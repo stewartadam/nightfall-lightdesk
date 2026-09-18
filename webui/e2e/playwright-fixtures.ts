@@ -138,8 +138,12 @@ export const frontendOnlyTest = playwrightTest.extend<
     await use(workerSlot.baseURL);
   },
 
-  /** Serve tracked show data and generated audio to pages and their engine workers. */
+  /** Use packaged release resources in preview mode and deterministic fixtures in development. */
   context: async ({ context }, use) => {
+    if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview") {
+      await use(context);
+      return;
+    }
     const showfile = await readFile(
       new URL(
         "../../test-fixtures/browser-show/showfile.json",
@@ -157,6 +161,7 @@ export const frontendOnlyTest = playwrightTest.extend<
       (route) =>
         route.fulfill({
           contentType: "audio/wav",
+          headers: { "accept-ranges": "bytes" },
           body: Buffer.from(createSampleWav()),
         }),
     );
