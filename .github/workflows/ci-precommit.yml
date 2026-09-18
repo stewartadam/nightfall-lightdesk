@@ -66,12 +66,19 @@ jobs:
         run: npm run wasm-build:dev
 
       - name: Run prek pre-commit stage hooks
+        # Native CI needs useful backtraces, not full debugger data or optimized
+        # workspace code. Package overrides keep third-party dependencies fast.
+        env: &native-build-env
+          CARGO_PROFILE_DEV_DEBUG: line-tables-only
+          CARGO_PROFILE_DEV_OPT_LEVEL: "0"
         run: npx prek run --all-files --show-diff-on-failure --color always --stage pre-commit
 
       - name: Run prek pre-push stage hooks
-        run: npx prek run --all-files --show-diff-on-failure --color always --stage pre-push
+        env: *native-build-env
+        run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-push
 
       # Keep smoke tests in this job to reuse Cargo and generated WASM assets.
       - name: Run Chromium product flows
         if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        env: *native-build-env
         uses: ./.github/actions/playwright-smoke
