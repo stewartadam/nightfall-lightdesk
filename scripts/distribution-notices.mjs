@@ -11,10 +11,13 @@ import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -269,8 +272,13 @@ export function rustNotices(report) {
 }
 
 /** Run the pinned Cargo collector for the exact root, target and feature set being packaged. */
-function collectRust(manifest, target, features = []) {
-  const version = execFileSync("cargo", ["about", "--version"], {
+export function collectRust(
+  manifest,
+  target,
+  features = [],
+  run = execFileSync,
+) {
+  const version = run("cargo", ["about", "--version"], {
     cwd: projectRoot,
     encoding: "utf8",
   }).trim();
@@ -292,13 +300,17 @@ function collectRust(manifest, target, features = []) {
   ];
   if (features.length)
     args.push("--no-default-features", "--features", features.join(","));
-  const output = execFileSync("cargo", args, {
-    cwd: projectRoot,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  return rustNotices(JSON.parse(output));
+  const directory = mkdtempSync(join(tmpdir(), "nightfall-cargo-about-"));
+  const reportPath = join(directory, "report.json");
+  try {
+    run("cargo", [...args, "--output-file", reportPath], {
+      cwd: projectRoot,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    return rustNotices(JSON.parse(readFileSync(reportPath, "utf8")));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** Merge component inventories and include the existing model notice verbatim. */

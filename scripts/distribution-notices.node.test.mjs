@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -15,9 +16,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import {
+  collectRust,
   documentFor,
   frontendNotices,
   legalFiles,
@@ -200,4 +202,74 @@ test("conflicting inventories cannot overwrite each other", () => {
     () => documentFor("test", [entry, { ...entry, text: "second" }]),
     /Conflicting notices/,
   );
+});
+
+/** Read the UTF-8 file emitted by cargo-about instead of redirecting PowerShell stdout. */
+test("Cargo collection reads its output file and removes temporary reports", () => {
+  let reportPath;
+  /** Emulate cargo-about's version and file-output contract without invoking Cargo. */
+  const run = (command, args, options) => {
+    assert.equal(command, "cargo");
+    if (args[1] === "--version") return "cargo-about 0.8.4\n";
+    const outputIndex = args.indexOf("--output-file");
+    assert.notEqual(outputIndex, -1);
+    reportPath = args[outputIndex + 1];
+    assert.deepEqual(args.slice(0, outputIndex), [
+      "about",
+      "generate",
+      "--manifest-path",
+      "crates/app/Cargo.toml",
+      "--target",
+      "x86_64-pc-windows-msvc",
+      "--locked",
+      "--fail",
+      "--format",
+      "json",
+      "--no-default-features",
+      "--features",
+      "desktop,full",
+    ]);
+    assert.deepEqual(options.stdio, ["ignore", "inherit", "inherit"]);
+    writeFileSync(
+      reportPath,
+      JSON.stringify(
+        cargoReport(dirname(reportPath), [
+          {
+            id: "MIT",
+            source_path: null,
+            text: "Copyright Café authors\nMIT terms",
+          },
+        ]),
+      ),
+    );
+    return "not JSON: diagnostics belong on stdout";
+  };
+  const [entry] = collectRust(
+    "crates/app/Cargo.toml",
+    "x86_64-pc-windows-msvc",
+    ["desktop", "full"],
+    run,
+  );
+  assert.match(entry.text, /Copyright Café authors/);
+  assert.equal(existsSync(dirname(reportPath)), false);
+});
+
+/** Preserve collector errors and remove partial reports after command or JSON failures. */
+test("Cargo collection cleans up failed and malformed reports", () => {
+  for (const malformed of [false, true]) {
+    let reportPath;
+    /** Simulate a collector failure after it creates a partial output file. */
+    const run = (_command, args) => {
+      if (args[1] === "--version") return "cargo-about 0.8.4";
+      reportPath = args[args.indexOf("--output-file") + 1];
+      writeFileSync(reportPath, "invalid JSON");
+      if (!malformed) throw new Error("collector failed");
+    };
+    assert.throws(
+      () =>
+        collectRust("crates/app/Cargo.toml", "x86_64-pc-windows-msvc", [], run),
+      malformed ? SyntaxError : /collector failed/,
+    );
+    assert.equal(existsSync(dirname(reportPath)), false);
+  }
 });
