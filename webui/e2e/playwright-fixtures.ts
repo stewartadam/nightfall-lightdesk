@@ -6,7 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { readFile } from "node:fs/promises";
 import { expect, test as playwrightTest } from "@playwright/test";
+import { createSampleWav } from "../../scripts/browser-demo-audio.mjs";
 
 import {
   startPlaywrightTestBackend,
@@ -134,6 +136,31 @@ export const frontendOnlyTest = playwrightTest.extend<
   /** Route relative page URLs through the frontend-only Vite process. */
   baseURL: async ({ workerSlot }, use) => {
     await use(workerSlot.baseURL);
+  },
+
+  /** Serve tracked show data and generated audio to pages and their engine workers. */
+  context: async ({ context }, use) => {
+    const showfile = await readFile(
+      new URL(
+        "../../test-fixtures/browser-show/showfile.json",
+        import.meta.url,
+      ),
+    );
+    await context.route(
+      "**/nightfall-demo.nightfall-show/showfile.json",
+      (route) =>
+        route.fulfill({ contentType: "application/json", body: showfile }),
+    );
+    const audioPath = JSON.parse(showfile.toString()).timelines[0].audio_path;
+    await context.route(
+      `**/nightfall-demo.nightfall-show/${audioPath}`,
+      (route) =>
+        route.fulfill({
+          contentType: "audio/wav",
+          body: Buffer.from(createSampleWav()),
+        }),
+    );
+    await use(context);
   },
 
   /** Use an empty origin-neutral browser state for the embedded runtime. */

@@ -204,7 +204,7 @@ async function verifySingleElementValues(
   }
 }
 
-/** Exercises the unmodified bundled showfile in the WASM runtime. */
+/** Exercises the tracked test showfile in the WASM runtime. */
 frontendOnlyTest(
   "embedded demo displays and edits single-element cue values",
   async ({ page }, testInfo) => {
@@ -213,14 +213,14 @@ frontendOnlyTest(
   },
 );
 
-/** Loads a separate copy of the bundled showfile through the native showfile lifecycle. */
+/** Loads a separate copy of the tracked test showfile through the native showfile lifecycle. */
 test("native runtime displays and edits single-element cue values", async ({
   backendSlot,
   page,
 }, testInfo) => {
   test.setTimeout(120_000);
   await cp(
-    "webui/public/nightfall-demo.nightfall-show",
+    "test-fixtures/browser-show",
     join(backendSlot.dataDir, "cue-editor-demo.nightfall-show"),
     { recursive: true },
   );

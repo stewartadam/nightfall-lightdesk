@@ -41,8 +41,7 @@ const MAX_TICK_DELTA_MS: f64 = 100.0;
 #[cfg(test)]
 const TEST_SAMPLE_ID: &str = "nightfall-demo-v1";
 #[cfg(test)]
-const TEST_SHOWFILE_JSON: &str =
-    include_str!("../../../webui/public/nightfall-demo.nightfall-show/showfile.json");
+const TEST_SHOWFILE_JSON: &str = include_str!("../../../test-fixtures/browser-show/showfile.json");
 #[cfg(target_arch = "wasm32")]
 static CONSTRUCTION_STAGE: AtomicU8 = AtomicU8::new(0);
 
@@ -311,10 +310,10 @@ mod tests {
 
     use super::*;
 
-    /// Build the released browser sample through the canonical JSON load boundary.
+    /// Build the tracked browser test fixture through the canonical JSON load boundary.
     fn sample_engine() -> BrowserEngine {
         BrowserEngine::create_core(TEST_SAMPLE_ID.to_owned(), TEST_SHOWFILE_JSON)
-            .expect("runtime should initialize from the released showfile")
+            .expect("runtime should initialize from the test showfile")
     }
 
     /// Decode one discriminator-prefixed engine publication into JSON.

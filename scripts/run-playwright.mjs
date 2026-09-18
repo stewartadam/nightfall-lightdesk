@@ -78,11 +78,6 @@ const { isTestRun, needsBackend } = resolvePlaywrightRunMode(
   playwrightArgs,
   target,
 );
-if (isTestRun) {
-  execFileSync(process.execPath, ["scripts/generate-browser-demo-audio.mjs"], {
-    stdio: "inherit",
-  });
-}
 const sourceDataDir = needsBackend
   ? await nightfallDataDirForTestProcess(
       process.cwd(),

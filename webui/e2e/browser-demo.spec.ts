@@ -43,11 +43,11 @@ async function prepareEmbeddedPage(page: Page): Promise<{
     }
   });
   await page.route("**/*", async (route) => {
-    const response = await route.fetch();
     if (route.request().resourceType() !== "document") {
-      await route.fulfill({ response });
+      await route.fallback();
       return;
     }
+    const response = await route.fetch();
     await route.fulfill({
       response,
       headers: {
@@ -581,6 +581,48 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   expect(showfileRequests).toHaveLength(2);
   expect([...new Set(audioRequests)]).toEqual([expectedAudioUrl]);
   expect(pageErrors).toEqual([]);
+});
+
+/** Verify the tracked show and generated audio support real timeline playback. */
+test("embedded fixture decodes and plays generated timeline audio", async ({
+  page,
+}, testInfo) => {
+  const basePath =
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+      ? "/demo/app/"
+      : "/";
+  await page.goto(
+    `${basePath}?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false`,
+  );
+  await expect
+    .poll(async () => (await readDemoState(page)).timelineUid)
+    .toBeTruthy();
+  const { timelineUid } = await readDemoState(page);
+  await openDemoTimeline(page, timelineUid);
+  const surface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  await expect(surface.locator(".waveform-container")).toHaveAttribute(
+    "data-waveform-state",
+    "decoded",
+  );
+  try {
+    await surface.getByRole("button", { name: "Play timeline" }).click();
+    await expect
+      .poll(() => readDemoAudioState(page))
+      .toMatchObject({ status: "playing" });
+    await expect
+      .poll(() => timelinePositionMs(page, timelineUid))
+      .toBeGreaterThan(100);
+    await surface.screenshot({
+      path: testInfo.outputPath("generated-audio-playback.png"),
+    });
+  } finally {
+    await surface.getByRole("button", { name: "Stop timeline" }).click();
+  }
+  await expect
+    .poll(() => readDemoAudioState(page))
+    .toMatchObject({ status: "unloaded" });
 });
 
 /** Verifies demo identity, toolbar placement, and reset without changing the local showfile selection. */
