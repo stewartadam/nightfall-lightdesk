@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    paths:
+      - '.github/workflows/browser-demo.yml'
+      - '.gitignore'
+      - 'webui/index.html'
+      - 'webui/public/**'
+      - 'scripts/*browser-demo*'
 
 permissions:
   contents: read

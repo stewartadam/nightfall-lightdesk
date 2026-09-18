@@ -31,7 +31,8 @@ dist/
 # web assets
 webui/public/fixtures/
 webui/public/assets/visualizer/
-webui/public/nightfall-demo.nightfall-show/
+webui/public/nightfall-demo.nightfall-show/*
+!webui/public/nightfall-demo.nightfall-show/showfile.json
 webui/assets/models/beat-this/*.onnx
 
 # AI tools

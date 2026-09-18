@@ -218,7 +218,7 @@ test("reduced motion supports Auto, On, and Off", async ({
 });
 
 for (const preference of ["on", "off"] as const) {
-  /** Verifies saved overrides take effect even before the application module loads. */
+  /** Verifies saved overrides apply before app startup under a CSP that forbids inline scripts. */
   test(`bootstrap splash honors reduced motion ${preference}`, async ({
     page,
   }) => {
@@ -232,6 +232,20 @@ for (const preference of ["on", "off"] as const) {
       );
     }, preference);
     await page.route("**/main.tsx", (route) => route.abort());
+    await page.route("**/*", async (route) => {
+      if (route.request().resourceType() !== "document") {
+        await route.fallback();
+        return;
+      }
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        headers: {
+          ...response.headers(),
+          "content-security-policy": "script-src 'self' 'wasm-unsafe-eval'",
+        },
+      });
+    });
     await page.goto("/");
     await expect(page.locator("#bootstrap-splash")).toBeVisible();
     const fader = page.locator(".bootstrap-fader").first();

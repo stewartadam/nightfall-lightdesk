@@ -1,0 +1,2311 @@
+{
+  "metadata": {
+    "nightfallVersion": "0.1.0",
+    "showfileVersion": 17,
+    "lastSavedUnixSec": 1789726339
+  },
+  "fixtures": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "7ee293f49ce745c198aed2f022341001",
+        "label": "Demo Wash 1"
+      },
+      "make": "Nightfall",
+      "model": "Aurora Wash",
+      "mode": "RGB + Position",
+      "elements": [
+        {
+          "label": "Head",
+          "parameters": [
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "VirtualIntensity"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "HTP",
+              "use_grandmaster": true
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Red"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Green"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Blue"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Pan"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Tilt"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            }
+          ]
+        }
+      ],
+      "physical": null,
+      "placement": {
+        "position": {
+          "x": -5.5,
+          "y": 4.0,
+          "z": -1.5
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "library_asset_etag": null
+    },
+    {
+      "identifiers": {
+        "id": 2,
+        "uid": "7ee293f49ce745c198aed2f022341002",
+        "label": "Demo Wash 2"
+      },
+      "make": "Nightfall",
+      "model": "Aurora Wash",
+      "mode": "RGB + Position",
+      "elements": [
+        {
+          "label": "Head",
+          "parameters": [
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "VirtualIntensity"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "HTP",
+              "use_grandmaster": true
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Red"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Green"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Blue"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Pan"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Tilt"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            }
+          ]
+        }
+      ],
+      "physical": null,
+      "placement": {
+        "position": {
+          "x": -3.3000002,
+          "y": 4.0,
+          "z": 1.5
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "library_asset_etag": null
+    },
+    {
+      "identifiers": {
+        "id": 3,
+        "uid": "7ee293f49ce745c198aed2f022341003",
+        "label": "Demo Wash 3"
+      },
+      "make": "Nightfall",
+      "model": "Aurora Wash",
+      "mode": "RGB + Position",
+      "elements": [
+        {
+          "label": "Head",
+          "parameters": [
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "VirtualIntensity"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "HTP",
+              "use_grandmaster": true
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Red"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Green"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Blue"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Pan"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Tilt"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            }
+          ]
+        }
+      ],
+      "physical": null,
+      "placement": {
+        "position": {
+          "x": -1.1,
+          "y": 4.0,
+          "z": -1.5
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "library_asset_etag": null
+    },
+    {
+      "identifiers": {
+        "id": 4,
+        "uid": "7ee293f49ce745c198aed2f022341004",
+        "label": "Demo Wash 4"
+      },
+      "make": "Nightfall",
+      "model": "Aurora Wash",
+      "mode": "RGB + Position",
+      "elements": [
+        {
+          "label": "Head",
+          "parameters": [
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "VirtualIntensity"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "HTP",
+              "use_grandmaster": true
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Red"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Green"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Blue"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Pan"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Tilt"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            }
+          ]
+        }
+      ],
+      "physical": null,
+      "placement": {
+        "position": {
+          "x": 1.1,
+          "y": 4.0,
+          "z": 1.5
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "library_asset_etag": null
+    },
+    {
+      "identifiers": {
+        "id": 5,
+        "uid": "7ee293f49ce745c198aed2f022341005",
+        "label": "Demo Wash 5"
+      },
+      "make": "Nightfall",
+      "model": "Aurora Wash",
+      "mode": "RGB + Position",
+      "elements": [
+        {
+          "label": "Head",
+          "parameters": [
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "VirtualIntensity"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "HTP",
+              "use_grandmaster": true
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Red"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Green"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Blue"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Pan"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Tilt"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            }
+          ]
+        }
+      ],
+      "physical": null,
+      "placement": {
+        "position": {
+          "x": 3.3000002,
+          "y": 4.0,
+          "z": -1.5
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "library_asset_etag": null
+    },
+    {
+      "identifiers": {
+        "id": 6,
+        "uid": "7ee293f49ce745c198aed2f022341006",
+        "label": "Demo Wash 6"
+      },
+      "make": "Nightfall",
+      "model": "Aurora Wash",
+      "mode": "RGB + Position",
+      "elements": [
+        {
+          "label": "Head",
+          "parameters": [
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "VirtualIntensity"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "HTP",
+              "use_grandmaster": true
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Red"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Green"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Blue"
+              },
+              "native_unit": "Percent",
+              "value_polarity": "Unsigned",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Pan"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            },
+            {
+              "resolution": "Coarse",
+              "attribute": {
+                "type": "Tilt"
+              },
+              "native_unit": "Degrees",
+              "value_polarity": "Signed",
+              "min": 0.0,
+              "max": 255.0,
+              "offset": {
+                "type": "Absolute",
+                "data": {
+                  "value": 0.0
+                }
+              },
+              "is_inverted": false,
+              "is_snap": false,
+              "merge_type": "LTP",
+              "use_grandmaster": false
+            }
+          ]
+        }
+      ],
+      "physical": null,
+      "placement": {
+        "position": {
+          "x": 5.5,
+          "y": 4.0,
+          "z": 1.5
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "library_asset_etag": null
+    }
+  ],
+  "variables": {},
+  "settings": {
+    "programmer_auto_select": false,
+    "audio_device": null,
+    "sequence_reorder_renumber_policy": "Preserve",
+    "selection_flatten_policy": "Silent",
+    "time_display_preference": "Auto",
+    "timeline_placement_preference": "Playhead",
+    "showfile_backup_retention": 20,
+    "panel_layouts": [
+      {
+        "shownInSwitcher": true,
+        "id": "35bd2380-ff0e-4394-8d24-bd2c8eaed29c",
+        "name": "Your Layout",
+        "version": 2,
+        "layout": {
+          "grid": {
+            "root": {
+              "type": "branch",
+              "data": [
+                {
+                  "type": "branch",
+                  "data": [
+                    {
+                      "type": "leaf",
+                      "data": {
+                        "views": [
+                          "panel-CueList",
+                          "panel-SequenceList",
+                          "panel-FxList",
+                          "panel-FlowList",
+                          "panel-Groups"
+                        ],
+                        "activeView": "panel-Groups",
+                        "id": "1"
+                      },
+                      "size": 388
+                    },
+                    {
+                      "type": "leaf",
+                      "data": {
+                        "views": ["panel-TimelinesPanel"],
+                        "activeView": "panel-TimelinesPanel",
+                        "id": "3"
+                      },
+                      "size": 386
+                    }
+                  ],
+                  "size": 681
+                },
+                {
+                  "type": "leaf",
+                  "data": {
+                    "views": ["panel-Visualizer"],
+                    "activeView": "panel-Visualizer",
+                    "id": "4"
+                  },
+                  "size": 520.6666666666665
+                }
+              ],
+              "size": 790
+            },
+            "width": 1217.6666666666663,
+            "height": 790,
+            "orientation": "HORIZONTAL"
+          },
+          "panels": {
+            "panel-CueList": {
+              "id": "panel-CueList",
+              "contentComponent": "CueList",
+              "tabComponent": "PanelTab",
+              "title": "Cues"
+            },
+            "panel-SequenceList": {
+              "id": "panel-SequenceList",
+              "contentComponent": "SequenceList",
+              "tabComponent": "PanelTab",
+              "title": "Sequences"
+            },
+            "panel-FxList": {
+              "id": "panel-FxList",
+              "contentComponent": "FxList",
+              "tabComponent": "PanelTab",
+              "title": "Fx"
+            },
+            "panel-FlowList": {
+              "id": "panel-FlowList",
+              "contentComponent": "FlowList",
+              "tabComponent": "PanelTab",
+              "title": "Flows"
+            },
+            "panel-Groups": {
+              "id": "panel-Groups",
+              "contentComponent": "GroupsPanel",
+              "tabComponent": "PanelTab",
+              "title": "Groups"
+            },
+            "panel-TimelinesPanel": {
+              "id": "panel-TimelinesPanel",
+              "contentComponent": "TimelinesPanel",
+              "tabComponent": "PanelTab",
+              "title": "Timelines"
+            },
+            "panel-Visualizer": {
+              "id": "panel-Visualizer",
+              "contentComponent": "Visualizer",
+              "tabComponent": "PanelTab",
+              "title": "3D Visualizer"
+            },
+            "panel-CommandLine": {
+              "id": "panel-CommandLine",
+              "contentComponent": "CommandLine",
+              "tabComponent": "PanelTab",
+              "title": "Console"
+            },
+            "panel-ProgrammerGrid": {
+              "id": "panel-ProgrammerGrid",
+              "contentComponent": "ProgrammerGrid",
+              "tabComponent": "PanelTab",
+              "title": "Programmer"
+            },
+            "panel-SelectionVisualizer": {
+              "id": "panel-SelectionVisualizer",
+              "contentComponent": "SelectionVisualizer",
+              "tabComponent": "PanelTab",
+              "title": "Selection Inspector"
+            },
+            "panel-TapPattern": {
+              "id": "panel-TapPattern",
+              "contentComponent": "TapPattern",
+              "tabComponent": "PanelTab",
+              "title": "Tap Pattern"
+            },
+            "panel-PatchEditor": {
+              "id": "panel-PatchEditor",
+              "contentComponent": "PatchEditor",
+              "tabComponent": "PanelTab",
+              "title": "Patch"
+            },
+            "panel-ClipList": {
+              "id": "panel-ClipList",
+              "contentComponent": "ClipList",
+              "tabComponent": "PanelTab",
+              "title": "Clips"
+            },
+            "panel-PropertiesInspector": {
+              "id": "panel-PropertiesInspector",
+              "contentComponent": "PropertiesInspector",
+              "tabComponent": "PanelTab",
+              "title": "Properties"
+            },
+            "panel-StatusDisplay": {
+              "id": "panel-StatusDisplay",
+              "contentComponent": "StatusDisplay",
+              "tabComponent": "PanelTab",
+              "title": "Status Display"
+            },
+            "panel-LayerStack": {
+              "id": "panel-LayerStack",
+              "contentComponent": "LayerStack",
+              "tabComponent": "PanelTab",
+              "title": "Layers"
+            },
+            "panel-FixtureGrid": {
+              "id": "panel-FixtureGrid",
+              "contentComponent": "FixtureGrid",
+              "tabComponent": "PanelTab",
+              "title": "Fixtures"
+            },
+            "panel-Instrumentation": {
+              "id": "panel-Instrumentation",
+              "contentComponent": "Instrumentation",
+              "tabComponent": "PanelTab",
+              "title": "Instrumentation"
+            }
+          },
+          "activeGroup": "3",
+          "edgeGroups": {
+            "left": {
+              "size": 526,
+              "visible": true,
+              "minimumSize": 515,
+              "collapsedSize": 35,
+              "group": {
+                "views": ["panel-ClipList"],
+                "activeView": "panel-ClipList",
+                "id": "edge-Programmer",
+                "headerPosition": "left"
+              }
+            },
+            "right": {
+              "size": 536,
+              "visible": true,
+              "collapsed": true,
+              "minimumSize": 360,
+              "collapsedSize": 35,
+              "group": {
+                "views": [
+                  "panel-PropertiesInspector",
+                  "panel-StatusDisplay",
+                  "panel-LayerStack",
+                  "panel-FixtureGrid",
+                  "panel-Instrumentation"
+                ],
+                "activeView": "panel-PropertiesInspector",
+                "id": "edge-Properties",
+                "headerPosition": "right"
+              }
+            },
+            "bottom": {
+              "size": 528.19921875,
+              "visible": true,
+              "collapsed": true,
+              "minimumSize": 240,
+              "collapsedSize": 35,
+              "group": {
+                "views": [
+                  "panel-CommandLine",
+                  "panel-ProgrammerGrid",
+                  "panel-SelectionVisualizer",
+                  "panel-TapPattern",
+                  "panel-PatchEditor"
+                ],
+                "activeView": "panel-PatchEditor",
+                "id": "edge-Console",
+                "headerPosition": "bottom"
+              }
+            }
+          }
+        },
+        "panels": [
+          {
+            "id": "panel-CueList",
+            "title": "Cues",
+            "params": {}
+          },
+          {
+            "id": "panel-SequenceList",
+            "title": "Sequences",
+            "params": {}
+          },
+          {
+            "id": "panel-FxList",
+            "title": "Fx",
+            "params": {}
+          },
+          {
+            "id": "panel-FlowList",
+            "title": "Flows",
+            "params": {}
+          },
+          {
+            "id": "panel-Groups",
+            "title": "Groups",
+            "params": {}
+          },
+          {
+            "id": "panel-TimelinesPanel",
+            "title": "Timelines",
+            "params": {}
+          },
+          {
+            "id": "panel-Visualizer",
+            "title": "3D Visualizer",
+            "params": {}
+          },
+          {
+            "id": "panel-CommandLine",
+            "title": "Console",
+            "params": {}
+          },
+          {
+            "id": "panel-ProgrammerGrid",
+            "title": "Programmer",
+            "params": {}
+          },
+          {
+            "id": "panel-SelectionVisualizer",
+            "title": "Selection Inspector",
+            "params": {}
+          },
+          {
+            "id": "panel-TapPattern",
+            "title": "Tap Pattern",
+            "params": {}
+          },
+          {
+            "id": "panel-PatchEditor",
+            "title": "Patch",
+            "params": {}
+          },
+          {
+            "id": "panel-ClipList",
+            "title": "Clips",
+            "params": {}
+          },
+          {
+            "id": "panel-PropertiesInspector",
+            "title": "Properties",
+            "params": {}
+          },
+          {
+            "id": "panel-StatusDisplay",
+            "title": "Status Display",
+            "params": {}
+          },
+          {
+            "id": "panel-LayerStack",
+            "title": "Layers",
+            "params": {}
+          },
+          {
+            "id": "panel-FixtureGrid",
+            "title": "Fixtures",
+            "params": {}
+          },
+          {
+            "id": "panel-Instrumentation",
+            "title": "Instrumentation",
+            "params": {}
+          }
+        ],
+        "createdAt": 1789726337666.0,
+        "updatedAt": 1789726337666.0
+      }
+    ],
+    "active_panel_layout": {
+      "layoutId": "35bd2380-ff0e-4394-8d24-bd2c8eaed29c",
+      "version": 2,
+      "layout": {
+        "grid": {
+          "root": {
+            "type": "branch",
+            "data": [
+              {
+                "type": "branch",
+                "data": [
+                  {
+                    "type": "leaf",
+                    "data": {
+                      "views": [
+                        "panel-CueList",
+                        "panel-SequenceList",
+                        "panel-FxList",
+                        "panel-FlowList",
+                        "panel-Groups"
+                      ],
+                      "activeView": "panel-Groups",
+                      "id": "1"
+                    },
+                    "size": 386
+                  },
+                  {
+                    "type": "leaf",
+                    "data": {
+                      "views": ["panel-TimelinesPanel"],
+                      "activeView": "panel-TimelinesPanel",
+                      "id": "3"
+                    },
+                    "size": 385
+                  }
+                ],
+                "size": 682
+              },
+              {
+                "type": "leaf",
+                "data": {
+                  "views": ["panel-Visualizer"],
+                  "activeView": "panel-Visualizer",
+                  "id": "4"
+                },
+                "size": 520.6666666666665
+              }
+            ],
+            "size": 787
+          },
+          "width": 1218.6666666666663,
+          "height": 787,
+          "orientation": "HORIZONTAL"
+        },
+        "panels": {
+          "panel-CueList": {
+            "id": "panel-CueList",
+            "contentComponent": "CueList",
+            "tabComponent": "PanelTab",
+            "title": "Cues"
+          },
+          "panel-SequenceList": {
+            "id": "panel-SequenceList",
+            "contentComponent": "SequenceList",
+            "tabComponent": "PanelTab",
+            "title": "Sequences"
+          },
+          "panel-FxList": {
+            "id": "panel-FxList",
+            "contentComponent": "FxList",
+            "tabComponent": "PanelTab",
+            "title": "Fx"
+          },
+          "panel-FlowList": {
+            "id": "panel-FlowList",
+            "contentComponent": "FlowList",
+            "tabComponent": "PanelTab",
+            "title": "Flows"
+          },
+          "panel-Groups": {
+            "id": "panel-Groups",
+            "contentComponent": "GroupsPanel",
+            "tabComponent": "PanelTab",
+            "title": "Groups"
+          },
+          "panel-TimelinesPanel": {
+            "id": "panel-TimelinesPanel",
+            "contentComponent": "TimelinesPanel",
+            "tabComponent": "PanelTab",
+            "title": "Timelines"
+          },
+          "panel-Visualizer": {
+            "id": "panel-Visualizer",
+            "contentComponent": "Visualizer",
+            "tabComponent": "PanelTab",
+            "title": "3D Visualizer"
+          },
+          "panel-CommandLine": {
+            "id": "panel-CommandLine",
+            "contentComponent": "CommandLine",
+            "tabComponent": "PanelTab",
+            "title": "Console"
+          },
+          "panel-ProgrammerGrid": {
+            "id": "panel-ProgrammerGrid",
+            "contentComponent": "ProgrammerGrid",
+            "tabComponent": "PanelTab",
+            "title": "Programmer"
+          },
+          "panel-SelectionVisualizer": {
+            "id": "panel-SelectionVisualizer",
+            "contentComponent": "SelectionVisualizer",
+            "tabComponent": "PanelTab",
+            "title": "Selection Inspector"
+          },
+          "panel-TapPattern": {
+            "id": "panel-TapPattern",
+            "contentComponent": "TapPattern",
+            "tabComponent": "PanelTab",
+            "title": "Tap Pattern"
+          },
+          "panel-PatchEditor": {
+            "id": "panel-PatchEditor",
+            "contentComponent": "PatchEditor",
+            "tabComponent": "PanelTab",
+            "title": "Patch"
+          },
+          "panel-ClipList": {
+            "id": "panel-ClipList",
+            "contentComponent": "ClipList",
+            "tabComponent": "PanelTab",
+            "title": "Clips"
+          },
+          "panel-PropertiesInspector": {
+            "id": "panel-PropertiesInspector",
+            "contentComponent": "PropertiesInspector",
+            "tabComponent": "PanelTab",
+            "title": "Properties"
+          },
+          "panel-StatusDisplay": {
+            "id": "panel-StatusDisplay",
+            "contentComponent": "StatusDisplay",
+            "tabComponent": "PanelTab",
+            "title": "Status Display"
+          },
+          "panel-LayerStack": {
+            "id": "panel-LayerStack",
+            "contentComponent": "LayerStack",
+            "tabComponent": "PanelTab",
+            "title": "Layers"
+          },
+          "panel-FixtureGrid": {
+            "id": "panel-FixtureGrid",
+            "contentComponent": "FixtureGrid",
+            "tabComponent": "PanelTab",
+            "title": "Fixtures"
+          },
+          "panel-Instrumentation": {
+            "id": "panel-Instrumentation",
+            "contentComponent": "Instrumentation",
+            "tabComponent": "PanelTab",
+            "title": "Instrumentation"
+          }
+        },
+        "activeGroup": "3",
+        "edgeGroups": {
+          "left": {
+            "size": 526,
+            "visible": true,
+            "minimumSize": 515,
+            "collapsedSize": 35,
+            "group": {
+              "views": ["panel-ClipList"],
+              "activeView": "panel-ClipList",
+              "id": "edge-Programmer",
+              "headerPosition": "left"
+            }
+          },
+          "right": {
+            "size": 536,
+            "visible": true,
+            "collapsed": true,
+            "minimumSize": 360,
+            "collapsedSize": 35,
+            "group": {
+              "views": [
+                "panel-PropertiesInspector",
+                "panel-StatusDisplay",
+                "panel-LayerStack",
+                "panel-FixtureGrid",
+                "panel-Instrumentation"
+              ],
+              "activeView": "panel-PropertiesInspector",
+              "id": "edge-Properties",
+              "headerPosition": "right"
+            }
+          },
+          "bottom": {
+            "size": 528.19921875,
+            "visible": true,
+            "collapsed": true,
+            "minimumSize": 240,
+            "collapsedSize": 35,
+            "group": {
+              "views": [
+                "panel-CommandLine",
+                "panel-ProgrammerGrid",
+                "panel-SelectionVisualizer",
+                "panel-TapPattern",
+                "panel-PatchEditor"
+              ],
+              "activeView": "panel-PatchEditor",
+              "id": "edge-Console",
+              "headerPosition": "bottom"
+            }
+          }
+        }
+      },
+      "panels": [
+        {
+          "id": "panel-CueList",
+          "title": "Cues",
+          "params": {}
+        },
+        {
+          "id": "panel-SequenceList",
+          "title": "Sequences",
+          "params": {}
+        },
+        {
+          "id": "panel-FxList",
+          "title": "Fx",
+          "params": {}
+        },
+        {
+          "id": "panel-FlowList",
+          "title": "Flows",
+          "params": {}
+        },
+        {
+          "id": "panel-Groups",
+          "title": "Groups",
+          "params": {}
+        },
+        {
+          "id": "panel-TimelinesPanel",
+          "title": "Timelines",
+          "params": {}
+        },
+        {
+          "id": "panel-Visualizer",
+          "title": "3D Visualizer",
+          "params": {}
+        },
+        {
+          "id": "panel-CommandLine",
+          "title": "Console",
+          "params": {}
+        },
+        {
+          "id": "panel-ProgrammerGrid",
+          "title": "Programmer",
+          "params": {}
+        },
+        {
+          "id": "panel-SelectionVisualizer",
+          "title": "Selection Inspector",
+          "params": {}
+        },
+        {
+          "id": "panel-TapPattern",
+          "title": "Tap Pattern",
+          "params": {}
+        },
+        {
+          "id": "panel-PatchEditor",
+          "title": "Patch",
+          "params": {}
+        },
+        {
+          "id": "panel-ClipList",
+          "title": "Clips",
+          "params": {}
+        },
+        {
+          "id": "panel-PropertiesInspector",
+          "title": "Properties",
+          "params": {}
+        },
+        {
+          "id": "panel-StatusDisplay",
+          "title": "Status Display",
+          "params": {}
+        },
+        {
+          "id": "panel-LayerStack",
+          "title": "Layers",
+          "params": {}
+        },
+        {
+          "id": "panel-FixtureGrid",
+          "title": "Fixtures",
+          "params": {}
+        },
+        {
+          "id": "panel-Instrumentation",
+          "title": "Instrumentation",
+          "params": {}
+        }
+      ],
+      "updatedAt": 1789726339633.0
+    }
+  },
+  "ioSettings": {
+    "network_interface": null,
+    "network_output_enabled": true,
+    "network_input_enabled": true,
+    "usb_output_enabled": true,
+    "network_dmx_outputs": {
+      "targets": [
+        {
+          "id": "sacn",
+          "protocol": "Sacn",
+          "delivery": {
+            "type": "SacnMulticast"
+          }
+        },
+        {
+          "id": "artnet",
+          "protocol": "ArtNet",
+          "delivery": {
+            "type": "ArtNetBroadcast"
+          }
+        }
+      ]
+    },
+    "usb_dmx_outputs": {
+      "targets": [
+        {
+          "id": "udmx",
+          "device": "default",
+          "device_label": null
+        }
+      ]
+    },
+    "input_signal_loss_policy": {
+      "type": "Hold"
+    },
+    "input_signal_loss_timeout": {
+      "secs": 2,
+      "nanos": 0
+    },
+    "input_universe_visibility_mode": "ExternalOnly"
+  },
+  "bindings": {
+    "input": [],
+    "output": [],
+    "disabled": []
+  },
+  "midiMappings": [],
+  "oscMappings": [],
+  "sceneObjects": [],
+  "cues": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "7ee293f49ce745c198aed2f022343001",
+        "label": "Midnight Blue"
+      },
+      "trigger": {
+        "type": "Manual"
+      },
+      "transitions": {
+        "delay_in": null,
+        "fade_in": null,
+        "curve_in": null,
+        "delay_out": null,
+        "fade_out": null,
+        "curve_out": null
+      },
+      "transitions_by_attribute": {},
+      "instructions": [
+        {
+          "selection": {
+            "source": {
+              "type": "Resolved",
+              "data": [
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341001",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341002",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341003",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341004",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341005",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341006",
+                  "index": 1
+                }
+              ]
+            },
+            "clauses": []
+          },
+          "cue_instruction": {
+            "values": {
+              "Red": {
+                "type": "Inline",
+                "data": {
+                  "type": "Absolute",
+                  "data": {
+                    "value": 25.0
+                  }
+                }
+              },
+              "Green": {
+                "type": "Inline",
+                "data": {
+                  "type": "Absolute",
+                  "data": {
+                    "value": 70.0
+                  }
+                }
+              },
+              "VirtualIntensity": {
+                "type": "Inline",
+                "data": {
+                  "type": "Absolute",
+                  "data": {
+                    "value": 220.0
+                  }
+                }
+              },
+              "Blue": {
+                "type": "Inline",
+                "data": {
+                  "type": "Absolute",
+                  "data": {
+                    "value": 255.0
+                  }
+                }
+              }
+            },
+            "transitions_by_attribute": {},
+            "transitions_by_fixture_attribute": [],
+            "color_path_id": null,
+            "transitions": {
+              "delay_in": null,
+              "fade_in": null,
+              "curve_in": null,
+              "delay_out": null,
+              "fade_out": null,
+              "curve_out": null
+            }
+          }
+        }
+      ],
+      "lookahead": null,
+      "parts": [],
+      "tracking_flags": {
+        "__Composed__": 7
+      },
+      "tracking_mode": null
+    },
+    {
+      "identifiers": {
+        "id": 2,
+        "uid": "7ee293f49ce745c198aed2f022343002",
+        "label": "Sunrise"
+      },
+      "trigger": {
+        "type": "Manual"
+      },
+      "transitions": {
+        "delay_in": null,
+        "fade_in": null,
+        "curve_in": null,
+        "delay_out": null,
+        "fade_out": null,
+        "curve_out": null
+      },
+      "transitions_by_attribute": {},
+      "instructions": [
+        {
+          "selection": {
+            "source": {
+              "type": "Resolved",
+              "data": [
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341001",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341002",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341003",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341004",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341005",
+                  "index": 1
+                },
+                {
+                  "fixture_uid": "7ee293f49ce745c198aed2f022341006",
+                  "index": 1
+                }
+              ]
+            },
+            "clauses": []
+          },
+          "cue_instruction": {
+            "values": {
+              "Red": {
+                "type": "Inline",
+                "data": {
+                  "type": "Absolute",
+                  "data": {
+                    "value": 255.0
+                  }
+                }
+              },
+              "Green": {
+                "type": "Inline",
+                "data": {
+                  "type": "Absolute",
+                  "data": {
+                    "value": 75.0
+                  }
+                }
+              },
+              "Blue": {
+                "type": "Inline",
+                "data": {
+                  "type": "Absolute",
+                  "data": {
+                    "value": 20.0
+                  }
+                }
+              },
+              "VirtualIntensity": {
+                "type": "Inline",
+                "data": {
+                  "type": "Absolute",
+                  "data": {
+                    "value": 220.0
+                  }
+                }
+              }
+            },
+            "transitions_by_attribute": {},
+            "transitions_by_fixture_attribute": [],
+            "color_path_id": null,
+            "transitions": {
+              "delay_in": null,
+              "fade_in": null,
+              "curve_in": null,
+              "delay_out": null,
+              "fade_out": null,
+              "curve_out": null
+            }
+          }
+        }
+      ],
+      "lookahead": null,
+      "parts": [],
+      "tracking_flags": {
+        "__Composed__": 7
+      },
+      "tracking_mode": null
+    }
+  ],
+  "sequences": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "7ee293f49ce745c198aed2f022344001",
+        "label": "Nightfall Looks"
+      },
+      "steps": [
+        "7ee293f49ce745c198aed2f022343001",
+        "7ee293f49ce745c198aed2f022343002"
+      ],
+      "wrap": true,
+      "release_on_start": false,
+      "setup_cue": {
+        "identifiers": {
+          "id": 0,
+          "uid": "3661361be3094be08e69e1d19696d70c",
+          "label": ""
+        },
+        "trigger": {
+          "type": "FollowPrevious"
+        },
+        "transitions": {
+          "delay_in": null,
+          "fade_in": null,
+          "curve_in": null,
+          "delay_out": null,
+          "fade_out": null,
+          "curve_out": null
+        },
+        "transitions_by_attribute": {},
+        "instructions": [],
+        "lookahead": null,
+        "parts": [],
+        "tracking_flags": {
+          "__Composed__": 7
+        },
+        "tracking_mode": {
+          "type": "Flags",
+          "data": {
+            "__Composed__": 7
+          }
+        }
+      },
+      "release_cue": {
+        "identifiers": {
+          "id": 0,
+          "uid": "c70f5de2ef1444a795343a0908296e01",
+          "label": ""
+        },
+        "trigger": {
+          "type": "FollowPrevious"
+        },
+        "transitions": {
+          "delay_in": null,
+          "fade_in": null,
+          "curve_in": null,
+          "delay_out": null,
+          "fade_out": null,
+          "curve_out": null
+        },
+        "transitions_by_attribute": {},
+        "instructions": [],
+        "lookahead": null,
+        "parts": [],
+        "tracking_flags": {
+          "__Composed__": 7
+        },
+        "tracking_mode": {
+          "type": "Inherit"
+        }
+      },
+      "default_timing": {
+        "delay_in": {
+          "type": "Fixed",
+          "data": {
+            "secs": 0,
+            "nanos": 0
+          }
+        },
+        "fade_in": {
+          "type": "Fixed",
+          "data": {
+            "secs": 0,
+            "nanos": 0
+          }
+        },
+        "curve_in": "Linear",
+        "delay_out": {
+          "type": "Fixed",
+          "data": {
+            "secs": 0,
+            "nanos": 0
+          }
+        },
+        "fade_out": {
+          "type": "Fixed",
+          "data": {
+            "secs": 0,
+            "nanos": 0
+          }
+        },
+        "curve_out": "Linear"
+      },
+      "tracking_mode": {
+        "type": "Flags",
+        "data": {
+          "__Composed__": 7
+        }
+      }
+    }
+  ],
+  "groups": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "7ee293f49ce745c198aed2f022342001",
+        "label": "All Demo Washes"
+      },
+      "selection": {
+        "source": {
+          "type": "Resolved",
+          "data": [
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341001",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341002",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341003",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341004",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341005",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341006",
+              "index": 1
+            }
+          ]
+        },
+        "clauses": []
+      },
+      "description": "The complete browser-demo rig"
+    }
+  ],
+  "masters": [],
+  "blueprints": [],
+  "color_paths": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "727573746c6400000000000000000001",
+        "label": "RGB"
+      },
+      "interpolation_space": "Rgb",
+      "hue_direction": "Shortest",
+      "timing": {
+        "in_color": null,
+        "out_color": null,
+        "brightness_percent": null,
+        "attributes": {}
+      },
+      "curve": "Linear"
+    },
+    {
+      "identifiers": {
+        "id": 2,
+        "uid": "727573746c6400000000000000000002",
+        "label": "HSV"
+      },
+      "interpolation_space": "Hsv",
+      "hue_direction": "Shortest",
+      "timing": {
+        "in_color": null,
+        "out_color": null,
+        "brightness_percent": null,
+        "attributes": {}
+      },
+      "curve": "Linear"
+    },
+    {
+      "identifiers": {
+        "id": 3,
+        "uid": "727573746c6400000000000000000003",
+        "label": "CMY"
+      },
+      "interpolation_space": "Cmy",
+      "hue_direction": "Shortest",
+      "timing": {
+        "in_color": null,
+        "out_color": null,
+        "brightness_percent": null,
+        "attributes": {}
+      },
+      "curve": "Linear"
+    }
+  ],
+  "color_path_defaults": [],
+  "fx": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "7ee293f49ce745c198aed2f022346001",
+        "label": "Nightfall Wave"
+      },
+      "selection": {
+        "source": {
+          "type": "Resolved",
+          "data": [
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341001",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341002",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341003",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341004",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341005",
+              "index": 1
+            },
+            {
+              "fixture_uid": "7ee293f49ce745c198aed2f022341006",
+              "index": 1
+            }
+          ]
+        },
+        "clauses": []
+      },
+      "attributes": {
+        "VirtualIntensity": {
+          "params": {
+            "kind": "sin",
+            "min": 24.0,
+            "max": 255.0,
+            "duty_cycle": 1.0
+          },
+          "phase_range": [0.0, 6.2831855],
+          "rate": {
+            "secs": 4,
+            "nanos": 0
+          },
+          "width": 1.0,
+          "is_relative": false
+        }
+      }
+    }
+  ],
+  "fxModule": [],
+  "stepFx": [],
+  "flows": [],
+  "timecodes": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "7ee293f49ce745c198aed2f022348001",
+        "label": "Demo Audio Clock"
+      },
+      "rate": "Fps30",
+      "source": "Internal"
+    }
+  ],
+  "timelines": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "7ee293f49ce745c198aed2f022349001",
+        "label": "Nightfall Demo"
+      },
+      "timecode_uid": "7ee293f49ce745c198aed2f022348001",
+      "timecode_start": {
+        "secs": 0,
+        "nanos": 0
+      },
+      "audio_path": "timeline-audio/7ee293f49ce745c198aed2f022349001/nightfall-demo-click.wav",
+      "audio_enabled": true,
+      "end_time": {
+        "secs": 4,
+        "nanos": 0
+      },
+      "trigger_mode": "FollowTimecode",
+      "seek_behavior": "ReconstructState",
+      "nondeterministic_seek_behavior": "Ignore",
+      "stop_behavior": "ResetAndReleaseOwnedActions",
+      "lookahead": "inherit",
+      "tracks": [
+        {
+          "id": "looks",
+          "label": "Looks and Effects",
+          "muted": false,
+          "solo": false,
+          "expanded": true,
+          "actions": [
+            {
+              "id": "start-looks",
+              "label": "Start Looks",
+              "position": {
+                "secs": 0,
+                "nanos": 100000000
+              },
+              "duration": {
+                "secs": 0,
+                "nanos": 900000000
+              },
+              "action": {
+                "type": "StartClip",
+                "data": "7ee293f49ce745c198aed2f022345001"
+              }
+            },
+            {
+              "id": "advance-look",
+              "label": "Sunrise Look",
+              "position": {
+                "secs": 1,
+                "nanos": 500000000
+              },
+              "duration": {
+                "secs": 0,
+                "nanos": 800000000
+              },
+              "action": {
+                "type": "AdvanceSequence",
+                "data": "7ee293f49ce745c198aed2f022345001"
+              }
+            },
+            {
+              "id": "start-wave",
+              "label": "Intensity Wave",
+              "position": {
+                "secs": 2,
+                "nanos": 500000000
+              },
+              "duration": {
+                "secs": 1,
+                "nanos": 200000000
+              },
+              "action": {
+                "type": "StartClip",
+                "data": "7ee293f49ce745c198aed2f022347001"
+              }
+            }
+          ],
+          "automation_lanes": [
+            {
+              "id": "energy",
+              "name": "Energy",
+              "color": "#8b5cf6",
+              "points": [
+                {
+                  "position": {
+                    "secs": 0,
+                    "nanos": 0
+                  },
+                  "value": 0.15
+                },
+                {
+                  "position": {
+                    "secs": 2,
+                    "nanos": 0
+                  },
+                  "value": 0.8
+                },
+                {
+                  "position": {
+                    "secs": 4,
+                    "nanos": 0
+                  },
+                  "value": 0.35
+                }
+              ],
+              "parameter_type": {
+                "type": "GlobalVariable",
+                "data": "demo_energy"
+              }
+            }
+          ]
+        }
+      ],
+      "markers": [
+        {
+          "uid": "7ee293f49ce745c198aed2f022349002",
+          "label": "Intro",
+          "time": {
+            "secs": 0,
+            "nanos": 500000000
+          },
+          "color": "#60a5fa"
+        },
+        {
+          "uid": "7ee293f49ce745c198aed2f022349003",
+          "label": "Drop",
+          "time": {
+            "secs": 2,
+            "nanos": 500000000
+          },
+          "color": "#f472b6"
+        }
+      ],
+      "regions": [
+        {
+          "uid": "7ee293f49ce745c198aed2f022349004",
+          "label": "Main phrase",
+          "start": {
+            "secs": 0,
+            "nanos": 750000000
+          },
+          "end": {
+            "secs": 3,
+            "nanos": 500000000
+          },
+          "color": "#8b5cf6"
+        }
+      ],
+      "loop_range": {
+        "start": {
+          "secs": 0,
+          "nanos": 750000000
+        },
+        "end": {
+          "secs": 3,
+          "nanos": 500000000
+        },
+        "enabled": false
+      },
+      "bpm": 120.0,
+      "beats_per_bar": 4,
+      "use_beat_grid": false,
+      "beatgrid": null,
+      "scroll_mode": "free"
+    }
+  ],
+  "clips": [
+    {
+      "identifiers": {
+        "id": 1,
+        "uid": "7ee293f49ce745c198aed2f022345001",
+        "label": "Nightfall Looks"
+      },
+      "source": {
+        "type": "Sequence",
+        "data": "7ee293f49ce745c198aed2f022344001"
+      },
+      "priority": 0,
+      "options": {
+        "auto_release": true,
+        "deactivate_on_sequence_end": false
+      }
+    },
+    {
+      "identifiers": {
+        "id": 2,
+        "uid": "7ee293f49ce745c198aed2f022347001",
+        "label": "Nightfall Wave"
+      },
+      "source": {
+        "type": "Fx",
+        "data": "7ee293f49ce745c198aed2f022346001"
+      },
+      "priority": 0,
+      "options": {
+        "auto_release": true,
+        "deactivate_on_sequence_end": false
+      }
+    }
+  ]
+}
