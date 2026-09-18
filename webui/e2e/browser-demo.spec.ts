@@ -86,7 +86,7 @@ async function readDemoState(page: Page) {
   });
 }
 
-/** Open the preseeded timeline through the same Dockview component used by the list panel. */
+/** Open a playback workspace independent of the bundled showfile's saved panel layout. */
 async function openDemoTimeline(
   page: Page,
   timelineUid: string,
@@ -95,15 +95,12 @@ async function openDemoTimeline(
   await page.evaluate((uid) => {
     const api = (window as any).appStores?.dockApi?.get?.();
     if (!api) throw new Error("Dockview was unavailable");
+    api.clear();
     api.addPanel({
       id: `browser-demo-timeline-${uid}`,
       component: "Timeline",
       title: "Nightfall Demo Timeline",
       params: { initialTimelineUid: uid },
-      position: {
-        referencePanel: "panel-FixtureGrid",
-        direction: "within",
-      },
     });
   }, timelineUid);
   await expect(

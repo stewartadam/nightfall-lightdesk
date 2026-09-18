@@ -18,6 +18,7 @@ const log = getLogger(import.meta.url);
 export class BrowserDemoAudioHost {
   readonly element: HTMLAudioElement;
   private loaded = false;
+  private hasPlayed = false;
   private audioUrl: string | null = null;
   private session = 0;
   private timelineUid: string | null = null;
@@ -93,6 +94,7 @@ export class BrowserDemoAudioHost {
     this.element.src = audioUrl;
     this.element.load();
     this.loaded = true;
+    this.hasPlayed = false;
     this.publishState();
     log.debug("Loaded showfile-selected browser demo audio");
   }
@@ -103,6 +105,8 @@ export class BrowserDemoAudioHost {
     if (this.unlockPromise) await this.unlockPromise;
     this.seek(timelineUid, positionMs);
     await this.element.play();
+    this.hasPlayed = true;
+    this.publishState();
   }
 
   /** Pause playback without changing the current position. */
@@ -110,6 +114,7 @@ export class BrowserDemoAudioHost {
     if (!this.loaded || this.timelineUid !== timelineUid) return;
     this.assertTimeline(timelineUid);
     this.element.pause();
+    this.publishState();
   }
 
   /** Seek the active timeline to a bounded position expressed in milliseconds. */
@@ -125,8 +130,10 @@ export class BrowserDemoAudioHost {
   stop(timelineUid: string): void {
     if (!this.loaded || this.timelineUid !== timelineUid) return;
     this.assertTimeline(timelineUid);
+    this.hasPlayed = false;
     this.element.pause();
     this.element.currentTime = 0;
+    this.publishState();
   }
 
   /** Set or clear media-loop bounds for the active timeline. */
@@ -197,6 +204,7 @@ export class BrowserDemoAudioHost {
       this.element.load();
     }
     this.loaded = false;
+    this.hasPlayed = false;
     this.audioUrl = null;
     this.timelineUid = null;
     this.loopRangeMs = null;
@@ -226,7 +234,7 @@ export class BrowserDemoAudioHost {
       status: !this.loaded
         ? "unloaded"
         : this.element.paused
-          ? this.element.currentTime > 0
+          ? this.hasPlayed
             ? "paused"
             : "ready"
           : "playing",

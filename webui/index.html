@@ -15,24 +15,7 @@
   <title>nightfall</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="stylesheet" href="index.css" />
-  <script>
-    /** Applies the saved motion preference before the bootstrap splash can paint. */
-    (() => {
-      let preference = "auto";
-      try {
-        const saved = JSON.parse(localStorage.getItem("nightfall-appearance") || "null");
-        if (saved?.reducedMotion === "on" || saved?.reducedMotion === "off") {
-          preference = saved.reducedMotion;
-        }
-      } catch {
-        // Unavailable or malformed storage falls back to the system preference.
-      }
-      document.documentElement.dataset.reducedMotion = String(
-        preference === "on" ||
-        (preference === "auto" && matchMedia("(prefers-reduced-motion: reduce)").matches)
-      );
-    })();
-  </script>
+  <script src="%BASE_URL%bootstrap-appearance.js"></script>
   <style>
     html,
     body {
