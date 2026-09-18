@@ -1,0 +1,42 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.timeline-footer .nf-toolbar-group {
+  gap: 8px;
+}
+
+.timeline-zoom-controls {
+  width: 136px;
+}
+
+.timeline-zoom-controls > .nf-button {
+  width: 28px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.timeline-position-display {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--nf-corner-radius);
+  background: var(--panel);
+  color: var(--color-neutral-100);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-position-label {
+  color: var(--muted);
+  font-family: var(--font-sans);
+}

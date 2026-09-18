@@ -1,0 +1,15 @@
+[package]
+name = "nightfall-selection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nightfall = { path = "../common" }
+uuid.workspace = true
+
+[dev-dependencies]
+nightfall-dmx = { path = "../dmx" }
+
+[lints]
+workspace = true

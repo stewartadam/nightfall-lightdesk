@@ -1,0 +1,17 @@
+name: Feedback or idea
+description: Share an idea or describe a workflow Nightfall could improve.
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What are you trying to do?
+      description: Describe your workflow and where Nightfall could help.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Feedback or suggestion
+      description: Tell us what works, what gets in the way, or what you would change.
+    validations:
+      required: true

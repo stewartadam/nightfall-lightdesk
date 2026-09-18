@@ -1,0 +1,63 @@
+[package]
+name = "nightfall-desk"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy_app.workspace = true
+bevy_diagnostic.workspace = true
+bevy_ecs.workspace = true
+bevy_platform.workspace = true
+bimap.workspace = true
+dashmap.workspace = true
+moonshine-kind.workspace = true
+netwatcher = { workspace = true, optional = true }
+nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-clips = { path = "../clips" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-flow = { path = "../flow", default-features = false }
+nightfall-framepace = { path = "../framepace" }
+nightfall-fx = { path = "../fx" }
+nightfall-fx-module = { path = "../fx-module", optional = true }
+nightfall-io = { path = "../io" }
+nightfall-lookahead = { path = "../lookahead" }
+nightfall-instances = { path = "../instances" }
+nightfall-playback-planner = { path = "../playback-planner" }
+nightfall-selection = { path = "../selection" }
+nightfall-undo = { path = "../undo" }
+serde_json.workspace = true
+serde_with.workspace = true
+serde.workspace = true
+smart-default.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+web-time.workspace = true
+
+[features]
+default = []
+debug = ["nightfall-engine/debug"]
+fx-module-host = ["dep:nightfall-fx-module", "nightfall-flow/fx-module"]
+native-network-watch = ["dep:netwatcher"]
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+async-channel.workspace = true
+nightfall-programmer = { path = "../programmer" }
+criterion.workspace = true
+minicbor-serde.workspace = true
+
+[[bench]]
+name = "clip_lookup"
+harness = false

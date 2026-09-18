@@ -1,0 +1,30 @@
+name: Bug report
+description: Report a reproducible problem in Nightfall.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the result and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest sequence of actions that demonstrates the problem.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Nightfall version and operating system
+      description: Find the version and build ID in About Nightfall.
+    validations:
+      required: true
+  - type: textarea
+    id: system-information
+    attributes:
+      label: System Information and examples
+      description: Report a Bug in Nightfall can fill this field with System Information. Attach downloaded diagnostics, screenshots, and a minimal example showfile when useful.

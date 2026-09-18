@@ -1,0 +1,57 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.lab-animation-controls,
+.lab-animation-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lab-animation-stage {
+  overflow: hidden;
+  padding: 24px;
+  margin-block: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--nf-corner-radius, 7px);
+}
+
+.lab-animation-parameters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 20px;
+  margin-block: 20px;
+}
+
+.lab-animation-parameter {
+  display: grid;
+  gap: 12px;
+}
+
+.lab-animation-content {
+  padding: 20px;
+  border: 1px solid var(--accent);
+  border-radius: var(--nf-corner-radius, 7px);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  overflow-wrap: anywhere;
+}
+
+.lab-animation-content h3 {
+  margin-block: 12px;
+}
+
+.lab-animation-details {
+  margin-top: 20px;
+  font-size: 12px;
+}
+
+.lab-animation-details span {
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: var(--nf-corner-radius, 7px);
+}

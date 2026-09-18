@@ -1,0 +1,102 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-scroll-area {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  isolation: isolate;
+}
+.nf-scroll-viewport {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 0;
+  max-height: inherit;
+  overflow: auto;
+}
+.nf-scroll-indicators {
+  --nf-scroll-surface: var(--panel, light-dark(#fff, #191c1e));
+  position: absolute;
+  grid-area: 1 / 1;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.nf-scroll-edge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted, light-dark(#545b5e, #a4ada9));
+  opacity: 0;
+}
+.nf-scroll-edge[data-visible="true"] {
+  opacity: 1;
+}
+.nf-scroll-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(4px);
+  background: linear-gradient(
+    var(--nf-scroll-direction),
+    var(--nf-scroll-surface),
+    transparent
+  );
+  mask-image: linear-gradient(
+    var(--nf-scroll-direction),
+    #000 35%,
+    transparent
+  );
+}
+.nf-scroll-edge svg {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 2px var(--nf-scroll-surface));
+}
+.nf-scroll-edge[data-edge="top"],
+.nf-scroll-edge[data-edge="bottom"] {
+  left: 0;
+  right: 0;
+  height: 28px;
+}
+.nf-scroll-edge[data-edge="left"],
+.nf-scroll-edge[data-edge="right"] {
+  top: 0;
+  bottom: 0;
+  width: 28px;
+}
+.nf-scroll-edge[data-edge="top"] {
+  --nf-scroll-direction: to bottom;
+  top: 0;
+}
+.nf-scroll-edge[data-edge="top"] svg {
+  rotate: -90deg;
+}
+.nf-scroll-edge[data-edge="bottom"] {
+  --nf-scroll-direction: to top;
+  bottom: 0;
+}
+.nf-scroll-edge[data-edge="bottom"] svg {
+  rotate: 90deg;
+}
+.nf-scroll-edge[data-edge="left"] {
+  --nf-scroll-direction: to right;
+  left: 0;
+}
+.nf-scroll-edge[data-edge="left"] svg {
+  rotate: 180deg;
+}
+.nf-scroll-edge[data-edge="right"] {
+  --nf-scroll-direction: to left;
+  right: 0;
+}

@@ -1,0 +1,390 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* biome-ignore-all lint/correctness/noInvalidPositionAtImportRule: reason */
+/* biome-ignore-all lint/complexity/noImportantStyles: react-select generated classes need explicit overrides for the portaled dropdown. */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./styles/theme.css";
+@import "./styles/forms.css";
+@import "./styles/focus.css";
+@import "./styles/widgets.css";
+
+/* Motion utilities follow the resolved application preference. */
+@custom-variant motion-reduce (
+  &:where([data-reduced-motion="true"], [data-reduced-motion="true"] *)
+);
+@custom-variant motion-safe (
+  &:where([data-reduced-motion="false"], [data-reduced-motion="false"] *)
+);
+
+/* The application uses dark controls independently of the OS setting. */
+@custom-variant dark (&:where(:root, :root *));
+
+/* Preline UI */
+@source "../node_modules/preline/dist/*.js";
+@import "../node_modules/preline/variants.css";
+
+/* noUiSlider - import base styles before our overrides */
+@import "nouislider/dist/nouislider.css";
+
+/* Toastify - import base then override for custom styling */
+@import "toastify-js/src/toastify.css";
+
+@layer base {
+  button {
+    cursor: pointer;
+  }
+}
+
+.toastify {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  max-width: none;
+}
+
+.nightfall-top-layer {
+  z-index: 2147483646;
+}
+
+.nightfall-popover-layer {
+  z-index: 1100;
+}
+
+.nightfall-modal-surface {
+  box-shadow:
+    0 24px 48px rgb(0 0 0 / 0.42),
+    0 8px 18px rgb(0 0 0 / 0.34);
+  filter: drop-shadow(0 18px 22px rgb(0 0 0 / 0.28));
+}
+
+@utility animation-delay-* {
+  animation-delay: --value(integer) ms;
+}
+
+@keyframes cmdline-shake {
+  0% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes startup-status-dot-chase {
+  0%,
+  100% {
+    transform: scale(1.5);
+  }
+  25%,
+  75% {
+    transform: scale(0.625);
+  }
+}
+
+.startup-status-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background-color: currentcolor;
+  transform: scale(0.625);
+  animation: startup-status-dot-chase 900ms ease-in-out infinite;
+  will-change: transform;
+}
+
+.startup-status-dot:nth-child(2) {
+  animation-delay: 300ms;
+}
+
+.startup-status-dot:nth-child(3) {
+  animation-delay: 600ms;
+}
+
+:root[data-reduced-motion="true"] {
+  .startup-status-dot {
+    transform: scale(0.75);
+    animation: none;
+    will-change: auto;
+  }
+}
+
+.cmdline-submit-shake {
+  animation: cmdline-shake 0.28s ease-in-out;
+}
+
+@supports (font: -apple-system-body) {
+  select:not([multiple]):not([size]) {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-position: calc(100% - 0.75rem) center;
+    background-repeat: no-repeat;
+    background-size: 0.875rem 0.875rem;
+    padding-right: 2.5rem;
+    text-align: left;
+    text-align-last: left;
+    line-height: normal;
+  }
+}
+
+/* Hide number input spinners in waveform editor */
+.waveform-editor input[type="number"]::-webkit-outer-spin-button,
+.waveform-editor input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.waveform-editor input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* noUiSlider dark theme overrides */
+.range-slider-container {
+  position: relative;
+}
+.range-slider-pair {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+  margin: 10px 9px 0;
+}
+:where(.range-slider-pair) .range-slider {
+  flex: none;
+}
+.range-slider-pair .range-slider-inputs {
+  justify-content: space-between;
+  margin-left: -9px;
+  margin-right: -9px;
+}
+
+.range-slider {
+  width: 100%;
+}
+
+.range-slider.noUi-target {
+  background: rgb(64 64 64);
+  border: none;
+  border-radius: 9999px;
+  height: 8px;
+  box-shadow: none;
+}
+
+.range-slider .noUi-connect {
+  background: rgb(37 99 235);
+  border-radius: 9999px;
+}
+
+.range-slider .noUi-handle {
+  width: 18px;
+  height: 18px;
+  right: -9px;
+  top: -5px;
+  background: white;
+  border: 4px solid rgb(37 99 235);
+  border-radius: 50%;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.range-slider .noUi-handle::before,
+.range-slider .noUi-handle::after {
+  display: none;
+}
+
+.range-slider .noUi-handle:focus {
+  outline: none;
+}
+
+.range-slider .noUi-tooltip {
+  background: rgb(38 38 38);
+  border: 1px solid rgb(64 64 64);
+  border-radius: 6px;
+  color: white;
+  font-size: 12px;
+  padding: 4px 8px;
+  bottom: calc(100% + 8px);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.range-slider.is-dragging .noUi-tooltip {
+  opacity: 1;
+}
+
+.range-slider .noUi-pips {
+  color: rgb(115 115 115);
+  height: 18px;
+  padding: 0;
+  top: 100%;
+}
+
+.range-slider .noUi-pips-horizontal {
+  padding-top: 6px;
+}
+
+.range-slider .noUi-value {
+  display: none;
+}
+
+.range-slider .noUi-marker {
+  background: rgb(115 115 115);
+}
+
+.range-slider .noUi-marker-horizontal.noUi-marker {
+  width: 1px;
+  height: 8px;
+}
+
+.range-slider .noUi-marker-horizontal.noUi-marker-large {
+  height: 12px;
+}
+
+/* Vertical range slider styles */
+.vertical-range-slider-container {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+}
+
+.vertical-range-slider {
+  width: 8px;
+  height: 100%;
+  flex-shrink: 0;
+  background: rgb(64 64 64);
+  border: none;
+  border-radius: 9999px;
+  box-shadow: none;
+}
+
+.vertical-range-slider .noUi-base,
+.vertical-range-slider .noUi-connects {
+  width: 100%;
+  height: 100%;
+}
+
+.vertical-range-slider .noUi-connect {
+  background: rgb(37 99 235);
+  border-radius: 9999px;
+}
+
+.vertical-range-slider.noUi-vertical .noUi-handle {
+  width: 16px;
+  height: 16px;
+  right: -4px;
+  bottom: -8px;
+  background: white;
+  border: 3px solid rgb(37 99 235);
+  border-radius: 50%;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.vertical-range-slider .noUi-handle::before,
+.vertical-range-slider .noUi-handle::after {
+  display: none;
+}
+
+.vertical-range-slider .noUi-handle:focus {
+  outline: none;
+}
+
+/* Hide tooltip - we show value below slider */
+.vertical-range-slider .noUi-tooltip {
+  display: none;
+}
+
+/* Hide pips on slider - we render tick marks separately */
+.vertical-range-slider .noUi-pips {
+  display: none;
+}
+
+.vertical-range-slider.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.vertical-range-slider.is-disabled .noUi-connect {
+  background: rgb(82 82 82);
+}
+
+.vertical-range-slider.is-disabled .noUi-handle {
+  border-color: rgb(82 82 82);
+}
+
+/* Custom tick marks container */
+.vertical-slider-ticks {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 0 0 4px;
+}
+
+.vertical-slider-tick {
+  display: flex;
+  align-items: center;
+  height: 0;
+}
+
+.vertical-slider-tick-mark {
+  width: 5px;
+  height: 1px;
+  background: rgb(82 82 82);
+}
+
+.vertical-slider-value-marker {
+  position: absolute;
+  right: 0;
+  width: 8px;
+  height: 2px;
+  border-radius: 9999px;
+  background: rgb(239 68 68);
+  box-shadow: 0 0 0 1px rgb(127 29 29 / 0.85);
+}
+
+/* Playback controls styles */
+.controls {
+  overflow-x: auto;
+}
+
+/* FIXME use tailwind for this for scalable widths */
+.control {
+  width: 80px;
+  flex-shrink: 0;
+}
+
+/* Fix for solid-flow controls - use dark theme colors */
+.solid-flow__controls button {
+  @apply bg-neutral-800 text-neutral-100 border-neutral-600;
+}
+
+.solid-flow__controls button:hover {
+  @apply bg-neutral-700 text-white;
+}
+
+.solid-flow__controls button svg {
+  @apply fill-current;
+}

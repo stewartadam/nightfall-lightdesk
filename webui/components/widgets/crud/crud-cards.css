@@ -1,0 +1,93 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Cards retain each domain's editing and selection handlers. */
+.grid:has(> .nf-crud-card) {
+  grid-template-columns: repeat(auto-fill, var(--nf-tile-width));
+  align-items: start;
+}
+.nf-crud-card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: var(--nf-tile-gap);
+  min-width: 0;
+  height: var(--nf-tile-height);
+  padding: var(--nf-tile-padding);
+  border: 1px solid #373e40;
+  border-radius: var(--nf-corner-radius);
+  background: #202325;
+  overflow: hidden;
+  overflow-wrap: normal;
+}
+.nf-crud-card > * {
+  min-width: 0;
+  min-height: 0;
+  margin-block: 0;
+}
+.nf-crud-card > :first-child {
+  flex-shrink: 0;
+  align-items: center;
+  color: #d0d7d4;
+  font-size: 11px;
+  line-height: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.nf-crud-card > :not(:first-child) {
+  overflow: hidden;
+  color: #ebeeed;
+  font-size: 11px;
+  line-height: 12px;
+  font-weight: 550;
+}
+.nf-crud-card svg {
+  width: 12px;
+  height: 12px;
+}
+.nf-crud-card > .nf-tile-badges {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+.nf-crud-card > .nf-timeline-card-title {
+  color: var(--color-neutral-100);
+  font-weight: 550;
+}
+.nf-crud-card > .nf-timeline-card-audio {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+.nf-crud-card > .nf-timeline-card-meta {
+  flex-shrink: 0;
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 10px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.nf-crud-card-unselected:hover {
+  background: #292e30;
+  border-color: #65716e;
+}
+.nf-crud-card-selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.nf-crud-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+[data-crud-drag-box] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}

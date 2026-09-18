@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-patch-wizard {
+  container: patch-wizard / inline-size;
+}
+.patch-wizard-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+.patch-wizard-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+@container patch-wizard (max-width: 560px) {
+  .patch-wizard-picker {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 240px 200px;
+  }
+}

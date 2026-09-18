@@ -1,0 +1,25 @@
+[package]
+name = "nightfall-cmd-parse"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+logos = "0.16"
+nightfall = { path = "../common" }
+nightfall-dmx = { path = "../dmx" }
+serde.workspace = true
+smol_str = { version = "0.3", features = ["serde"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+libtest-mimic = "0.8.2"
+serde_json.workspace = true
+
+[[test]]
+name = "design_matrix_golden"
+path = "tests/design_matrix_golden.rs"
+harness = false
+
+[lints]
+workspace = true

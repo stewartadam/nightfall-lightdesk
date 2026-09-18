@@ -1,0 +1,113 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "attach",
+      "name": "Attach (nightfall-desk)",
+      "program": "${workspaceFolder}/target/debug/nightfall-desk"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'nightfall-desk'",
+      "cargo": {
+        "args": ["build", "--bin=nightfall-desk", "--package=nightfall-desk"],
+        "filter": {
+          "name": "nightfall-desk",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "envFile": "${workspaceFolder}/.env",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'nightfall-app'",
+      "cargo": {
+        "args": ["build", "--bin=nightfall-app", "--package=nightfall-app"],
+        "filter": {
+          "name": "nightfall-app",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "envFile": "${workspaceFolder}/.env",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'nightfall-app'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=nightfall-app",
+          "--package=nightfall-app"
+        ],
+        "filter": {
+          "name": "nightfall-app",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'nightfall'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=nightfall"],
+        "filter": {
+          "name": "nightfall",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'nightfall-desk'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=nightfall-desk"],
+        "filter": {
+          "name": "nightfall-desk",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "node-terminal",
+      "request": "launch",
+      "name": "Worktree dashboard API (UI+MCP backend)",
+      "command": "npm run worktree:dashboard:api"
+    },
+    {
+      "type": "node-terminal",
+      "request": "launch",
+      "name": "Worktree dashboard UI",
+      "command": "npm run worktree:dashboard:ui"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Worktree dashboard launch (UI+API)",
+      "configurations": [
+        "Worktree dashboard API (UI+MCP backend)",
+        "Worktree dashboard UI"
+      ],
+      "stopAll": true
+    }
+  ]
+}

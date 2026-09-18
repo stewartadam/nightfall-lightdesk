@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Keep filter out of these keyframes: even blur(0) prevents Chromium compositing. */
+@keyframes nf-layout-enter {
+  from {
+    transform: translateX(var(--tw-enter-translate-x, 0));
+  }
+  to {
+    transform: translateX(0);
+  }
+}

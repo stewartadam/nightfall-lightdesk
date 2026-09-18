@@ -1,0 +1,42 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-app-header,
+.nf-status-bar {
+  background: var(--color-neutral-950);
+  border-color: var(--line);
+  color: var(--muted);
+}
+.nf-status-bar {
+  gap: 12px;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.nf-status-bar > div {
+  flex-shrink: 0;
+}
+.nf-app-header {
+  color: #ebeeed;
+}
+#header-cmdline {
+  background: transparent;
+  color: #ebeeed;
+}
+.nf-header-command-group > [data-command-programmer-clear] {
+  padding: 0;
+  border-radius: 0 calc(var(--nf-corner-radius) - 1px)
+    calc(var(--nf-corner-radius) - 1px) 0;
+}
+
+.nf-browser-demo-banner .nf-button {
+  min-height: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: inherit;
+  line-height: 16px;
+}

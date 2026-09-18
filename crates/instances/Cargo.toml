@@ -1,0 +1,21 @@
+[package]
+name = "nightfall-instances"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_ecs.workspace = true
+nightfall = { path = "../common" }
+nightfall-playback-planner = { path = "../playback-planner" }
+serde.workspace = true
+smart-default.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+web-time.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

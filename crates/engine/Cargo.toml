@@ -1,0 +1,38 @@
+[package]
+name = "nightfall-engine"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-channel.workspace = true
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_state.workspace = true
+bimap.workspace = true
+dashmap.workspace = true
+nightfall = { path = "../common" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine-derive = { path = "../engine-derive" }
+minicbor-serde.workspace = true
+once_cell = "1.21.4"
+serde_json.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+web-time.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["sync"] }
+
+[features]
+default = []
+debug = []
+
+[lints]
+workspace = true

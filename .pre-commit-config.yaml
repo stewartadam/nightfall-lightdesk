@@ -1,0 +1,122 @@
+repos:
+- repo: https://github.com/Lucas-C/pre-commit-hooks
+  rev: ad1b27d73581aa16cca06fc4a0761fc563ffe8e8 # v1.5.6
+  hooks:
+    - id: insert-license
+      name: MPL headers (source)
+      files: \.(rs|[cm]?[jt]sx?|wit)$
+      # Imported bevy_framepace code retains its upstream MIT license.
+      exclude: ^crates/framepace/src/lib\.rs$
+      args: [--license-filepath, config/license-headers/source.txt, --comment-style, '']
+      stages: [pre-commit]
+    - id: insert-license
+      name: MPL headers (CSS)
+      files: \.css$
+      args: [--license-filepath, config/license-headers/css.txt, --comment-style, '']
+      stages: [pre-commit]
+    - id: insert-license
+      name: MPL headers (HTML)
+      files: \.html$
+      args: [--license-filepath, config/license-headers/html.txt, --comment-style, '']
+      stages: [pre-commit]
+    - id: insert-license
+      name: MPL headers (shell)
+      files: \.sh$
+      args: [--license-filepath, config/license-headers/shell.txt, --comment-style, '']
+      stages: [pre-commit]
+
+- repo: local
+  hooks:
+    # code style and lints
+    - id: biome-check
+      name: biome check
+      entry: npx biome check --files-ignore-unknown=true --no-errors-on-unmatched
+      language: system
+      pass_filenames: true
+      types: [text]
+      files: "\\.(jsx?|tsx?|c(js|ts)|m(js|ts)|d\\.(ts|cts|mts)|jsonc?|css|svelte|vue|astro|graphql|gql)$"
+      stages: [pre-commit]
+
+    - id: npm-typecheck
+      name: npm typecheck
+      entry: npm run typecheck
+      language: system
+      pass_filenames: false
+      files: "\\.(jsx?|tsx?|c(js|ts)|m(js|ts)|d\\.(ts|cts|mts))$|(^|/)tsconfig(\\..+)?\\.json$"
+      stages: [pre-commit]
+
+    - id: rustfmt
+      name: rustfmt
+      description: Check if all files follow the rustfmt style
+      entry: cargo fmt --all -- --check --color always
+      language: system
+      pass_filenames: false
+      files: \.rs$
+      stages: [pre-commit]
+
+    - id: cargo-clippy
+      name: Cargo clippy
+      entry: cargo clippy --all-targets
+      language: system
+      pass_filenames: false
+      files: \.rs$
+      stages: [pre-commit]
+
+    - id: typeshare
+      name: typeshare
+      description: Check if TypeScript definitions can be generated from Rust types
+      entry: typeshare --lang typescript crates/ --output-file /dev/null
+      language: system
+      pass_filenames: false
+      files: \.rs$
+      stages: [pre-commit]
+
+    - id: command-architecture
+      name: command architecture
+      entry: npm run check:command-architecture
+      language: system
+      pass_filenames: false
+      files: ^(crates|webui)/.*\.(rs|tsx?)$|^scripts/check-command-architecture\.mjs$
+      stages: [pre-commit]
+
+    - id: crate-boundaries
+      name: backend crate boundaries
+      entry: npm run check:crate-boundaries
+      language: system
+      pass_filenames: false
+      files: (^|/)Cargo\.toml$|^scripts/check-crate-boundaries\.mjs$|^config/architecture/(crate-boundary-exceptions|crate-roles)\.json$|^docs/backend-crate-boundaries\.md$
+      stages: [pre-commit]
+
+    # tests
+    - id: cargo-test
+      name: Rust tests
+      entry: cargo test --workspace
+      language: system
+      pass_filenames: false
+      files: \.rs$|(^|/)Cargo\.lock$
+      stages: [pre-push]
+
+    - id: node-tests
+      name: Node tests
+      entry: npm test
+      language: system
+      pass_filenames: false
+      files: "\\.(jsx?|tsx?|c(js|ts)|m(js|ts)|d\\.(ts|cts|mts))$|(^|/)tsconfig(\\..+)?\\.json$|^config/architecture/webui-boundary-exceptions\\.json$"
+      stages: [pre-push]
+
+    # post-merge and post-rewrite hooks cannot filter by filename - see j178/prek#2144
+    - id: typeshare-after-git-update
+      name: Run typeshare
+      entry: npm run typeshare
+      language: system
+      stages: [post-merge, post-rewrite]
+      always_run: true
+      pass_filenames: false
+
+    - id: wasm-build-after-git-update
+      name: Build Wasm
+      entry: npm run wasm-build:dev
+      language: system
+      stages: [post-merge, post-rewrite]
+      always_run: true
+      pass_filenames: false

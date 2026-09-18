@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "tags": ["-lintignore"],
+  "entry": [
+    "webui/main.tsx",
+    "webui/worktree-dashboard.tsx",
+    "webui/**/*.node.test.ts",
+    "webui/e2e/**/*.spec.ts",
+    "playwright/tests/**/*.spec.ts",
+    "scripts/*.mjs",
+    "vite.config.ts"
+  ],
+  "project": [
+    "webui/**/*.{css,js,ts,tsx}",
+    "scripts/**/*.mjs",
+    "playwright/**/*.ts",
+    "*.config.ts",
+    "!webui/types/*.ts"
+  ],
+  "paths": {
+    "/lib/*": ["webui/lib/*"]
+  },
+  "ignoreFiles": ["webui/*.d.ts", "webui/assets/wasm/*.d.ts"],
+  "ignoreBinaries": ["typeshare"],
+  "ignoreIssues": {
+    "webui/assets/wasm/nightfall_wasm_bridge.js": ["exports"],
+    "webui/components/command-palette/index.ts": ["exports"]
+  }
+}

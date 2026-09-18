@@ -1,0 +1,201 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+package nightfall:fx-module@0.1.0;
+
+interface shared {
+  type uuid = string;
+  type json-config = string;
+  type attribute-label = string;
+
+  record init-input {
+    fx-instance-id: uuid,
+    label: string,
+    config-json: json-config,
+    random-seed: option<u64>,
+  }
+
+  record render-input {
+    now-micros: u64,
+    delta-micros: u64,
+    elapsed-since-start-micros: u64,
+    selection: list<selected-target>,
+    selection-grid: selected-grid,
+  }
+
+  record selected-target {
+    fixture-uid: uuid,
+    element-index: option<u32>,
+    available-attributes: list<attribute-label>,
+  }
+
+  record selected-cell {
+    x: u32,
+    y: u32,
+    z: u32,
+    targets: list<selected-target>,
+  }
+
+  record selected-grid {
+    width: u32,
+    height: u32,
+    depth: u32,
+    cells: list<selected-cell>,
+  }
+
+  variant parameter-value {
+    absolute(f32),
+    absolute-percent(f32),
+    relative(f32),
+    relative-percent(f32),
+  }
+
+  enum fade-curve {
+    linear,
+    ease-in,
+    ease-out,
+    ease-in-out,
+  }
+
+  record materialized-transition {
+    delay-in-micros: u64,
+    fade-in-micros: u64,
+    curve-in: fade-curve,
+    delay-out-micros: u64,
+    fade-out-micros: u64,
+    curve-out: fade-curve,
+  }
+
+  record layer-instruction {
+    fixture-uid: uuid,
+    element-index: option<u32>,
+    attribute: attribute-label,
+    value: parameter-value,
+    materialized-transition: option<materialized-transition>,
+  }
+
+  record fx-module-layer {
+    absolute: list<layer-instruction>,
+    relative: list<layer-instruction>,
+  }
+
+  record identifiers {
+    id: u32,
+    uid: uuid,
+    label: string,
+  }
+
+  enum dmx-value-resolution {
+    coarse,
+    fine,
+    ultra-fine,
+    uber,
+  }
+
+  enum merge-strategy {
+    htp,
+    ltp,
+  }
+
+  enum parameter-unit {
+    percent,
+    degrees,
+  }
+
+  record parameter-metadata {
+    resolution: dmx-value-resolution,
+    attribute: attribute-label,
+    native-unit: parameter-unit,
+    min: f32,
+    max: f32,
+    offset: parameter-value,
+    is-inverted: bool,
+    is-snap: bool,
+    merge-type: merge-strategy,
+    use-grandmaster: bool,
+  }
+
+  record fixture-element {
+    label: string,
+    parameters: list<parameter-metadata>,
+  }
+
+  enum beam-type {
+    spot,
+    wash,
+    fresnel,
+    pc,
+    glow,
+  }
+
+  record fixture-physical {
+    beam-angle: f32,
+    field-angle: f32,
+    lumens: option<f32>,
+    color-temperature: option<f32>,
+    beam-type: beam-type,
+  }
+
+  record placement-position {
+    x: f32,
+    y: f32,
+    z: f32,
+  }
+
+  record placement-rotation {
+    x: f32,
+    y: f32,
+    z: f32,
+  }
+
+  record fixture-placement {
+    position: placement-position,
+    rotation: placement-rotation,
+  }
+
+  record fixture {
+    identifiers: identifiers,
+    make: string,
+    model: string,
+    mode: string,
+    elements: list<fixture-element>,
+    physical: option<fixture-physical>,
+    placement: fixture-placement,
+  }
+
+  enum error-code {
+    invalid-config,
+    invalid-input,
+    host-access-failed,
+    internal,
+  }
+
+  record fx-module-error {
+    code: error-code,
+    message: string,
+  }
+}
+
+interface host {
+  use shared.{fixture, fx-module-error, uuid};
+
+  get-fixture: func(fixture-uid: uuid) -> result<option<fixture>, fx-module-error>;
+}
+
+interface guest {
+  use shared.{fx-module-error, fx-module-layer, init-input, render-input};
+
+  init: func(input: init-input) -> result<_, fx-module-error>;
+  render: func(input: render-input) -> result<fx-module-layer, fx-module-error>;
+  teardown: func() -> result<_, fx-module-error>;
+}
+
+world fx-module {
+  import host;
+  export guest;
+}

@@ -1,0 +1,443 @@
+# Licenses accepted for redistributed Rust dependencies, in preference order.
+# Keep build dependencies: native build scripts can embed third-party code.
+accepted = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0", "Unicode-DFS-2016", "CC0-1.0", "MPL-2.0", "BSL-1.0", "Unlicense", "0BSD", "CDLA-Permissive-2.0", "BlueOak-1.0.0"]
+ignore-dev-dependencies = true
+ignore-build-dependencies = false
+no-clearly-defined = true
+
+# Cargo-about fetches omitted license files from the published crate’s Git commit.
+# Checksums pin the reviewed text without storing duplicate license files.
+
+[alloc-stdlib.clarify]
+license = "BSD-3-Clause"
+[[alloc-stdlib.clarify.git]]
+path = "LICENSE"
+license = "BSD-3-Clause"
+checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+
+[block2.clarify]
+license = "MIT"
+[[block2.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[clonetree.clarify]
+license = "MIT"
+[[clonetree.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "d4d065f71b60ed6d472bdbb9145462e3a8ee6a81f3dddd4fb4d11f46041b836e"
+
+[cranelift-bitset.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[cranelift-bitset.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[cranelift-isle.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[cranelift-isle.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[cranelift-srcgen.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[cranelift-srcgen.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[dispatch2.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[dispatch2.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[flatbuffers.clarify]
+license = "Apache-2.0"
+[[flatbuffers.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0"
+checksum = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+
+[fxprof-processed-profile.clarify]
+license = "MIT OR Apache-2.0"
+[[fxprof-processed-profile.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "a59f933e4ae3a569f798c651e3214a3576ce82d25d3d731158def05669dab79f"
+
+[gdt-cpus.clarify]
+license = "MIT OR Apache-2.0"
+[[gdt-cpus.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "4f817b176cb72396c1fce3e1f4393bbad3980b95c584db00ffc16ecb8a096bdc"
+
+[objc2.clarify]
+license = "MIT"
+[[objc2.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-app-kit.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-app-kit.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-foundation.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-foundation.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-audio-toolbox.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-audio-toolbox.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-core-audio.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-core-audio.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-core-audio-types.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-core-audio-types.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-core-foundation.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-core-foundation.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-encode.clarify]
+license = "MIT"
+[[objc2-encode.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-exception-helper.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-exception-helper.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-system-configuration.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-system-configuration.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-web-kit.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-web-kit.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[pulley-interpreter.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[pulley-interpreter.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[pulley-macros.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[pulley-macros.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[rten.clarify]
+license = "MIT OR Apache-2.0"
+[[rten.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-base.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-base.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-gemm.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-gemm.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-model-file.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-model-file.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-onnx.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-onnx.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-parallel.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-parallel.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-shape-inference.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-shape-inference.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-simd.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-simd.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-tensor.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-tensor.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[rten-vecmath.clarify]
+license = "MIT OR Apache-2.0"
+[[rten-vecmath.clarify.git]]
+path = "LICENSE-MIT.txt"
+license = "MIT"
+checksum = "5096967f408fab8da02f4b6dfac6b00ccc19ca17c635f9009ee74594ac275e18"
+
+[symphonia.clarify]
+license = "MPL-2.0"
+[[symphonia.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[symphonia-bundle-mp3.clarify]
+license = "MPL-2.0"
+[[symphonia-bundle-mp3.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[symphonia-codec-aac.clarify]
+license = "MPL-2.0"
+[[symphonia-codec-aac.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[symphonia-codec-pcm.clarify]
+license = "MPL-2.0"
+[[symphonia-codec-pcm.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[symphonia-core.clarify]
+license = "MPL-2.0"
+[[symphonia-core.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[symphonia-format-isomp4.clarify]
+license = "MPL-2.0"
+[[symphonia-format-isomp4.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[symphonia-format-riff.clarify]
+license = "MPL-2.0"
+[[symphonia-format-riff.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[symphonia-metadata.clarify]
+license = "MPL-2.0"
+[[symphonia-metadata.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[symphonia-utils-xiph.clarify]
+license = "MPL-2.0"
+[[symphonia-utils-xiph.clarify.git]]
+path = "LICENSE"
+license = "MPL-2.0"
+checksum = "c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30"
+
+[typeshare.clarify]
+license = "MIT OR Apache-2.0"
+[[typeshare.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c"
+
+[typeshare-annotation.clarify]
+license = "MIT OR Apache-2.0"
+[[typeshare-annotation.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c"
+
+[unic-char-property.clarify]
+license = "MIT OR Apache-2.0"
+[[unic-char-property.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[unic-char-range.clarify]
+license = "MIT OR Apache-2.0"
+[[unic-char-range.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[unic-common.clarify]
+license = "MIT OR Apache-2.0"
+[[unic-common.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[unic-ucd-ident.clarify]
+license = "MIT OR Apache-2.0"
+[[unic-ucd-ident.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[unic-ucd-version.clarify]
+license = "MIT OR Apache-2.0"
+[[unic-ucd-version.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[wasmtime-internal-component-macro.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[wasmtime-internal-component-macro.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[wasmtime-internal-component-util.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[wasmtime-internal-component-util.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[wasmtime-internal-jit-debug.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[wasmtime-internal-jit-debug.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[wasmtime-internal-jit-icache-coherence.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[wasmtime-internal-jit-icache-coherence.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[wasmtime-internal-versioned-export-macros.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[wasmtime-internal-versioned-export-macros.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[wasmtime-internal-wit-bindgen.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[wasmtime-internal-wit-bindgen.clarify.git]]
+path = "LICENSE"
+license = "Apache-2.0 WITH LLVM-exception"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+[tauri-plugin.clarify]
+license = "Apache-2.0 OR MIT"
+[[tauri-plugin.clarify.git]]
+path = "LICENSE_MIT"
+license = "MIT"
+checksum = "9dd42ea92cff2ede5cd477cbfcce051b2d0115c0ac7f368ee88cb545055dff1d"
+
+[webview2-com.clarify]
+license = "MIT"
+[[webview2-com.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+
+[webview2-com-macros.clarify]
+license = "MIT"
+[[webview2-com-macros.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+
+[webview2-com-sys.clarify]
+license = "MIT"
+[[webview2-com-sys.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+
+[dlopen2.clarify]
+license = "MIT"
+[[dlopen2.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+
+[dlopen2_derive.clarify]
+license = "MIT"
+[[dlopen2_derive.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+
+[ittapi.clarify]
+license = "GPL-2.0-only OR BSD-3-Clause"
+[[ittapi.clarify.git]]
+path = "LICENSES/BSD-3-Clause.txt"
+license = "BSD-3-Clause"
+checksum = "cf48cdd9ed87c2031b68fb1b9f4cfb55d00dcf815b21a30bf8304aa1e5e6f76a"

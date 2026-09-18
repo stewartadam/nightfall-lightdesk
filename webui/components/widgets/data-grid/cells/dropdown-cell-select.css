@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Inline editors inherit cell geometry rather than standalone field dimensions. */
+[data-grid-kind] .nf-select-toggle {
+  min-height: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}

@@ -1,0 +1,137 @@
+{
+  "note": "Curated architectural exceptions. New or stale dependency edges fail the crate-boundary check.",
+  "exceptions": [
+    {
+      "id": "cues-desk-orchestration",
+      "reason": "Cue runtime orchestration uses desk-owned integration services that do not yet have lower-layer contracts.",
+      "edges": [
+        {
+          "from": "nightfall-cues",
+          "to": "nightfall-desk",
+          "fromRole": "domain",
+          "toRole": "integration",
+          "rule": "domain-crate-must-not-depend-on-integration-or-composition"
+        }
+      ]
+    },
+    {
+      "id": "flow-fx-module-runtime",
+      "reason": "Flow directly hosts FX module nodes and therefore depends on the FX module domain runtime.",
+      "edges": [
+        {
+          "from": "nightfall-flow",
+          "to": "nightfall-fx-module",
+          "fromRole": "domain",
+          "toRole": "domain",
+          "rule": "domain-crate-must-not-depend-on-domain-crate"
+        }
+      ]
+    },
+    {
+      "id": "fx-module-fx-runtime",
+      "reason": "FX module materialization reuses runtime contracts owned by the FX domain.",
+      "edges": [
+        {
+          "from": "nightfall-fx-module",
+          "to": "nightfall-fx",
+          "fromRole": "domain",
+          "toRole": "domain",
+          "rule": "domain-crate-must-not-depend-on-domain-crate"
+        }
+      ]
+    },
+    {
+      "id": "network-io-desk-diagnostics",
+      "reason": "Network output domains use desk-owned diagnostics and notification integration.",
+      "edges": [
+        {
+          "from": "nightfall-output-artnet",
+          "to": "nightfall-desk",
+          "fromRole": "domain",
+          "toRole": "integration",
+          "rule": "domain-crate-must-not-depend-on-integration-or-composition"
+        },
+        {
+          "from": "nightfall-output-sacn",
+          "to": "nightfall-desk",
+          "fromRole": "domain",
+          "toRole": "integration",
+          "rule": "domain-crate-must-not-depend-on-integration-or-composition"
+        }
+      ]
+    },
+    {
+      "id": "object-library-scene-objects",
+      "reason": "Object library persistence directly imports and exports scene-object domain models.",
+      "edges": [
+        {
+          "from": "nightfall-object-library",
+          "to": "nightfall-scene-objects",
+          "fromRole": "domain",
+          "toRole": "domain",
+          "rule": "domain-crate-must-not-depend-on-domain-crate"
+        }
+      ]
+    },
+    {
+      "id": "programmer-cue-integration",
+      "reason": "Programmer storage and recall workflows directly consume cue-domain contracts.",
+      "edges": [
+        {
+          "from": "nightfall-programmer",
+          "to": "nightfall-cues",
+          "fromRole": "domain",
+          "toRole": "domain",
+          "rule": "domain-crate-must-not-depend-on-domain-crate"
+        }
+      ]
+    },
+    {
+      "id": "programmer-desk-orchestration",
+      "reason": "Programmer event and store orchestration uses desk-owned integration services.",
+      "edges": [
+        {
+          "from": "nightfall-programmer",
+          "to": "nightfall-desk",
+          "fromRole": "domain",
+          "toRole": "integration",
+          "rule": "domain-crate-must-not-depend-on-integration-or-composition"
+        }
+      ]
+    },
+    {
+      "id": "timeline-runtime-orchestration",
+      "reason": "Timeline planning and materialization coordinate audio, cue, desk, and FX domain behavior.",
+      "edges": [
+        {
+          "from": "nightfall-timeline",
+          "to": "nightfall-audio",
+          "fromRole": "domain",
+          "toRole": "domain",
+          "rule": "domain-crate-must-not-depend-on-domain-crate"
+        },
+        {
+          "from": "nightfall-timeline",
+          "to": "nightfall-cues",
+          "fromRole": "domain",
+          "toRole": "domain",
+          "rule": "domain-crate-must-not-depend-on-domain-crate"
+        },
+        {
+          "from": "nightfall-timeline",
+          "to": "nightfall-desk",
+          "fromRole": "domain",
+          "toRole": "integration",
+          "rule": "domain-crate-must-not-depend-on-integration-or-composition"
+        },
+        {
+          "from": "nightfall-timeline",
+          "to": "nightfall-fx",
+          "fromRole": "domain",
+          "toRole": "domain",
+          "rule": "domain-crate-must-not-depend-on-domain-crate"
+        }
+      ]
+    }
+  ]
+}

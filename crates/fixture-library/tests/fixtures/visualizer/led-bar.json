@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "make": "Generic",
+  "model": "LED Bar",
+  "behavior": "led-bar",
+  "geometry": {
+    "nodes": [
+      {
+        "id": "emitter",
+        "type": "emitter"
+      }
+    ],
+    "emitters": [
+      {
+        "nodeId": "emitter",
+        "elementRange": [1, 1]
+      }
+    ]
+  }
+}

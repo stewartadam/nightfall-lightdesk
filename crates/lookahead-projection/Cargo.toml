@@ -1,0 +1,17 @@
+[package]
+license.workspace = true
+name = "nightfall-lookahead-projection"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+nightfall = { path = "../common" }
+nightfall-dmx = { path = "../dmx" }
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+uuid = { workspace = true }
+
+[lints]
+workspace = true

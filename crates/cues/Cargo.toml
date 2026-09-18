@@ -1,0 +1,41 @@
+[package]
+name = "nightfall-cues"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+dashmap.workspace = true
+enum-flags = "0.4.0"
+moonshine-kind.workspace = true
+partially.workspace = true
+nightfall = { path = "../common" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-desk = { path = "../desk" }
+nightfall-engine = { path = "../engine" }
+nightfall-clips = { path = "../clips" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-lookahead = { path = "../lookahead" }
+nightfall-lookahead-projection = { path = "../lookahead-projection" }
+nightfall-instances = { path = "../instances" }
+nightfall-playback-planner = { path = "../playback-planner" }
+nightfall-selection = { path = "../selection" }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+smart-default.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+web-time.workspace = true
+
+[dev-dependencies]
+minicbor-serde.workspace = true
+
+[lints]
+workspace = true

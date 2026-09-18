@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "make": "Generic",
+  "model": "Moving Head Spot",
+  "behavior": "moving-head",
+  "geometry": {
+    "nodes": [
+      {
+        "id": "emitter",
+        "type": "emitter"
+      }
+    ],
+    "emitters": [
+      {
+        "nodeId": "emitter",
+        "elementRange": [1, 1]
+      }
+    ]
+  }
+}

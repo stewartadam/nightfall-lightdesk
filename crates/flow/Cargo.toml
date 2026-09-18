@@ -1,0 +1,42 @@
+[package]
+name = "nightfall-flow"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+nightfall = { path = "../common" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-fx-module = { path = "../fx-module", optional = true }
+nightfall-instances = { path = "../instances" }
+nightfall-playback-planner = { path = "../playback-planner" }
+nightfall-selection = { path = "../selection" }
+nightfall-timecode = { path = "../timecode" }
+nightfall-waveform = { path = "../waveform" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+web-time.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+async-channel.workspace = true
+moonshine-kind.workspace = true
+nightfall-desk = { path = "../desk" }
+nightfall-clips = { path = "../clips" }
+tokio.workspace = true
+wit-component.workspace = true
+
+[features]
+default = ["fx-module"]
+fx-module = ["dep:nightfall-fx-module"]
+
+[lints]
+workspace = true

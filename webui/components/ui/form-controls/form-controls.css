@@ -1,0 +1,49 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-field-group {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid var(--line, #3d4645);
+  border-radius: var(--nf-corner-radius, 6px);
+  background: var(--raised, #24282a);
+}
+.nf-field-group > .nf-form-control {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+.nf-field-group > .nf-button {
+  border: 0;
+  border-radius: 0;
+}
+.nf-field-group > .nf-button:first-child {
+  border-right: 1px solid var(--line, #3d4645);
+  border-radius: var(--nf-corner-radius, 6px) 0 0 var(--nf-corner-radius, 6px);
+}
+.nf-field-group > .nf-button:last-child {
+  border-left: 1px solid var(--line, #3d4645);
+  border-radius: 0 var(--nf-corner-radius, 6px) var(--nf-corner-radius, 6px) 0;
+}
+.nf-input-suffix {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 8px;
+  border-left: 1px solid var(--line, #3d4645);
+  color: var(--muted, #969c9e);
+  font-size: 12px;
+}
+.nf-field-group:has([aria-invalid="true"]) {
+  border-color: #f18b8e;
+}
+.nf-field-group:has(input:disabled) {
+  opacity: 0.6;
+}

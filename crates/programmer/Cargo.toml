@@ -1,0 +1,30 @@
+[package]
+name = "nightfall-programmer"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+moonshine-kind.workspace = true
+nightfall = { path = "../common" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-cues = { path = "../cues" }
+nightfall-engine = { path = "../engine" }
+nightfall-desk = { path = "../desk" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-instances = { path = "../instances" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-selection = { path = "../selection" }
+nightfall-undo = { path = "../undo" }
+uuid.workspace = true
+serde.workspace = true
+serde_with.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "nightfall-lookahead"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_ecs.workspace = true
+moonshine-kind.workspace = true
+nightfall-compositor = { path = "../compositor" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-instances = { path = "../instances" }
+uuid.workspace = true
+
+[lints]
+workspace = true

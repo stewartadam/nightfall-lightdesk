@@ -1,0 +1,74 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Native fields and composite shells share one focus indicator. */
+:root {
+  --nf-input-focus-width: 1px;
+}
+
+:is(input, textarea, select)[aria-invalid="true"],
+.nf-input-group:has([aria-invalid="true"]) {
+  --nf-input-focus-color: var(--color-invalid);
+}
+:is(input, textarea, select)[data-validation-severity="warning"],
+.nf-input-group:has([data-validation-severity="warning"]) {
+  --nf-input-focus-color: var(--color-warning);
+}
+
+:is(input, textarea, select, .nf-select-toggle):focus-visible,
+.noUi-handle:focus-visible,
+.nf-switch input:focus-visible ~ .nf-switch-track,
+.nf-input-group:has(:is(input, textarea, select):focus-visible) {
+  outline: none;
+  /* A neutral border keeps the colored ring from becoming a double band. */
+  border-color: var(--line, #3d4645);
+  box-shadow: 0 0 0 var(--nf-input-focus-width)
+    var(--nf-input-focus-color, var(--accent));
+
+  @media (forced-colors: active) {
+    outline: var(--nf-input-focus-width) solid Highlight;
+    outline-offset: 0;
+    box-shadow: none;
+  }
+}
+
+.nf-input-group :is(input, textarea, select) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.nf-input-group :is(input, textarea, select):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Inline editors use the grid cell's selection perimeter as their focus indicator. */
+[role="gridcell"]
+:is(
+  input:not([type="checkbox"], [type="radio"]),
+  textarea,
+  select,
+  .nf-select-toggle
+):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+@media (forced-colors: active) {
+  [role="gridcell"]:has(
+    :is(
+        input:not([type="checkbox"], [type="radio"]),
+        textarea,
+        select,
+        .nf-select-toggle
+      ):focus-visible
+  ) {
+    outline: var(--nf-input-focus-width) solid Highlight;
+    outline-offset: calc(-1 * var(--nf-input-focus-width));
+  }
+}

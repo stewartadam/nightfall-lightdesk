@@ -1,0 +1,38 @@
+[package]
+name = "nightfall-fx-module"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+nightfall = { path = "../common" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-fx = { path = "../fx" }
+nightfall-instances = { path = "../instances" }
+nightfall-playback-planner = { path = "../playback-planner" }
+nightfall-selection = { path = "../selection" }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+wasmtime = { version = "48.0", features = ["component-model"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+async-channel.workspace = true
+moonshine-kind.workspace = true
+nightfall-desk = { path = "../desk" }
+tempfile.workspace = true
+tokio.workspace = true
+wit-component.workspace = true

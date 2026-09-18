@@ -1,0 +1,1568 @@
+{
+  "cases": [
+    {
+      "name": "Root command suggestions.",
+      "input": "",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["command"],
+        "candidates": [
+          "\"",
+          "(",
+          "block",
+          "channel",
+          "clear",
+          "clip",
+          "copy",
+          "cue",
+          "debug",
+          "fixture",
+          "flow",
+          "fps",
+          "fx",
+          "group",
+          "help",
+          "load",
+          "log",
+          "new",
+          "parameter",
+          "patch",
+          "quit",
+          "recall",
+          "redo",
+          "release",
+          "rename",
+          "rm",
+          "save",
+          "set",
+          "sleep",
+          "store",
+          "timecode",
+          "timeline",
+          "unblock",
+          "undo",
+          "{"
+        ],
+        "breadcrumb": {
+          "state": "none"
+        }
+      }
+    },
+    {
+      "name": "Tokens from the command intent that match the typed prefix.",
+      "input": "f",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["command"],
+        "candidates": ["fixture", "flow", "fps", "fx"],
+        "breadcrumb": {
+          "state": "none"
+        }
+      }
+    },
+    {
+      "name": "Only one intent group is active.",
+      "input": "fixture ",
+      "response": {
+        "parse": {
+          "status": "error",
+          "expected_rules": ["identifier_expression"],
+          "expected_tokens": ["(", "0..9"]
+        },
+        "completion_groups": ["programmer/selection/identifier"],
+        "candidates": ["(", "0..9"],
+        "current_breadcrumb": "Programmer > Selection",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": [
+            "programmer",
+            "programmer_selection",
+            "programmer_selection_identifier"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Selection expressions can continue or enter attribute, timing, placement, and path clauses.",
+      "input": "fix 311",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": [
+          "programmer/selection/identifier",
+          "programmer/set_attribute",
+          "programmer/intensity",
+          "programmer/timings",
+          "programmer/3d_placement"
+        ],
+        "candidates": [
+          "+",
+          "-",
+          ".",
+          "0..9",
+          "3d",
+          ">",
+          "@",
+          "@@",
+          "blue",
+          "delay",
+          "fade",
+          "green",
+          "int",
+          "path",
+          "red",
+          "white",
+          "|",
+          "~"
+        ],
+        "current_breadcrumb": "Programmer > Selection > Identifier",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Numeric sub-fixture continuation only.",
+      "input": "fix 311.",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["programmer/selection/identifier"],
+        "candidates": [".", "0..9"],
+        "current_breadcrumb": "Programmer > Selection > Identifier",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": [
+            "programmer",
+            "programmer_selection",
+            "programmer_selection_identifier"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Single intent with token completions.",
+      "input": "fix 311 red ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["programmer/set_attribute"],
+        "candidates": ["@", "@@", "~"],
+        "current_breadcrumb": "Programmer > Attributes > Set Attribute",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": [
+            "programmer",
+            "programmer_attribute_actions",
+            "programmer_set_attribute_item"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Set-attribute and timing paths are parser-valid here; placement is not.",
+      "input": "fix 311 red @ 100",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": [
+          "programmer/set_attribute",
+          "programmer/intensity",
+          "programmer/timings"
+        ],
+        "candidates": [
+          "/absolute",
+          "0..9",
+          ">",
+          "@",
+          "@@",
+          "blue",
+          "delay",
+          "fade",
+          "green",
+          "int",
+          "white",
+          "~"
+        ],
+        "current_breadcrumb": "Programmer > Attributes > Set Attribute",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Partial fa offers matching replacement edits from the pre-token branch.",
+      "input": "fix 311 red @ 100 fa",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["programmer/set_attribute", "programmer/timings"],
+        "candidates": ["@", "@@", "fade", "~"],
+        "current_breadcrumb": "Programmer > Attributes > Set Attribute",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "After `fade`, parser expects a duration or override attribute branch.",
+      "input": "fix 311 red @ 100 fade",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["programmer/timings"],
+        "candidates": [
+          "+",
+          "-",
+          "0..9",
+          "blue",
+          "delay",
+          "fade",
+          "green",
+          "in",
+          "int",
+          "out",
+          "red",
+          "white"
+        ],
+        "current_breadcrumb": "Programmer > Timing",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Timing override durations offer units and subsequent timing clauses, with used attributes suppressed.",
+      "input": "fix 311 red @ 100 fade 10 red 1",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["programmer/timings"],
+        "candidates": [
+          "%",
+          "0..9",
+          ">",
+          "blue",
+          "bpm",
+          "delay",
+          "green",
+          "hz",
+          "in",
+          "int",
+          "ms",
+          "out",
+          "s",
+          "sec",
+          "seconds",
+          "white"
+        ],
+        "current_breadcrumb": "Programmer > Timing > Override",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 11: fix 311 3d",
+      "input": "fix 311 3d",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["programmer/3d_placement"],
+        "candidates": ["3d", "pos", "rot"],
+        "current_breadcrumb": "Programmer > 3D placement",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["programmer", "programmer_placement3d"]
+        }
+      }
+    },
+    {
+      "name": "User can continue position or shift to rotation.",
+      "input": "fix 311 3d pos x 1",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["programmer/timings", "programmer/3d_placement"],
+        "candidates": [".", "0..9", "delay", "fade", "rot", "y", "z"],
+        "current_breadcrumb": "Programmer > 3D placement",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Single intent with token completions.",
+      "input": "fx",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fx/identifier"],
+        "candidates": ["+", "-", "0..9", ">", "module"],
+        "current_breadcrumb": "FX",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "User can continue the identifier or switch to controlling the fx.",
+      "input": "fx 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fx/identifier", "fx/action"],
+        "candidates": ["+", "-", "0..9", ">", "rate", "start", "stop"],
+        "current_breadcrumb": "FX > Identifier",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 15: fx 1\u2420",
+      "input": "fx 1 ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fx/identifier", "fx/action"],
+        "candidates": ["+", "-", "0..9", ">", "rate", "start", "stop"],
+        "current_breadcrumb": "FX > Identifier",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 16: fx 1 rate",
+      "input": "fx 1 rate",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fx/action"],
+        "candidates": ["rate"],
+        "current_breadcrumb": "FX > Action",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["fx", "fx_action"]
+        }
+      }
+    },
+    {
+      "name": "Step FX selection is pending, with replacement of the active step keyword available.",
+      "input": "store fx 1 step ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fx/step", "fx/step/selection"],
+        "candidates": ["fixture", "group"],
+        "current_breadcrumb": "Store > Step",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store", "step_fx", "step_fx_selection"]
+        }
+      }
+    },
+    {
+      "name": "User can continue selection expression or move on to duration.",
+      "input": "store fx 1 step fix 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fx/step/selection", "fx/step/duration"],
+        "candidates": ["+", "-", ".", "0..9", ">", "|"],
+        "current_breadcrumb": "Store > Step > Selection",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "User can finish duration or provide an attribute to control.",
+      "input": "store fx 1 step group 14 5",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fx/step/duration"],
+        "candidates": ["%", "0..9", "bpm", "hz", "ms", "s", "sec", "seconds"],
+        "current_breadcrumb": "Store > Step > Duration",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store", "step_fx", "step_fx_duration"]
+        }
+      }
+    },
+    {
+      "name": "Completed duration advances into attribute-step definition.",
+      "input": "store fx 1 step g 14 1bpm ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fx/step/attribute"],
+        "candidates": ["blue", "green", "int", "red", "white"],
+        "current_breadcrumb": "Store > Step > Duration > Attribute Step",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store", "step_fx", "step_fx_step_definition"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 20: store fx 1 step group 14 5s red",
+      "input": "store fx 1 step group 14 5s red",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": [
+          "fx/step/attribute",
+          "fx/step/attribute/initial_value",
+          "fx/step/values",
+          "fx/step/shaping"
+        ],
+        "candidates": [
+          "@",
+          "bezier",
+          "ease",
+          "easein",
+          "easeout",
+          "linear",
+          "red",
+          "snap",
+          "steps",
+          "ramp",
+          "width"
+        ],
+        "current_breadcrumb": "Store > Step > Attribute Step",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store", "step_fx", "step_fx_step_definition"]
+        }
+      }
+    },
+    {
+      "name": "Current intent resolves with additional predictive intents.",
+      "input": "store fx 1 step fix 1 5s int steps 100",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": [
+          "fx/step/attribute",
+          "fx/step/attribute/initial_value",
+          "fx/step/values",
+          "fx/step/shaping"
+        ],
+        "candidates": [
+          "+",
+          "-",
+          "0..9",
+          "@",
+          "bezier",
+          "blue",
+          "ease",
+          "easein",
+          "easeout",
+          "green",
+          "linear",
+          "red",
+          "snap",
+          "ramp",
+          "white",
+          "width"
+        ],
+        "current_breadcrumb": "Store > Step > Attribute Step",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Current intent resolves with additional predictive intents.",
+      "input": "store fx 1 step fix 1 5s int steps 100 0 ",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": [
+          "fx/step/attribute",
+          "fx/step/attribute/initial_value",
+          "fx/step/values",
+          "fx/step/shaping"
+        ],
+        "candidates": [
+          "+",
+          "-",
+          "0..9",
+          "@",
+          "bezier",
+          "blue",
+          "ease",
+          "easein",
+          "easeout",
+          "green",
+          "linear",
+          "red",
+          "snap",
+          "ramp",
+          "white",
+          "width"
+        ],
+        "current_breadcrumb": "Store > Step > Attribute Step",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Single post-head intent is unambiguous.",
+      "input": "patch ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["patch/source"],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          "0..9",
+          ">",
+          "artnet",
+          "console",
+          "disabled",
+          "fixture",
+          "sacn",
+          "udmx"
+        ],
+        "current_breadcrumb": "Patch",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["patch", "patch_source"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 24: patch sacn",
+      "input": "patch sacn",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": [
+          "patch/source",
+          "patch/dmx_address",
+          "patch/target"
+        ],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          ".",
+          "0..9",
+          ":",
+          ">",
+          "@",
+          "artnet",
+          "console",
+          "disabled",
+          "fixture",
+          "sacn",
+          "udmx"
+        ],
+        "current_breadcrumb": "Patch > Source",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Single intent with token completions.",
+      "input": "patch sacn:",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["patch/source", "patch/dmx_address"],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          "0..9",
+          ":",
+          ">",
+          "artnet",
+          "console",
+          "disabled",
+          "fixture",
+          "sacn",
+          "udmx"
+        ],
+        "current_breadcrumb": "Patch > Source",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["patch", "patch_source"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 26: patch sacn:1",
+      "input": "patch sacn:1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": [
+          "patch/source",
+          "patch/dmx_address",
+          "patch/target"
+        ],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          ".",
+          "0..9",
+          ">",
+          "@",
+          "artnet",
+          "console",
+          "disabled",
+          "fixture",
+          "sacn",
+          "udmx"
+        ],
+        "current_breadcrumb": "Patch > Source",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Single intent with token completions.",
+      "input": "patch sacn:1.",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["patch/source", "patch/dmx_address"],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          ".",
+          "0..9",
+          ">",
+          "artnet",
+          "console",
+          "disabled",
+          "fixture",
+          "sacn",
+          "udmx"
+        ],
+        "current_breadcrumb": "Patch > Source",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["patch", "patch_source"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 28: patch sacn:1 @",
+      "input": "patch sacn:1 @",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["patch/target"],
+        "candidates": ["0..9", "@"],
+        "current_breadcrumb": "Patch > Target",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["patch", "patch_target"]
+        }
+      }
+    },
+    {
+      "name": "Single intent with token completions.",
+      "input": "clip 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["clip/identifier", "clip/action"],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          "0..9",
+          ">",
+          "back",
+          "go",
+          "goto",
+          "rate",
+          "start",
+          "stop"
+        ],
+        "current_breadcrumb": "Clip > Identifier",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "User must provide cue number.",
+      "input": "clip 1 goto",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["clip/action"],
+        "candidates": ["0..9", "goto"],
+        "current_breadcrumb": "Clip > Action",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["clip", "clip_action"]
+        }
+      }
+    },
+    {
+      "name": "clear suggests filters",
+      "input": "clear ",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["clear", "clear/attributes"],
+        "candidates": [
+          "0..9",
+          "attr",
+          "attribute",
+          "blue",
+          "filter",
+          "fixture",
+          "green",
+          "int",
+          "red",
+          "selected",
+          "values",
+          "white"
+        ],
+        "current_breadcrumb": "Clear",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 32: clear fixture 411",
+      "input": "clear fixture 411",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["clear", "clear/attributes"],
+        "candidates": [
+          "0..9",
+          "attr",
+          "attribute",
+          "blue",
+          "filter",
+          "fixture",
+          "green",
+          "int",
+          "red",
+          "selected",
+          "values",
+          "white"
+        ],
+        "current_breadcrumb": "Clear",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 33: clear fixture 411>415",
+      "input": "clear fixture 411>415",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["clear", "clear/attributes"],
+        "candidates": [
+          "0..9",
+          "attr",
+          "attribute",
+          "blue",
+          "filter",
+          "fixture",
+          "green",
+          "int",
+          "red",
+          "selected",
+          "values",
+          "white"
+        ],
+        "current_breadcrumb": "Clear",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 34: clear fixture 411>415 attr red",
+      "input": "clear fixture 411>415 attr red",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["clear/attributes"],
+        "candidates": ["blue", "green", "int", "red", "white"],
+        "current_breadcrumb": "Clear > Attributes",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["clear", "clear_attributes"]
+        }
+      }
+    },
+    {
+      "name": "Single intent with token completions.",
+      "input": "clear attr ",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["clear", "clear/attributes"],
+        "candidates": ["0..9", "blue", "green", "int", "red", "white"],
+        "current_breadcrumb": "Clear",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 36: release",
+      "input": "release",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["release/attributes", "release/channel"],
+        "candidates": [
+          "attr",
+          "attribute",
+          "blue",
+          "channel",
+          "filter",
+          "fixture",
+          "green",
+          "group",
+          "int",
+          "parameter",
+          "red",
+          "stale",
+          "white"
+        ],
+        "current_breadcrumb": "Release",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Single intent with token completions.",
+      "input": "release attr ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["release/attributes"],
+        "candidates": ["blue", "green", "int", "red", "white"],
+        "current_breadcrumb": "Release > Attributes",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["release", "release_attributes"]
+        }
+      }
+    },
+    {
+      "name": "Single intent with token completions.",
+      "input": "release channel ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["release/channel"],
+        "candidates": ["0..9"],
+        "current_breadcrumb": "Release > Channel",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["release", "release_channel"]
+        }
+      }
+    },
+    {
+      "name": "Single post-head intent is unambiguous.",
+      "input": "channel ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["channel_override/identifier"],
+        "candidates": ["(", ")", "+", "-", ".", "0..9", ">"],
+        "current_breadcrumb": "Channel Override",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 40: channel 1",
+      "input": "channel 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": [
+          "channel_override/identifier",
+          "channel_override/value"
+        ],
+        "candidates": ["(", ")", "+", "-", ".", "0..9", ">", "@"],
+        "current_breadcrumb": "Channel Override",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 41: channel 1.100",
+      "input": "channel 1.100",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": [
+          "channel_override/identifier",
+          "channel_override/value"
+        ],
+        "candidates": ["(", ")", "+", "-", ".", "0..9", ">", "@"],
+        "current_breadcrumb": "Channel Override",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "User must provide the DMX value.",
+      "input": "channel 1>5 @ ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["channel_override/value"],
+        "candidates": ["0..9"],
+        "current_breadcrumb": "Channel Override",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "Single intent.",
+      "input": "rm ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["rm/object_type"],
+        "candidates": [
+          "blueprint",
+          "clip",
+          "cue",
+          "fixture",
+          "fx",
+          "group",
+          "parameter",
+          "patch",
+          "path",
+          "sequence",
+          "timecode",
+          "timeline"
+        ],
+        "current_breadcrumb": "Remove",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["rm"]
+        }
+      }
+    },
+    {
+      "name": "Cue reference entry and replacement of the active object type remain distinct.",
+      "input": "rm cue",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["rm/object_type", "rm/object_identifier"],
+        "candidates": ["0..9", "cue"],
+        "current_breadcrumb": "Remove",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["rm"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 45: rm seq 2",
+      "input": "rm seq 2",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["rm/object_identifier"],
+        "candidates": ["0..9"],
+        "current_breadcrumb": "Remove",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["rm"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 46: rm cue 1.1",
+      "input": "rm cue 1.1",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["rm/object_identifier"],
+        "candidates": ["0..9"],
+        "current_breadcrumb": "Remove",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["rm"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 47: store\u2420",
+      "input": "store ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["store/object_type"],
+        "candidates": [
+          "blueprint",
+          "clip",
+          "cue",
+          "fixture",
+          "flow",
+          "fx",
+          "group",
+          "path",
+          "timecode",
+          "timeline"
+        ],
+        "current_breadcrumb": "Store",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store"]
+        }
+      }
+    },
+    {
+      "name": "Cue reference entry and replacement of the active store object type remain distinct.",
+      "input": "store cue",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["store/object_type", "store/cue_ref"],
+        "candidates": ["0..9", "cue"],
+        "current_breadcrumb": "Store",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store"]
+        }
+      }
+    },
+    {
+      "name": "Single intent.",
+      "input": "store cue 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["store/cue_ref"],
+        "candidates": [".", "0..9"],
+        "current_breadcrumb": "Store",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store"]
+        }
+      }
+    },
+    {
+      "name": "Group definition entry and replacement of the active object type remain distinct.",
+      "input": "store group",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["store/object_type", "store/group_identifier"],
+        "current_breadcrumb": "Store",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 51: store blueprint 1",
+      "input": "store blueprint 1",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["store/blueprint", "store/blueprint/filter"],
+        "candidates": [
+          "0..9",
+          "attr",
+          "attribute",
+          "blue",
+          "filter",
+          "green",
+          "int",
+          "red",
+          "white"
+        ],
+        "current_breadcrumb": "Store",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "User can submit or add attributes to the filter.",
+      "input": "store blueprint 9 filter red",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["store/blueprint/filter"],
+        "candidates": ["blue", "green", "int", "red", "white"],
+        "current_breadcrumb": "Store > Blueprint > Filter",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store", "store_blueprint", "store_blueprint_filter"]
+        }
+      }
+    },
+    {
+      "name": "Space-separated attribute continuation only; `@` is not valid here.",
+      "input": "store blueprint 9 filter red ",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["store/blueprint/filter"],
+        "candidates": ["blue", "green", "int", "white"],
+        "current_breadcrumb": "Store > Blueprint > Filter",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store", "store_blueprint", "store_blueprint_filter"]
+        }
+      }
+    },
+    {
+      "name": "User can submit or specify additional filter attributes.",
+      "input": "store blueprint 52 filter int red",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["store/blueprint/filter"],
+        "candidates": ["blue", "green", "red", "white"],
+        "current_breadcrumb": "Store > Blueprint > Filter",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store", "store_blueprint", "store_blueprint_filter"]
+        }
+      }
+    },
+    {
+      "name": "Rename exposes object-type and compact path-reference alternatives.",
+      "input": "rename ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["rename", "rename/object_type"],
+        "candidates": [
+          "blueprint",
+          "clip",
+          "cue",
+          "fixture",
+          "fx",
+          "group",
+          "parameter",
+          "patch",
+          "path",
+          "path0..9",
+          "sequence",
+          "timecode",
+          "timeline"
+        ],
+        "current_breadcrumb": "Rename",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 56: rename fixture 1",
+      "input": "rename fixture 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["rename"],
+        "candidates": ["0..9"],
+        "current_breadcrumb": "Rename > Objects",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["rename", "rename_objects"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 57: rename fixture 1 3",
+      "input": "rename fixture 1 3",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["rename"],
+        "candidates": ["0..9"],
+        "current_breadcrumb": "Rename > Objects",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["rename", "rename_objects"]
+        }
+      }
+    },
+    {
+      "name": "Intent scope: identifier and action intents both active. Parser frontier: expression continuation or flow action branch. Token scope: raw parser-frontier union at this cursor.",
+      "input": "flow 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["flow/identifier", "flow/action"],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          "0..9",
+          ">",
+          "go",
+          "rename",
+          "rm",
+          "start",
+          "stop"
+        ],
+        "current_breadcrumb": "Flow > Identifier",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Command is complete; parser frontier only allows the terminator.",
+      "input": "store flow 1 ",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["store/object_identifier"],
+        "candidates": ["(", ")", "+", "-", "0..9", ">"],
+        "current_breadcrumb": "Store",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["store"]
+        }
+      }
+    },
+    {
+      "name": "User can continue the identifier expression or move on to an action command.",
+      "input": "timecode 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["timecode/identifier", "timecode/action"],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          "0..9",
+          ">",
+          "pause",
+          "start",
+          "stop"
+        ],
+        "current_breadcrumb": "Timecode > Identifier",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "User can continue the identifier expression or move on to an action command.",
+      "input": "timeline 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["timeline/identifier", "timeline/action"],
+        "candidates": ["(", ")", "+", "-", "0..9", ">", "start", "stop"],
+        "current_breadcrumb": "Timeline > Identifier",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "matrix case 62: log",
+      "input": "log",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["log/level", "log/filter", "log/fixture"],
+        "candidates": ["0..9", "filter", "fixture", "level"],
+        "current_breadcrumb": "Log",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "User must provide a log-level string.",
+      "input": "log level",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["log/level"],
+        "candidates": ["0..9", "level"],
+        "current_breadcrumb": "Log > Level",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["log", "log_level"]
+        }
+      }
+    },
+    {
+      "name": "User can provide a new filter or clear filters.",
+      "input": "log filter",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["log/filter"],
+        "candidates": ["0..9", "clear", "filter"],
+        "current_breadcrumb": "Log > Filter",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["log", "log_filter"]
+        }
+      }
+    },
+    {
+      "name": "matrix case 65: log fixture",
+      "input": "log fixture",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["log/fixture"],
+        "candidates": ["0..9", "fixture"],
+        "current_breadcrumb": "Log > Fixture",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["log", "log_fixture"]
+        }
+      }
+    },
+    {
+      "name": "Command can be submitted, identifier editing can continue, or a sub-fixture can be specified.",
+      "input": "log fixture 1",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["log/fixture"],
+        "candidates": ["0..9", "blue", "green", "int", "red", "white"],
+        "current_breadcrumb": "Log > Fixture",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["log", "log_fixture"]
+        }
+      }
+    },
+    {
+      "name": "Intent scope: cue-ref intent remains active. Parser frontier: both recall branches are syntactically valid. Token scope: raw parser-frontier union before intent filtering.",
+      "input": "recall",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["recall/cue_ref"],
+        "candidates": ["blueprint", "cue"],
+        "current_breadcrumb": "Recall",
+        "breadcrumb": {
+          "state": "ambiguous_clause_path"
+        }
+      }
+    },
+    {
+      "name": "Debug exposes object types through its object group.",
+      "input": "debug ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["debug/object"],
+        "candidates": [
+          "blueprint",
+          "clip",
+          "cue",
+          "fixture",
+          "fx",
+          "group",
+          "parameter",
+          "patch",
+          "path",
+          "sequence",
+          "timecode",
+          "timeline"
+        ],
+        "current_breadcrumb": "Debug",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["debug"]
+        }
+      }
+    },
+    {
+      "name": "Single intent; parser expects a duration value.",
+      "input": "sleep",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["sleep/duration"],
+        "candidates": ["+", "-", "0..9"],
+        "current_breadcrumb": "Sleep",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["sleep"]
+        }
+      }
+    },
+    {
+      "name": "Intent scope: duration slot remains active for inline numeric entry. Parser frontier also includes duration-unit and terminator continuations.",
+      "input": "sleep 1",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["sleep/duration"],
+        "candidates": [
+          "%",
+          ".",
+          "0..9",
+          "bpm",
+          "hz",
+          "ms",
+          "s",
+          "sec",
+          "seconds"
+        ],
+        "current_breadcrumb": "Sleep",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["sleep"]
+        }
+      }
+    },
+    {
+      "name": "Single intent; parser expects an integer value.",
+      "input": "fps",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["fps/value"],
+        "candidates": ["+", "-", "0..9"],
+        "current_breadcrumb": "FPS",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["fps"]
+        }
+      }
+    },
+    {
+      "name": "User can submit or continue editing the numeric token.",
+      "input": "fps 1",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["fps/value"],
+        "candidates": ["0..9"],
+        "current_breadcrumb": "FPS",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["fps"]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.widget-sample-card {
+  border: 1px solid var(--line);
+  border-radius: var(--nf-corner-radius, 7px);
+  padding: 16px;
+  margin-block: 16px;
+}
+.widget-switch-row,
+.widget-rename-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.widget-fader-bank {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-block: 24px;
+}
+.widget-fader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 64px;
+  font-size: 12px;
+}
+.widget-fader output {
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+}
+.widget-object-name {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1;
+}
+.widget-metric-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.widget-tooltip-placements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-block: 24px;
+}
+.widget-tooltip-copy {
+  display: block;
+  width: min(240px, calc(100vw - 48px));
+  white-space: normal;
+  line-height: 1.6;
+}
+.widget-tooltip-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}

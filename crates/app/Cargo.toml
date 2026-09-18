@@ -1,0 +1,104 @@
+[package]
+name = "nightfall-app"
+description = "A modern lighting controller"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+default-run = "nightfall-app"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "2", features = [], optional = true }
+
+# The mobile interface of Tauri requires a shared library
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "nightfall_app_lib"
+# required for mobile builds but conflicts with bevy_dylib
+#crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+axum.workspace = true
+bevy.workspace = true
+bevy_state.workspace = true
+jiff.workspace = true
+clonetree = "0.0.2"
+moonshine-kind.workspace = true
+nightfall = { path = "../common" }
+nightfall-config = { path = "../config" }
+nightfall-actions = { path = "../actions" }
+nightfall-audio = { path = "../audio", optional = true }
+nightfall-compositor = { path = "../compositor" }
+nightfall-cues = { path = "../cues" }
+nightfall-desk = { path = "../desk", default-features = false, features = ["fx-module-host", "native-network-watch"] }
+nightfall-desk-audio = { path = "../desk_audio", optional = true }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-clips = { path = "../clips" }
+nightfall-framepace = { path = "../framepace" }
+nightfall-fx = { path = "../fx" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-io = { path = "../io" }
+nightfall-fixture-library = { path = "../fixture-library", optional = true }
+nightfall-object-library = { path = "../object-library", optional = true }
+nightfall-flow = { path = "../flow" }
+nightfall-input-artnet = { path = "../input_artnet", optional = true }
+nightfall-input-midi = { path = "../input_midi", optional = true }
+nightfall-input-osc = { path = "../input_osc", optional = true }
+nightfall-input-sacn = { path = "../input_sacn", optional = true }
+nightfall-output-artnet = { path = "../output_artnet", optional = true }
+nightfall-output-sacn = { path = "../output_sacn", optional = true }
+nightfall-output-usb = { path = "../output_usb", optional = true }
+nightfall-instances = { path = "../instances" }
+nightfall-fx-module = { path = "../fx-module" }
+nightfall-programmer = { path = "../programmer" }
+nightfall-scene-objects = { path = "../scene-objects" }
+nightfall-selection = { path = "../selection" }
+nightfall-showfile = { path = "../showfile" }
+nightfall-timecode = { path = "../timecode" }
+nightfall-timeline = { path = "../timeline", default-features = false, features = ["http"] }
+nightfall-undo = { path = "../undo" }
+nightfall-waveform = { path = "../waveform" }
+nightfall-websocket = { path = "../websocket" }
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", optional = true , features = [] }
+# The existing LogTracer bridge handles plugin records; its tracing feature would duplicate them.
+tauri-plugin-log = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+tokio = { workspace = true, features = ["sync"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tower-http = { workspace = true, features = ["fs"] }
+tracing-appender = "0.2"
+tracing-subscriber = { workspace = true, features = ["json"] }
+tracing.workspace = true
+uuid.workspace = true
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+tempfile.workspace = true
+
+# gdt-cpus deliberately rejects Intel macOS; that target uses OS-default scheduling.
+[target.'cfg(not(all(target_os = "macos", not(target_arch = "aarch64"))))'.dependencies]
+gdt-cpus = "0.2606.1"
+
+[features]
+default = ["full", "bevy_dynamic", "beatgrid-detect"]
+full = ["audio", "midi", "osc", "artnet", "sacn", "usb", "fixture-library", "object-library"]
+minimal = []
+audio = ["dep:nightfall-audio", "dep:nightfall-desk-audio", "nightfall-timeline/audio"]
+beatgrid-detect = ["nightfall-timeline/beatgrid-detect"]
+midi = ["dep:nightfall-input-midi", "nightfall-showfile/midi"]
+osc = ["dep:nightfall-input-osc", "nightfall-showfile/osc"]
+artnet = ["dep:nightfall-input-artnet", "dep:nightfall-output-artnet"]
+sacn = ["dep:nightfall-input-sacn", "dep:nightfall-output-sacn"]
+usb = ["dep:nightfall-output-usb"]
+fixture-library = ["dep:nightfall-fixture-library"]
+object-library = ["dep:nightfall-object-library"]
+bevy_dynamic = ["bevy/dynamic_linking"]  # you opt in to Bevy's "dynamic" feature
+tauri = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-log", "dep:tauri-plugin-dialog"] # meta-feature for enabling Tauri app
+debug = ["nightfall-engine/debug", "nightfall-desk/debug"]
+
+[lints]
+workspace = true

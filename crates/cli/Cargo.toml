@@ -1,0 +1,28 @@
+[package]
+name = "nightfall-cli"
+description = "Standalone CLI binary for Nightfall that connects to engine via WebSocket"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "nightfall-cli"
+path = "src/main.rs"
+
+[dependencies]
+futures-util.workspace = true
+itertools = "0.15"
+minicbor-serde.workspace = true
+reedline = "0.51"
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-config = { path = "../config" }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true }
+tokio-tungstenite = "0.30"
+tracing-subscriber.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

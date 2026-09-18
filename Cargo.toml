@@ -1,0 +1,105 @@
+[workspace]
+members = ["crates/*"]
+default-members = ["crates/app"]
+resolver = "3" # default for rust 2024
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+
+[workspace.dependencies]
+artnet_protocol = "0.4"
+async-channel = "2.5"
+axum = { version = "0.8.9", features = ["ws"] }
+base64 = "0.23"
+bevy = { version = "0.19", default-features = false, features = ["debug"] }
+bevy_app = { version = "0.19" }
+bevy_diagnostic = { version = "0.19" }
+bevy_ecs = { version = "0.19" }
+bevy_platform = { version = "0.19" }
+bevy_reflect = { version = "0.19" }
+bevy_state = { version = "0.19" }
+bevy_time = { version = "0.19" }
+bimap = "0.6.3"
+jiff = "0.2.35"
+dashmap = { version = "6.2.1", features = ["serde"] }
+criterion = "0.8"
+dotenv = { package = "dotenv-ng", version = "1" }
+enum_dispatch = "0.3.13"
+futures-util = "0.3.34"
+minicbor-serde = { version = "0.7", features = ["alloc"] }
+moonshine-kind = "0.5"
+netdev = "0.46"
+netwatcher = "0.8"
+notify = "8.2"
+partially = { version = "0.2.1", features = ["derive"] }
+orx-parallel = "3.4.0"
+sacn = "0.11.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_with = { version = "3.22.0", features = ["json"] }
+smart-default = "0.7.1"
+socket2 = { version = "0.6.5", features = ["all"] }
+strum = { version = "0.28", features = ["derive"] }
+tempfile = "3.27"
+thiserror = "2.0"
+tokio = { version = "1.53.1", features = ["sync", "rt-multi-thread", "macros"] }
+tower-http = { version = "0.7.1", default-features = false }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+typeshare = "1.0.5"
+rosc = "0.11.4"
+rustc-hash = "2.1.3"
+uuid = { version = "1.26", features = ["serde", "v4", "v5"] }
+web-time = { version = "1.1", features = ["serde"] }
+wit-component = "0.258"
+
+[profile.dev]
+incremental = true            # Improve consecutive recompile performance
+opt-level = 1                 # Enable a small amount of optimization in debug mode
+
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+[profile.dev.package."*"]
+debug = false
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+codegen-units = 16
+incremental = false # for sccache
+
+[profile.dev.package.nightfall-engine]
+debug-assertions = true
+
+[profile.dev.package.nightfall-desk]
+debug-assertions = true
+
+[profile.dev.package.tauri-utils]
+# prevent IDE errors from generate_context macro
+# see https://github.com/tauri-apps/tauri/issues/13865
+debug-assertions = true
+
+# -- START WORKAROUND --
+# Keep debug assertions enabled for the Tauri/WebView stack in dev builds.
+# This repo disables dependency debug assertions globally above, but Tauri/Wry
+# gate web inspector support behind `debug_assertions`, so debug NSIS builds
+# lose devtools unless these crates are opted back in explicitly.
+[profile.dev.package.tauri]
+debug-assertions = true
+
+[profile.dev.package.tauri-runtime]
+debug-assertions = true
+
+[profile.dev.package.tauri-runtime-wry]
+debug-assertions = true
+
+[profile.dev.package.wry]
+debug-assertions = true
+# -- END WORKAROUND --
+
+[profile.samply]
+inherits = "dev"
+debug = true
+
+[workspace.lints.clippy]
+collapsible_if = { level = "allow", priority = 0 }

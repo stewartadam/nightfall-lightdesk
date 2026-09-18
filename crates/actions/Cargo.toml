@@ -1,0 +1,16 @@
+[package]
+name = "nightfall-actions"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

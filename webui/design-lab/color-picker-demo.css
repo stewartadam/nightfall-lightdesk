@@ -1,0 +1,69 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.color-picker-demo-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 32px;
+  margin-top: 24px;
+}
+.lab-color-picker {
+  max-width: 100%;
+}
+.lab-color-picker > .flex-row {
+  flex-wrap: wrap;
+}
+.lab-color-picker [aria-label="Picker shape"] button {
+  background: var(--raised);
+  border-color: var(--line);
+  color: var(--muted);
+  padding: 7px 12px;
+  text-transform: capitalize;
+}
+.lab-color-picker [aria-label="Picker shape"] button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: #ebeeed;
+}
+.lab-color-picker :is(canvas, [aria-label="Color presets"] button) {
+  border-color: var(--line);
+  border-radius: var(--nf-corner-radius, 5px);
+}
+.lab-color-picker button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.lab-color-picker [role="tab"] {
+  color: var(--muted);
+  padding: 6px 0;
+}
+.lab-color-picker [role="tab"][aria-selected="true"] {
+  color: #ebeeed;
+  border-bottom-color: var(--accent);
+}
+.lab-color-picker [role="tabpanel"] {
+  color: #ebeeed;
+  padding-top: 6px;
+}
+.color-picker-demo-preview {
+  width: 180px;
+}
+.color-picker-demo-swatch {
+  height: 112px;
+  margin: 14px 0;
+  border-radius: var(--nf-corner-radius, 8px);
+  border: 1px solid var(--line);
+}
+.color-picker-demo-preview output {
+  font-family: monospace;
+  font-size: 14px;
+}
+.color-picker-demo-preview .nf-button {
+  margin-top: 14px;
+}

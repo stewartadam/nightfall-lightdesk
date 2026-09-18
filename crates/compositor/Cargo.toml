@@ -1,0 +1,29 @@
+[package]
+license.workspace = true
+name = "nightfall-compositor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Bevy integration
+bevy_ecs.workspace = true
+bevy_app.workspace = true
+
+# Internal dependencies
+nightfall = { path = "../common" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+
+# Utilities
+moonshine-kind.workspace = true
+tracing.workspace = true
+rustc-hash.workspace = true
+serde.workspace = true
+smart-default.workspace = true
+web-time.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "make": "Generic",
+  "model": "Strobe Matrix",
+  "behavior": "strobe-panel",
+  "geometry": {
+    "nodes": [
+      {
+        "id": "emitter",
+        "type": "emitter"
+      }
+    ],
+    "emitters": [
+      {
+        "nodeId": "emitter",
+        "elementRange": [1, 1]
+      }
+    ]
+  }
+}

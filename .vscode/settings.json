@@ -1,0 +1,54 @@
+{
+  "cSpell.words": [
+    "Bimap",
+    "cmdline",
+    "Comlink",
+    "dashmap",
+    "despawn",
+    "Dmxval",
+    "GDTF",
+    "ledbar",
+    "mapref",
+    "materializer",
+    "mcue",
+    "mcues",
+    "minicbor",
+    "msequence",
+    "multimap",
+    "netdev",
+    "Rematerialize",
+    "nightfall",
+    "sacn",
+    "schemars",
+    "showfile",
+    "slotmap",
+    "startcode",
+    "Submaster",
+    "Timecode",
+    "timestep",
+    "tungstenite",
+    "typetag",
+    "udmx"
+  ],
+  "rust-analyzer.showUnlinkedFileNotification": false,
+  "rust-analyzer.cargo.features": "all",
+  //"rust-analyzer.cargo.targetDir": true,
+  "html.customData": [
+    "./node_modules/@shoelace-style/shoelace/dist/vscode.html-custom-data.json"
+  ],
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true
+  },
+  "[rust]": {
+    "editor.formatOnSave": true
+  },
+  "editor.codeActionsOnSave": {
+    "source.organizeImports.biome": "explicit",
+    "source.fixAll.biome": "explicit"
+  }
+}

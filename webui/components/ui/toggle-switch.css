@@ -1,0 +1,76 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted, #a0a7aa);
+  font-size: 12px;
+}
+.nf-switch-control {
+  position: relative;
+  display: inline-flex;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.nf-switch-control input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.nf-switch-track {
+  width: 36px;
+  height: 20px;
+  border: 1px solid var(--line, #34383b);
+  border-radius: 999px;
+  background: var(--raised, #222527);
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+.nf-switch-thumb {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ebeeed;
+  transition: transform 120ms;
+}
+.nf-switch-control input:checked ~ .nf-switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.nf-switch-control input:checked ~ .nf-switch-thumb {
+  transform: translateX(16px);
+  background: var(--panel, #191b1d);
+}
+.nf-switch-control input:focus-visible ~ .nf-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.nf-switch[data-disabled="true"] {
+  opacity: 0.5;
+}
+.nf-switch-control input:disabled {
+  cursor: not-allowed;
+}
+:root[data-reduced-motion="true"] {
+  .nf-switch-track,
+  .nf-switch-thumb {
+    transition: none;
+  }
+}

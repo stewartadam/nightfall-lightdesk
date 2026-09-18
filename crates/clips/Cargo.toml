@@ -1,0 +1,23 @@
+[package]
+name = "nightfall-clips"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_ecs.workspace = true
+nightfall = { path = "../common" }
+nightfall-instances = { path = "../instances" }
+nightfall-playback-planner = { path = "../playback-planner" }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+smart-default.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+bevy_app.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,52 @@
+[
+  {
+    "package": "cargo:dasp_sample@0.11.0",
+    "file": "rustaudio-sample-b1d6df41ed3a.txt",
+    "sha256": "b1d6df41ed3aa96806e74c729444d7c121d90e6660a6aed01d298e03fde475a0",
+    "source": "https://raw.githubusercontent.com/rustaudio/sample/97c3bb9b2363c0b46ac1633858bf1054fd02a980/LICENSE-MIT"
+  },
+  {
+    "package": "cargo:cranelift-assembler-x64@0.135.1",
+    "file": "bytecodealliance-wasmtime-268872b9816f.txt",
+    "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+    "source": "https://raw.githubusercontent.com/bytecodealliance/wasmtime/7bac2c2775808aaec5d4aa5627a5e447b51102cf/LICENSE"
+  },
+  {
+    "package": "cargo:cranelift-assembler-x64-meta@0.135.1",
+    "file": "bytecodealliance-wasmtime-268872b9816f.txt",
+    "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+    "source": "https://raw.githubusercontent.com/bytecodealliance/wasmtime/7bac2c2775808aaec5d4aa5627a5e447b51102cf/LICENSE"
+  },
+  {
+    "package": "cargo:partially@0.2.1",
+    "file": "bengreenier-partially-336aaefa5765.txt",
+    "sha256": "336aaefa5765431805f2a02952f2be83e3261e6128c438a6e2ff78c6aaef61d8",
+    "source": "https://raw.githubusercontent.com/bengreenier/partially/d7883b4ec1eafe3093e971306426068e15fdc2a2/LICENSE-MIT"
+  },
+  {
+    "package": "cargo:partially_derive@0.2.1",
+    "file": "bengreenier-partially-336aaefa5765.txt",
+    "sha256": "336aaefa5765431805f2a02952f2be83e3261e6128c438a6e2ff78c6aaef61d8",
+    "source": "https://raw.githubusercontent.com/bengreenier/partially/d7883b4ec1eafe3093e971306426068e15fdc2a2/LICENSE-MIT"
+  },
+  {
+    "package": "cargo:wasmtime-internal-core@48.0.1",
+    "file": "bytecodealliance-wasmtime-268872b9816f.txt",
+    "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+    "source": "https://raw.githubusercontent.com/bytecodealliance/wasmtime/7bac2c2775808aaec5d4aa5627a5e447b51102cf/LICENSE"
+  },
+  {
+    "package": "cargo:enum-flags@0.4.0",
+    "file": "enum-flags-MIT.txt",
+    "source": "https://github.com/mokeyish/enum-flags/blob/ce28b1c1b680b4d2d25eaaa7dabd45ea1535c32b/Cargo.toml",
+    "sha256": "ab0e16cf53040a0b20856e528d6e3ddea8bbf37e94a7ba48ad29f8ddd2a8dec6"
+  },
+  {
+    "name": "Phosphor Icons (original artwork)",
+    "version": "2.1.1",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz",
+    "file": "phosphor-core-2.1.1.txt",
+    "sha256": "b5b1f1da112d18ea2147decfd48ddc1bf2b5aeb6c265381579340e95b15a2bb2"
+  }
+]

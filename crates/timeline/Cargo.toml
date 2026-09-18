@@ -1,0 +1,54 @@
+[package]
+name = "nightfall-timeline"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["multipart"], optional = true }
+bevy_app.workspace = true
+bevy_diagnostic.workspace = true
+bevy_ecs.workspace = true
+moonshine-kind.workspace = true
+nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
+nightfall-audio = { path = "../audio", optional = true }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-cues = { path = "../cues" }
+nightfall-desk = { path = "../desk", default-features = false }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-clips = { path = "../clips" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-fx = { path = "../fx" }
+nightfall-lookahead = { path = "../lookahead" }
+nightfall-playback-planner = { path = "../playback-planner" }
+nightfall-instances = { path = "../instances" }
+nightfall-selection = { path = "../selection" }
+nightfall-timecode = { path = "../timecode" }
+nightfall-undo = { path = "../undo" }
+nightfall-websocket = { path = "../websocket", optional = true }
+rodio = { version = "0.22", optional = true, default-features = false, features = ["wav", "mp3", "mp4"] }
+rten = { version = "0.26", optional = true, features = ["fft"] }
+rten-tensor = { version = "0.26", optional = true }
+rustfft = { version = "6", optional = true }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+web-time.workspace = true
+
+[features]
+default = []
+audio = ["dep:nightfall-audio"]
+beatgrid-detect = ["dep:rodio", "dep:rten", "dep:rten-tensor", "dep:rustfft"]
+http = ["dep:axum", "dep:nightfall-websocket"]
+
+[dev-dependencies]
+nightfall-flow = { path = "../flow" }
+nightfall-fx-module = { path = "../fx-module" }
+
+[lints]
+workspace = true

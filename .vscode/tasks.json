@@ -1,0 +1,92 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "nightfall: fps 5",
+      "type": "shell",
+      "command": "echo 'fps 5' | cargo run",
+      "problemMatcher": "$rustc",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "nightfall: network input generator",
+      "type": "shell",
+      "command": "cargo run -p \"nightfall-input-${input:sender_protocol}\" --bin \"send_${input:sender_protocol}\" -- --universe ${input:universe} --pattern ${input:pattern}",
+      "problemMatcher": "$rustc",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "playwright: start dev servers",
+      "dependsOn": ["nightfall: fps 5", "npm: dev"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "worktree dashboard: api",
+      "type": "shell",
+      "command": "node --watch worktree-dashboard/worktree-dashboard.mjs",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "worktree dashboard: mcp",
+      "type": "shell",
+      "command": "node worktree-dashboard/worktree-dashboard-mcp.mjs",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "worktree dashboard: ui",
+      "type": "shell",
+      "command": "npm run worktree:dashboard:ui",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "worktree dashboard: launch (ui+api)",
+      "dependsOn": ["worktree dashboard: api", "worktree dashboard: ui"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "sender_protocol",
+      "type": "pickString",
+      "options": ["artnet", "sacn"],
+      "description": "Select the protocol for the sender"
+    },
+    {
+      "id": "universe",
+      "type": "promptString",
+      "description": "Enter the universe number for the sender",
+      "default": "1"
+    },
+    {
+      "id": "pattern",
+      "type": "promptString",
+      "description": "Enter the pattern to send (e.g., 'solid:N', 'ramp', 'chase')",
+      "default": "ramp"
+    }
+  ]
+}

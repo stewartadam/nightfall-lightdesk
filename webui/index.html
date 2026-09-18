@@ -1,0 +1,257 @@
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at https://mozilla.org/MPL/2.0/.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nightfall</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="stylesheet" href="index.css" />
+  <script>
+    /** Applies the saved motion preference before the bootstrap splash can paint. */
+    (() => {
+      let preference = "auto";
+      try {
+        const saved = JSON.parse(localStorage.getItem("nightfall-appearance") || "null");
+        if (saved?.reducedMotion === "on" || saved?.reducedMotion === "off") {
+          preference = saved.reducedMotion;
+        }
+      } catch {
+        // Unavailable or malformed storage falls back to the system preference.
+      }
+      document.documentElement.dataset.reducedMotion = String(
+        preference === "on" ||
+        (preference === "auto" && matchMedia("(prefers-reduced-motion: reduce)").matches)
+      );
+    })();
+  </script>
+  <style>
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: #0a0a0a;
+      color: #f5f5f5;
+    }
+
+    .bootstrap-splash {
+      display: flex;
+      width: 100%;
+      height: 100vh;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #0a0a0a;
+      color: #f5f5f5;
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    .bootstrap-splash-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+      padding: 0 1.5rem 5rem;
+      text-align: center;
+    }
+
+    .bootstrap-splash-title {
+      margin: 0;
+      font-size: 1.875rem;
+      font-weight: 600;
+      line-height: 2.25rem;
+    }
+
+    .bootstrap-logo-shell {
+      border: 1px solid rgb(255 255 255 / 0.1);
+      border-radius: 2.1rem;
+      background: rgb(10 10 10 / 0.8);
+      padding: 0.25rem;
+      box-shadow:
+        0 28px 80px rgb(0 0 0 / 0.58),
+        0 12px 32px rgb(0 0 0 / 0.46),
+        inset 0 1px 0 rgb(255 255 255 / 0.13),
+        0 0 42px rgb(124 92 255 / 0.14);
+    }
+
+    .bootstrap-logo {
+      display: block;
+      width: 9rem;
+      height: 9rem;
+      border-radius: 1.85rem;
+    }
+
+    .bootstrap-status {
+      margin: 0;
+      color: #a3a3a3;
+      font-size: 1.125rem;
+      line-height: 1.75rem;
+    }
+
+    .bootstrap-status-dot {
+      display: inline-block;
+      width: 1.5rem;
+      margin-left: 0.5rem;
+      text-align: left;
+      white-space: pre;
+      animation: bootstrap-status-dot 1s steps(4, end) infinite;
+    }
+
+    .bootstrap-fader {
+      transform-box: fill-box;
+      transform-origin: center;
+      will-change: transform;
+      animation-duration: 1s;
+      animation-iteration-count: infinite;
+      animation-timing-function: steps(4, end);
+    }
+
+    .bootstrap-fader-left {
+      animation-name: bootstrap-fader-left;
+    }
+
+    .bootstrap-fader-middle {
+      animation-name: bootstrap-fader-middle;
+    }
+
+    .bootstrap-fader-right {
+      animation-name: bootstrap-fader-right;
+    }
+
+    @keyframes bootstrap-fader-left {
+      0% {
+        transform: translateY(0);
+      }
+      25% {
+        transform: translateY(5px);
+      }
+      50% {
+        transform: translateY(-3px);
+      }
+      75% {
+        transform: translateY(1px);
+      }
+      100% {
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes bootstrap-fader-middle {
+      0% {
+        transform: translateY(0);
+      }
+      25% {
+        transform: translateY(-5px);
+      }
+      50% {
+        transform: translateY(3px);
+      }
+      75% {
+        transform: translateY(-1px);
+      }
+      100% {
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes bootstrap-fader-right {
+      0% {
+        transform: translateY(0);
+      }
+      25% {
+        transform: translateY(3px);
+      }
+      50% {
+        transform: translateY(-5px);
+      }
+      75% {
+        transform: translateY(5px);
+      }
+      100% {
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes bootstrap-status-dot {
+      0% {
+        content: ".  ";
+      }
+      25% {
+        content: " . ";
+      }
+      50% {
+        content: "  .";
+      }
+      75% {
+        content: " . ";
+      }
+    }
+
+    .bootstrap-status-dot::before {
+      content: ".  ";
+      animation: bootstrap-status-dot 1s steps(4, end) infinite;
+    }
+
+    @media (min-width: 768px) {
+      .bootstrap-logo-shell {
+        border-radius: 2.35rem;
+      }
+
+      .bootstrap-logo {
+        width: 11rem;
+        height: 11rem;
+        border-radius: 2.1rem;
+      }
+    }
+
+    :root[data-reduced-motion="true"] {
+      .bootstrap-fader,
+      .bootstrap-status-dot,
+      .bootstrap-status-dot::before {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+
+<body class="h-screen overflow-hidden overscroll-x-none bg-neutral-950">
+  <main id="app" class="h-screen overflow-hidden">
+    <div id="bootstrap-splash" class="bootstrap-splash" role="status" aria-label="Starting nightfall">
+      <div class="bootstrap-splash-content">
+        <h1 class="bootstrap-splash-title">nightfall</h1>
+        <div class="bootstrap-logo-shell">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="nightfall logo"
+            class="bootstrap-logo">
+            <rect width="32" height="32" rx="7" fill="#0B1020" />
+            <path
+              d="M7.2 1.2H24.8C28.1 1.2 30.8 3.9 30.8 7.2V8.4C25.8 5.9 19.9 4.7 13.2 4.7H1.2C2 2.6 4.1 1.2 7.2 1.2Z"
+              fill="rgba(255,255,255,0.08)" />
+            <rect x="8" y="8" width="3" height="16" rx="1.5" fill="#E6E8FF" />
+            <rect x="14.5" y="8" width="3" height="16" rx="1.5" fill="#E6E8FF" />
+            <rect x="21" y="8" width="3" height="16" rx="1.5" fill="#E6E8FF" />
+            <rect class="bootstrap-fader bootstrap-fader-left" x="6.8" y="13" width="5.4" height="4" rx="2"
+              fill="#7C5CFF" />
+            <rect class="bootstrap-fader bootstrap-fader-middle" x="13.3" y="10.5" width="5.4" height="4" rx="2"
+              fill="#31D0AA" />
+            <rect class="bootstrap-fader bootstrap-fader-right" x="19.8" y="16.5" width="5.4" height="4" rx="2"
+              fill="#FFB020" />
+          </svg>
+        </div>
+        <p class="bootstrap-status">Starting engine<span class="bootstrap-status-dot" aria-hidden="true"></span></p>
+      </div>
+    </div>
+  </main>
+  <script type="module" src="main.tsx"></script>
+</body>
+
+</html>

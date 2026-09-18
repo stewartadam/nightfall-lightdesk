@@ -1,0 +1,31 @@
+[package]
+name = "nightfall-object-library"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+base64.workspace = true
+notify.workspace = true
+nightfall = { path = "../common" }
+nightfall-engine = { path = "../engine" }
+nightfall-scene-objects = { path = "../scene-objects" }
+nightfall-websocket = { path = "../websocket" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+async-channel.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,86 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  min-height: 46px;
+  gap: 8px;
+  padding: 7px;
+  border: 0;
+  border-bottom: 1px solid var(--line, #34383b);
+  border-radius: 0;
+  background: #141718;
+}
+.nf-toolbar-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 3px;
+}
+.nf-panel-toolbar[data-position="footer"] {
+  border-bottom: 0;
+  border-top: 1px solid var(--line, #34383b);
+}
+.nf-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--nf-corner-radius, 5px);
+  color: #c7cdca;
+  background: transparent;
+  cursor: pointer;
+}
+.nf-toolbar-button[data-size="labeled"] {
+  width: auto;
+  gap: 6px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.nf-toolbar-button:hover:not(:disabled) {
+  background: var(--raised, #24282a);
+}
+.nf-toolbar-button[aria-pressed="true"] {
+  --button-selection-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: var(--button-selection-shadow);
+}
+.nf-toolbar-button[data-variant="danger"]:enabled {
+  color: #f79a9e;
+}
+.nf-toolbar-button[data-variant="danger"]:hover:enabled {
+  background: #632c32;
+}
+.nf-toolbar-button[data-variant="danger"][aria-pressed="true"] {
+  --button-selection-shadow: inset 0 0 0 1px #f79a9e;
+  background: #632c3266;
+}
+.nf-toolbar-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: transparent;
+}
+.nf-toolbar-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.nf-toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--line, #34383b);
+  margin: 0 6px;
+}

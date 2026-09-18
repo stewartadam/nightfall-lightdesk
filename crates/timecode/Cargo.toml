@@ -1,0 +1,23 @@
+[package]
+name = "nightfall-timecode"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_time.workspace = true
+nightfall = { path = "../common" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-engine = { path = "../engine" }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+web-time.workspace = true
+
+[lints]
+workspace = true

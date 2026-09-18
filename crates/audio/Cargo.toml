@@ -1,0 +1,17 @@
+[package]
+name = "nightfall-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true }
+rodio = { version = "0.22", default-features = false, features = ["wav", "mp3", "mp4", "playback", "tracing"] }
+nightfall-engine = { path = "../engine" }
+nightfall-service-host = { path = "../service_host" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

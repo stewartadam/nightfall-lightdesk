@@ -1,0 +1,66 @@
+[
+  {
+    "name": "flow partial action prefix",
+    "input": "flow 1 st",
+    "status": "error",
+    "furthest_pos": 7,
+    "expected_rules": ["flow_actions"],
+    "expected_inserts": ["start", "stop"]
+  },
+  {
+    "name": "timecode partial action prefix",
+    "input": "timecode 1 pa",
+    "status": "error",
+    "furthest_pos": 11,
+    "expected_rules": ["timecode_actions"],
+    "expected_inserts": ["pause"]
+  },
+  {
+    "name": "timeline partial action prefix",
+    "input": "timeline 1 st",
+    "status": "error",
+    "furthest_pos": 11,
+    "expected_rules": ["timeline_actions"],
+    "expected_inserts": ["start", "stop"]
+  },
+  {
+    "name": "clip partial action prefix",
+    "input": "clip 1 go",
+    "status": "ok",
+    "furthest_pos": 9,
+    "expected_rules": ["playback_actions"],
+    "expected_inserts": ["go", "goto"]
+  },
+  {
+    "name": "rm partial object type alias",
+    "input": "rm pat",
+    "status": "error",
+    "furthest_pos": 3,
+    "expected_rules": ["object_type"],
+    "expected_inserts": ["patch", "path"]
+  },
+  {
+    "name": "patch delete alias",
+    "input": "del patch @ disabled",
+    "status": "ok",
+    "furthest_pos": 20,
+    "expected_rules": ["transport_name"],
+    "expected_inserts": ["disabled"]
+  },
+  {
+    "name": "mixed-case command head",
+    "input": "LoG",
+    "status": "error",
+    "furthest_pos": 3,
+    "expected_rules": ["command", "log_commands"],
+    "expected_inserts": ["0..9", "filter", "fixture", "level"]
+  },
+  {
+    "name": "partial top-level alias prefix",
+    "input": "pa",
+    "status": "error",
+    "furthest_pos": 0,
+    "expected_rules": ["command"],
+    "expected_inserts": ["parameter", "patch"]
+  }
+]

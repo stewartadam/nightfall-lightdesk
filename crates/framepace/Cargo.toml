@@ -1,0 +1,16 @@
+[package]
+name = "nightfall-framepace"
+version.workspace = true
+license = "MIT"
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_reflect.workspace = true
+nightfall-engine = { path = "../engine" }
+spin_sleep = "1.3.3"
+tracing.workspace = true
+
+[lints]
+workspace = true

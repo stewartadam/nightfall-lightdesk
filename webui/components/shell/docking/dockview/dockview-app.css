@@ -1,0 +1,36 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.dv-tab.dv-active-tab .dv-default-tab .dv-default-tab-content span {
+  font-weight: 600;
+}
+
+.nightfall-dockview-edge-drop-target.dv-drop-target
+  > .dv-drop-target-dropzone
+  > .dv-drop-target-selection {
+  border: var(--dv-drag-over-border, none);
+  background-color: var(--dv-drag-over-background-color, rgba(83, 89, 93, 0.5));
+}
+
+.nightfall-dockview-edge-drop-target.dv-drop-target
+  > .dv-drop-target-dropzone
+  > .dv-drop-target-selection.dv-drop-target-bottom.dv-drop-target-small-vertical {
+  border-bottom: 1px solid var(--dv-drag-over-border-color, transparent);
+}
+
+.nightfall-dockview-edge-drop-target.dv-drop-target
+  > .dv-drop-target-dropzone
+  > .dv-drop-target-selection.dv-drop-target-left.dv-drop-target-small-horizontal {
+  border-left: 1px solid var(--dv-drag-over-border-color, transparent);
+}
+
+.nightfall-dockview-edge-drop-target.dv-drop-target
+  > .dv-drop-target-dropzone
+  > .dv-drop-target-selection.dv-drop-target-right.dv-drop-target-small-horizontal {
+  border-right: 1px solid var(--dv-drag-over-border-color, transparent);
+}

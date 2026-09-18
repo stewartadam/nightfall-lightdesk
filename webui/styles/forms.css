@@ -1,0 +1,86 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Native defaults stay below component variants and Tailwind utilities. */
+@layer base {
+  :is(input, textarea, select):where(
+    input:not([type]),
+    input[type="text"],
+    input[type="number"],
+    input[type="search"],
+    input[type="email"],
+    input[type="password"],
+    input[type="url"],
+    input[type="tel"],
+    input[type="date"],
+    input[type="datetime-local"],
+    input[type="month"],
+    input[type="week"],
+    input[type="time"],
+    textarea,
+    select
+  ) {
+    --nf-control-padding: 9px 10px;
+    --nf-control-height: 38px;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: var(--nf-control-height);
+    padding: var(--nf-control-padding);
+    border: 1px solid var(--line);
+    border-radius: var(--nf-corner-radius);
+    background-color: var(--raised);
+    color: var(--color-neutral-100);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+
+    .compact & {
+      --nf-control-padding: 6px 8px;
+      --nf-control-height: 32px;
+    }
+    &[data-density="comfortable"] {
+      --nf-control-padding: 9px 10px;
+      --nf-control-height: 38px;
+    }
+    &[data-density="compact"] {
+      --nf-control-padding: 4px 8px;
+      --nf-control-height: 28px;
+    }
+    &[data-inherited="true"],
+    &::placeholder {
+      color: var(--muted);
+    }
+    &[readonly],
+    &:disabled {
+      color: var(--muted);
+      background-color: var(--panel);
+    }
+    &[aria-invalid="true"] {
+      border-color: var(--color-invalid);
+    }
+  }
+  textarea {
+    resize: vertical;
+    min-height: 80px;
+    &[data-density="compact"] {
+      min-height: 56px;
+    }
+  }
+  :where(input[type="checkbox"], input[type="radio"]) {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+  }
+  :where(input, textarea, select):disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}

@@ -1,0 +1,24 @@
+[package]
+name = "nightfall-input-midi"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+midir = "0.11"
+nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
+nightfall-coremidi-hotplug = { path = "../coremidi_hotplug" }
+nightfall-engine = { path = "../engine" }
+nightfall-service-host = { path = "../service_host" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

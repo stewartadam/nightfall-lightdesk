@@ -1,0 +1,25 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+[role="grid"][aria-readonly="true"] {
+  --data-grid-bg: var(--panel, #191b1d);
+  --data-grid-header-bg: var(--panel, #191b1d);
+  background: var(--panel, #191b1d);
+  color: var(--text, #ebeeed);
+  font-size: 12px;
+}
+[role="grid"][aria-readonly="true"] [role="gridcell"] {
+  cursor: default;
+}
+[role="grid"][aria-readonly="true"] [role="columnheader"][aria-sort] {
+  cursor: pointer;
+}
+[data-grid-resize-handle]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

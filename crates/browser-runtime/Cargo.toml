@@ -1,0 +1,53 @@
+[package]
+name = "nightfall-browser-runtime"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+async-channel.workspace = true
+bevy_app.workspace = true
+bevy_ecs = { workspace = true, features = ["debug"] }
+bevy_state.workspace = true
+bevy_time.workspace = true
+js-sys = "0.3"
+moonshine-kind.workspace = true
+nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
+nightfall-cues = { path = "../cues" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-desk = { path = "../desk", default-features = false }
+nightfall-engine = { path = "../engine" }
+nightfall-clips = { path = "../clips" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-flow = { path = "../flow", default-features = false }
+nightfall-fx = { path = "../fx" }
+nightfall-instances = { path = "../instances" }
+nightfall-programmer = { path = "../programmer" }
+nightfall-scene-objects = { path = "../scene-objects" }
+nightfall-showfile = { path = "../showfile" }
+nightfall-timecode = { path = "../timecode" }
+nightfall-timeline = { path = "../timeline", default-features = false }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+serde_json.workspace = true
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+uuid.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bevy_app = { workspace = true, features = ["web"] }
+bevy_platform = { workspace = true, features = ["web"] }
+uuid = { workspace = true, features = ["js"] }
+web-sys = { version = "0.3", features = ["DedicatedWorkerGlobalScope"] }
+
+[dev-dependencies]
+minicbor-serde.workspace = true
+
+[lints]
+workspace = true

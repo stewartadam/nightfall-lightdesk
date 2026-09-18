@@ -1,0 +1,102 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-layout-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.nf-layout-modified {
+  visibility: hidden;
+  color: var(--accent);
+}
+
+.nf-layout-slot[data-modified="true"] .nf-layout-modified {
+  visibility: visible;
+}
+
+.nf-layout-slot .nf-toolbar-button.nf-layout-slot-trigger {
+  max-width: 190px;
+  padding-right: 30px;
+}
+
+.nf-layout-slot .nf-layout-slot-trigger:focus-visible {
+  outline-offset: -2px;
+}
+
+.nf-layout-slot > [data-component="DropdownMenu"] {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.nf-layout-slot-menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nf-layout-slot:hover .nf-layout-slot-menu,
+.nf-layout-slot:has(:focus-visible) .nf-layout-slot-menu,
+.nf-layout-slot:has([aria-expanded="true"]) .nf-layout-slot-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.nf-layout-slot-menu:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.nf-button.nf-layout-slot-add,
+.nf-button.nf-layout-slot-add:hover:enabled {
+  border: 0;
+  color: var(--muted, #9ca3af);
+}
+
+@media (hover: none) {
+  .nf-layout-slot-menu {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.nf-layout-slot-trigger[draggable="true"] {
+  cursor: grab;
+}
+
+.nf-layout-slot[data-dragging="true"] {
+  opacity: 0.5;
+}
+
+.nf-layout-slot[data-drop-side]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.nf-layout-slot[data-drop-side="before"]::after {
+  left: -3px;
+}
+
+.nf-layout-slot[data-drop-side="after"]::after {
+  right: -3px;
+}

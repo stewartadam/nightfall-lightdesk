@@ -1,0 +1,59 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.data-grid-demo > .nf-segmented-tabs {
+  flex-shrink: 0;
+  margin: 0 var(--panel-padding);
+}
+.data-grid-variant-content {
+  flex: 1;
+  min-height: 0;
+}
+.data-grid-variant-content[hidden] {
+  display: none;
+}
+.lab-monitor-scroll {
+  flex: 1;
+  margin: 0 var(--panel-padding);
+}
+.monitor-timecode {
+  font-variant-numeric: tabular-nums;
+  font-family: monospace;
+  white-space: nowrap;
+}
+.monitor-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.monitor-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.monitor-state[data-state="Running"] i {
+  background: #58c58a;
+}
+.monitor-state[data-state="Paused"] i {
+  background: #f6bf54;
+}
+.monitor-state[data-state="Waiting"] i {
+  background: #398bfa;
+}
+.progress-table-toolbar {
+  flex-wrap: wrap;
+  gap: 12px 18px;
+}
+.progress-table-scrubber {
+  flex: 1 1 200px;
+  max-width: 320px;
+  min-width: 0;
+  padding: 12px 0 16px;
+}

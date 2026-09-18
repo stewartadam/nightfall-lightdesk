@@ -1,0 +1,4 @@
+{
+  "note": "Curated architectural exceptions. New or stale dependency violations fail the web UI architecture test.",
+  "exceptions": []
+}

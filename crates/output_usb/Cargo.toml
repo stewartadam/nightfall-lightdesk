@@ -1,0 +1,21 @@
+[package]
+name = "nightfall-output-usb"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+futures-util.workspace = true
+nusb = "0.2"
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-io = { path = "../io" }
+nightfall-service-host = { path = "../service_host" }
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

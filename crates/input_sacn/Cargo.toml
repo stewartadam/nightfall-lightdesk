@@ -1,0 +1,23 @@
+[package]
+name = "nightfall-input-sacn"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-io = { path = "../io" }
+nightfall-service-host = { path = "../service_host" }
+sacn.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+nightfall-compositor = { path = "../compositor" }
+nightfall-fixtures = { path = "../fixtures" }
+
+[lints]
+workspace = true

@@ -1,0 +1,48 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-accent-picker {
+  min-width: 0;
+}
+.nf-accent-picker legend {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.nf-accent-picker .nf-accent-name {
+  color: var(--muted);
+  font-weight: 400;
+}
+.nf-accent-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.nf-accent-options button {
+  width: 100%;
+  height: 34px;
+  position: relative;
+  background: transparent;
+  padding: 5px;
+}
+.nf-accent-options button span {
+  width: 100%;
+  height: 100%;
+  background: var(--swatch);
+  border-radius: var(--nf-corner-radius, 3px);
+}
+.nf-accent-options button[aria-pressed="true"] {
+  border-color: var(--swatch);
+}
+.nf-accent-options svg {
+  position: absolute;
+  color: #101112;
+}

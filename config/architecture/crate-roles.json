@@ -1,0 +1,63 @@
+{
+  "note": "Architectural role assignments for every Cargo workspace crate.",
+  "roles": {
+    "foundation": [
+      "open-fixture-library",
+      "nightfall",
+      "nightfall-actions",
+      "nightfall-cmd-parse",
+      "nightfall-config",
+      "nightfall-coremidi-hotplug",
+      "nightfall-dmx",
+      "nightfall-engine-derive",
+      "nightfall-io",
+      "nightfall-lookahead-projection",
+      "nightfall-instances",
+      "nightfall-playback-planner",
+      "nightfall-selection",
+      "nightfall-waveform"
+    ],
+    "infrastructure": [
+      "nightfall-compositor",
+      "nightfall-engine",
+      "nightfall-clips",
+      "nightfall-fixtures",
+      "nightfall-framepace",
+      "nightfall-lookahead",
+      "nightfall-service-host",
+      "nightfall-timecode",
+      "nightfall-undo",
+      "nightfall-websocket"
+    ],
+    "domain": [
+      "nightfall-audio",
+      "nightfall-cues",
+      "nightfall-fixture-library",
+      "nightfall-flow",
+      "nightfall-fx",
+      "nightfall-fx-module",
+      "nightfall-input-artnet",
+      "nightfall-input-midi",
+      "nightfall-input-osc",
+      "nightfall-input-sacn",
+      "nightfall-object-library",
+      "nightfall-output-artnet",
+      "nightfall-output-sacn",
+      "nightfall-output-usb",
+      "nightfall-programmer",
+      "nightfall-scene-objects",
+      "nightfall-timeline"
+    ],
+    "integration": [
+      "nightfall-desk",
+      "nightfall-desk-audio",
+      "nightfall-showfile",
+      "nightfall-wasm-bridge"
+    ],
+    "composition": [
+      "nightfall-app",
+      "nightfall-browser-runtime",
+      "nightfall-cli"
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/schema-12.5.0/schemas/fixture.json",
+  "name": "Practice RGBI",
+  "categories": ["Color Changer"],
+  "meta": {
+    "authors": ["Nightfall contributors"],
+    "createDate": "2026-09-04",
+    "lastModifyDate": "2026-09-04"
+  },
+  "comment": "Virtual four-channel light for the Nightfall getting-started tutorial; not a profile for a physical product.",
+  "physical": {
+    "bulb": {
+      "type": "LED"
+    },
+    "lens": {
+      "degreesMinMax": [25, 25]
+    }
+  },
+  "availableChannels": {
+    "Intensity": {
+      "capability": {
+        "type": "Intensity"
+      }
+    },
+    "Red": {
+      "capability": {
+        "type": "ColorIntensity",
+        "color": "Red"
+      }
+    },
+    "Green": {
+      "capability": {
+        "type": "ColorIntensity",
+        "color": "Green"
+      }
+    },
+    "Blue": {
+      "capability": {
+        "type": "ColorIntensity",
+        "color": "Blue"
+      }
+    }
+  },
+  "modes": [
+    {
+      "name": "4 channel",
+      "channels": ["Intensity", "Red", "Green", "Blue"]
+    }
+  ]
+}

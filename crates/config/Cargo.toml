@@ -1,0 +1,16 @@
+[package]
+name = "nightfall-config"
+description = "Typed startup configuration for Nightfall"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+dotenv.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

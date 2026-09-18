@@ -1,0 +1,26 @@
+[aliases]
+done = "git -C {{ primary_worktree_path }} pull && wt remove {{ args }}"
+kill-backend = "WORKTREE_TARGET={{ managed_worktree_path | default(worktree_path) }} node ./scripts/stop-processes.mjs"
+
+[[pre-start]]
+setup-env = "node ./scripts/setup-env.mjs"
+copy-beat-this-model = "node ./scripts/seed-beat-this-model-from-main.mjs"
+download-beat-this-model = "node ./scripts/download-beat-this-model.mjs"
+
+[[pre-start]]
+install = "npm install"
+typeshare = "npm run typeshare"
+
+[[post-start]]
+copy-target = "node ./scripts/seed-target-from-main.mjs"
+copy-data-dir = "node ./scripts/seed-data-dir-from-main.mjs {{ args }}"
+copy-assets = "cp -a {{ primary_worktree_path }}/webui/assets webui"
+
+[[post-start]]
+build = "cargo build --workspace"
+wasm-build = "npm run wasm-build:dev"
+
+[pre-remove]
+stop-services = "wt step kill-backend --managed-worktree-path={{ worktree_path }} --yes"
+
+# note: merge hooks are handled by prek

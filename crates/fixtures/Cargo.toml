@@ -1,0 +1,40 @@
+[package]
+name = "nightfall-fixtures"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_diagnostic.workspace = true
+bevy_ecs.workspace = true
+bimap.workspace = true
+dashmap.workspace = true
+moonshine-kind.workspace = true
+nightfall = { path = "../common" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-engine = { path = "../engine" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-io = { path = "../io" }
+nightfall-instances = { path = "../instances" }
+nightfall-selection = { path = "../selection" }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+serde_json.workspace = true
+smart-default.workspace = true
+typeshare.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+web-time.workspace = true
+
+[dev-dependencies]
+bevy.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "compositor"
+harness = false
+
+[lints]
+workspace = true

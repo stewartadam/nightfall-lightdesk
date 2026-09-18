@@ -1,0 +1,24 @@
+[package]
+name = "nightfall-input-artnet"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+artnet_protocol.workspace = true
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-io = { path = "../io" }
+nightfall-service-host = { path = "../service_host" }
+socket2 = { workspace = true, features = ["all"] }
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+nightfall-compositor = { path = "../compositor" }
+nightfall-fixtures = { path = "../fixtures" }
+
+[lints]
+workspace = true

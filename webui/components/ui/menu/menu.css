@@ -1,0 +1,92 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-menu {
+  background: #202526;
+  color: #ebeeed;
+  border: 1px solid #52615c;
+  border-radius: var(--nf-corner-radius, 7px);
+  padding: 4px;
+  box-shadow: 0 12px 32px #0008;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.nf-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--nf-corner-radius, 4px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.nf-menu-item:is(:hover, :focus-visible) {
+  background: var(--accent-soft);
+  outline: none;
+  box-shadow: inset 2px 0 var(--accent);
+}
+.nf-menu-item[data-danger] {
+  color: #fca5a5;
+}
+.nf-menu-item[data-danger]:is(:hover, :focus-visible) {
+  background: #ef444433;
+  box-shadow: inset 2px 0 #f87171;
+}
+.nf-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+  box-shadow: none;
+}
+.nf-menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.nf-menu-icon > svg {
+  width: 16px;
+  height: 16px;
+}
+.nf-menu-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nf-menu-hint {
+  flex-shrink: 0;
+  color: #9ca3af;
+  font-size: 11px;
+}
+.nf-menu-separator {
+  margin: 3px 0;
+  border: 0;
+  border-top: 1px solid var(--line, #3d4645);
+}
+.nf-menu-heading {
+  padding: 6px 10px 2px;
+  color: #9ca3af;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}

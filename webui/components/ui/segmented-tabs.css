@@ -1,0 +1,66 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-segmented-tabs {
+  min-width: 0;
+  border: 1px solid #2a2d2f;
+  border-radius: var(--nf-corner-radius, 7px);
+  background: #0e0f10;
+}
+.nf-segmented-tabs .nf-scroll-indicators {
+  --nf-scroll-surface: #0e0f10;
+}
+.nf-segmented-tabs-viewport {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  gap: 8px;
+  scroll-padding-inline: 12px;
+  padding: 8px;
+}
+.nf-segmented-tabs-viewport[data-density="compact"] {
+  gap: 3px;
+  padding: 3px;
+}
+.nf-segmented-tabs-viewport[data-density="compact"] > .nf-button {
+  padding: 2px 7px;
+}
+.nf-segmented-tabs-indicator {
+  position: absolute;
+  left: 0;
+  z-index: -1;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  border-radius: var(--nf-corner-radius, 7px);
+  background: var(--accent-soft);
+  transition:
+    transform 120ms ease-out,
+    width 120ms ease-out;
+}
+.nf-segmented-tabs-viewport > .nf-button {
+  flex: 1 0 auto;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted, #9ca3af);
+  font-size: 12px;
+}
+.nf-segmented-tabs-viewport > .nf-button[aria-selected="true"] {
+  color: var(--accent);
+  background: transparent;
+  border-color: transparent;
+}
+:root[data-reduced-motion="true"] {
+  .nf-segmented-tabs-indicator {
+    transition: none;
+  }
+}
+.nf-segmented-tabs-viewport > .nf-button:focus-visible {
+  outline-offset: -2px;
+}

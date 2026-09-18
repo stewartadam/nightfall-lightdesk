@@ -1,0 +1,68 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: inherit;
+  border: 1px solid var(--line, #34383b);
+  border-radius: var(--nf-corner-radius, 6px);
+  background: var(--raised, #24282a);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.nf-button:hover:enabled {
+  background: #2c3032;
+  border-color: #545b5e;
+}
+.nf-button.primary,
+.nf-button.primary:hover:enabled {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #101a19;
+}
+.nf-button.primary:hover:enabled:not(:active) {
+  filter: brightness(1.1);
+}
+.nf-button.subtle {
+  background: transparent;
+  font-size: 11px;
+  padding: 5px 8px;
+}
+.nf-button.danger {
+  color: #f79a9e;
+  border-color: #a24c5266;
+}
+.nf-button.danger:hover:enabled {
+  background: #632c32;
+  border-color: #a24c52;
+}
+.nf-button[data-size="compact"] {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.nf-button[data-size="icon"] {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.nf-button:disabled {
+  color: #767d80;
+  cursor: not-allowed;
+  background: transparent;
+  border-color: var(--line, #34383b);
+}
+.nf-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

@@ -1,0 +1,34 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Capture the chosen accent before an inactive group overrides its local color. */
+.dockview-theme-nightfall-graphite {
+  --nf-panel-accent: var(--accent);
+}
+
+/* Resolve derived colors at the group so selections follow its local accent. */
+.dockview-theme-nightfall-graphite :is(.dv-groupview, [data-panel-active]) {
+  --accent-soft: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  --data-grid-selected-bg: var(--accent-soft);
+  --data-grid-selection-ring: var(--accent);
+  --data-grid-selected-header-bg: var(--accent-soft);
+}
+
+:where([data-mute-unfocused-accents="true"])
+  .dockview-theme-nightfall-graphite
+  :is(.dv-inactive-group, [data-panel-active="false"]) {
+  --accent: oklch(from var(--nf-panel-accent) l 0 h);
+}
+
+:where([data-mute-unfocused-accents="true"])
+  .dockview-theme-nightfall-graphite
+  .dv-inactive-group
+  > .dv-tabs-and-actions-container
+  .dv-tab.dv-active-tab {
+  --nf-tab-accent-color: var(--accent);
+}

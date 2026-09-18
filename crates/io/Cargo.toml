@@ -1,0 +1,21 @@
+[package]
+name = "nightfall-io"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_ecs.workspace = true
+nightfall-dmx = { path = "../dmx" }
+web-time.workspace = true
+serde.workspace = true
+typeshare.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+netdev.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

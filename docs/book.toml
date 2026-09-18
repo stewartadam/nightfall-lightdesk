@@ -1,0 +1,6 @@
+[book]
+authors = ["Stewart Adam"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Nightfall User Manual"

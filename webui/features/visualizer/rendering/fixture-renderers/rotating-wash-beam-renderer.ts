@@ -1,0 +1,782 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/**
+ * Generic 12-pixel rotating wash beam renderer for Visualizer.
+ * Renders a manually modeled linear beam fixture with 12 wash apertures and
+ * two decorative 12-pixel LED strips.
+ */
+
+import {
+  AdditiveBlending,
+  BoxGeometry,
+  CircleGeometry,
+  Color,
+  CylinderGeometry,
+  DoubleSide,
+  Group,
+  MathUtils,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  Object3D,
+  Quaternion,
+  SpotLight,
+  Vector3,
+} from "three/webgpu";
+import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
+import type { FixtureElement } from "../../../../types";
+import type { EmitterData, FixtureInstance } from "../../model/types";
+import {
+  type BeamMaterial,
+  type BeamParameters,
+  createBeamGeometry,
+  createBeamMaterial,
+  defaultBeamParameters,
+  disposeBeamMaterial,
+  isLowQualityBeamMaterial,
+  MAX_CONE_ANGLE_DEGREES,
+  MIN_CONE_ANGLE_DEGREES,
+  updateBeamMaterial,
+} from "../effects/beam-material";
+import { beamConeAngleDegrees } from "../effects/beam-zoom";
+import { DEFAULT_STAGE_FLOOR_TOP_Y } from "../scene-environment";
+
+const BEAM_COUNT = 12;
+const STRIP_PIXEL_COUNT = 12;
+const STRIP_COUNT = 2;
+const CONTROL_ELEMENT_INDEX = 0;
+const BEAM_ELEMENT_OFFSET = 1;
+const STRIP_ELEMENT_OFFSET = BEAM_ELEMENT_OFFSET + BEAM_COUNT;
+const INCH_TO_METER = 0.0254;
+
+const TOTAL_WIDTH = 1.0;
+const TOTAL_HEIGHT = 15 * INCH_TO_METER;
+const FIXTURE_WIDTH = 0.922;
+const FIXTURE_HEIGHT = 0.215;
+const FIXTURE_DEPTH = 0.267;
+const FACE_Z = FIXTURE_DEPTH / 2 + 0.006;
+const BASE_WIDTH = TOTAL_WIDTH;
+const BASE_HEIGHT = 0.055;
+const BASE_DEPTH = 0.23;
+const BASE_Y = FIXTURE_HEIGHT / 2 - TOTAL_HEIGHT + BASE_HEIGHT / 2;
+const BASE_Z = 0;
+const PIVOT_Z = 0;
+const PIVOT_SUPPORT_WIDTH = 0.08;
+const PIVOT_SUPPORT_HEIGHT = TOTAL_HEIGHT - FIXTURE_HEIGHT / 2;
+const PIVOT_SUPPORT_DEPTH = 0.15;
+const PIVOT_SUPPORT_CENTER_Y = -PIVOT_SUPPORT_HEIGHT / 2;
+const LENS_RADIUS = 0.034;
+const LENS_DEPTH = 0.018;
+const STRIP_PIXEL_WIDTH = 0.052;
+const STRIP_PIXEL_HEIGHT = 0.026;
+const STRIP_TOP_Y = 0.08;
+const STRIP_BOTTOM_Y = -0.08;
+const MAX_BEAM_LENGTH = 50.0;
+const MIN_BEAM_RADIUS = 0.035;
+const DEFAULT_BEAM_ANGLE = 6;
+const DEFAULT_FIELD_ANGLE = 28;
+const TILT_RANGE_DEGREES = 270;
+const TILT_UP_REFERENCE_DEGREES = -90;
+const DEFAULT_TILT_SPEED_DEG_PER_SEC = 180;
+const MAX_TILT_SPEED_DEG_PER_SEC = 720;
+const FLOOR_SPOT_OPACITY_SCALE = 0.35;
+const FLOOR_SPOT_MAX_OPACITY = 0.45;
+const FLOOR_SPOT_Y_OFFSET = 0.003;
+const WORLD_UP = new Vector3(0, 1, 0);
+const WORLD_RIGHT = new Vector3(1, 0, 0);
+const FLOOR_SPOT_FLOOR_QUATERNION = new Quaternion().setFromAxisAngle(
+  WORLD_RIGHT,
+  -Math.PI / 2,
+);
+const FLOOR_SPOT_PARENT_QUATERNION = new Quaternion();
+const FLOOR_SPOT_YAW_QUATERNION = new Quaternion();
+const FLOOR_SPOT_WORLD_QUATERNION = new Quaternion();
+const BEAM_WORLD_DIRECTION = new Vector3();
+const BEAM_WORLD_QUATERNION = new Quaternion();
+const BEAM_ORIGIN = new Vector3();
+const BEAM_COLOR = new Color();
+const FLAT_EMITTER_COLOR = new Color();
+const FLOOR_SPOT_WORLD_HIT = new Vector3();
+const FLOOR_SPOT_HORIZONTAL_DIRECTION = new Vector3();
+
+interface EmitterColorData {
+  red: number;
+  green: number;
+  blue: number;
+  intensity: number;
+  tilt?: number;
+  tiltSpeed?: number;
+  zoom?: number;
+  frost?: number;
+}
+
+interface WashBeamEmitterData {
+  lensMesh: Mesh;
+  beamNode: Group;
+  beamMesh: Mesh;
+  beamMaterial: BeamMaterial;
+  spotLight: SpotLight;
+  spotlightTarget: Object3D;
+  floorSpotMesh: Mesh;
+  beamParameters: BeamParameters;
+  elementLabel: string;
+}
+
+/**
+ * Renderer state for the Generic 12-pixel rotating wash beam fixture.
+ */
+export interface RotatingWashBeamData {
+  type: "rotating-wash-beam";
+  tiltGroup: Group;
+  beamEmitters: WashBeamEmitterData[];
+  stripPixelMeshes: Mesh[];
+  controlElementLabel?: string;
+  beamElementLabels: string[];
+  stripElementLabels: string[];
+  elementLabels: string[];
+  currentTilt: number;
+  targetTilt: number;
+  lastUpdateTime: number;
+}
+
+/**
+ * Build a Generic 12-pixel rotating wash beam fixture from element metadata.
+ */
+export function buildRotatingWashBeamFixture(
+  fixtureUid: string,
+  elements: FixtureElement[],
+  beamQuality: VisualizerBeamQuality = "high",
+  beamCount = BEAM_COUNT,
+): FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData } {
+  const group = new Group();
+  group.name = `Fixture_${fixtureUid}`;
+
+  const tiltGroup = new Group();
+  tiltGroup.name = "TiltHead";
+  group.add(tiltGroup);
+
+  const base = createBaseGroup();
+  group.add(base);
+
+  const housing = createHousingMesh();
+  tiltGroup.add(housing);
+
+  const endCapMaterial = new MeshStandardMaterial({
+    color: 0x101010,
+    metalness: 0.7,
+    roughness: 0.35,
+  });
+  for (const x of [-FIXTURE_WIDTH / 2 - 0.035, FIXTURE_WIDTH / 2 + 0.035]) {
+    const endCap = new Mesh(
+      new BoxGeometry(0.05, FIXTURE_HEIGHT * 0.9, FIXTURE_DEPTH * 1.1),
+      endCapMaterial.clone(),
+    );
+    endCap.name = "EndCap";
+    endCap.position.x = x;
+    tiltGroup.add(endCap);
+  }
+
+  const elementLabels = elements.map((element) => element.label);
+  const controlElementLabel = elementLabels[CONTROL_ELEMENT_INDEX];
+  const beamElementLabels = elementLabels.slice(
+    BEAM_ELEMENT_OFFSET,
+    BEAM_ELEMENT_OFFSET + beamCount,
+  );
+  const stripElementLabels = elementLabels.slice(
+    STRIP_ELEMENT_OFFSET,
+    STRIP_ELEMENT_OFFSET + STRIP_PIXEL_COUNT * STRIP_COUNT,
+  );
+  const emitters = new Map<string, EmitterData>();
+  const beamEmitters: WashBeamEmitterData[] = [];
+  const stripPixelMeshes: Mesh[] = [];
+
+  for (let index = 0; index < beamCount; index++) {
+    const x = beamX(index, beamCount);
+    const beamNode = new Group();
+    beamNode.name = `BeamNode_${index + 1}`;
+    beamNode.position.set(x, 0, FACE_Z);
+    beamNode.rotation.x = -Math.PI / 2;
+    tiltGroup.add(beamNode);
+
+    const lensMesh = createLensMesh(index + 1);
+    lensMesh.position.set(x, 0, FACE_Z);
+    tiltGroup.add(lensMesh);
+
+    const beamMaterial = createBeamMaterial(beamQuality);
+    const shouldPrewarmBeam = beamQuality === "high";
+    if (shouldPrewarmBeam) {
+      updateBeamMaterial(beamMaterial, {
+        ...defaultBeamParameters,
+        intensity: 0,
+        minAlpha: 0,
+        color: [0, 0, 0, 0],
+        clipY: DEFAULT_STAGE_FLOOR_TOP_Y,
+        softIntersectionFade: 0,
+      });
+    }
+    const beamMesh = new Mesh(createBeamGeometry(beamQuality), beamMaterial);
+    beamMesh.name = `Beam_${index + 1}`;
+    beamMesh.position.set(0, -MAX_BEAM_LENGTH / 2, 0);
+    beamMesh.castShadow = false;
+    beamMesh.frustumCulled = false;
+    beamMesh.renderOrder = 100;
+    beamMesh.visible = shouldPrewarmBeam;
+    beamMesh.userData.beamPrewarmPending = shouldPrewarmBeam;
+    beamMesh.onAfterRender = () => {
+      if (beamMesh.userData.beamPrewarmPending !== true) return;
+      beamMesh.userData.beamPrewarmPending = false;
+      if (
+        !isLowQualityBeamMaterial(beamMaterial) &&
+        beamMaterial.beamIntensityUniform.value <= 0.01
+      ) {
+        beamMesh.visible = false;
+      }
+    };
+    beamNode.add(beamMesh);
+
+    const floorSpotGeometry = new CircleGeometry(1, 32);
+    const floorSpotMaterial = new MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: DoubleSide,
+      blending: AdditiveBlending,
+    });
+    const floorSpotMesh = new Mesh(floorSpotGeometry, floorSpotMaterial);
+    floorSpotMesh.name = `BeamFootprint_${index + 1}`;
+    floorSpotMesh.rotation.x = -Math.PI / 2;
+    floorSpotMesh.frustumCulled = false;
+    floorSpotMesh.renderOrder = 101;
+    floorSpotMesh.visible = shouldPrewarmBeam;
+    floorSpotMesh.userData.beamPrewarmPending = shouldPrewarmBeam;
+    floorSpotMesh.onAfterRender = () => {
+      if (floorSpotMesh.userData.beamPrewarmPending !== true) return;
+      floorSpotMesh.userData.beamPrewarmPending = false;
+      if (floorSpotMaterial.opacity <= 0.01) {
+        floorSpotMesh.visible = false;
+      }
+    };
+    group.add(floorSpotMesh);
+
+    const spotLight = new SpotLight(0xffffff, 0);
+    spotLight.name = `SpotLight_${index + 1}`;
+    spotLight.angle = MathUtils.degToRad(DEFAULT_FIELD_ANGLE / 2);
+    spotLight.penumbra = 0.5;
+    spotLight.decay = 2;
+    spotLight.distance = MAX_BEAM_LENGTH + 10;
+    spotLight.visible = false;
+    beamNode.add(spotLight);
+
+    const spotlightTarget = new Object3D();
+    spotlightTarget.name = `SpotLightTarget_${index + 1}`;
+    spotlightTarget.position.set(0, -MAX_BEAM_LENGTH, 0);
+    beamNode.add(spotlightTarget);
+    spotLight.target = spotlightTarget;
+
+    const elementLabel = beamElementLabels[index] ?? `Beam ${index + 1}`;
+    beamEmitters.push({
+      lensMesh,
+      beamNode,
+      beamMesh,
+      beamMaterial,
+      spotLight,
+      spotlightTarget,
+      floorSpotMesh,
+      beamParameters: createCachedBeamParameters(),
+      elementLabel,
+    });
+    emitters.set(`Beam_${index}`, {
+      mesh: lensMesh,
+      controlledElement: elementLabel,
+      nodeGroup: beamNode,
+    });
+  }
+
+  for (
+    let stripIndex = 0;
+    stripIndex < (beamCount === BEAM_COUNT ? STRIP_COUNT : 0);
+    stripIndex++
+  ) {
+    const y = stripIndex === 0 ? STRIP_TOP_Y : STRIP_BOTTOM_Y;
+    const stripName = stripIndex === 0 ? "TopStrip" : "BottomStrip";
+    for (let pixelIndex = 0; pixelIndex < STRIP_PIXEL_COUNT; pixelIndex++) {
+      const mesh = createStripPixelMesh(stripName, pixelIndex + 1);
+      mesh.position.set(beamX(pixelIndex), y, FACE_Z + 0.006);
+      tiltGroup.add(mesh);
+      stripPixelMeshes.push(mesh);
+
+      const elementLabel =
+        stripElementLabels[stripIndex * STRIP_PIXEL_COUNT + pixelIndex] ??
+        `${stripName} Pixel ${pixelIndex + 1}`;
+      emitters.set(`${stripName}_${pixelIndex}`, {
+        mesh,
+        controlledElement: elementLabel,
+      });
+    }
+  }
+
+  return {
+    uid: fixtureUid,
+    group,
+    nodeObjects: new Map<string, Object3D>([
+      ["Base", base],
+      ["Housing", housing],
+      ["TiltHead", tiltGroup],
+    ]),
+    emitters,
+    rotatingWashBeamData: {
+      type: "rotating-wash-beam",
+      tiltGroup,
+      beamEmitters,
+      stripPixelMeshes,
+      controlElementLabel,
+      beamElementLabels,
+      stripElementLabels,
+      elementLabels,
+      currentTilt: MathUtils.degToRad(TILT_UP_REFERENCE_DEGREES),
+      targetTilt: MathUtils.degToRad(TILT_UP_REFERENCE_DEGREES),
+      lastUpdateTime: 0,
+    },
+  };
+}
+
+/**
+ * Update Generic wash beam emitters and beam cones from visualizer DMX data.
+ */
+export function updateRotatingWashBeamColors(
+  instance: FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData },
+  elementColors: Map<string, EmitterColorData>,
+): void {
+  const data = instance.rotatingWashBeamData;
+  const control = colorForElement(
+    elementColors,
+    CONTROL_ELEMENT_INDEX,
+    data.controlElementLabel,
+  );
+  const masterIntensity = control?.intensity ?? 1;
+  const zoom = control?.zoom ?? 0.5;
+  const frost = control?.frost ?? 0;
+  const tilt = control?.tilt ?? 0;
+  const tiltSpeed = control?.tiltSpeed;
+  data.targetTilt = MathUtils.degToRad(
+    TILT_UP_REFERENCE_DEGREES + tilt * TILT_RANGE_DEGREES,
+  );
+  const now = performance.now();
+  const deltaSeconds =
+    data.lastUpdateTime === 0
+      ? 0
+      : Math.max(0, (now - data.lastUpdateTime) / 1000);
+  data.lastUpdateTime = now;
+
+  if (deltaSeconds > 0) {
+    const speed =
+      tiltSpeed === undefined
+        ? DEFAULT_TILT_SPEED_DEG_PER_SEC
+        : MathUtils.lerp(
+            DEFAULT_TILT_SPEED_DEG_PER_SEC,
+            MAX_TILT_SPEED_DEG_PER_SEC,
+            MathUtils.clamp(tiltSpeed, 0, 1),
+          );
+    const maxStep = MathUtils.degToRad(speed * deltaSeconds);
+    const tiltDelta = data.targetTilt - data.currentTilt;
+    data.currentTilt += MathUtils.clamp(tiltDelta, -maxStep, maxStep);
+  } else {
+    data.currentTilt = data.targetTilt;
+  }
+
+  data.tiltGroup.rotation.x = data.currentTilt;
+  data.tiltGroup.updateMatrixWorld(true);
+
+  for (let index = 0; index < data.beamEmitters.length; index++) {
+    const beam = data.beamEmitters[index];
+    const color = colorForElement(
+      elementColors,
+      BEAM_ELEMENT_OFFSET + index,
+      beam.elementLabel,
+    );
+    updateBeamEmitter(instance, beam, color, masterIntensity, zoom, frost);
+  }
+
+  for (let index = 0; index < data.stripPixelMeshes.length; index++) {
+    const mesh = data.stripPixelMeshes[index];
+    const color = colorForElement(
+      elementColors,
+      STRIP_ELEMENT_OFFSET + index,
+      data.stripElementLabels[index],
+    );
+    updateFlatEmitter(mesh, color, 1);
+  }
+}
+
+/**
+ * Dispose geometry and materials held by a Generic wash beam fixture instance.
+ */
+export function disposeRotatingWashBeam(
+  instance: FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData },
+): void {
+  const disposedBeamMaterials = new Set<BeamMaterial>();
+  for (const beam of instance.rotatingWashBeamData.beamEmitters) {
+    if (disposedBeamMaterials.has(beam.beamMaterial)) continue;
+    disposedBeamMaterials.add(beam.beamMaterial);
+    disposeBeamMaterial(beam.beamMaterial);
+  }
+  instance.group.traverse((object) => {
+    if (object instanceof Mesh) {
+      object.geometry.dispose();
+      if (Array.isArray(object.material)) {
+        for (const material of object.material) {
+          material.dispose();
+        }
+      } else {
+        object.material.dispose();
+      }
+    }
+  });
+}
+
+/**
+ * Create the main metal body for the scanned wash beam shape.
+ */
+function createHousingMesh(): Mesh {
+  const geometry = new BoxGeometry(
+    FIXTURE_WIDTH,
+    FIXTURE_HEIGHT,
+    FIXTURE_DEPTH,
+  );
+  const material = new MeshStandardMaterial({
+    color: 0x151515,
+    metalness: 0.65,
+    roughness: 0.42,
+  });
+  const mesh = new Mesh(geometry, material);
+  mesh.name = "Housing";
+  return mesh;
+}
+
+/**
+ * Create the fixed base and side supports that carry the rotating head.
+ */
+function createBaseGroup(): Group {
+  const group = new Group();
+  group.name = "Base";
+
+  const baseMaterial = new MeshStandardMaterial({
+    color: 0x0e0e0e,
+    metalness: 0.72,
+    roughness: 0.38,
+  });
+  const supportMaterial = new MeshStandardMaterial({
+    color: 0x121212,
+    metalness: 0.68,
+    roughness: 0.36,
+  });
+
+  const rail = new Mesh(
+    new BoxGeometry(BASE_WIDTH, BASE_HEIGHT, BASE_DEPTH),
+    baseMaterial,
+  );
+  rail.name = "BaseRail";
+  rail.position.set(0, BASE_Y, BASE_Z);
+  group.add(rail);
+
+  for (const side of [-1, 1]) {
+    const support = new Mesh(
+      new BoxGeometry(
+        PIVOT_SUPPORT_WIDTH,
+        PIVOT_SUPPORT_HEIGHT,
+        PIVOT_SUPPORT_DEPTH,
+      ),
+      supportMaterial.clone(),
+    );
+    support.name = side < 0 ? "LeftPivotSupport" : "RightPivotSupport";
+    support.position.set(
+      side * (TOTAL_WIDTH / 2 - PIVOT_SUPPORT_WIDTH / 2),
+      PIVOT_SUPPORT_CENTER_Y,
+      PIVOT_Z,
+    );
+    group.add(support);
+
+    const pivotBoss = new Mesh(
+      new CylinderGeometry(0.095, 0.095, PIVOT_SUPPORT_WIDTH + 0.01, 32),
+      supportMaterial.clone(),
+    );
+    pivotBoss.name = side < 0 ? "LeftPivotBoss" : "RightPivotBoss";
+    pivotBoss.rotation.z = Math.PI / 2;
+    pivotBoss.position.set(
+      side * (TOTAL_WIDTH / 2 - PIVOT_SUPPORT_WIDTH / 2),
+      0,
+      PIVOT_Z,
+    );
+    group.add(pivotBoss);
+  }
+
+  return group;
+}
+
+/**
+ * Create one round beam aperture lens.
+ */
+function createLensMesh(index: number): Mesh {
+  const geometry = new CylinderGeometry(
+    LENS_RADIUS,
+    LENS_RADIUS,
+    LENS_DEPTH,
+    40,
+  );
+  const material = new MeshBasicMaterial({ color: 0x252525 });
+  const mesh = new Mesh(geometry, material);
+  mesh.name = `Lens_${index}`;
+  mesh.rotation.x = Math.PI / 2;
+  return mesh;
+}
+
+/**
+ * Create one decorative strip pixel lens.
+ */
+function createStripPixelMesh(stripName: string, pixelIndex: number): Mesh {
+  const geometry = new BoxGeometry(
+    STRIP_PIXEL_WIDTH,
+    STRIP_PIXEL_HEIGHT,
+    0.014,
+  );
+  const material = new MeshBasicMaterial({ color: 0x000000 });
+  const mesh = new Mesh(geometry, material);
+  mesh.name = `${stripName}Pixel_${pixelIndex}`;
+  return mesh;
+}
+
+/**
+ * Resolve an element color by update path key, accepting both index and label keys.
+ */
+function colorForElement(
+  elementColors: Map<string, EmitterColorData>,
+  elementIndex: number,
+  elementLabel: string | undefined,
+): EmitterColorData | undefined {
+  return (
+    elementColors.get(String(elementIndex)) ??
+    (elementLabel ? elementColors.get(elementLabel) : undefined)
+  );
+}
+
+/**
+ * Creates mutable beam parameters that can be reused without touching defaults.
+ */
+function createCachedBeamParameters(): BeamParameters {
+  return {
+    ...defaultBeamParameters,
+    color: [...defaultBeamParameters.color] as [number, number, number, number],
+    secondaryColor: [...defaultBeamParameters.secondaryColor] as [
+      number,
+      number,
+      number,
+    ],
+    beamDirection: defaultBeamParameters.beamDirection.clone(),
+    beamOrigin: defaultBeamParameters.beamOrigin.clone(),
+  };
+}
+
+/**
+ * Compute the left-to-right beam and strip pixel X coordinate.
+ */
+function beamX(index: number, count = BEAM_COUNT): number {
+  const spacing = FIXTURE_WIDTH / count;
+  return -FIXTURE_WIDTH / 2 + spacing / 2 + index * spacing;
+}
+
+/**
+ * Update one beam aperture, volumetric cone, and synthetic floor footprint.
+ */
+function updateBeamEmitter(
+  instance: FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData },
+  beam: WashBeamEmitterData,
+  colorData: EmitterColorData | undefined,
+  masterIntensity: number,
+  zoom: number,
+  frost: number,
+): void {
+  const intensity = (colorData?.intensity ?? 0) * masterIntensity;
+  updateFlatEmitter(beam.lensMesh, colorData, masterIntensity);
+
+  const coneAngleDeg = beamConeAngleDegrees(
+    DEFAULT_BEAM_ANGLE,
+    DEFAULT_BEAM_ANGLE + DEFAULT_FIELD_ANGLE,
+    zoom,
+  );
+  const halfAngleRad = MathUtils.degToRad(coneAngleDeg / 2);
+  const color = BEAM_COLOR.setRGB(
+    colorData?.red ?? 0,
+    colorData?.green ?? 0,
+    colorData?.blue ?? 0,
+  );
+  color.convertSRGBToLinear();
+
+  beam.beamNode.updateMatrixWorld(true);
+  beam.beamNode.getWorldPosition(BEAM_ORIGIN);
+  beam.beamNode.getWorldQuaternion(BEAM_WORLD_QUATERNION);
+  const beamDirection = BEAM_WORLD_DIRECTION.set(0, -1, 0)
+    .applyQuaternion(BEAM_WORLD_QUATERNION)
+    .normalize();
+  const isLowQuality = isLowQualityBeamMaterial(beam.beamMaterial);
+  const baseRadius = Math.max(
+    MIN_BEAM_RADIUS,
+    MAX_BEAM_LENGTH * Math.tan(halfAngleRad),
+  );
+  beam.beamMesh.scale.set(baseRadius, MAX_BEAM_LENGTH, baseRadius);
+  beam.beamMesh.position.set(0, -MAX_BEAM_LENGTH / 2, 0);
+
+  const beamColor = beam.beamParameters.color;
+  beamColor[0] = color.r;
+  beamColor[1] = color.g;
+  beamColor[2] = color.b;
+  beamColor[3] = 0.6;
+  beam.beamParameters.intensity = intensity;
+  beam.beamParameters.coneAngleDegrees = Math.max(
+    MIN_CONE_ANGLE_DEGREES,
+    Math.min(MAX_CONE_ANGLE_DEGREES, coneAngleDeg),
+  );
+  beam.beamParameters.beamDirection.copy(beamDirection);
+  beam.beamParameters.beamOrigin.copy(BEAM_ORIGIN);
+  beam.beamParameters.beamLength = MAX_BEAM_LENGTH;
+  beam.beamParameters.clipY = 0.0;
+  beam.beamParameters.softIntersectionFade = 0.0;
+  beam.beamParameters.frostAmount = frost;
+  beam.beamParameters.minAlpha =
+    intensity > 0.01 ? defaultBeamParameters.minAlpha : 0;
+  updateBeamMaterial(beam.beamMaterial, beam.beamParameters);
+
+  beam.spotLight.color.copy(color);
+  beam.spotLight.intensity = 0;
+  beam.spotLight.angle = halfAngleRad;
+  beam.spotLight.distance = MAX_BEAM_LENGTH + 10;
+  beam.spotlightTarget.position.set(0, -MAX_BEAM_LENGTH, 0);
+
+  const visible = intensity > 0.01;
+  beam.beamMesh.visible =
+    visible || beam.beamMesh.userData.beamPrewarmPending === true;
+  beam.spotLight.visible = false;
+  updateRotatingWashBeamFloorSpot(
+    instance,
+    beam,
+    color,
+    isLowQuality ? 0 : intensity,
+    BEAM_ORIGIN,
+    beamDirection,
+    halfAngleRad,
+  );
+}
+
+/**
+ * Updates the cheap synthetic floor illumination for one Generic wash beam.
+ */
+function updateRotatingWashBeamFloorSpot(
+  instance: FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData },
+  beam: WashBeamEmitterData,
+  color: Color,
+  intensity: number,
+  beamOrigin: Vector3,
+  beamDirection: Vector3,
+  halfAngleRad: number,
+): void {
+  const { floorSpotMesh } = beam;
+  const material = floorSpotMesh.material as MeshBasicMaterial;
+
+  if (intensity <= 0.01 || beamDirection.y >= -0.001) {
+    hideRotatingWashBeamFloorSpot(floorSpotMesh, material);
+    return;
+  }
+
+  const distanceToFloor =
+    (DEFAULT_STAGE_FLOOR_TOP_Y - beamOrigin.y) / beamDirection.y;
+  if (distanceToFloor <= 0 || distanceToFloor > MAX_BEAM_LENGTH) {
+    hideRotatingWashBeamFloorSpot(floorSpotMesh, material);
+    return;
+  }
+
+  const radius = Math.max(
+    MIN_BEAM_RADIUS,
+    distanceToFloor * Math.tan(halfAngleRad),
+  );
+  const incidence = Math.max(Math.abs(beamDirection.y), 0.15);
+  const majorRadius = Math.min(radius / incidence, MAX_BEAM_LENGTH);
+
+  const worldHit = FLOOR_SPOT_WORLD_HIT.copy(beamOrigin).addScaledVector(
+    beamDirection,
+    distanceToFloor,
+  );
+  worldHit.y = DEFAULT_STAGE_FLOOR_TOP_Y + FLOOR_SPOT_Y_OFFSET;
+  floorSpotMesh.position.copy(instance.group.worldToLocal(worldHit));
+
+  const horizontalDirection = FLOOR_SPOT_HORIZONTAL_DIRECTION.set(
+    beamDirection.x,
+    0,
+    beamDirection.z,
+  );
+  let floorSpotYaw = 0;
+  if (horizontalDirection.lengthSq() > 1e-6) {
+    horizontalDirection.normalize();
+    floorSpotYaw = Math.atan2(-horizontalDirection.z, horizontalDirection.x);
+  }
+
+  FLOOR_SPOT_YAW_QUATERNION.setFromAxisAngle(WORLD_UP, floorSpotYaw);
+  FLOOR_SPOT_WORLD_QUATERNION.copy(FLOOR_SPOT_YAW_QUATERNION).multiply(
+    FLOOR_SPOT_FLOOR_QUATERNION,
+  );
+  instance.group.getWorldQuaternion(FLOOR_SPOT_PARENT_QUATERNION);
+  floorSpotMesh.quaternion
+    .copy(FLOOR_SPOT_PARENT_QUATERNION)
+    .invert()
+    .multiply(FLOOR_SPOT_WORLD_QUATERNION);
+  floorSpotMesh.scale.set(majorRadius, radius, 1);
+  material.color.copy(color);
+  material.opacity = MathUtils.clamp(
+    intensity * FLOOR_SPOT_OPACITY_SCALE,
+    0,
+    FLOOR_SPOT_MAX_OPACITY,
+  );
+  floorSpotMesh.visible = true;
+}
+
+/**
+ * Hides a floor footprint while preserving any one-frame material prewarm draw.
+ */
+function hideRotatingWashBeamFloorSpot(
+  floorSpotMesh: Mesh,
+  material: MeshBasicMaterial,
+): void {
+  floorSpotMesh.visible = floorSpotMesh.userData.beamPrewarmPending === true;
+  material.opacity = 0;
+}
+
+/**
+ * Update a flat emissive lens or decorative strip pixel.
+ */
+function updateFlatEmitter(
+  mesh: Mesh,
+  colorData: EmitterColorData | undefined,
+  masterIntensity: number,
+): void {
+  const material = mesh.material as MeshBasicMaterial;
+  if (!colorData) {
+    material.color.setRGB(0, 0, 0);
+    return;
+  }
+
+  const color = FLAT_EMITTER_COLOR.setRGB(
+    colorData.red,
+    colorData.green,
+    colorData.blue,
+  ).convertSRGBToLinear();
+  material.color.copy(
+    color.multiplyScalar(
+      Math.min(2.0, colorData.intensity * masterIntensity * 2),
+    ),
+  );
+}

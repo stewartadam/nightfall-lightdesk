@@ -1,0 +1,99 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+@layer components {
+  .nf-table-scroll {
+    min-width: 0;
+    min-height: 0;
+  }
+  .nf-table-viewport:focus-visible {
+    outline: 2px solid var(--accent, Highlight);
+    outline-offset: -2px;
+  }
+  .nf-table {
+    --table-surface: var(--panel, light-dark(#fff, #0f172a));
+    --table-line: var(
+      --line,
+      color-mix(in srgb, currentColor 20%, transparent)
+    );
+    --table-muted: var(
+      --muted,
+      color-mix(in srgb, currentColor 65%, transparent)
+    );
+    --table-padding-y: 7px;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--table-surface);
+    color: inherit;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: left;
+  }
+  .nf-table[data-density="comfortable"] {
+    --table-padding-y: 12px;
+  }
+  .nf-table > :is(thead, tbody, tfoot) > tr > :is(th, td) {
+    padding: var(--table-padding-y) 10px;
+    border-bottom: 1px solid var(--table-line);
+    font-weight: 400;
+  }
+  .nf-table > thead > tr > th {
+    background: var(--table-surface);
+    color: var(--table-muted);
+    font-size: 10px;
+    font-weight: 500;
+    text-align: inherit;
+  }
+  .nf-table[data-sticky-header] > thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .nf-table[data-column-guides]
+    > :is(thead, tbody, tfoot)
+    > tr
+    > :is(th, td):not(:last-child) {
+    border-right: 1px solid var(--table-line);
+  }
+  .nf-table
+    > tbody
+    > tr:not(
+      [data-table-empty],
+      [data-table-spacer],
+      [data-table-group]
+    ):hover {
+    background: var(
+      --raised,
+      color-mix(in srgb, currentColor 8%, var(--table-surface))
+    );
+  }
+  .nf-table > tbody > tr:is([data-selected="true"], [aria-selected="true"]) {
+    background: var(
+      --accent-soft,
+      color-mix(in srgb, Highlight 20%, var(--table-surface))
+    );
+  }
+  .nf-table > tbody > tr[data-table-empty] > td {
+    padding: 32px 10px;
+    color: var(--table-muted);
+    text-align: center;
+  }
+  .nf-table > tbody > tr[data-table-group] > td {
+    background: var(
+      --raised,
+      color-mix(in srgb, currentColor 8%, var(--table-surface))
+    );
+    color: var(--table-muted);
+    font-weight: 500;
+  }
+  .nf-table > tbody > tr[data-table-spacer] > td {
+    padding: 0;
+    border: 0;
+  }
+}

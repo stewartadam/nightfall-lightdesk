@@ -1,0 +1,39 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.component-index > h2 {
+  padding-right: 9px;
+}
+.component-index h2 span,
+.component-index h3 span {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.component-index svg {
+  flex-shrink: 0;
+}
+.component-index-section + .component-index-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.component-index-section h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 9px 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.component-index-section h3 span {
+  font-weight: 400;
+  letter-spacing: 0;
+}

@@ -1,0 +1,168 @@
+name: Desktop artifacts
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths:
+      - '.github/workflows/desktop-artifacts.yml'
+      - '.github/desktop-release-notes.md'
+      - 'scripts/desktop-artifacts*'
+      - 'scripts/*notices*'
+      - 'config/notices/**'
+      - 'about.toml'
+      - 'Cargo.lock'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'crates/app/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  prepare:
+    name: Validate version and build shared web assets
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      publish: ${{ steps.release.outputs.publish }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      matrix: ${{ steps.release.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Load the repository Rust toolchain
+        run: rustup show
+      - name: Validate release policy
+        id: release
+        run: |
+          node --test scripts/desktop-artifacts.node.test.mjs
+          node scripts/desktop-artifacts.mjs prepare
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-web
+          cache-on-failure: true
+      - name: Build shared frontend and model resources
+        run: |
+          npm ci
+          cargo install --locked typeshare-cli --version 1.13.3
+          cargo install --locked cargo-about --version 0.8.4
+          npm run typeshare
+          npm run wasm-build
+          npm run download:beat-this-model
+          npm run build
+      - uses: actions/upload-artifact@v6
+        with:
+          name: desktop-web-${{ github.sha }}
+          path: |
+            webui/dist/
+            webui/assets/models/beat-this/
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Package ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Load the repository Rust toolchain
+        run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.target }}
+          cache-on-failure: true
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libasound2-dev \
+            libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf file wget
+      - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: desktop-web-${{ github.sha }}
+          path: webui
+      - name: Assemble target-specific distribution notices
+        run: |
+          cargo install --locked cargo-about --version 0.8.4
+          node scripts/distribution-notices.mjs ${{ matrix.target }}
+      - name: Build the desktop installers
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: crates/app
+          tauriScript: npx tauri
+          args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
+      - name: Stage versioned installers
+        env:
+          DESKTOP_TARGET: ${{ matrix.target }}
+          TAURI_ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: node scripts/desktop-artifacts.mjs stage
+      - uses: actions/upload-artifact@v6
+        with:
+          name: nightfall-desktop-${{ matrix.target }}-${{ github.sha }}
+          path: desktop-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish version-tag release
+    needs: [prepare, build]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: nightfall-desktop-*-${{ github.sha }}
+          path: release-assets
+          merge-multiple: true
+      - name: Publish only after every installer has uploaded
+        working-directory: release-assets
+        shell: bash
+        run: |
+          sha256sum ./* > SHA256SUMS
+          if state=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft); then
+            if [ "$state" != true ]; then
+              echo "Release $RELEASE_TAG is already public; refusing to replace its assets."
+              exit 1
+            fi
+          else
+            prerelease_args=()
+            if [ "$RELEASE_PRERELEASE" = true ]; then prerelease_args+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "Nightfall $RELEASE_VERSION" \
+              --notes-file "$GITHUB_WORKSPACE/.github/desktop-release-notes.md" \
+              "${prerelease_args[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" ./* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

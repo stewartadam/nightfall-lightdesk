@@ -1,0 +1,81 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-numeric-stepper {
+  --nf-stepper-height: 38px;
+  height: var(--nf-stepper-height);
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.nf-numeric-stepper > .nf-form-control {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  width: 0;
+  border: 0;
+  background: transparent;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+.nf-numeric-stepper > input::-webkit-inner-spin-button,
+.nf-numeric-stepper > input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.nf-numeric-stepper > .nf-button {
+  flex-shrink: 0;
+  width: 30px;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.nf-numeric-stepper > .nf-button:first-child {
+  border-right: 1px solid var(--line, #34383b);
+  border-radius: var(--nf-corner-radius, 6px) 0 0 var(--nf-corner-radius, 6px);
+}
+.nf-numeric-stepper > .nf-button:last-child {
+  border-left: 1px solid var(--line, #34383b);
+  border-radius: 0 var(--nf-corner-radius, 6px) var(--nf-corner-radius, 6px) 0;
+}
+.nf-numeric-stepper[data-density="compact"] > .nf-button {
+  min-height: 0;
+  width: 26px;
+}
+.nf-stepper-unit {
+  flex-shrink: 0;
+  padding-right: 8px;
+  color: var(--muted, #a0a7aa);
+  font-size: 11px;
+}
+.nf-numeric-stepper[data-disabled="true"] {
+  opacity: 0.5;
+}
+
+.compact .nf-numeric-stepper {
+  --nf-stepper-height: 32px;
+}
+.nf-numeric-stepper[data-density="comfortable"] {
+  --nf-stepper-height: 38px;
+}
+.nf-numeric-stepper[data-density="compact"] {
+  --nf-stepper-height: 28px;
+}
+.nf-numeric-stepper:has([aria-invalid="true"]) {
+  border-color: #f18b8e;
+}
+.nf-numeric-stepper > .nf-button:hover:enabled {
+  background: var(--accent-soft);
+}
+.nf-numeric-stepper > .nf-button:focus-visible {
+  outline-offset: -3px;
+}

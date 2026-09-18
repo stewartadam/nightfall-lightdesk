@@ -1,0 +1,116 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Shared palette and appearance tokens for every application entry point. */
+:root {
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-invalid: #f18b8e;
+  --color-warning: #fbbf24;
+  --color-accent-red: #f26872;
+  --color-accent-orange: #fb923c;
+  --color-accent-amber: #efb84f;
+  --color-accent-yellow: #d9cc4b;
+  --color-accent-lime: #a3cf57;
+  --color-accent-green: #58c58a;
+  --color-accent-mint: #54d5b4;
+  --color-accent-cyan: #39c9df;
+  --color-accent-blue: #398bfa;
+  --color-accent-indigo: #7e87ff;
+  --color-accent-violet: #b080ff;
+  --color-accent-magenta: #e56bc4;
+}
+
+:root {
+  --radius-xs: var(--nf-corner-radius, 0.125rem);
+  --radius-sm: var(--nf-corner-radius, 0.25rem);
+  --radius-md: var(--nf-corner-radius, 0.375rem);
+  --radius-lg: var(--nf-corner-radius, 0.5rem);
+  --radius-xl: var(--nf-corner-radius, 0.75rem);
+  --radius-2xl: var(--nf-corner-radius, 1rem);
+  --radius-3xl: var(--nf-corner-radius, 1.5rem);
+  --radius-4xl: var(--nf-corner-radius, 2rem);
+  --panel-padding: 18px;
+  --cell-padding: 10px;
+  --nf-tile-width: 140px;
+  --nf-tile-height: 60px;
+  --nf-tile-padding: 4px 6px;
+  --nf-tile-gap: 2px;
+  --accent: var(--color-accent-mint);
+  --panel: #191b1d;
+  --raised: #222527;
+  --line: #34383b;
+  --muted: #a0a7aa;
+  --accent-soft: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  /* Keep shadow hue tied to the accent, with subdued saturation and lightness. */
+  --shadow-color: hsl(from var(--accent) h calc(s * 0.6) 12%);
+  --shadow-elevation-low:
+    0.3px 0.4px 0.5px hsl(from var(--shadow-color) h s l / 0.77),
+    1.3px 1.7px 2px -3.7px hsl(from var(--shadow-color) h s l / 0.52);
+  --shadow-elevation-medium:
+    0.3px 0.4px 0.5px hsl(from var(--shadow-color) h s l / 0.72),
+    1.4px 1.8px 2.1px -1.9px hsl(from var(--shadow-color) h s l / 0.56),
+    6.5px 8.6px 10.1px -3.7px hsl(from var(--shadow-color) h s l / 0.4);
+  --shadow-elevation-high:
+    0.3px 0.4px 0.5px hsl(from var(--shadow-color) h s l / 0.8),
+    1.9px 2.6px 3px -0.9px hsl(from var(--shadow-color) h s l / 0.7),
+    5.8px 7.7px 9px -1.9px hsl(from var(--shadow-color) h s l / 0.59),
+    14.9px 19.8px 23.2px -2.8px hsl(from var(--shadow-color) h s l / 0.48),
+    32.3px 42.8px 50.3px -3.7px hsl(from var(--shadow-color) h s l / 0.38);
+  --data-grid-bg: var(--panel);
+  --data-grid-selected-bg: var(--accent-soft);
+  --data-grid-text: #ebeeed;
+  --data-grid-selection-ring: var(--accent);
+  --data-grid-header-bg: var(--panel);
+  --data-grid-selected-header-bg: var(--accent-soft);
+  --data-grid-column-border: transparent;
+  color: #ebeeed;
+  color-scheme: dark;
+}
+
+:root {
+  --nf-corner-radius-default: 6px;
+  --nf-corner-radius: var(--nf-corner-radius-default);
+  --color-neutral-50: #f0f3f1;
+  --color-neutral-100: #ebeeed;
+  --color-neutral-200: #d0d7d4;
+  --color-neutral-300: #c7cdca;
+  --color-neutral-400: var(--muted);
+  --color-neutral-500: #7f898b;
+  --color-neutral-600: #545b5e;
+  --color-neutral-700: var(--line);
+  --color-neutral-800: var(--raised);
+  --color-neutral-900: var(--panel);
+  --color-neutral-950: #101112;
+  --color-gray-50: var(--color-neutral-50);
+  --color-gray-100: var(--color-neutral-100);
+  --color-gray-200: var(--color-neutral-200);
+  --color-gray-300: var(--color-neutral-300);
+  --color-gray-400: var(--color-neutral-400);
+  --color-gray-500: var(--color-neutral-500);
+  --color-gray-600: var(--color-neutral-600);
+  --color-gray-700: var(--color-neutral-700);
+  --color-gray-800: var(--color-neutral-800);
+  --color-gray-900: var(--color-neutral-900);
+  --color-gray-950: var(--color-neutral-950);
+  --color-slate-50: var(--color-neutral-50);
+  --color-slate-100: var(--color-neutral-100);
+  --color-slate-200: var(--color-neutral-200);
+  --color-slate-300: var(--color-neutral-300);
+  --color-slate-400: var(--color-neutral-400);
+  --color-slate-500: var(--color-neutral-500);
+  --color-slate-600: var(--color-neutral-600);
+  --color-slate-700: var(--color-neutral-700);
+  --color-slate-800: var(--color-neutral-800);
+  --color-slate-900: var(--color-neutral-900);
+  --color-slate-950: var(--color-neutral-950);
+  background: #101112;
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
