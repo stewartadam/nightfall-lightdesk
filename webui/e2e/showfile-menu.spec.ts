@@ -438,8 +438,27 @@ test("prompts to load a newer startup draft", async ({ page }) => {
   });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Close" })).toHaveCount(0);
-  await expect(dialog.getByText(/^Draft saved /)).toBeVisible();
-  await expect(dialog.getByText(/^Saved snapshot /)).toBeVisible();
+  const timestamps = await page.evaluate(
+    /** Format fixture timestamps using the browser's locale and time zone. */
+    () => {
+      const format = new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+      return {
+        draft: format.format(new Date(1_700_000_100_000)),
+        saved: format.format(new Date(1_700_000_000_000)),
+      };
+    },
+  );
+  const draftLabel = dialog.locator("dt").filter({ hasText: /^Draft$/ });
+  const savedLabel = dialog
+    .locator("dt")
+    .filter({ hasText: /^Saved version$/ });
+  await expect(draftLabel).toBeVisible();
+  await expect(draftLabel.locator("+ dd")).toHaveText(timestamps.draft);
+  await expect(savedLabel).toBeVisible();
+  await expect(savedLabel.locator("+ dd")).toHaveText(timestamps.saved);
   await page.screenshot({
     path: test.info().outputPath("shared-startup-recovery.png"),
   });
