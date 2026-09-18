@@ -98,7 +98,7 @@ try {
       "cargo",
       [
         "build",
-        "--quiet",
+        ...(process.env.CI ? ["--timings"] : ["--quiet"]),
         "-p",
         "nightfall-app",
         "--bin",
