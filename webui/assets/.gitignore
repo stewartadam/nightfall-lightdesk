@@ -1,0 +1,10 @@
+*
+!.gitignore
+!browser-demo/
+browser-demo/*
+!browser-demo/nightfall-demo-click.LICENSE.txt
+!models/
+models/*
+!models/beat-this/
+models/beat-this/*
+!models/beat-this/NOTICE.md
