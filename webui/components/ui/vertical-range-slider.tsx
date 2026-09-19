@@ -34,8 +34,8 @@ export interface VerticalRangeSliderProps {
   step?: number;
   /** Number of ticks to show (default: 11 for 0%, 10%, ..., 100%) */
   tickCount?: number;
-  /** Height of the slider (default: 160px) */
-  height?: number;
+  /** Track height in pixels or a CSS size (default: 160px). */
+  height?: number | string;
 
   /** Additional class for container */
   class?: string;
@@ -67,8 +67,11 @@ export function VerticalRangeSlider(
   /** Resolves the number of evenly spaced tick marks. */
   const tickCount = () => props.tickCount ?? 11;
 
-  /** Resolves the rendered track height in pixels. */
-  const height = () => props.height ?? 160;
+  /** Resolves a CSS track height, allowing the parent to supply available space. */
+  const height = () =>
+    typeof props.height === "string"
+      ? props.height
+      : `${props.height ?? 160}px`;
   /** Converts an optional reference value into a bounded track position. */
   const markerPercent = createMemo(() => {
     if (props.markerValue === undefined) return undefined;
@@ -141,7 +144,7 @@ export function VerticalRangeSlider(
   return (
     <div
       class={`vertical-range-slider-container ${props.class ?? ""}`}
-      style={{ height: `${height()}px` }}
+      style={{ height: height() }}
     >
       <div
         ref={sliderRef}

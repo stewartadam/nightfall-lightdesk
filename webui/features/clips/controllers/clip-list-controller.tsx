@@ -468,6 +468,7 @@ export function ClipListController(props: ClipListControllerProps) {
 
       <ClipControlsSection
         collapsed={controls.collapsed()}
+        transitioning={controls.transitioning()}
         height={controls.height()}
         visibleHeight={controls.visibleHeight()}
         clipStates={$clips}

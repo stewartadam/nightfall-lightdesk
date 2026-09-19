@@ -16,6 +16,7 @@ import { Controls, type ControlsProps } from "./controls";
 
 interface ClipControlsSectionProps {
   collapsed: boolean;
+  transitioning: boolean;
   height: number;
   visibleHeight: number;
   clipStates: ControlsProps["clipStates"];
@@ -28,7 +29,10 @@ interface ClipControlsSectionProps {
 export function ClipControlsSection(props: ClipControlsSectionProps) {
   return (
     <div
-      class="flex min-h-0 shrink-0 flex-col border-t border-neutral-700 bg-neutral-900"
+      class="flex min-h-0 shrink-0 flex-col overflow-hidden border-t border-neutral-700 bg-neutral-900"
+      classList={{
+        "transition-[height] duration-200 ease-in-out": props.transitioning,
+      }}
       data-clip-controls-section=""
       data-collapsed={props.collapsed}
       style={{ height: `${props.visibleHeight}px` }}
@@ -70,8 +74,8 @@ export function ClipControlsSection(props: ClipControlsSectionProps) {
           />
         </ToolbarButton>
       </div>
-      <Show when={!props.collapsed}>
-        <div class="min-h-0 flex-1 overflow-auto p-3">
+      <Show when={!props.collapsed || props.transitioning}>
+        <div class="min-h-0 flex-1 overflow-hidden p-3" inert={props.collapsed}>
           <Controls controlCount={10} clipStates={props.clipStates} />
         </div>
       </Show>

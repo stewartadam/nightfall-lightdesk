@@ -42,6 +42,7 @@ export interface ControlProps {
 
 const log = getLogger(import.meta.url);
 
+/** Renders a full-height fader strip with fixed-size assignment and playback actions. */
 export function Control(props: ControlProps): JSX.Element {
   const [isDragOver, setIsDragOver] = createSignal(false);
 
@@ -117,7 +118,7 @@ export function Control(props: ControlProps): JSX.Element {
   return (
     <div
       data-control-index={props.index}
-      class={`control flex flex-col items-center gap-2 p-2 rounded-lg transition-colors ${
+      class={`control h-full min-h-0 flex flex-col items-center gap-2 p-2 rounded-lg transition-colors ${
         isDragOver() ? "bg-blue-900/50 ring-2 ring-blue-500" : "bg-neutral-800"
       }`}
       onDragOver={handleDragOver}
@@ -125,7 +126,7 @@ export function Control(props: ControlProps): JSX.Element {
       onDrop={handleDrop}
     >
       {/* Vertical slider */}
-      <div class="flex w-full justify-center pb-2 pt-1">
+      <div class="flex min-h-0 flex-1 w-full justify-center pb-2 pt-1">
         <Show
           when={props.assignedClip || props.assignedMaster}
           fallback={
@@ -136,7 +137,7 @@ export function Control(props: ControlProps): JSX.Element {
               max={100}
               step={1}
               tickCount={11}
-              height={160}
+              height="100%"
               markerValue={
                 showDisparateValues() ? props.hardwareValue : undefined
               }
@@ -151,7 +152,7 @@ export function Control(props: ControlProps): JSX.Element {
             max={100}
             step={1}
             tickCount={11}
-            height={160}
+            height="100%"
             markerValue={
               showDisparateValues() ? props.hardwareValue : undefined
             }
@@ -161,14 +162,17 @@ export function Control(props: ControlProps): JSX.Element {
       </div>
 
       {/* Current value display */}
-      <div data-control-value-index={props.index} class="w-full text-center">
+      <div
+        data-control-value-index={props.index}
+        class="w-full shrink-0 text-center"
+      >
         <div class="text-xs text-neutral-400 font-mono">{valueLabel()}</div>
       </div>
 
       {/* Clip label / drop zone */}
       <div
         data-clip-dropzone-index={props.index}
-        class={`w-full min-h-[40px] rounded text-center text-xs flex items-center justify-center relative ${
+        class={`w-full shrink-0 min-h-[40px] rounded text-center text-xs flex items-center justify-center relative ${
           props.assignedClip || props.assignedMaster
             ? "bg-neutral-700 text-neutral-200"
             : "bg-neutral-900 text-neutral-500 border border-dashed border-neutral-600"
@@ -207,7 +211,7 @@ export function Control(props: ControlProps): JSX.Element {
         type="button"
         data-control-go-index={props.index}
         aria-label={`Go control ${props.index}`}
-        class="w-full"
+        class="w-full shrink-0"
         disabled={!canGo()}
         onClick={props.onGo}
         title={
@@ -226,7 +230,9 @@ export function Control(props: ControlProps): JSX.Element {
         Go
       </Button>
       {/* Control number */}
-      <div class="text-xs text-neutral-500 font-medium">{props.index}</div>
+      <div class="shrink-0 text-xs text-neutral-500 font-medium">
+        {props.index}
+      </div>
     </div>
   );
 }
