@@ -56,10 +56,10 @@ repos:
 
     - id: cargo-clippy
       name: Cargo clippy
-      entry: cargo clippy --all-targets
+      entry: node scripts/run-native-cargo.mjs clippy --all-targets
       language: system
       pass_filenames: false
-      files: \.rs$
+      files: \.rs$|(^|/)Cargo\.toml$|^scripts/run-native-cargo\.mjs$
       stages: [pre-commit]
 
     - id: typeshare
@@ -90,10 +90,10 @@ repos:
     # tests
     - id: cargo-test
       name: Rust tests
-      entry: cargo test --workspace
+      entry: node scripts/run-native-cargo.mjs test
       language: system
       pass_filenames: false
-      files: \.rs$|(^|/)Cargo\.lock$
+      files: \.rs$|(^|/)Cargo\.(toml|lock)$|^scripts/run-native-cargo\.mjs$
       stages: [pre-push]
 
     - id: node-tests

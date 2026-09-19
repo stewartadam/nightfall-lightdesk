@@ -17,7 +17,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { relative, resolve } from "node:path";
-import { brotliCompressSync, gzipSync } from "node:zlib";
 import { noticesJson, noticesText } from "./distribution-notices.mjs";
 
 const artifactDirectory = resolve("webui/dist");
@@ -45,13 +44,11 @@ function artifactFiles(directory, root = directory) {
   return files.sort();
 }
 
-/** Compute deploy-time integrity and transfer-size evidence for one file. */
+/** Compute raw byte size and deploy-time integrity for one file. */
 function describeFile(path) {
   const bytes = readFileSync(path);
   return {
     bytes: bytes.byteLength,
-    gzipBytes: gzipSync(bytes).byteLength,
-    brotliBytes: brotliCompressSync(bytes).byteLength,
     sha256: createHash("sha256").update(bytes).digest("hex"),
     integrity: `sha384-${createHash("sha384").update(bytes).digest("base64")}`,
   };

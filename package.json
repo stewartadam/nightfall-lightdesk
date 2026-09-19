@@ -6,7 +6,8 @@
   "scripts": {
     "notices:desktop": "node scripts/distribution-notices.mjs",
     "build": "vite build",
-    "build:browser-demo": "npm run generate:browser-demo-audio && npm run wasm-build:browser-demo && vite build --mode browser-demo --base=/demo/app/ && node scripts/package-browser-demo-artifact.mjs && npm run report:browser-demo-size",
+    "build:browser-demo": "npm run wasm-build && npm run build:browser-demo:prepared",
+    "build:browser-demo:prepared": "npm run generate:browser-demo-audio && vite build --mode browser-demo --base=/demo/app/ && node scripts/package-browser-demo-artifact.mjs && npm run report:browser-demo-size",
     "dev": "vite dev",
     "worktree:dashboard": "node worktree-dashboard/worktree-dashboard.mjs",
     "worktree:dashboard:api": "node worktree-dashboard/worktree-dashboard.mjs",

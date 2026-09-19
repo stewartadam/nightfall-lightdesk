@@ -42,3 +42,5 @@
   - [Undo Stack](user-guide/panels/undo-stack.md)
   - [Instrumentation](user-guide/panels/instrumentation.md)
 - [Glossary](user-guide/glossary.md)
+
+- [CI builds](developer-reference/ci-builds.md)

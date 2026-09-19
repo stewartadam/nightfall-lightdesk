@@ -1,16 +1,8 @@
 name: Browser demo artifact
 
+# Called after the distribution workflow uploads release WASM for this commit.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    paths:
-      - '.github/workflows/browser-demo.yml'
-      - '.gitignore'
-      - 'webui/index.html'
-      - 'webui/public/**'
-      - 'scripts/*browser-demo*'
+  workflow_call:
 
 permissions:
   contents: read
@@ -53,21 +45,21 @@ jobs:
       - name: Install JavaScript dependencies and browsers
         run: |
           npm clean-install
-          cargo install --locked typeshare-cli
+          cargo install --locked typeshare-cli --version 1.13.3
           cargo install --locked cargo-about --version 0.8.4
           npx playwright install --with-deps chromium firefox
 
       - name: Generate TypeScript shared types
         run: npm run typeshare
 
-      - name: Build WASM web assets (dev)
-        run: npm run wasm-build:dev
+      - name: Download shared release WASM
+        uses: actions/download-artifact@v7
+        with:
+          name: release-wasm-${{ github.sha }}
+          path: webui/assets
 
       - name: Check the reduced browser dependency graph
         run: npm run check:browser-demo-dependencies
-
-      - name: Check the browser runtime on wasm32
-        run: cargo check -p nightfall-browser-runtime --target wasm32-unknown-unknown
 
       - name: Test the browser runtime natively
         run: cargo test -p nightfall-browser-runtime
@@ -76,7 +68,7 @@ jobs:
         run: npm test
 
       - name: Build and package the release artifact
-        run: npm run build:browser-demo
+        run: npm run build:browser-demo:prepared
 
       - name: Run the Chromium product flow
         run: npm run test:browser-demo-artifact -- --browser chromium
