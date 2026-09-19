@@ -19,7 +19,6 @@ import {
   INITIAL_FADER_BEAT_STATE,
   nextFaderBeatState,
 } from "../../../lib/startup-fader-animation";
-import { serverVersion } from "../../../state/appStores";
 import { reducedMotion } from "../../../state/reduced-motion";
 import type { StartupPhase } from "./model";
 
@@ -119,7 +118,6 @@ function createSplashBeatState() {
 
 /** Renders the startup splash while backend presence and showfile state settle. */
 function StartupSplash(props: { exiting: boolean; phase: StartupPhase }) {
-  const version = useStore(serverVersion);
   const beatState = createSplashBeatState();
 
   /** Returns user-facing status text for the current startup phase. */
@@ -175,9 +173,6 @@ function StartupSplash(props: { exiting: boolean; phase: StartupPhase }) {
         <p>
           v{APP_VERSION} - {APP_BUILD_NAME} ({APP_BUILD_ID})
         </p>
-        <Show when={version()}>
-          {(engineVersion) => <p>engine v{engineVersion()}</p>}
-        </Show>
       </div>
     </div>
   );
