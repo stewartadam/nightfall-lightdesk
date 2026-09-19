@@ -26,12 +26,6 @@ export const desktopTargets = [
     extensions: [".dmg"],
   },
   {
-    runner: "macos-15-intel",
-    target: "x86_64-apple-darwin",
-    bundles: "dmg",
-    extensions: [".dmg"],
-  },
-  {
     runner: "windows-2022",
     target: "x86_64-pc-windows-msvc",
     bundles: "nsis",

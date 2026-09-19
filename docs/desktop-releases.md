@@ -5,13 +5,12 @@ The [Desktop artifacts workflow](../.github/workflows/desktop-artifacts.yml) bui
 | Platform | Native runner | Installer |
 | --- | --- | --- |
 | macOS Apple Silicon | `macos-15` | DMG |
-| macOS Intel | `macos-15-intel` | DMG |
 | Windows x64 | `windows-2022` | NSIS EXE |
 | Linux x64 | `ubuntu-22.04` | Debian package and AppImage |
 
 The web frontend is prepared once and shared by the native packaging jobs. The beat-detection model is an optional, checksum-verified download offered on first use or through Settings; it is stored in the application data directory and is not included in installers. Saved beat grids and playback do not require it. Native builds disable Cargo's default features to exclude Bevy dynamic linking; the Tauri configuration explicitly selects the desktop features.
 
-Intel macOS uses OS-default thread scheduling because `gdt-cpus` supports only Apple Silicon on macOS. Backend priority and affinity tuning remain enabled on Apple Silicon, Linux, and Windows.
+Generated macOS installers target Apple Silicon only.
 
 ## Build channels
 
@@ -33,7 +32,7 @@ This repository supplies the tagged GitHub Release assets. The `nightfall.live/d
    git push origin v0.1.0
    ```
 
-4. Inspect the Desktop artifacts run. It collects five uniquely named installers and writes `SHA256SUMS`. Uploads go to a draft release, which becomes public only after every upload succeeds.
+4. Inspect the Desktop artifacts run. It collects four uniquely named installers and writes `SHA256SUMS`. Uploads go to a draft release, which becomes public only after every upload succeeds.
 
 A failed upload leaves a draft that the same workflow can resume. Rerunning an already-public release fails instead of replacing its files. Keep release tags and published artifacts immutable; use a new version for corrections.
 
