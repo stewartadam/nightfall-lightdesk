@@ -26,7 +26,7 @@ test("layout list shows scroll indicators at overflow edges", async ({
   await expect(bottom).toHaveAttribute("data-visible", "false");
   for (let index = 0; index < 12; index++) {
     await dialog.getByPlaceholder("Layout name").fill(`Layout ${index + 1}`);
-    await dialog.getByRole("button", { name: "Store Current" }).click();
+    await dialog.getByRole("button", { name: "Save current as new" }).click();
     await expect(dialog.getByPlaceholder("Layout name")).toHaveValue("");
   }
   await expect(bottom).toHaveAttribute("data-visible", "true");
@@ -40,7 +40,7 @@ test("layout list shows scroll indicators at overflow edges", async ({
   await expect(top).toHaveAttribute("data-visible", "true");
   await expect(bottom).toHaveAttribute("data-visible", "false");
   await expect(
-    dialog.getByRole("button", { name: "Store Current" }),
+    dialog.getByRole("button", { name: "Save current as new" }),
   ).toBeInViewport();
   await page.screenshot({
     path: testInfo.outputPath("layouts-overflow-bottom.png"),
