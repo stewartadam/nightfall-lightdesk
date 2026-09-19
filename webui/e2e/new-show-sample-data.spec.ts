@@ -69,6 +69,8 @@ test("new show optionally includes standalone sample data", async ({
   expect(snapshot.timelines.length).toBeGreaterThan(0);
   for (const timeline of snapshot.timelines) {
     expect(timeline.audio_enabled).toBe(true);
+    expect(timeline.use_beat_grid).toBe(true);
+    expect(timeline.bpm).toBe(timeline.identifiers.id === 1 ? 108 : 168);
     const audioPath = timeline.audio_path as string;
     expect(audioPath).toMatch(/^timeline-audio\/[a-f0-9]+\/(lofi|rap)\.mp3$/);
     const bundledAudio = readFileSync(
@@ -139,6 +141,39 @@ test("new show optionally includes standalone sample data", async ({
     path: testInfo.outputPath("sample-show-arrangement.png"),
     animations: "disabled",
   });
+
+  for (const timeline of snapshot.timelines) {
+    await page.evaluate((uid) => {
+      const stores = (window as any).appStores;
+      const timeline = stores.timelines.get()[uid];
+      const api = stores.dockApi.get();
+      const panelId = `sample-timeline-${uid}`;
+      api.addPanel({
+        id: panelId,
+        component: "Timeline",
+        title: timeline.identifiers.label,
+        params: { initialTimelineUid: uid },
+        position: { referencePanel: "panel-Visualizer", direction: "within" },
+      });
+      api.getPanel(panelId)?.focus();
+    }, timeline.identifiers.uid);
+    await expect(
+      page.getByRole("switch", { name: "Use beatgrid" }),
+    ).toBeChecked();
+    await page
+      .getByRole("button", { name: "BPM controls", exact: true })
+      .click();
+    await expect(
+      page.getByRole("textbox", { name: "Beatgrid BPM", exact: true }),
+    ).toHaveValue(String(timeline.bpm));
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `sample-timeline-${timeline.identifiers.id}.png`,
+      ),
+      animations: "disabled",
+    });
+    await page.keyboard.press("Escape");
+  }
 
   const saveResult = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
