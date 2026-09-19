@@ -180,6 +180,20 @@
       }
     }
 
+    .bootstrap-build-metadata {
+      position: absolute;
+      bottom: 1.5rem;
+      left: 0;
+      right: 0;
+      margin: 0;
+      padding: 0 1rem;
+      text-align: center;
+      font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+      font-size: 0.75rem;
+      line-height: 1rem;
+      color: var(--color-neutral-500, #737373);
+    }
+
     .bootstrap-status-dot::before {
       content: ".  ";
       animation: bootstrap-status-dot 1s steps(4, end) infinite;
@@ -232,6 +246,7 @@
         </div>
         <p class="bootstrap-status">Starting engine<span class="bootstrap-status-dot" aria-hidden="true"></span></p>
       </div>
+      <p class="bootstrap-build-metadata"><!-- startup-build-metadata --></p>
     </div>
   </main>
   <script type="module" src="main.tsx"></script>

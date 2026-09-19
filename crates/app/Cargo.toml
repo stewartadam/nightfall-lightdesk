@@ -63,6 +63,7 @@ nightfall-timeline = { path = "../timeline", default-features = false, features 
 nightfall-undo = { path = "../undo" }
 nightfall-waveform = { path = "../waveform" }
 nightfall-websocket = { path = "../websocket" }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", optional = true , features = [] }
@@ -88,7 +89,7 @@ default = ["full", "bevy_dynamic", "beatgrid-detect"]
 full = ["audio", "midi", "osc", "artnet", "sacn", "usb", "fixture-library", "object-library"]
 minimal = []
 audio = ["dep:nightfall-audio", "dep:nightfall-desk-audio", "nightfall-timeline/audio"]
-beatgrid-detect = ["nightfall-timeline/beatgrid-detect"]
+beatgrid-detect = ["nightfall-timeline/beatgrid-detect", "dep:reqwest"]
 midi = ["dep:nightfall-input-midi", "nightfall-showfile/midi"]
 osc = ["dep:nightfall-input-osc", "nightfall-showfile/osc"]
 artnet = ["dep:nightfall-input-artnet", "dep:nightfall-output-artnet"]

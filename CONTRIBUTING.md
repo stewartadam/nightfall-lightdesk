@@ -114,7 +114,6 @@ From the repository root of a fresh clone:
 rustup show
 npm ci
 node scripts/setup-env.mjs
-npm run download:beat-this-model
 npm run typeshare
 npm run wasm-build:dev
 cargo build --workspace --locked
@@ -131,7 +130,7 @@ The backend port is `NIGHTFALL_PORT` in `.env`; Vite uses the following port. Fo
 
 The WASM build generates both the application bridge and worker-local browser runtime, including its curated component FX artifact. Generated WASM assets and TypeScript types are prerequisites for running the UI from a clean checkout.
 
-Beatgrid detection uses a Rust mel-spectrogram frontend and the MIT-licensed Beat This model pipeline with RTen. The model downloader verifies the checksum and writes `webui/assets/models/beat-this/beat_this.onnx`; license details are in `webui/assets/models/beat-this/NOTICE.md`. This step requires a network connection and is separate from `npm ci`.
+Beatgrid detection uses a Rust mel-spectrogram frontend and the MIT-licensed Beat This model pipeline with RTen. The app offers an optional model download when you first request beat detection, or from Settings → Editors. It verifies the checksum and stores the weights in the application data directory for offline reuse. The download prompt includes the full license notice, also available in `webui/assets/models/beat-this/NOTICE.md`. Existing saved beat grids and playback do not require the model.
 
 A clean clone does not include a personal fixture or object library. Put compatible fixture definitions in the application's data directory, as described in the [Fixture Library guide](docs/src/user-guide/panels/fixture-library.md). Set `NIGHTFALL_DATA_DIR` in `.env` to an isolated writable directory for development. Use `NIGHTFALL_SAMPLE_DATA=1` when you intentionally want the engine's generated sample show data; do not enable it against a show you intend to preserve unchanged.
 

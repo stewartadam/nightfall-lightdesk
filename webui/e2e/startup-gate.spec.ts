@@ -308,6 +308,13 @@ test("startup splash presents beat-synced logo faders and bottom build metadata"
 
   const metadata = splash.getByText(/^v.+\(.+\)$/);
   await expect(metadata).toBeVisible();
+  const bootstrapHtml = await (await page.request.get("/")).text();
+  const bootstrapMetadata = bootstrapHtml.match(
+    /<p class="bootstrap-build-metadata">([^<]+)<\/p>/,
+  )?.[1];
+  expect(bootstrapMetadata).toBe(await metadata.textContent());
+  await expect(splash.getByText(/^engine v/)).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("startup-metadata.png") });
   const metadataBox = await metadata.boundingBox();
   const viewport = page.viewportSize();
   expect(metadataBox?.y).toBeGreaterThan((viewport?.height ?? 0) - 100);

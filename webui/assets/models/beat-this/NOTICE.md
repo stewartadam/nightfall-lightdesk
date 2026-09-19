@@ -1,7 +1,8 @@
 Beat This
 =========
 
-Nightfall bundles `beat_this.onnx` for beatgrid detection. The model is a
+Nightfall offers `beat_this.onnx` as an optional download for beatgrid detection.
+The model is a
 converted ONNX form of the Beat This checkpoint from Johannes Kepler University
 Linz, used with Nightfall's Rust mel-spectrogram frontend and RTen inference.
 
@@ -10,7 +11,7 @@ Source repositories:
 - Original Beat This project: https://github.com/CPJKU/beat_this
 - ONNX conversion reference: https://github.com/mosynthkey/beat_this_cpp
 
-Bundled file:
+Optional model file:
 
 - `beat_this.onnx`
 - Download: https://raw.githubusercontent.com/mosynthkey/beat_this_cpp/e9e609472980e3bd7d3d1b06b629464269b9a907/onnx/beat_this.onnx

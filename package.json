@@ -14,7 +14,6 @@
     "worktree:dashboard:watch": "node --watch worktree-dashboard/worktree-dashboard.mjs",
     "worktree:dashboard:ui": "vite dev --open /worktree-dashboard.html",
     "worktree:mcp": "node worktree-dashboard/worktree-dashboard-mcp.mjs",
-    "download:beat-this-model": "node scripts/download-beat-this-model.mjs",
     "fx-module:install": "node scripts/install-fx-module.mjs",
     "generate:showfile-parse-data": "cargo run -p nightfall-app --bin sample-data-showfile-parse-data --",
     "generate:browser-demo-audio": "node scripts/generate-browser-demo-audio.mjs",

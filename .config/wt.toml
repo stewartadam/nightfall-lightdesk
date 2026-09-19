@@ -4,8 +4,6 @@ kill-backend = "WORKTREE_TARGET={{ managed_worktree_path | default(worktree_path
 
 [[pre-start]]
 setup-env = "node ./scripts/setup-env.mjs"
-copy-beat-this-model = "node ./scripts/seed-beat-this-model-from-main.mjs"
-download-beat-this-model = "node ./scripts/download-beat-this-model.mjs"
 
 [[pre-start]]
 install = "npm install"

@@ -85,12 +85,6 @@ pub(super) fn init_bevy_with_transport_policy(
     );
 
     let mut app = App::new();
-    #[cfg(feature = "beatgrid-detect")]
-    app.insert_resource(
-        nightfall_timeline::beat_this_detection::BeatThisResourceDirectory(
-            runtime_config.resource_dir.clone(),
-        ),
-    );
     app.insert_resource(transport_policy);
     app.insert_resource(native_runtime_capabilities(
         runtime_config,
@@ -129,6 +123,12 @@ pub(super) fn init_bevy_with_transport_policy(
         websocket_port: runtime_config.server_port,
     });
     systems::showfile_events::register_showfile_http_routes(
+        &mut app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+    );
+    #[cfg(feature = "beatgrid-detect")]
+    crate::beat_model_http::register_routes(
         &mut app
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),

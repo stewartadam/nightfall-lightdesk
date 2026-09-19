@@ -7,6 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
+import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   createEffect,
@@ -34,7 +35,10 @@ import { Button } from "../../components/ui/visual-language/button";
 import { durationToMs, msToDuration } from "../../lib/duration";
 import { engineRuntime } from "../../lib/engine-runtime";
 import { setStoreAction } from "../../lib/nanostore-action";
-import { bindingValidationSettings } from "../../state/appStores";
+import {
+  bindingValidationSettings,
+  runtimeCapabilities,
+} from "../../state/appStores";
 import {
   $availableAudioDevices,
   $availableNetworkInterfaces,
@@ -56,6 +60,7 @@ import {
   TimeDisplayPreference,
   TimelinePlacementPreference,
 } from "../../types";
+import { createBeatModelDownload } from "../beat-detection";
 import {
   type QualityPreset,
   setVisualizerQuality,
@@ -153,6 +158,8 @@ export function SettingsOverlay() {
   const networkInterfaces = useStore($availableNetworkInterfaces);
   const networkInterfaceStatus = useStore($networkInterfaceStatus);
   const audioDevices = useStore($availableAudioDevices);
+  const capabilities = useStore(runtimeCapabilities);
+  const modelDownload = createBeatModelDownload();
   const highlightSelection = useStore(visualizerHighlightSelection);
   const rotationMode = useStore(visualizerCameraRotationMode);
   const showOrbitTargetIndicator = useStore(visualizerShowOrbitTargetIndicator);
@@ -170,6 +177,15 @@ export function SettingsOverlay() {
       module: "SettingsCommand",
       command: { type: "GetAvailableAudioDevices" },
     });
+  });
+
+  /** Refresh cached model information on entry and stop polling when settings closes. */
+  createEffect(() => {
+    if (isSettingsOpen() && capabilities()?.runtime_mode !== "EmbeddedDemo") {
+      void modelDownload.refresh();
+    } else {
+      modelDownload.close();
+    }
   });
 
   const setProgrammerAutoSelect = (value: boolean) => {
@@ -312,7 +328,11 @@ export function SettingsOverlay() {
   };
 
   return (
-    <Modal isOpen={isSettingsOpen()} onEscape={closeSettings}>
+    <Modal
+      isOpen={isSettingsOpen()}
+      onEscape={closeSettings}
+      closeOnEscape={!modelDownload.isOpen()}
+    >
       <DialogBackdrop
         role="dialog"
         aria-modal="true"
@@ -323,7 +343,11 @@ export function SettingsOverlay() {
       >
         <DialogSurface
           role="document"
-          style={{ width: "500px", "max-width": "100%", "max-height": "80vh" }}
+          style={{
+            width: "500px",
+            "max-width": "100%",
+            "max-height": "80vh",
+          }}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
@@ -502,9 +526,60 @@ export function SettingsOverlay() {
               </section>
 
               <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">
-                  Timeline Authoring
-                </h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Timeline</h3>
+                <Show when={capabilities()?.runtime_mode !== "EmbeddedDemo"}>
+                  <div class="mb-4 space-y-2">
+                    <Show
+                      when={modelDownload.status()?.phase === "ready"}
+                      fallback={
+                        <>
+                          <p class="text-sm text-gray-400" role="status">
+                            {!modelDownload.status() ||
+                            ["unchecked", "checking"].includes(
+                              modelDownload.status()!.phase,
+                            )
+                              ? "Checking beat detection model…"
+                              : modelDownload.status()?.phase === "deleting"
+                                ? "Deleting beat detection model…"
+                                : "The optional Beat This model will enable offline and automatic beatgrid detection."}
+                          </p>
+                          <Button
+                            disabled={
+                              modelDownload.busy() ||
+                              !modelDownload.status() ||
+                              ["unchecked", "checking", "deleting"].includes(
+                                modelDownload.status()!.phase,
+                              )
+                            }
+                            onClick={() => modelDownload.request()}
+                          >
+                            <CloudArrowDownIcon class="size-4" aria-hidden />
+                            Download
+                          </Button>
+                        </>
+                      }
+                    >
+                      <p class="text-sm text-gray-400" role="status">
+                        <span class="text-[var(--accent)]">Beat This</span> ·{" "}
+                        {(
+                          (modelDownload.status()?.total_bytes ?? 0) / 1000000
+                        ).toFixed(1)}{" "}
+                        MB · Installed and available offline
+                      </p>
+                      <Button
+                        disabled={modelDownload.busy()}
+                        onClick={() => void modelDownload.remove()}
+                      >
+                        Delete model
+                      </Button>
+                    </Show>
+                    <Show when={modelDownload.error()}>
+                      <p role="alert" class="text-sm text-red-400">
+                        {modelDownload.error()}
+                      </p>
+                    </Show>
+                  </div>
+                </Show>
                 <label class="block">
                   <span class="text-sm text-gray-400">
                     Insert and paste position
@@ -706,6 +781,7 @@ export function SettingsOverlay() {
           </DialogBody>
         </DialogSurface>
       </DialogBackdrop>
+      {modelDownload.dialog(false)}
     </Modal>
   );
 }

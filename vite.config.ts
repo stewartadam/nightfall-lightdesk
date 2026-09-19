@@ -192,7 +192,23 @@ export default defineConfig(({ mode }) => {
       __NIGHTFALL_APP_LICENSE__: JSON.stringify(appLicense),
       __NIGHTFALL_APP_COPYRIGHT__: JSON.stringify(appCopyright),
     },
-    plugins: [tailwindcss(), solidPlugin(), distributionNoticesPlugin()],
+    plugins: [
+      tailwindcss(),
+      solidPlugin(),
+      distributionNoticesPlugin(),
+      {
+        name: "startup-build-metadata",
+        /** Inserts escaped build metadata into the pre-JavaScript splash. */
+        transformIndexHtml(html) {
+          const metadata = `v${appVersion} - ${appBuildName} (${appBuildId})`;
+          const escaped = metadata
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;");
+          return html.replace("<!-- startup-build-metadata -->", escaped);
+        },
+      },
+    ],
     server: {
       port: vitePort,
       proxy: proxiedUrls(mode, tauri),

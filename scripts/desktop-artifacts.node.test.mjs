@@ -86,8 +86,8 @@ test("stages the complete matrix without filename collisions", () => {
     assert.equal(plan.length, platform.extensions.length);
     names.push(...plan.map((artifact) => artifact.filename));
   }
-  assert.equal(names.length, 5);
-  assert.equal(new Set(names).size, 5);
+  assert.equal(names.length, 4);
+  assert.equal(new Set(names).size, 4);
 });
 
 /** Missing or ambiguous build outputs prevent partial installers from reaching a release. */

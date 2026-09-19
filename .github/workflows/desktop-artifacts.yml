@@ -78,16 +78,14 @@ jobs:
             webui/assets/browser-runtime/
           if-no-files-found: error
           retention-days: 7
-      - name: Build shared desktop frontend and model resources
+      - name: Build shared desktop frontend
         run: |
-          npm run download:beat-this-model
           npm run build
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-web-${{ github.sha }}
           path: |
             webui/dist/
-            webui/assets/models/beat-this/
           if-no-files-found: error
           retention-days: 7
 
@@ -128,7 +126,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: desktop-web-${{ github.sha }}
-          path: webui
+          path: webui/dist
       - name: Assemble target-specific distribution notices
         run: |
           cargo install --locked cargo-about --version 0.8.4

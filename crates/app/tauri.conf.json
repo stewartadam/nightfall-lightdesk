@@ -36,7 +36,6 @@
     "copyright": "(C) 2026 Stewart Adam",
     "license": "MPL-2.0",
     "resources": {
-      "../../webui/assets/models/beat-this": "webui/assets/models/beat-this",
       "../../webui/dist/notices": "notices"
     },
     "targets": "all",
