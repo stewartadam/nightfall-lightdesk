@@ -23,6 +23,27 @@ import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 const inputSelector = "#header-cmdline";
+const rendererErrors = new WeakMap<Page, string[]>();
+
+/** Retains GPU diagnostics even when a failed pipeline still draws emissive pixels. */
+test.beforeEach(async ({ page }) => {
+  const errors: string[] = [];
+  rendererErrors.set(page, errors);
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      /THREE\.|WebGPU|GPUValidationError|Tint/.test(message.text())
+    ) {
+      errors.push(message.text());
+    }
+  });
+});
+
+/** Requires every visualizer scenario to finish without shader or pipeline failures. */
+test.afterEach(async ({ page }) => {
+  expect(rendererErrors.get(page)).toEqual([]);
+});
+
 type CreateFixtureFromLibraryData = Extract<
   FixtureLibraryCommand,
   { type: "CreateFixtureFromLibrary" }
