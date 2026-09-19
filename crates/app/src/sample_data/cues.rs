@@ -20,31 +20,27 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    let selection_elements: Vec<FixtureRef> = vec![
-        // the fixtures whose elements we will select
-        311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 331, 332, 333, 334, 335, 341, 342, 343,
-        344, 345, 351, 352, 353, 354, 355, 361, 362, 363, 364, 365, 371, 372, 373, 374, 375, 381,
-        382, 383, 384, 385,
-    ]
-    .into_iter()
-    .flat_map(|fixture_id| {
-        // create an elementref for the elements on the particular fixture
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(fixture_id)
-            .expect("failed to obtain fixture");
+    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture_id| {
+            // create an elementref for the elements on the particular fixture
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("failed to obtain fixture");
 
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect::<Vec<_>>()
-    })
-    .collect();
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements.clone());
 
@@ -207,31 +203,27 @@ pub(super) fn add_abs_255_cue(world: &mut World) {
             .get_mut(world)
             .expect("sample data system parameters should be available");
 
-    let selection_elements: Vec<FixtureRef> = vec![
-        // the fixtures whose elements we will select
-        311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 331, 332, 333, 334, 335, 341, 342, 343,
-        344, 345, 351, 352, 353, 354, 355, 361, 362, 363, 364, 365, 371, 372, 373, 374, 375, 381,
-        382, 383, 384, 385,
-    ]
-    .into_iter()
-    .flat_map(|fixture_id| {
-        // create an elementref for the elements on the particular fixture
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(fixture_id)
-            .expect("failed to obtain fixture");
+    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture_id| {
+            // create an elementref for the elements on the particular fixture
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("failed to obtain fixture");
 
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect::<Vec<_>>()
-    })
-    .collect();
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements.clone());
 
@@ -430,31 +422,27 @@ pub(super) fn add_rel_cue(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    let selection_elements: Vec<FixtureRef> = vec![
-        // the fixtures whose elements we will select
-        311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 331, 332, 333, 334, 335, 341, 342, 343,
-        344, 345, 351, 352, 353, 354, 355, 361, 362, 363, 364, 365, 371, 372, 373, 374, 375, 381,
-        382, 383, 384, 385,
-    ]
-    .into_iter()
-    .flat_map(|fixture_id| {
-        // create an elementref for the elements on the particular fixture
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(fixture_id)
-            .expect("failed to obtain fixture");
+    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture_id| {
+            // create an elementref for the elements on the particular fixture
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("failed to obtain fixture");
 
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect::<Vec<_>>()
-    })
-    .collect();
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements.clone());
 
@@ -591,31 +579,27 @@ pub(super) fn add_rel_cue2(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    let selection_elements: Vec<FixtureRef> = vec![
-        // the fixtures whose elements we will select
-        311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 331, 332, 333, 334, 335, 341, 342, 343,
-        344, 345, 351, 352, 353, 354, 355, 361, 362, 363, 364, 365, 371, 372, 373, 374, 375, 381,
-        382, 383, 384, 385,
-    ]
-    .into_iter()
-    .flat_map(|fixture_id| {
-        // create an elementref for the elements on the particular fixture
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(fixture_id)
-            .expect("failed to obtain fixture");
+    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture_id| {
+            // create an elementref for the elements on the particular fixture
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("failed to obtain fixture");
 
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect::<Vec<_>>()
-    })
-    .collect();
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements.clone());
 

@@ -56,7 +56,17 @@ test("new show optionally includes standalone sample data", async ({
       "utf8",
     ),
   );
-  expect(snapshot.fixtures.length).toBeGreaterThan(0);
+  expect(snapshot.fixtures).toHaveLength(56);
+  expect(snapshot.sceneObjects).toHaveLength(3);
+  expect(snapshot.bindings.output).toEqual([]);
+  expect(snapshot.bindings.disabled).toHaveLength(56);
+  expect(
+    snapshot.sceneObjects.every(
+      (object: any) =>
+        object.properties.type === "StageElement" &&
+        !object.properties.data.modelPath,
+    ),
+  ).toBe(true);
   expect(snapshot.timelines.length).toBeGreaterThan(0);
   expect(
     snapshot.timelines.every(
@@ -84,6 +94,26 @@ test("new show optionally includes standalone sample data", async ({
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("sample-show-patch.png"),
+    animations: "disabled",
+  });
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  await page
+    .getByPlaceholder("Type a command or search...")
+    .fill("Open Visualizer");
+  await page.keyboard.press("Enter");
+  const visualizer = page.locator('[data-panel-id="panel-Visualizer"]');
+  await expect(visualizer).toBeVisible();
+  await expect(visualizer.locator("canvas")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => Object.keys((window as any).appStores.sceneObjects.get()).length,
+      ),
+    )
+    .toBe(3);
+  await page.screenshot({
+    path: testInfo.outputPath("sample-show-arrangement.png"),
     animations: "disabled",
   });
 

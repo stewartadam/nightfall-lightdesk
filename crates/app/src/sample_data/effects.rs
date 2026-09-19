@@ -19,16 +19,9 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    #[rustfmt::skip]
-    let fixture_rows: [[u32; 10]; 4] = [
-        [325, 324, 323, 322, 321, 311, 312, 313, 314, 315],
-        [345, 344, 343, 342, 341, 331, 332, 333, 334, 335],
-        [365, 364, 363, 362, 361, 351, 352, 353, 354, 355],
-        [385, 384, 383, 382, 381, 371, 372, 373, 374, 375],
-    ];
     // Convert fixture IDs to FixtureRefs for all elements in the fixtures,
     // preserving row structure for spatial clauses
-    let selection_rows: Vec<Vec<FixtureRef>> = fixture_rows
+    let selection_rows: Vec<Vec<FixtureRef>> = fixtures::PIXEL_ROWS
         .iter()
         .map(|row| {
             row.iter()
@@ -290,9 +283,8 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
         ..Default::default()
     });
 
-    // 2. Pan/Tilt circle effect for moving heads (groups 13-14: Spots Front + Spots Rear)
-    let moving_head_selection =
-        SelectionExpr::Group(GroupRefExpr::RangeById { start: 13, end: 14 });
+    // 2. Pan/Tilt circle effect for the six front moving heads.
+    let moving_head_selection = SelectionExpr::Group(GroupRefExpr::ById(13));
 
     // Circle motion: Pan and Tilt with 90° phase offset
     // Both use 4 steps at 25% width each, hitting targets at t=0.25, 0.50, 0.75, 1.00
@@ -762,9 +754,9 @@ pub(super) fn add_fx(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    // fx 1 - Single fixture (Fixture 13)
+    // Single-strip waveform effect.
     let fx_selection = SelectionExpr::Fixture(UnresolvedFixtureRef {
-        fixture_id: 13,
+        fixture_id: 310,
         element_index: None,
     });
 
