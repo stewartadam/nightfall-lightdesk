@@ -10,7 +10,7 @@ use bevy::prelude::{App, Resource};
 use bevy_state::app::AppExtStates;
 use nightfall_config::RuntimeConfig;
 use nightfall_desk::{
-    prelude::{PendingUiNotifications, ToastLevel, UiNotification},
+    prelude::{ToastLevel, UiNotification, UiNotificationState},
     resources::log_config::LogConfig,
 };
 use nightfall_engine::prelude::AppState;
@@ -183,11 +183,9 @@ pub(super) fn queue_startup_ui_notifications(
 
     let Some(mut pending_ui_notifications) = bevy_app
         .world_mut()
-        .get_resource_mut::<PendingUiNotifications>()
+        .get_resource_mut::<UiNotificationState>()
     else {
-        tracing::error!(
-            "Failed to get PendingUiNotifications resource for startup UI notifications"
-        );
+        tracing::error!("Failed to get UiNotificationState resource for startup UI notifications");
         return;
     };
 

@@ -28,7 +28,7 @@ use nightfall_cues::prelude::{
     BoundCueInstruction, Cue, CueInstruction, MaterializedSequence, Sequence,
 };
 use nightfall_desk::{
-    prelude::{PendingUiNotifications, ToastLevel, UiNotification, set_control_action},
+    prelude::{ToastLevel, UiNotification, UiNotificationState, set_control_action},
     resources::log_config::{LogConfig, TracingTarget},
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
@@ -566,11 +566,11 @@ fn new_showfile_current_showfile_notification_uses_normalized_name() {
 
     let notifications: Vec<_> = app
         .world_mut()
-        .resource_mut::<PendingUiNotifications>()
-        .drain()
+        .resource_mut::<UiNotificationState>()
+        .take_for_resync()
         .collect();
     assert_eq!(notifications.len(), 1);
-    let UiNotification::CurrentShowfileChanged { name } = &notifications[0] else {
+    let UiNotification::CurrentShowfileChanged { name, .. } = &notifications[0] else {
         panic!("expected current showfile changed command");
     };
     assert_eq!(name.as_deref(), Some("demo"));

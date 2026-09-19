@@ -11,7 +11,7 @@ use std::time::Duration;
 use bevy::prelude::{App, AppExit};
 use nightfall_config::RuntimeConfig;
 use nightfall_desk::{
-    prelude::{PendingUiNotifications, UiNotification},
+    prelude::{UiNotification, UiNotificationState},
     resources::log_config::LogConfig,
 };
 use nightfall_engine::prelude::{
@@ -179,17 +179,13 @@ pub(super) fn queue_current_showfile_changed(bevy_app: &mut App, _request: &Pend
         .and_then(|showfile| showfile.name().map(str::to_string));
     let Some(mut pending_ui_notifications) = bevy_app
         .world_mut()
-        .get_resource_mut::<PendingUiNotifications>()
+        .get_resource_mut::<UiNotificationState>()
     else {
-        tracing::error!(
-            "Failed to get PendingUiNotifications resource for current showfile change"
-        );
+        tracing::error!("Failed to get UiNotificationState resource for current showfile change");
         return;
     };
 
-    pending_ui_notifications.push(UiNotification::CurrentShowfileChanged {
-        name: current_showfile,
-    });
+    pending_ui_notifications.push(UiNotification::current_showfile_changed(current_showfile));
 }
 
 /// Publishes an internal post-swap resync request in the active world.

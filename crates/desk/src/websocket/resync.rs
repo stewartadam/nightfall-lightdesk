@@ -45,7 +45,7 @@ pub(crate) fn handle_resync_state(
     materialized_clips: Query<&MaterializedClip>,
     control_params: ResyncControlParams,
     undo_manager: Res<UndoManager>,
-    mut pending_ui_notifications: Option<ResMut<PendingUiNotifications>>,
+    mut pending_ui_notifications: Option<ResMut<UiNotificationState>>,
     broadcaster: Res<ClientEventSink>,
 ) {
     let should_resync = events.read().next().is_some();
