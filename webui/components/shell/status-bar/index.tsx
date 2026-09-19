@@ -45,7 +45,7 @@ import { getLogger } from "../../../lib/logger";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import {
   newShowfile,
-  promptForNewShowfileName,
+  promptForNewShowfile,
   saveShowfile,
 } from "../../../lib/showfile-actions";
 import { currentShowfileName } from "../../../lib/showfile-loading";
@@ -204,9 +204,9 @@ export default function StatusBar() {
   /** Prompts for a show name before starting a fresh showfile. */
   const promptAndNewShowfile = () => {
     void (async () => {
-      const showfileName = await promptForNewShowfileName();
-      if (!showfileName) return;
-      newShowfile(showfileName);
+      const options = await promptForNewShowfile();
+      if (!options) return;
+      newShowfile(options);
     })();
   };
 

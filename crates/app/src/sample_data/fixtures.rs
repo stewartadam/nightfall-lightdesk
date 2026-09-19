@@ -2267,7 +2267,7 @@ fn add_fixture_with_patching(
             .get_mut(world)
             .expect("sample data system parameters should be available");
 
-        // Store the fixture (geometry is provided separately via the library at runtime)
+        // Embedded profiles and physical metadata work without installed geometry assets.
         let _ = fixture_data_provider.inner.add(fixture.clone());
     }
     apply_output_binding(

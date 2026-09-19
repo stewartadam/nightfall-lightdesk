@@ -14,7 +14,7 @@ import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import {
   newShowfile,
-  promptForNewShowfileName,
+  promptForNewShowfile,
   showfileSaveCommandForInput,
 } from "../../../lib/showfile-actions";
 import { pushToast } from "../../../state/appStores";
@@ -94,12 +94,12 @@ export function createCommandLineController(
       return;
 
     if (isNewShowPromptCommand(trimmedInput)) {
-      const showfileName = await promptForNewShowfileName();
-      if (!showfileName) {
+      const options = await promptForNewShowfile();
+      if (!options) {
         queueMicrotask(() => inputElement?.focus());
         return;
       }
-      newShowfile(showfileName);
+      newShowfile(options);
     } else {
       const showfileSaveCommand = showfileSaveCommandForInput(trimmedInput);
       if (showfileSaveCommand) {
