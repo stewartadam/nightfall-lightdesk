@@ -6,4 +6,6 @@ Keep open state, validation, submission, focus restoration, and domain keyboard 
 
 Keep headers and footers outside padded form bodies. Close buttons default to the accessible name “Close”; override it when several dialogs need distinct labels. File inputs used by drop zones remain hidden native inputs.
 
+Dialog buttons and single-line form controls default to compact 28px sizing, matching the startup recovery actions. Header close buttons use the same height. Explicit button `size` and field `density` props override the surrounding defaults; multiline fields retain their larger editing area.
+
 `DialogBody` uses `ScrollArea` to show directional carets when content overflows. Body classes and HTML attributes apply to the padded viewport; `style` applies to the outer sizing container. Use `scrollable={false}` when a child `ScrollArea` or `TableScroll` owns scrolling, and constrain that child with a flex or grid layout so headers and actions stay visible.

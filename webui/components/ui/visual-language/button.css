@@ -46,7 +46,8 @@
   background: #632c32;
   border-color: #a24c52;
 }
-.nf-button[data-size="compact"] {
+.nf-button[data-size="compact"],
+:where(.nf-dialog-surface) .nf-button:not([data-size]) {
   min-height: 28px;
   padding: 4px 10px;
   font-size: 12px;
@@ -55,6 +56,10 @@
   width: 32px;
   height: 32px;
   padding: 0;
+}
+:where(.nf-dialog-header) .nf-button[data-size="icon"] {
+  width: 28px;
+  height: 28px;
 }
 .nf-button:disabled {
   color: #767d80;
