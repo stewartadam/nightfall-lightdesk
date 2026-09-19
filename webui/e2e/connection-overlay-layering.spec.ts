@@ -66,9 +66,7 @@ test("connection overlay renders above dockview sashes", async ({
   await expect(overlay).toBeVisible();
   await expect(page.getByText("Connection Lost")).toBeVisible();
   await expect(
-    overlay.getByText(
-      "Attempting to re-establish connection to nightfall session.",
-    ),
+    overlay.getByText("Re-establishing connection to nightfall session."),
   ).toBeVisible();
   const surface = overlay.getByRole("dialog");
   await expect(surface).toHaveClass(/nightfall-modal-surface/);
