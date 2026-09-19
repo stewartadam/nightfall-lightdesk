@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { createEmbeddedRuntime } from "./engine-runtime-embedded";
 import { startEngineRuntimeWorker } from "./engine-runtime-worker-core";
 
-startEngineRuntimeWorker();
+startEngineRuntimeWorker(createEmbeddedRuntime);

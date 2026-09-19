@@ -1,9 +1,12 @@
 name: Cached WASM assets
-description: Restore exact wasm-pack outputs or build and cache both WebAssembly packages.
+description: Restore exact wasm-pack outputs or build and cache one WebAssembly package.
 
 inputs:
   profile:
     description: wasm-pack build profile (dev or release).
+    required: true
+  package:
+    description: Rust package to build (wasm-bridge or browser-runtime).
     required: true
 
 runs:
@@ -14,11 +17,19 @@ runs:
       shell: bash
       env:
         WASM_PROFILE: ${{ inputs.profile }}
+        WASM_PACKAGE: ${{ inputs.package }}
       run: |
         case "$WASM_PROFILE" in
           dev|release) ;;
           *) echo "Unsupported WASM profile: $WASM_PROFILE" >&2; exit 1 ;;
         esac
+        case "$WASM_PACKAGE" in
+          wasm-bridge) directory=wasm; entry=nightfall_wasm_bridge ;;
+          browser-runtime) directory=browser-runtime; entry=nightfall_browser_runtime ;;
+          *) echo "Unsupported WASM package: $WASM_PACKAGE" >&2; exit 1 ;;
+        esac
+        echo "directory=$directory" >> "$GITHUB_OUTPUT"
+        echo "entry=$entry" >> "$GITHUB_OUTPUT"
         echo "hash=$(rustc -vV | sha256sum | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
     # Final outputs must never use a fallback key: Cargo cannot check their freshness.
@@ -27,30 +38,30 @@ runs:
       id: cache
       uses: actions/cache/restore@v5
       with:
-        path: |
-          webui/assets/wasm/
-          webui/assets/browser-runtime/
-        key: wasm-assets-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.profile }}-${{ steps.compiler.outputs.hash }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain*', '.cargo/**', 'crates/**', 'config/**', 'test-fixtures/**', 'scripts/**', 'package.json', 'package-lock.json', 'LICENSE', '.github/workflows/**', '.github/actions/wasm-assets/**') }}
+        path: webui/assets/${{ steps.compiler.outputs.directory }}/
+        key: wasm-assets-v2-${{ inputs.package }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.profile }}-${{ steps.compiler.outputs.hash }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain*', '.cargo/**', 'crates/**', 'config/**', 'test-fixtures/**', 'scripts/**', 'package.json', 'package-lock.json', 'LICENSE', '.github/workflows/**', '.github/actions/wasm-assets/**') }}
 
-    - name: Build missing WASM packages
+    - name: Build missing WASM package
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       env:
         WASM_PROFILE: ${{ inputs.profile }}
+        WASM_PACKAGE: ${{ inputs.package }}
+        WASM_DIRECTORY: ${{ steps.compiler.outputs.directory }}
       run: |
-        if [[ "$WASM_PROFILE" == dev ]]; then
-          npm run wasm-build:dev
-        else
-          npm run wasm-build
-        fi
+        profile_args=()
+        if [[ "$WASM_PROFILE" == dev ]]; then profile_args+=(--dev); fi
+        npx wasm-pack build "${profile_args[@]}" --target web \
+          --out-dir "../../webui/assets/$WASM_DIRECTORY" "crates/$WASM_PACKAGE"
 
     - name: Verify generated package entry points
       shell: bash
+      env:
+        WASM_DIRECTORY: ${{ steps.compiler.outputs.directory }}
+        WASM_ENTRY: ${{ steps.compiler.outputs.entry }}
       run: |
-        for package in wasm/nightfall_wasm_bridge browser-runtime/nightfall_browser_runtime; do
-          for suffix in .js .d.ts _bg.wasm; do
-            test -s "webui/assets/${package}${suffix}"
-          done
+        for suffix in .js .d.ts _bg.wasm; do
+          test -s "webui/assets/$WASM_DIRECTORY/${WASM_ENTRY}${suffix}"
         done
 
     # Save immediately after a successful build, even if a later unrelated check fails.
@@ -58,7 +69,5 @@ runs:
       if: steps.cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
-        path: |
-          webui/assets/wasm/
-          webui/assets/browser-runtime/
+        path: webui/assets/${{ steps.compiler.outputs.directory }}/
         key: ${{ steps.cache.outputs.cache-primary-key }}

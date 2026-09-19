@@ -47,7 +47,9 @@ const outcome = await runOwnedCommand(
     "127.0.0.1",
     "--port",
     `${backendPort + 1}`,
-    ...(usesVitePreview ? ["--base", "/demo/app/"] : []),
+    ...(usesVitePreview
+      ? ["--base", process.env.NIGHTFALL_PLAYWRIGHT_VITE_BASE ?? "/demo/app/"]
+      : []),
   ],
   {
     onSpawn: configureViteChild,

@@ -58,6 +58,7 @@ const WEBSOCKET_WORKER_DELIVERY_MEASURE = "nightfall:websocket.worker-to-main";
 const REACTIVE_PARAMETER_STATE_INTERVAL_MS = 50;
 const mainThreadMessageHandlers = createMainThreadMessageHandlerRegistry();
 
+import EngineRuntimeWorker from "#engine-runtime-worker?worker";
 import {
   addConsoleSendError,
   addExternalConsoleCommand,
@@ -131,7 +132,6 @@ import {
   normalizeCorrelationId,
 } from "./console-scrollback";
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
-import EngineRuntimeWorker from "./engine-runtime-worker?worker";
 import { applyFlowDeltaToDefinition } from "./flow-delta";
 import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
