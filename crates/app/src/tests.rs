@@ -58,8 +58,7 @@ use super::{
     WorldFactory,
     composition::{PeriodicDraftAutosaveTimer, ShowfileHandling},
     desktop_shell::{
-        file_explorer_command, file_open_command, resolve_open_data_dir_path,
-        resolve_open_log_file_path,
+        file_explorer_command, resolve_open_data_dir_path, resolve_open_log_file_path,
     },
     session::{
         complete_and_publish_world_swap_success, queue_current_showfile_changed,
@@ -687,9 +686,10 @@ fn file_explorer_command_matches_current_platform() {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+/// Preserve the log path as one argument to the platform file launcher.
 fn file_open_command_matches_current_platform() {
     let path = Path::new("test-log.txt");
-    let (program, args) = file_open_command(path).expect("file open command");
+    let (program, args) = crate::desktop_shell::file_open_command(path).expect("file open command");
 
     #[cfg(target_os = "macos")]
     assert_eq!(program, "open");
