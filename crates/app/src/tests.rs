@@ -38,8 +38,8 @@ use nightfall_engine::prelude::{
     EngineActionEnvelope, EventHandling, FinishedCommand, ReplyTarget, ResyncRequested,
 };
 use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, OutputSource, OutputTarget,
-    Parameter, ParameterMetadata, ParameterValues,
+    Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, OutputSource, Parameter,
+    ParameterMetadata, ParameterValues,
 };
 #[cfg(feature = "midi")]
 use nightfall_input_midi::prelude::*;
@@ -741,8 +741,9 @@ fn world_factory_build_propagates_network_enabled_states() {
     assert!(settings.usb_output_enabled);
 }
 
+/// Verifies the inner wash arc is seeded with output disabled even when transports are enabled.
 #[test]
-fn sample_data_build_patches_rotating_wash_beam() {
+fn sample_data_build_seeds_rotating_wash_beam_with_disabled_output() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
 
     let app = factory
@@ -754,36 +755,26 @@ fn sample_data_build_patches_rotating_wash_beam() {
     let fixture = fixture_provider
         .inner
         .iter()
-        .find(|fixture| fixture.identifiers.id == 607)
+        .find(|fixture| fixture.identifiers.id == 1010)
         .expect("sample data should include Generic wash beam");
 
     assert_eq!(fixture.make, "Generic");
     assert_eq!(fixture.model, "12-segment Rotating Wash Beam");
     assert_eq!(fixture.elements.len(), 37);
-    assert_eq!(fixture.placement.position.x, 0.0);
-    assert_eq!(fixture.placement.position.y, 0.5);
-    assert_eq!(fixture.placement.position.z, 0.0);
+    assert_eq!(fixture.placement.position.x, -2.25);
+    assert_eq!(fixture.placement.position.y, 0.25);
+    assert_eq!(fixture.placement.position.z, -2.5);
 
-    let output_bindings = app.world().resource::<OutputBindings>();
-    let binding = output_bindings
-        .bindings
-        .iter()
-        .find(|binding| {
-            matches!(
-                &binding.source,
-                OutputSource::Fixture { uids, .. } if uids.contains(&fixture.identifiers.uid)
-            )
-        })
-        .expect("sample data should patch Generic wash beam output");
-
-    assert!(matches!(
-        &binding.target,
-        OutputTarget::Transport {
-            target,
-            universe: Some(universe),
-            address: Some(1),
-        } if target == "artnet" && universe.start == 26 && universe.end == 26
-    ));
+    assert!(app.world().resource::<OutputBindings>().bindings.is_empty());
+    let disabled = app
+        .world()
+        .resource::<nightfall_fixtures::prelude::DisabledBindings>();
+    assert_eq!(disabled.bindings.len(), 56);
+    assert!(disabled.bindings.iter().any(|binding| matches!(binding,
+        nightfall_fixtures::prelude::DisabledBinding::Output {
+            source: OutputSource::Fixture { uids, .. }, ..
+        } if uids.contains(&fixture.identifiers.uid)
+    )));
 }
 
 /// Verifies fixture 601 white output is scaled by its virtual dimmer.
@@ -921,8 +912,8 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         fixture_provider
             .inner
             .iter()
-            .find(|fixture| fixture.identifiers.id == 607)
-            .expect("sample data should include fixture 607")
+            .find(|fixture| fixture.identifiers.id == 1010)
+            .expect("sample data should include fixture 1010")
             .identifiers
             .uid
     };
@@ -938,7 +929,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
     queue_startup_command(
         &mut app,
         "test",
-        "fix 607.(14>25) red @ 100 int @ 0".to_owned(),
+        "fix 1010.(14>25) red @ 100 int @ 0".to_owned(),
     );
     for _ in 0..10 {
         app.update();
@@ -948,7 +939,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let red_parameter = fixture_provider
             .try_parameter_for_element_attribute(&first_top_strip_pixel, &Attribute::Red)
-            .expect("fixture 607 top strip pixel should expose red");
+            .expect("fixture 1010 top strip pixel should expose red");
         app.world()
             .get::<Parameter>(red_parameter.entity())
             .expect("red parameter entity should exist")
@@ -959,7 +950,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let red_parameter = fixture_provider
             .try_parameter_for_element_attribute(&last_top_strip_pixel, &Attribute::Red)
-            .expect("fixture 607 top strip pixel should expose red");
+            .expect("fixture 1010 top strip pixel should expose red");
         app.world()
             .get::<Parameter>(red_parameter.entity())
             .expect("red parameter entity should exist")
@@ -978,7 +969,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
     queue_startup_command(
         &mut app,
         "test",
-        "fix 607.(14>25) int @ 100 red @ 100".to_owned(),
+        "fix 1010.(14>25) int @ 100 red @ 100".to_owned(),
     );
     for _ in 0..10 {
         app.update();
@@ -988,7 +979,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let vdim_parameter = fixture_provider
             .try_parameter_for_logical_attribute(&first_top_strip_pixel, &Attribute::Intensity)
-            .expect("fixture 607 top strip pixel should resolve intensity to virtual dimmer");
+            .expect("fixture 1010 top strip pixel should resolve intensity to virtual dimmer");
         app.world()
             .get::<Parameter>(vdim_parameter.instance.entity())
             .expect("virtual intensity parameter entity should exist")
@@ -1004,7 +995,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let red_parameter = fixture_provider
             .try_parameter_for_element_attribute(&first_top_strip_pixel, &Attribute::Red)
-            .expect("fixture 607 top strip pixel should expose red");
+            .expect("fixture 1010 top strip pixel should expose red");
         app.world()
             .get::<Parameter>(red_parameter.entity())
             .expect("red parameter entity should exist")
@@ -1015,7 +1006,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let red_parameter = fixture_provider
             .try_parameter_for_element_attribute(&last_top_strip_pixel, &Attribute::Red)
-            .expect("fixture 607 top strip pixel should expose red");
+            .expect("fixture 1010 top strip pixel should expose red");
         app.world()
             .get::<Parameter>(red_parameter.entity())
             .expect("red parameter entity should exist")
@@ -1373,7 +1364,7 @@ fn dmx_output_set_respects_runtime_output_state() {
     assert_eq!(counter.0, 1);
 }
 
-/// Ensures sample fixtures have generic identities and include every repository-defined profile.
+/// Ensures the default rig contains the six built-in fixture families and serializable layouts.
 #[test]
 fn sample_fixtures_are_generic_and_self_contained() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
@@ -1403,7 +1394,15 @@ fn sample_fixtures_are_generic_and_self_contained() {
             );
         }
     }
-    for (id, count) in [(1001, 1), (1002, 100), (1003, 11), (1004, 115)] {
+    assert_eq!(provider.inner.iter().count(), 56);
+    for (id, count) in [
+        (310, 40),
+        (501, 1),
+        (601, 115),
+        (602, 119),
+        (1004, 72),
+        (1010, 37),
+    ] {
         let fixture = provider
             .inner
             .iter()
@@ -1474,10 +1473,65 @@ fn named_sample_show_is_standalone_and_recoverable() {
         snapshot.fx_module.is_empty(),
         "sample effects must not require installed WASM modules"
     );
+    assert_eq!(snapshot.scene_objects.len(), 3);
     assert!(
-        snapshot.scene_objects.is_empty(),
-        "sample show must not require local scene models"
+        snapshot.scene_objects.iter().all(|object| matches!(
+            &object.properties,
+            nightfall_scene_objects::SceneObjectProperties::StageElement(properties)
+                if properties.model_path.is_empty()
+        )),
+        "sample stage must use built-in primitives"
     );
+    assert!(snapshot.bindings.output.is_empty());
+    assert_eq!(snapshot.bindings.disabled.len(), 56);
+
+    // Resolve every programmed selection against the generated inventory, including cue parts.
+    let mut selections: Vec<_> = snapshot
+        .groups
+        .iter()
+        .map(|group| group.selection.clone())
+        .collect();
+    selections.extend(snapshot.fx.iter().map(|fx| fx.selection.clone()));
+    selections.extend(snapshot.step_fx.iter().map(|fx| fx.selection.clone()));
+    for cue in &snapshot.cues {
+        selections.extend(
+            cue.clone()
+                .flatten_instructions()
+                .instructions
+                .into_iter()
+                .map(|instruction| instruction.selection),
+        );
+    }
+    for flow in &snapshot.flows {
+        for node in &flow.nodes {
+            for port in &node.ports {
+                if let Some(nightfall_flow::prelude::FlowValue::Selection(selection)) =
+                    &port.default_value
+                {
+                    // Connected flow inputs use an empty fallback until their upstream node supplies a selection.
+                    if selection != &SpatialSelection::default() {
+                        selections.push(selection.clone());
+                    }
+                }
+            }
+        }
+    }
+    let mut state = bevy::ecs::system::SystemState::<
+        nightfall_fixtures::prelude::SpatialSelectionResolver,
+    >::new(app.world_mut());
+    let resolver = state.get(app.world()).expect("selection resolver");
+    for selection in selections {
+        let resolved = resolver.resolve(&selection);
+        assert!(
+            !resolved.is_partial(),
+            "sample selection {selection:?}: {:?}",
+            resolved.issues
+        );
+        assert!(
+            !resolved.value.canonical.is_empty(),
+            "sample selection must not be empty: {selection:?}"
+        );
+    }
     assert!(!root.path().join("Sample Tour.nightfall-show").exists());
     let fixture_count = snapshot.fixtures.len();
     drop(app);
@@ -1504,6 +1558,21 @@ fn named_sample_show_is_standalone_and_recoverable() {
             .iter()
             .count(),
         snapshot.timelines.len()
+    );
+    assert_eq!(
+        recovered
+            .world()
+            .resource::<nightfall_scene_objects::prelude::SceneObjectDataProvider>()
+            .iter()
+            .count(),
+        3
+    );
+    assert!(
+        recovered
+            .world()
+            .resource::<OutputBindings>()
+            .bindings
+            .is_empty()
     );
     drop(recovered);
     nightfall::clear_active_show_data_dir();
