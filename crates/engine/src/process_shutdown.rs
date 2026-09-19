@@ -14,7 +14,9 @@ use std::{
     time::Duration,
 };
 
-use once_cell::sync::{Lazy, OnceCell};
+#[cfg(any(feature = "debug", debug_assertions))]
+use once_cell::sync::Lazy;
+use once_cell::sync::OnceCell;
 use tokio::sync::broadcast;
 
 const DEFAULT_FATAL_SHUTDOWN_GRACE: Duration = Duration::from_millis(1500);

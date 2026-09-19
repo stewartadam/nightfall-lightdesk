@@ -355,6 +355,7 @@ pub(super) fn file_explorer_command(
 }
 
 #[cfg(any(test, feature = "tauri"))]
+#[cfg(not(target_os = "windows"))]
 /// Construct the platform-specific command used to open a file with its associated application.
 pub(super) fn file_open_command(
     path: &Path,
@@ -368,10 +369,6 @@ pub(super) fn file_open_command(
     {
         return Ok(("xdg-open", vec![path.as_os_str().to_owned()]));
     }
-
-    #[allow(unreachable_code)]
-    #[cfg(target_os = "windows")]
-    let _ = path;
 
     #[allow(unreachable_code)]
     Err(format!(
