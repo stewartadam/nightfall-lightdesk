@@ -6,6 +6,7 @@ on:
     tags: ['v*']
   pull_request:
     paths:
+      - '.github/actions/wasm-assets/**'
       - '.github/workflows/desktop-artifacts.yml'
       - '.github/workflows/browser-demo.yml'
       - '.gitignore'
@@ -69,7 +70,9 @@ jobs:
       - name: Check the reduced browser dependency graph
         run: npm run check:browser-demo-dependencies
       - name: Build release WASM once for both distributions
-        run: npm run wasm-build
+        uses: ./.github/actions/wasm-assets
+        with:
+          profile: release
       - uses: actions/upload-artifact@v6
         with:
           name: release-wasm-${{ github.sha }}

@@ -60,7 +60,9 @@ jobs:
 
       - name: Build WASM web assets (dev)
         id: wasm
-        run: npm run wasm-build:dev
+        uses: ./.github/actions/wasm-assets
+        with:
+          profile: dev
 
       - name: Run prek pre-commit stage hooks
         # Native CI needs useful backtraces, not full debugger data or optimized
