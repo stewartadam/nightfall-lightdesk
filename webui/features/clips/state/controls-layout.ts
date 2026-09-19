@@ -12,7 +12,7 @@ export const CONTROLS_HEIGHT_STORAGE_KEY =
 export const CONTROLS_COLLAPSED_STORAGE_KEY =
   "nightfall-clip-panel:controls-collapsed";
 export const DEFAULT_CONTROLS_HEIGHT = 320;
-export const MIN_CONTROLS_HEIGHT = 160;
+export const MIN_CONTROLS_HEIGHT = 300;
 export const COLLAPSED_CONTROLS_HEIGHT = 46;
 export const MAX_CONTROLS_PANEL_RATIO = 0.75;
 

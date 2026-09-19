@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, createSignal, onCleanup } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { reducedMotion } from "../../../state/reduced-motion";
 import {
   COLLAPSED_CONTROLS_HEIGHT,
   clampControlsHeight,
@@ -31,6 +32,15 @@ export function createClipControlsController(
   const [height, setHeight] = createSignal(loadControlsHeight());
   const [collapsed, setCollapsedSignal] = createSignal(loadControlsCollapsed());
 
+  const [transitioning, setTransitioning] = createSignal(false);
+  let transitionTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Ends the collapse transition before direct resizing or disposal. */
+  const finishTransition = () => {
+    clearTimeout(transitionTimer);
+    setTransitioning(false);
+  };
+
   /** Computes the section height rendered for expanded and collapsed states. */
   const visibleHeight = createMemo(() =>
     collapsed() ? COLLAPSED_CONTROLS_HEIGHT : height(),
@@ -38,6 +48,7 @@ export function createClipControlsController(
 
   /** Applies and persists a height clamped to the current panel bounds. */
   const applyHeight = (nextHeight: number, panelHeight?: number) => {
+    finishTransition();
     const clampedHeight = clampControlsHeight(nextHeight, panelHeight);
     setHeight(clampedHeight);
     persistControlsHeight(clampedHeight);
@@ -102,13 +113,34 @@ export function createClipControlsController(
 
   /** Toggles the persisted collapsed state. */
   const toggleCollapsed = () => {
+    clearTimeout(transitionTimer);
+    setTransitioning(!reducedMotion.get());
     setCollapsed(!collapsed());
+    transitionTimer = setTimeout(finishTransition, 200);
   };
 
+  /** Reapplies the section bounds when its docked panel changes size. */
+  onMount(() => {
+    const panel = panelElement();
+    if (!panel) return;
+    const observer = new ResizeObserver(() => {
+      const nextHeight = clampControlsHeight(
+        height(),
+        panel.getBoundingClientRect().height,
+      );
+      if (nextHeight !== height())
+        applyHeight(nextHeight, panel.getBoundingClientRect().height);
+    });
+    observer.observe(panel);
+    onCleanup(() => observer.disconnect());
+  });
+
   onCleanup(removeResizeListeners);
+  onCleanup(finishTransition);
 
   return {
     collapsed,
+    transitioning,
     height,
     visibleHeight,
     handleResizeKeyDown,
