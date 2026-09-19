@@ -174,6 +174,7 @@ export default defineConfig(({ mode }) => {
     envDir: tauri ? false : resolve(projectRoot),
     envPrefix: ["VITE_", "TAURI_", "NIGHTFALL_"],
     build: {
+      reportCompressedSize: false,
       sourcemap: true,
       license: { fileName: "notices/frontend.json" },
     },

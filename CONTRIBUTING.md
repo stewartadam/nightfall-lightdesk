@@ -22,7 +22,23 @@ For desktop artifact builds and the tagged-release procedure, see [Desktop build
 
 ## Legal
 
-Code contributions are welcome under the terms of the [license](LICENSE) and with attestation of the [Developer Certificate of Origin (DCO)](https://developercertificate.org/).
+Contributions are welcome under the project's [license](LICENSE). Before a contribution can be merged, contributors must accept the [Nightfall Contributor License Agreement (CLA)](https://cla-assistant.io/stewartadam/nightfall-lightdesk) through the project's CLA service and sign off each commit under the [Developer Certificate of Origin (DCO)](https://developercertificate.org/). These are separate requirements: the DCO attests to your right to submit the contribution, while the CLA grants the maintainer rights to use and license it.
+
+A CLA can look intimidating. Its purpose is to make long-term maintenance practical: as a codebase and its contributor community grow, tracking permissions and contacting every past contributor for a license change can become difficult or impossible. The CLA establishes those permissions up front, including the ability to relicense contributions or offer multiple licenses. You retain ownership and can use and license your own contributions independently; the maintainer can also license them under open-source, commercial, or proprietary terms without seeking further permission or owing payment. Third-party material remains subject to its own license.
+
+Please read the linked CLA and DCO before contributing. Those documents contain the full terms; we link to their maintained versions rather than duplicate them here.
+
+To attest to the DCO, add a sign-off to each commit using your configured Git identity:
+
+```sh
+git commit -s -m "commit message"
+```
+
+This adds a trailer in the following format:
+
+```text
+Signed-off-by: Your Name <Your@Email.tld>
+```
 
 First-party source files must include the `SPDX-License-Identifier: MPL-2.0`
 comment and Mozilla MPL 2.0 notice. The `insert-license` prek hook checks the
@@ -32,58 +48,6 @@ the change. Script shebangs remain first. Imported third-party code retains its
 original license; the framepace source file is explicitly excluded.
 
 Run `npx prek run insert-license --all-files` to check all tracked source files.
-
-
-As such, we request that PRs use commits that have been signed off to denote attestation of the terms in the DCO.
-You can do so by adding a line to the end of your Git commit(s):
-
-```text
-Signed-off-by: Your Name <Your@Email.tld>
-```
-
-This header can also automatically be applied (using your configured Git identity) by passing the `-s` flag to Git, i.e. (`git commit -s -m "commit message"`).
-
-<details>
-  <summary>Developer Certificate of Origin version 1.1</summary>
-
-  ```text
-  Developer Certificate of Origin
-  Version 1.1
-
-  Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
-
-  Everyone is permitted to copy and distribute verbatim copies of this
-  license document, but changing it is not allowed.
-
-
-  Developer's Certificate of Origin 1.1
-
-  By making a contribution to this project, I certify that:
-
-  (a) The contribution was created in whole or in part by me and I
-      have the right to submit it under the open source license
-      indicated in the file; or
-
-  (b) The contribution is based upon previous work that, to the best
-      of my knowledge, is covered under an appropriate open source
-      license and I have the right under that license to submit that
-      work with modifications, whether created in whole or in part
-      by me, under the same open source license (unless I am
-      permitted to submit under a different license), as indicated
-      in the file; or
-
-  (c) The contribution was provided directly to me by some other
-      person who certified (a), (b) or (c) and I have not modified
-      it.
-
-  (d) I understand and agree that this project and the contribution
-      are public and that a record of the contribution (including all
-      personal information I submit with it, including my sign-off) is
-      maintained indefinitely and may be redistributed consistent with
-      this project or the open source license(s) involved.
-  ```
-
-</details>
 
 ## Getting started
 
@@ -150,7 +114,6 @@ From the repository root of a fresh clone:
 rustup show
 npm ci
 node scripts/setup-env.mjs
-npm run download:beat-this-model
 npm run typeshare
 npm run wasm-build:dev
 cargo build --workspace --locked
@@ -167,7 +130,7 @@ The backend port is `NIGHTFALL_PORT` in `.env`; Vite uses the following port. Fo
 
 The WASM build generates both the application bridge and worker-local browser runtime, including its curated component FX artifact. Generated WASM assets and TypeScript types are prerequisites for running the UI from a clean checkout.
 
-Beatgrid detection uses a Rust mel-spectrogram frontend and the MIT-licensed Beat This model pipeline with RTen. The model downloader verifies the checksum and writes `webui/assets/models/beat-this/beat_this.onnx`; license details are in `webui/assets/models/beat-this/NOTICE.md`. This step requires a network connection and is separate from `npm ci`.
+Beatgrid detection uses a Rust mel-spectrogram frontend and the MIT-licensed Beat This model pipeline with RTen. The app offers an optional model download when you first request beat detection, or from Settings → Editors. It verifies the checksum and stores the weights in the application data directory for offline reuse. The download prompt includes the full license notice, also available in `webui/assets/models/beat-this/NOTICE.md`. Existing saved beat grids and playback do not require the model.
 
 A clean clone does not include a personal fixture or object library. Put compatible fixture definitions in the application's data directory, as described in the [Fixture Library guide](docs/src/user-guide/panels/fixture-library.md). Set `NIGHTFALL_DATA_DIR` in `.env` to an isolated writable directory for development. Use `NIGHTFALL_SAMPLE_DATA=1` when you intentionally want the engine's generated sample show data; do not enable it against a show you intend to preserve unchanged.
 

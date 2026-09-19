@@ -59,7 +59,7 @@ use super::{
     composition::{PeriodicDraftAutosaveTimer, ShowfileHandling},
     desktop_shell::{
         file_explorer_command, file_open_command, resolve_open_data_dir_path,
-        resolve_open_log_file_path, url_open_command,
+        resolve_open_log_file_path,
     },
     session::{
         complete_and_publish_world_swap_success, queue_current_showfile_changed,
@@ -699,13 +699,13 @@ fn file_open_command_matches_current_platform() {
     assert_eq!(args, vec![path.as_os_str().to_owned()]);
 }
 
+#[cfg(not(target_os = "windows"))]
 #[test]
+/// Preserve the complete external URL as one argument to the platform browser launcher.
 fn url_open_command_matches_current_platform() {
-    let url = "https://example.com/docs";
-    let (program, args) = url_open_command(url).expect("url open command");
+    let url = "https://github.com/example/project/issues/new?title=Bug%20report&body=Details%0AUnicode%20%E2%9C%93";
+    let (program, args) = crate::desktop_shell::url_open_command(url).expect("url open command");
 
-    #[cfg(target_os = "windows")]
-    assert_eq!(program, "explorer.exe");
     #[cfg(target_os = "macos")]
     assert_eq!(program, "open");
     #[cfg(target_os = "linux")]

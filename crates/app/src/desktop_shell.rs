@@ -271,7 +271,7 @@ pub(super) fn open_log_file() -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        return open_file_with_shell_execute(&log_path);
+        return open_with_shell_execute(log_path.as_os_str());
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -286,12 +286,12 @@ pub(super) fn open_log_file() -> Result<(), String> {
 }
 
 #[cfg(all(feature = "tauri", target_os = "windows"))]
-/// Open a file through Windows ShellExecute without routing its path through a shell.
-fn open_file_with_shell_execute(path: &Path) -> Result<(), String> {
+/// Open a file or URL with its Windows association without invoking a command shell.
+fn open_with_shell_execute(target: &std::ffi::OsStr) -> Result<(), String> {
     use std::{ffi::OsStr, iter::once, os::windows::ffi::OsStrExt, ptr::null_mut};
 
     let operation: Vec<u16> = OsStr::new("open").encode_wide().chain(once(0)).collect();
-    let file: Vec<u16> = path.as_os_str().encode_wide().chain(once(0)).collect();
+    let file: Vec<u16> = target.encode_wide().chain(once(0)).collect();
     let result = unsafe {
         shell_execute_w(
             null_mut(),
@@ -306,7 +306,7 @@ fn open_file_with_shell_execute(path: &Path) -> Result<(), String> {
     if result <= 32 {
         return Err(format!(
             "failed to open {} with its default application (ShellExecuteW returned {result})",
-            path.display()
+            target.to_string_lossy()
         ));
     }
 
@@ -383,8 +383,16 @@ pub(super) fn file_open_command(
 #[cfg(feature = "tauri")]
 /// Open an external URL with the current platform's default browser.
 pub(super) fn open_url_in_browser(url: &str) -> Result<(), String> {
-    let (program, args) = url_open_command(url)?;
-    spawn_open_command(program, args, &format!("browser for {url}"))
+    #[cfg(target_os = "windows")]
+    {
+        open_with_shell_execute(std::ffi::OsStr::new(url))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let (program, args) = url_open_command(url)?;
+        spawn_open_command(program, args, &format!("browser for {url}"))
+    }
 }
 
 #[cfg(feature = "tauri")]
@@ -402,15 +410,11 @@ pub(super) fn spawn_open_command(
 }
 
 #[cfg(any(test, feature = "tauri"))]
+#[cfg(not(target_os = "windows"))]
 /// Construct the platform-specific command used to open an external URL.
 pub(super) fn url_open_command(
     url: &str,
 ) -> Result<(&'static str, Vec<std::ffi::OsString>), String> {
-    #[cfg(target_os = "windows")]
-    {
-        return Ok(("explorer.exe", vec![std::ffi::OsString::from(url)]));
-    }
-
     #[cfg(target_os = "macos")]
     {
         return Ok(("open", vec![std::ffi::OsString::from(url)]));

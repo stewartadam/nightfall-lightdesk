@@ -26,6 +26,7 @@ import { extractPlaywrightCliOptions } from "./playwright-cli-options.mjs";
 import { sharedBrowsersPath } from "./playwright-path.mjs";
 import { resolvePlaywrightRunMode } from "./playwright-run-mode.mjs";
 import { playwrightSandboxError } from "./playwright-sandbox.mjs";
+import { nativeCargoArgs } from "./run-native-cargo.mjs";
 
 const cliEntrypoint = join(
   process.cwd(),
@@ -96,17 +97,11 @@ try {
   if (needsBackend) {
     const buildOutcome = await runOwnedCommand(
       "cargo",
-      [
-        "build",
+      nativeCargoArgs("build", [
         ...(process.env.CI ? ["--timings"] : ["--quiet"]),
-        "-p",
-        "nightfall-app",
         "--bin",
         "nightfall-app",
-        "--no-default-features",
-        "--features",
-        "full,beatgrid-detect",
-      ],
+      ]),
       { spawnOptions: { stdio: "inherit" } },
     );
     if (buildOutcome.code !== 0 || buildOutcome.signal) {
