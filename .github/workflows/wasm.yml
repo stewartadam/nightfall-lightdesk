@@ -1,0 +1,40 @@
+name: Shared release WASM
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        type: string
+        required: true
+      directory:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ inputs.package }}
+          cache-on-failure: true
+      - run: npm ci
+      - uses: ./.github/actions/wasm-assets
+        with:
+          profile: release
+          package: ${{ inputs.package }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-${{ inputs.package }}-${{ github.sha }}
+          path: webui/assets/${{ inputs.directory }}/
+          if-no-files-found: error
+          retention-days: 7

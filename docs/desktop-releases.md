@@ -1,6 +1,6 @@
 # Desktop builds and releases
 
-The [Desktop artifacts workflow](../.github/workflows/desktop-artifacts.yml) builds these installers using the repository's Rust toolchain and Node 24:
+The [CI workflow](../.github/workflows/ci-precommit.yml) calls the [Desktop artifacts workflow](../.github/workflows/desktop-artifacts.yml) to build these installers using the repository's Rust toolchain and Node 24:
 
 | Platform | Native runner | Installer |
 | --- | --- | --- |
@@ -8,14 +8,14 @@ The [Desktop artifacts workflow](../.github/workflows/desktop-artifacts.yml) bui
 | Windows x64 | `windows-2022` | NSIS EXE |
 | Linux x64 | `ubuntu-22.04` | Debian package and AppImage |
 
-The web frontend is prepared once and shared by the native packaging jobs. The beat-detection model is an optional, checksum-verified download offered on first use or through Settings; it is stored in the application data directory and is not included in installers. Saved beat grids and playback do not require it. Native builds disable Cargo's default features to exclude Bevy dynamic linking; the Tauri configuration explicitly selects the desktop features.
+The web frontend is prepared once and shared by the native packaging jobs. It consumes the same release WASM bridge artifact as UI tests; the embedded demo engine is built separately and is excluded from desktop bundles and their WASM notices. The beat-detection model is an optional, checksum-verified download offered on first use or through Settings; it is stored in the application data directory and is not included in installers. Saved beat grids and playback do not require it. Native builds disable Cargo's default features to exclude Bevy dynamic linking; the Tauri configuration explicitly selects the desktop features.
 
 Generated macOS installers target Apple Silicon only.
 
 ## Build channels
 
 - Pushes to `main` build GitHub Actions artifacts, retained for 14 days. They do not create a GitHub Release and must not appear on `nightfall.live/downloads`.
-- Pull requests changing the workflow, its helpers, or Tauri packaging configuration exercise the same builds without publishing.
+- Pull requests changing distribution workflows, their build inputs, runtime entry points, or Tauri packaging configuration exercise the same builds without publishing.
 - Manual workflow runs produce CI artifacts only, including when run against a tag.
 - A pushed `v<version>` tag publishes a GitHub Release after every platform build succeeds. The tag must exactly match the Tauri application version and Cargo workspace version. Versions such as `v0.2.0-beta.1` produce prereleases.
 
@@ -32,7 +32,7 @@ This repository supplies the tagged GitHub Release assets. The `nightfall.live/d
    git push origin v0.1.0
    ```
 
-4. Inspect the Desktop artifacts run. It collects four uniquely named installers and writes `SHA256SUMS`. Uploads go to a draft release, which becomes public only after every upload succeeds.
+4. Inspect the desktop jobs in the CI run. It collects four uniquely named installers and writes `SHA256SUMS`. Uploads go to a draft release, which becomes public only after every upload succeeds.
 
 A failed upload leaves a draft that the same workflow can resume. Rerunning an already-public release fails instead of replacing its files. Keep release tags and published artifacts immutable; use a new version for corrections.
 
@@ -55,7 +55,7 @@ Tauri imports the signing identity, signs and notarizes the app, and staples its
 
 Pull requests, including same-repository PRs, receive no signing credentials and use an ad-hoc macOS identity (`-`). Linux and Windows packaging receive no Apple credentials. Windows installers remain unsigned.
 
-To validate credential setup, manually run **Desktop and browser artifacts** from a trusted branch containing the signing workflow. Manual runs produce artifacts without publishing a release. Download each macOS DMG through a browser and verify that the installed app opens without a security override. The normal confirmation for an Internet download may still appear.
+To validate credential setup, manually run **CI (Prek Parity + WebUI Tests)** from a trusted branch containing the signing workflow. Manual runs produce artifacts without publishing a release. Download each macOS DMG through a browser and verify that the installed app opens without a security override. The normal confirmation for an Internet download may still appear.
 
 See the official [Tauri macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) for certificate export and credential setup. Keep credentials in GitHub Actions secrets, never in repository files.
 

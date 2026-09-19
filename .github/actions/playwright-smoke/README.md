@@ -8,11 +8,9 @@ Run the Chromium product smoke suite in an existing Linux build-and-test job:
 ```
 
 The caller must check out this repository, set up Node.js and Rust, install npm
-and native backend dependencies, download the beat detection model, generate
-TypeScript shared types, and build the development WASM assets. The
-`ci-precommit.yml` workflow provides this setup once for its checks and smoke
-tests. Keep the action in that same job to reuse its Cargo target directory and
-generated assets.
+and native backend dependencies, generate TypeScript shared types, and download
+the shared release WASM artifacts. `ci-precommit.yml` supplies those artifacts
+and the backend executable produced by its native-check job.
 
 The CI caller runs smoke tests even if a preceding hook fails, provided asset
 preparation succeeded and the job has not been cancelled.
@@ -23,8 +21,14 @@ disposable showfiles in the runner's temporary directory, runs
 workers by default; set the `workers` input to override this. Set a unique
 `artifact-name` when invoking the action more than once in the same job.
 
-The repository Playwright wrapper still builds the backend with
-`--no-default-features --features full,beatgrid-detect` before staging it for
-isolated workers. Cargo reuses compatible artifacts from earlier steps; crates
-whose feature sets differ from the default-feature Rust checks can still require
-compilation. No binary freshness checks or Rust feature coverage are skipped.
+The wrapper builds the backend using the shared native Cargo graph unless
+`NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE` identifies an already-tested executable.
+It copies either executable into the isolated run directory and restores execute
+permissions, including after a GitHub artifact download. CI passes only the
+backend artifact from the same workflow run and commit. Local invocations keep
+the normal Cargo freshness check.
+
+To test a production native frontend locally, build it first and set
+`NIGHTFALL_PLAYWRIGHT_VITE_MODE=preview` and
+`NIGHTFALL_PLAYWRIGHT_VITE_BASE=/` when invoking the repository wrapper. Browser
+demo previews retain their `/demo/app/` base.

@@ -55,8 +55,14 @@ jobs:
       - name: Download shared release WASM
         uses: actions/download-artifact@v7
         with:
-          name: release-wasm-${{ github.sha }}
-          path: webui/assets
+          name: release-wasm-bridge-${{ github.sha }}
+          path: webui/assets/wasm
+
+      - name: Download shared demo engine
+        uses: actions/download-artifact@v8
+        with:
+          name: release-browser-runtime-${{ github.sha }}
+          path: webui/assets/browser-runtime
 
       - name: Check the reduced browser dependency graph
         run: npm run check:browser-demo-dependencies

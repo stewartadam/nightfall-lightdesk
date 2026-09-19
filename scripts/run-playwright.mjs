@@ -56,8 +56,7 @@ function playwrightBackendExecutable() {
 }
 
 /** Copies the static test backend into its run root for stable parallel reuse. */
-function stagePlaywrightBackend(runRoot) {
-  const sourcePath = playwrightBackendExecutable();
+function stagePlaywrightBackend(runRoot, sourcePath) {
   const executableName =
     process.platform === "win32"
       ? "nightfall-playwright-backend.exe"
@@ -95,19 +94,25 @@ let outcome;
 try {
   let backendExecutable;
   if (needsBackend) {
-    const buildOutcome = await runOwnedCommand(
-      "cargo",
-      nativeCargoArgs("build", [
-        ...(process.env.CI ? ["--timings"] : ["--quiet"]),
-        "--bin",
-        "nightfall-app",
-      ]),
-      { spawnOptions: { stdio: "inherit" } },
-    );
+    const preparedBackend = process.env.NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE;
+    const buildOutcome = preparedBackend
+      ? { code: 0 }
+      : await runOwnedCommand(
+          "cargo",
+          nativeCargoArgs("build", [
+            ...(process.env.CI ? ["--timings"] : ["--quiet"]),
+            "--bin",
+            "nightfall-app",
+          ]),
+          { spawnOptions: { stdio: "inherit" } },
+        );
     if (buildOutcome.code !== 0 || buildOutcome.signal) {
       outcome = buildOutcome;
     } else {
-      backendExecutable = stagePlaywrightBackend(runRoot);
+      backendExecutable = stagePlaywrightBackend(
+        runRoot,
+        preparedBackend ?? playwrightBackendExecutable(),
+      );
       seedDataDir = preparePlaywrightDataDir(sourceDataDir, runRoot).runDataDir;
     }
   }

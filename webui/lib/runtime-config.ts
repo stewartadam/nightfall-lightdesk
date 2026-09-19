@@ -28,8 +28,9 @@ export function isEmbeddedDemoRuntime(): boolean {
   if (typeof window === "undefined") return false;
   return (
     import.meta.env.MODE === "browser-demo" ||
-    new URLSearchParams(window.location.search).get("engine") ===
-      "embedded-demo"
+    (import.meta.env.DEV &&
+      new URLSearchParams(window.location.search).get("engine") ===
+        "embedded-demo")
   );
 }
 

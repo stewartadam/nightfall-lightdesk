@@ -155,7 +155,7 @@ const appBuildName = readBuildName();
 const appTitle = formatAppTitle(appName, appBuildName);
 const viteWatchIgnored = ["**/*.spec.ts"];
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Load env vars from project root (where .env lives)
   const env = loadEnv(mode, resolve(projectRoot), ["NIGHTFALL_"]);
 
@@ -170,6 +170,16 @@ export default defineConfig(({ mode }) => {
 
   return {
     root: "./webui",
+    resolve: {
+      alias: {
+        "#engine-runtime-worker?worker": `${resolve(
+          projectRoot,
+          command === "serve" || mode === "browser-demo"
+            ? "webui/lib/engine-runtime-demo-worker.ts"
+            : "webui/lib/engine-runtime-worker.ts",
+        )}?worker`,
+      },
+    },
     // Desktop connection settings come from native runtime configuration.
     envDir: tauri ? false : resolve(projectRoot),
     envPrefix: ["VITE_", "TAURI_", "NIGHTFALL_"],

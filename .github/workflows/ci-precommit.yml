@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -12,15 +13,71 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  precommit:
-    name: Run prek hooks
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      distributions: ${{ steps.scope.outputs.distributions }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: Select distribution validation
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          distributions=true
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            distributions=false
+            git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/ci-changed-files"
+            while IFS= read -r file; do
+              case "$file" in
+                .github/actions/wasm-assets/*|.github/workflows/*|.github/desktop-release-notes.md|.gitignore|webui/index.html|webui/public/*|webui/lib/engine-runtime*|webui/lib/runtime-config.ts|scripts/*browser-demo*|scripts/desktop-artifacts*|scripts/*notices*|scripts/check-distribution-wasm*|config/notices/*|about.toml|Cargo.lock|package.json|package-lock.json|vite.config.ts|crates/app/*|crates/wasm-bridge/*|crates/browser-runtime/*)
+                  distributions=true ;;
+              esac
+            done < "$RUNNER_TEMP/ci-changed-files"
+          fi
+          echo "distributions=$distributions" >> "$GITHUB_OUTPUT"
+
+  wasm-bridge:
+    uses: ./.github/workflows/wasm.yml
+    with:
+      package: wasm-bridge
+      directory: wasm
+
+  browser-runtime:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/wasm.yml
+    with:
+      package: browser-runtime
+      directory: browser-runtime
+
+  desktop:
+    needs: [scope, wasm-bridge]
+    if: needs.scope.outputs.distributions == 'true'
+    uses: ./.github/workflows/desktop-artifacts.yml
+    permissions:
+      contents: write
+    secrets: inherit
+
+  browser-demo:
+    needs: [scope, wasm-bridge, browser-runtime]
+    if: needs.scope.outputs.distributions == 'true'
+    uses: ./.github/workflows/browser-demo.yml
+
+  native:
+    name: Run native and source hooks
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
       CARGO_TERM_COLOR: always
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_DEV_OPT_LEVEL: "0"
+      SKIP: npm-typecheck,node-tests
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -55,29 +112,82 @@ jobs:
           npm clean-install
           cargo install --locked typeshare-cli --version 1.13.3
 
-      - name: Generate TypeScript shared types
-        run: npm run typeshare
-
-      - name: Build WASM web assets (dev)
-        id: wasm
-        uses: ./.github/actions/wasm-assets
-        with:
-          profile: dev
-
       - name: Run prek pre-commit stage hooks
         # Native CI needs useful backtraces, not full debugger data or optimized
         # workspace code. Package overrides keep third-party dependencies fast.
-        env: &native-build-env
-          CARGO_PROFILE_DEV_DEBUG: line-tables-only
-          CARGO_PROFILE_DEV_OPT_LEVEL: "0"
         run: npx prek run --all-files --show-diff-on-failure --color always --stage pre-commit
 
       - name: Run prek pre-push stage hooks
-        env: *native-build-env
         run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-push
 
-      # Keep smoke tests in this job to reuse Cargo and generated WASM assets.
+      - name: Stage the tested native backend
+        run: |
+          node scripts/run-native-cargo.mjs build --bin nightfall-app
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          mkdir -p ci-artifacts
+          cp "$target_dir/debug/nightfall-app" ci-artifacts/nightfall-app
+      - uses: actions/upload-artifact@v6
+        with:
+          name: native-test-backend-${{ github.sha }}
+          path: ci-artifacts/nightfall-app
+          if-no-files-found: error
+          retention-days: 1
+
+  precommit:
+    name: Run prek hooks
+    needs: [native, wasm-bridge, browser-runtime]
+    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require successful native checks and WASM builds
+        env:
+          NATIVE_RESULT: ${{ needs.native.result }}
+          BRIDGE_RESULT: ${{ needs.wasm-bridge.result }}
+          DEMO_RESULT: ${{ needs.browser-runtime.result }}
+        run: |
+          test "$NATIVE_RESULT" = success
+          test "$BRIDGE_RESULT" = success
+          test "$DEMO_RESULT" = success
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: webui-tools
+          cache-targets: false
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+          npm ci
+          cargo install --locked typeshare-cli --version 1.13.3
+          npm run typeshare
+      - name: Download shared release bridge
+        uses: actions/download-artifact@v8
+        with:
+          name: release-wasm-bridge-${{ github.sha }}
+          path: webui/assets/wasm
+      - name: Download shared release demo engine
+        id: wasm
+        uses: actions/download-artifact@v8
+        with:
+          name: release-browser-runtime-${{ github.sha }}
+          path: webui/assets/browser-runtime
+      - name: Download the tested native backend
+        uses: actions/download-artifact@v8
+        with:
+          name: native-test-backend-${{ github.sha }}
+          path: ci-artifacts
+      - name: Run TypeScript pre-commit hook
+        run: npx prek run npm-typecheck --all-files --show-diff-on-failure --color always --stage pre-commit
+      - name: Run Node pre-push hook
+        run: npx prek run node-tests --all-files --verbose --show-diff-on-failure --color always --stage pre-push
       - name: Run Chromium product flows
         if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
-        env: *native-build-env
+        env:
+          NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-app
         uses: ./.github/actions/playwright-smoke

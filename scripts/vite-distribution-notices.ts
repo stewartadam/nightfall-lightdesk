@@ -105,7 +105,11 @@ export function distributionNoticesPlugin(): Plugin {
         inventory,
         JSON.stringify([...entries, ...workerPackages.values()], null, 2),
       );
-      packageNotices(outDir, process.env.TAURI_ENV_TARGET_TRIPLE);
+      packageNotices(
+        outDir,
+        process.env.TAURI_ENV_TARGET_TRIPLE,
+        config.mode === "browser-demo",
+      );
     },
   };
 }
