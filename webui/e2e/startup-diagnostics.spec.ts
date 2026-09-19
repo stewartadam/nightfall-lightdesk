@@ -155,3 +155,36 @@ test("collects native diagnostics before the backend connects", async ({
     '"backendVersion": "Unavailable"',
   );
 });
+
+/** The native bug-report menu passes the full issue URL to the desktop browser opener. */
+test("opens a bug report from the native menu before the backend connects", async ({
+  page,
+  workerSlot,
+}, testInfo) => {
+  await installDiagnosticNativeMock(
+    page,
+    testInfo.outputPath("nightfall.log"),
+    workerSlot.backendPort,
+  );
+  await page.goto("/");
+  await expect(page.getByTestId("startup-splash")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).diagnosticListenerCount()))
+    .toBe(1);
+  await page.evaluate(() =>
+    (window as any).emitDiagnosticMenu("app.report_bug"),
+  );
+  await expect
+    .poll(() => page.evaluate(() => (window as any).bugReportUrl))
+    .toBeTruthy();
+  const issueUrl = new URL(
+    await page.evaluate(() => (window as any).bugReportUrl),
+  );
+  expect(issueUrl.protocol).toBe("https:");
+  expect(issueUrl.hostname).toBe("github.com");
+  expect(issueUrl.pathname).toMatch(/\/issues\/new$/);
+  expect(issueUrl.searchParams.get("system-information")).toContain(
+    '"backendVersion": "Unavailable"',
+  );
+  await page.screenshot({ path: testInfo.outputPath("native-bug-report.png") });
+});
