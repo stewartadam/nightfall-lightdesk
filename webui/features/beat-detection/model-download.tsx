@@ -7,7 +7,7 @@
  */
 
 import { CheckCircleIcon } from "@squidlab/phosphor-solid/check-circle";
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import notice from "../../assets/models/beat-this/NOTICE.md?raw";
 import {
   DialogBackdrop,
@@ -45,6 +45,19 @@ export function createBeatModelDownload() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let generation = 0;
   let readyAction: (() => void) | undefined;
+  let downloadButton: HTMLButtonElement | undefined;
+
+  /** Focus the available primary action so Enter activates the consented download. */
+  createEffect(() => {
+    if (
+      !open() ||
+      busy() ||
+      !["missing", "failed", "cancelled"].includes(status()?.phase ?? "")
+    )
+      return;
+    const frame = requestAnimationFrame(() => downloadButton?.focus());
+    onCleanup(() => cancelAnimationFrame(frame));
+  });
 
   /** Stop polling and discard an authoring action when its dialog is dismissed. */
   const close = () => {
@@ -144,8 +157,10 @@ export function createBeatModelDownload() {
             <p>
               Would you like to download the{" "}
               <span class="text-[var(--accent)]">Beat This</span> model (~83 MB)
-              to detect beats in audio? Your existing beat grids and playback
-              continue to work without it.
+              to detect beats in audio?
+            </p>
+            <p>
+              Your existing beat grids and playback continue to work without it.
             </p>
             <p class="text-sm text-neutral-400">
               The model will be saved to application data on this machine and
@@ -249,9 +264,14 @@ export function createBeatModelDownload() {
                   ["missing", "failed", "cancelled"].includes(status()!.phase)
                 }
               >
-                <Button disabled={busy()} onClick={() => void refresh("POST")}>
+                <Button
+                  ref={downloadButton}
+                  variant="primary"
+                  disabled={busy()}
+                  onClick={() => void refresh("POST")}
+                >
                   {status()?.phase === "missing"
-                    ? "Download model"
+                    ? "Download"
                     : "Retry download"}
                 </Button>
               </Show>

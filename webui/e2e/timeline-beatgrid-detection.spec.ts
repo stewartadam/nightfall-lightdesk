@@ -6,6 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { createSampleWav } from "../../scripts/browser-demo-audio.mjs";
+
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
@@ -312,24 +314,30 @@ async function dropDemoAudio(page: Page, timelineUid: string) {
   );
   await expect(surface).toBeVisible();
 
-  const dataTransfer = await page.evaluateHandle(async () => {
-    const response = await fetch("/assets/demo-audio.mp3");
-    if (!response.ok) {
-      throw new Error(`Failed to fetch demo audio: ${response.status}`);
-    }
+  // Repeat the existing deterministic click track long enough for beat inference.
+  const sample = createSampleWav();
+  const payload = sample.slice(44);
+  const wav = new Uint8Array(44 + payload.length * 8);
+  wav.set(sample.slice(0, 44));
+  for (let index = 0; index < 8; index++)
+    wav.set(payload, 44 + index * payload.length);
+  const header = new DataView(wav.buffer);
+  header.setUint32(4, wav.length - 8, true);
+  header.setUint32(40, wav.length - 44, true);
+  const dataTransfer = await page.evaluateHandle((bytes) => {
     const transfer = new DataTransfer();
-    const file = new File([await response.arrayBuffer()], "beatgrid-demo.mp3", {
-      type: "audio/mpeg",
+    const file = new File([new Uint8Array(bytes)], "beatgrid-demo.wav", {
+      type: "audio/wav",
     });
     transfer.items.add(file);
     return transfer;
-  });
+  }, Array.from(wav));
 
   await surface.dispatchEvent("dragenter", { dataTransfer });
   await surface.dispatchEvent("dragover", { dataTransfer });
   await surface.dispatchEvent("drop", { dataTransfer });
   await expect(
-    page.getByText("Updated timeline audio to beatgrid-demo.mp3"),
+    page.getByText("Updated timeline audio to beatgrid-demo.wav"),
   ).toBeVisible();
 }
 
@@ -518,7 +526,7 @@ test("beatgrid detection proposal can be rejected, applied, and used for ruler s
         exact: true,
       });
       await modelDialog
-        .getByRole("button", { name: "Download model", exact: true })
+        .getByRole("button", { name: "Download", exact: true })
         .click();
       await expect
         .poll(
@@ -532,7 +540,7 @@ test("beatgrid detection proposal can be rejected, applied, and used for ruler s
         )
         .toBe("ready");
       await modelDialog
-        .getByRole("button", { name: "Close", exact: true })
+        .getByRole("button", { name: "Back", exact: true })
         .click();
     }
     await expect(
@@ -570,7 +578,7 @@ test("beatgrid detection proposal can be rejected, applied, and used for ruler s
       );
     }
     await waitForTimelineState(page, context.timelineUid, {
-      audioPathEndsWith: "beatgrid-demo.mp3",
+      audioPathEndsWith: "beatgrid-demo.wav",
       audioPathStartsWith: `timeline-audio/${context.timelineUid}/`,
       beatgridMarkers: 0,
       useBeatGrid: false,

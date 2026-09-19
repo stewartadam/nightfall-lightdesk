@@ -79,7 +79,7 @@ test("first detection offers a licensed model download and reuses the installed 
     exact: true,
   });
   await expect(
-    dialog.getByRole("button", { name: "Download model", exact: true }),
+    dialog.getByRole("button", { name: "Download", exact: true }),
   ).toBeVisible();
   expect(downloads).toBe(0);
   await expect(
@@ -104,9 +104,7 @@ test("first detection offers a licensed model download and reuses the installed 
   await dialog.screenshot({
     path: testInfo.outputPath("model-download-license.png"),
   });
-  await dialog
-    .getByRole("button", { name: "Download model", exact: true })
-    .click();
+  await dialog.getByRole("button", { name: "Download", exact: true }).click();
   await expect(
     dialog.getByRole("progressbar", { name: "Model download progress" }),
   ).toBeVisible();
@@ -165,9 +163,7 @@ test("settings supports download failure, cancellation, retry, and offline readi
     name: "Beat detection model",
     exact: true,
   });
-  await dialog
-    .getByRole("button", { name: "Download model", exact: true })
-    .click();
+  await dialog.getByRole("button", { name: "Download", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveText(
     "Download connection lost",
   );
