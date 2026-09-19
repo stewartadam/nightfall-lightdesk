@@ -159,7 +159,7 @@ export function createBeatModelDownload() {
               <span class="text-[var(--accent)]">Beat This</span> model (~83 MB)
               to detect beats in audio?
             </p>
-            <p>
+            <p class="text-sm text-neutral-400">
               Your existing beat grids and playback continue to work without it.
             </p>
             <p class="text-sm text-neutral-400">
