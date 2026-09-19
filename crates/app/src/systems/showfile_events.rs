@@ -39,6 +39,15 @@ use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use nightfall_undo::prelude::*;
 
+/// Compiled-in file staged with a newly created show before its draft is published.
+#[derive(Debug)]
+pub(crate) struct InitialShowfileAsset {
+    /// Path within the new show folder; only normal relative components are accepted.
+    pub relative_path: &'static str,
+    /// Asset contents compiled into the application.
+    pub bytes: &'static [u8],
+}
+
 mod assets;
 mod backup;
 mod commands;

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use bevy::prelude::App;
+use bevy::prelude::{App, Resource};
 use bevy_state::app::AppExtStates;
 use nightfall_config::RuntimeConfig;
 use nightfall_desk::{
@@ -17,6 +17,10 @@ use nightfall_engine::prelude::AppState;
 use nightfall_io::TransportRuntimePolicy;
 
 use crate::{composition::init_bevy_with_transport_policy, sample_data};
+
+/// Marks an in-memory sample world whose draft and bundled media must be installed before runtime starts.
+#[derive(Resource)]
+pub(super) struct PendingSampleDraft;
 
 /// Initial world bootstrap source when creating a fresh Bevy app instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -210,12 +214,33 @@ fn finalize_new_world(
         crate::systems::showfile_events::persist_new_showfile_draft_from_world(
             app.world_mut(),
             showfile_name,
+            if seeded {
+                sample_data::SAMPLE_AUDIO
+            } else {
+                &[]
+            },
         )?;
     } else {
+        if seeded {
+            app.insert_resource(PendingSampleDraft);
+        }
         crate::systems::showfile_events::refresh_clean_snapshot_hash_from_world(app.world_mut())?;
     }
     if seeded || showfile_name.is_some() {
         app.insert_state(AppState::Ready);
+    }
+    Ok(())
+}
+
+/// Installs a CLI/fallback sample world's draft before runtime services consume its media paths.
+pub(super) fn persist_pending_sample_draft(app: &mut App) -> Result<(), String> {
+    if app.world().contains_resource::<PendingSampleDraft>() {
+        crate::systems::showfile_events::persist_new_showfile_draft_from_world(
+            app.world_mut(),
+            None,
+            sample_data::SAMPLE_AUDIO,
+        )?;
+        app.world_mut().remove_resource::<PendingSampleDraft>();
     }
     Ok(())
 }

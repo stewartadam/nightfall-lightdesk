@@ -17,7 +17,6 @@ test("new show optionally includes standalone sample data", async ({
   backendSlot,
 }, testInfo) => {
   await page.addInitScript(() => {
-    window.localStorage.removeItem("nightfall.currentShowfileName");
     window.localStorage.removeItem("nightfall.e2eAutoOpenStartupShowfile");
   });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
@@ -68,15 +67,39 @@ test("new show optionally includes standalone sample data", async ({
     ),
   ).toBe(true);
   expect(snapshot.timelines.length).toBeGreaterThan(0);
-  expect(
-    snapshot.timelines.every(
-      (timeline: any) => !timeline.audio_path && !timeline.audio_enabled,
-    ),
-  ).toBe(true);
+  for (const timeline of snapshot.timelines) {
+    expect(timeline.audio_enabled).toBe(true);
+    const audioPath = timeline.audio_path as string;
+    expect(audioPath).toMatch(/^timeline-audio\/[a-f0-9]+\/(lofi|rap)\.mp3$/);
+    const bundledAudio = readFileSync(
+      join("crates/app/assets/sample-audio", audioPath.split("/").at(-1)!),
+    );
+    const installedAudio = readFileSync(
+      join(backendSlot.dataDir, "drafts/Sample Tour.nightfall-show", audioPath),
+    );
+    expect(installedAudio.equals(bundledAudio)).toBe(true);
+    const response = await page.request.get(
+      `/api/showfiles/current/${audioPath}`,
+    );
+    expect(response.ok()).toBe(true);
+    expect((await response.body()).equals(bundledAudio)).toBe(true);
+  }
   expect(
     snapshot.fixtures.every((fixture: any) => !fixture.library_asset_etag),
   ).toBe(true);
   expect(snapshot.fxModule).toEqual([]);
+  for (const id of [4, 5, 29]) {
+    expect(snapshot.clips.some((clip: any) => clip.identifiers.id === id)).toBe(
+      false,
+    );
+  }
+  expect(
+    snapshot.fx.some((fx: any) => [1, 2].includes(fx.identifiers.id)),
+  ).toBe(false);
+  expect(
+    snapshot.sequences.some((sequence: any) => sequence.identifiers.id === 29),
+  ).toBe(false);
+
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -116,6 +139,25 @@ test("new show optionally includes standalone sample data", async ({
     path: testInfo.outputPath("sample-show-arrangement.png"),
     animations: "disabled",
   });
+
+  const saveResult = await page.evaluate(() =>
+    (window as any).appStores.sendAndAwait({
+      module: "DeskCommand",
+      command: { type: "SaveShowfile", data: {} },
+    }),
+  );
+  expect(saveResult.outcome.type).toBe("Succeeded");
+  for (const timeline of snapshot.timelines) {
+    expect(
+      readFileSync(
+        join(
+          backendSlot.dataDir,
+          "Sample Tour.nightfall-show",
+          timeline.audio_path,
+        ),
+      ).length,
+    ).toBeGreaterThan(0);
+  }
 
   await page.getByTitle("Menu", { exact: true }).click();
   await page.getByRole("button", { name: /New Showfile/ }).click();

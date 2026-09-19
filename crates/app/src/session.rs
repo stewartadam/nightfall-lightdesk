@@ -53,6 +53,10 @@ pub(super) fn run_bevy_session(
             return;
         }
     };
+    if let Err(error) = crate::world_factory::persist_pending_sample_draft(&mut bevy_app) {
+        tracing::error!("Failed to install sample show media: {error}");
+        return;
+    }
     pin_backend_thread_to_performance_core(thread_role);
     queue_startup_ui_notifications(&mut bevy_app, startup_ui_notifications);
 
