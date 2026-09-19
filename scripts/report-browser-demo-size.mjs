@@ -6,9 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { brotliCompressSync, gzipSync } from "node:zlib";
 
 const artifactDirectory = resolve("webui/dist");
 const assetsDirectory = resolve("webui/dist/assets");
@@ -24,22 +23,15 @@ function matchingAssets(expression) {
     .map((name) => resolve(assetsDirectory, name));
 }
 
-/** Measure raw and gzip byte counts for one emitted artifact group. */
+/** Measure packaged byte counts for one emitted artifact group. */
 function measure(files) {
   let rawBytes = 0;
-  let gzipBytes = 0;
-  let brotliBytes = 0;
   for (const file of files) {
-    const bytes = readFileSync(file);
-    rawBytes += bytes.byteLength;
-    gzipBytes += gzipSync(bytes).byteLength;
-    brotliBytes += brotliCompressSync(bytes).byteLength;
+    rawBytes += statSync(file).size;
   }
   return {
     files: files.map((file) => basename(file)),
     rawBytes,
-    gzipBytes,
-    brotliBytes,
   };
 }
 
@@ -67,8 +59,6 @@ function main() {
   };
   const total = {
     rawBytes: groups.demoCode.rawBytes + groups.sampleAudio.rawBytes,
-    gzipBytes: groups.demoCode.gzipBytes + groups.sampleAudio.gzipBytes,
-    brotliBytes: groups.demoCode.brotliBytes + groups.sampleAudio.brotliBytes,
   };
   process.stdout.write(`${JSON.stringify({ groups, total }, null, 2)}\n`);
 }
