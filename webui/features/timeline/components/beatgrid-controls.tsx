@@ -27,6 +27,7 @@ import {
   timelines,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
+import { createBeatModelDownload } from "../../beat-detection";
 import { useTimelineContext } from "../context/timeline-context";
 import { parseBeatgridBpmInput } from "../model/beatgrid-bpm";
 
@@ -217,6 +218,10 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
     }
   };
 
+  const modelDownload = createBeatModelDownload();
+  const [controlsOpen, setControlsOpen] = createSignal(false);
+
+  /** Start analysis only after the user has an installed model. */
   const requestBeatgridDetection = () => {
     const timelineValue = timeline();
     if (!timelineValue || isDetecting()) return;
@@ -236,6 +241,7 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
 
   return (
     <div class="flex items-center gap-1">
+      {modelDownload.dialog()}
       <div
         data-timeline-beatgrid-toggle="true"
         data-timeline-uid={context.timelineUid}
@@ -250,6 +256,8 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
       </div>
 
       <DropdownMenu
+        open={controlsOpen()}
+        onOpenChange={setControlsOpen}
         placement="below"
         align="end"
         triggerLabel="BPM controls"
@@ -270,7 +278,10 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
             <Button
               size="compact"
               type="button"
-              onClick={requestBeatgridDetection}
+              onClick={() => {
+                setControlsOpen(false);
+                modelDownload.request(requestBeatgridDetection);
+              }}
               disabled={!timeline() || isDetecting()}
             >
               {isDetecting() ? "Detecting..." : "Detect"}

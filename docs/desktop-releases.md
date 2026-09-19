@@ -9,7 +9,7 @@ The [Desktop artifacts workflow](../.github/workflows/desktop-artifacts.yml) bui
 | Windows x64 | `windows-2022` | NSIS EXE |
 | Linux x64 | `ubuntu-22.04` | Debian package and AppImage |
 
-The web frontend and beat-detection model are prepared once and shared by the native packaging jobs. Native builds disable Cargo's default features to exclude Bevy dynamic linking; the Tauri configuration explicitly selects the desktop features.
+The web frontend is prepared once and shared by the native packaging jobs. The beat-detection model is an optional, checksum-verified download offered on first use or through Settings; it is stored in the application data directory and is not included in installers. Saved beat grids and playback do not require it. Native builds disable Cargo's default features to exclude Bevy dynamic linking; the Tauri configuration explicitly selects the desktop features.
 
 Intel macOS uses OS-default thread scheduling because `gdt-cpus` supports only Apple Silicon on macOS. Backend priority and affinity tuning remain enabled on Apple Silicon, Linux, and Windows.
 
@@ -52,4 +52,4 @@ node --test scripts/desktop-artifacts.node.test.mjs
 node scripts/desktop-artifacts.mjs prepare
 ```
 
-The second command reads the actual Tauri and Cargo versions. Outside a version-tag push it reports `publish: false`. The CI-specific Tauri configuration expects `webui/dist` and model resources to have already been prepared; ordinary local Tauri commands retain the normal frontend build hook.
+The second command reads the actual Tauri and Cargo versions. Outside a version-tag push it reports `publish: false`. The CI-specific Tauri configuration expects `webui/dist` to have already been prepared; ordinary local Tauri commands retain the normal frontend build hook.

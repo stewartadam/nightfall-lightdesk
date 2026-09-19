@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let model_paths = nightfall_timeline::beat_this_detection::BeatThisModelPaths::resolve(None)?;
+    let model_paths = nightfall_timeline::beat_this_detection::BeatThisModelPaths::resolve()?;
     let analysis =
         nightfall_timeline::beat_this_detection::analyze_path(&parsed.audio_path, &model_paths)?;
     let bpm = nightfall_timeline::beat_this_detection::calculate_bpm(&analysis.beats);
@@ -147,7 +147,7 @@ fn parse_args(args: &[String]) -> Result<CliParse, String> {
 fn print_usage(bin_name: &str) {
     eprintln!("Usage: {bin_name} <audio-file> [--max-events N]");
     eprintln!();
-    eprintln!("Uses bundled model: webui/assets/models/beat-this/beat_this.onnx");
+    eprintln!("Uses the downloaded model in the application data directory");
 }
 
 #[cfg(not(feature = "beatgrid-detect"))]

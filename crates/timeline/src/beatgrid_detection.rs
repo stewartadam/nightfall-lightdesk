@@ -42,8 +42,6 @@ struct PendingDetection {
 /// Async task handle for an in-flight beatgrid detection request.
 #[derive(Debug, Clone)]
 struct BeatgridWorkerTask {
-    #[cfg(feature = "beatgrid-detect")]
-    resource_dir: Option<PathBuf>,
     request_id: Uuid,
     timeline_uid: Uuid,
     source: BeatgridSource,
@@ -63,8 +61,6 @@ struct BeatgridWorkerResult {
 /// Runtime state for background beatgrid detection and pending proposals.
 #[derive(Resource)]
 pub(crate) struct BeatgridDetectionRuntime {
-    #[cfg(feature = "beatgrid-detect")]
-    resource_dir: Option<PathBuf>,
     result_tx: Sender<BeatgridWorkerResult>,
     result_rx: Mutex<Receiver<BeatgridWorkerResult>>,
     pending_requests: HashMap<Uuid, PendingDetection>,
@@ -77,10 +73,6 @@ impl FromWorld for BeatgridDetectionRuntime {
     fn from_world(_world: &mut World) -> Self {
         let (result_tx, result_rx) = mpsc::channel::<BeatgridWorkerResult>();
         Self {
-            #[cfg(feature = "beatgrid-detect")]
-            resource_dir: _world
-                .get_resource::<crate::beat_this_detection::BeatThisResourceDirectory>()
-                .and_then(|directory| directory.0.clone()),
             result_tx,
             result_rx: Mutex::new(result_rx),
             pending_requests: HashMap::new(),
@@ -90,23 +82,6 @@ impl FromWorld for BeatgridDetectionRuntime {
     }
 }
 
-/// Verify the worker runtime keeps the desktop resource location supplied to its world.
-#[cfg(all(test, feature = "beatgrid-detect"))]
-#[test]
-fn detection_runtime_inherits_host_resource_directory() {
-    let resource_dir = PathBuf::from("/opt/nightfall/usr/lib/nightfall");
-    let mut world = World::new();
-    world.insert_resource(crate::beat_this_detection::BeatThisResourceDirectory(Some(
-        resource_dir.clone(),
-    )));
-    world.init_resource::<BeatgridDetectionRuntime>();
-
-    assert_eq!(
-        world.resource::<BeatgridDetectionRuntime>().resource_dir,
-        Some(resource_dir)
-    );
-}
-
 /// Queue a beatgrid detection request for the provided timeline.
 pub(crate) fn request_detection_for_timeline(
     runtime: &mut BeatgridDetectionRuntime,
@@ -114,6 +89,13 @@ pub(crate) fn request_detection_for_timeline(
     timeline: &Timeline,
     trigger: BeatgridDetectionTrigger,
 ) {
+    // Audio import must not trigger an unsolicited model download or a missing-model error.
+    #[cfg(feature = "beatgrid-detect")]
+    if matches!(trigger, BeatgridDetectionTrigger::Automatic)
+        && !crate::beat_model::model_path().is_ok_and(|path| path.is_file())
+    {
+        return;
+    }
     let request_id = Uuid::new_v4();
     let timeline_uid = timeline.identifiers.uid;
 
@@ -215,8 +197,6 @@ pub(crate) fn request_detection_for_timeline(
 
     let worker_tx = runtime.result_tx.clone();
     let worker_task = BeatgridWorkerTask {
-        #[cfg(feature = "beatgrid-detect")]
-        resource_dir: runtime.resource_dir.clone(),
         request_id,
         timeline_uid,
         source,
@@ -335,8 +315,7 @@ pub(crate) fn take_proposal_for_timeline(
 fn detect_beatgrid(task: BeatgridWorkerTask) -> Result<BeatgridProposal, String> {
     use std::time::Duration;
 
-    let model_paths =
-        crate::beat_this_detection::BeatThisModelPaths::resolve(task.resource_dir.as_deref())?;
+    let model_paths = crate::beat_this_detection::BeatThisModelPaths::resolve()?;
     let analysis = crate::beat_this_detection::analyze_path(&task.audio_path, &model_paths)?;
 
     if analysis.beats.len() < 2 {

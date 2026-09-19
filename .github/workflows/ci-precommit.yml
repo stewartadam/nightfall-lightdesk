@@ -55,9 +55,6 @@ jobs:
           npm clean-install
           cargo install --locked typeshare-cli --version 1.13.3
 
-      - name: Download beat detection model
-        run: npm run download:beat-this-model
-
       - name: Generate TypeScript shared types
         run: npm run typeshare
 

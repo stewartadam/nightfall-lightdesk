@@ -112,3 +112,77 @@ impl ShowfileLoadContributor for TimecodesTimelinesLoadContributor<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use bevy_ecs::world::{CommandQueue, World};
+
+    use super::*;
+
+    /// Saves and materializes an accepted grid in a fresh world without detection resources.
+    #[test]
+    fn accepted_beatgrid_survives_showfile_save_and_load_without_model() {
+        let mut timelines = DataProvider::<Timeline>::default();
+        let timecodes = DataProvider::<Timecode>::default();
+        let mut timeline = Timeline::default();
+        timeline.bpm = 128.5;
+        timeline.beats_per_bar = 3;
+        timeline.use_beat_grid = true;
+        timeline.beatgrid = Some(BeatgridData {
+            source: BeatgridSource::Manual,
+            audio_fingerprint: "saved-audio".into(),
+            bpm: 128.5,
+            beats_per_bar: 3,
+            markers: vec![BeatMarker {
+                time: Duration::from_millis(1375),
+                beat_index: 2,
+                is_downbeat: false,
+                confidence: Some(0.95),
+            }],
+            confidence: 0.9,
+        });
+        timelines.add(timeline.clone()).unwrap();
+        let saver = TimecodesTimelinesSaveContributor::new(&timecodes, &timelines);
+        let snapshot = super::super::collect_save_contributions(&[&saver]);
+        let json = crate::serialize_showfile_snapshot_json(&snapshot).unwrap();
+        let loaded = crate::parse_showfile_snapshot_json(&json, "beatgrid").unwrap();
+        let contribution = ShowfileContribution::TimecodesTimelines(TimecodesTimelinesSnapshot {
+            timecodes: Cow::Borrowed(&loaded.timecodes),
+            timelines: Cow::Borrowed(&loaded.timelines),
+        });
+        let mut restored_timelines = DataProvider::<Timeline>::default();
+        let mut restored_timecodes = DataProvider::<Timecode>::default();
+        let mut loader = TimecodesTimelinesLoadContributor::new(
+            &mut restored_timecodes,
+            &mut restored_timelines,
+        );
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, &world);
+        for phase in [
+            ShowfileLoadPhase::ImportDefs,
+            ShowfileLoadPhase::ResolveLinks,
+            ShowfileLoadPhase::MaterializeRuntime,
+        ] {
+            loader
+                .contribute_load(phase, &contribution, &mut commands)
+                .unwrap();
+        }
+        queue.apply(&mut world);
+        let restored = world
+            .query::<&MaterializedTimeline>()
+            .single(&world)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&restored.timeline).unwrap(),
+            serde_json::to_value(&timeline).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&*restored_timelines.from_id(timeline.identifiers.id).unwrap())
+                .unwrap(),
+            serde_json::to_value(&timeline).unwrap()
+        );
+    }
+}

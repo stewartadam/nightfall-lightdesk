@@ -28,6 +28,8 @@ use crate::prelude::*;
 pub mod ast_conv;
 mod audio_integration;
 #[cfg(feature = "beatgrid-detect")]
+pub mod beat_model;
+#[cfg(feature = "beatgrid-detect")]
 #[doc(hidden)]
 pub mod beat_this_detection;
 mod beatgrid_detection;

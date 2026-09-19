@@ -29,15 +29,6 @@ const LOG_MULTIPLIER: f32 = 1000.0;
 const CHUNK_SIZE: usize = 1500;
 const BORDER_SIZE: usize = 6;
 const STRIDE: usize = CHUNK_SIZE - 2 * BORDER_SIZE;
-const BUNDLED_MODEL_PATH: &str = "webui/assets/models/beat-this/beat_this.onnx";
-
-/// Host-resolved bundle location retained across timeline worker requests.
-#[derive(bevy_ecs::prelude::Resource, Debug, Clone, Default)]
-pub struct BeatThisResourceDirectory(
-    /// Desktop resource directory, or no override for standalone development builds.
-    pub Option<PathBuf>,
-);
-
 /// Paths to the Beat This beat/downbeat model files.
 #[derive(Debug, Clone)]
 pub struct BeatThisModelPaths {
@@ -74,16 +65,19 @@ struct RtenModel {
 }
 
 impl BeatThisModelPaths {
-    /// Resolve the model inside the host's bundle, or standalone development locations.
-    pub fn resolve(resource_dir: Option<&Path>) -> Result<Self, String> {
-        let candidates = bundled_model_candidates(resource_dir);
-        let Some(beat_model) = candidates.iter().find(|candidate| candidate.is_file()) else {
-            return Err(missing_model_message(&candidates));
-        };
-
-        Ok(Self {
-            beat_model: beat_model.clone(),
-        })
+    /// Load only verified, explicitly downloaded model weights from application data.
+    pub fn resolve() -> Result<Self, String> {
+        let beat_model = crate::beat_model::model_path()?;
+        crate::beat_model::verify(
+            &beat_model,
+            crate::beat_model::manifest().size_bytes,
+            &crate::beat_model::manifest().sha256,
+        )
+        .map_err(|_| {
+            "Beat detection model is unavailable. Download it in Settings or select Detect beats."
+                .to_string()
+        })?;
+        Ok(Self { beat_model })
     }
 }
 
@@ -687,72 +681,9 @@ fn nearest_beat_index(beats: &[f32], time: f32, tolerance: f32) -> Option<usize>
     }
 }
 
-/// Use the host's platform-aware directory exclusively when running in a desktop bundle.
-fn bundled_model_candidates(resource_dir: Option<&Path>) -> Vec<PathBuf> {
-    let bundled_model_path = PathBuf::from(BUNDLED_MODEL_PATH);
-    if let Some(resource_dir) = resource_dir {
-        return vec![resource_dir.join(bundled_model_path)];
-    }
-    let mut candidates = vec![bundled_model_path.clone()];
-
-    if let Ok(exe_path) = std::env::current_exe()
-        && let Some(exe_dir) = exe_path.parent()
-    {
-        candidates.push(exe_dir.join(&bundled_model_path));
-        if let Some(contents_dir) = exe_dir.parent() {
-            candidates.push(contents_dir.join("Resources").join(&bundled_model_path));
-        }
-    }
-
-    candidates
-}
-
-/// Include every attempted location in a failed model lookup for diagnostics.
-fn missing_model_message(candidates: &[PathBuf]) -> String {
-    let searched = candidates
-        .iter()
-        .map(|candidate| candidate.display().to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "Bundled Beat This model file was not found. Searched: {}",
-        searched
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Resolve an installed model from a Linux bundle layout outside the working directory.
-    #[test]
-    fn resolves_model_from_host_resource_directory() {
-        let bundle_root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
-        let resource_dir = bundle_root.join("usr/lib/nightfall");
-        let model_path = resource_dir.join(BUNDLED_MODEL_PATH);
-        std::fs::create_dir_all(model_path.parent().unwrap()).unwrap();
-        std::fs::write(&model_path, b"test model resource").unwrap();
-
-        let result = BeatThisModelPaths::resolve(Some(&resource_dir));
-        std::fs::remove_dir_all(&bundle_root).unwrap();
-
-        assert_eq!(result.unwrap().beat_model, model_path);
-    }
-
-    /// A missing packaged model reports its bundle path instead of using a development copy.
-    #[test]
-    fn missing_host_resource_does_not_fall_back_to_working_directory() {
-        let resource_dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
-        let model_path = resource_dir.join(BUNDLED_MODEL_PATH);
-        let error = BeatThisModelPaths::resolve(Some(&resource_dir)).unwrap_err();
-        assert_eq!(
-            error,
-            format!(
-                "Bundled Beat This model file was not found. Searched: {}",
-                model_path.display()
-            )
-        );
-    }
 
     #[test]
     fn calculate_bpm_uses_median_interval() {

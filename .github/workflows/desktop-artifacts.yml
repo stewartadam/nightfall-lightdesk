@@ -59,14 +59,12 @@ jobs:
           cargo install --locked cargo-about --version 0.8.4
           npm run typeshare
           npm run wasm-build
-          npm run download:beat-this-model
           npm run build
       - uses: actions/upload-artifact@v6
         with:
           name: desktop-web-${{ github.sha }}
           path: |
             webui/dist/
-            webui/assets/models/beat-this/
           if-no-files-found: error
           retention-days: 7
 

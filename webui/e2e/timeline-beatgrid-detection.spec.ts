@@ -490,10 +490,55 @@ test("beatgrid detection proposal can be rejected, applied, and used for ruler s
   backendSlot,
   page,
 }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
 
   const context = await openOwnedBeatgridApp(page, backendSlot.backendPort);
   try {
+    // Pre-download through Settings, as an author preparing to work offline would.
+    await page.keyboard.press("ControlOrMeta+,");
+    const settings = page.getByRole("dialog", {
+      name: "Settings",
+      exact: true,
+    });
+    await settings.getByRole("tab", { name: "Editors", exact: true }).click();
+    const modelUrl = `http://127.0.0.1:${backendSlot.backendPort}/api/beat-detection/model`;
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(modelUrl);
+        return (await response.json()).phase;
+      })
+      .toMatch(/^(missing|ready)$/);
+    const availability = await (await page.request.get(modelUrl)).json();
+    if (availability.phase === "missing") {
+      await settings
+        .getByRole("button", { name: "Download", exact: true })
+        .click();
+      const modelDialog = page.getByRole("dialog", {
+        name: "Beat detection model",
+        exact: true,
+      });
+      await modelDialog
+        .getByRole("button", { name: "Download model", exact: true })
+        .click();
+      await expect
+        .poll(
+          async () => {
+            const response = await page.request.get(modelUrl);
+            const status = await response.json();
+            if (status.phase === "failed") throw new Error(status.error);
+            return status.phase;
+          },
+          { timeout: 180_000 },
+        )
+        .toBe("ready");
+      await modelDialog
+        .getByRole("button", { name: "Close", exact: true })
+        .click();
+    }
+    await expect(
+      settings.getByRole("button", { name: "Delete model", exact: true }),
+    ).toBeEnabled();
+    await settings.getByRole("button", { name: "Close settings" }).click();
     await clearBeatgridState(page, context);
     await dropDemoAudio(page, context.timelineUid);
 
