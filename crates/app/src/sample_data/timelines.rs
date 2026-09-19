@@ -190,9 +190,9 @@ pub(super) fn add_tc(world: &mut World) {
         markers: Vec::new(),
         regions: Vec::new(),
         loop_range: None,
-        bpm: 120.0,
+        bpm: 108.0,
         beats_per_bar: 4,
-        use_beat_grid: false,
+        use_beat_grid: true,
         beatgrid: None,
         scroll_mode: TimelineScrollMode::Free,
     };
@@ -217,9 +217,9 @@ pub(super) fn add_tc(world: &mut World) {
         markers: Vec::new(),
         regions: Vec::new(),
         loop_range: None,
-        bpm: 120.0,
+        bpm: 168.0,
         beats_per_bar: 4,
-        use_beat_grid: false,
+        use_beat_grid: true,
         beatgrid: None,
         scroll_mode: TimelineScrollMode::Free,
         tracks: vec![
