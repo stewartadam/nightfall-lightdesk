@@ -133,17 +133,67 @@ jobs:
         run: |
           cargo install --locked cargo-about --version 0.8.4
           node scripts/distribution-notices.mjs ${{ matrix.target }}
-      - name: Build the desktop installers
-        id: tauri
+      - name: Validate macOS signing credentials
+        if: runner.os == 'macOS' && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required repository secret: $name"
+              exit 1
+            fi
+          done
+          if [[ "$APPLE_SIGNING_IDENTITY" != "Developer ID Application: "* ]]; then
+            echo "::error::APPLE_SIGNING_IDENTITY must be a Developer ID Application identity."
+            exit 1
+          fi
+      - name: Build signed and notarized macOS installers
+        if: runner.os == 'macOS' && github.event_name != 'pull_request'
+        id: tauri-signed
         uses: tauri-apps/tauri-action@v1
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: crates/app
           tauriScript: npx tauri
           args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
+      - name: Build credential-free desktop installers
+        if: runner.os != 'macOS' || github.event_name == 'pull_request'
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+        with:
+          projectPath: crates/app
+          tauriScript: npx tauri
+          args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
+      - name: Verify macOS signature and notarization ticket
+        if: runner.os == 'macOS' && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          DESKTOP_TARGET: ${{ matrix.target }}
+        run: |
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          app="$target_dir/$DESKTOP_TARGET/release/bundle/macos/Nightfall.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
       - name: Stage versioned installers
         env:
           DESKTOP_TARGET: ${{ matrix.target }}
-          TAURI_ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          TAURI_ARTIFACT_PATHS: ${{ steps.tauri-signed.outputs.artifactPaths || steps.tauri.outputs.artifactPaths }}
         run: node scripts/desktop-artifacts.mjs stage
       - name: Upload primary installer
         uses: actions/upload-artifact@v7

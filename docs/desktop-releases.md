@@ -41,9 +41,24 @@ Installer names include the version and architecture target, for example `nightf
 
 ## Signing status
 
-These builds do not use signing credentials. macOS uses Tauri's ad-hoc identity (`-`) for Apple Silicon compatibility and is not notarized. Windows installers do not have an Authenticode signature. Operating-system trust prompts are expected; the release notes state this explicitly.
+macOS builds on pushes to `main`, version-tag pushes, and manual workflow runs use a Developer ID Application certificate and Apple notarization. Both Apple Silicon and Intel jobs require all six repository secrets below; missing credentials fail the build instead of falling back to ad-hoc signing.
 
-Publisher signing and notarization can be added when credentials are available. See the official [Tauri macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) and [Windows signing guide](https://v2.tauri.app/distribute/sign/windows/).
+| Repository secret | Value |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Base64-encoded `.p12` export containing the certificate and its private key (not a `.cer` file) |
+| `APPLE_CERTIFICATE_PASSWORD` | Password protecting the `.p12` export |
+| `APPLE_SIGNING_IDENTITY` | Full identity, such as `Developer ID Application: Your Name (TEAMID)` |
+| `APPLE_ID` | Apple Account email used for notarization |
+| `APPLE_PASSWORD` | App-specific password for that account |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+The Tauri action imports the signing identity, and Tauri signs and notarizes the app and staples its ticket. The workflow verifies the app signature, stapled ticket, and Gatekeeper assessment before staging installers. Publication requires every build to succeed.
+
+Pull requests, including same-repository PRs, receive no signing credentials and use an ad-hoc macOS identity (`-`). Linux and Windows packaging receive no Apple credentials. Windows installers remain unsigned.
+
+To validate credential setup, manually run **Desktop and browser artifacts** from a trusted branch containing the signing workflow. Manual runs produce artifacts without publishing a release. Download each macOS DMG through a browser and verify that the installed app opens without a security override. The normal confirmation for an Internet download may still appear.
+
+See the official [Tauri macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) for certificate export and credential setup. Keep credentials in GitHub Actions secrets, never in repository files.
 
 ## Local workflow checks
 
