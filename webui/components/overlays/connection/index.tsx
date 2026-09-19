@@ -242,7 +242,7 @@ const ConnectionOverlay = () => {
                 </Tooltip>
               </div>
               <div class="text-gray-300 text-center">
-                Attempting to re-establish connection to nightfall session.
+                Re-establishing connection to nightfall session.
               </div>
               <div
                 class="flex h-10 w-7 items-center justify-between"

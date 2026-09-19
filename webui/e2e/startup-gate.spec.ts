@@ -191,7 +191,7 @@ test("bootstrap html presents startup splash before app shell mounts", async ({
     page.getByRole("status", { name: "Starting nightfall" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "nightfall" })).toBeVisible();
-  await expect(page.getByText("Starting engine")).toBeVisible();
+  await expect(page.getByText("Starting nightfall")).toBeVisible();
   await expect(page.getByRole("img", { name: "nightfall logo" })).toBeVisible();
   const bootstrapFaders = page.locator("#bootstrap-splash .bootstrap-fader");
   await expect(bootstrapFaders).toHaveCount(3);
