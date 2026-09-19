@@ -538,6 +538,7 @@ test("layers panel preserves expansion when a layer moves in the stack", async (
   const populatedLayer = panel.locator("details").filter({ hasText: "Cue 1" });
   await populatedLayer.locator("summary").click();
   await expect(populatedLayer).toHaveAttribute("open", "");
+  await expect(populatedLayer.getByRole("grid")).toBeVisible();
   await populatedLayer.evaluate((element) => {
     (element as HTMLElement & { __layerRowMarker?: string }).__layerRowMarker =
       "mounted";
@@ -586,6 +587,7 @@ test("layers panel reorders existing layer rows without remounting", async ({
   const populatedLayer = panel.locator("details").filter({ hasText: "Cue 1" });
   await populatedLayer.locator("summary").click();
   await expect(populatedLayer).toHaveAttribute("open", "");
+  await expect(populatedLayer.getByRole("grid")).toBeVisible();
   await populatedLayer.evaluate((element) => {
     (element as HTMLElement & { __layerRowMarker?: string }).__layerRowMarker =
       "mounted";
@@ -605,4 +607,109 @@ test("layers panel reorders existing layer rows without remounting", async ({
     )
     .toBe("mounted");
   await expect(populatedLayer).toContainText("Layer 1:");
+});
+
+/** Keeps offscreen grids mounted but refreshes their latest snapshots on viewport entry or navigation. */
+test("layers panel pauses offscreen snapshots and refreshes on reentry", async ({
+  page,
+}, testInfo) => {
+  await openLayerPanelTestApp(page);
+  await seedLayerData(page);
+  await page.evaluate(() => {
+    const store = (window as any).appStores.layerStack;
+    const template = store.get()[0];
+    store.set(
+      Array.from({ length: 10 }, (_, index) => ({
+        ...structuredClone(template),
+        creator: `Viewport layer ${index}`,
+        object_ref: undefined,
+      })),
+    );
+  });
+  await openLayerPanel(page, "panel-LayerStack-e2e-viewport");
+  const panel = page.locator(
+    '[data-panel-kind="layer"][data-panel-id="panel-LayerStack-e2e-viewport"]',
+  );
+  await panel.getByRole("button", { name: "Expand all layers" }).click();
+  const first = panel.locator("details").first();
+  const last = panel.locator("details").last();
+  await expect(
+    first.getByRole("gridcell", { name: "180", exact: true }),
+  ).toHaveCount(2);
+  await first.getByRole("grid").evaluate((element) => {
+    element.setAttribute("data-test-retained-grid", "mounted");
+  });
+
+  /** Publishes one complete backend-style snapshot with a distinct output value. */
+  const publishOutput = async (value: number) => {
+    await page.evaluate((intensity) => {
+      const store = (window as any).appStores.layerStack;
+      const layers = structuredClone(store.get());
+      for (const layer of layers) {
+        layer.computed_values[0].parameters[0].Intensity = intensity;
+      }
+      store.set(layers);
+    }, value);
+  };
+
+  await last.evaluate((element) => element.scrollIntoView({ block: "end" }));
+  /** Allows the browser to deliver the scroll intersection before publishing snapshots. */
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+  for (const value of [181, 182, 187]) {
+    await publishOutput(value);
+    await expect(
+      last.getByRole("gridcell", { name: String(value), exact: true }),
+    ).toHaveCount(1);
+    await expect(
+      first.getByRole("gridcell", { name: "180", exact: true }),
+    ).toHaveCount(2);
+  }
+  await expect(first.getByRole("grid")).toHaveAttribute(
+    "data-test-retained-grid",
+    "mounted",
+  );
+
+  await first.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await expect(
+    first.getByRole("gridcell", { name: "187", exact: true }),
+  ).toHaveCount(1);
+  await expect(first.getByRole("grid")).toHaveAttribute(
+    "data-test-retained-grid",
+    "mounted",
+  );
+  await publishOutput(191);
+  await expect(
+    first.getByRole("gridcell", { name: "191", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    last.getByRole("gridcell", { name: "187", exact: true }),
+  ).toHaveCount(1);
+  await page.evaluate((fixtureUid) => {
+    (window as any).appStores.layerNavigationRequest.set({
+      requestId: 987654,
+      layerIndex: 9,
+      fixtureUid,
+    });
+  }, FIXTURE_UID);
+  await expect(
+    last.getByRole("gridcell", { name: "191", exact: true }),
+  ).toHaveCount(1);
+  await page.screenshot({
+    path: testInfo.outputPath("layer-viewport-refresh.png"),
+  });
+
+  await page.evaluate(() => (window as any).appStores.layerStack.set([]));
+  await expect(panel).toHaveCount(0);
+  await seedLayerData(page);
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Expand all layers" }).click();
+  await updateLayerOutput(page, 199);
+  await expect(
+    panel.getByRole("gridcell", { name: "199", exact: true }),
+  ).toBeVisible();
 });
