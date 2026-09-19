@@ -18,38 +18,44 @@ pub(super) fn add_groups(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    // inside add_groups()
-
-    // define each region by its fixture IDs
     let group_defs = vec![
-        ("Tubes Left", vec![211, 212, 213, 214, 215, 216]),
-        ("Tubes Right", vec![221, 222, 223, 224, 225, 226]),
-        ("bstrip 1 left", vec![311, 312, 313, 314, 315]),
-        ("bstrip 1 right", vec![321, 322, 323, 324, 325]),
-        ("bstrip 2 left", vec![331, 332, 333, 334, 335]),
-        ("bstrip 2 right", vec![341, 342, 343, 344, 345]),
-        ("bstrip 3 left", vec![351, 352, 353, 354, 355]),
-        ("bstrip 3 right", vec![361, 362, 363, 364, 365]),
-        ("bstrip 4 left", vec![371, 372, 373, 374, 375]),
-        ("bstrip 4 right", vec![381, 382, 383, 384, 385]),
-        ("Overhead Left", vec![411, 412, 413, 414, 415, 416]),
-        ("Overhead Right", vec![421, 422, 423, 424, 425, 426]),
         (
-            "Spots Front",
-            vec![501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511, 512],
+            "Pixel Tapes Left",
+            vec![
+                310, 311, 312, 313, 330, 331, 332, 333, 350, 351, 352, 353, 370, 371, 372, 373,
+            ],
         ),
         (
-            "Spots Rear",
-            vec![513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524],
+            "Pixel Tapes Right",
+            vec![
+                320, 321, 322, 323, 340, 341, 342, 343, 360, 361, 362, 363, 380, 381, 382, 383,
+            ],
         ),
-        ("Manual Strobes", vec![601, 602, 603, 604, 605, 606]),
+        ("bstrip 1 left", vec![310, 311, 312, 313]),
+        ("bstrip 1 right", vec![320, 321, 322, 323]),
+        ("bstrip 2 left", vec![330, 331, 332, 333]),
+        ("bstrip 2 right", vec![340, 341, 342, 343]),
+        ("bstrip 3 left", vec![350, 351, 352, 353]),
+        ("bstrip 3 right", vec![360, 361, 362, 363]),
+        ("bstrip 4 left", vec![370, 371, 372, 373]),
+        ("bstrip 4 right", vec![380, 381, 382, 383]),
+        ("Strobe Bars Left", vec![1004, 1005, 1006]),
+        ("Strobe Bars Right", vec![1007, 1008, 1009]),
+        ("Spots Front", vec![501, 502, 503, 504, 505, 506]),
+        ("Rotating Wash", vec![1010, 1011, 1012, 1013, 1014, 1015]),
+        ("Matrix Strobes", vec![601, 602, 603, 604, 605, 606]),
     ];
 
     for (idx, (label, fixture_ids)) in group_defs.into_iter().enumerate() {
         // build a flat list of all element‐refs in this group:
         let elements: Vec<FixtureRef> = fixture_ids
             .into_iter()
-            .filter_map(|id| fixture_data_provider.inner.from_id(id).ok())
+            .map(|id| {
+                fixture_data_provider
+                    .inner
+                    .from_id(id)
+                    .expect("sample group fixture must exist")
+            })
             .flat_map(|fixture| {
                 let uid = fixture.identifiers.uid;
                 fixture
@@ -74,8 +80,6 @@ pub(super) fn add_groups(world: &mut World) {
             description: Default::default(),
         });
     }
-
-    system_state.apply(world);
 
     system_state.apply(world);
 }

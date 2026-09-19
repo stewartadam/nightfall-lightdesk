@@ -1875,6 +1875,7 @@ fn new_showfile_event_is_deferred_when_swap_request_resource_exists() {
         vec![crate::PendingWorldSwap::NewShowfile {
             correlation_id,
             showfile_name: None,
+            include_sample_data: false,
         }]
     );
 }
@@ -1894,7 +1895,10 @@ fn named_new_showfile_event_is_deferred_when_swap_request_resource_exists() {
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::NewNamedShowfile("demo".to_string()),
+            DeskCommand::NewNamedShowfile(nightfall_desk::desk_command::NewShowfileOptions {
+                name: "demo".to_string(),
+                include_sample_data: true,
+            }),
         ));
 
     world
@@ -1909,6 +1913,7 @@ fn named_new_showfile_event_is_deferred_when_swap_request_resource_exists() {
         vec![crate::PendingWorldSwap::NewShowfile {
             correlation_id,
             showfile_name: Some("demo".to_string()),
+            include_sample_data: true,
         }]
     );
 }
@@ -2219,6 +2224,7 @@ fn mixed_world_swap_events_preserve_original_order() {
             crate::PendingWorldSwap::NewShowfile {
                 correlation_id: new_correlation_id,
                 showfile_name: None,
+                include_sample_data: false,
             },
         ]
     );

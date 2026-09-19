@@ -12,7 +12,7 @@ import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import {
   newShowfile,
-  promptForNewShowfileName,
+  promptForNewShowfile,
   saveShowfile,
 } from "../../../lib/showfile-actions";
 import { isTauriRuntime } from "../../../lib/tauri";
@@ -42,9 +42,9 @@ export default function TauriMenuBridge() {
   /** Prompts for a show name before starting a fresh showfile from the app menu. */
   const promptAndNewShowfile = () => {
     void (async () => {
-      const showfileName = await promptForNewShowfileName();
-      if (!showfileName) return;
-      newShowfile(showfileName);
+      const options = await promptForNewShowfile();
+      if (!options) return;
+      newShowfile(options);
     })();
   };
 

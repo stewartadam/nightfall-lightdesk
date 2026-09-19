@@ -20,31 +20,27 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    let selection_elements: Vec<FixtureRef> = vec![
-        // the fixtures whose elements we will select
-        311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 331, 332, 333, 334, 335, 341, 342, 343,
-        344, 345, 351, 352, 353, 354, 355, 361, 362, 363, 364, 365, 371, 372, 373, 374, 375, 381,
-        382, 383, 384, 385,
-    ]
-    .into_iter()
-    .flat_map(|fixture_id| {
-        // create an elementref for the elements on the particular fixture
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(fixture_id)
-            .expect("failed to obtain fixture");
+    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture_id| {
+            // create an elementref for the elements on the particular fixture
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("failed to obtain fixture");
 
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect::<Vec<_>>()
-    })
-    .collect();
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements.clone());
 
@@ -207,31 +203,27 @@ pub(super) fn add_abs_255_cue(world: &mut World) {
             .get_mut(world)
             .expect("sample data system parameters should be available");
 
-    let selection_elements: Vec<FixtureRef> = vec![
-        // the fixtures whose elements we will select
-        311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 331, 332, 333, 334, 335, 341, 342, 343,
-        344, 345, 351, 352, 353, 354, 355, 361, 362, 363, 364, 365, 371, 372, 373, 374, 375, 381,
-        382, 383, 384, 385,
-    ]
-    .into_iter()
-    .flat_map(|fixture_id| {
-        // create an elementref for the elements on the particular fixture
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(fixture_id)
-            .expect("failed to obtain fixture");
+    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture_id| {
+            // create an elementref for the elements on the particular fixture
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("failed to obtain fixture");
 
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect::<Vec<_>>()
-    })
-    .collect();
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements.clone());
 
@@ -430,31 +422,27 @@ pub(super) fn add_rel_cue(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    let selection_elements: Vec<FixtureRef> = vec![
-        // the fixtures whose elements we will select
-        311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 331, 332, 333, 334, 335, 341, 342, 343,
-        344, 345, 351, 352, 353, 354, 355, 361, 362, 363, 364, 365, 371, 372, 373, 374, 375, 381,
-        382, 383, 384, 385,
-    ]
-    .into_iter()
-    .flat_map(|fixture_id| {
-        // create an elementref for the elements on the particular fixture
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(fixture_id)
-            .expect("failed to obtain fixture");
+    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture_id| {
+            // create an elementref for the elements on the particular fixture
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("failed to obtain fixture");
 
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect::<Vec<_>>()
-    })
-    .collect();
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements.clone());
 
@@ -591,31 +579,27 @@ pub(super) fn add_rel_cue2(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    let selection_elements: Vec<FixtureRef> = vec![
-        // the fixtures whose elements we will select
-        311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 331, 332, 333, 334, 335, 341, 342, 343,
-        344, 345, 351, 352, 353, 354, 355, 361, 362, 363, 364, 365, 371, 372, 373, 374, 375, 381,
-        382, 383, 384, 385,
-    ]
-    .into_iter()
-    .flat_map(|fixture_id| {
-        // create an elementref for the elements on the particular fixture
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(fixture_id)
-            .expect("failed to obtain fixture");
+    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture_id| {
+            // create an elementref for the elements on the particular fixture
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("failed to obtain fixture");
 
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect::<Vec<_>>()
-    })
-    .collect();
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements.clone());
 
@@ -810,7 +794,9 @@ pub(super) fn add_fanned_timing_cue(world: &mut World) {
                     ),
                     (
                         Attribute::Tilt,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.5.into() }),
+                        ValueSource::Inline(ParameterValue::AbsolutePercent {
+                            value: (-0.3).into(),
+                        }),
                     ),
                 ]),
                 transitions: fanned_transition.clone(),
@@ -883,7 +869,7 @@ pub(super) fn add_fanned_timing_cue(world: &mut World) {
     world.spawn_instance(clip);
 }
 
-/// Adds RGB color fade sequences: each sequence has 2 cues:
+/// Adds RGB color fades across all matrix and bar strobes; each sequence has 2 cues:
 /// - Cue 1: Sets color to 100% immediately
 /// - Cue 2: Follows immediately and fades to 0% over 2 seconds
 ///
@@ -900,23 +886,24 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
             .get_mut(world)
             .expect("sample data system parameters should be available");
 
-    // Select fixture 601 (manual strobe)
-    let selection_elements: Vec<FixtureRef> = {
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(601)
-            .expect("failed to obtain fixture 601");
-
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect()
-    };
+    let selection_elements: Vec<FixtureRef> = (601..=606)
+        .chain(1004..=1009)
+        .flat_map(|fixture_id| {
+            let fixture = fixture_data_provider
+                .inner
+                .from_id(fixture_id)
+                .expect("sample strobe fixture must exist");
+            fixture
+                .elements
+                .iter()
+                .enumerate()
+                .map(|(index, _)| FixtureRef {
+                    fixture_uid: fixture.identifiers.uid,
+                    index: Some(index as u32 + 1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let selection = SelectionExpr::Resolved(selection_elements);
 
@@ -1182,195 +1169,6 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
     commands.spawn_instance(red_clip);
     commands.spawn_instance(green_clip);
     commands.spawn_instance(blue_clip);
-
-    system_state.apply(world);
-}
-
-/// Adds a sequence with nested cue parts for exercising part display, editing,
-/// and sequence execution from the UI.
-pub(super) fn add_cue_parts_sequence(world: &mut World) {
-    let mut system_state: SystemState<(
-        Commands,
-        ResMut<FixtureDataProviderExt>,
-        ResMut<DataProvider<Cue>>,
-        ResMut<DataProvider<Sequence>>,
-    )> = SystemState::new(world);
-    let (mut commands, fixture_data_provider, mut cue_data_provider, mut seq_data_provider) =
-        system_state
-            .get_mut(world)
-            .expect("sample data system parameters should be available");
-
-    let selection_elements: Vec<FixtureRef> = {
-        let fixture = fixture_data_provider
-            .inner
-            .from_id(601)
-            .expect("failed to obtain fixture 601");
-
-        fixture
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(index, _)| FixtureRef {
-                fixture_uid: fixture.identifiers.uid,
-                index: Some(index as u32 + 1),
-            })
-            .collect()
-    };
-
-    let selection = SelectionExpr::Resolved(selection_elements);
-    let fixed = |duration: Duration| TransitionMode::Fixed(duration);
-
-    let cue1 = Cue {
-        identifiers: Identifiers {
-            uid: Uuid::from_str("a1000001-0004-0001-0001-000000000001").unwrap(),
-            id: 1,
-            label: "RGB Parts".to_owned(),
-        },
-        trigger: CueTriggerType::Manual,
-        instructions: vec![BoundCueInstruction {
-            selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
-                blueprint_application: None,
-                values: HashMap::from([(
-                    Attribute::Red,
-                    ValueSource::Inline(ParameterValue::AbsolutePercent { value: 1.0.into() }),
-                )]),
-                ..Default::default()
-            },
-        }],
-        parts: vec![
-            CuePart {
-                identifiers: Identifiers {
-                    uid: Uuid::from_str("a1000001-0004-0001-0001-000000000011").unwrap(),
-                    id: 1,
-                    label: "Green Layer".to_owned(),
-                },
-                instructions: vec![BoundCueInstruction {
-                    selection: selection.clone().into(),
-                    cue_instruction: CueInstruction {
-                        blueprint_application: None,
-                        values: HashMap::from([(
-                            Attribute::Green,
-                            ValueSource::Inline(ParameterValue::AbsolutePercent {
-                                value: 1.0.into(),
-                            }),
-                        )]),
-                        ..Default::default()
-                    },
-                }],
-                ..Default::default()
-            },
-            CuePart {
-                identifiers: Identifiers {
-                    uid: Uuid::from_str("a1000001-0004-0001-0001-000000000012").unwrap(),
-                    id: 2,
-                    label: "Blue Accent".to_owned(),
-                },
-                transitions: PartialTransition {
-                    delay_in: Some(fixed(Duration::from_millis(250))),
-                    fade_in: Some(fixed(Duration::from_millis(750))),
-                    delay_out: Some(fixed(Duration::from_secs(0))),
-                    fade_out: Some(fixed(Duration::from_millis(500))),
-                    curve_in: Some(FadeCurve::EaseOut),
-                    curve_out: Some(FadeCurve::Linear),
-                },
-                instructions: vec![BoundCueInstruction {
-                    selection: selection.clone().into(),
-                    cue_instruction: CueInstruction {
-                        blueprint_application: None,
-                        values: HashMap::from([
-                            (
-                                Attribute::Green,
-                                ValueSource::Inline(ParameterValue::AbsolutePercent {
-                                    value: 0.5.into(),
-                                }),
-                            ),
-                            (
-                                Attribute::Blue,
-                                ValueSource::Inline(ParameterValue::AbsolutePercent {
-                                    value: 1.0.into(),
-                                }),
-                            ),
-                        ]),
-                        ..Default::default()
-                    },
-                }],
-                ..Default::default()
-            },
-        ],
-        ..Default::default()
-    };
-
-    let cue2 = Cue {
-        identifiers: Identifiers {
-            uid: Uuid::from_str("a1000001-0004-0001-0001-000000000002").unwrap(),
-            id: 2,
-            label: "RGB Parts Blackout".to_owned(),
-        },
-        trigger: CueTriggerType::Manual,
-        instructions: vec![BoundCueInstruction {
-            selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
-                blueprint_application: None,
-                values: HashMap::from([
-                    (
-                        Attribute::Red,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
-                    ),
-                    (
-                        Attribute::Green,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
-                    ),
-                    (
-                        Attribute::Blue,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
-                    ),
-                ]),
-                ..Default::default()
-            },
-        }],
-        ..Default::default()
-    };
-
-    let sequence = Sequence {
-        identifiers: Identifiers {
-            uid: Uuid::from_str("a1000001-0004-0001-0001-000000000010").unwrap(),
-            id: 29,
-            label: "Cue Parts Demo".to_owned(),
-        },
-        steps: vec![cue1.identifiers.uid.into(), cue2.identifiers.uid.into()],
-        wrap: false,
-        default_timing: Transition {
-            delay_in: fixed(Duration::from_secs(0)),
-            fade_in: fixed(Duration::from_millis(1500)),
-            curve_in: FadeCurve::EaseInOut,
-            delay_out: fixed(Duration::from_secs(0)),
-            fade_out: fixed(Duration::from_millis(500)),
-            curve_out: FadeCurve::Linear,
-        },
-        ..Default::default()
-    };
-
-    let clip = Clip {
-        identifiers: Identifiers {
-            id: 29,
-            uid: Uuid::from_str("a1000001-0004-0001-0001-000000000100").unwrap(),
-            label: "Cue Parts Demo".to_owned(),
-        },
-        source: Some(Source::Sequence(sequence.identifiers.uid)),
-        ..Default::default()
-    };
-
-    cue_data_provider
-        .add(cue1)
-        .expect("sample data should not have duplicate IDs");
-    cue_data_provider
-        .add(cue2)
-        .expect("sample data should not have duplicate IDs");
-    seq_data_provider
-        .add(sequence)
-        .expect("sample data should not have duplicate IDs");
-    commands.spawn_instance(clip);
 
     system_state.apply(world);
 }

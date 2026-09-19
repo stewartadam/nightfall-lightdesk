@@ -2581,6 +2581,15 @@ function currentShowfileNameFromCommand(
     case "LoadShowfile":
       return { name: "default", bumpRevision: true };
     case "NewNamedShowfile":
+      return command.data &&
+        typeof command.data === "object" &&
+        "name" in command.data &&
+        typeof command.data.name === "string"
+        ? {
+            name: normalizedShowfileName(command.data.name),
+            bumpRevision: true,
+          }
+        : null;
     case "LoadNamedShowfile":
     case "LoadDraftShowfile":
       return typeof command.data === "string"

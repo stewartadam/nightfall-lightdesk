@@ -64,6 +64,11 @@ async function captureWorkerSends(
     }) => {
       switch (command?.type) {
         case "NewNamedShowfile":
+          return command.data &&
+            typeof command.data === "object" &&
+            "name" in command.data
+            ? String(command.data.name)
+            : "default";
         case "LoadNamedShowfile":
         case "LoadDraftShowfile":
           return typeof command.data === "string" ? command.data : "default";
@@ -685,7 +690,7 @@ test("creates a new show from the startup draft prompt", async ({ page }) => {
           (send) =>
             send?.module === "DeskCommand" &&
             send?.command?.type === "NewNamedShowfile" &&
-            send?.command?.data === "recovered-new",
+            send?.command?.data?.name === "recovered-new",
         );
       }),
     )
@@ -886,7 +891,7 @@ test("creates a new startup show when no showfiles are available", async ({
           (send) =>
             send?.module === "DeskCommand" &&
             send?.command?.type === "NewNamedShowfile" &&
-            send?.command?.data === "startup-new",
+            send?.command?.data?.name === "startup-new",
         );
       }),
     )

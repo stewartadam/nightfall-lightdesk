@@ -12,8 +12,8 @@ use std::{
 };
 
 use super::{
-    ShowfileCleanSnapshotHash, ShowfileSaveOptions, ShowfileSaveState, ShowfileSnapshot,
-    apply_showfile_save_options,
+    InitialShowfileAsset, ShowfileCleanSnapshotHash, ShowfileSaveOptions, ShowfileSaveState,
+    ShowfileSnapshot, apply_showfile_save_options,
     assets::{
         normalize_scene_object_model_paths_for_showfile, paths_refer_to_same_file,
         remove_orphaned_showfile_object_snapshots, remove_orphaned_timeline_audio_assets,
@@ -52,8 +52,8 @@ pub(crate) enum DraftSaveOutcome {
 enum DraftAssetSource {
     /// Copy the currently mounted show data directory so referenced assets are preserved.
     ActiveShowDataDir,
-    /// Start with an empty directory when there is no prior show data to preserve.
-    EmptyDirectory,
+    /// Start with a fresh directory and install only the supplied bundled files.
+    InitialAssets(&'static [InitialShowfileAsset]),
 }
 
 /// Copy the active show root into the target draft folder when saving under a new name.
@@ -251,13 +251,14 @@ pub(super) fn save_initial_draft_showfile_snapshot(
     showfile_snapshot: &mut ShowfileSnapshot,
     showfile_name: Option<&str>,
     snapshot_hash: u64,
+    initial_assets: &'static [InitialShowfileAsset],
 ) -> Result<(), String> {
     save_draft_showfile_snapshot(
         showfile_snapshot,
         showfile_name,
         snapshot_hash,
         snapshot_hash,
-        DraftAssetSource::EmptyDirectory,
+        DraftAssetSource::InitialAssets(initial_assets),
     )
 }
 
@@ -352,7 +353,7 @@ fn save_draft_showfile_snapshot(
                 })?;
             }
         }
-        DraftAssetSource::EmptyDirectory => {
+        DraftAssetSource::InitialAssets(_) => {
             std::fs::create_dir_all(&temp_dir).map_err(|error| {
                 format!(
                     "failed to create initial showfile draft directory {}: {}",
@@ -360,6 +361,30 @@ fn save_draft_showfile_snapshot(
                     error
                 )
             })?;
+        }
+    }
+    if let DraftAssetSource::InitialAssets(initial_assets) = asset_source {
+        for asset in initial_assets {
+            let relative_path = std::path::Path::new(asset.relative_path);
+            if relative_path.as_os_str().is_empty()
+                || !relative_path
+                    .components()
+                    .all(|component| matches!(component, std::path::Component::Normal(_)))
+            {
+                return Err(format!(
+                    "invalid bundled show asset path: {}",
+                    asset.relative_path
+                ));
+            }
+            let destination = temp_dir.join(relative_path);
+            std::fs::create_dir_all(destination.parent().expect("asset has a staging parent"))
+                .and_then(|()| std::fs::write(&destination, asset.bytes))
+                .map_err(|error| {
+                    format!(
+                        "failed to install bundled show asset {}: {error}",
+                        destination.display()
+                    )
+                })?;
         }
     }
     normalize_scene_object_model_paths_for_showfile(

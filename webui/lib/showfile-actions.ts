@@ -17,10 +17,10 @@ import {
 } from "./showfile-loading";
 import { parseSimpleShowfileSaveCommand } from "./showfile-save-command-parser";
 
-export { promptForNewShowfileName } from "./new-showfile-name-prompt";
+export { promptForNewShowfile } from "./new-showfile-name-prompt";
 
 export type OpenShowfileSelection =
-  | { type: "new"; name: string }
+  | ({ type: "new" } & types.NewShowfileOptions)
   | { type: "showfile"; name: string; discardDraft?: boolean }
   | { type: "draft"; showfileName: string }
   | { type: "revision"; showfileName: string; revisionName: string };
@@ -89,20 +89,24 @@ export function showfileSaveCommandForInput(
 }
 
 /** Returns the command payload for starting a new showfile. */
-function newShowfileCommand(name?: string): types.DeskCommand {
-  return name
-    ? { type: "NewNamedShowfile", data: name }
+function newShowfileCommand(
+  options?: types.NewShowfileOptions,
+): types.DeskCommand {
+  return options
+    ? { type: "NewNamedShowfile", data: options }
     : { type: "NewShowfile" };
 }
 
 /** Starts a new showfile through the backend. */
-export function newShowfile(name?: string): void {
-  sendDeskCommand(newShowfileCommand(name));
+export function newShowfile(options?: types.NewShowfileOptions): void {
+  sendDeskCommand(newShowfileCommand(options));
 }
 
 /** Starts a new showfile and resolves after the backend confirms it completed. */
-export async function newShowfileAndAwait(name?: string): Promise<void> {
-  await sendDeskCommandAndAwait(newShowfileCommand(name));
+export async function newShowfileAndAwait(
+  options?: types.NewShowfileOptions,
+): Promise<void> {
+  await sendDeskCommandAndAwait(newShowfileCommand(options));
 }
 
 /** Saves the current showfile through the backend. */
@@ -182,7 +186,7 @@ export async function openShowfileSelection(
   selection: OpenShowfileSelection,
 ): Promise<void> {
   if (selection.type === "new") {
-    newShowfile(selection.name);
+    newShowfile(selection);
     return;
   }
 

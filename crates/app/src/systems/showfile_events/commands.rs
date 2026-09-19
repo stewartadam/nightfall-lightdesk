@@ -49,12 +49,17 @@ pub fn handle_events(
             DeskCommand::NewShowfile | DeskCommand::NewNamedShowfile(_) => {
                 if let Some(pending_world_swap_request) = pending_world_swap_request.as_deref_mut()
                 {
-                    let showfile_name = match &event.command {
-                        DeskCommand::NewNamedShowfile(name) => Some(name.as_str()),
-                        _ => None,
+                    let (showfile_name, include_sample_data) = match &event.command {
+                        DeskCommand::NewNamedShowfile(options) => {
+                            (Some(options.name.as_str()), options.include_sample_data)
+                        }
+                        _ => (None, false),
                     };
-                    pending_world_swap_request
-                        .request_new_showfile(event.command_id.into(), showfile_name);
+                    pending_world_swap_request.request_new_showfile(
+                        event.command_id.into(),
+                        showfile_name,
+                        include_sample_data,
+                    );
                     continue;
                 }
 
