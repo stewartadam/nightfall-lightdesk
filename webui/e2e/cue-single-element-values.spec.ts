@@ -54,6 +54,7 @@ async function verifySingleElementValues(
   page: Page,
   testInfo: TestInfo,
 ): Promise<void> {
+  await waitForDockviewApp(page);
   await expect
     .poll(() =>
       page.evaluate(
