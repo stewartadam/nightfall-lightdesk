@@ -91,10 +91,13 @@ test("assigned clip controls keep an enabled, visible handle", async ({
   await expect
     .poll(async () =>
       sliderHandle.evaluate((el) => {
-        const computed = getComputedStyle(el);
-        const color = document.createElement("span").style;
-        color.color = computed.getPropertyValue("--accent").trim();
-        return computed.borderColor === color.color;
+        const track = el
+          .closest(".vertical-range-slider")!
+          .querySelector(".noUi-connect")!;
+        return (
+          getComputedStyle(el).borderColor ===
+          getComputedStyle(track).backgroundColor
+        );
       }),
     )
     .toBe(true);
