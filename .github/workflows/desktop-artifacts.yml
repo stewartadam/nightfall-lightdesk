@@ -61,7 +61,7 @@ jobs:
           npm run wasm-build
           npm run download:beat-this-model
           npm run build
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-web-${{ github.sha }}
           path: |
@@ -98,7 +98,7 @@ jobs:
             libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf file wget
       - run: npm ci
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: desktop-web-${{ github.sha }}
           path: webui
@@ -118,10 +118,26 @@ jobs:
           DESKTOP_TARGET: ${{ matrix.target }}
           TAURI_ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
         run: node scripts/desktop-artifacts.mjs stage
-      - uses: actions/upload-artifact@v6
+      - name: Upload primary installer
+        uses: actions/upload-artifact@v7
         with:
-          name: nightfall-desktop-${{ matrix.target }}-${{ github.sha }}
-          path: desktop-artifacts/
+          path: desktop-artifacts/*${{ matrix.extensions[0] }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload additional installer
+        if: matrix.extensions[1] != ''
+        uses: actions/upload-artifact@v7
+        with:
+          path: desktop-artifacts/*${{ matrix.extensions[1] }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload target notices
+        uses: actions/upload-artifact@v7
+        with:
+          path: desktop-artifacts/*-THIRD-PARTY-NOTICES.txt
+          archive: false
           if-no-files-found: error
           retention-days: 14
 
@@ -141,9 +157,9 @@ jobs:
       RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
-          pattern: nightfall-desktop-*-${{ github.sha }}
+          pattern: nightfall-v${{ needs.prepare.outputs.version }}-*
           path: release-assets
           merge-multiple: true
       - name: Publish only after every installer has uploaded
