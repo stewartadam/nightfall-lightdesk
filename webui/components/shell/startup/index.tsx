@@ -18,7 +18,7 @@ import {
   loadShowfileRevisionAndAwait,
   newShowfileAndAwait,
   type OpenShowfileSelection,
-  promptForNewShowfileName,
+  promptForNewShowfile,
 } from "../../../lib/showfile-actions";
 import {
   appLifecycle,
@@ -137,7 +137,7 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
       await waitForBackendConnection(RECOVERY_COMMAND_TIMEOUT_MS);
       markResyncPending();
       await waitForStartupWorldSwapCommand(
-        newShowfileAndAwait(selection.name),
+        newShowfileAndAwait(selection),
         RECOVERY_COMMAND_TIMEOUT_MS,
         selection.name,
       );
@@ -236,9 +236,9 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
   /** Prompts for and creates a new showfile from startup recovery. */
   const startNewShowfile = () => {
     void (async () => {
-      const showfileName = await promptForNewShowfileName();
-      if (!showfileName) return;
-      void openStartupShowfileSelection({ type: "new", name: showfileName });
+      const options = await promptForNewShowfile();
+      if (!options) return;
+      void openStartupShowfileSelection({ type: "new", ...options });
     })();
   };
 

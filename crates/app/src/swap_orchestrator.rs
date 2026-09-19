@@ -43,6 +43,7 @@ pub enum PendingWorldSwap {
     NewShowfile {
         correlation_id: Uuid,
         showfile_name: Option<String>,
+        include_sample_data: bool,
     },
     LoadShowfile {
         correlation_id: Uuid,
@@ -63,9 +64,21 @@ impl PendingWorldSwap {
     /// Build the world bootstrap requested by this swap.
     pub fn bootstrap(&self) -> WorldBootstrap {
         match self {
-            Self::NewShowfile { showfile_name, .. } => WorldBootstrap::Empty {
-                showfile_name: showfile_name.clone(),
-            },
+            Self::NewShowfile {
+                showfile_name,
+                include_sample_data,
+                ..
+            } => {
+                if *include_sample_data {
+                    WorldBootstrap::SampleData {
+                        showfile_name: showfile_name.clone(),
+                    }
+                } else {
+                    WorldBootstrap::Empty {
+                        showfile_name: showfile_name.clone(),
+                    }
+                }
+            }
             Self::LoadShowfile {
                 showfile_name,
                 source,
@@ -94,10 +107,16 @@ pub struct PendingWorldSwapRequest {
 
 impl PendingWorldSwapRequest {
     /// Queue a fresh-showfile world swap request for a command correlation id.
-    pub fn request_new_showfile(&mut self, correlation_id: Uuid, showfile_name: Option<&str>) {
+    pub fn request_new_showfile(
+        &mut self,
+        correlation_id: Uuid,
+        showfile_name: Option<&str>,
+        include_sample_data: bool,
+    ) {
         self.requests.push(PendingWorldSwap::NewShowfile {
             correlation_id,
             showfile_name: showfile_name.map(str::to_string),
+            include_sample_data,
         });
     }
 
@@ -458,7 +477,7 @@ mod tests {
         let correlation_a = Uuid::new_v4();
         let correlation_b = Uuid::new_v4();
         let mut pending = PendingWorldSwapRequest::default();
-        pending.request_new_showfile(correlation_new, Some("fresh"));
+        pending.request_new_showfile(correlation_new, Some("fresh"), false);
         pending.request_load_showfile(
             correlation_a,
             None,
@@ -477,6 +496,7 @@ mod tests {
                 PendingWorldSwap::NewShowfile {
                     correlation_id: correlation_new,
                     showfile_name: Some("fresh".to_string()),
+                    include_sample_data: false,
                 },
                 PendingWorldSwap::LoadShowfile {
                     correlation_id: correlation_a,

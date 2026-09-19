@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Module to populate sample data programmatically
+//! Standalone sample show built from inline data and compiled-in fixture profiles.
+//!
+//! Population must not require installed GDTF/OFL files, media, scene models, or
+//! WASM effects. Sample timelines intentionally have no audio attached.
 #![allow(clippy::type_complexity)]
 use std::{collections::HashMap, str::FromStr, time::Duration};
 

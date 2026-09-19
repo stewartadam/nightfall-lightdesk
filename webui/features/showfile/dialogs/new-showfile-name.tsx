@@ -23,7 +23,7 @@ import {
   DialogSurface,
   DialogTitle,
 } from "../../../components/ui/dialog";
-import { Input } from "../../../components/ui/form-controls";
+import { Checkbox, Input } from "../../../components/ui/form-controls";
 import Modal from "../../../components/ui/modal";
 import { Button } from "../../../components/ui/visual-language/button";
 import {
@@ -32,20 +32,20 @@ import {
   submitNewShowfileNamePrompt,
 } from "../../../lib/new-showfile-name-prompt";
 
-/** Prompts for the show name used when creating a fresh showfile. */
+/** Collects a new show name and optional sample data before creation. */
 export default function NewShowfileNameModal() {
   const prompt = useStore(newShowfileNamePrompt);
   const titleId = createUniqueId();
   const [name, setName] = createSignal("");
-  const [isEntered, setIsEntered] = createSignal(false);
+  const [includeSampleData, setIncludeSampleData] = createSignal(false);
   let inputRef: HTMLInputElement | undefined;
   let enterAnimationFrame: number | null = null;
 
   /** Resets and focuses the name field when a new prompt opens. */
   createEffect(() => {
     if (!prompt()) {
-      setIsEntered(false);
       setName("");
+      setIncludeSampleData(false);
       if (enterAnimationFrame !== null) {
         cancelAnimationFrame(enterAnimationFrame);
         enterAnimationFrame = null;
@@ -54,9 +54,8 @@ export default function NewShowfileNameModal() {
     }
 
     setName("");
-    setIsEntered(false);
+    setIncludeSampleData(false);
     enterAnimationFrame = requestAnimationFrame(() => {
-      setIsEntered(true);
       inputRef?.focus();
       enterAnimationFrame = null;
     });
@@ -75,11 +74,11 @@ export default function NewShowfileNameModal() {
     cancelNewShowfileNamePrompt(request.requestId);
   };
 
-  /** Submits the entered show name to the pending prompt request. */
+  /** Submits the new show name and initial content selection. */
   const submitPrompt = () => {
     const request = prompt();
     if (!request) return;
-    submitNewShowfileNamePrompt(request.requestId, name());
+    submitNewShowfileNamePrompt(request.requestId, name(), includeSampleData());
   };
 
   return (
@@ -91,11 +90,7 @@ export default function NewShowfileNameModal() {
         aria-labelledby={titleId}
       >
         <div
-          class="w-full max-w-md transition-opacity duration-150"
-          classList={{
-            "opacity-0": !isEntered(),
-            "opacity-100": isEntered(),
-          }}
+          class="w-full max-w-md"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
@@ -131,6 +126,31 @@ export default function NewShowfileNameModal() {
                   value={name()}
                   onInput={(event) => setName(event.currentTarget.value)}
                 />
+                <label
+                  class="flex items-start gap-3 pt-3"
+                  for={`${titleId}-samples`}
+                >
+                  <Checkbox
+                    id={`${titleId}-samples`}
+                    checked={includeSampleData()}
+                    onChange={(event) =>
+                      setIncludeSampleData(event.currentTarget.checked)
+                    }
+                    aria-describedby={`${titleId}-samples-description`}
+                  />
+                  <span>
+                    <span class="block text-sm font-medium text-neutral-200">
+                      Include sample data
+                    </span>
+                    <span
+                      id={`${titleId}-samples-description`}
+                      class="block text-xs text-neutral-400"
+                    >
+                      Start with example fixtures, groups, cues, effects, and
+                      timelines.
+                    </span>
+                  </span>
+                </label>
               </DialogBody>
               <DialogFooter>
                 <Button type="button" onClick={cancelPrompt}>

@@ -8,6 +8,6 @@
 *.sh text eol=lf
 *.Dockerfile text eol=lf
 Dockerfile text eol=lf
-
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads
+crates/app/assets/sample-audio/*.mp3 filter=lfs diff=lfs merge=lfs -text

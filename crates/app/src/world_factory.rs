@@ -27,7 +27,10 @@ pub enum WorldBootstrap {
         showfile_name: Option<String>,
     },
     /// Seed sample entities into the fresh world.
-    SampleData,
+    SampleData {
+        /// Optional name for a sample show and its initial draft.
+        showfile_name: Option<String>,
+    },
     /// Load persisted showfile data into the fresh world.
     Showfile {
         /// Logical showfile name used as the destination for explicit saves.
@@ -91,31 +94,11 @@ impl WorldFactory {
 
         let clean_hash_result: Result<(), String> = match bootstrap {
             WorldBootstrap::Empty { showfile_name } => {
-                let has_showfile_name = showfile_name.is_some();
-                bevy_app
-                    .world_mut()
-                    .resource_mut::<crate::systems::showfile_events::CurrentShowfile>()
-                    .set_name(showfile_name.as_deref())?;
-                if has_showfile_name {
-                    crate::systems::showfile_events::persist_new_showfile_draft_from_world(
-                        bevy_app.world_mut(),
-                        showfile_name.as_deref(),
-                    )?;
-                    bevy_app.insert_state(AppState::Ready);
-                } else {
-                    crate::systems::showfile_events::refresh_clean_snapshot_hash_from_world(
-                        bevy_app.world_mut(),
-                    )?;
-                }
-                Ok(())
+                finalize_new_world(&mut bevy_app, showfile_name.as_deref(), false)
             }
-            WorldBootstrap::SampleData => {
+            WorldBootstrap::SampleData { showfile_name } => {
                 sample_data::populate_sample_entities(bevy_app.world_mut());
-                crate::systems::showfile_events::refresh_clean_snapshot_hash_from_world(
-                    bevy_app.world_mut(),
-                )?;
-                bevy_app.insert_state(AppState::Ready);
-                Ok(())
+                finalize_new_world(&mut bevy_app, showfile_name.as_deref(), true)
             }
             WorldBootstrap::Showfile { name, source } => {
                 crate::systems::showfile_events::load_showfile_into_world(
@@ -158,7 +141,10 @@ pub(super) fn bootstrap_world_with_fallback(
             );
             tracing::error!("{message}");
 
-            let bevy_app = build(WorldBootstrap::SampleData).map_err(|fallback_error| {
+            let bevy_app = build(WorldBootstrap::SampleData {
+                showfile_name: None,
+            })
+            .map_err(|fallback_error| {
                 format!("{message}; sample data bootstrap also failed: {fallback_error}")
             })?;
 
@@ -201,10 +187,35 @@ pub(super) fn queue_startup_ui_notifications(
 /// Choose the initial world bootstrap for a fresh backend process.
 pub(super) fn initial_world_bootstrap(should_seed_sample_data: bool) -> WorldBootstrap {
     if should_seed_sample_data {
-        WorldBootstrap::SampleData
+        WorldBootstrap::SampleData {
+            showfile_name: None,
+        }
     } else {
         WorldBootstrap::Empty {
             showfile_name: None,
         }
     }
+}
+
+/// Assigns a new show's identity and persists its complete initial contents before activation.
+fn finalize_new_world(
+    app: &mut App,
+    showfile_name: Option<&str>,
+    seeded: bool,
+) -> Result<(), String> {
+    app.world_mut()
+        .resource_mut::<crate::systems::showfile_events::CurrentShowfile>()
+        .set_name(showfile_name)?;
+    if showfile_name.is_some() {
+        crate::systems::showfile_events::persist_new_showfile_draft_from_world(
+            app.world_mut(),
+            showfile_name,
+        )?;
+    } else {
+        crate::systems::showfile_events::refresh_clean_snapshot_hash_from_world(app.world_mut())?;
+    }
+    if seeded || showfile_name.is_some() {
+        app.insert_state(AppState::Ready);
+    }
+    Ok(())
 }
