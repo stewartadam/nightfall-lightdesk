@@ -52,7 +52,7 @@ macOS builds on pushes to `main`, version-tag pushes, and manual workflow runs u
 | `APPLE_PASSWORD` | App-specific password for that account |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
 
-The Tauri action imports the signing identity, and Tauri signs and notarizes the app and staples its ticket. The workflow verifies the app signature, stapled ticket, and Gatekeeper assessment before staging installers. Publication requires every build to succeed.
+Tauri imports the signing identity, signs and notarizes the app, and staples its ticket. Signed builds retain both the app bundle and DMG so the app can be verified; only the DMG is staged as an installer. The workflow verifies the app signature, stapled ticket, and Gatekeeper assessment before staging installers. Publication requires every build to succeed.
 
 Pull requests, including same-repository PRs, receive no signing credentials and use an ad-hoc macOS identity (`-`). Linux and Windows packaging receive no Apple credentials. Windows installers remain unsigned.
 

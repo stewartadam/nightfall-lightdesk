@@ -168,7 +168,7 @@ jobs:
         with:
           projectPath: crates/app
           tauriScript: npx tauri
-          args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
+          args: --ci --target ${{ matrix.target }} --bundles app,${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
       - name: Build credential-free desktop installers
         if: runner.os != 'macOS' || github.event_name == 'pull_request'
         id: tauri
