@@ -1463,12 +1463,19 @@ fn named_sample_show_is_standalone_and_recoverable() {
             .iter()
             .all(|fixture| fixture.library_asset_etag.is_none())
     );
-    assert!(
-        snapshot
-            .timelines
-            .iter()
-            .all(|timeline| timeline.audio_path.is_empty() && !timeline.audio_enabled)
-    );
+    assert_eq!(snapshot.timelines.len(), 2);
+    for (timeline, asset) in snapshot
+        .timelines
+        .iter()
+        .zip(crate::sample_data::SAMPLE_AUDIO)
+    {
+        assert!(timeline.audio_enabled);
+        assert_eq!(timeline.audio_path, asset.relative_path);
+        assert_eq!(
+            std::fs::read(draft.join(&timeline.audio_path)).expect("installed bundled audio"),
+            asset.bytes
+        );
+    }
     assert!(
         snapshot.fx_module.is_empty(),
         "sample effects must not require installed WASM modules"
@@ -1520,6 +1527,55 @@ fn named_sample_show_is_standalone_and_recoverable() {
         nightfall_fixtures::prelude::SpatialSelectionResolver,
     >::new(app.world_mut());
     let resolver = state.get(app.world()).expect("selection resolver");
+    let strobe_uids: std::collections::BTreeSet<_> = snapshot
+        .fixtures
+        .iter()
+        .filter(|fixture| {
+            (601..=606).contains(&fixture.identifiers.id)
+                || (1004..=1009).contains(&fixture.identifiers.id)
+        })
+        .map(|fixture| fixture.identifiers.uid)
+        .collect();
+    for cue in snapshot.cues.iter().filter(|cue| {
+        [
+            "Red 100%",
+            "Red Fade Out",
+            "Green 100%",
+            "Green Fade Out",
+            "Blue 100%",
+            "Blue Fade Out",
+        ]
+        .contains(&cue.identifiers.label.as_str())
+    }) {
+        for instruction in &cue.instructions {
+            let selected: std::collections::BTreeSet<_> = resolver
+                .resolve(&instruction.selection)
+                .value
+                .canonical
+                .into_iter()
+                .map(|fixture| fixture.fixture_uid)
+                .collect();
+            assert_eq!(
+                selected, strobe_uids,
+                "{} must target all strobes",
+                cue.identifiers.label
+            );
+        }
+    }
+    let fanned_cue = snapshot
+        .cues
+        .iter()
+        .find(|cue| cue.identifiers.id == 30)
+        .expect("cue 30.30");
+    assert_eq!(
+        fanned_cue.instructions[0]
+            .cue_instruction
+            .values
+            .get(&Attribute::Tilt),
+        Some(&ValueSource::Inline(ParameterValue::AbsolutePercent {
+            value: (-0.3).into()
+        }))
+    );
     for selection in selections {
         let resolved = resolver.resolve(&selection);
         assert!(
@@ -1574,7 +1630,49 @@ fn named_sample_show_is_standalone_and_recoverable() {
             .bindings
             .is_empty()
     );
+    for asset in crate::sample_data::SAMPLE_AUDIO {
+        assert_eq!(
+            std::fs::read(
+                nightfall::active_show_data_dir()
+                    .unwrap()
+                    .join(asset.relative_path)
+            )
+            .expect("recovered bundled audio"),
+            asset.bytes
+        );
+    }
     drop(recovered);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// Installs bundled audio for unnamed CLI/fallback samples before the runtime starts.
+#[test]
+fn unnamed_sample_show_installs_bundled_audio_before_runtime() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("empty sample data root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("in-memory sample world");
+    assert!(!root.path().join("drafts/default.nightfall-show").exists());
+    crate::world_factory::persist_pending_sample_draft(&mut app)
+        .expect("install runtime sample assets");
+    let draft = root.path().join("drafts/default.nightfall-show");
+    assert!(draft.join("showfile.json").is_file());
+    for asset in crate::sample_data::SAMPLE_AUDIO {
+        assert_eq!(
+            std::fs::read(draft.join(asset.relative_path)).expect("installed sample audio"),
+            asset.bytes
+        );
+    }
+    drop(app);
     nightfall::clear_active_show_data_dir();
     nightfall::set_nightfall_data_dir(None);
 }
