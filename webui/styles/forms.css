@@ -45,6 +45,10 @@
       --nf-control-padding: 6px 8px;
       --nf-control-height: 32px;
     }
+    .nf-dialog-surface & {
+      --nf-control-padding: 4px 8px;
+      --nf-control-height: 28px;
+    }
     &[data-density="comfortable"] {
       --nf-control-padding: 9px 10px;
       --nf-control-height: 38px;

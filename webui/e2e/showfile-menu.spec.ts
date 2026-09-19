@@ -639,7 +639,9 @@ test("opens another showfile from the startup draft prompt", async ({
 });
 
 /** Verifies startup recovery can start a new show before revealing the app. */
-test("creates a new show from the startup draft prompt", async ({ page }) => {
+test("creates a new show from the startup draft prompt", async ({
+  page,
+}, testInfo) => {
   await disableE2eStartupAutoOpen(page);
   await captureWorkerSends(page);
   await routeShowfileDiscovery(
@@ -677,9 +679,34 @@ test("creates a new show from the startup draft prompt", async ({ page }) => {
   });
   await expect(recoveryDialog).toBeVisible();
 
-  const prompt = answerShowNamePrompt(page, "recovered-new");
+  const recoveryAction = recoveryDialog.getByRole("button", {
+    name: "Load Draft",
+  });
+  await expect(recoveryAction).toHaveCSS("height", "28px");
+  await recoveryDialog.screenshot({
+    path: testInfo.outputPath("recovery-dialog.png"),
+  });
   await recoveryDialog.getByRole("button", { name: "New showfile" }).click();
-  await prompt;
+  const nameDialog = page.getByRole("dialog", {
+    name: "New Showfile",
+    exact: true,
+  });
+  await expect(nameDialog).toBeVisible();
+  for (const control of [
+    nameDialog.getByRole("textbox", { name: "Show name" }),
+    nameDialog.getByRole("button", { name: "Cancel", exact: true }),
+    nameDialog.getByRole("button", { name: "Create Show" }),
+    nameDialog.getByRole("button", { name: "Close new showfile dialog" }),
+  ]) {
+    await expect(control).toHaveCSS("height", "28px");
+  }
+  await nameDialog.screenshot({
+    path: testInfo.outputPath("new-showfile-dialog.png"),
+  });
+  await nameDialog
+    .getByRole("textbox", { name: "Show name" })
+    .fill("recovered-new");
+  await nameDialog.getByRole("button", { name: "Create Show" }).click();
   await expect
     .poll(() =>
       page.evaluate(() => {
