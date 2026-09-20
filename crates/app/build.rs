@@ -6,7 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+/// Prepare desktop resources and platform integration when building the desktop host.
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
     #[cfg(feature = "tauri")]
     tauri_build::build()
 }

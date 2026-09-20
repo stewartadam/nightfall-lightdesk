@@ -55,7 +55,7 @@ Run `npx prek run insert-license --all-files` to check all tracked source files.
 
 #### General dependencies
 
-Install Git, [rustup](https://rustup.rs/), and **Node.js 24 with npm**, matching `.nvmrc` and the CI environment (`nvm install && nvm use` if you use nvm). Keep `package-lock.json` and `Cargo.lock`; use `npm ci` and Cargo's `--locked` flag to reproduce their dependency versions.
+Install Git, [Git LFS](https://git-lfs.com/), [rustup](https://rustup.rs/), and **Node.js 24 with npm**, matching `.nvmrc` and the CI environment (`nvm install && nvm use` if you use nvm). Keep `package-lock.json` and `Cargo.lock`; use `npm ci` and Cargo's `--locked` flag to reproduce their dependency versions.
 
 Rustup reads `rust-toolchain.toml`, which pins the nightly compiler and installs rustfmt, Clippy, and the `wasm32-unknown-unknown` target. Do not substitute a stable compiler or set `RUSTUP_TOOLCHAIN` when validating a change. Update the pin deliberately with native and WASM validation.
 
@@ -111,6 +111,8 @@ This changes npm's script shell for your Windows user; launching npm from Git Ba
 From the repository root of a fresh clone:
 
 ```sh
+git lfs install --local
+git lfs pull
 rustup show
 npm ci
 node scripts/setup-env.mjs
@@ -136,9 +138,32 @@ A clean clone does not include a personal fixture or object library. Put compati
 
 Worktrunk is optional. `wt switch --create <branch>` runs the repository hooks to create the environment, install packages, generate types/assets, and seed build and application data from the main worktree. These hooks assume the general prerequisites above are installed. Check their output before starting services; a background build may still be running.
 
+Sample MP3s are tracked with Git LFS and packaged as external resources. Run
+`git lfs pull` before packaging or creating a sample show in development. Rust
+compilation does not read or embed these files. Debug backends read the source
+assets unless a `sample-audio` directory exists beside the executable. Packaged
+desktop apps use Tauri's resource directory; standalone release backends require
+`sample-audio/lofi.mp3` and `sample-audio/rap.mp3` beside their executable.
+
+Run `npm run package:sample-audio -- <executable-directory>` to validate and copy
+standalone backend resources. Each new sample show receives its own copy, so
+saved shows remain portable. Replacing packaged tracks affects future sample
+shows without recompilation. Updating a track uses normal `git add`, signed-off
+commits, and `git push`; the LFS pre-push hook uploads its contents.
+
 #### Git hooks
 
 This project uses [prek](https://prek.j178.dev) to enforce quality gates during development.
+Install Git LFS before installing prek hooks so prek chains the existing LFS hooks.
+For an existing checkout that already has prek hooks, run the following once to
+reinstall both tools in that order (without making commits or pushes between steps):
+
+```sh
+npx prek uninstall -t pre-commit -t pre-push -t post-merge -t post-rewrite
+git lfs install --local
+```
+
+Then install the combined hooks:
 
 ```sh
 npx prek install -t pre-commit -t pre-push -t post-merge -t post-rewrite

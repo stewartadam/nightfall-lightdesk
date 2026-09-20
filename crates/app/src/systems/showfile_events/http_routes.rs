@@ -13,7 +13,7 @@ use std::path::{Component, Path, PathBuf};
 use axum::{
     Json,
     body::Body,
-    extract::{Path as AxumPath, Request, State},
+    extract::{Path as AxumPath, Query, Request, State},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -34,6 +34,7 @@ use super::{
 /// Register showfile-owned HTTP endpoints with the shared route registry.
 pub(crate) fn register_showfile_http_routes(registry: &mut HttpRouteRegistry) {
     registry.register("/api/showfiles", get(list_available_showfiles));
+    registry.register("/api/showfiles/validate-new-name", get(validate_new_name));
     registry.register(
         "/api/showfiles/current/export",
         post(export_current_showfile),
@@ -50,6 +51,20 @@ pub(crate) fn register_showfile_http_routes(registry: &mut HttpRouteRegistry) {
         "/api/showfiles/current/draft",
         post(save_current_showfile_draft),
     );
+}
+
+/// Name proposed by the new-show dialog.
+#[derive(serde::Deserialize)]
+struct NewShowNameQuery {
+    name: String,
+}
+
+/// Report name conflicts before the dialog submits its independently validated creation command.
+async fn validate_new_name(Query(query): Query<NewShowNameQuery>) -> Response {
+    match super::paths::validate_new_showfile_name(Some(&query.name)) {
+        Ok(()) => without_showfile_resource_cache(StatusCode::NO_CONTENT.into_response()),
+        Err(error) => showfile_resource_error(StatusCode::CONFLICT, error),
+    }
 }
 
 /// Requests a named live showfile copy without saving or changing the current show.

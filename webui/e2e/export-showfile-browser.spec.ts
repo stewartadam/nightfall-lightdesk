@@ -25,7 +25,10 @@ test("downloads a live showfile ZIP from the browser footer menu", async ({
   const created = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
       module: "DeskCommand",
-      command: { type: "NewNamedShowfile", data: "browser-export-test" },
+      command: {
+        type: "NewNamedShowfile",
+        data: { name: "browser-export-test", includeSampleData: false },
+      },
     }),
   );
   expect(created.outcome.type).toBe("Succeeded");

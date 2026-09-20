@@ -12,8 +12,8 @@ use std::{
 };
 
 use super::{
-    ShowfileCleanSnapshotHash, ShowfileSaveOptions, ShowfileSaveState, ShowfileSnapshot,
-    apply_showfile_save_options,
+    InitialShowfileAsset, ShowfileCleanSnapshotHash, ShowfileSaveOptions, ShowfileSaveState,
+    ShowfileSnapshot, apply_showfile_save_options,
     assets::{
         normalize_scene_object_model_paths_for_showfile, paths_refer_to_same_file,
         remove_orphaned_showfile_object_snapshots, remove_orphaned_timeline_audio_assets,
@@ -49,11 +49,11 @@ pub(crate) enum DraftSaveOutcome {
 
 /// Controls how draft saves seed files before writing the canonical snapshot.
 #[derive(Debug, Clone, Copy)]
-enum DraftAssetSource {
+enum DraftAssetSource<'a> {
     /// Copy the currently mounted show data directory so referenced assets are preserved.
     ActiveShowDataDir,
-    /// Start with an empty directory when there is no prior show data to preserve.
-    EmptyDirectory,
+    /// Start with a fresh directory and install only the supplied bundled files.
+    InitialAssets(&'a [InitialShowfileAsset]),
 }
 
 /// Copy the active show root into the target draft folder when saving under a new name.
@@ -251,13 +251,14 @@ pub(super) fn save_initial_draft_showfile_snapshot(
     showfile_snapshot: &mut ShowfileSnapshot,
     showfile_name: Option<&str>,
     snapshot_hash: u64,
+    initial_assets: &[InitialShowfileAsset],
 ) -> Result<(), String> {
     save_draft_showfile_snapshot(
         showfile_snapshot,
         showfile_name,
         snapshot_hash,
         snapshot_hash,
-        DraftAssetSource::EmptyDirectory,
+        DraftAssetSource::InitialAssets(initial_assets),
     )
 }
 
@@ -298,8 +299,11 @@ fn save_draft_showfile_snapshot(
     showfile_name: Option<&str>,
     based_on_snapshot_hash: u64,
     draft_snapshot_hash: u64,
-    asset_source: DraftAssetSource,
+    asset_source: DraftAssetSource<'_>,
 ) -> Result<(), String> {
+    if matches!(asset_source, DraftAssetSource::InitialAssets(_)) {
+        super::paths::validate_new_showfile_name(showfile_name)?;
+    }
     let draft_dir = showfile_draft_dir_path(showfile_name)?;
     let draft_parent = draft_dir
         .parent()
@@ -352,7 +356,7 @@ fn save_draft_showfile_snapshot(
                 })?;
             }
         }
-        DraftAssetSource::EmptyDirectory => {
+        DraftAssetSource::InitialAssets(_) => {
             std::fs::create_dir_all(&temp_dir).map_err(|error| {
                 format!(
                     "failed to create initial showfile draft directory {}: {}",
@@ -360,6 +364,30 @@ fn save_draft_showfile_snapshot(
                     error
                 )
             })?;
+        }
+    }
+    if let DraftAssetSource::InitialAssets(initial_assets) = asset_source {
+        for asset in initial_assets {
+            let relative_path = std::path::Path::new(asset.relative_path);
+            if relative_path.as_os_str().is_empty()
+                || !relative_path
+                    .components()
+                    .all(|component| matches!(component, std::path::Component::Normal(_)))
+            {
+                return Err(format!(
+                    "invalid bundled show asset path: {}",
+                    asset.relative_path
+                ));
+            }
+            let destination = temp_dir.join(relative_path);
+            std::fs::create_dir_all(destination.parent().expect("asset has a staging parent"))
+                .and_then(|()| std::fs::copy(&asset.source_path, &destination))
+                .map_err(|error| {
+                    format!(
+                        "failed to install bundled show asset {}: {error}",
+                        destination.display()
+                    )
+                })?;
         }
     }
     normalize_scene_object_model_paths_for_showfile(
@@ -391,7 +419,29 @@ fn save_draft_showfile_snapshot(
         );
     }
 
-    replace_showfile_dir_with_temp(&temp_dir, &draft_dir)?;
+    if matches!(asset_source, DraftAssetSource::InitialAssets(_)) {
+        // Reserve the destination exclusively; never remove another show's directory.
+        let mut reserved_destination = false;
+        let publish = (|| -> Result<(), String> {
+            super::paths::validate_new_showfile_name(showfile_name)?;
+            std::fs::create_dir(&draft_dir)
+                .map_err(|error| format!("Cannot create new show: {error}"))?;
+            reserved_destination = true;
+            for entry in std::fs::read_dir(&temp_dir).map_err(|error| error.to_string())? {
+                let entry = entry.map_err(|error| error.to_string())?;
+                std::fs::rename(entry.path(), draft_dir.join(entry.file_name()))
+                    .map_err(|error| format!("Cannot install new show: {error}"))?;
+            }
+            Ok(())
+        })();
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        if publish.is_err() && reserved_destination {
+            let _ = std::fs::remove_dir_all(&draft_dir);
+        }
+        publish?;
+    } else {
+        replace_showfile_dir_with_temp(&temp_dir, &draft_dir)?;
+    }
     nightfall::set_active_show_data_dir(draft_dir.clone());
 
     tracing::debug!("Wrote draft showfile to {}", draft_dir.display());

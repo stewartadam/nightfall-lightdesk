@@ -67,3 +67,24 @@ node scripts/desktop-artifacts.mjs prepare
 ```
 
 The second command reads the actual Tauri and Cargo versions. Outside a version-tag push it reports `publish: false`. The CI-specific Tauri configuration expects `webui/dist` to have already been prepared; ordinary local Tauri commands retain the normal frontend build hook.
+
+## Sample audio resources
+
+The Lo-fi and Rap MP3s are Git LFS assets packaged under `sample-audio` in Tauri's
+resource directory, separate from the executable. The bundling hook rejects
+missing files, empty files, and unresolved LFS pointers. New sample shows copy
+these files into their own timeline-audio folders; existing shows retain their
+own copies when application resources change.
+
+After an initial `npm run tauri-build`, audio-only changes can be repackaged with
+`npm run tauri-bundle -- --bundles <formats>` (add `--target <triple>` or `--debug`
+to match the original build). This runs the resource validation and bundler without
+Cargo compilation. Normal `tauri build` may still rerun Tauri's resource staging
+when resources change; use the bundle-only command for audio-only updates.
+Signed desktop resources must be replaced through rebuilding/signing the bundle,
+rather than editing an installed signed application in place.
+
+For a standalone backend, run `npm run package:sample-audio -- <executable-directory>`
+and distribute that executable together with the generated `sample-audio` folder.
+These sidecar files can be replaced without compiling the backend. No audio
+resources are needed to create empty shows or load existing self-contained shows.

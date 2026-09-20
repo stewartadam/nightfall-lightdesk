@@ -7,6 +7,7 @@
  */
 
 import { atom } from "nanostores";
+import type { NewShowfileOptions } from "../types";
 
 export interface NewShowfileNamePromptRequest {
   requestId: string;
@@ -16,7 +17,10 @@ export const newShowfileNamePrompt = atom<NewShowfileNamePromptRequest | null>(
   null,
 );
 
-const pendingResolvers = new Map<string, (name: string | null) => void>();
+const pendingResolvers = new Map<
+  string,
+  (options: NewShowfileOptions | null) => void
+>();
 
 /** Creates a stable request id for one new-showfile name prompt. */
 function createPromptRequestId(): string {
@@ -24,7 +28,10 @@ function createPromptRequestId(): string {
 }
 
 /** Resolves and clears a pending prompt request if it is still active. */
-function resolvePromptRequest(requestId: string, name: string | null): void {
+function resolvePromptRequest(
+  requestId: string,
+  options: NewShowfileOptions | null,
+): void {
   const resolve = pendingResolvers.get(requestId);
   if (!resolve) return;
 
@@ -32,11 +39,11 @@ function resolvePromptRequest(requestId: string, name: string | null): void {
   if (newShowfileNamePrompt.get()?.requestId === requestId) {
     newShowfileNamePrompt.set(null);
   }
-  resolve(name);
+  resolve(options);
 }
 
-/** Requests a showfile name through the app modal prompt. */
-export function promptForNewShowfileName(): Promise<string | null> {
+/** Requests the name and initial content for a new show through the shared dialog. */
+export function promptForNewShowfile(): Promise<NewShowfileOptions | null> {
   const activeRequest = newShowfileNamePrompt.get();
   if (activeRequest) {
     resolvePromptRequest(activeRequest.requestId, null);
@@ -49,13 +56,17 @@ export function promptForNewShowfileName(): Promise<string | null> {
   });
 }
 
-/** Completes the active prompt request with a trimmed showfile name. */
+/** Completes the active request with the trimmed name and sample-data selection. */
 export function submitNewShowfileNamePrompt(
   requestId: string,
   name: string,
+  includeSampleData: boolean,
 ): void {
   const trimmed = name.trim();
-  resolvePromptRequest(requestId, trimmed.length > 0 ? trimmed : null);
+  resolvePromptRequest(
+    requestId,
+    trimmed.length > 0 ? { name: trimmed, includeSampleData } : null,
+  );
 }
 
 /** Cancels the active prompt request without creating a showfile. */

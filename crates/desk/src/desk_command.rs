@@ -114,6 +114,17 @@ impl Default for ShowfileImportOptions {
     }
 }
 
+/// Content selected when creating a named show and its initial recoverable draft.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct NewShowfileOptions {
+    /// Name of the new showfile folder.
+    pub name: String,
+    /// Populate built-in example fixtures and show objects before creating the draft.
+    pub include_sample_data: bool,
+}
+
 /// Options captured at the moment a showfile save is requested.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -202,10 +213,10 @@ pub enum DeskCommand {
     /// Quit the application
     Quit,
 
-    /// Create a fresh showfile from the default sample world
+    /// Create a fresh unnamed empty showfile.
     NewShowfile,
     /// Create a fresh showfile for a named `.nightfall-show` folder.
-    NewNamedShowfile(String),
+    NewNamedShowfile(NewShowfileOptions),
     /// Save showfile
     SaveShowfile(ShowfileSaveOptions),
     /// Save showfile to a named `.nightfall-show` folder.

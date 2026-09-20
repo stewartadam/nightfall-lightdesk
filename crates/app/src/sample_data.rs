@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Module to populate sample data programmatically
+//! Standalone sample show built from inline data and compiled-in fixture profiles.
+//!
+//! Population uses compiled-in profiles and audio, without installed GDTF/OFL
+//! files, scene models, or WASM effects. Media is copied into each new show.
 #![allow(clippy::type_complexity)]
 use std::{collections::HashMap, str::FromStr, time::Duration};
 
@@ -31,6 +34,7 @@ use nightfall_timeline::prelude::*;
 use nightfall_waveform::prelude::WaveformKind;
 use uuid::Uuid;
 
+mod audio;
 mod blueprints;
 mod cues;
 mod effects;
@@ -40,6 +44,8 @@ mod groups;
 mod input_mappings;
 mod timelines;
 
+pub(crate) use audio::{SAMPLE_AUDIO, sample_audio_assets, sample_audio_directory};
+
 /// Populate a deterministic sample world in dependency-safe domain order.
 pub fn populate_sample_entities(world: &mut World) {
     fixtures::add_fixtures(world);
@@ -48,11 +54,8 @@ pub fn populate_sample_entities(world: &mut World) {
     cues::add_abs_128_cue(world);
     cues::add_abs_255_cue(world);
     cues::add_rel_cue(world);
-    cues::add_rel_cue2(world);
     cues::add_fanned_timing_cue(world);
     cues::add_color_fade_sequences(world);
-    cues::add_cue_parts_sequence(world);
-    effects::add_fx(world);
     effects::add_bstrip_fx(world);
     effects::add_visualizer_demo_fx(world);
     flows::add_flows(world);

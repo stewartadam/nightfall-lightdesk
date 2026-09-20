@@ -39,6 +39,15 @@ use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use nightfall_undo::prelude::*;
 
+/// External resource staged with a newly created show before its draft is published.
+#[derive(Debug)]
+pub(crate) struct InitialShowfileAsset {
+    /// Path within the new show folder; only normal relative components are accepted.
+    pub relative_path: &'static str,
+    /// Source file resolved from the application resource directory.
+    pub source_path: std::path::PathBuf,
+}
+
 mod assets;
 mod backup;
 mod commands;

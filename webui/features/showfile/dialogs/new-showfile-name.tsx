@@ -13,6 +13,7 @@ import {
   createSignal,
   createUniqueId,
   onCleanup,
+  Show,
 } from "solid-js";
 import {
   DialogBackdrop,
@@ -23,29 +24,34 @@ import {
   DialogSurface,
   DialogTitle,
 } from "../../../components/ui/dialog";
-import { Input } from "../../../components/ui/form-controls";
+import { Checkbox, Input } from "../../../components/ui/form-controls";
 import Modal from "../../../components/ui/modal";
 import { Button } from "../../../components/ui/visual-language/button";
+import { getBackendUrl } from "../../../lib/api";
 import {
   cancelNewShowfileNamePrompt,
   newShowfileNamePrompt,
   submitNewShowfileNamePrompt,
 } from "../../../lib/new-showfile-name-prompt";
 
-/** Prompts for the show name used when creating a fresh showfile. */
+/** Collects a new show name and optional sample data before creation. */
 export default function NewShowfileNameModal() {
   const prompt = useStore(newShowfileNamePrompt);
   const titleId = createUniqueId();
   const [name, setName] = createSignal("");
-  const [isEntered, setIsEntered] = createSignal(false);
+  const [includeSampleData, setIncludeSampleData] = createSignal(false);
+  const [error, setError] = createSignal("");
+  const [checking, setChecking] = createSignal(false);
   let inputRef: HTMLInputElement | undefined;
   let enterAnimationFrame: number | null = null;
 
   /** Resets and focuses the name field when a new prompt opens. */
   createEffect(() => {
+    setError("");
+    setChecking(false);
     if (!prompt()) {
-      setIsEntered(false);
       setName("");
+      setIncludeSampleData(false);
       if (enterAnimationFrame !== null) {
         cancelAnimationFrame(enterAnimationFrame);
         enterAnimationFrame = null;
@@ -54,9 +60,8 @@ export default function NewShowfileNameModal() {
     }
 
     setName("");
-    setIsEntered(false);
+    setIncludeSampleData(false);
     enterAnimationFrame = requestAnimationFrame(() => {
-      setIsEntered(true);
       inputRef?.focus();
       enterAnimationFrame = null;
     });
@@ -75,11 +80,43 @@ export default function NewShowfileNameModal() {
     cancelNewShowfileNamePrompt(request.requestId);
   };
 
-  /** Submits the entered show name to the pending prompt request. */
-  const submitPrompt = () => {
+  /** Checks availability while keeping conflicts visible in the active dialog. */
+  const submitPrompt = async () => {
     const request = prompt();
-    if (!request) return;
-    submitNewShowfileNamePrompt(request.requestId, name());
+    const proposedName = name().trim();
+    if (!request || checking() || !proposedName) return;
+    setChecking(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `${getBackendUrl()}/api/showfiles/validate-new-name?name=${encodeURIComponent(proposedName)}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) throw new Error(await response.text());
+      if (
+        prompt()?.requestId === request.requestId &&
+        name().trim() === proposedName
+      ) {
+        submitNewShowfileNamePrompt(
+          request.requestId,
+          proposedName,
+          includeSampleData(),
+        );
+      }
+    } catch (cause) {
+      if (
+        prompt()?.requestId === request.requestId &&
+        name().trim() === proposedName
+      ) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not check show name. Try again.",
+        );
+      }
+    } finally {
+      if (prompt()?.requestId === request.requestId) setChecking(false);
+    }
   };
 
   return (
@@ -91,11 +128,7 @@ export default function NewShowfileNameModal() {
         aria-labelledby={titleId}
       >
         <div
-          class="w-full max-w-md transition-opacity duration-150"
-          classList={{
-            "opacity-0": !isEntered(),
-            "opacity-100": isEntered(),
-          }}
+          class="w-full max-w-md"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
@@ -129,8 +162,47 @@ export default function NewShowfileNameModal() {
                   ref={inputRef}
                   id={`${titleId}-name`}
                   value={name()}
-                  onInput={(event) => setName(event.currentTarget.value)}
+                  aria-invalid={Boolean(error())}
+                  aria-describedby={error() ? `${titleId}-error` : undefined}
+                  onInput={(event) => {
+                    setName(event.currentTarget.value);
+                    setError("");
+                  }}
                 />
+                <Show when={error()}>
+                  <p
+                    id={`${titleId}-error`}
+                    role="alert"
+                    class="text-sm text-red-400"
+                  >
+                    {error()}
+                  </p>
+                </Show>
+                <label
+                  class="flex items-start gap-3 pt-3"
+                  for={`${titleId}-samples`}
+                >
+                  <Checkbox
+                    id={`${titleId}-samples`}
+                    checked={includeSampleData()}
+                    onChange={(event) =>
+                      setIncludeSampleData(event.currentTarget.checked)
+                    }
+                    aria-describedby={`${titleId}-samples-description`}
+                  />
+                  <span>
+                    <span class="block text-sm font-medium text-neutral-200">
+                      Include sample data
+                    </span>
+                    <span
+                      id={`${titleId}-samples-description`}
+                      class="block text-xs text-neutral-400"
+                    >
+                      Start with example fixtures, groups, cues, effects, and
+                      timelines.
+                    </span>
+                  </span>
+                </label>
               </DialogBody>
               <DialogFooter>
                 <Button type="button" onClick={cancelPrompt}>
@@ -139,7 +211,7 @@ export default function NewShowfileNameModal() {
                 <Button
                   variant="primary"
                   type="submit"
-                  disabled={name().trim().length === 0}
+                  disabled={name().trim().length === 0 || checking()}
                 >
                   Create Show
                 </Button>

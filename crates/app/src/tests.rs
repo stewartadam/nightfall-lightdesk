@@ -38,8 +38,8 @@ use nightfall_engine::prelude::{
     EngineActionEnvelope, EventHandling, FinishedCommand, ReplyTarget, ResyncRequested,
 };
 use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, OutputSource, OutputTarget,
-    Parameter, ParameterMetadata, ParameterValues,
+    Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, OutputSource, Parameter,
+    ParameterMetadata, ParameterValues,
 };
 #[cfg(feature = "midi")]
 use nightfall_input_midi::prelude::*;
@@ -406,7 +406,9 @@ fn world_factory_build_propagates_usb_enabled_state() {
     let factory = WorldFactory::new(test_log_config(), true, true, false);
 
     let app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("world factory build");
     let settings = app.world().resource::<IoRuntimeSettings>();
 
@@ -461,6 +463,38 @@ fn world_factory_named_empty_bootstrap_starts_ready() {
         Some("demo")
     );
 
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// New empty and sample worlds cannot replace saved shows or previously created drafts.
+#[test]
+fn new_world_preserves_existing_showfiles() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().unwrap();
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    for parent in [root.path().to_path_buf(), root.path().join("drafts")] {
+        let existing = parent.join("Tour.nightfall-show");
+        std::fs::create_dir_all(&existing).unwrap();
+        let snapshot = existing.join("showfile.json");
+        std::fs::write(&snapshot, b"existing show contents").unwrap();
+        for bootstrap in [
+            WorldBootstrap::Empty {
+                showfile_name: Some("Tour".to_string()),
+            },
+            WorldBootstrap::SampleData {
+                showfile_name: Some(" tour ".to_string()),
+            },
+        ] {
+            assert!(factory.build(bootstrap).is_err());
+            assert_eq!(std::fs::read(&snapshot).unwrap(), b"existing show contents");
+        }
+        std::fs::remove_dir_all(existing).unwrap();
+    }
     nightfall::clear_active_show_data_dir();
     nightfall::set_nightfall_data_dir(None);
 }
@@ -522,6 +556,7 @@ fn new_showfile_current_showfile_notification_uses_normalized_name() {
     let request = PendingWorldSwap::NewShowfile {
         correlation_id,
         showfile_name: Some("demo.nightfall-show".to_string()),
+        include_sample_data: false,
     };
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
@@ -551,7 +586,9 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
     let factory = WorldFactory::new(test_log_config(), false, false, false);
 
     let app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("sample data world factory build");
 
     assert_eq!(lifecycle_state(&app), AppState::Ready);
@@ -562,7 +599,9 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
 fn world_factory_sample_data_bootstrap_seeds_blueprints() {
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("sample data world factory build");
     let blueprints = app.world().resource::<DataProvider<Blueprint>>();
 
@@ -614,7 +653,12 @@ fn initial_world_bootstrap_defaults_to_empty_world() {
 /// Verifies explicit sample-data startup remains available for development fixtures.
 #[test]
 fn initial_world_bootstrap_can_seed_sample_data_explicitly() {
-    assert_eq!(initial_world_bootstrap(true), WorldBootstrap::SampleData);
+    assert_eq!(
+        initial_world_bootstrap(true),
+        WorldBootstrap::SampleData {
+            showfile_name: None
+        }
+    );
 }
 
 /// Verifies the open-data helper creates the typed configured directory.
@@ -719,7 +763,9 @@ fn world_factory_build_propagates_network_enabled_states() {
     let factory = WorldFactory::new(test_log_config(), false, true, true);
 
     let app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("world factory build");
     let settings = app.world().resource::<IoRuntimeSettings>();
     assert!(!settings.network_output_enabled);
@@ -727,47 +773,40 @@ fn world_factory_build_propagates_network_enabled_states() {
     assert!(settings.usb_output_enabled);
 }
 
+/// Verifies the inner wash arc is seeded with output disabled even when transports are enabled.
 #[test]
-fn sample_data_build_patches_rotating_wash_beam() {
+fn sample_data_build_seeds_rotating_wash_beam_with_disabled_output() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
 
     let app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("world factory build");
     let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
     let fixture = fixture_provider
         .inner
         .iter()
-        .find(|fixture| fixture.identifiers.id == 607)
+        .find(|fixture| fixture.identifiers.id == 1010)
         .expect("sample data should include Generic wash beam");
 
     assert_eq!(fixture.make, "Generic");
     assert_eq!(fixture.model, "12-segment Rotating Wash Beam");
     assert_eq!(fixture.elements.len(), 37);
-    assert_eq!(fixture.placement.position.x, 0.0);
-    assert_eq!(fixture.placement.position.y, 0.5);
-    assert_eq!(fixture.placement.position.z, 0.0);
+    assert_eq!(fixture.placement.position.x, -2.25);
+    assert_eq!(fixture.placement.position.y, 0.25);
+    assert_eq!(fixture.placement.position.z, -2.5);
 
-    let output_bindings = app.world().resource::<OutputBindings>();
-    let binding = output_bindings
-        .bindings
-        .iter()
-        .find(|binding| {
-            matches!(
-                &binding.source,
-                OutputSource::Fixture { uids, .. } if uids.contains(&fixture.identifiers.uid)
-            )
-        })
-        .expect("sample data should patch Generic wash beam output");
-
-    assert!(matches!(
-        &binding.target,
-        OutputTarget::Transport {
-            target,
-            universe: Some(universe),
-            address: Some(1),
-        } if target == "artnet" && universe.start == 26 && universe.end == 26
-    ));
+    assert!(app.world().resource::<OutputBindings>().bindings.is_empty());
+    let disabled = app
+        .world()
+        .resource::<nightfall_fixtures::prelude::DisabledBindings>();
+    assert_eq!(disabled.bindings.len(), 56);
+    assert!(disabled.bindings.iter().any(|binding| matches!(binding,
+        nightfall_fixtures::prelude::DisabledBinding::Output {
+            source: OutputSource::Fixture { uids, .. }, ..
+        } if uids.contains(&fixture.identifiers.uid)
+    )));
 }
 
 /// Verifies fixture 601 white output is scaled by its virtual dimmer.
@@ -776,7 +815,9 @@ async fn sample_data_fixture_601_white_output_follows_virtual_dimmer() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
 
     let mut app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("world factory build");
     let fixture_uid = {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
@@ -842,7 +883,9 @@ async fn sample_data_element_virtual_dimmer_overrides_parent_fixture_intensity()
     let factory = WorldFactory::new(test_log_config(), false, false, true);
 
     let mut app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("world factory build");
     let fixture_uid = {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
@@ -892,15 +935,17 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
 
     let mut app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("world factory build");
     let fixture_uid = {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         fixture_provider
             .inner
             .iter()
-            .find(|fixture| fixture.identifiers.id == 607)
-            .expect("sample data should include fixture 607")
+            .find(|fixture| fixture.identifiers.id == 1010)
+            .expect("sample data should include fixture 1010")
             .identifiers
             .uid
     };
@@ -916,7 +961,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
     queue_startup_command(
         &mut app,
         "test",
-        "fix 607.(14>25) red @ 100 int @ 0".to_owned(),
+        "fix 1010.(14>25) red @ 100 int @ 0".to_owned(),
     );
     for _ in 0..10 {
         app.update();
@@ -926,7 +971,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let red_parameter = fixture_provider
             .try_parameter_for_element_attribute(&first_top_strip_pixel, &Attribute::Red)
-            .expect("fixture 607 top strip pixel should expose red");
+            .expect("fixture 1010 top strip pixel should expose red");
         app.world()
             .get::<Parameter>(red_parameter.entity())
             .expect("red parameter entity should exist")
@@ -937,7 +982,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let red_parameter = fixture_provider
             .try_parameter_for_element_attribute(&last_top_strip_pixel, &Attribute::Red)
-            .expect("fixture 607 top strip pixel should expose red");
+            .expect("fixture 1010 top strip pixel should expose red");
         app.world()
             .get::<Parameter>(red_parameter.entity())
             .expect("red parameter entity should exist")
@@ -956,7 +1001,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
     queue_startup_command(
         &mut app,
         "test",
-        "fix 607.(14>25) int @ 100 red @ 100".to_owned(),
+        "fix 1010.(14>25) int @ 100 red @ 100".to_owned(),
     );
     for _ in 0..10 {
         app.update();
@@ -966,7 +1011,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let vdim_parameter = fixture_provider
             .try_parameter_for_logical_attribute(&first_top_strip_pixel, &Attribute::Intensity)
-            .expect("fixture 607 top strip pixel should resolve intensity to virtual dimmer");
+            .expect("fixture 1010 top strip pixel should resolve intensity to virtual dimmer");
         app.world()
             .get::<Parameter>(vdim_parameter.instance.entity())
             .expect("virtual intensity parameter entity should exist")
@@ -982,7 +1027,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let red_parameter = fixture_provider
             .try_parameter_for_element_attribute(&first_top_strip_pixel, &Attribute::Red)
-            .expect("fixture 607 top strip pixel should expose red");
+            .expect("fixture 1010 top strip pixel should expose red");
         app.world()
             .get::<Parameter>(red_parameter.entity())
             .expect("red parameter entity should exist")
@@ -993,7 +1038,7 @@ async fn sample_data_generic_strip_element_intensity_scales_red_output() {
         let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
         let red_parameter = fixture_provider
             .try_parameter_for_element_attribute(&last_top_strip_pixel, &Attribute::Red)
-            .expect("fixture 607 top strip pixel should expose red");
+            .expect("fixture 1010 top strip pixel should expose red");
         app.world()
             .get::<Parameter>(red_parameter.entity())
             .expect("red parameter entity should exist")
@@ -1016,7 +1061,9 @@ fn sample_data_build_seeds_default_midi_mapping() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
 
     let app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("world factory build");
     let mappings = app.world().resource::<MidiMappings>().mappings();
 
@@ -1057,7 +1104,7 @@ fn bootstrap_world_with_fallback_uses_sample_data_after_showfile_error() {
             match bootstrap {
                 WorldBootstrap::Empty { .. } => Ok(App::new()),
                 WorldBootstrap::Showfile { .. } => Err("missing showfile".to_string()),
-                WorldBootstrap::SampleData => Ok(App::new()),
+                WorldBootstrap::SampleData { .. } => Ok(App::new()),
             }
         },
         WorldBootstrap::Showfile {
@@ -1074,7 +1121,9 @@ fn bootstrap_world_with_fallback_uses_sample_data_after_showfile_error() {
                 name: None,
                 source: std::path::PathBuf::from("default.nightfall-show"),
             },
-            WorldBootstrap::SampleData
+            WorldBootstrap::SampleData {
+                showfile_name: None
+            }
         ]
     );
     assert_eq!(ui_notifications.len(), 1);
@@ -1097,7 +1146,7 @@ fn bootstrap_world_with_fallback_reports_secondary_failure() {
             match bootstrap {
                 WorldBootstrap::Empty { .. } => Ok(App::new()),
                 WorldBootstrap::Showfile { .. } => Err("bad showfile".to_string()),
-                WorldBootstrap::SampleData => Err("sample data unavailable".to_string()),
+                WorldBootstrap::SampleData { .. } => Err("sample data unavailable".to_string()),
             }
         },
         WorldBootstrap::Showfile {
@@ -1114,7 +1163,9 @@ fn bootstrap_world_with_fallback_reports_secondary_failure() {
                 name: None,
                 source: std::path::PathBuf::from("default.nightfall-show"),
             },
-            WorldBootstrap::SampleData
+            WorldBootstrap::SampleData {
+                showfile_name: None
+            }
         ]
     );
     assert!(error.contains("bad showfile"), "unexpected error: {error}");
@@ -1195,12 +1246,20 @@ fn world_swap_success_emits_command_result_for_original_request() {
 fn staged_world_keeps_runtime_states_paused_until_commit() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
     let active_app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("active app build");
     let orchestrator = SwapOrchestrator::new(active_app);
 
     let staged_app = orchestrator
-        .stage_world(&factory, WorldBootstrap::SampleData, 0)
+        .stage_world(
+            &factory,
+            WorldBootstrap::SampleData {
+                showfile_name: None,
+            },
+            0,
+        )
         .expect("staged app build");
     let command_state = staged_app
         .world()
@@ -1337,12 +1396,14 @@ fn dmx_output_set_respects_runtime_output_state() {
     assert_eq!(counter.0, 1);
 }
 
-/// Ensures sample fixtures have generic identities and include every repository-defined profile.
+/// Ensures the default rig contains the six built-in fixture families and serializable layouts.
 #[test]
 fn sample_fixtures_are_generic_and_self_contained() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
     let app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("sample world");
     let provider = app.world().resource::<FixtureDataProviderExt>();
     for fixture in provider.inner.iter() {
@@ -1365,7 +1426,15 @@ fn sample_fixtures_are_generic_and_self_contained() {
             );
         }
     }
-    for (id, count) in [(1001, 1), (1002, 100), (1003, 11), (1004, 115)] {
+    assert_eq!(provider.inner.iter().count(), 56);
+    for (id, count) in [
+        (310, 40),
+        (501, 1),
+        (601, 115),
+        (602, 119),
+        (1004, 72),
+        (1010, 37),
+    ] {
         let fixture = provider
             .inner
             .iter()
@@ -1377,4 +1446,361 @@ fn sample_fixtures_are_generic_and_self_contained() {
             serde_json::from_str(&serialized).unwrap();
         assert_eq!(restored.layout, fixture.layout);
     }
+}
+
+/// Creates and reloads a complete sample draft with no installed fixture or media assets.
+#[test]
+fn named_sample_show_is_standalone_and_recoverable() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("empty data root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let request = PendingWorldSwap::NewShowfile {
+        correlation_id: Uuid::new_v4(),
+        showfile_name: Some("Sample Tour.nightfall-show".to_string()),
+        include_sample_data: true,
+    };
+    let mut app = factory
+        .build(request.bootstrap())
+        .expect("create named sample show");
+    assert_eq!(lifecycle_state(&app), AppState::Ready);
+    assert_eq!(
+        app.world()
+            .resource::<super::systems::showfile_events::CurrentShowfile>()
+            .name(),
+        Some("Sample Tour")
+    );
+    assert!(
+        app.world_mut()
+            .query::<&TimecodeGenerator>()
+            .iter(app.world())
+            .all(|generator| !generator.state.is_active)
+    );
+    let draft = root.path().join("drafts/Sample Tour.nightfall-show");
+    let snapshot: nightfall_showfile::ShowfileSnapshot = serde_json::from_slice(
+        &std::fs::read(draft.join("showfile.json")).expect("read initial sample draft"),
+    )
+    .expect("decode sample draft");
+    assert!(!snapshot.fixtures.is_empty());
+    assert!(!snapshot.cues.is_empty());
+    assert!(!snapshot.clips.is_empty());
+    assert!(!snapshot.timelines.is_empty());
+    assert!(
+        snapshot
+            .fixtures
+            .iter()
+            .all(|fixture| fixture.library_asset_etag.is_none())
+    );
+    assert_eq!(snapshot.timelines.len(), 2);
+    for (timeline, asset) in snapshot
+        .timelines
+        .iter()
+        .zip(crate::sample_data::SAMPLE_AUDIO)
+    {
+        assert!(timeline.audio_enabled);
+        assert_eq!(timeline.audio_path, asset.relative_path);
+        assert_eq!(
+            std::fs::read(draft.join(&timeline.audio_path)).expect("installed bundled audio"),
+            std::fs::read(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("assets/sample-audio")
+                    .join(asset.filename)
+            )
+            .expect("source audio")
+        );
+    }
+    assert!(
+        snapshot.fx_module.is_empty(),
+        "sample effects must not require installed WASM modules"
+    );
+    assert_eq!(snapshot.scene_objects.len(), 3);
+    assert!(
+        snapshot.scene_objects.iter().all(|object| matches!(
+            &object.properties,
+            nightfall_scene_objects::SceneObjectProperties::StageElement(properties)
+                if properties.model_path.is_empty()
+        )),
+        "sample stage must use built-in primitives"
+    );
+    assert!(snapshot.bindings.output.is_empty());
+    assert_eq!(snapshot.bindings.disabled.len(), 56);
+
+    // Resolve every programmed selection against the generated inventory, including cue parts.
+    let mut selections: Vec<_> = snapshot
+        .groups
+        .iter()
+        .map(|group| group.selection.clone())
+        .collect();
+    selections.extend(snapshot.fx.iter().map(|fx| fx.selection.clone()));
+    selections.extend(snapshot.step_fx.iter().map(|fx| fx.selection.clone()));
+    for cue in &snapshot.cues {
+        selections.extend(
+            cue.clone()
+                .flatten_instructions()
+                .instructions
+                .into_iter()
+                .map(|instruction| instruction.selection),
+        );
+    }
+    for flow in &snapshot.flows {
+        for node in &flow.nodes {
+            for port in &node.ports {
+                if let Some(nightfall_flow::prelude::FlowValue::Selection(selection)) =
+                    &port.default_value
+                {
+                    // Connected flow inputs use an empty fallback until their upstream node supplies a selection.
+                    if selection != &SpatialSelection::default() {
+                        selections.push(selection.clone());
+                    }
+                }
+            }
+        }
+    }
+    let mut state = bevy::ecs::system::SystemState::<
+        nightfall_fixtures::prelude::SpatialSelectionResolver,
+    >::new(app.world_mut());
+    let resolver = state.get(app.world()).expect("selection resolver");
+    let strobe_uids: std::collections::BTreeSet<_> = snapshot
+        .fixtures
+        .iter()
+        .filter(|fixture| {
+            (601..=606).contains(&fixture.identifiers.id)
+                || (1004..=1009).contains(&fixture.identifiers.id)
+        })
+        .map(|fixture| fixture.identifiers.uid)
+        .collect();
+    for cue in snapshot.cues.iter().filter(|cue| {
+        [
+            "Red 100%",
+            "Red Fade Out",
+            "Green 100%",
+            "Green Fade Out",
+            "Blue 100%",
+            "Blue Fade Out",
+        ]
+        .contains(&cue.identifiers.label.as_str())
+    }) {
+        for instruction in &cue.instructions {
+            let selected: std::collections::BTreeSet<_> = resolver
+                .resolve(&instruction.selection)
+                .value
+                .canonical
+                .into_iter()
+                .map(|fixture| fixture.fixture_uid)
+                .collect();
+            assert_eq!(
+                selected, strobe_uids,
+                "{} must target all strobes",
+                cue.identifiers.label
+            );
+        }
+    }
+    let fanned_cue = snapshot
+        .cues
+        .iter()
+        .find(|cue| cue.identifiers.id == 30)
+        .expect("cue 30.30");
+    assert_eq!(
+        fanned_cue.instructions[0]
+            .cue_instruction
+            .values
+            .get(&Attribute::Tilt),
+        Some(&ValueSource::Inline(ParameterValue::AbsolutePercent {
+            value: (-0.3).into()
+        }))
+    );
+    for selection in selections {
+        let resolved = resolver.resolve(&selection);
+        assert!(
+            !resolved.is_partial(),
+            "sample selection {selection:?}: {:?}",
+            resolved.issues
+        );
+        assert!(
+            !resolved.value.canonical.is_empty(),
+            "sample selection must not be empty: {selection:?}"
+        );
+    }
+    assert!(!root.path().join("Sample Tour.nightfall-show").exists());
+    let fixture_count = snapshot.fixtures.len();
+    drop(app);
+    nightfall::clear_active_show_data_dir();
+    let recovered = factory
+        .build(WorldBootstrap::Showfile {
+            name: Some("Sample Tour".to_string()),
+            source: draft,
+        })
+        .expect("recover standalone sample draft");
+    assert_eq!(
+        recovered
+            .world()
+            .resource::<FixtureDataProviderExt>()
+            .inner
+            .iter()
+            .count(),
+        fixture_count
+    );
+    assert_eq!(
+        recovered
+            .world()
+            .resource::<DataProvider<Timeline>>()
+            .iter()
+            .count(),
+        snapshot.timelines.len()
+    );
+    assert_eq!(
+        recovered
+            .world()
+            .resource::<nightfall_scene_objects::prelude::SceneObjectDataProvider>()
+            .iter()
+            .count(),
+        3
+    );
+    assert!(
+        recovered
+            .world()
+            .resource::<OutputBindings>()
+            .bindings
+            .is_empty()
+    );
+    for asset in crate::sample_data::SAMPLE_AUDIO {
+        assert_eq!(
+            std::fs::read(
+                nightfall::active_show_data_dir()
+                    .unwrap()
+                    .join(asset.relative_path)
+            )
+            .expect("recovered bundled audio"),
+            std::fs::read(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("assets/sample-audio")
+                    .join(asset.filename)
+            )
+            .expect("source audio")
+        );
+    }
+    drop(recovered);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// Installs bundled audio for unnamed CLI/fallback samples before the runtime starts.
+#[test]
+fn unnamed_sample_show_installs_bundled_audio_before_runtime() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("empty sample data root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("in-memory sample world");
+    assert!(!root.path().join("drafts/default.nightfall-show").exists());
+    crate::world_factory::persist_pending_sample_draft(&mut app)
+        .expect("install runtime sample assets");
+    let draft = root.path().join("drafts/default.nightfall-show");
+    assert!(draft.join("showfile.json").is_file());
+    for asset in crate::sample_data::SAMPLE_AUDIO {
+        assert_eq!(
+            std::fs::read(draft.join(asset.relative_path)).expect("installed sample audio"),
+            std::fs::read(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("assets/sample-audio")
+                    .join(asset.filename)
+            )
+            .expect("source audio")
+        );
+    }
+    drop(app);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// External resource updates affect new shows without altering existing show-owned audio.
+#[test]
+fn sample_audio_resources_can_change_without_recompilation() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().unwrap();
+    let resources = tempfile::tempdir().unwrap();
+    let audio = resources.path().join("sample-audio");
+    std::fs::create_dir(&audio).unwrap();
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let config = RuntimeConfig {
+        resource_dir: Some(resources.path().to_path_buf()),
+        ..RuntimeConfig::default()
+    };
+    let factory = WorldFactory::for_config(test_log_config(), config);
+    for name in ["First", "Second"] {
+        for asset in crate::sample_data::SAMPLE_AUDIO {
+            std::fs::write(
+                audio.join(asset.filename),
+                format!("ID3 {name} {}", asset.filename),
+            )
+            .unwrap();
+        }
+        factory
+            .build(WorldBootstrap::SampleData {
+                showfile_name: Some(name.to_string()),
+            })
+            .unwrap();
+    }
+    for name in ["First", "Second"] {
+        for asset in crate::sample_data::SAMPLE_AUDIO {
+            assert_eq!(
+                std::fs::read(
+                    root.path()
+                        .join(format!("drafts/{name}.nightfall-show"))
+                        .join(asset.relative_path)
+                )
+                .unwrap(),
+                format!("ID3 {name} {}", asset.filename).as_bytes()
+            );
+        }
+    }
+    std::fs::write(
+        audio.join("lofi.mp3"),
+        b"version https://git-lfs.github.com/spec/v1\n",
+    )
+    .unwrap();
+    assert!(
+        factory
+            .build(WorldBootstrap::SampleData {
+                showfile_name: Some("Pointer".into())
+            })
+            .is_err()
+    );
+    assert!(!root.path().join("drafts/Pointer.nightfall-show").exists());
+    std::fs::remove_dir_all(&audio).unwrap();
+    assert!(
+        factory
+            .build(WorldBootstrap::SampleData {
+                showfile_name: Some("Missing".into())
+            })
+            .is_err()
+    );
+    assert!(!root.path().join("drafts/Missing.nightfall-show").exists());
+    factory
+        .build(WorldBootstrap::Empty {
+            showfile_name: Some("Empty".into()),
+        })
+        .unwrap();
+    factory
+        .build(WorldBootstrap::Showfile {
+            name: Some("First".into()),
+            source: root.path().join("drafts/First.nightfall-show"),
+        })
+        .unwrap();
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
 }

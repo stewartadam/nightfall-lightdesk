@@ -17,6 +17,7 @@ on:
       - 'crates/browser-runtime/**'
       - '.github/desktop-release-notes.md'
       - 'scripts/desktop-artifacts*'
+      - 'scripts/package-sample-audio*'
       - 'scripts/*notices*'
       - 'config/notices/**'
       - 'about.toml'
@@ -105,6 +106,8 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          lfs: true
       - uses: actions/setup-node@v5
         with:
           node-version: 24

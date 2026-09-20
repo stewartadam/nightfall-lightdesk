@@ -36,7 +36,7 @@ import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
 import {
   type OpenShowfileSelection,
-  promptForNewShowfileName,
+  promptForNewShowfile,
 } from "../../../lib/showfile-actions";
 import { pushToast } from "../../../state/appStores";
 import {
@@ -192,11 +192,11 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
     }
   };
 
-  /** Prompt for a show name before starting a new empty showfile. */
+  /** Collect the name and initial content before starting a new showfile. */
   const openNewShowfile = async () => {
-    const showfileName = await promptForNewShowfileName();
-    if (!showfileName) return;
-    return openSelection({ type: "new", name: showfileName });
+    const options = await promptForNewShowfile();
+    if (!options) return;
+    return openSelection({ type: "new", ...options });
   };
 
   /** Tracks the showfile groups with the newest known saved, draft, or revision update. */

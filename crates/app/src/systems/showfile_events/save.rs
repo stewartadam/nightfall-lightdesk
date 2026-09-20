@@ -153,11 +153,17 @@ pub(crate) fn refresh_clean_snapshot_hash_from_world(world: &mut World) -> Resul
 pub(crate) fn persist_new_showfile_draft_from_world(
     world: &mut World,
     showfile_name: Option<&str>,
+    initial_assets: &[InitialShowfileAsset],
 ) -> Result<(), String> {
     let mut snapshot = snapshot_from_world(world)?;
     snapshot.metadata = current_showfile_metadata();
     let snapshot_hash = hash_showfile_snapshot_with_metadata(&snapshot, &snapshot.metadata)?;
-    save_initial_draft_showfile_snapshot(&mut snapshot, showfile_name, snapshot_hash)?;
+    save_initial_draft_showfile_snapshot(
+        &mut snapshot,
+        showfile_name,
+        snapshot_hash,
+        initial_assets,
+    )?;
 
     let mut clean_snapshot_hash = world
         .get_resource_mut::<ShowfileCleanSnapshotHash>()

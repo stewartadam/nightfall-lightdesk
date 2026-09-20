@@ -19,16 +19,9 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
         .get_mut(world)
         .expect("sample data system parameters should be available");
 
-    #[rustfmt::skip]
-    let fixture_rows: [[u32; 10]; 4] = [
-        [325, 324, 323, 322, 321, 311, 312, 313, 314, 315],
-        [345, 344, 343, 342, 341, 331, 332, 333, 334, 335],
-        [365, 364, 363, 362, 361, 351, 352, 353, 354, 355],
-        [385, 384, 383, 382, 381, 371, 372, 373, 374, 375],
-    ];
     // Convert fixture IDs to FixtureRefs for all elements in the fixtures,
     // preserving row structure for spatial clauses
-    let selection_rows: Vec<Vec<FixtureRef>> = fixture_rows
+    let selection_rows: Vec<Vec<FixtureRef>> = fixtures::PIXEL_ROWS
         .iter()
         .map(|row| {
             row.iter()
@@ -290,9 +283,8 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
         ..Default::default()
     });
 
-    // 2. Pan/Tilt circle effect for moving heads (groups 13-14: Spots Front + Spots Rear)
-    let moving_head_selection =
-        SelectionExpr::Group(GroupRefExpr::RangeById { start: 13, end: 14 });
+    // 2. Pan/Tilt circle effect for the six front moving heads.
+    let moving_head_selection = SelectionExpr::Group(GroupRefExpr::ById(13));
 
     // Circle motion: Pan and Tilt with 90° phase offset
     // Both use 4 steps at 25% width each, hitting targets at t=0.25, 0.50, 0.75, 1.00
@@ -749,91 +741,6 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
         ],
     };
     commands.spawn(strobe_pixel_rainbow_fx);
-
-    system_state.apply(world);
-}
-
-#[allow(unused_mut, dead_code)]
-/// Seed the baseline waveform effects and their clip bindings.
-pub(super) fn add_fx(world: &mut World) {
-    let mut system_state: SystemState<(ResMut<DataProvider<Fx>>, Commands)> =
-        SystemState::new(world);
-    let (mut fx_data_provider, mut commands) = system_state
-        .get_mut(world)
-        .expect("sample data system parameters should be available");
-
-    // fx 1 - Single fixture (Fixture 13)
-    let fx_selection = SelectionExpr::Fixture(UnresolvedFixtureRef {
-        fixture_id: 13,
-        element_index: None,
-    });
-
-    let waveform = FxWaveform {
-        params: FxWaveformParams {
-            kind: WaveformKind::Sin,
-            min: 10.0,
-            max: 70.0,
-            duty_cycle: 1.0,
-        },
-        phase_range: (0.0, 2.0 * std::f32::consts::PI),
-        rate: Duration::from_secs(2),
-        width: Percentage::from(1.0),
-        is_relative: false,
-    };
-    let _ = fx_data_provider.add(Fx {
-        identifiers: Identifiers {
-            id: 1,
-            label: "fx1".to_owned(),
-            uid: Uuid::from_str("c4141177-09e4-474f-abe6-ebf68f30a745").unwrap(),
-        },
-        selection: fx_selection.clone().into(),
-        attributes: HashMap::from([(Attribute::Red, waveform)]),
-    });
-    commands.spawn_instance(Clip {
-        identifiers: Identifiers {
-            id: 4,
-            label: "fx1".to_owned(),
-            uid: Uuid::from_str("4e6e5de7-8d40-4508-86a5-73583daea8f9").unwrap(),
-        },
-        source: Some(Source::Fx(
-            Uuid::from_str("c4141177-09e4-474f-abe6-ebf68f30a745").unwrap(),
-        )),
-        ..Default::default()
-    });
-
-    // fx 2
-    let waveform = FxWaveform {
-        params: FxWaveformParams {
-            kind: WaveformKind::Sin,
-            min: 10.0,
-            max: 70.0,
-            duty_cycle: 1.0,
-        },
-        phase_range: (0.0, 2.0 * std::f32::consts::PI),
-        rate: Duration::from_secs(2),
-        width: Percentage::from(1.0),
-        is_relative: false,
-    };
-    let _ = fx_data_provider.add(Fx {
-        identifiers: Identifiers {
-            id: 2,
-            label: "fx2".to_owned(),
-            uid: Uuid::from_str("a2595aeb-abf8-4dda-9726-23121b1846b2").unwrap(),
-        },
-        selection: fx_selection.into(),
-        attributes: HashMap::from([(Attribute::Blue, waveform)]),
-    });
-    commands.spawn_instance(Clip {
-        identifiers: Identifiers {
-            id: 5,
-            label: "fx2".to_owned(),
-            uid: Uuid::from_str("eddc2d67-deb6-4aa3-af4d-74bc6a1bc9bb").unwrap(),
-        },
-        source: Some(Source::Fx(
-            Uuid::from_str("a2595aeb-abf8-4dda-9726-23121b1846b2").unwrap(),
-        )),
-        ..Default::default()
-    });
 
     system_state.apply(world);
 }
