@@ -408,6 +408,7 @@ pub(super) struct PlannedClipRenderTarget {
 
 /// Derives the sequence render target for a timeline-authored instance intervention.
 pub(super) fn planned_intervention_render_target_for_clip_action(
+    planning_actions: &[TimelinePlanningAction],
     action_positions: &HashMap<(String, String), Duration>,
     existing_spawned_entities: &HashMap<Entity, (String, String, SpawnedEntityType)>,
     untracked_entities: &HashSet<Entity>,
@@ -456,25 +457,48 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
             ),
         )]),
     };
+    let mut instance_actions = vec![TimelinePlanningAction {
+        track_id: origin_track_id.clone(),
+        action_id: origin_action_id.clone(),
+        action: ActionKind::StartClip(clip_uid),
+        position: origin_position,
+        duration: Duration::ZERO,
+    }];
+    let history_start = planning_actions
+        .iter()
+        .position(|action| {
+            action.track_id == origin_track_id && action.action_id == origin_action_id
+        })
+        .map_or(0, |index| index + 1);
+    for action in &planning_actions[history_start..] {
+        if action.track_id == intervention_track_id && action.action_id == intervention_action_id {
+            break;
+        }
+        if action.position < origin_position
+            || (action.track_id == origin_track_id && action.action_id == origin_action_id)
+        {
+            continue;
+        }
+        let target = match &action.action {
+            ActionKind::AdvanceSequence(uid) | ActionKind::BackSequence(uid) => *uid,
+            ActionKind::JumpToCue { uid, .. } | ActionKind::SetClipRate { uid, .. } => *uid,
+            _ => continue,
+        };
+        if target == clip_uid {
+            instance_actions.push(action.clone());
+        }
+    }
+    instance_actions.push(TimelinePlanningAction {
+        track_id: intervention_track_id.to_owned(),
+        action_id: intervention_action_id.to_owned(),
+        action: intervention_action,
+        position: intervention_position,
+        duration: Duration::ZERO,
+    });
     let plan = plan_timeline_at(
         timeline_uid,
         current_position,
-        [
-            TimelinePlanningAction {
-                track_id: origin_track_id,
-                action_id: origin_action_id,
-                action: ActionKind::StartClip(clip_uid),
-                position: origin_position,
-                duration: Duration::ZERO,
-            },
-            TimelinePlanningAction {
-                track_id: intervention_track_id.to_owned(),
-                action_id: intervention_action_id.to_owned(),
-                action: intervention_action,
-                position: intervention_position,
-                duration: Duration::ZERO,
-            },
-        ],
+        instance_actions,
         &planner_resolver,
         None,
     );

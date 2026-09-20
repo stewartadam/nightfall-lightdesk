@@ -10,6 +10,117 @@ use bevy_ecs::change_detection::DetectChanges;
 
 use super::*;
 
+/// Verifies repeated live Go actions retain earlier navigation across frames and within one frame.
+#[test]
+fn live_repeated_sequence_go_reaches_each_manual_cue() {
+    for batched in [false, true] {
+        let mut app = App::new();
+        app.add_message::<EngineActionEnvelope<DeskAction>>();
+        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<TimecodeEvent>();
+        app.init_resource::<DataProvider<Cue>>();
+        app.init_resource::<DataProvider<Sequence>>();
+        app.init_resource::<DataProvider<Group>>();
+        app.init_resource::<FixtureDataProviderExt>();
+        app.init_resource::<TimelineCommandOrigins>();
+        app.add_systems(Update, process_actions_system);
+        let clip_uid = Uuid::new_v4();
+        let sequence_uid = Uuid::new_v4();
+        let mut steps = Vec::new();
+        for id in 1..=4 {
+            let uid = Uuid::new_v4();
+            app.world_mut()
+                .resource_mut::<DataProvider<Cue>>()
+                .add(Cue {
+                    identifiers: Identifiers {
+                        id,
+                        uid,
+                        label: format!("Cue {id}"),
+                    },
+                    trigger: CueTriggerType::Manual,
+                    ..Default::default()
+                })
+                .expect("manual cue should insert");
+            steps.push(uid.into());
+        }
+        app.world_mut()
+            .resource_mut::<DataProvider<Sequence>>()
+            .add(Sequence {
+                identifiers: Identifiers {
+                    id: 1,
+                    uid: sequence_uid,
+                    label: "Manual sequence".to_owned(),
+                },
+                steps,
+                ..Default::default()
+            })
+            .expect("sequence should insert");
+        app.world_mut().spawn(Clip {
+            identifiers: Identifiers {
+                id: 1,
+                uid: clip_uid,
+                label: "Sequence clip".to_owned(),
+            },
+            source: Some(Source::Sequence(sequence_uid)),
+            ..Default::default()
+        });
+        let timecode_uid = spawn_timecode(&mut app, 1, Duration::ZERO);
+        let mut timeline = MaterializedTimeline::new(Timeline {
+            timecode_uid,
+            tracks: vec![Track {
+                id: "sequence".to_owned(),
+                label: "Sequence".to_owned(),
+                muted: false,
+                solo: false,
+                expanded: false,
+                automation_lanes: Vec::new(),
+                actions: (1..=4)
+                    .map(|cue| Action {
+                        id: cue.to_string(),
+                        label: format!("Cue {cue}"),
+                        position: Duration::from_secs(cue),
+                        duration: Duration::ZERO,
+                        action: if cue == 1 {
+                            ActionKind::StartClip(clip_uid)
+                        } else {
+                            ActionKind::AdvanceSequence(clip_uid)
+                        },
+                    })
+                    .collect(),
+            }],
+            ..Default::default()
+        });
+        timeline.activate();
+        app.world_mut().spawn(timeline);
+        for cue in 1..=4 {
+            if batched && cue < 4 {
+                continue;
+            }
+            set_single_timecode(&mut app, Duration::from_secs(cue), true);
+            app.update();
+            let positions = app
+                .world_mut()
+                .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+                .drain()
+                .map(|event| match event.action {
+                    ClipAction::StartAtTiming { .. } => 1,
+                    ClipAction::RenderAt { position, .. } => position,
+                    other => panic!("unexpected playback action: {other:?}"),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                positions,
+                if batched {
+                    vec![1, 2, 3, 4]
+                } else {
+                    vec![cue as u32]
+                },
+                "Go should reach cue {cue}, batched={batched}"
+            );
+        }
+    }
+}
+
 /// Verifies live timeline playback and seek replay produce the same sequence state.
 #[test]
 fn live_timeline_sequence_matches_seek_reconstruction() {

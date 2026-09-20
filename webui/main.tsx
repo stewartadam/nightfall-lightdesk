@@ -14,7 +14,7 @@ import DiagnosticsRuntime from "./components/shell/runtime/diagnostics";
 import EngineConnection from "./components/shell/runtime/engine-connection";
 import { StartupController, StartupOverlaps } from "./components/shell/startup";
 import NewShowfileNameModal from "./features/showfile/dialogs/new-showfile-name";
-import { APP_TITLE } from "./lib/app-metadata";
+import { APP_NAME, APP_TITLE } from "./lib/app-metadata";
 import { backendAppState } from "./lib/engine-runtime";
 import {
   initFeatureFlags,
@@ -43,7 +43,7 @@ function loadInteractiveApp(): Promise<InteractiveAppModule> {
 
 // Initialize URL-backed runtime settings before app components read them.
 initFeatureFlags();
-document.title = APP_TITLE;
+document.title = isEmbeddedDemoRuntime() ? APP_NAME : APP_TITLE;
 
 type InteractiveShellMountProps = {
   active: boolean;
