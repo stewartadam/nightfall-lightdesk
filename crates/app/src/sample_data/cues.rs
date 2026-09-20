@@ -72,11 +72,11 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
                     ),
                     (
                         Attribute::Green,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.5.into() }),
+                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
                     ),
                     (
                         Attribute::Blue,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.5.into() }),
+                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
                     ),
                 ]),
                 ..Default::default()
@@ -100,7 +100,7 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
                 values: HashMap::from([
                     (
                         Attribute::Red,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.5.into() }),
+                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
                     ),
                     (
                         Attribute::Green,
@@ -108,7 +108,7 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
                     ),
                     (
                         Attribute::Blue,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.5.into() }),
+                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
                     ),
                 ]),
                 ..Default::default()
@@ -132,15 +132,15 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
                 values: HashMap::from([
                     (
                         Attribute::Red,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 1.0.into() }),
+                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
                     ),
                     (
                         Attribute::Green,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 1.0.into() }),
+                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.5.into() }),
                     ),
                     (
                         Attribute::Blue,
-                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 1.0.into() }),
+                        ValueSource::Inline(ParameterValue::AbsolutePercent { value: 0.0.into() }),
                     ),
                 ]),
                 ..Default::default()
@@ -168,7 +168,7 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
         identifiers: Identifiers {
             uid: Uuid::from_str("25de4124-c9af-4c63-8358-b0444eacb4b2").unwrap(),
             id: 2,
-            label: "128/0/0".to_owned(),
+            label: "RGB cycle (half)".to_owned(),
         },
         source: Some(Source::Sequence(sequence.identifiers.uid)),
         ..Default::default()
@@ -384,7 +384,7 @@ pub(super) fn add_abs_255_cue(world: &mut World) {
         identifiers: Identifiers {
             id: 1,
             uid: Uuid::from_str("cd19c920-ae7c-4d99-8ff4-31fade6dfa69").unwrap(),
-            label: "255/0/0".to_owned(),
+            label: "RGB cycle (full)".to_owned(),
         },
         source: Some(Source::Sequence(sequence.identifiers.uid)),
         ..Default::default()
@@ -546,161 +546,7 @@ pub(super) fn add_rel_cue(world: &mut World) {
         identifiers: Identifiers {
             id: 3,
             uid: Uuid::from_str("4bb63e10-eb99-4475-8b2e-093ede1bb247").unwrap(),
-            label: "-128 cycle".to_owned(),
-        },
-        source: Some(Source::Sequence(sequence.identifiers.uid)),
-        ..Default::default()
-    };
-
-    cue_data_provider
-        .add(cue1)
-        .expect("sample data should not have duplicate IDs");
-    cue_data_provider
-        .add(cue2)
-        .expect("sample data should not have duplicate IDs");
-    cue_data_provider
-        .add(cue3)
-        .expect("sample data should not have duplicate IDs");
-    seq_data_provider
-        .add(sequence)
-        .expect("sample data should not have duplicate IDs");
-    world.spawn_instance(clip);
-}
-
-/// Seed the second relative-value cue sequence and its clip.
-#[allow(unused_mut, dead_code)]
-pub(super) fn add_rel_cue2(world: &mut World) {
-    let mut system_state: SystemState<(
-        ResMut<FixtureDataProviderExt>,
-        ResMut<DataProvider<Cue>>,
-        ResMut<DataProvider<Sequence>>,
-    )> = SystemState::new(world);
-    let (mut fixture_data_provider, mut cue_data_provider, mut seq_data_provider) = system_state
-        .get_mut(world)
-        .expect("sample data system parameters should be available");
-
-    let selection_elements: Vec<FixtureRef> = fixtures::PIXEL_ROWS
-        .into_iter()
-        .flatten()
-        .flat_map(|fixture_id| {
-            // create an elementref for the elements on the particular fixture
-            let fixture = fixture_data_provider
-                .inner
-                .from_id(fixture_id)
-                .expect("failed to obtain fixture");
-
-            fixture
-                .elements
-                .iter()
-                .enumerate()
-                .map(|(index, _)| FixtureRef {
-                    fixture_uid: fixture.identifiers.uid,
-                    index: Some(index as u32 + 1),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    let selection = SelectionExpr::Resolved(selection_elements.clone());
-
-    let transition = PartialTransition {
-        delay_in: Some(TransitionMode::Fixed(Duration::from_secs(1))),
-        fade_in: Some(TransitionMode::Fixed(Duration::from_secs(1))),
-        delay_out: Some(TransitionMode::Fixed(Duration::from_secs(1))),
-        fade_out: Some(TransitionMode::Fixed(Duration::from_secs(1))),
-        curve_in: Some(FadeCurve::Linear),
-        curve_out: Some(FadeCurve::Linear),
-    };
-
-    let cue1 = Cue {
-        identifiers: Identifiers {
-            id: 100,
-            ..Default::default()
-        },
-        trigger: CueTriggerType::Manual,
-        transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
-            selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
-                blueprint_application: None,
-                values: HashMap::from([(
-                    Attribute::Red,
-                    ValueSource::Inline(ParameterValue::RelativePercent {
-                        offset: (-0.5).into(),
-                    }),
-                )]),
-                ..Default::default()
-            },
-        }],
-        ..Default::default()
-    };
-
-    let cue2 = Cue {
-        identifiers: Identifiers {
-            id: 101,
-            ..Default::default()
-        },
-        trigger: CueTriggerType::Manual,
-        transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
-            selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
-                blueprint_application: None,
-                values: HashMap::from([(
-                    Attribute::Green,
-                    ValueSource::Inline(ParameterValue::RelativePercent {
-                        offset: (-0.5).into(),
-                    }),
-                )]),
-                ..Default::default()
-            },
-        }],
-        ..Default::default()
-    };
-
-    let cue3 = Cue {
-        identifiers: Identifiers {
-            id: 102,
-            ..Default::default()
-        },
-        trigger: CueTriggerType::Manual,
-        transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
-            selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
-                blueprint_application: None,
-                values: HashMap::from([(
-                    Attribute::Blue,
-                    ValueSource::Inline(ParameterValue::RelativePercent {
-                        offset: (-0.5).into(),
-                    }),
-                )]),
-                ..Default::default()
-            },
-        }],
-        ..Default::default()
-    };
-
-    let sequence = Sequence {
-        identifiers: Identifiers {
-            id: 4,
-            label: "sequence 4 (rel2)".to_owned(),
-            ..Default::default()
-        },
-        steps: vec![
-            cue1.identifiers.uid.into(),
-            cue2.identifiers.uid.into(),
-            cue3.identifiers.uid.into(),
-        ],
-        wrap: true,
-        ..Default::default()
-    };
-
-    let clip = Clip {
-        identifiers: Identifiers {
-            uid: Uuid::from_str("eed8a692-3d8c-4007-b654-5ab597a12ec2").unwrap(),
-            id: 9,
-            label: "-128 cycle (2)".to_owned(),
+            label: "RGB cycle (-50% rel.)".to_owned(),
         },
         source: Some(Source::Sequence(sequence.identifiers.uid)),
         ..Default::default()

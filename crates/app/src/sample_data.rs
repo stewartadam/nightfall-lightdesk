@@ -54,7 +54,6 @@ pub fn populate_sample_entities(world: &mut World) {
     cues::add_abs_128_cue(world);
     cues::add_abs_255_cue(world);
     cues::add_rel_cue(world);
-    cues::add_rel_cue2(world);
     cues::add_fanned_timing_cue(world);
     cues::add_color_fade_sequences(world);
     effects::add_bstrip_fx(world);
