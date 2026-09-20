@@ -153,7 +153,7 @@ pub(crate) fn refresh_clean_snapshot_hash_from_world(world: &mut World) -> Resul
 pub(crate) fn persist_new_showfile_draft_from_world(
     world: &mut World,
     showfile_name: Option<&str>,
-    initial_assets: &'static [InitialShowfileAsset],
+    initial_assets: &[InitialShowfileAsset],
 ) -> Result<(), String> {
     let mut snapshot = snapshot_from_world(world)?;
     snapshot.metadata = current_showfile_metadata();

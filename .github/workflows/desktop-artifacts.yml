@@ -17,6 +17,7 @@ on:
       - 'crates/browser-runtime/**'
       - '.github/desktop-release-notes.md'
       - 'scripts/desktop-artifacts*'
+      - 'scripts/package-sample-audio*'
       - 'scripts/*notices*'
       - 'config/notices/**'
       - 'about.toml'

@@ -138,10 +138,18 @@ A clean clone does not include a personal fixture or object library. Put compati
 
 Worktrunk is optional. `wt switch --create <branch>` runs the repository hooks to create the environment, install packages, generate types/assets, and seed build and application data from the main worktree. These hooks assume the general prerequisites above are installed. Check their output before starting services; a background build may still be running.
 
-Sample MP3s are tracked with Git LFS and embedded in application builds. After checkout,
-`git lfs pull` materializes them; builds reject unresolved pointer files. Once fetched,
-builds and packaged sample-show creation work offline. Updating a track uses normal
-`git add`, signed-off commits, and `git push`; the LFS pre-push hook uploads its contents.
+Sample MP3s are tracked with Git LFS and packaged as external resources. Run
+`git lfs pull` before packaging or creating a sample show in development. Rust
+compilation does not read or embed these files. Debug backends read the source
+assets unless a `sample-audio` directory exists beside the executable. Packaged
+desktop apps use Tauri's resource directory; standalone release backends require
+`sample-audio/lofi.mp3` and `sample-audio/rap.mp3` beside their executable.
+
+Run `npm run package:sample-audio -- <executable-directory>` to validate and copy
+standalone backend resources. Each new sample show receives its own copy, so
+saved shows remain portable. Replacing packaged tracks affects future sample
+shows without recompilation. Updating a track uses normal `git add`, signed-off
+commits, and `git push`; the LFS pre-push hook uploads its contents.
 
 #### Git hooks
 

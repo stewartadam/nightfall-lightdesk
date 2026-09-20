@@ -20,7 +20,7 @@ use crate::{composition::init_bevy_with_transport_policy, sample_data};
 
 /// Marks an in-memory sample world whose draft and bundled media must be installed before runtime starts.
 #[derive(Resource)]
-pub(super) struct PendingSampleDraft;
+pub(super) struct PendingSampleDraft(std::path::PathBuf);
 
 /// Initial world bootstrap source when creating a fresh Bevy app instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,12 +97,20 @@ impl WorldFactory {
         );
 
         let clean_hash_result: Result<(), String> = match bootstrap {
-            WorldBootstrap::Empty { showfile_name } => {
-                finalize_new_world(&mut bevy_app, showfile_name.as_deref(), false)
-            }
+            WorldBootstrap::Empty { showfile_name } => finalize_new_world(
+                &mut bevy_app,
+                showfile_name.as_deref(),
+                false,
+                self.runtime_config.resource_dir.as_deref(),
+            ),
             WorldBootstrap::SampleData { showfile_name } => {
                 sample_data::populate_sample_entities(bevy_app.world_mut());
-                finalize_new_world(&mut bevy_app, showfile_name.as_deref(), true)
+                finalize_new_world(
+                    &mut bevy_app,
+                    showfile_name.as_deref(),
+                    true,
+                    self.runtime_config.resource_dir.as_deref(),
+                )
             }
             WorldBootstrap::Showfile { name, source } => {
                 crate::systems::showfile_events::load_showfile_into_world(
@@ -206,23 +214,30 @@ fn finalize_new_world(
     app: &mut App,
     showfile_name: Option<&str>,
     seeded: bool,
+    resource_dir: Option<&std::path::Path>,
 ) -> Result<(), String> {
     app.world_mut()
         .resource_mut::<crate::systems::showfile_events::CurrentShowfile>()
         .set_name(showfile_name)?;
+    let audio_directory = if seeded {
+        Some(sample_data::sample_audio_directory(resource_dir)?)
+    } else {
+        None
+    };
     if showfile_name.is_some() {
+        let assets = audio_directory
+            .as_deref()
+            .map(sample_data::sample_audio_assets)
+            .transpose()?
+            .unwrap_or_default();
         crate::systems::showfile_events::persist_new_showfile_draft_from_world(
             app.world_mut(),
             showfile_name,
-            if seeded {
-                sample_data::SAMPLE_AUDIO
-            } else {
-                &[]
-            },
+            &assets,
         )?;
     } else {
-        if seeded {
-            app.insert_resource(PendingSampleDraft);
+        if let Some(directory) = audio_directory {
+            app.insert_resource(PendingSampleDraft(directory));
         }
         crate::systems::showfile_events::refresh_clean_snapshot_hash_from_world(app.world_mut())?;
     }
@@ -234,11 +249,12 @@ fn finalize_new_world(
 
 /// Installs a CLI/fallback sample world's draft before runtime services consume its media paths.
 pub(super) fn persist_pending_sample_draft(app: &mut App) -> Result<(), String> {
-    if app.world().contains_resource::<PendingSampleDraft>() {
+    if let Some(pending) = app.world().get_resource::<PendingSampleDraft>() {
+        let assets = sample_data::sample_audio_assets(&pending.0)?;
         crate::systems::showfile_events::persist_new_showfile_draft_from_world(
             app.world_mut(),
             None,
-            sample_data::SAMPLE_AUDIO,
+            &assets,
         )?;
         app.world_mut().remove_resource::<PendingSampleDraft>();
     }

@@ -48,7 +48,9 @@
     "tauri-dev": "npm run tauri dev -- -- --no-default-features",
     "tauri-build": "npm run tauri build -- -- --no-default-features",
     "tauri-build:dev": "npm run tauri build -- -d -- --no-default-features",
-    "knip": "knip"
+    "knip": "knip",
+    "tauri-bundle": "tauri bundle",
+    "package:sample-audio": "node scripts/package-sample-audio.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",

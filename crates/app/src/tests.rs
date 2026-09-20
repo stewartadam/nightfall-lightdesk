@@ -1505,7 +1505,12 @@ fn named_sample_show_is_standalone_and_recoverable() {
         assert_eq!(timeline.audio_path, asset.relative_path);
         assert_eq!(
             std::fs::read(draft.join(&timeline.audio_path)).expect("installed bundled audio"),
-            asset.bytes
+            std::fs::read(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("assets/sample-audio")
+                    .join(asset.filename)
+            )
+            .expect("source audio")
         );
     }
     assert!(
@@ -1670,7 +1675,12 @@ fn named_sample_show_is_standalone_and_recoverable() {
                     .join(asset.relative_path)
             )
             .expect("recovered bundled audio"),
-            asset.bytes
+            std::fs::read(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("assets/sample-audio")
+                    .join(asset.filename)
+            )
+            .expect("source audio")
         );
     }
     drop(recovered);
@@ -1701,10 +1711,96 @@ fn unnamed_sample_show_installs_bundled_audio_before_runtime() {
     for asset in crate::sample_data::SAMPLE_AUDIO {
         assert_eq!(
             std::fs::read(draft.join(asset.relative_path)).expect("installed sample audio"),
-            asset.bytes
+            std::fs::read(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("assets/sample-audio")
+                    .join(asset.filename)
+            )
+            .expect("source audio")
         );
     }
     drop(app);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// External resource updates affect new shows without altering existing show-owned audio.
+#[test]
+fn sample_audio_resources_can_change_without_recompilation() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().unwrap();
+    let resources = tempfile::tempdir().unwrap();
+    let audio = resources.path().join("sample-audio");
+    std::fs::create_dir(&audio).unwrap();
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let config = RuntimeConfig {
+        resource_dir: Some(resources.path().to_path_buf()),
+        ..RuntimeConfig::default()
+    };
+    let factory = WorldFactory::for_config(test_log_config(), config);
+    for name in ["First", "Second"] {
+        for asset in crate::sample_data::SAMPLE_AUDIO {
+            std::fs::write(
+                audio.join(asset.filename),
+                format!("ID3 {name} {}", asset.filename),
+            )
+            .unwrap();
+        }
+        factory
+            .build(WorldBootstrap::SampleData {
+                showfile_name: Some(name.to_string()),
+            })
+            .unwrap();
+    }
+    for name in ["First", "Second"] {
+        for asset in crate::sample_data::SAMPLE_AUDIO {
+            assert_eq!(
+                std::fs::read(
+                    root.path()
+                        .join(format!("drafts/{name}.nightfall-show"))
+                        .join(asset.relative_path)
+                )
+                .unwrap(),
+                format!("ID3 {name} {}", asset.filename).as_bytes()
+            );
+        }
+    }
+    std::fs::write(
+        audio.join("lofi.mp3"),
+        b"version https://git-lfs.github.com/spec/v1\n",
+    )
+    .unwrap();
+    assert!(
+        factory
+            .build(WorldBootstrap::SampleData {
+                showfile_name: Some("Pointer".into())
+            })
+            .is_err()
+    );
+    assert!(!root.path().join("drafts/Pointer.nightfall-show").exists());
+    std::fs::remove_dir_all(&audio).unwrap();
+    assert!(
+        factory
+            .build(WorldBootstrap::SampleData {
+                showfile_name: Some("Missing".into())
+            })
+            .is_err()
+    );
+    assert!(!root.path().join("drafts/Missing.nightfall-show").exists());
+    factory
+        .build(WorldBootstrap::Empty {
+            showfile_name: Some("Empty".into()),
+        })
+        .unwrap();
+    factory
+        .build(WorldBootstrap::Showfile {
+            name: Some("First".into()),
+            source: root.path().join("drafts/First.nightfall-show"),
+        })
+        .unwrap();
     nightfall::clear_active_show_data_dir();
     nightfall::set_nightfall_data_dir(None);
 }

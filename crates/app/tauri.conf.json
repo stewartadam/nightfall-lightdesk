@@ -14,7 +14,11 @@
     },
     "features": ["tauri", "full", "beatgrid-detect"],
     "frontendDist": "../../webui/dist",
-    "devUrl": "http://localhost:3031"
+    "devUrl": "http://localhost:3031",
+    "beforeBundleCommand": {
+      "script": "node ../scripts/package-sample-audio.mjs --check",
+      "cwd": "../../webui"
+    }
   },
   "app": {
     "windows": [
@@ -36,7 +40,8 @@
     "copyright": "(C) 2026 Stewart Adam",
     "license": "MPL-2.0",
     "resources": {
-      "../../webui/dist/notices": "notices"
+      "../../webui/dist/notices": "notices",
+      "assets/sample-audio/": "sample-audio/"
     },
     "targets": "all",
     "icon": [

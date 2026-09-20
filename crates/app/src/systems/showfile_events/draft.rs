@@ -49,11 +49,11 @@ pub(crate) enum DraftSaveOutcome {
 
 /// Controls how draft saves seed files before writing the canonical snapshot.
 #[derive(Debug, Clone, Copy)]
-enum DraftAssetSource {
+enum DraftAssetSource<'a> {
     /// Copy the currently mounted show data directory so referenced assets are preserved.
     ActiveShowDataDir,
     /// Start with a fresh directory and install only the supplied bundled files.
-    InitialAssets(&'static [InitialShowfileAsset]),
+    InitialAssets(&'a [InitialShowfileAsset]),
 }
 
 /// Copy the active show root into the target draft folder when saving under a new name.
@@ -251,7 +251,7 @@ pub(super) fn save_initial_draft_showfile_snapshot(
     showfile_snapshot: &mut ShowfileSnapshot,
     showfile_name: Option<&str>,
     snapshot_hash: u64,
-    initial_assets: &'static [InitialShowfileAsset],
+    initial_assets: &[InitialShowfileAsset],
 ) -> Result<(), String> {
     save_draft_showfile_snapshot(
         showfile_snapshot,
@@ -299,7 +299,7 @@ fn save_draft_showfile_snapshot(
     showfile_name: Option<&str>,
     based_on_snapshot_hash: u64,
     draft_snapshot_hash: u64,
-    asset_source: DraftAssetSource,
+    asset_source: DraftAssetSource<'_>,
 ) -> Result<(), String> {
     if matches!(asset_source, DraftAssetSource::InitialAssets(_)) {
         super::paths::validate_new_showfile_name(showfile_name)?;
@@ -381,7 +381,7 @@ fn save_draft_showfile_snapshot(
             }
             let destination = temp_dir.join(relative_path);
             std::fs::create_dir_all(destination.parent().expect("asset has a staging parent"))
-                .and_then(|()| std::fs::write(&destination, asset.bytes))
+                .and_then(|()| std::fs::copy(&asset.source_path, &destination))
                 .map_err(|error| {
                     format!(
                         "failed to install bundled show asset {}: {error}",

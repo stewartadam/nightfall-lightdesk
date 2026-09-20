@@ -44,7 +44,7 @@ mod groups;
 mod input_mappings;
 mod timelines;
 
-pub(crate) use audio::SAMPLE_AUDIO;
+pub(crate) use audio::{SAMPLE_AUDIO, sample_audio_assets, sample_audio_directory};
 
 /// Populate a deterministic sample world in dependency-safe domain order.
 pub fn populate_sample_entities(world: &mut World) {
