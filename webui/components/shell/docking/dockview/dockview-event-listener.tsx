@@ -44,7 +44,7 @@ const log = getLogger(import.meta.url);
 const EDGE_GROUP_SIZE_TARGETS = [
   {
     position: "left",
-    testId: "dv-edge-group-edge-Programmer",
+    testId: "dv-edge-group-edge-Clips",
   },
   {
     position: "bottom",

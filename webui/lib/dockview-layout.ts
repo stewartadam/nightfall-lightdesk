@@ -100,8 +100,8 @@ const DEFAULT_EDGE_GROUPS = {
   },
   left: {
     collapsed: true,
-    groupId: "edge-Programmer",
-    size: 360,
+    groupId: "edge-Clips",
+    size: 550,
     visible: false,
   },
   right: {
