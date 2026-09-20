@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - develop
     tags: ['v*']
   workflow_dispatch:
 
@@ -28,6 +29,7 @@ jobs:
         id: scope
         env:
           EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           distributions=true
           if [[ "$EVENT_NAME" == pull_request ]]; then
@@ -39,6 +41,10 @@ jobs:
                   distributions=true ;;
               esac
             done < "$RUNNER_TEMP/ci-changed-files"
+          fi
+          # Develop pushes warm caches available to subsequent PRs without packaging releases.
+          if [[ "$EVENT_NAME" == push && "$REF_NAME" == develop ]]; then
+            distributions=false
           fi
           echo "distributions=$distributions" >> "$GITHUB_OUTPUT"
 
@@ -69,7 +75,15 @@ jobs:
     uses: ./.github/workflows/browser-demo.yml
 
   native:
-    name: Run native and source hooks
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stage: pre-commit
+            name: Rust Clippy and source checks
+          - stage: pre-push
+            name: Rust tests and backend
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -95,9 +109,12 @@ jobs:
       - name: Show Rust toolchain
         run: rustup show
 
-      - name: Cache Rust build artifacts
+      - name: Cache native dependencies and tools
         uses: Swatinem/rust-cache@v2
         with:
+          # Matrix legs produce different artifacts. Stable stage keys also let
+          # develop pushes warm caches that PRs can restore from their base branch.
+          shared-key: native-${{ matrix.stage }}-${{ hashFiles('Cargo.toml', 'scripts/run-native-cargo.mjs') }}
           cache-on-failure: true
 
       - name: Install system dependencies
@@ -109,26 +126,26 @@ jobs:
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev
 
-      - name: Install dependencies
-        run: |
-          npm clean-install
-          cargo install --locked typeshare-cli --version 1.13.3
+      - name: Install Node dependencies
+        run: npm clean-install
 
-      - name: Run prek pre-commit stage hooks
-        # Native CI needs useful backtraces, not full debugger data or optimized
-        # workspace code. Package overrides keep third-party dependencies fast.
-        run: npx prek run --all-files --show-diff-on-failure --color always --stage pre-commit
+      - name: Install typeshare for source checks
+        if: matrix.stage == 'pre-commit'
+        run: cargo install --locked typeshare-cli --version 1.13.3
 
-      - name: Run prek pre-push stage hooks
-        run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-push
+      - name: Run native ${{ matrix.stage }} hooks
+        # Each stage runs once, on its own runner and with its own build cache.
+        run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage ${{ matrix.stage }}
 
       - name: Stage the tested native backend
+        if: matrix.stage == 'pre-push'
         run: |
           node scripts/run-native-cargo.mjs build --bin nightfall-app
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           mkdir -p ci-artifacts
           cp "$target_dir/debug/nightfall-app" ci-artifacts/nightfall-app
       - uses: actions/upload-artifact@v6
+        if: matrix.stage == 'pre-push'
         with:
           name: native-test-backend-${{ github.sha }}
           path: ci-artifacts/nightfall-app
