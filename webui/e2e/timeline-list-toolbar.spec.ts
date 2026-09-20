@@ -207,6 +207,16 @@ test("timeline list toolbar exposes CRUD actions", async ({
   await expect
     .poll(() => timelinePanelIsOpen(page, createdTimelineUid as string))
     .toBe(true);
+  await expect(
+    page
+      .locator(".dv-tab")
+      .getByText(`Timeline ${createdTimelineId}: ${createdTimelineLabel}`, {
+        exact: true,
+      }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("timeline-tab-title.png"),
+  });
   await focusTimelineListPanel(page);
   await expect(openButton).toBeDisabled();
   await expect(editButton).toBeDisabled();
