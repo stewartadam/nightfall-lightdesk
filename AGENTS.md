@@ -10,6 +10,13 @@
 - Use Bevy `SystemParam`s to resolve mutually exclusive SystemParam conflicts or encapsulate complex sets of system dependencies.
 - Questions are just that, questions. Answer the question, do jump straight to implementation.
 
+## Command execution
+
+- Use the patch tool for source and test edits. Do not use Python, Node, or shell redirection merely to write files.
+- Omit `2>&1` unless combining streams is necessary for the command's behavior.
+- Prefer direct commands and the execution tool's working-directory parameter over unnecessary shell wrappers or `cd` chains.
+- Run Playwright only through the repository wrapper described below.
+
 ## Cloud agent setup
 
 When running remotely, check `CONTRIBUTING.md` subsection *Nightfall setup* for setup instructions.
