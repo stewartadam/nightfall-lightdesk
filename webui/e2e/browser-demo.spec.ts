@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
@@ -48,12 +49,22 @@ async function prepareEmbeddedPage(page: Page): Promise<{
       return;
     }
     const response = await route.fetch();
+    const html = await response.text();
+    const devScriptHashes =
+      process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+        ? []
+        : Array.from(
+            html.matchAll(
+              /<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi,
+            ),
+            ([, script]) =>
+              `'sha256-${createHash("sha256").update(script).digest("base64")}'`,
+          );
     await route.fulfill({
       response,
       headers: {
         ...response.headers(),
-        "content-security-policy":
-          "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:",
+        "content-security-policy": `default-src 'self'; script-src 'self' 'wasm-unsafe-eval' ${devScriptHashes.join(" ")}; worker-src 'self' blob:; connect-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:`,
       },
     });
   });
@@ -302,9 +313,19 @@ async function seekTimeline(
 
 /** Verify the full product UI edits and plays its sample without native services. */
 test("embedded demo edits and plays the sample without backend traffic", async ({
+  baseURL,
   browserName,
   page,
 }, testInfo) => {
+  if (
+    browserName === "chromium" &&
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview"
+  ) {
+    // Routed document responses need loopback access for Vite's HMR WebSocket.
+    await page
+      .context()
+      .grantPermissions(["local-network-access"], { origin: baseURL });
+  }
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   page.on("pageerror", (error) =>
@@ -312,12 +333,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   );
   page.on("console", (message) => {
     const text = message.text();
-    if (
-      message.type() === "error" &&
-      !text.includes("/@vite/client") &&
-      !text.startsWith("WebSocket connection to 'ws://127.0.0.1") &&
-      !text.startsWith("[vite]")
-    ) {
+    if (message.type() === "error") {
       consoleErrors.push(text);
     }
   });
@@ -578,6 +594,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   expect(showfileRequests).toHaveLength(2);
   expect([...new Set(audioRequests)]).toEqual([expectedAudioUrl]);
   expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });
 
 /** Verify the tracked show and generated audio support real timeline playback. */
