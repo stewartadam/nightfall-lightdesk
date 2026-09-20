@@ -599,7 +599,9 @@ fn world_factory_sample_data_seeds_fader_assignments() {
     use nightfall_desk::prelude::{ControlAssignment, Controls};
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
-        .build(WorldBootstrap::SampleData)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
         .expect("sample world");
     let assignments = app.world().resource::<Controls>().assignments();
     assert_eq!(
