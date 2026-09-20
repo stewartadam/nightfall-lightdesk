@@ -186,6 +186,42 @@ fn store_timeline_marks_audio_sync_when_audio_enabled_changes() {
     );
 }
 
+/// Start-offset edits realign active audio even when both starts precede the timecode.
+#[test]
+fn store_timeline_start_change_requests_audio_sync() {
+    let mut timeline = Timeline {
+        timecode_start: Duration::from_secs(3),
+        audio_enabled: true,
+        ..Default::default()
+    };
+    let mut materialized = MaterializedTimeline::new(timeline.clone());
+    materialized.activate();
+    let current_time = Duration::from_secs(5);
+    materialized.update_with_timecode(current_time);
+    materialized.audio_needs_sync = false;
+    assert_eq!(
+        materialized.get_playback_position(current_time),
+        Duration::from_secs(2)
+    );
+
+    timeline.timecode_start = Duration::from_secs(1);
+    apply_stored_timeline_to_materialized(&mut materialized, &timeline);
+    materialized.update_with_timecode(current_time);
+    assert!(materialized.audio_needs_sync);
+    assert_eq!(
+        materialized.get_playback_position(current_time),
+        Duration::from_secs(4)
+    );
+
+    materialized.audio_needs_sync = false;
+    apply_stored_timeline_to_materialized(&mut materialized, &timeline);
+    materialized.update_with_timecode(current_time + Duration::from_millis(16));
+    assert!(
+        !materialized.audio_needs_sync,
+        "unchanged stores and steady ticks must not seek audio"
+    );
+}
+
 /// Verifies accepted active timeline stores request live playback reconstruction.
 #[test]
 fn store_timeline_action_change_requests_reconstruction_event() {
