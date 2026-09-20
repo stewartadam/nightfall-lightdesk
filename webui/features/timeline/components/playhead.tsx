@@ -6,20 +6,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { msToPixels } from "../../../lib/utils";
-// Playhead component
 import { useTimelineContext } from "../context/timeline-context";
 
 type GhostPlayheadProps = {
   left: number;
 };
 
+/** Draws the playback cursor at subpixel precision as the timeline clock advances. */
 export const Playhead = () => {
   const context = useTimelineContext();
 
   /** Calculate position directly from context values */
   const getPixelPosition = () => {
-    return msToPixels(context.position() - context.start(), context.zoom());
+    return ((context.position() - context.start()) / 1000) * context.zoom();
   };
 
   return (
@@ -33,6 +32,7 @@ export const Playhead = () => {
   );
 };
 
+/** Marks the prospective cursor location without changing playback. */
 export const GhostPlayhead = (props: GhostPlayheadProps) => {
   return (
     <div
