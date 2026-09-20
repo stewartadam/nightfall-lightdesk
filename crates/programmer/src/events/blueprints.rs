@@ -142,7 +142,7 @@ fn selector_description(selector: &BlueprintSelector) -> String {
     }
 }
 
-/// Reports selected fixture elements to which the addressed Blueprint cannot apply values.
+/// Summarizes incompatible targets in one bounded notice rather than one toast per pixel.
 fn blueprint_compatibility_warnings(
     blueprint: &Blueprint,
     selector: &BlueprintSelector,
@@ -150,7 +150,8 @@ fn blueprint_compatibility_warnings(
     resolved_selection: &ResolvedSelection,
     fixture_data_provider: &FixtureDataProviderExt,
 ) -> Vec<String> {
-    let mut warnings = Vec::new();
+    let mut incompatible_count = 0;
+    let mut examples = Vec::new();
     for selected_target in resolved_selection.canonical_fixtures() {
         for element_ref in selected_fixture_elements(selected_target, fixture_data_provider) {
             let supported = selected_values.keys().any(|attribute| {
@@ -159,6 +160,11 @@ fn blueprint_compatibility_warnings(
                     .is_some()
             });
             if supported {
+                continue;
+            }
+
+            incompatible_count += 1;
+            if examples.len() >= 3 {
                 continue;
             }
 
@@ -171,23 +177,31 @@ fn blueprint_compatibility_warnings(
                 .index
                 .map(|index| format!(" element {index}"))
                 .unwrap_or_default();
-            let code = if matches!(selector, BlueprintSelector::Attribute(_)) {
-                "blueprint.attribute_unsupported"
-            } else {
-                "blueprint.no_applicable_values"
-            };
-            warnings.push(format!(
-                "{code}: Blueprint {} \"{}\" {} applies no values to fixture {} \"{}\"{}",
-                blueprint.identifiers.id,
-                blueprint.identifiers.label,
-                selector_description(selector),
-                fixture_id,
-                fixture_label,
-                element_suffix,
+            examples.push(format!(
+                "fixture {} \"{}\"{}",
+                fixture_id, fixture_label, element_suffix,
             ));
         }
     }
-    warnings
+    if incompatible_count == 0 {
+        return Vec::new();
+    }
+    let code = if matches!(selector, BlueprintSelector::Attribute(_)) {
+        "blueprint.attribute_unsupported"
+    } else {
+        "blueprint.no_applicable_values"
+    };
+    let remaining = incompatible_count - examples.len();
+    if remaining > 0 {
+        examples.push(format!("and {remaining} more"));
+    }
+    vec![format!(
+        "{code}: Blueprint {} \"{}\" {} applies no values to {incompatible_count} selected element(s): {}",
+        blueprint.identifiers.id,
+        blueprint.identifiers.label,
+        selector_description(selector),
+        examples.join("; "),
+    )]
 }
 
 /// Captures final logical programmer values and rejects fixture-dependent ambiguity.
