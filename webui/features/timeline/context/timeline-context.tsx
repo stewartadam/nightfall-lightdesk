@@ -148,6 +148,9 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
       seek: hydration.playback.seek,
     },
     track: {
+      addLane: track.addLane,
+      removeLane: track.removeLane,
+      onLanesChanged: track.lanesChangedEvent,
       addTrack: track.addTrack,
       removeTrack: track.removeTrack,
       renameTrack: track.renameTrack,

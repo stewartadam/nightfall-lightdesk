@@ -24,6 +24,124 @@ const DRAG_ITEM_ID = "owned-operator-drag-item";
 const DENSE_TRACK_ID = "owned-operator-dense-track";
 const DENSE_NEW_ITEM_ID = "owned-operator-dense-new-item";
 
+/** Exercises parameter lane creation, cancellation, deletion, and backend persistence. */
+test("parameter lane controls persist additions and deletions", async ({
+  page,
+}, testInfo) => {
+  await openFirstTimeline(page);
+  const header = page.locator(
+    `[data-timeline-track-header="true"][data-track-id="${BASE_TRACK_ID}"]`,
+  );
+  const add = header.getByRole("button", {
+    name: "Add parameter lane",
+    exact: true,
+  });
+  await expect(add).toBeVisible();
+  await add.click();
+  const dialog = page.getByRole("dialog", { name: "Add parameter lane" });
+  await expect(
+    dialog.getByRole("button", { name: "Add lane", exact: true }),
+  ).toBeDisabled();
+  await dialog.getByLabel("Parameter type").selectOption("RateMaster");
+  await expect(
+    dialog.getByText("Create a clip to add a clip rate lane."),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Add lane", exact: true }),
+  ).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+
+  await add.click();
+  await dialog.getByLabel("Variable name").fill("  lane-test-variable  ");
+  await dialog.getByLabel("Lane name (optional)").fill("Test parameter curve");
+  await page.screenshot({
+    path: testInfo.outputPath("parameter-lane-dialog.png"),
+  });
+  await dialog.getByRole("button", { name: "Add lane", exact: true }).click();
+  const remove = header.getByRole("button", {
+    name: "Delete parameter lane Test parameter curve",
+    exact: true,
+  });
+  await expect(remove).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate((uid) => {
+        const timeline = (window as any).appStores.timelines.get()[uid];
+        return timeline.tracks[0].automation_lanes.map((lane: any) => ({
+          name: lane.name,
+          target: lane.parameter_type,
+        }));
+      }, TIMELINE_UID),
+    )
+    .toEqual([
+      {
+        name: "Owned Operator Curve",
+        target: { type: "GlobalVariable", data: "owned-operator-variable" },
+      },
+      {
+        name: "Test parameter curve",
+        target: { type: "GlobalVariable", data: "lane-test-variable" },
+      },
+    ]);
+  await page.screenshot({
+    path: testInfo.outputPath("parameter-lane-controls.png"),
+  });
+
+  await page.reload();
+  await waitForDockviewApp(page);
+  await openFirstTimeline(page);
+  await expect(remove).toBeVisible();
+  await remove.click();
+  await expect(remove).not.toBeVisible();
+  await page.getByRole("button", { name: /Undo: Store Timeline/ }).click();
+  await expect(remove).toBeVisible();
+  await remove.click();
+  await expect(remove).not.toBeVisible();
+  await header
+    .getByRole("button", {
+      name: "Delete parameter lane Owned Operator Curve",
+      exact: true,
+    })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (uid) =>
+          (window as any).appStores.timelines.get()[uid].tracks[0]
+            .automation_lanes.length,
+        TIMELINE_UID,
+      ),
+    )
+    .toBe(0);
+  await expect(
+    header.getByRole("button", {
+      name: "Collapse automation lanes",
+      exact: true,
+    }),
+  ).not.toBeVisible();
+  await add.click();
+  await dialog.getByLabel("Variable name").fill("replacement-variable");
+  await dialog.getByRole("button", { name: "Add lane", exact: true }).click();
+  await expect(
+    header.getByRole("button", {
+      name: "Delete parameter lane replacement-variable",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (uid) =>
+          (window as any).appStores.timelines
+            .get()
+            [uid].tracks[0].automation_lanes.map((lane: any) => lane.name),
+        TIMELINE_UID,
+      ),
+    )
+    .toEqual(["replacement-variable"]);
+});
+
 test.describe.configure({ timeout: 180_000 });
 
 /** Starts every operator workflow from the same exact backend graph. */

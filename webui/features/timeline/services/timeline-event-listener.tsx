@@ -25,6 +25,13 @@ export const TimelineEventListener = () => {
 
   const $timelines = useStore(timelines);
 
+  /** Persists lane creation and deletion through the timeline snapshot command. */
+  createEffect(() => {
+    if (ctx.track.onLanesChanged()) {
+      untrack(() => sendTimelineUpdate());
+    }
+  });
+
   // Persist track additions, removals, and inline renames as a timeline snapshot.
   createEffect(() => {
     const addTrackEvent = ctx.track.onAddTrack();
