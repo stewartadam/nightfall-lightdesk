@@ -11,7 +11,18 @@ This affects standard materials even in an empty visualizer scene. The patch
 covers the upstream source and both unminified WebGPU distribution entry points;
 Nightfall imports `three/webgpu`, which resolves to `build/three.webgpu.js`.
 
-`npm install` / `npm ci` apply the patch through `patch-package --error-on-fail`.
+`npm install` / `npm ci` apply the patch through the `postinstall` script. After
+`patch-package --error-on-fail` succeeds, the script updates the patches directory
+modification time, which [Vite includes in its dependency cache key](https://vite.dev/guide/dep-pre-bundling.html#caching).
+This prevents a previously optimized, unpatched Three.js bundle from surviving
+patch installation. Restart any running Vite server after applying patches.
+
+If npm lifecycle scripts are disabled (`npm config get ignore-scripts` reports
+`true`, or installation used `--ignore-scripts`), run `npm run postinstall`
+explicitly after installing dependencies. This applies only the repository's
+patch step without enabling lifecycle scripts for other packages. Worktrunk's
+install hook runs this step explicitly as well.
+
 The Three.js version is pinned so an upgrade requires checking this patch.
 The minified distribution files are not used by Nightfall.
 

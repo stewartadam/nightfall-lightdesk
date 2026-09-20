@@ -6,7 +6,7 @@ kill-backend = "WORKTREE_TARGET={{ managed_worktree_path | default(worktree_path
 setup-env = "node ./scripts/setup-env.mjs"
 
 [[pre-start]]
-install = "npm install"
+install = "npm install && npm run postinstall"
 typeshare = "npm run typeshare"
 
 [[post-start]]
