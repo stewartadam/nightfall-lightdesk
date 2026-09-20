@@ -1,0 +1,30 @@
+# Owned performance workloads
+
+Run with an empty seed directory and one worker:
+
+```sh
+mkdir -p /private/tmp/nightfall-owned-performance-empty
+npm run test:webui-playwright -- --data-dir /private/tmp/nightfall-owned-performance-empty webui/e2e/owned-performance.spec.ts --workers=1 --repeat-each=3
+```
+
+The `sampleDataOnly` fixture also forces an empty source directory per test, even when the caller has configured personal data. The backend creates the repository's sample/default shows. No private backups, external media, installed fixture libraries, or availability skips are used. The tests install the repository basic-module component into their own disposable data directory, resolving its input WASM from Cargo JSON artifact output.
+
+The workload includes 101 fixtures and 10,929 parameter definitions from `crates/app/src/sample_data`, twelve independent Step FX definitions (four copies each of Rainbow Cycle, Circle Motion, and White Bounce), clips 400–411, and the basic-module WASM pulse as clip 412. The module resolves 28 intensity targets through host fixture calls. Thirteen simultaneous effects produce 22,620 asserted parameter values and fifteen layers including the two engine input layers. Runtime assertions require at least 100 fixtures, 10,000 parameter definitions, 24 module targets, all 13 effect activations, at least 13 layers, and 20,000 asserted parameters to prevent accidental workload reduction.
+
+One owned timeline reproduces the historical measurement windows: clip 412 at 169.210 seconds, timeline 3 beat 59 at 29.5 seconds, and timeline 4 beat 33 at 16.5 seconds (120 BPM). These are representative fanout workloads, not copies of the removed private show. Every effect is held for ten seconds and uses no audio. Clip-start runs cover hidden consumers, Layers visible, and Fixtures visible. The two timeline cases show Layers, Fixtures, and Timeline together. The two timeline fanout cases expand layers to render their parameter grids; clip-start consumer states match the original test without adding an expansion action.
+
+Each run waits for settled startup, seeks 1.5 seconds before the trigger, then measures through three seconds after activation for clip-start cases. Timeline fanout expands the grids after activation, waits 2.5 seconds for that setup, and measures the next three seconds while retaining expansion-phase RAF samples separately. RAF, engine publications, and websocket-stat publications are collected separately. Engine timing uses the existing `DeskMetrics.frame_time_ms` smoothed diagnostic (as the historical test did), while RAF records raw callback gaps; repeated reads of a stale backend snapshot do not count as fresh backend samples. The WASM layer must publish all 28 requested fixture/element intensity targets, with finite absolute values in range and observable changes across multiple fresh layer publications. Baseline and active windows must contain real measurements, and engine/RAF timings must be positive and finite. UI responsiveness times opening the command palette and rendering an Open Clips search result. Playback stops in both normal and failure cleanup.
+
+The target is 44 engine FPS. All scenarios require engine p95 below 60 ms and maximum below 100 ms, RAF maximum below 150 ms, and delivery p95 below 100 ms and maximum below 150 ms. Clip-start cases require RAF p95 below 50 ms and rendered UI response below 500 ms. Expanded timeline fanout requires RAF p95 below 75 ms and UI response below 750 ms. The browser limits allow three 60-Hz frame intervals for clip starts or four plus scheduling headroom for expanded live grids; the separate maximum still rejects isolated long stalls. Transport statistics arrive less frequently than RAF samples, so their short-window p95 is conservative and often equals the maximum.
+
+Calibration on an awake machine used two batches of all five cases repeated three times with the reviewed viewport fix (30 runs). Engine p95 was normally 23.5–24.2 ms, with one 53.4 ms outlier; the engine maximum reached 56.2 ms. Clip-start RAF p95 was 16.7–33.4 ms with UI response 47–137 ms; expanded fanout RAF p95 was 50.1–66.7 ms with UI response 370–619 ms. Delivery p95 ranged from 8.3–86.1 ms. Engine and transport limits include the observed outliers rather than fitting only the first batch. These measured bounds include scheduling headroom while still rejecting the original offscreen-grid regression (100–150 ms RAF p95, roughly 1–1.4 s UI response, and fewer than 60 RAF samples per three seconds). All workload and WASM-output assertions remain identical across calibration and regression runs.
+
+Calibration must run without concurrent Rust compilation or unrelated browser suites, with the machine awake throughout. On macOS, keep the laptop lid open; an idle-sleep assertion does not prevent clamshell sleep. Runs interrupted by sleep are invalid calibration evidence.
+
+Detailed baseline/active timing samples, workload counts, and screenshots are retained under `test-results/playwright/`. The complete `performance-surface-probe.json` is written before any sample-count assertions; `performance-surface.json` contains the summary before budget assertions, so failures retain diagnostic measurements too.
+
+On Chromium affected by the Tint nested-swizzle defect, calibration requires the reviewed Three.js patch from commit `cf0feee` (the separate WebGPU fix). Apply its `patches/three+0.185.1.patch` to installed dependencies before measuring; broken render pipelines are not a valid calibration environment.
+
+Expanded Layers calibration also requires the viewport subscription fix from commit `0a4a317`. Offscreen expanded parameter grids previously consumed every layer publication, producing sustained browser stalls; the viewport gate retains mounted controllers while updating visible grids.
+
+A subsequent acceptance batch passed all 15 cases (five scenarios, three repetitions, one worker) on awake macOS Chromium with the two reviewed fixes applied. The budgets above were unchanged during that acceptance batch.

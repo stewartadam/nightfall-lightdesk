@@ -6,7 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test as playwrightTest } from "@playwright/test";
 import { createSampleWav } from "../../scripts/browser-demo-audio.mjs";
 
@@ -34,6 +36,8 @@ export type BackendSlot = WorkerSlot & {
 
 type TestFixtures = {
   experimentalFlows: boolean;
+  /** Ignores installed shows and generates repository-owned sample data for this test. */
+  sampleDataOnly: boolean;
   backendSlot: BackendSlot;
 };
 
@@ -52,6 +56,7 @@ function requiredEnvironment(name: string): string {
 
 export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   experimentalFlows: [false, { option: true }],
+  sampleDataOnly: [false, { option: true }],
   /** Keeps one Vite proxy and fixed port pair alive for a Playwright worker. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -71,17 +76,30 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
 
   /** Gives each test a freshly seeded backend and destroys it afterward. */
   backendSlot: [
-    async ({ workerSlot, experimentalFlows }, use, testInfo) => {
-      const backendSlot = await startPlaywrightTestBackend({
-        experimentalFlows,
-        seedDataDir: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_SEED_DATA_DIR"),
-        testId: `${testInfo.testId}-${testInfo.retry}-${testInfo.repeatEachIndex}`,
-        workerSlot,
-      });
+    async (
+      { workerSlot, experimentalFlows, sampleDataOnly },
+      use,
+      testInfo,
+    ) => {
+      const emptySeed = sampleDataOnly
+        ? await mkdtemp(join(tmpdir(), "nightfall-owned-sample-"))
+        : undefined;
       try {
-        await use(backendSlot);
+        const backendSlot = await startPlaywrightTestBackend({
+          experimentalFlows,
+          seedDataDir:
+            emptySeed ??
+            requiredEnvironment("NIGHTFALL_PLAYWRIGHT_SEED_DATA_DIR"),
+          testId: `${testInfo.testId}-${testInfo.retry}-${testInfo.repeatEachIndex}`,
+          workerSlot,
+        });
+        try {
+          await use(backendSlot);
+        } finally {
+          await stopPlaywrightTestBackend(backendSlot);
+        }
       } finally {
-        await stopPlaywrightTestBackend(backendSlot);
+        if (emptySeed) await rm(emptySeed, { recursive: true, force: true });
       }
     },
     { timeout: 180_000 },

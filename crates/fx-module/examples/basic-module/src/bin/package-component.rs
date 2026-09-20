@@ -6,14 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::{
-    error::Error,
-    fs,
-    path::Path,
-};
+use std::{error::Error, fs, path::Path};
 
 use wit_component::ComponentEncoder;
 
+/// Packages the supplied Cargo artifact, or the default debug/release module, as a component.
 fn main() -> Result<(), Box<dyn Error>> {
     let profile = std::env::args()
         .nth(1)
@@ -22,7 +19,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .join("target")
         .join("wasm32-unknown-unknown")
         .join(&profile);
-    let core_module = output_dir.join("fx_module_basic_module.wasm");
+    let core_module = std::env::args()
+        .nth(2)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| output_dir.join("fx_module_basic_module.wasm"));
+    fs::create_dir_all(&output_dir)?;
     let component_path = output_dir.join("basic-module.wasm");
 
     let module = fs::read(&core_module)?;
