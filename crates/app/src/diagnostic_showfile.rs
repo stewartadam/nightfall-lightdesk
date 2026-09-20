@@ -50,9 +50,7 @@ pub(crate) fn respond_to_requests(
 
 /// Reads the latest stored snapshot when startup has not produced an active engine world.
 pub(crate) fn read_stored_showfile(asset_root: PathBuf) -> Result<DiagnosticShowfile, String> {
-    let json = std::fs::read_to_string(asset_root.join("showfile.json"))
-        .map_err(|error| format!("No showfile is available to include: {error}"))?;
-    let snapshot = nightfall_showfile::parse_showfile_snapshot_json(&json, "diagnostic fallback")
+    let snapshot = crate::systems::showfile_events::read_showfile_snapshot_from_path(&asset_root)
         .map_err(|error| format!("Could not read the stored showfile: {error}"))?;
     Ok(DiagnosticShowfile {
         snapshot,

@@ -49,6 +49,13 @@ if [[ -z "$showfile_backup_json" ]]; then
   showfile_backup_json="${latest_backup_dir}/showfile.json"
 fi
 
+if [[ -f "${showfile_json}.gz" ]]; then
+  showfile_json="${showfile_json}.gz"
+fi
+if [[ -f "${showfile_backup_json}.gz" ]]; then
+  showfile_backup_json="${showfile_backup_json}.gz"
+fi
+
 if [[ ! -f "$showfile_json" ]]; then
   echo "error: missing showfile JSON: $showfile_json" >&2
   exit 1
@@ -63,8 +70,16 @@ tmp_a="$(mktemp)"
 tmp_b="$(mktemp)"
 trap 'rm -f "$tmp_a" "$tmp_b"' EXIT
 
-jq -S . "$showfile_json" > "$tmp_a"
-jq -S . "$showfile_backup_json" > "$tmp_b"
+# Decode gzip snapshots while preserving plain JSON interchange support.
+read_snapshot_json() {
+  case "$1" in
+    *.gz) gzip -dc "$1" ;;
+    *) cat "$1" ;;
+  esac
+}
+
+read_snapshot_json "$showfile_json" | jq -S . > "$tmp_a"
+read_snapshot_json "$showfile_backup_json" | jq -S . > "$tmp_b"
 
 if diff -u "$tmp_b" "$tmp_a"; then
   echo "ok: normalized showfile JSON matches backup snapshot"

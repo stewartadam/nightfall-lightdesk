@@ -35,6 +35,7 @@ fn zip_exports_preserve_named_show_contents_and_warning_details() {
     let source = tempfile::tempdir().unwrap();
     std::fs::create_dir(source.path().join("empty")).unwrap();
     std::fs::write(source.path().join("asset.bin"), b"asset contents").unwrap();
+    write_showfile_snapshot_with_manifest_to_dir(&snapshot(), source.path(), 1, None).unwrap();
     let mut prepared = prepare_showfile_export(
         snapshot(),
         source.path(),
@@ -49,6 +50,13 @@ fn zip_exports_preserve_named_show_contents_and_warning_details() {
     let zip = prepared.write_zip("Tour.nightfall-show").unwrap();
     drop(prepared);
     let mut zip = zip::ZipArchive::new(zip.reopen().unwrap()).unwrap();
+    assert!(zip.by_name("Tour.nightfall-show/showfile.json.gz").is_err());
+    assert_eq!(
+        zip.by_name("Tour.nightfall-show/showfile.json")
+            .unwrap()
+            .compression(),
+        zip::CompressionMethod::Deflated
+    );
     let destination = tempfile::tempdir().unwrap();
     zip.extract(destination.path()).unwrap();
     let show = destination.path().join("Tour.nightfall-show");
@@ -89,6 +97,8 @@ fn published_showfiles_survive_staging_and_have_current_manifests() {
         .unwrap();
     drop(prepared);
     assert_eq!(path, destination.path().join("Tour.nightfall-show"));
+    assert!(path.join("showfile.json.gz").is_file());
+    assert!(!path.join("showfile.json").exists());
     let loaded = super::super::storage::read_showfile_snapshot_from_path(&path).unwrap();
     assert_eq!(
         loaded.settings.audio_device.as_deref(),

@@ -280,6 +280,27 @@ test("shows grouped showfile actions in the status bar menu", async ({
   await showfilePathDropZone.click();
   const fileChooser = await fileChooserPromise;
   expect(fileChooser.isMultiple()).toBe(false);
+  // Select the compressed snapshot even when folder enumeration puts other files first.
+  await dialog.locator('input[type="file"]').evaluate((input) => {
+    const transfer = new DataTransfer();
+    for (const name of [
+      "showfile-manifest.json",
+      "asset.bin",
+      "showfile.json",
+      "showfile.json.gz",
+    ]) {
+      const file = new File(["test"], name);
+      Object.defineProperty(file, "webkitRelativePath", {
+        value: `Tour.nightfall-show/${name}`,
+      });
+      transfer.items.add(file);
+    }
+    (input as HTMLInputElement).files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(showfilePathDropZone).toContainText(
+    "Tour.nightfall-show/showfile.json.gz",
+  );
   await expect(dialog.getByLabel("Timelines import policy")).toHaveValue(
     "Skip",
   );

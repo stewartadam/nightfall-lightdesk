@@ -520,7 +520,7 @@ fn world_factory_named_empty_bootstrap_persists_initial_draft() {
         root.path()
             .join("drafts")
             .join("test2.nightfall-show")
-            .join("showfile.json")
+            .join("showfile.json.gz")
             .is_file(),
         "expected initial draft snapshot for named showfile"
     );
@@ -1504,10 +1504,8 @@ fn named_sample_show_is_standalone_and_recoverable() {
             .all(|generator| !generator.state.is_active)
     );
     let draft = root.path().join("drafts/Sample Tour.nightfall-show");
-    let snapshot: nightfall_showfile::ShowfileSnapshot = serde_json::from_slice(
-        &std::fs::read(draft.join("showfile.json")).expect("read initial sample draft"),
-    )
-    .expect("decode sample draft");
+    let snapshot = crate::systems::showfile_events::read_showfile_snapshot_from_path(&draft)
+        .expect("decode sample draft");
     assert!(!snapshot.fixtures.is_empty());
     assert!(!snapshot.cues.is_empty());
     assert!(!snapshot.clips.is_empty());
@@ -1730,7 +1728,7 @@ fn unnamed_sample_show_installs_bundled_audio_before_runtime() {
     crate::world_factory::persist_pending_sample_draft(&mut app)
         .expect("install runtime sample assets");
     let draft = root.path().join("drafts/default.nightfall-show");
-    assert!(draft.join("showfile.json").is_file());
+    assert!(draft.join("showfile.json.gz").is_file());
     for asset in crate::sample_data::SAMPLE_AUDIO {
         assert_eq!(
             std::fs::read(draft.join(asset.relative_path)).expect("installed sample audio"),

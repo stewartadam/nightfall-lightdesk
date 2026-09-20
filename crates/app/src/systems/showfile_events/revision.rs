@@ -35,12 +35,12 @@ pub(super) fn resolve_showfile_revision_directory(
         })
         .ok_or_else(|| format!("showfile revision not found: {revision_name}"))?;
 
-    let revision_snapshot = revision_dir.join(SHOWFILE_SNAPSHOT_FILENAME);
+    let revision_snapshot = showfile_snapshot_path_in_dir(&revision_dir);
     if !revision_snapshot.is_file() {
         return Err(format!(
-            "showfile revision {} does not contain {}",
+            "showfile revision {} does not contain a snapshot ({})",
             revision_dir.display(),
-            SHOWFILE_SNAPSHOT_FILENAME
+            revision_snapshot.display()
         ));
     }
     Ok(revision_dir)

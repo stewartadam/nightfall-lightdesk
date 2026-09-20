@@ -13,6 +13,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import {
+  readShowfileJsonSync,
+  resolveShowfileSnapshotPath,
+} from "../../scripts/showfile-storage.mjs";
 
 import { type BackendSlot, expect, test } from "./playwright-fixtures";
 
@@ -48,9 +52,11 @@ async function verifyIsolatedBackendSlot(
     "default.nightfall-show",
     "showfile.json",
   );
-  await expect.poll(() => existsSync(defaultShowfilePath)).toBe(true);
+  await expect
+    .poll(() => existsSync(resolveShowfileSnapshotPath(defaultShowfilePath)))
+    .toBe(true);
   const settings = JSON.parse(
-    readFileSync(defaultShowfilePath, "utf8"),
+    readShowfileJsonSync(defaultShowfilePath),
   ).settings;
   expect(settings.network_input_enabled).toBe(false);
   expect(settings.network_output_enabled).toBe(false);

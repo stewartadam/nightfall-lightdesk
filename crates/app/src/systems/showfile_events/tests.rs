@@ -523,7 +523,7 @@ fn showfile_manifest_rejects_snapshot_size_drift() {
 
     let json = serialize_showfile_snapshot_json(&snapshot).expect("serialize snapshot");
     std::fs::write(
-        show_dir.join(SHOWFILE_SNAPSHOT_FILENAME),
+        showfile_snapshot_path_in_dir(&show_dir),
         format!("{json}\n"),
     )
     .expect("change snapshot size");
@@ -550,7 +550,7 @@ fn showfile_manifest_rejects_snapshot_modification_time_drift() {
 
     let snapshot_file = std::fs::OpenOptions::new()
         .write(true)
-        .open(show_dir.join(SHOWFILE_SNAPSHOT_FILENAME))
+        .open(showfile_snapshot_path_in_dir(&show_dir))
         .expect("open snapshot metadata");
     snapshot_file
         .set_times(

@@ -412,6 +412,12 @@ Check rendered pages and local links after edits. The generated `docs/book/` and
 
 ### Validating showfile restore idempotency
 
+Saved snapshots and working drafts use `showfile.json.gz` (gzip-compressed JSON).
+The discovery manifest remains plain JSON. To inspect a snapshot, run
+`gzip -dc /path/to/showfile.json.gz | jq .`. Show folders containing plain
+`showfile.json` can also be loaded or imported; ZIP exports include plain JSON
+and let the ZIP container compress it. Saving a loaded show writes gzip storage.
+
 Use this flow to validate that `save -> restart -> load -> save` restores identical persisted state:
 
 If your default app data directory is not writable in your environment, set

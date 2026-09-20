@@ -4926,6 +4926,7 @@ dependencies = [
  "bevy",
  "bevy_state",
  "clonetree",
+ "flate2",
  "gdt-cpus",
  "jiff",
  "moonshine-kind",

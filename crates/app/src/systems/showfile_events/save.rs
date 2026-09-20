@@ -58,6 +58,7 @@ pub(super) fn save_showfile(
             LEGACY_SHOWFILE_DRAFT_METADATA_FILENAME,
             SHOWFILE_MANIFEST_FILENAME,
             SHOWFILE_SNAPSHOT_FILENAME,
+            SHOWFILE_COMPRESSED_SNAPSHOT_FILENAME,
         ],
     )?;
     write_showfile_snapshot_with_manifest_to_dir(

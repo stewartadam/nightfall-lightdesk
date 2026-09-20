@@ -26,6 +26,7 @@ bevy.workspace = true
 bevy_state.workspace = true
 jiff.workspace = true
 clonetree = "0.0.2"
+flate2 = "1.1"
 moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-config = { path = "../config" }

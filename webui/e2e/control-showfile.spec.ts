@@ -6,6 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
@@ -91,6 +94,21 @@ test("fader assignments survive saving and loading a showfile", async ({
     }),
   );
   expect(saved.outcome.type).toBe("Succeeded");
+  const savedDirectory = join(
+    backendSlot.dataDir,
+    "fader-roundtrip.nightfall-show",
+  );
+  const compressed = readFileSync(join(savedDirectory, "showfile.json.gz"));
+  expect([...compressed.subarray(0, 2)]).toEqual([0x1f, 0x8b]);
+  expect(existsSync(join(savedDirectory, "showfile.json"))).toBe(false);
+  const persisted = JSON.parse(gunzipSync(compressed).toString("utf8"));
+  const response = await page.request.get(
+    "/api/showfiles/current/showfile.json",
+  );
+  expect(response.ok()).toBe(true);
+  expect((await response.json()).controlAssignments).toEqual(
+    persisted.controlAssignments,
+  );
   const cleared = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
       module: "ControlCommand",

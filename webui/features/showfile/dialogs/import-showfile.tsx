@@ -52,6 +52,7 @@ const REPLACE_ONLY_POLICY_OPTIONS: ShowfileImportPolicy[] = [
   ShowfileImportPolicy.Overwrite,
 ];
 const SHOWFILE_SNAPSHOT_FILENAME = "showfile.json";
+const SHOWFILE_COMPRESSED_SNAPSHOT_FILENAME = "showfile.json.gz";
 
 const IMPORT_ROWS: Array<{
   key: ImportPolicyKey;
@@ -157,6 +158,9 @@ export function ShowfileImportModal(props: ShowfileImportModalProps) {
   const pathFromFiles = (files: File[]): string | undefined => {
     const nativeFiles = files as NativePathFile[];
     const snapshotFile =
+      nativeFiles.find(
+        (file) => file.name === SHOWFILE_COMPRESSED_SNAPSHOT_FILENAME,
+      ) ??
       nativeFiles.find((file) => file.name === SHOWFILE_SNAPSHOT_FILENAME) ??
       nativeFiles[0];
     if (!snapshotFile) return undefined;
