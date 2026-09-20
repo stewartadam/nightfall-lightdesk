@@ -601,6 +601,21 @@ test("embedded demo edits and plays the sample without backend traffic", async (
 test("embedded fixture decodes and plays generated timeline audio", async ({
   page,
 }, testInfo) => {
+  await page.addInitScript(() => {
+    (window as any).demoAudioSeekCount = 0;
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "currentTime",
+    )!;
+    Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+      ...descriptor,
+      /** Count explicit media seeks while preserving real browser playback. */
+      set(value: number) {
+        (window as any).demoAudioSeekCount += 1;
+        descriptor.set!.call(this, value);
+      },
+    });
+  });
   const basePath =
     process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
       ? "/demo/app/"
@@ -628,6 +643,16 @@ test("embedded fixture decodes and plays generated timeline audio", async ({
     await expect
       .poll(() => timelinePositionMs(page, timelineUid))
       .toBeGreaterThan(100);
+    const seekCount = await page.evaluate(
+      () => (window as any).demoAudioSeekCount,
+    );
+    await page.waitForTimeout(750);
+    expect(await page.evaluate(() => (window as any).demoAudioSeekCount)).toBe(
+      seekCount,
+    );
+    await expect
+      .poll(async () => (await readDemoAudioState(page)).positionMs)
+      .toBeGreaterThan(500);
     await surface.screenshot({
       path: testInfo.outputPath("generated-audio-playback.png"),
     });

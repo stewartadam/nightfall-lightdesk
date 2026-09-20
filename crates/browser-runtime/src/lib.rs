@@ -435,6 +435,23 @@ mod tests {
         assert!(directives.contains(&"Load"), "directives: {directives:?}");
         assert!(directives.contains(&"Seek"), "directives: {directives:?}");
         assert!(directives.contains(&"Play"), "directives: {directives:?}");
+
+        for _ in 0..60 {
+            engine.tick_core(16.0);
+        }
+        let repeated_directives = engine
+            .drain_output_core()
+            .iter()
+            .filter(|bytes| {
+                bytes.first() == Some(&nightfall_engine::prelude::DISCRIMINATOR_NON_DROPPABLE)
+            })
+            .map(|bytes| decode_publication(bytes))
+            .filter(|message| message["type"] == "TimelineAudioDirective")
+            .collect::<Vec<_>>();
+        assert!(
+            repeated_directives.is_empty(),
+            "steady playback must not repeatedly seek browser media: {repeated_directives:#?}"
+        );
     }
 
     /// Verify suspended-frame deltas cannot advance the runtime by an unbounded amount.
