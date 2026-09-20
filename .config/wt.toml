@@ -1,5 +1,5 @@
 [aliases]
-done = "git -C {{ primary_worktree_path }} pull && wt remove {{ args }}"
+done = "node {{ worktree_path }}/scripts/worktree-done.mjs {{ args }}"
 kill-backend = "WORKTREE_TARGET={{ managed_worktree_path | default(worktree_path) }} node ./scripts/stop-processes.mjs"
 
 [[pre-start]]

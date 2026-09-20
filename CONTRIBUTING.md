@@ -138,6 +138,15 @@ A clean clone does not include a personal fixture or object library. Put compati
 
 Worktrunk is optional. `wt switch --create <branch>` runs the repository hooks to create the environment, install packages, generate types/assets, and seed build and application data from the main worktree. These hooks assume the general prerequisites above are installed. Check their output before starting services; a background build may still be running.
 
+After merging a GitHub PR, run `wt done` in its worktree, or `wt done <branch>`
+from another worktree. The alias requires an authenticated `gh` CLI and a merged
+PR in the `origin` repository. It fetches the PR's actual target (`main`, `develop`,
+or another branch) and uses it for Worktrunk's normal merge-safety checks without
+changing the repository's default branch or pulling another worktree. Local
+commits that are not integrated into the target keep their branch, and dirty
+worktrees are refused. For branches without merged PRs or manual cleanup, use
+`wt remove` directly. Run `wt done -- --help` for supported options.
+
 Sample MP3s are tracked with Git LFS and packaged as external resources. Run
 `git lfs pull` before packaging or creating a sample show in development. Rust
 compilation does not read or embed these files. Debug backends read the source
