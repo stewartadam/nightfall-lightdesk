@@ -316,6 +316,13 @@ export interface TimelineContextType {
     seek: (position: number) => void;
   };
   track: {
+    addLane: (
+      trackId: string,
+      name: string,
+      parameterType: types.ParameterType,
+    ) => void;
+    removeLane: (trackId: string, laneId: string) => void;
+    onLanesChanged: Accessor<{ trackId: string } | undefined>;
     addTrack: (label?: string) => string | undefined;
     removeTrack: (trackId: string) => void;
     renameTrack: (trackId: string, label: string) => void;

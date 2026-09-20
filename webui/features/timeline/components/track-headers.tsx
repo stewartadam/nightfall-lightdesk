@@ -7,6 +7,7 @@
  */
 
 import { PencilIcon } from "@squidlab/phosphor-solid/pencil";
+import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createSignal, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
@@ -22,6 +23,7 @@ import {
   type TrackReorderPlacement,
   useTimelineContext,
 } from "../context/timeline-context";
+import { AddParameterLaneDialog } from "./add-parameter-lane-dialog";
 
 const log = getLogger(import.meta.url);
 
@@ -33,6 +35,8 @@ export const ConnectedTrackHeaders = () => {
     <TrackHeaders
       tracks={ctx.displayTracks()}
       onAddTrack={ctx.track.addTrack}
+      onAddLane={ctx.track.addLane}
+      onRemoveLane={ctx.track.removeLane}
       onRemoveTrack={ctx.track.removeTrack}
       onRenameTrack={ctx.track.renameTrack}
       onReorderTrack={ctx.track.reorderTrack}
@@ -46,6 +50,12 @@ export const ConnectedTrackHeaders = () => {
 };
 
 type TrackHeadersProps = {
+  onAddLane: (
+    trackId: string,
+    name: string,
+    target: types.ParameterType,
+  ) => void;
+  onRemoveLane: (trackId: string, laneId: string) => void;
   onAddTrack?: () => void;
   onRemoveTrack?: (trackId: string) => void;
   onRenameTrack?: (trackId: string, label: string) => void;
@@ -75,6 +85,7 @@ const TrackHeaders = (props: TrackHeadersProps) => {
     undefined,
   );
   const [draftTrackLabel, setDraftTrackLabel] = createSignal("");
+  const [addingLaneTrackId, setAddingLaneTrackId] = createSignal<string>();
   let suppressNextRenameBlur = false;
 
   /** Focuses the inline rename input after Solid mounts it. */
@@ -341,6 +352,18 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                   />
                 </Show>
                 <div class="flex gap-1 shrink-0">
+                  <ToolbarButton
+                    label="Add parameter lane"
+                    title="Add parameter lane"
+                    style={{ width: "24px", height: "24px" }}
+                    draggable={false}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setAddingLaneTrackId(track.id);
+                    }}
+                  >
+                    <PlusIcon class="h-4 w-4" />
+                  </ToolbarButton>
                   <ToggleToolbarButton
                     pressed={track.muted}
                     label={track.muted ? "Unmute" : "Mute"}
@@ -376,13 +399,21 @@ const TrackHeaders = (props: TrackHeadersProps) => {
               <div class="pl-6">
                 <For each={track.automation_lanes}>
                   {(param) => (
-                    <div class="h-[60px] flex items-center px-2 text-gray-300 text-xs">
+                    <div class="h-[60px] flex items-center gap-1 px-2 text-gray-300 text-xs">
                       <div
-                        class="flex items-center"
+                        class="flex flex-1 min-w-0 items-center"
                         style={{ color: param.color }}
                       >
                         <span class="truncate">{param.name}</span>
                       </div>
+                      <ToolbarButton
+                        label={`Delete parameter lane ${param.name}`}
+                        title={`Delete parameter lane ${param.name}`}
+                        class="shrink-0"
+                        onClick={() => props.onRemoveLane(track.id, param.id)}
+                      >
+                        <TrashIcon class="h-4 w-4" />
+                      </ToolbarButton>
                     </div>
                   )}
                 </For>
@@ -402,6 +433,17 @@ const TrackHeaders = (props: TrackHeadersProps) => {
           + Add Track
         </Button>
       </div>
+      <Show when={addingLaneTrackId()}>
+        {(trackId) => (
+          <AddParameterLaneDialog
+            onCancel={() => setAddingLaneTrackId(undefined)}
+            onSubmit={(name, target) => {
+              props.onAddLane(trackId(), name, target);
+              setAddingLaneTrackId(undefined);
+            }}
+          />
+        )}
+      </Show>
     </div>
   );
 };

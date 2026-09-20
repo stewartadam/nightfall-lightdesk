@@ -73,8 +73,7 @@ pub fn sync_timeline_paused_instance_controls_system(
 
     let mut should_pause_playback = HashMap::new();
     let mut playback_positions = HashMap::new();
-    let mut playback_rates = HashMap::new();
-    let mut playback_rate_changes = HashMap::new();
+    let mut reconstruction_rates = HashMap::new();
     let mut playback_source_positions = HashMap::new();
     let mut playback_sources = HashMap::new();
     let mut playback_states_by_timeline_clip_uid = HashMap::new();
@@ -144,8 +143,7 @@ pub fn sync_timeline_paused_instance_controls_system(
                             .map(|state| state.position)
                             .unwrap_or_else(|| timeline_position.saturating_sub(action_position));
                         if let Some(state) = planned_playback_states.get(&playback_state_key) {
-                            playback_rates.insert(instance_id, state.rate);
-                            playback_rate_changes.insert(instance_id, state.rate_changes.clone());
+                            reconstruction_rates.insert(instance_id, state.rate);
                         }
                         playback_source_positions.insert(
                             instance_id,
@@ -184,7 +182,6 @@ pub fn sync_timeline_paused_instance_controls_system(
             .get(instance_id)
             .copied()
             .unwrap_or(false);
-        let mut playback_rate = playback_rates.get(instance_id).copied();
         let mut playback_position = playback_positions.get(instance_id).copied();
         let mut playback_source_position = playback_source_positions.get(instance_id).copied();
         let mut playback_source = playback_sources.get(instance_id).copied();
@@ -202,10 +199,8 @@ pub fn sync_timeline_paused_instance_controls_system(
             if let Some(state) = owner.and_then(|owner| {
                 playback_states_by_timeline_clip_uid.get(&(timeline_uid, owner.0))
             }) {
-                playback_rate = Some(state.rate);
-                playback_rates.insert(*instance_id, state.rate);
-                playback_rate_changes.insert(*instance_id, state.rate_changes.clone());
                 playback_source_position = Some(source_position);
+                reconstruction_rates.insert(*instance_id, state.rate);
                 playback_source_positions.insert(*instance_id, source_position);
                 playback_position = Some(state.position);
             } else {
@@ -213,20 +208,29 @@ pub fn sync_timeline_paused_instance_controls_system(
             }
             playback_source = Some(clock.source);
         }
+        // Reconstruct the rate property only for explicit seeks, never ordinary playback ticks.
+        let reconstructing = clock
+            .as_ref()
+            .is_some_and(|clock| clock.discontinuity == InstanceClockDiscontinuity::Discontinuous)
+            || playback_source_position.is_some_and(|position| {
+                paused_rates
+                    .source_positions
+                    .get(instance_id)
+                    .is_some_and(|previous| position < *previous)
+            });
+        if reconstructing && let Some(rate) = reconstruction_rates.get(instance_id) {
+            controls.set_rate(*rate);
+            if should_pause {
+                paused_rates.rates.insert(*instance_id, *rate);
+            }
+        }
         if should_pause {
             seen_instances.insert(*instance_id);
-            if let Some(rate) = playback_rate {
-                paused_rates.rates.insert(*instance_id, rate);
-            } else {
-                paused_rates
-                    .rates
-                    .entry(*instance_id)
-                    .or_insert(controls.rate);
-            }
+            paused_rates
+                .rates
+                .entry(*instance_id)
+                .or_insert(controls.rate);
             controls.set_rate(0.0);
-        } else if let Some(rate) = playback_rate {
-            paused_rates.rates.remove(instance_id);
-            controls.set_rate(rate);
         } else if let Some(previous_rate) = paused_rates.rates.remove(instance_id) {
             controls.set_rate(previous_rate);
         }
@@ -241,15 +245,7 @@ pub fn sync_timeline_paused_instance_controls_system(
                     playback_source,
                     source_position,
                     position,
-                    playback_rates
-                        .get(instance_id)
-                        .copied()
-                        .map(f64::from)
-                        .unwrap_or_else(|| controls.effective_rate()),
-                    playback_rate_changes
-                        .get(instance_id)
-                        .map(Vec::as_slice)
-                        .unwrap_or_default(),
+                    controls.effective_rate(),
                     should_pause,
                     &mut paused_rates.source_positions,
                 );
@@ -300,7 +296,6 @@ fn sync_timeline_owned_instance_clock(
     source_position: Duration,
     seed_position: Duration,
     final_rate: f64,
-    rate_changes: &[TimelinePlaybackRateChange],
     should_pause: bool,
     source_positions: &mut HashMap<InstanceId, Duration>,
 ) {
@@ -316,12 +311,8 @@ fn sync_timeline_owned_instance_clock(
         clock.seek_to(seed_position);
         clock.discontinuity = InstanceClockDiscontinuity::Continuous;
     } else if !should_pause && let Some(previous_source_position) = previous_source_position {
-        advance_timeline_owned_instance_clock_between(
-            clock,
-            previous_source_position,
-            source_position,
-            rate_changes,
-        );
+        clock.set_rate(final_rate);
+        clock.advance_by_source_delta(source_position.saturating_sub(previous_source_position));
     }
 
     if should_pause {
@@ -341,51 +332,6 @@ fn set_timeline_owned_instance_clock_rate(clock: &mut InstanceClock, rate: f64) 
     clock.previous_position = previous_position;
     clock.delta = delta;
     clock.discontinuity = discontinuity;
-}
-
-/// Advances a clock between two raw timeline source positions, splitting at rate changes.
-fn advance_timeline_owned_instance_clock_between(
-    clock: &mut InstanceClock,
-    previous_source_position: Duration,
-    source_position: Duration,
-    rate_changes: &[TimelinePlaybackRateChange],
-) {
-    if source_position <= previous_source_position {
-        clock.previous_position = clock.position;
-        clock.delta = Duration::ZERO;
-        clock.discontinuity = InstanceClockDiscontinuity::Continuous;
-        return;
-    }
-
-    let previous_playback_position = clock.position;
-    let mut cursor = previous_source_position;
-    let mut active_rate = timeline_rate_at_source_position(rate_changes, previous_source_position);
-    for change in rate_changes.iter().filter(|change| {
-        change.source_position > previous_source_position
-            && change.source_position <= source_position
-    }) {
-        clock.set_rate(active_rate);
-        clock.advance_by_source_delta(change.source_position.saturating_sub(cursor));
-        cursor = change.source_position;
-        active_rate = f64::from(change.rate);
-    }
-    clock.set_rate(active_rate);
-    clock.advance_by_source_delta(source_position.saturating_sub(cursor));
-    clock.previous_position = previous_playback_position;
-    clock.delta = clock.position.saturating_sub(previous_playback_position);
-}
-
-/// Returns the active playback rate at a raw timeline source position.
-fn timeline_rate_at_source_position(
-    rate_changes: &[TimelinePlaybackRateChange],
-    source_position: Duration,
-) -> f64 {
-    rate_changes
-        .iter()
-        .filter(|change| change.source_position <= source_position)
-        .map(|change| f64::from(change.rate))
-        .next_back()
-        .unwrap_or(1.0)
 }
 
 /// Resolver used by timeline clock sync when only clip source identity matters.
@@ -408,14 +354,6 @@ impl TimelinePlaybackSourceResolver for TimelineSyncPlannerResolver {
 struct TimelinePlaybackSyncState {
     position: Duration,
     rate: f32,
-    rate_changes: Vec<TimelinePlaybackRateChange>,
-}
-
-/// Authored rate change resolved to a raw timeline source position.
-#[derive(Clone)]
-struct TimelinePlaybackRateChange {
-    source_position: Duration,
-    rate: f32,
 }
 
 /// Evaluates a timeline into source-local states for active clip-owned instances.
@@ -436,21 +374,9 @@ fn planned_clip_playback_sync_states(
     .into_iter()
     .filter(|playback| !playback.is_noop_at(timeline_position))
     .map(|playback| {
-        let mut rate_changes = playback
-            .rate_changes
-            .iter()
-            .map(|change| TimelinePlaybackRateChange {
-                source_position: change
-                    .timeline_position
-                    .saturating_sub(playback.started_at_timeline),
-                rate: change.rate_multiplier(),
-            })
-            .collect::<Vec<_>>();
-        rate_changes.sort_by_key(|change| change.source_position);
         let state = TimelinePlaybackSyncState {
             position: playback.playback_position_at(timeline_position),
             rate: playback.playback_rate_at(timeline_position),
-            rate_changes,
         };
         ((playback.owner.track_id, playback.owner.action_id), state)
     })

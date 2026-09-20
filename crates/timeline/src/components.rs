@@ -173,7 +173,7 @@ impl MaterializedTimeline {
     }
 
     /// Process automation lanes and calculate current values based on timeline position
-    /// Returns a map of all parameters that changed value
+    /// Returns changed values and active rate lanes, which must also reach newly started clips.
     pub fn process_parameters(
         &mut self,
         timeline_time: Duration,
@@ -236,15 +236,13 @@ impl MaterializedTimeline {
 
                 // Check if the value has changed significantly
                 let param_key = (track.id.clone(), param.id.clone());
-                let previous_value = self
-                    .parameter_values
-                    .get(&param_key)
-                    .copied()
-                    .unwrap_or(0.0);
+                let previous_value = self.parameter_values.get(&param_key).copied();
 
                 // If the value changed by more than a small threshold, consider it changed
                 // This prevents tiny floating point changes from triggering updates
-                if (previous_value - value).abs() > 0.001 {
+                if previous_value.is_none_or(|previous| (previous - value).abs() > 0.001)
+                    || matches!(param.parameter_type, ParameterType::RateMaster(_))
+                {
                     self.parameter_values.insert(param_key.clone(), value);
                     changed_parameters.insert(param_key, value);
                 }
