@@ -71,11 +71,19 @@ impl PendingWorldSwap {
             } => {
                 if *include_sample_data {
                     WorldBootstrap::SampleData {
-                        showfile_name: showfile_name.clone(),
+                        showfile_name: Some(
+                            showfile_name
+                                .clone()
+                                .unwrap_or_else(|| "default".to_string()),
+                        ),
                     }
                 } else {
                     WorldBootstrap::Empty {
-                        showfile_name: showfile_name.clone(),
+                        showfile_name: Some(
+                            showfile_name
+                                .clone()
+                                .unwrap_or_else(|| "default".to_string()),
+                        ),
                     }
                 }
             }

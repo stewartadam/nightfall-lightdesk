@@ -467,6 +467,38 @@ fn world_factory_named_empty_bootstrap_starts_ready() {
     nightfall::set_nightfall_data_dir(None);
 }
 
+/// New empty and sample worlds cannot replace saved shows or previously created drafts.
+#[test]
+fn new_world_preserves_existing_showfiles() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().unwrap();
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    for parent in [root.path().to_path_buf(), root.path().join("drafts")] {
+        let existing = parent.join("Tour.nightfall-show");
+        std::fs::create_dir_all(&existing).unwrap();
+        let snapshot = existing.join("showfile.json");
+        std::fs::write(&snapshot, b"existing show contents").unwrap();
+        for bootstrap in [
+            WorldBootstrap::Empty {
+                showfile_name: Some("Tour".to_string()),
+            },
+            WorldBootstrap::SampleData {
+                showfile_name: Some(" tour ".to_string()),
+            },
+        ] {
+            assert!(factory.build(bootstrap).is_err());
+            assert_eq!(std::fs::read(&snapshot).unwrap(), b"existing show contents");
+        }
+        std::fs::remove_dir_all(existing).unwrap();
+    }
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
 /// Verifies named empty bootstraps leave a recoverable draft for restart flows.
 #[test]
 fn world_factory_named_empty_bootstrap_persists_initial_draft() {

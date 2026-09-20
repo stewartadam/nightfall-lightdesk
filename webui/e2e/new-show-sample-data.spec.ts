@@ -9,7 +9,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
 
 /** Creates sample data from startup, checks its draft, and verifies the next new show defaults empty. */
 test("new show optionally includes standalone sample data", async ({
@@ -36,7 +35,8 @@ test("new show optionally includes standalone sample data", async ({
   await samples.check();
   await page.screenshot({ path: testInfo.outputPath("new-show-samples.png") });
   await dialog.getByRole("button", { name: "Create Show" }).click();
-  await waitForDockviewApp(page);
+  await expect(dialog).not.toBeVisible();
+  await expect(picker).not.toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(
@@ -206,6 +206,40 @@ test("new show optionally includes standalone sample data", async ({
   await page.getByTitle("Menu", { exact: true }).click();
   await page.getByRole("button", { name: /New Showfile/ }).click();
   await expect(samples).not.toBeChecked();
+  const originalDraft = readFileSync(
+    join(
+      backendSlot.dataDir,
+      "drafts",
+      "Sample Tour.nightfall-show",
+      "showfile.json",
+    ),
+  );
+  await dialog.getByLabel("Show name").fill(" sample tour ");
+  await dialog.getByRole("button", { name: "Create Show" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("already exists");
+  await page.screenshot({
+    path: testInfo.outputPath("duplicate-show-name.png"),
+  });
+  const duplicateResult = await page.evaluate(() =>
+    (window as any).appStores.sendAndAwait({
+      module: "DeskCommand",
+      command: {
+        type: "NewNamedShowfile",
+        data: { name: "Sample Tour", includeSampleData: false },
+      },
+    }),
+  );
+  expect(duplicateResult.outcome.type).toBe("Failed");
+  expect(
+    readFileSync(
+      join(
+        backendSlot.dataDir,
+        "drafts",
+        "Sample Tour.nightfall-show",
+        "showfile.json",
+      ),
+    ),
+  ).toEqual(originalDraft);
   await dialog.getByLabel("Show name").fill("Empty Tour");
   await dialog.getByRole("button", { name: "Create Show" }).click();
   await expect

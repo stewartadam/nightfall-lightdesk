@@ -301,6 +301,9 @@ fn save_draft_showfile_snapshot(
     draft_snapshot_hash: u64,
     asset_source: DraftAssetSource,
 ) -> Result<(), String> {
+    if matches!(asset_source, DraftAssetSource::InitialAssets(_)) {
+        super::paths::validate_new_showfile_name(showfile_name)?;
+    }
     let draft_dir = showfile_draft_dir_path(showfile_name)?;
     let draft_parent = draft_dir
         .parent()
@@ -416,7 +419,29 @@ fn save_draft_showfile_snapshot(
         );
     }
 
-    replace_showfile_dir_with_temp(&temp_dir, &draft_dir)?;
+    if matches!(asset_source, DraftAssetSource::InitialAssets(_)) {
+        // Reserve the destination exclusively; never remove another show's directory.
+        let mut reserved_destination = false;
+        let publish = (|| -> Result<(), String> {
+            super::paths::validate_new_showfile_name(showfile_name)?;
+            std::fs::create_dir(&draft_dir)
+                .map_err(|error| format!("Cannot create new show: {error}"))?;
+            reserved_destination = true;
+            for entry in std::fs::read_dir(&temp_dir).map_err(|error| error.to_string())? {
+                let entry = entry.map_err(|error| error.to_string())?;
+                std::fs::rename(entry.path(), draft_dir.join(entry.file_name()))
+                    .map_err(|error| format!("Cannot install new show: {error}"))?;
+            }
+            Ok(())
+        })();
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        if publish.is_err() && reserved_destination {
+            let _ = std::fs::remove_dir_all(&draft_dir);
+        }
+        publish?;
+    } else {
+        replace_showfile_dir_with_temp(&temp_dir, &draft_dir)?;
+    }
     nightfall::set_active_show_data_dir(draft_dir.clone());
 
     tracing::debug!("Wrote draft showfile to {}", draft_dir.display());

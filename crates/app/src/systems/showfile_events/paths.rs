@@ -154,3 +154,60 @@ pub(super) fn showfile_root_dir_path() -> Result<PathBuf, String> {
     nightfall::nightfall_data_dir()
         .ok_or_else(|| "could not determine Nightfall app data directory".to_string())
 }
+
+/// Reject names already occupied by saved shows or working drafts, including case variants.
+pub(super) fn validate_new_showfile_name(name: Option<&str>) -> Result<(), String> {
+    validate_new_showfile_name_in_root(&showfile_root_dir_path()?, name)
+}
+
+/// Check both storage locations without relying on readable snapshot or manifest contents.
+fn validate_new_showfile_name_in_root(root: &Path, name: Option<&str>) -> Result<(), String> {
+    let folder = showfile_folder_name(name)?.to_lowercase();
+    for directory in [root.to_path_buf(), root.join(SHOWFILE_DRAFTS_DIR)] {
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("Cannot check existing show names: {error}")),
+        };
+        for entry in entries {
+            let entry =
+                entry.map_err(|error| format!("Cannot check existing show names: {error}"))?;
+            if entry.file_name().to_string_lossy().to_lowercase() == folder {
+                return Err(format!(
+                    "A show named \"{}\" already exists. Choose a different name.",
+                    showfile_name_stem(name)?
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+
+    /// Saved folders and orphan drafts reserve names regardless of casing or snapshot validity.
+    #[test]
+    fn new_names_reject_saved_and_draft_collisions() {
+        let root = tempfile::tempdir().unwrap();
+        for parent in [
+            root.path().to_path_buf(),
+            root.path().join(SHOWFILE_DRAFTS_DIR),
+        ] {
+            std::fs::create_dir_all(&parent).unwrap();
+            let existing = parent.join("Tour.nightfall-show");
+            std::fs::create_dir(&existing).unwrap();
+            std::fs::write(existing.join("showfile.json"), b"preserve me").unwrap();
+            for name in ["Tour", " tour ", "Tour.nightfall-show"] {
+                assert!(validate_new_showfile_name_in_root(root.path(), Some(name)).is_err());
+            }
+            assert!(validate_new_showfile_name_in_root(root.path(), Some("Other")).is_ok());
+            assert_eq!(
+                std::fs::read(existing.join("showfile.json")).unwrap(),
+                b"preserve me"
+            );
+            std::fs::remove_dir_all(existing).unwrap();
+        }
+    }
+}
