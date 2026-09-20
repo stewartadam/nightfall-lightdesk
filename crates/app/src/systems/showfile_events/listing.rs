@@ -15,8 +15,8 @@ use super::{
     manifest::read_current_showfile_manifest_from_dir,
     paths::{
         DEFAULT_SHOWFILE_NAME, SHOWFILE_DRAFTS_DIR, SHOWFILE_FOLDER_EXTENSION,
-        SHOWFILE_SNAPSHOT_FILENAME, showfile_draft_dir_path_in_root, showfile_folder_name,
-        showfile_name_from_dir, showfile_name_stem,
+        showfile_draft_dir_path_in_root, showfile_folder_name, showfile_name_from_dir,
+        showfile_name_stem, showfile_snapshot_path_in_dir,
     },
 };
 
@@ -110,7 +110,7 @@ pub(super) fn list_available_showfiles_in_root(
             continue;
         }
 
-        let snapshot_path = path.join(SHOWFILE_SNAPSHOT_FILENAME);
+        let snapshot_path = showfile_snapshot_path_in_dir(&path);
         if !snapshot_path.is_file() {
             continue;
         }
@@ -154,7 +154,7 @@ pub(super) fn available_showfile_draft_for_name_in_root(
 ) -> Result<Option<AvailableShowfileDraft>, String> {
     let name = showfile_name_stem(Some(requested_name))?;
     let saved_dir = root.join(showfile_folder_name(Some(&name))?);
-    let saved_snapshot_path = saved_dir.join(SHOWFILE_SNAPSHOT_FILENAME);
+    let saved_snapshot_path = showfile_snapshot_path_in_dir(&saved_dir);
     let saved_modified_ms = snapshot_modified_ms(&saved_snapshot_path);
     let saved_manifest = read_current_showfile_manifest_from_dir(&saved_dir).ok();
     available_showfile_draft_in_root(
@@ -190,7 +190,7 @@ fn available_showfile_draft_from_dir(
     saved_state_hash: Option<&str>,
     saved_modified_ms: Option<u64>,
 ) -> Result<Option<AvailableShowfileDraft>, String> {
-    let snapshot_path = draft_dir.join(SHOWFILE_SNAPSHOT_FILENAME);
+    let snapshot_path = showfile_snapshot_path_in_dir(draft_dir);
     if !snapshot_path.is_file() {
         return Ok(None);
     }
@@ -311,7 +311,7 @@ fn list_showfile_revisions(show_data_dir: &Path) -> Result<Vec<AvailableShowfile
 
     let mut revisions = Vec::with_capacity(revision_dirs.len());
     for revision_dir in revision_dirs {
-        let snapshot_path = revision_dir.join(SHOWFILE_SNAPSHOT_FILENAME);
+        let snapshot_path = showfile_snapshot_path_in_dir(&revision_dir);
         if !snapshot_path.is_file() {
             continue;
         }

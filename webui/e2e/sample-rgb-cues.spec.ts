@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readShowfileJsonSync } from "../../scripts/showfile-storage.mjs";
 import { expect, test } from "./playwright-fixtures";
 
 /** Checks persisted sample RGB values, removed examples, and visible clip names. */
@@ -38,12 +38,11 @@ test("sample RGB cues have the requested values and labels", async ({
     )
     .toBeGreaterThan(0);
   const snapshot = JSON.parse(
-    readFileSync(
+    readShowfileJsonSync(
       join(
         backendSlot.dataDir,
         "drafts/RGB Samples.nightfall-show/showfile.json",
       ),
-      "utf8",
     ),
   );
   expect(snapshot.clips.some((clip: any) => clip.identifiers.id === 9)).toBe(

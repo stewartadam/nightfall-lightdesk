@@ -18,7 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-
+import { gzipSync } from "node:zlib";
 import {
   clonePlaywrightDataDir,
   disablePlaywrightShowfileTransports,
@@ -26,6 +26,7 @@ import {
   playwrightSeedDataAvailable,
   preparePlaywrightDataDir,
 } from "./nightfall-test-data-dir.mjs";
+import { readShowfileJsonSync } from "./showfile-storage.mjs";
 import { defaultNightfallDataDir } from "./worktree-data-dir.mjs";
 
 /** Writes a small file beneath the requested seed directory. */
@@ -69,6 +70,42 @@ test("disabled Playwright transports do not rewrite showfiles", () => {
     assert.equal(readFileSync(showfilePath, "utf8"), sanitizedContents);
   } finally {
     rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+/** Compressed seeds are discovered and sanitized without losing their storage encoding. */
+test("compressed Playwright seeds remain compressed and disable transports", () => {
+  const root = mkdtempSync(join(tmpdir(), "nightfall-gzip-seed-"));
+  let runDataDir;
+  try {
+    for (const name of ["default.nightfall-show", "sample.nightfall-show"]) {
+      writeSeedFile(root, name, "showfile.json");
+      const path = join(root, name, "showfile.json");
+      writeFileSync(`${path}.gz`, gzipSync(readFileSync(path)));
+      rmSync(path);
+    }
+    assert.equal(playwrightSeedDataAvailable(root), true);
+    ({ runDataDir } = preparePlaywrightDataDir(root));
+    const path = join(runDataDir, "default.nightfall-show", "showfile.json");
+    const settings = JSON.parse(readShowfileJsonSync(path)).settings;
+    assert.equal(settings.network_input_enabled, false);
+    assert.equal(settings.network_output_enabled, false);
+    assert.equal(settings.usb_output_enabled, false);
+    assert.equal(existsSync(path), false);
+    const before = readFileSync(`${path}.gz`);
+    assert.equal(disablePlaywrightShowfileTransports(path), false);
+    assert.deepEqual(readFileSync(`${path}.gz`), before);
+    assert.equal(
+      JSON.parse(
+        readShowfileJsonSync(
+          join(root, "default.nightfall-show", "showfile.json"),
+        ),
+      ).settings.network_output_enabled,
+      true,
+    );
+  } finally {
+    if (runDataDir) rmSync(runDataDir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

@@ -280,6 +280,27 @@ test("shows grouped showfile actions in the status bar menu", async ({
   await showfilePathDropZone.click();
   const fileChooser = await fileChooserPromise;
   expect(fileChooser.isMultiple()).toBe(false);
+  // Select the compressed snapshot even when folder enumeration puts other files first.
+  await dialog.locator('input[type="file"]').evaluate((input) => {
+    const transfer = new DataTransfer();
+    for (const name of [
+      "showfile-manifest.json",
+      "asset.bin",
+      "showfile.json",
+      "showfile.json.gz",
+    ]) {
+      const file = new File(["test"], name);
+      Object.defineProperty(file, "webkitRelativePath", {
+        value: `Tour.nightfall-show/${name}`,
+      });
+      transfer.items.add(file);
+    }
+    (input as HTMLInputElement).files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(showfilePathDropZone).toContainText(
+    "Tour.nightfall-show/showfile.json.gz",
+  );
   await expect(dialog.getByLabel("Timelines import policy")).toHaveValue(
     "Skip",
   );
@@ -1075,6 +1096,54 @@ test("keeps saved startup showfile by discarding draft and loading saved copy", 
       }),
     )
     .toBe(true);
+});
+
+/** Shows the backend size-limit reason when a selected gzip snapshot cannot be loaded. */
+test("explains the 1 GiB limit when opening an oversized showfile", async ({
+  page,
+}, testInfo) => {
+  const message =
+    "Showfile /tmp/oversized.nightfall-show/showfile.json.gz is too large. The maximum uncompressed snapshot size is 1 GiB.";
+  await disableE2eStartupAutoOpen(page);
+  await captureWorkerSends(page, {
+    commandResults: {
+      LoadNamedShowfile: {
+        type: "Failed",
+        data: { code: "showfile.world_swap_failed", message, details: null },
+      },
+    },
+  });
+  await routeShowfileDiscovery(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        showfiles: [
+          {
+            name: "oversized",
+            path: "/tmp/oversized.nightfall-show",
+            hasSavedSnapshot: true,
+            modifiedMs: 1_700_000_000_000,
+            revisions: [],
+          },
+        ],
+      }),
+    });
+  });
+  await page.goto("/?e2e=1&startup:bypassBackendReadiness=1");
+  const dialog = page.getByRole("dialog", { name: "Open Showfile" });
+  await dialog
+    .getByRole("button", { name: "Show revisions for oversized" })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Open saved showfile oversized" })
+    .click();
+  await expect(dialog.getByRole("alert")).toHaveText(`${message}Retry`);
+  await expect(
+    dialog.getByRole("button", { name: "Retry", exact: true }),
+  ).toBeVisible();
+  await dialog.screenshot({
+    path: testInfo.outputPath("oversized-showfile-error.png"),
+  });
 });
 
 /** Verifies saved startup recovery restores the prompt when backend commands fail. */
