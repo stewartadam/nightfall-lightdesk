@@ -121,6 +121,12 @@ npm run wasm-build:dev
 cargo build --workspace --locked
 ```
 
+If npm lifecycle scripts are disabled, run `npm run postinstall` after `npm ci`
+to apply the required dependency patches. This also invalidates Vite's optimized
+dependency cache; restart any running Vite server afterward. Worktrunk's install
+hook runs this patch step explicitly, including when `ignore-scripts=true`.
+See [dependency patches](patches/README.md) for details.
+
 Production web and Tauri builds generate dependency notices. Install their
 pinned collector with `cargo install cargo-about --locked --version 0.8.4`.
 See [distribution notices](docs/src/developer-reference/distribution-notices.md)
