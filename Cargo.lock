@@ -5752,6 +5752,7 @@ dependencies = [
  "bevy_app",
  "bevy_diagnostic",
  "bevy_ecs",
+ "minicbor-serde",
  "moonshine-kind",
  "nightfall",
  "nightfall-actions",

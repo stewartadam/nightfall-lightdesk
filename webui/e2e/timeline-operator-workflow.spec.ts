@@ -142,6 +142,68 @@ test("parameter lane controls persist additions and deletions", async ({
     .toEqual(["replacement-variable"]);
 });
 
+/** Verifies a published clip target remains editable after adding control points. */
+test("clip rate lane control points persist after backend publication", async ({
+  page,
+}, testInfo) => {
+  await openFirstTimeline(page);
+  const clipUid = "50efca4267444a0bbed89a0f69930b9e";
+  await page.evaluate((uid) => {
+    const stores = (window as any).appStores;
+    stores.clips.set({
+      ...stores.clips.get(),
+      [uid]: [
+        {
+          identifiers: { id: 9201, uid, label: "Rate Target" },
+          priority: 0,
+          options: { auto_release: false, deactivate_on_sequence_end: false },
+        },
+        false,
+      ],
+    });
+  }, clipUid);
+  const header = page.locator(
+    `[data-timeline-track-header="true"][data-track-id="${BASE_TRACK_ID}"]`,
+  );
+  await header
+    .getByRole("button", { name: "Add parameter lane", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Add parameter lane" });
+  await dialog.getByLabel("Parameter type").selectOption("RateMaster");
+  await dialog.getByRole("combobox", { name: /^Clip/ }).selectOption(clipUid);
+  await dialog.getByRole("button", { name: "Add lane", exact: true }).click();
+  /** Reads authoritative lane data delivered by the backend. */
+  const readLane = () =>
+    page.evaluate(
+      (uid) =>
+        (window as any).appStores.timelines
+          .get()
+          [uid].tracks[0].automation_lanes.find(
+            (lane: any) => lane.parameter_type.type === "RateMaster",
+          ),
+      TIMELINE_UID,
+    );
+  await expect
+    .poll(async () => (await readLane())?.parameter_type.data)
+    .toBe(clipUid);
+  const laneId = (await readLane()).id;
+  const lane = page.locator(
+    `[data-timeline-automation-lane="true"][data-automationLane-id="${laneId}"]`,
+  );
+  await lane.click({ position: { x: 80, y: 20 } });
+  await expect.poll(async () => (await readLane()).points.length).toBe(1);
+  await lane.click({ position: { x: 160, y: 40 } });
+  await expect.poll(async () => (await readLane()).points.length).toBe(2);
+  await expect(lane.locator(".automation-point")).toHaveCount(2);
+  await page.reload();
+  await waitForDockviewApp(page);
+  await openFirstTimeline(page);
+  await expect(lane.locator(".automation-point")).toHaveCount(2);
+  await page.screenshot({
+    path: testInfo.outputPath("clip-rate-control-points.png"),
+  });
+});
+
 test.describe.configure({ timeout: 180_000 });
 
 /** Starts every operator workflow from the same exact backend graph. */
