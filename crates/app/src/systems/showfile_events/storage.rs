@@ -25,6 +25,19 @@ use super::{
     },
 };
 
+/// Maximum decoded JSON size for one snapshot, shared by plain files and all gzip members.
+const MAX_SHOWFILE_JSON_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// Describe oversized snapshots in user-facing units for load, import, and save errors.
+fn showfile_size_limit_error(filename: &str, max_bytes: u64) -> String {
+    let limit = if max_bytes == MAX_SHOWFILE_JSON_BYTES {
+        "1 GiB".to_string()
+    } else {
+        format!("{max_bytes} bytes")
+    };
+    format!("Showfile {filename} is too large. The maximum uncompressed snapshot size is {limit}.")
+}
+
 /// Replace a show-data directory with a prepared temporary directory.
 pub(super) fn replace_showfile_dir_with_temp(
     temp_dir: &Path,
@@ -114,6 +127,12 @@ fn write_snapshot_to_dir(
     };
     let path = show_data_dir.join(filename);
     let json = serialize_showfile_snapshot_json(showfile_snapshot)?;
+    if json.len() as u64 > MAX_SHOWFILE_JSON_BYTES {
+        return Err(showfile_size_limit_error(
+            &path.display().to_string(),
+            MAX_SHOWFILE_JSON_BYTES,
+        ));
+    }
     let write = || -> Result<(), std::io::Error> {
         let mut temporary = tempfile::NamedTempFile::new_in(show_data_dir)?;
         if compressed {
@@ -176,23 +195,42 @@ pub(crate) fn read_showfile_snapshot_from_path(path: &Path) -> Result<ShowfileSn
     parse_showfile_snapshot_json(&json, &filename)
 }
 
-/// Decode stored gzip or plain interchange JSON, validating the entire gzip stream and checksum.
+/// Decode bounded gzip or plain JSON, validating the complete stream and checksum when within the limit.
 pub(super) fn read_showfile_json_from_path(path: &Path) -> Result<String, String> {
     let path = showfile_snapshot_path_from_path(path);
     let filename = path.display().to_string();
     let file = std::fs::File::open(&path)
         .map_err(|error| format!("failed to open showfile {}: {}", filename, error))?;
-    let mut reader: Box<dyn Read> = if path.extension().is_some_and(|extension| extension == "gz") {
+    let reader: Box<dyn Read> = if path.extension().is_some_and(|extension| extension == "gz") {
         Box::new(MultiGzDecoder::new(file))
     } else {
         Box::new(file)
     };
-    let mut json = String::new();
-    reader
-        .read_to_string(&mut json)
-        .map_err(|error| format!("failed to read showfile {filename}: {error}"))?;
+    read_showfile_json_with_limit(reader, &filename, MAX_SHOWFILE_JSON_BYTES)
+}
 
-    Ok(json)
+/// Read at most one byte beyond the decoded limit to distinguish an exact fit from oversized input.
+fn read_showfile_json_with_limit(
+    mut reader: impl Read,
+    filename: &str,
+    max_bytes: u64,
+) -> Result<String, String> {
+    let mut json = Vec::new();
+    reader
+        .by_ref()
+        .take(max_bytes)
+        .read_to_end(&mut json)
+        .map_err(|error| format!("failed to read showfile {filename}: {error}"))?;
+    // Probe separately so a single oversized byte cannot double the JSON buffer's capacity.
+    loop {
+        match reader.read(&mut [0]) {
+            Ok(0) => break,
+            Ok(_) => return Err(showfile_size_limit_error(filename, max_bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(format!("failed to read showfile {filename}: {error}")),
+        }
+    }
+    String::from_utf8(json).map_err(|error| format!("failed to read showfile {filename}: {error}"))
 }
 
 /// Hash a showfile snapshot after replacing volatile save metadata with a stable baseline.
@@ -215,6 +253,98 @@ mod tests {
         manifest::read_current_showfile_manifest_from_dir,
     };
     use super::*;
+
+    /// Encode one gzip member for boundary and concatenated-stream regression cases.
+    fn gzip_member(bytes: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(bytes).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    /// Plain and compressed JSON accept exact limits and reject a one-byte overflow before parsing.
+    #[test]
+    fn snapshot_decoding_enforces_decoded_byte_limit() {
+        let json = "\"ééé\"";
+        for compressed in [false, true] {
+            for limit in [json.len() as u64, json.len() as u64 - 1] {
+                let encoded = gzip_member(json.as_bytes());
+                let reader: Box<dyn Read> = if compressed {
+                    Box::new(MultiGzDecoder::new(encoded.as_slice()))
+                } else {
+                    Box::new(json.as_bytes())
+                };
+                let result = read_showfile_json_with_limit(reader, "boundary.json", limit);
+                if limit == json.len() as u64 {
+                    assert_eq!(result.unwrap(), json);
+                } else {
+                    let error = result.unwrap_err();
+                    assert!(error.contains("boundary.json"), "{error}");
+                    assert!(
+                        error.contains("maximum uncompressed snapshot size is 7 bytes"),
+                        "{error}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Oversized streams stop reading after the sentinel byte rather than allocating for the full input.
+    #[test]
+    fn oversized_snapshot_reads_only_limit_plus_one_bytes() {
+        let mut input = std::io::Cursor::new(vec![b' '; 4096]);
+        let error = read_showfile_json_with_limit(&mut input, "large.json", 64).unwrap_err();
+        assert!(
+            error.contains("maximum uncompressed snapshot size is 64 bytes"),
+            "{error}"
+        );
+        assert_eq!(input.position(), 65);
+    }
+
+    /// Concatenated gzip members share one decoded limit instead of receiving independent budgets.
+    #[test]
+    fn gzip_members_share_snapshot_size_limit() {
+        let member = gzip_member(&[b' '; 40]);
+        let encoded = [member.as_slice(), member.as_slice()].concat();
+        let decoder = MultiGzDecoder::new(encoded.as_slice());
+        let error = read_showfile_json_with_limit(decoder, "members.json.gz", 64).unwrap_err();
+        assert!(
+            error.contains("maximum uncompressed snapshot size is 64 bytes"),
+            "{error}"
+        );
+        let decoder = MultiGzDecoder::new(encoded.as_slice());
+        assert_eq!(
+            read_showfile_json_with_limit(decoder, "members.json.gz", 80).unwrap(),
+            " ".repeat(80)
+        );
+    }
+
+    /// Reaching the exact decoded limit still rejects corrupt checksums and truncated footers.
+    #[test]
+    fn exact_limit_gzip_still_validates_checksum() {
+        let json = b"{}";
+        let encoded = gzip_member(json);
+        let mut bad_checksum = encoded.clone();
+        let checksum_offset = bad_checksum.len() - 8;
+        bad_checksum[checksum_offset] ^= 1;
+        for damaged in [bad_checksum, encoded[..encoded.len() - 4].to_vec()] {
+            let decoder = MultiGzDecoder::new(damaged.as_slice());
+            let error = read_showfile_json_with_limit(decoder, "corrupt.json.gz", 2).unwrap_err();
+            assert!(
+                error.contains("failed to read showfile corrupt.json.gz"),
+                "{error}"
+            );
+        }
+    }
+
+    /// Production errors identify the offending snapshot and explain the user-facing 1 GiB cap.
+    #[test]
+    fn snapshot_size_error_explains_one_gib_limit() {
+        assert_eq!(MAX_SHOWFILE_JSON_BYTES, 1_073_741_824);
+        assert_eq!(
+            showfile_size_limit_error("tour/showfile.json.gz", MAX_SHOWFILE_JSON_BYTES),
+            "Showfile tour/showfile.json.gz is too large. The maximum uncompressed snapshot size is 1 GiB."
+        );
+    }
 
     /// Gzip storage preserves JSON and semantic hashes while keeping manifests and discovery usable.
     #[test]
