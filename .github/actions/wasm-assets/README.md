@@ -19,7 +19,7 @@ uploaded normally, including on cache hits; only the generated WASM is reused,
 so frontend build metadata and distribution notices remain fresh.
 
 `wasm.yml` publishes each release package once per run. The CI workflow starts
-native checks and the two WASM producers independently. Desktop consumes only
+parallel native Clippy/test checks and the two WASM producers independently. Desktop consumes only
 `release-wasm-bridge`; UI checks and the demo consume that same artifact plus
-`release-browser-runtime`. UI checks also download the native-check job's backend
+`release-browser-runtime`. UI checks also download the native test job's backend
 and pass it to the Playwright wrapper, avoiding another native compilation.
