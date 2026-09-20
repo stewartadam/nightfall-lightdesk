@@ -8,13 +8,15 @@
 
 use super::*;
 
+/// Samples automation and sends clip-rate changes through the shared playback action path.
 pub fn process_parameters_system(
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
     global_vars: ResMut<GlobalVariables>,
     clip_lookup: ClipLookup,
     materialized_clips: Query<&MaterializedClip>,
-    mut instance_controls: Query<(&InstanceId, &mut InstanceControls)>,
+    mut clip_actions: MessageWriter<EngineActionEnvelope<ClipAction>>,
+    mut origins: ResMut<TimelineCommandOrigins>,
 ) {
     let clip_snapshot = clip_lookup.snapshot();
     // Create a map of timecode UIDs to their current times for quick lookup
@@ -59,13 +61,14 @@ pub fn process_parameters_system(
                             tracing::trace!("Setting global variable {} to {}", var_id, value);
                             global_vars.set(var_id, VariableValue::Float(*value));
                         }
-                        ParameterType::RateMaster(_clip_uid) => {
+                        ParameterType::RateMaster(clip_uid) => {
                             apply_rate_master_value(
-                                *_clip_uid,
+                                *clip_uid,
                                 *value,
                                 &clip_snapshot,
                                 &materialized_clips,
-                                &mut instance_controls,
+                                &mut clip_actions,
+                                &mut origins,
                             );
                         }
                     }
@@ -75,13 +78,14 @@ pub fn process_parameters_system(
     }
 }
 
-/// Applies a normalized timeline rate-master value to the clip's attached playback.
+/// Uses the same SetRate action as authored timeline actions and manual clip controls.
 fn apply_rate_master_value(
     clip_uid: Uuid,
     value: f32,
     clip_lookup: &ClipLookupSnapshot,
     materialized_clips: &Query<&MaterializedClip>,
-    instance_controls: &mut Query<(&InstanceId, &mut InstanceControls)>,
+    clip_actions: &mut MessageWriter<EngineActionEnvelope<ClipAction>>,
+    origins: &mut TimelineCommandOrigins,
 ) {
     let Ok((_, clip)) = clip_lookup.by_uid(clip_uid) else {
         tracing::warn!(
@@ -90,25 +94,17 @@ fn apply_rate_master_value(
         );
         return;
     };
-    let rate = value.max(0.0);
-    let mut applied = false;
-    for materialized_clip in materialized_clips.iter() {
-        if materialized_clip.clip_id != clip.identifiers.id {
-            continue;
-        }
-        for (instance_id, mut controls) in instance_controls.iter_mut() {
-            if *instance_id == materialized_clip.attached_instance {
-                controls.rate = rate;
-                applied = true;
-            }
-        }
-    }
-
-    if !applied {
-        tracing::trace!(
-            clip_uid = %clip_uid,
-            clip_id = clip.identifiers.id,
-            "Timeline rate master target has no attached playback"
+    if materialized_clips
+        .iter()
+        .any(|playback| playback.clip_id == clip.identifiers.id)
+    {
+        write_timeline_clip_action(
+            clip_actions,
+            origins,
+            ClipAction::SetRate {
+                clip_id: IdExpr::Single(clip.identifiers.id),
+                rate: value,
+            },
         );
     }
 }

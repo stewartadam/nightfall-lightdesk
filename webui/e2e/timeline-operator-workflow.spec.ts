@@ -204,6 +204,214 @@ test("clip rate lane control points persist after backend publication", async ({
   });
 });
 
+/** Verifies a clip rate lane changes rendered Step FX output through the shared rate property. */
+test("clip rate automation controls Step FX playback and output", async ({
+  page,
+}, testInfo) => {
+  const clipUid = "c7500000000000000000000000000004";
+  const stepFxUid = "c7500000000000000000000000000005";
+  await sendOwnedOperatorCommand(page, {
+    module: "FixtureLibraryCommand",
+    command: {
+      type: "CreateFixtureFromLibrary",
+      data: {
+        id: 1,
+        make: "Generic",
+        model: "Moving Head RGBW",
+        mode: "Spot",
+        label: "Rate test fixture",
+        update_existing_ids: [],
+        update_existing_only: false,
+      },
+    },
+  });
+  await sendOwnedOperatorCommand(page, {
+    module: "StepFxCommand",
+    command: {
+      type: "Store",
+      data: {
+        identifiers: {
+          id: TIMELINE_ID,
+          uid: stepFxUid,
+          label: "Rate test Step FX",
+        },
+        selection: {
+          source: {
+            type: "FixtureRange",
+            data: { start: { fixture_id: 1 }, end: { fixture_id: 1 } },
+          },
+          clauses: [],
+          union: [],
+        },
+        timing: { beat_duration: { secs: 1, nanos: 0 } },
+        phase: { waypoints: [0] },
+        direction: "Forward",
+        cycle_scale: { type: "Auto" },
+        lanes: [
+          {
+            attribute: { type: "Intensity" },
+            absolute: {
+              steps: [0, 1].map((value, index) => ({
+                uid: `c750000000000000000000000000001${index}`,
+                width_beats: 1,
+                target: { type: "AbsolutePercent", data: { value } },
+                transition: { start: 0, end: 1 },
+                curve: { type: "Linear", data: {} },
+              })),
+            },
+          },
+        ],
+      },
+    },
+  });
+  await sendOwnedOperatorCommand(page, {
+    module: "ClipCommand",
+    command: {
+      type: "StoreClip",
+      data: {
+        identifiers: { id: TIMELINE_ID, uid: clipUid, label: "Rate test clip" },
+        source: { type: "StepFx", data: stepFxUid },
+        priority: 0,
+        options: { auto_release: false, deactivate_on_sequence_end: false },
+      },
+    },
+  });
+  const timeline = await page.evaluate(
+    (uid) => (window as any).appStores.timelines.get()[uid],
+    TIMELINE_UID,
+  );
+  timeline.tracks[0].actions = [
+    {
+      id: "rate-test-start",
+      label: "Start Step FX",
+      position: { secs: 2, nanos: 0 },
+      duration: { secs: 0, nanos: 0 },
+      action: { type: "StartClip", data: clipUid },
+    },
+  ];
+  timeline.tracks[0].automation_lanes = [];
+  await sendOwnedOperatorCommand(page, {
+    module: "TimelineCommand",
+    command: { type: "StoreTimeline", data: timeline },
+  });
+  await openFirstTimeline(page);
+  const header = page.locator(
+    `[data-timeline-track-header="true"][data-track-id="${BASE_TRACK_ID}"]`,
+  );
+  await header
+    .getByRole("button", { name: "Add parameter lane", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Add parameter lane" });
+  await dialog.getByLabel("Parameter type").selectOption("RateMaster");
+  await dialog.getByRole("combobox", { name: /^Clip/ }).selectOption(clipUid);
+  await dialog.getByRole("button", { name: "Add lane", exact: true }).click();
+  const lane = page.locator(
+    `[data-timeline-automation-lane="true"][data-track-id="${BASE_TRACK_ID}"]`,
+  );
+  await lane.click({ position: { x: 80, y: 45 } });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (uid) =>
+          (window as any).appStores.timelines.get()[uid].tracks[0]
+            .automation_lanes[0]?.points.length,
+        TIMELINE_UID,
+      ),
+    )
+    .toBe(1);
+  await sendOwnedOperatorCommand(page, {
+    module: "TimelineCommand",
+    command: { type: "StartTimeline", data: TIMELINE_ID },
+  });
+  await sendOwnedOperatorCommand(page, {
+    module: "TimecodeCommand",
+    command: { type: "StartTimecode", data: TIMECODE_ID },
+  });
+  /** Reads the clock-backed status and actual fixture output from backend snapshots. */
+  const readPlayback = () =>
+    page.evaluate((clipId) => {
+      const stores = (window as any).appStores;
+      const instance = (
+        Object.values(stores.activeInstances.get()) as any[]
+      ).find((entry) => entry.bound_clip_id === clipId);
+      const fixture = (Object.values(stores.fixtures.get()) as any[]).find(
+        (entry) => entry.identifiers.id === 1,
+      );
+      const raw = fixture
+        ? stores.parameters.get().get(fixture.identifiers.uid)?.raw
+        : undefined;
+      const elapsed = instance?.transition_elapsed;
+      return {
+        rate: instance?.rate,
+        elapsed: elapsed ? elapsed.secs + elapsed.nanos / 1e9 : undefined,
+        output: raw?.VirtualIntensity ?? raw?.Intensity,
+        at: Date.now(),
+      };
+    }, TIMELINE_ID);
+  try {
+    await expect
+      .poll(async () => (await readPlayback()).rate)
+      .toBeCloseTo(0.25, 1);
+  } catch (error) {
+    const state = await page.evaluate(() => {
+      const stores = (window as any).appStores;
+      return {
+        instances: stores.activeInstances.get(),
+        clips: stores.clips.get(),
+        timelines: stores.timelines.get(),
+        timecodes: stores.timecodes.get(),
+        timelineStates: stores.timelineStates?.get?.(),
+        stepFx: stores.stepFx.get(),
+      };
+    });
+    await testInfo.attach("rate-playback-state", {
+      body: JSON.stringify(state, null, 2),
+      contentType: "application/json",
+    });
+    throw error;
+  }
+  await expect
+    .poll(async () => (await readPlayback()).elapsed)
+    .toBeGreaterThan(0.1);
+  const slowStart = await readPlayback();
+  await expect
+    .poll(async () => (await readPlayback()).at - slowStart.at)
+    .toBeGreaterThan(1000);
+  const slowEnd = await readPlayback();
+  const observedRate =
+    ((slowEnd.elapsed ?? 0) - (slowStart.elapsed ?? 0)) /
+    ((slowEnd.at - slowStart.at) / 1000);
+  expect(observedRate).toBeGreaterThan(0.1);
+  expect(observedRate).toBeLessThan(0.5);
+  await expect
+    .poll(async () => (await readPlayback()).output)
+    .not.toBeUndefined();
+  const runningOutput = (await readPlayback()).output;
+  await expect
+    .poll(async () => (await readPlayback()).output)
+    .not.toBe(runningOutput);
+  const zeroTimeline = await page.evaluate(
+    (uid) => (window as any).appStores.timelines.get()[uid],
+    TIMELINE_UID,
+  );
+  zeroTimeline.tracks[0].automation_lanes[0].points[0].value = 0;
+  await sendOwnedOperatorCommand(page, {
+    module: "TimelineCommand",
+    command: { type: "StoreTimeline", data: zeroTimeline },
+  });
+  await expect.poll(async () => (await readPlayback()).rate).toBe(0);
+  const frozenStart = await readPlayback();
+  await expect
+    .poll(async () => (await readPlayback()).at - frozenStart.at)
+    .toBeGreaterThan(600);
+  const frozenEnd = await readPlayback();
+  expect(frozenEnd.elapsed).toBe(frozenStart.elapsed);
+  expect(frozenEnd.output).toBe(frozenStart.output);
+  await page.screenshot({
+    path: testInfo.outputPath("clip-rate-step-fx-frozen.png"),
+  });
+});
+
 test.describe.configure({ timeout: 180_000 });
 
 /** Starts every operator workflow from the same exact backend graph. */
