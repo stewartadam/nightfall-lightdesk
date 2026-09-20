@@ -34,8 +34,14 @@ function fixture(t, target = "develop") {
   mkdirSync(upstream);
   mkdirSync(bin);
   writeFileSync(join(root, "wt.toml"), "");
+  // Git hooks export repository selectors; inheriting them would redirect test Git commands.
+  const inherited = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !key.startsWith("GIT_") && !key.startsWith("WORKTRUNK_"),
+    ),
+  );
   const env = {
-    ...process.env,
+    ...inherited,
     PATH: `${bin}:${process.env.PATH}`,
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_NOSYSTEM: "1",
