@@ -83,6 +83,14 @@ test("collects native diagnostics before the backend connects", async ({
   expect(new Set(Object.values(colors)).size).toBe(5);
   await expect(preview.locator(".italic").first()).toHaveText("state_count");
   await dialog.getByText("System info", { exact: true }).click();
+  await expect
+    .poll(() =>
+      dialog.evaluate((element) => {
+        const body = element.querySelector("details")!.parentElement!;
+        return body.scrollHeight - body.clientHeight;
+      }),
+    )
+    .toBeLessThanOrEqual(1);
   const layout = await dialog.evaluate((element) => {
     const body = element.querySelector("details")!.parentElement!;
     return {
