@@ -23,9 +23,12 @@ function installBackend({
   retireFirstSession = false,
   retireBeforeOpen = false,
   malformed = false,
+  rejectCreation = false,
+  errorOnSwap = false,
 } = {}) {
   const sockets: ScriptedSocket[] = [];
   const commands: string[] = [];
+  const showNames: string[] = [];
   /** Models asynchronous backend frames and records connection cleanup. */
   class ScriptedSocket extends EventTarget {
     static OPEN = 1;
@@ -46,19 +49,43 @@ function installBackend({
     }
     /** Sends protocol responses or retires the world before its resync reply. */
     send(payload: string): void {
-      const command = JSON.parse(payload).command.type;
+      const request = JSON.parse(payload);
+      const command = request.command.type;
+      if (command === "NewNamedShowfile") {
+        assert.equal(request.command.data.includeSampleData, false);
+        showNames.push(request.command.data.name);
+      }
       commands.push(command);
       setTimeout(() => {
         if (
-          command === "NewShowfile" ||
+          (command === "NewNamedShowfile" && !rejectCreation) ||
           (retireFirstSession && sockets[0] === this)
         ) {
+          if (errorOnSwap && command === "NewNamedShowfile") {
+            this.dispatchEvent(new Event("error"));
+          }
           this.close();
           return;
         }
         const body = malformed
           ? new Uint8Array([0xff])
-          : encode({ type: "ResyncComplete" });
+          : encode(
+              command === "NewNamedShowfile"
+                ? {
+                    type: "CommandResult",
+                    data: {
+                      command_id: request.command_id,
+                      outcome: {
+                        type: "Failed",
+                        data: {
+                          code: "duplicate_name",
+                          message: "Show already exists.",
+                        },
+                      },
+                    },
+                  }
+                : { type: "ResyncComplete" },
+            );
         const frame = new Uint8Array(body.length + 1);
         frame.set(body, 1);
         this.dispatchEvent(new MessageEvent("message", { data: frame.buffer }));
@@ -73,14 +100,18 @@ function installBackend({
     }
   }
   globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
-  return { sockets, commands };
+  return { sockets, commands, showNames };
 }
 
 /** Verifies the normal initial resync, world replacement, and final resync sequence. */
 test("fresh backend setup closes all three completed connections", async () => {
   const { sockets, commands } = installBackend();
   await prepareFreshBackendShowfile(1234);
-  assert.deepEqual(commands, ["ResyncState", "NewShowfile", "ResyncState"]);
+  assert.deepEqual(commands, [
+    "ResyncState",
+    "NewNamedShowfile",
+    "ResyncState",
+  ]);
   assert.equal(sockets.length, 3);
   assert.ok(sockets.every((socket) => socket.closed));
 });
@@ -89,7 +120,11 @@ test("fresh backend setup closes all three completed connections", async () => {
 test("fresh backend setup retries a closed handshake", async () => {
   const { sockets, commands } = installBackend({ retireBeforeOpen: true });
   await prepareFreshBackendShowfile(1234);
-  assert.deepEqual(commands, ["ResyncState", "NewShowfile", "ResyncState"]);
+  assert.deepEqual(commands, [
+    "ResyncState",
+    "NewNamedShowfile",
+    "ResyncState",
+  ]);
   assert.equal(sockets.length, 4);
   assert.ok(sockets.every((socket) => socket.closed));
 });
@@ -101,7 +136,7 @@ test("fresh backend setup reconnects when a world closes during resync", async (
   assert.deepEqual(commands, [
     "ResyncState",
     "ResyncState",
-    "NewShowfile",
+    "NewNamedShowfile",
     "ResyncState",
   ]);
   assert.equal(sockets.length, 4);
@@ -114,4 +149,39 @@ test("fresh backend setup propagates invalid CBOR and closes the connection", as
   await assert.rejects(prepareFreshBackendShowfile(1234));
   assert.equal(sockets.length, 1);
   assert.ok(sockets[0].closed);
+});
+
+/** Ensures seeded default shows and repeated resets never share a creation name. */
+test("fresh backend setup creates distinct blank named shows", async () => {
+  const { showNames } = installBackend();
+  const first = await prepareFreshBackendShowfile(1234);
+  const second = await prepareFreshBackendShowfile(1234);
+  assert.deepEqual(showNames, [first, second]);
+  assert.equal(new Set(showNames).size, 2);
+  assert.ok(showNames.every((name) => name.startsWith("playwright-")));
+});
+
+/** Reproduces rejected creation without closing the socket or waiting for a timeout. */
+test("fresh backend setup surfaces creation errors immediately", {
+  timeout: 1000,
+}, async () => {
+  const { sockets, commands } = installBackend({ rejectCreation: true });
+  await assert.rejects(
+    prepareFreshBackendShowfile(1234),
+    /duplicate_name.*Show already exists/,
+  );
+  assert.deepEqual(commands, ["ResyncState", "NewNamedShowfile"]);
+  assert.ok(sockets.every((socket) => socket.closed));
+});
+
+/** Covers backends whose world shutdown emits a transport error before socket close. */
+test("fresh backend setup resyncs after a swap transport error", async () => {
+  const { sockets, commands } = installBackend({ errorOnSwap: true });
+  await prepareFreshBackendShowfile(1234);
+  assert.deepEqual(commands, [
+    "ResyncState",
+    "NewNamedShowfile",
+    "ResyncState",
+  ]);
+  assert.ok(sockets.every((socket) => socket.closed));
 });

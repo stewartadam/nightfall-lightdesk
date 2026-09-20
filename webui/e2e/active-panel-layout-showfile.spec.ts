@@ -396,7 +396,9 @@ test("restores draft active panel layout after loading draft", async ({
   backendSlot,
   page,
 }) => {
-  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  const showfileName = await prepareFreshBackendShowfile(
+    backendSlot.backendPort,
+  );
   await installBrowserStorageSeed(page);
   await page.goto("/?startup:draftRecovery=false");
   await expect(page.locator("main#app")).toBeVisible();
@@ -411,7 +413,7 @@ test("restores draft active panel layout after loading draft", async ({
   });
   await sendWorldSwapDeskCommand(page, {
     type: "LoadDraftShowfile",
-    data: "default",
+    data: showfileName,
   });
 
   await expect
