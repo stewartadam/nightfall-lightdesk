@@ -83,6 +83,40 @@ mod tests {
         assert_eq!(serialize_showfile_snapshot_json(&parsed).unwrap(), json);
     }
 
+    /// Preserve clip, master, and empty assignments through JSON and replace a previous bank on load.
+    #[test]
+    fn control_assignments_round_trip_and_replace_existing_bank() {
+        use bevy_ecs::prelude::World;
+        use nightfall_desk::prelude::{ControlAssignment, Controls};
+
+        let mut world = World::new();
+        initialize_showfile_resources(&mut world);
+        let controls = Controls::from_assignments(&[
+            Some(ControlAssignment::Clip(28)),
+            None,
+            Some(ControlAssignment::Master(7)),
+        ]);
+        let expected = controls.assignments();
+        world.insert_resource(controls);
+        let snapshot = snapshot_from_world(&mut world).unwrap();
+        let json = serialize_showfile_snapshot_json(&snapshot).unwrap();
+        let parsed = parse_showfile_snapshot_json(&json, "controls").unwrap();
+        world.insert_resource(Controls::from_assignments(&[Some(
+            ControlAssignment::Clip(99),
+        )]));
+        apply_showfile_snapshot_to_world(&mut world, parsed).unwrap();
+        assert_eq!(world.resource::<Controls>().assignments(), expected);
+
+        apply_showfile_snapshot_to_world(&mut world, ShowfileSnapshot::default()).unwrap();
+        assert!(
+            world
+                .resource::<Controls>()
+                .assignments()
+                .iter()
+                .all(Option::is_none)
+        );
+    }
+
     /// Reject every retired schema and future schemas before deserializing their data.
     #[test]
     fn unsupported_showfile_versions_are_rejected() {
