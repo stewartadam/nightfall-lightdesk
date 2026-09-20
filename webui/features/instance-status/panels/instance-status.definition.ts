@@ -13,7 +13,7 @@ export default definePanel({
   panelId: "panel-StatusDisplay",
   componentName: "StatusDisplay",
   title: "Status Display",
-  minWidth: 220,
+  minWidth: 360,
   minHeight: 160,
   icon: MonitorPlayIcon,
   loadComponent: () => import("./instance-status-panel"),
