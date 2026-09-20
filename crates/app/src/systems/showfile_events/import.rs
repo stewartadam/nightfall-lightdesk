@@ -111,6 +111,11 @@ pub(super) fn merge_showfile_snapshots(
             options.fixtures,
         )?,
         variables: merge_variables(current.variables, incoming.variables, options.variables),
+        control_assignments: merge_single(
+            current.control_assignments,
+            incoming.control_assignments,
+            options.settings,
+        ),
         settings: merge_single(current.settings, incoming.settings, options.settings),
         io_settings: merge_single(current.io_settings, incoming.io_settings, options.settings),
         bindings: merge_bindings(current.bindings, incoming.bindings, options.bindings)?,

@@ -593,6 +593,27 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
     assert_eq!(lifecycle_state(&app), AppState::Ready);
 }
 
+/// Verify sample faders reference the intended clips and survive the portable snapshot path.
+#[test]
+fn world_factory_sample_data_seeds_fader_assignments() {
+    use nightfall_desk::prelude::{ControlAssignment, Controls};
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData)
+        .expect("sample world");
+    let assignments = app.world().resource::<Controls>().assignments();
+    assert_eq!(
+        &assignments[..5],
+        &[1, 2, 26, 28, 30].map(|id| Some(ControlAssignment::Clip(id)))
+    );
+    assert!(assignments[5..].iter().all(Option::is_none));
+    let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
+    for id in [1, 2, 26, 28, 30] {
+        assert!(snapshot.clips.iter().any(|clip| clip.identifiers.id == id));
+    }
+    assert_eq!(snapshot.control_assignments, assignments);
+}
+
 /// Verifies sample startup exposes populated Color and Position Blueprints.
 #[test]
 fn world_factory_sample_data_bootstrap_seeds_blueprints() {

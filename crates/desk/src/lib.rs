@@ -56,7 +56,9 @@ pub mod prelude {
     pub use crate::blueprint_command::{
         BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
     };
-    pub use crate::controls::{ControlCommand, ControlSnapshot, ControlUpdate, Controls};
+    pub use crate::controls::{
+        ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
+    };
     pub use crate::desk_command::{
         DeskAction, DeskCommand, ShowfileImportOptions, ShowfileImportPolicy,
         ShowfileRevisionSelection, ShowfileSaveOptions,
