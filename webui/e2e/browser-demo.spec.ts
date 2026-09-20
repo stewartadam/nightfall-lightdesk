@@ -652,6 +652,7 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
       : "/?engine=embedded-demo&e2e=1";
   await page.goto(path);
   await waitForDockviewApp(page);
+  await expect(page).toHaveTitle("nightfall");
   const bar = page.getByRole("region", { name: "Application status bar" });
   const banner = bar.getByTestId("browser-demo-banner");
   const header = page.getByRole("navigation", { name: "Global" });
