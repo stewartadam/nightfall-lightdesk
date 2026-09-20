@@ -4789,6 +4789,44 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
                 .position,
             Duration::from_secs(2)
         );
+        // Removing one of two lanes must preserve the remaining lane's zero rate.
+        {
+            let mut timeline = app
+                .world_mut()
+                .get_mut::<MaterializedTimeline>(timeline_entity)
+                .unwrap();
+            let lanes = &mut timeline.timeline.tracks[0].automation_lanes;
+            lanes[0].points[0].value = 0.0;
+            let mut duplicate = lanes[0].clone();
+            duplicate.id = "duplicate-rate-lane".to_owned();
+            lanes.push(duplicate);
+        }
+        app.update();
+        app.update();
+        app.world_mut()
+            .get_mut::<MaterializedTimeline>(timeline_entity)
+            .unwrap()
+            .timeline
+            .tracks[0]
+            .automation_lanes
+            .pop();
+        app.update();
+        app.update();
+        assert_eq!(
+            app.world()
+                .get::<InstanceControls>(playback_entity)
+                .unwrap()
+                .rate,
+            0.0
+        );
+        app.world_mut()
+            .query::<&mut TimecodeGenerator>()
+            .single_mut(app.world_mut())
+            .unwrap()
+            .state
+            .is_active = false;
+        app.update();
+        app.update();
         app.world_mut()
             .get_mut::<MaterializedTimeline>(timeline_entity)
             .unwrap()
@@ -4796,8 +4834,26 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
             .tracks[0]
             .automation_lanes
             .clear();
-        // Drain the last lane action before applying the manual action to the same property.
+        // Removal while paused releases zero on resume without losing to pause restoration.
         app.update();
+        app.update();
+        assert_eq!(
+            app.world()
+                .get::<InstanceControls>(playback_entity)
+                .unwrap()
+                .rate,
+            0.0
+        );
+        set_rate_test_time(&mut app, Duration::from_secs(5));
+        app.update();
+        app.update();
+        assert_eq!(
+            app.world()
+                .get::<InstanceControls>(playback_entity)
+                .unwrap()
+                .rate,
+            1.0
+        );
         app.world_mut()
             .write_message(EngineActionEnvelope::detached(ClipAction::SetRate {
                 clip_id: IdExpr::Single(42),

@@ -410,6 +410,21 @@ test("clip rate automation controls Step FX playback and output", async ({
   await page.screenshot({
     path: testInfo.outputPath("clip-rate-step-fx-frozen.png"),
   });
+  zeroTimeline.tracks[0].automation_lanes = [];
+  await sendOwnedOperatorCommand(page, {
+    module: "TimelineCommand",
+    command: { type: "StoreTimeline", data: zeroTimeline },
+  });
+  await expect.poll(async () => (await readPlayback()).rate).toBe(1);
+  await expect
+    .poll(async () => (await readPlayback()).elapsed)
+    .toBeGreaterThan(frozenEnd.elapsed ?? 0);
+  await expect
+    .poll(async () => (await readPlayback()).output)
+    .not.toBe(frozenEnd.output);
+  await page.screenshot({
+    path: testInfo.outputPath("clip-rate-step-fx-released.png"),
+  });
 });
 
 test.describe.configure({ timeout: 180_000 });
@@ -424,9 +439,13 @@ test.afterEach(async ({ backendSlot, page }) => {
   if (!page.isClosed() && page.url() !== "about:blank") {
     await page
       .evaluate(
-        async ({ timecodeId }) => {
+        async ({ timecodeId, timelineId }) => {
           const stores = (window as any).appStores;
           if (typeof stores?.sendAndAwait !== "function") return;
+          await stores.sendAndAwait({
+            module: "TimelineCommand",
+            command: { type: "StopTimeline", data: timelineId },
+          });
           await stores.sendAndAwait({
             module: "TimecodeCommand",
             command: { type: "StopTimecode", data: timecodeId },
@@ -436,7 +455,7 @@ test.afterEach(async ({ backendSlot, page }) => {
             command: { type: "StopAll" },
           });
         },
-        { timecodeId: TIMECODE_ID },
+        { timecodeId: TIMECODE_ID, timelineId: TIMELINE_ID },
       )
       .catch(() => undefined);
   }

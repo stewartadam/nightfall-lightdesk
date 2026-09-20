@@ -17,8 +17,40 @@ pub fn process_parameters_system(
     materialized_clips: Query<&MaterializedClip>,
     mut clip_actions: MessageWriter<EngineActionEnvelope<ClipAction>>,
     mut origins: ResMut<TimelineCommandOrigins>,
+    mut applied_rate_targets: Local<HashMap<Uuid, Uuid>>,
 ) {
     let clip_snapshot = clip_lookup.snapshot();
+    // Preserve shared targets until their last populated lane is removed, including while paused.
+    let retained_targets: std::collections::HashSet<_> = timeline_query
+        .iter()
+        .flat_map(|(_, timeline)| &timeline.timeline.tracks)
+        .flat_map(|track| &track.automation_lanes)
+        .filter(|lane| !lane.points.is_empty())
+        .filter_map(|lane| match lane.parameter_type {
+            ParameterType::RateMaster(uid) => Some(uid),
+            ParameterType::GlobalVariable(_) => None,
+        })
+        .collect();
+    applied_rate_targets.retain(|uid, timecode_uid| {
+        if retained_targets.contains(uid) {
+            return true;
+        }
+        // Defer release until resume so pause restoration cannot overwrite the reset action.
+        if timecode_query.iter().any(|(_, timecode)| {
+            timecode.timecode.identifiers.uid == *timecode_uid && !timecode.state.is_active
+        }) {
+            return true;
+        }
+        apply_rate_master_value(
+            *uid,
+            1.0,
+            &clip_snapshot,
+            &materialized_clips,
+            &mut clip_actions,
+            &mut origins,
+        );
+        false
+    });
     // Create a map of timecode UIDs to their current times for quick lookup
     let mut timecode_times = std::collections::HashMap::new();
 
@@ -62,6 +94,7 @@ pub fn process_parameters_system(
                             global_vars.set(var_id, VariableValue::Float(*value));
                         }
                         ParameterType::RateMaster(clip_uid) => {
+                            applied_rate_targets.insert(*clip_uid, timeline.timeline.timecode_uid);
                             apply_rate_master_value(
                                 *clip_uid,
                                 *value,
