@@ -55,6 +55,11 @@
   z-index: 2147483646;
 }
 
+/* Connection loss blocks every dialog in the interactive session. */
+[data-overlay-kind="connection"] {
+  z-index: 2147483647;
+}
+
 .nightfall-popover-layer {
   z-index: 1100;
 }

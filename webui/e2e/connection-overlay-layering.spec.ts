@@ -11,8 +11,8 @@ import { expect, test } from "./playwright-fixtures";
 
 import { routeShowfileDiscovery, waitForDockviewApp } from "./showfile-startup";
 
-/** Verifies the raised reconnect dialog and endpoint tooltip stay above workspace controls. */
-test("connection overlay renders above dockview sashes", async ({
+/** Verifies connection loss covers open dialogs and workspace controls without losing draft input. */
+test("connection overlay renders above showfile dialogs and dockview sashes", async ({
   page,
 }, testInfo) => {
   let hmrSocket: WebSocketRoute | undefined;
@@ -38,6 +38,14 @@ test("connection overlay renders above dockview sashes", async ({
   const overlay = page.locator('[data-overlay-kind="connection"]');
   await expect(overlay).toHaveCount(0);
   await expect(overlay.getByText("Connected")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await page.getByRole("button", { name: "New Showfile" }).click();
+  const showfileDialog = page.getByRole("dialog", { name: "New Showfile" });
+  await expect(showfileDialog).toBeVisible();
+  await showfileDialog.getByLabel("Show name").fill("unfinished-show");
+  const showfileBounds = await showfileDialog.boundingBox();
+  expect(showfileBounds).not.toBeNull();
 
   const sashPoint = await page
     .locator(".dv-sash")
@@ -70,6 +78,28 @@ test("connection overlay renders above dockview sashes", async ({
   ).toBeVisible();
   const surface = overlay.getByRole("dialog");
   await expect(surface).toHaveClass(/nightfall-modal-surface/);
+  const bounds = showfileBounds!;
+  for (const point of [
+    { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 },
+    { x: bounds.x + 20, y: bounds.y + 20 },
+    { x: bounds.x + bounds.width - 20, y: bounds.y + bounds.height - 20 },
+  ]) {
+    expect(
+      await page.evaluate(
+        ({ x, y }) =>
+          Boolean(
+            document
+              .elementFromPoint(x, y)
+              ?.closest('[data-overlay-kind="connection"]'),
+          ),
+        point,
+      ),
+    ).toBe(true);
+  }
+  await page.keyboard.type("blocked");
+  await expect(showfileDialog.getByLabel("Show name")).toHaveValue(
+    "unfinished-show",
+  );
   expect(
     await surface.evaluate((element) => getComputedStyle(element).boxShadow),
   ).not.toBe("none");
