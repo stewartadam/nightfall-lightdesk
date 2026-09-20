@@ -7,6 +7,7 @@
  */
 
 import { decode } from "cborg";
+import type { CommandResult } from "../types";
 
 /** Returns the websocket URL for one test's isolated backend. */
 function backendWebsocketUrl(backendPort: number): string {
@@ -181,39 +182,72 @@ async function waitForBackendReady(backendPort: number): Promise<void> {
   throw new Error("Timed out waiting for backend resync completion.");
 }
 
-/** Replaces one test backend with a blank showfile and waits until it is ready. */
+/** Creates a uniquely named blank showfile, waits for resync, and returns its name. */
 export async function prepareFreshBackendShowfile(
   backendPort: number,
-): Promise<void> {
+): Promise<string> {
   await waitForBackendReady(backendPort);
   const socket = await openBackendSocket(backendPort);
+  const commandId = crypto.randomUUID();
+  const showfileName = `playwright-${crypto.randomUUID()}`;
   try {
     await new Promise<void>((resolve, reject) => {
+      /** Removes all listeners before reporting the swap or its command failure. */
+      function finish(error?: Error): void {
+        clearTimeout(timeout);
+        socket.removeEventListener("message", onMessage);
+        socket.removeEventListener("close", onClose);
+        socket.removeEventListener("error", onError);
+        if (error) reject(error);
+        else resolve();
+      }
+      /** Surfaces correlated command failures instead of waiting for a nonexistent swap. */
+      async function onMessage(event: MessageEvent): Promise<void> {
+        try {
+          const message = await decodeBackendFrame(event.data);
+          if (
+            !message ||
+            typeof message !== "object" ||
+            !("type" in message) ||
+            message.type !== "CommandResult" ||
+            !("data" in message)
+          )
+            return;
+          const result = message.data as CommandResult;
+          if (result.command_id !== commandId) return;
+          if (result.outcome.type === "Failed") {
+            finish(
+              new Error(
+                `Fresh showfile creation failed (${result.outcome.data.code}): ${result.outcome.data.message}`,
+              ),
+            );
+          }
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+      /** A successful world replacement retires its websocket listener. */
+      function onClose(): void {
+        finish();
+      }
+      /** World replacement can retire the transport with an error before close. */
+      function onError(): void {
+        finish();
+      }
       const timeout = setTimeout(() => {
-        reject(new Error("Timed out waiting for backend world swap."));
+        finish(new Error("Timed out waiting for backend world swap."));
       }, 30_000);
-
-      socket.addEventListener(
-        "close",
-        () => {
-          clearTimeout(timeout);
-          resolve();
-        },
-        { once: true },
-      );
-      socket.addEventListener(
-        "error",
-        () => {
-          clearTimeout(timeout);
-          resolve();
-        },
-        { once: true },
-      );
+      socket.addEventListener("message", onMessage);
+      socket.addEventListener("close", onClose);
+      socket.addEventListener("error", onError);
       socket.send(
         JSON.stringify({
-          command_id: crypto.randomUUID(),
+          command_id: commandId,
           module: "DeskCommand",
-          command: { type: "NewShowfile" },
+          command: {
+            type: "NewNamedShowfile",
+            data: { name: showfileName, includeSampleData: false },
+          },
         }),
       );
     });
@@ -222,4 +256,5 @@ export async function prepareFreshBackendShowfile(
   }
 
   await waitForBackendReady(backendPort);
+  return showfileName;
 }

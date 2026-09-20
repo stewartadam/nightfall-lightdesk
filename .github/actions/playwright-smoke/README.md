@@ -17,7 +17,9 @@ preparation succeeded and the job has not been cancelled.
 
 The action installs Playwright browsers and their system dependencies, seeds
 disposable showfiles in the runner's temporary directory, runs
-`npm run test:webui-smoke`, and uploads reports even when tests fail. It uses two
+`npm run test:webui-smoke -- --max-failures=3`, and uploads reports even when tests
+fail. The three-failure cap stops repeated setup failures before they exhaust the
+job timeout. It uses two
 workers by default; set the `workers` input to override this. Set a unique
 `artifact-name` when invoking the action more than once in the same job.
 

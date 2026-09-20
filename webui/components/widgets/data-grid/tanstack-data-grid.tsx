@@ -835,7 +835,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
       rootRef?.focus();
     }
     requestAnimationFrame(() => {
-      if (editingCell()) return;
+      if (editingCell() || typeSeekActive()) return;
       rootRef?.focus();
     });
   };

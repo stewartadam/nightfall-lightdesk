@@ -32,7 +32,7 @@ runs:
       env:
         NIGHTFALL_PLAYWRIGHT_WORKERS: ${{ inputs.workers }}
         NIGHTFALL_DATA_DIR: ${{ steps.seed.outputs.data-dir }}
-      run: npm run test:webui-smoke
+      run: npm run test:webui-smoke -- --max-failures=3
 
     - name: Upload Playwright report and failure artifacts
       if: always()
