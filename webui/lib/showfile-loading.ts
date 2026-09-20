@@ -32,6 +32,17 @@ function storedCurrentShowfileName(): string {
 export const currentShowfileName = atom<string>(storedCurrentShowfileName());
 /** Monotonic counter for backend-confirmed current showfile context changes. */
 export const currentShowfileRevision = atom<number>(0);
+let lastConfirmedShowfileChangeId: string | null = null;
+
+/** Applies confirmed identity once per change, preserving layouts during resync replays. */
+export function applyConfirmedShowfileChange(
+  name: string | null | undefined,
+  changeId: string,
+): void {
+  const changed = lastConfirmedShowfileChangeId !== changeId;
+  lastConfirmedShowfileChangeId = changeId;
+  persistCurrentShowfileName(name, { bumpRevision: changed });
+}
 
 /**
  * Normalizes the default showfile name for browser-side persistence and matching.

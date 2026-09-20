@@ -143,8 +143,10 @@ async function captureWorkerSends(
                   type: "UiNotification",
                   data: {
                     type: "CurrentShowfileChanged",
-                    data:
-                      showfileName === "default" ? {} : { name: showfileName },
+                    data: {
+                      name: showfileName,
+                      change_id: crypto.randomUUID(),
+                    },
                   },
                 });
                 postWorkerMessage(this, {
@@ -164,7 +166,7 @@ async function captureWorkerSends(
                   type: "UiNotification",
                   data: {
                     type: "CurrentShowfileChanged",
-                    data: { name: "tour" },
+                    data: { name: "tour", change_id: crypto.randomUUID() },
                   },
                 });
                 postWorkerMessage(this, {
@@ -184,7 +186,10 @@ async function captureWorkerSends(
                   type: "UiNotification",
                   data: {
                     type: "CurrentShowfileChanged",
-                    data: { name: "command-new" },
+                    data: {
+                      name: "command-new",
+                      change_id: crypto.randomUUID(),
+                    },
                   },
                 });
                 postWorkerMessage(this, {

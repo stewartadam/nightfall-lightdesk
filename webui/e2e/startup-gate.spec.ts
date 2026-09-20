@@ -96,7 +96,7 @@ async function installFakeWebsocketWorker(
               type: "UiNotification",
               data: {
                 type: "CurrentShowfileChanged",
-                data: showfileName === "default" ? {} : { name: showfileName },
+                data: { name: showfileName, change_id: crypto.randomUUID() },
               },
             });
             this.emitBackendMessage({ type: "AppState", data: "Ready" });

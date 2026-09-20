@@ -33,6 +33,7 @@ import {
 } from "./performance-marks";
 import { recordExternalPerformanceMeasure } from "./performance-measure-collector";
 import {
+  applyConfirmedShowfileChange,
   currentShowfileName,
   normalizedShowfileName,
   persistCurrentShowfileName,
@@ -1766,9 +1767,12 @@ function handleUiNotification(notification: types.UiNotification) {
       break;
     }
     case "CurrentShowfileChanged": {
-      persistCurrentShowfileName(notification.data.name, {
-        bumpRevision: true,
-      });
+      const changeId = decodeCorrelationId(notification.data.change_id);
+      if (!changeId) {
+        log.error("Current showfile notification has an invalid change ID");
+        break;
+      }
+      applyConfirmedShowfileChange(notification.data.name, changeId);
       break;
     }
   }

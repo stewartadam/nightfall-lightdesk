@@ -110,6 +110,46 @@ test("new show optionally includes standalone sample data", async ({
     )
     .toBe("Sample Tour");
 
+  const identityBeforeResync = await page.evaluate(async () => {
+    const showfile = await import(
+      /* @vite-ignore */ "/lib/showfile-loading.ts"
+    );
+    const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
+    const revision = showfile.currentShowfileRevision.get();
+    const generation = runtime.resyncGeneration();
+    localStorage.removeItem("nightfall.currentShowfileName");
+    (window as any).appStores.send({
+      module: "EngineCommand",
+      command: { type: "ResyncState" },
+    });
+    return { revision, generation };
+  });
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const runtime = await import(
+          /* @vite-ignore */ "/lib/engine-runtime.ts"
+        );
+        return runtime.resyncGeneration();
+      }),
+    )
+    .toBeGreaterThan(identityBeforeResync.generation);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        localStorage.getItem("nightfall.currentShowfileName"),
+      ),
+    )
+    .toBe("Sample Tour");
+  expect(
+    await page.evaluate(async () => {
+      const showfile = await import(
+        /* @vite-ignore */ "/lib/showfile-loading.ts"
+      );
+      return showfile.currentShowfileRevision.get();
+    }),
+  ).toBe(identityBeforeResync.revision);
+
   await page.getByRole("button", { name: "Open command palette" }).click();
   await page.getByPlaceholder("Type a command or search...").fill("Open Patch");
   await page.keyboard.press("Enter");

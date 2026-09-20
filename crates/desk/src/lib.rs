@@ -81,7 +81,7 @@ pub mod prelude {
     pub use crate::systems::vdim::{
         DEFAULT_GAMMA, VDIM_AFFECTED_ATTRIBUTES, apply_vdim, gamma_correct,
     };
-    pub use crate::ui_notification::{PendingUiNotifications, ToastLevel, UiNotification};
+    pub use crate::ui_notification::{ToastLevel, UiNotification, UiNotificationState};
 }
 
 /// Plugin for adding desk functionality to the app
@@ -178,7 +178,7 @@ impl Plugin for DeskPlugin {
         app.init_resource::<AvailableUsbDmxDevices>();
         app.init_resource::<Controls>();
         app.init_resource::<NetworkInterfaceState>();
-        app.init_resource::<PendingUiNotifications>();
+        app.init_resource::<UiNotificationState>();
         app.init_resource::<FramePaceStats>();
         app.init_resource::<DelayedCommandQueue>();
         app.insert_resource(self.log_config.clone());

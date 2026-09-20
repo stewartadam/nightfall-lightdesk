@@ -184,6 +184,7 @@ fn forward_ui_notifications_broadcasts_show_toast() {
     let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
     let mut app = App::new();
     app.add_message::<UiNotification>();
+    app.init_resource::<UiNotificationState>();
     app.insert_resource(ClientEventSink::new(tx));
     app.add_systems(Update, forward_ui_notifications);
 
@@ -219,7 +220,7 @@ fn forward_ui_notifications_broadcasts_show_toast() {
 fn flush_pending_ui_notifications_broadcasts_and_drains_notifications() {
     let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
     let broadcaster = ClientEventSink::new(tx);
-    let mut pending = PendingUiNotifications::default();
+    let mut pending = UiNotificationState::default();
     pending.push(UiNotification::ShowToast {
         level: crate::ui_notification::ToastLevel::Error,
         message: "startup failed".to_string(),
@@ -246,6 +247,55 @@ fn flush_pending_ui_notifications_broadcasts_and_drains_notifications() {
     assert!(
         rx.try_recv().is_err(),
         "pending UI notifications should be drained after replay"
+    );
+}
+
+#[test]
+/// Reconnects must receive confirmed identity even after an unobserved internal resync.
+fn resync_replays_showfile_identity_after_earlier_delivery() {
+    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let broadcaster = ClientEventSink::new(tx);
+    let mut state = UiNotificationState::default();
+    flush_pending_ui_notifications(Some(&mut state), &broadcaster);
+    assert!(
+        rx.try_recv().is_err(),
+        "initial worlds have no confirmed identity"
+    );
+    state.push(UiNotification::current_showfile_changed(Some(
+        "Sample Tour".to_string(),
+    )));
+    for _ in 0..2 {
+        flush_pending_ui_notifications(Some(&mut state), &broadcaster);
+        let payload = rx.try_recv().expect("identity must survive every resync");
+        assert!(String::from_utf8_lossy(&payload).contains("Sample Tour"));
+    }
+}
+
+#[test]
+/// Live rename notifications replace the identity retained for a later reconnect.
+fn forward_ui_notifications_updates_replayed_identity() {
+    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let mut app = App::new();
+    app.add_message::<UiNotification>();
+    app.init_resource::<UiNotificationState>();
+    app.insert_resource(ClientEventSink::new(tx));
+    app.add_systems(Update, forward_ui_notifications);
+    app.world_mut().resource_mut::<UiNotificationState>().push(
+        UiNotification::current_showfile_changed(Some("Old".to_string())),
+    );
+    app.world_mut()
+        .write_message(UiNotification::current_showfile_changed(Some(
+            "Renamed".to_string(),
+        )));
+    app.update();
+    rx.try_recv().expect("live notification");
+    let replay: Vec<_> = app
+        .world_mut()
+        .resource_mut::<UiNotificationState>()
+        .take_for_resync()
+        .collect();
+    assert!(
+        matches!(replay.as_slice(), [UiNotification::CurrentShowfileChanged { name: Some(name), .. }] if name == "Renamed")
     );
 }
 
