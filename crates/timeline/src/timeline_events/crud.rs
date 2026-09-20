@@ -136,7 +136,9 @@ pub(super) fn apply_stored_timeline_to_materialized(
     let should_reconstruct_live_items = materialized_timeline.is_active
         && active_timeline_actions_changed(&materialized_timeline.timeline, timeline);
 
-    if materialized_timeline.timeline.audio_enabled != timeline.audio_enabled {
+    if materialized_timeline.timeline.audio_enabled != timeline.audio_enabled
+        || materialized_timeline.timeline.timecode_start != timeline.timecode_start
+    {
         materialized_timeline.audio_needs_sync = true;
     }
     materialized_timeline.timeline = timeline.clone();

@@ -653,6 +653,30 @@ test("embedded fixture decodes and plays generated timeline audio", async ({
     await expect
       .poll(async () => (await readDemoAudioState(page)).positionMs)
       .toBeGreaterThan(500);
+    await page.evaluate(async (uid) => {
+      const stores = (window as any).appStores;
+      const timeline = stores.timelines.get()[uid];
+      const result = await stores.sendAndAwait({
+        module: "TimelineCommand",
+        command: {
+          type: "StoreTimeline",
+          data: {
+            ...timeline,
+            timecode_start: { secs: 0, nanos: 500_000_000 },
+          },
+        },
+      });
+      if (result.outcome.type !== "Succeeded") {
+        throw new Error(
+          `Unable to edit timeline start: ${JSON.stringify(result)}`,
+        );
+      }
+    }, timelineUid);
+    await expect
+      .poll(() => page.evaluate(() => (window as any).demoAudioSeekCount), {
+        timeout: 1_000,
+      })
+      .toBeGreaterThan(seekCount);
     await surface.screenshot({
       path: testInfo.outputPath("generated-audio-playback.png"),
     });
