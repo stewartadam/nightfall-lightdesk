@@ -19,7 +19,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     backup::copy_directory_recursive,
-    storage::{hash_showfile_snapshot_with_metadata, write_showfile_snapshot_with_manifest_to_dir},
+    storage::{
+        hash_showfile_snapshot_with_metadata, write_showfile_json_with_manifest_to_dir,
+        write_showfile_snapshot_with_manifest_to_dir,
+    },
 };
 
 #[cfg(test)]
@@ -127,10 +130,15 @@ pub(crate) fn archive_directory<W: Write + Seek>(
         if kind.is_dir() {
             files.extend(archive_directory(zip, &entry.path(), &entry_name)?);
         } else if kind.is_file() {
+            let compression =
+                if entry.file_name() == super::paths::SHOWFILE_COMPRESSED_SNAPSHOT_FILENAME {
+                    zip::CompressionMethod::Stored
+                } else {
+                    zip::CompressionMethod::Deflated
+                };
             zip.start_file(
                 &entry_name,
-                zip::write::SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Deflated),
+                zip::write::SimpleFileOptions::default().compression_method(compression),
             )
             .map_err(|error| error.to_string())?;
             let mut file = std::fs::File::open(entry.path()).map_err(|error| error.to_string())?;
@@ -183,7 +191,7 @@ pub fn prepare_showfile_export(
         collect_fixtures(&mut collector, &snapshot, source, app_data)?;
     }
     let hash = hash_showfile_snapshot_with_metadata(&snapshot, &snapshot.metadata)?;
-    write_showfile_snapshot_with_manifest_to_dir(&snapshot, &destination, hash, None)?;
+    write_showfile_json_with_manifest_to_dir(&snapshot, &destination, hash)?;
     Ok(prepared)
 }
 

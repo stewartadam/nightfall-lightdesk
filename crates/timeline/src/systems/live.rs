@@ -429,14 +429,43 @@ pub fn process_actions_system(
             active_clip_entities(&clip_state.exec_query, &clip_state.materialized_clip_links);
 
         let action_positions = timeline_action_positions(&timeline);
-        let existing_spawned_entities = timeline.spawned_entities.clone();
-        let timeline_instance_options = instance_options_for_timeline(&timeline);
-
-        // Process track actions to find those that should be triggered
         let last_processed = last_processed_by_timeline
             .get(&timeline_entity)
             .copied()
             .unwrap_or_default();
+        let has_navigation = timeline
+            .collect_actions_in_range(last_processed, current_position)
+            .iter()
+            .any(|(action, _)| {
+                matches!(
+                    normalized_registered_action_kind(&action.action, action_registry.as_deref())
+                        .unwrap_or_else(|| action.action.clone()),
+                    ActionKind::AdvanceSequence(_)
+                        | ActionKind::BackSequence(_)
+                        | ActionKind::JumpToCue { .. }
+                )
+            });
+        let planning_actions = if has_navigation {
+            timeline
+                .collect_actions_in_range(Duration::ZERO, current_position)
+                .into_iter()
+                .map(|(action, track)| TimelinePlanningAction {
+                    track_id: track.id.clone(),
+                    action_id: action.id.clone(),
+                    action: normalized_registered_action_kind(
+                        &action.action,
+                        action_registry.as_deref(),
+                    )
+                    .unwrap_or_else(|| action.action.clone()),
+                    position: action.position,
+                    duration: action.duration,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let existing_spawned_entities = timeline.spawned_entities.clone();
+        let timeline_instance_options = instance_options_for_timeline(&timeline);
         let actions_to_trigger = timeline.process_actions(last_processed, current_position);
         last_processed_by_timeline.insert(timeline_entity, current_position);
 
@@ -676,6 +705,7 @@ pub fn process_actions_system(
                         .and_then(|(_, clip)| planned_source_for_clip(clip))
                         .and_then(|source| {
                             planned_intervention_render_target_for_clip_action(
+                                &planning_actions,
                                 &action_positions,
                                 &existing_spawned_entities,
                                 &entities_to_untrack,
@@ -732,6 +762,7 @@ pub fn process_actions_system(
                         .and_then(|(_, clip)| planned_source_for_clip(clip))
                         .and_then(|source| {
                             planned_intervention_render_target_for_clip_action(
+                                &planning_actions,
                                 &action_positions,
                                 &existing_spawned_entities,
                                 &entities_to_untrack,
@@ -813,6 +844,7 @@ pub fn process_actions_system(
                         .and_then(|(_, clip)| planned_source_for_clip(clip))
                         .and_then(|source| {
                             planned_intervention_render_target_for_clip_action(
+                                &planning_actions,
                                 &action_positions,
                                 &existing_spawned_entities,
                                 &entities_to_untrack,

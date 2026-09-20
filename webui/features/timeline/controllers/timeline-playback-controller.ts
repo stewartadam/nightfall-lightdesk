@@ -21,6 +21,10 @@ import type { InstanceCommandCallbacks } from "../context/timeline-context-contr
 
 const log = getLogger(import.meta.url);
 
+// Small transport delays adjust playback speed by at most 10%; larger changes seek.
+const MAX_CLOCK_CORRECTION_RATE = 0.1;
+const PLAYBACK_DISCONTINUITY_MS = 250;
+
 interface TimelinePlaybackControllerOptions {
   isManualTriggerMode: Accessor<boolean>;
   loopRange: Accessor<types.TimelineLoopRange | undefined>;
@@ -47,29 +51,42 @@ export const createTimelinePlaybackController = (
   const [manualTimelinePlaybackActive, setManualTimelinePlaybackActive] =
     createSignal(false);
   const [playbackStartPending, setPlaybackStartPending] = createSignal(false);
-  let playbackInterval: number | undefined;
+  let playbackFrame: number | undefined;
+  let anchorPositionMs = 0;
+  let anchorTimeMs = 0;
+  let lastFrameTimeMs = 0;
+  let lastSnapshotPositionMs: number | undefined;
 
-  /** Stops local playhead interpolation and forgets the timer handle. */
-  const clearPlaybackInterval = () => {
-    if (playbackInterval !== undefined) {
-      window.clearInterval(playbackInterval);
-      playbackInterval = undefined;
+  /** Cancels the pending presentation update. */
+  const clearPlaybackFrame = () => {
+    if (playbackFrame !== undefined) {
+      window.cancelAnimationFrame(playbackFrame);
+      playbackFrame = undefined;
     }
   };
 
   /** Uses a monotonic clock for playback interpolation when available. */
   const monotonicNow = () => globalThis.performance?.now() ?? Date.now();
 
+  /** Anchors elapsed playback time to the instant this position was received or sought. */
+  const anchorPosition = (nextPosition: number) => {
+    anchorPositionMs = nextPosition;
+    anchorTimeMs = monotonicNow();
+    lastFrameTimeMs = anchorTimeMs;
+    setPosition(nextPosition);
+  };
+
   /** Resets local playback state when the selected timeline disappears. */
   const reset = () => {
     setEnd(60 * 1000);
     setStart(0);
-    setPosition(0);
+    anchorPosition(0);
+    lastSnapshotPositionMs = undefined;
     setPaused(true);
     setTimecodePlaybackActive(false);
     setManualTimelinePlaybackActive(false);
     setPlaybackStartPending(false);
-    clearPlaybackInterval();
+    clearPlaybackFrame();
   };
 
   /** Stops local playback when upstream playback state is unavailable. */
@@ -91,7 +108,25 @@ export const createTimelinePlaybackController = (
       return;
     }
 
-    setPosition(durationToMs(state.currentTime));
+    const snapshotPositionMs = durationToMs(state.currentTime);
+    const receivedAtMs = monotonicNow();
+    const predictedPositionMs = anchorPositionMs + receivedAtMs - anchorTimeMs;
+    if (
+      !state.isActive ||
+      snapshotPositionMs >= untrack(end) ||
+      !untrack(timecodePlaybackActive) ||
+      (lastSnapshotPositionMs !== undefined &&
+        snapshotPositionMs < lastSnapshotPositionMs) ||
+      Math.abs(snapshotPositionMs - predictedPositionMs) >
+        PLAYBACK_DISCONTINUITY_MS
+    ) {
+      anchorPosition(snapshotPositionMs);
+    } else {
+      // Keep presentation continuous while converging on the latest clock sample.
+      anchorPositionMs = snapshotPositionMs;
+      anchorTimeMs = receivedAtMs;
+    }
+    lastSnapshotPositionMs = snapshotPositionMs;
     setTimecodePlaybackActive(state.isActive);
     if (state.isActive) {
       setPlaybackStartPending(false);
@@ -107,7 +142,7 @@ export const createTimelinePlaybackController = (
   /** Interpolates the playhead between authoritative timecode snapshots. */
   createEffect(() => {
     const currentPosition = untrack(position);
-    clearPlaybackInterval();
+    clearPlaybackFrame();
 
     if (!workspaceActive() || !timecodePlaybackActive()) {
       log.debug(`playback paused at ${currentPosition}ms`);
@@ -115,17 +150,26 @@ export const createTimelinePlaybackController = (
     }
 
     log.debug(`playback resumed from ${currentPosition}ms`);
-    let lastTickMs = monotonicNow();
-    playbackInterval = window.setInterval(() => {
-      const tickMs = monotonicNow();
-      const elapsedMs = tickMs - lastTickMs;
-      lastTickMs = tickMs;
-      const newPosition = untrack(position) + elapsedMs;
-      if (newPosition < untrack(end)) setPosition(newPosition);
-    }, 16);
+    /** Projects the latest authoritative position onto this browser presentation frame. */
+    const animate = () => {
+      const frameTimeMs = monotonicNow();
+      const elapsedMs = frameTimeMs - lastFrameTimeMs;
+      lastFrameTimeMs = frameTimeMs;
+      const projectedPositionMs = untrack(position) + elapsedMs;
+      const targetPositionMs = anchorPositionMs + frameTimeMs - anchorTimeMs;
+      const maxCorrectionMs = elapsedMs * MAX_CLOCK_CORRECTION_RATE;
+      const correctionMs = Math.max(
+        -maxCorrectionMs,
+        Math.min(maxCorrectionMs, targetPositionMs - projectedPositionMs),
+      );
+      const nextPosition = projectedPositionMs + correctionMs;
+      if (nextPosition < untrack(end)) setPosition(nextPosition);
+      playbackFrame = window.requestAnimationFrame(animate);
+    };
+    playbackFrame = window.requestAnimationFrame(animate);
   });
 
-  onCleanup(clearPlaybackInterval);
+  onCleanup(clearPlaybackFrame);
 
   /** Starts playback, seeking to an enabled loop's start when necessary. */
   const play = () => {
@@ -134,7 +178,7 @@ export const createTimelinePlaybackController = (
     if (loop?.enabled) {
       const loopStart = durationToMs(loop.start);
       playPosition = loopStart;
-      setPosition(loopStart);
+      anchorPosition(loopStart);
       options.commands.onSeek(loopStart);
     }
     if (options.isManualTriggerMode()) setManualTimelinePlaybackActive(true);
@@ -155,7 +199,7 @@ export const createTimelinePlaybackController = (
   /** Moves the playhead immediately and notifies the backend. */
   const seek = (nextPosition: number) => {
     log.debug(`seeking to ${nextPosition}ms`);
-    setPosition(nextPosition);
+    anchorPosition(nextPosition);
     options.commands.onSeek(nextPosition);
   };
 
@@ -166,8 +210,8 @@ export const createTimelinePlaybackController = (
     setTimecodePlaybackActive(false);
     setManualTimelinePlaybackActive(false);
     setPaused(true);
-    setPosition(start());
-    clearPlaybackInterval();
+    anchorPosition(start());
+    clearPlaybackFrame();
     options.commands.onStop(position());
   };
 

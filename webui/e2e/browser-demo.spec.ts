@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
@@ -48,12 +49,22 @@ async function prepareEmbeddedPage(page: Page): Promise<{
       return;
     }
     const response = await route.fetch();
+    const html = await response.text();
+    const devScriptHashes =
+      process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+        ? []
+        : Array.from(
+            html.matchAll(
+              /<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi,
+            ),
+            ([, script]) =>
+              `'sha256-${createHash("sha256").update(script).digest("base64")}'`,
+          );
     await route.fulfill({
       response,
       headers: {
         ...response.headers(),
-        "content-security-policy":
-          "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:",
+        "content-security-policy": `default-src 'self'; script-src 'self' 'wasm-unsafe-eval' ${devScriptHashes.join(" ")}; worker-src 'self' blob:; connect-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:`,
       },
     });
   });
@@ -302,9 +313,19 @@ async function seekTimeline(
 
 /** Verify the full product UI edits and plays its sample without native services. */
 test("embedded demo edits and plays the sample without backend traffic", async ({
+  baseURL,
   browserName,
   page,
 }, testInfo) => {
+  if (
+    browserName === "chromium" &&
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview"
+  ) {
+    // Routed document responses need loopback access for Vite's HMR WebSocket.
+    await page
+      .context()
+      .grantPermissions(["local-network-access"], { origin: baseURL });
+  }
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   page.on("pageerror", (error) =>
@@ -312,12 +333,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   );
   page.on("console", (message) => {
     const text = message.text();
-    if (
-      message.type() === "error" &&
-      !text.includes("/@vite/client") &&
-      !text.startsWith("WebSocket connection to 'ws://127.0.0.1") &&
-      !text.startsWith("[vite]")
-    ) {
+    if (message.type() === "error") {
       consoleErrors.push(text);
     }
   });
@@ -578,12 +594,28 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   expect(showfileRequests).toHaveLength(2);
   expect([...new Set(audioRequests)]).toEqual([expectedAudioUrl]);
   expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });
 
 /** Verify the tracked show and generated audio support real timeline playback. */
 test("embedded fixture decodes and plays generated timeline audio", async ({
   page,
 }, testInfo) => {
+  await page.addInitScript(() => {
+    (window as any).demoAudioSeekCount = 0;
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "currentTime",
+    )!;
+    Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+      ...descriptor,
+      /** Count explicit media seeks while preserving real browser playback. */
+      set(value: number) {
+        (window as any).demoAudioSeekCount += 1;
+        descriptor.set!.call(this, value);
+      },
+    });
+  });
   const basePath =
     process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
       ? "/demo/app/"
@@ -611,6 +643,40 @@ test("embedded fixture decodes and plays generated timeline audio", async ({
     await expect
       .poll(() => timelinePositionMs(page, timelineUid))
       .toBeGreaterThan(100);
+    const seekCount = await page.evaluate(
+      () => (window as any).demoAudioSeekCount,
+    );
+    await page.waitForTimeout(750);
+    expect(await page.evaluate(() => (window as any).demoAudioSeekCount)).toBe(
+      seekCount,
+    );
+    await expect
+      .poll(async () => (await readDemoAudioState(page)).positionMs)
+      .toBeGreaterThan(500);
+    await page.evaluate(async (uid) => {
+      const stores = (window as any).appStores;
+      const timeline = stores.timelines.get()[uid];
+      const result = await stores.sendAndAwait({
+        module: "TimelineCommand",
+        command: {
+          type: "StoreTimeline",
+          data: {
+            ...timeline,
+            timecode_start: { secs: 0, nanos: 500_000_000 },
+          },
+        },
+      });
+      if (result.outcome.type !== "Succeeded") {
+        throw new Error(
+          `Unable to edit timeline start: ${JSON.stringify(result)}`,
+        );
+      }
+    }, timelineUid);
+    await expect
+      .poll(() => page.evaluate(() => (window as any).demoAudioSeekCount), {
+        timeout: 1_000,
+      })
+      .toBeGreaterThan(seekCount);
     await surface.screenshot({
       path: testInfo.outputPath("generated-audio-playback.png"),
     });
@@ -635,6 +701,7 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
       : "/?engine=embedded-demo&e2e=1";
   await page.goto(path);
   await waitForDockviewApp(page);
+  await expect(page).toHaveTitle("nightfall");
   const bar = page.getByRole("region", { name: "Application status bar" });
   const banner = bar.getByTestId("browser-demo-banner");
   const header = page.getByRole("navigation", { name: "Global" });

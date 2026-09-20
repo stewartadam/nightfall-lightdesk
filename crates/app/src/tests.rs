@@ -28,7 +28,7 @@ use nightfall_cues::prelude::{
     BoundCueInstruction, Cue, CueInstruction, MaterializedSequence, Sequence,
 };
 use nightfall_desk::{
-    prelude::{PendingUiNotifications, ToastLevel, UiNotification, set_control_action},
+    prelude::{ToastLevel, UiNotification, UiNotificationState, set_control_action},
     resources::log_config::{LogConfig, TracingTarget},
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
@@ -58,8 +58,7 @@ use super::{
     WorldFactory,
     composition::{PeriodicDraftAutosaveTimer, ShowfileHandling},
     desktop_shell::{
-        file_explorer_command, file_open_command, resolve_open_data_dir_path,
-        resolve_open_log_file_path,
+        file_explorer_command, resolve_open_data_dir_path, resolve_open_log_file_path,
     },
     session::{
         complete_and_publish_world_swap_success, queue_current_showfile_changed,
@@ -521,7 +520,7 @@ fn world_factory_named_empty_bootstrap_persists_initial_draft() {
         root.path()
             .join("drafts")
             .join("test2.nightfall-show")
-            .join("showfile.json")
+            .join("showfile.json.gz")
             .is_file(),
         "expected initial draft snapshot for named showfile"
     );
@@ -567,11 +566,11 @@ fn new_showfile_current_showfile_notification_uses_normalized_name() {
 
     let notifications: Vec<_> = app
         .world_mut()
-        .resource_mut::<PendingUiNotifications>()
-        .drain()
+        .resource_mut::<UiNotificationState>()
+        .take_for_resync()
         .collect();
     assert_eq!(notifications.len(), 1);
-    let UiNotification::CurrentShowfileChanged { name } = &notifications[0] else {
+    let UiNotification::CurrentShowfileChanged { name, .. } = &notifications[0] else {
         panic!("expected current showfile changed command");
     };
     assert_eq!(name.as_deref(), Some("demo"));
@@ -592,6 +591,29 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
         .expect("sample data world factory build");
 
     assert_eq!(lifecycle_state(&app), AppState::Ready);
+}
+
+/// Verify sample faders reference the intended clips and survive the portable snapshot path.
+#[test]
+fn world_factory_sample_data_seeds_fader_assignments() {
+    use nightfall_desk::prelude::{ControlAssignment, Controls};
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    let assignments = app.world().resource::<Controls>().assignments();
+    assert_eq!(
+        &assignments[..5],
+        &[1, 2, 26, 28, 30].map(|id| Some(ControlAssignment::Clip(id)))
+    );
+    assert!(assignments[5..].iter().all(Option::is_none));
+    let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
+    for id in [1, 2, 26, 28, 30] {
+        assert!(snapshot.clips.iter().any(|clip| clip.identifiers.id == id));
+    }
+    assert_eq!(snapshot.control_assignments, assignments);
 }
 
 /// Verifies sample startup exposes populated Color and Position Blueprints.
@@ -731,9 +753,10 @@ fn file_explorer_command_matches_current_platform() {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+/// Preserve the log path as one argument to the platform file launcher.
 fn file_open_command_matches_current_platform() {
     let path = Path::new("test-log.txt");
-    let (program, args) = file_open_command(path).expect("file open command");
+    let (program, args) = crate::desktop_shell::file_open_command(path).expect("file open command");
 
     #[cfg(target_os = "macos")]
     assert_eq!(program, "open");
@@ -1481,10 +1504,8 @@ fn named_sample_show_is_standalone_and_recoverable() {
             .all(|generator| !generator.state.is_active)
     );
     let draft = root.path().join("drafts/Sample Tour.nightfall-show");
-    let snapshot: nightfall_showfile::ShowfileSnapshot = serde_json::from_slice(
-        &std::fs::read(draft.join("showfile.json")).expect("read initial sample draft"),
-    )
-    .expect("decode sample draft");
+    let snapshot = crate::systems::showfile_events::read_showfile_snapshot_from_path(&draft)
+        .expect("decode sample draft");
     assert!(!snapshot.fixtures.is_empty());
     assert!(!snapshot.cues.is_empty());
     assert!(!snapshot.clips.is_empty());
@@ -1707,7 +1728,7 @@ fn unnamed_sample_show_installs_bundled_audio_before_runtime() {
     crate::world_factory::persist_pending_sample_draft(&mut app)
         .expect("install runtime sample assets");
     let draft = root.path().join("drafts/default.nightfall-show");
-    assert!(draft.join("showfile.json").is_file());
+    assert!(draft.join("showfile.json.gz").is_file());
     for asset in crate::sample_data::SAMPLE_AUDIO {
         assert_eq!(
             std::fs::read(draft.join(asset.relative_path)).expect("installed sample audio"),

@@ -8,6 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readShowfileJsonSync } from "../../scripts/showfile-storage.mjs";
 import { expect, test } from "./playwright-fixtures";
 
 /** Creates sample data from startup, checks its draft, and verifies the next new show defaults empty. */
@@ -45,14 +46,13 @@ test("new show optionally includes standalone sample data", async ({
     )
     .toBeGreaterThan(0);
   const snapshot = JSON.parse(
-    readFileSync(
+    readShowfileJsonSync(
       join(
         backendSlot.dataDir,
         "drafts",
         "Sample Tour.nightfall-show",
         "showfile.json",
       ),
-      "utf8",
     ),
   );
   expect(snapshot.fixtures).toHaveLength(56);
@@ -109,6 +109,46 @@ test("new show optionally includes standalone sample data", async ({
       ),
     )
     .toBe("Sample Tour");
+
+  const identityBeforeResync = await page.evaluate(async () => {
+    const showfile = await import(
+      /* @vite-ignore */ "/lib/showfile-loading.ts"
+    );
+    const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
+    const revision = showfile.currentShowfileRevision.get();
+    const generation = runtime.resyncGeneration();
+    localStorage.removeItem("nightfall.currentShowfileName");
+    (window as any).appStores.send({
+      module: "EngineCommand",
+      command: { type: "ResyncState" },
+    });
+    return { revision, generation };
+  });
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const runtime = await import(
+          /* @vite-ignore */ "/lib/engine-runtime.ts"
+        );
+        return runtime.resyncGeneration();
+      }),
+    )
+    .toBeGreaterThan(identityBeforeResync.generation);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        localStorage.getItem("nightfall.currentShowfileName"),
+      ),
+    )
+    .toBe("Sample Tour");
+  expect(
+    await page.evaluate(async () => {
+      const showfile = await import(
+        /* @vite-ignore */ "/lib/showfile-loading.ts"
+      );
+      return showfile.currentShowfileRevision.get();
+    }),
+  ).toBe(identityBeforeResync.revision);
 
   await page.getByRole("button", { name: "Open command palette" }).click();
   await page.getByPlaceholder("Type a command or search...").fill("Open Patch");
@@ -206,7 +246,7 @@ test("new show optionally includes standalone sample data", async ({
   await page.getByTitle("Menu", { exact: true }).click();
   await page.getByRole("button", { name: /New Showfile/ }).click();
   await expect(samples).not.toBeChecked();
-  const originalDraft = readFileSync(
+  const originalDraft = readShowfileJsonSync(
     join(
       backendSlot.dataDir,
       "drafts",
@@ -231,7 +271,7 @@ test("new show optionally includes standalone sample data", async ({
   );
   expect(duplicateResult.outcome.type).toBe("Failed");
   expect(
-    readFileSync(
+    readShowfileJsonSync(
       join(
         backendSlot.dataDir,
         "drafts",
@@ -257,14 +297,13 @@ test("new show optionally includes standalone sample data", async ({
     )
     .toBe(0);
   const empty = JSON.parse(
-    readFileSync(
+    readShowfileJsonSync(
       join(
         backendSlot.dataDir,
         "drafts",
         "Empty Tour.nightfall-show",
         "showfile.json",
       ),
-      "utf8",
     ),
   );
   expect(empty.fixtures).toEqual([]);

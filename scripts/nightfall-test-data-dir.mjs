@@ -12,13 +12,17 @@ import {
   cpSync,
   existsSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
+import { gzipSync } from "node:zlib";
+import {
+  readShowfileJsonSync,
+  resolveShowfileSnapshotPath,
+} from "./showfile-storage.mjs";
 
 import {
   defaultNightfallDataDir,
@@ -81,8 +85,9 @@ export async function nightfallDataDirForTestProcess(
 
 /** Disables physical transports when one copied seed showfile still enables them. */
 export function disablePlaywrightShowfileTransports(showfilePath) {
+  showfilePath = resolveShowfileSnapshotPath(showfilePath);
   if (!existsSync(showfilePath)) return false;
-  const showfile = JSON.parse(readFileSync(showfilePath, "utf8"));
+  const showfile = JSON.parse(readShowfileJsonSync(showfilePath));
   if (!showfile.settings || typeof showfile.settings !== "object") return false;
   if (
     showfile.settings.network_output_enabled === false &&
@@ -94,7 +99,11 @@ export function disablePlaywrightShowfileTransports(showfilePath) {
   showfile.settings.network_output_enabled = false;
   showfile.settings.network_input_enabled = false;
   showfile.settings.usb_output_enabled = false;
-  writeFileSync(showfilePath, `${JSON.stringify(showfile, null, 2)}\n`, "utf8");
+  const json = `${JSON.stringify(showfile, null, 2)}\n`;
+  writeFileSync(
+    showfilePath,
+    showfilePath.endsWith(".gz") ? gzipSync(json) : json,
+  );
   return true;
 }
 
@@ -104,9 +113,14 @@ export function disablePlaywrightShowfileTransports(showfilePath) {
 export function playwrightSeedDataAvailable(sourceDataDir) {
   return PLAYWRIGHT_SEED_SHOWFILES.every(
     (entry) =>
-      statSync(join(sourceDataDir, entry, "showfile.json"), {
-        throwIfNoEntry: false,
-      })?.isFile() ?? false,
+      statSync(
+        resolveShowfileSnapshotPath(
+          join(sourceDataDir, entry, "showfile.json"),
+        ),
+        {
+          throwIfNoEntry: false,
+        },
+      )?.isFile() ?? false,
   );
 }
 

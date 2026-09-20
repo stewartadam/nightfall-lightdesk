@@ -355,7 +355,7 @@ export function renderNotices(document) {
 }
 
 /** Assemble the build's frontend and WASM notices, adding native dependencies for desktop packaging. */
-export function packageNotices(outDir, target) {
+export function packageNotices(outDir, target, embeddedDemo = false) {
   const directory = resolve(outDir, noticesDirectory);
   const frontend = JSON.parse(
     readFileSync(join(directory, "frontend.json"), "utf8"),
@@ -366,7 +366,9 @@ export function packageNotices(outDir, target) {
     return { name, version: pkg.version, identifier: pkg.license };
   });
   const entries = frontendNotices([...frontend, ...supplemental]);
-  for (const crate of ["wasm-bridge", "browser-runtime"]) {
+  for (const crate of embeddedDemo
+    ? ["wasm-bridge", "browser-runtime"]
+    : ["wasm-bridge"]) {
     entries.push(
       ...collectRust(`crates/${crate}/Cargo.toml`, "wasm32-unknown-unknown"),
     );

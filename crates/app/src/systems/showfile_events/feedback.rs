@@ -28,7 +28,7 @@ pub(super) fn write_current_showfile_changed(
     name: Option<String>,
     ui_notifications: &mut MessageWriter<UiNotification>,
 ) {
-    ui_notifications.write(UiNotification::CurrentShowfileChanged { name });
+    ui_notifications.write(UiNotification::current_showfile_changed(name));
 }
 
 /// Emits successful import completion and its operator-facing toast.

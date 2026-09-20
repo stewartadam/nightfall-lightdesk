@@ -14,13 +14,14 @@ pub(super) const SHOWFILE_BACKUPS_DIR: &str = "backups";
 pub(super) const SHOWFILE_DRAFTS_DIR: &str = "drafts";
 pub(super) const SHOWFILE_FOLDER_EXTENSION: &str = "nightfall-show";
 pub(super) const SHOWFILE_SNAPSHOT_FILENAME: &str = "showfile.json";
+pub(super) const SHOWFILE_COMPRESSED_SNAPSHOT_FILENAME: &str = "showfile.json.gz";
 pub(super) const SHOWFILE_MANIFEST_FILENAME: &str = "showfile-manifest.json";
 pub(super) const LEGACY_SHOWFILE_DRAFT_METADATA_FILENAME: &str = "metadata.json";
 pub(super) const DEFAULT_SHOWFILE_NAME: &str = "default";
 
 /// Resolve the on-disk path for the canonical or named showfile JSON snapshot.
 pub(super) fn showfile_path(name: Option<&str>) -> Result<PathBuf, String> {
-    Ok(showfile_dir_path(name)?.join(SHOWFILE_SNAPSHOT_FILENAME))
+    Ok(showfile_snapshot_path_in_dir(&showfile_dir_path(name)?))
 }
 
 /// Normalize a loaded showfile name for active runtime state.
@@ -120,10 +121,20 @@ pub(super) fn showfile_draft_dir_path_in_root(
         .join(showfile_folder_name(name)?))
 }
 
-/// Resolve a snapshot path from either a show folder or a direct JSON path.
+/// Resolve the stored gzip snapshot, or the plain JSON interchange snapshot in a show folder.
+pub(super) fn showfile_snapshot_path_in_dir(path: &Path) -> PathBuf {
+    let compressed = path.join(SHOWFILE_COMPRESSED_SNAPSHOT_FILENAME);
+    if compressed.exists() {
+        compressed
+    } else {
+        path.join(SHOWFILE_SNAPSHOT_FILENAME)
+    }
+}
+
+/// Resolve a snapshot path from either a show folder or a direct JSON or gzip path.
 pub(super) fn showfile_snapshot_path_from_path(path: &Path) -> PathBuf {
     if path.is_dir() {
-        path.join(SHOWFILE_SNAPSHOT_FILENAME)
+        showfile_snapshot_path_in_dir(path)
     } else {
         path.to_path_buf()
     }

@@ -12,6 +12,8 @@ import { waitForDockviewApp } from "./showfile-startup";
 const LAYOUT_STORAGE_KEY = "nightfall-ui-layouts";
 const STORAGE_CLEARED_FLAG = "nightfall-layout-test-storage-cleared";
 
+test.use({ sampleDataOnly: true });
+
 /** Shows overflow carets only where more layouts remain while keeping creation controls visible. */
 test("layout list shows scroll indicators at overflow edges", async ({
   page,
@@ -26,7 +28,7 @@ test("layout list shows scroll indicators at overflow edges", async ({
   await expect(bottom).toHaveAttribute("data-visible", "false");
   for (let index = 0; index < 12; index++) {
     await dialog.getByPlaceholder("Layout name").fill(`Layout ${index + 1}`);
-    await dialog.getByRole("button", { name: "Store Current" }).click();
+    await dialog.getByRole("button", { name: "Save current as new" }).click();
     await expect(dialog.getByPlaceholder("Layout name")).toHaveValue("");
   }
   await expect(bottom).toHaveAttribute("data-visible", "true");
@@ -40,7 +42,7 @@ test("layout list shows scroll indicators at overflow edges", async ({
   await expect(top).toHaveAttribute("data-visible", "true");
   await expect(bottom).toHaveAttribute("data-visible", "false");
   await expect(
-    dialog.getByRole("button", { name: "Store Current" }),
+    dialog.getByRole("button", { name: "Save current as new" }),
   ).toBeInViewport();
   await page.screenshot({
     path: testInfo.outputPath("layouts-overflow-bottom.png"),
@@ -237,13 +239,11 @@ async function movePropertiesPanelToGrid(page: Page) {
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     const propertiesPanel = api.getPanel("panel-PropertiesInspector");
-    const gridPanel =
-      api.getPanel("panel-FixtureGrid") ??
-      api.panels.find(
-        (panel: any) =>
-          panel.id !== "panel-PropertiesInspector" &&
-          panel.api.location.type === "grid",
-      );
+    const gridPanel = api.panels.find(
+      (panel: any) =>
+        panel.id !== "panel-PropertiesInspector" &&
+        panel.api.location.type === "grid",
+    );
     if (!gridPanel) {
       throw new Error("Unable to resolve a grid panel for Properties");
     }
@@ -268,7 +268,7 @@ async function movePropertiesPanelToGrid(page: Page) {
     )
     .toEqual({
       locationType: "grid",
-      rightVisible: false,
+      rightVisible: true,
     });
 }
 

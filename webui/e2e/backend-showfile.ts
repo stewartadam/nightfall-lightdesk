@@ -7,6 +7,7 @@
  */
 
 import { decode } from "cborg";
+import type { CommandResult } from "../types";
 
 /** Returns the websocket URL for one test's isolated backend. */
 function backendWebsocketUrl(backendPort: number): string {
@@ -37,43 +38,55 @@ async function sleep(ms: number): Promise<void> {
 }
 
 /** Attempts one backend websocket connection configured for binary CBOR. */
-async function tryOpenBackendSocket(backendPort: number): Promise<WebSocket> {
+async function tryOpenBackendSocket(
+  backendPort: number,
+  timeoutMs: number,
+): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(backendWebsocketUrl(backendPort));
     socket.binaryType = "arraybuffer";
-
+    /** Releases the handshake listeners after either connection or failure. */
+    function cleanup(): void {
+      clearTimeout(timeout);
+      socket.removeEventListener("open", onOpen);
+      socket.removeEventListener("close", onFailure);
+      socket.removeEventListener("error", onFailure);
+    }
+    /** Hands the connected socket to its protocol exchange. */
+    function onOpen(): void {
+      cleanup();
+      resolve(socket);
+    }
+    /** Retires failed handshakes so the caller can reconnect promptly. */
+    function onFailure(): void {
+      cleanup();
+      socket.close();
+      reject(new Error("Backend websocket connection failed."));
+    }
     const timeout = setTimeout(() => {
+      cleanup();
       socket.close();
       reject(new Error("Timed out connecting to backend websocket."));
-    }, 10_000);
-
-    socket.addEventListener(
-      "open",
-      () => {
-        clearTimeout(timeout);
-        resolve(socket);
-      },
-      { once: true },
-    );
-    socket.addEventListener(
-      "error",
-      () => {
-        clearTimeout(timeout);
-        reject(new Error("Backend websocket connection failed."));
-      },
-      { once: true },
-    );
+    }, timeoutMs);
+    socket.addEventListener("open", onOpen);
+    socket.addEventListener("close", onFailure);
+    socket.addEventListener("error", onFailure);
   });
 }
 
 /** Opens a backend websocket, retrying across world-swap server restarts. */
-async function openBackendSocket(backendPort: number): Promise<WebSocket> {
-  const deadline = Date.now() + 10_000;
+async function openBackendSocket(
+  backendPort: number,
+  deadline = Date.now() + 10_000,
+): Promise<WebSocket> {
   let lastError: unknown = null;
 
   while (Date.now() < deadline) {
     try {
-      return await tryOpenBackendSocket(backendPort);
+      return await tryOpenBackendSocket(
+        backendPort,
+        Math.max(1, Math.min(10_000, deadline - Date.now())),
+      );
     } catch (error) {
       lastError = error;
       await sleep(100);
@@ -85,16 +98,27 @@ async function openBackendSocket(backendPort: number): Promise<WebSocket> {
     : new Error("Timed out connecting to backend websocket.");
 }
 
-/** Waits until a backend websocket connection observes a ready showfile session. */
-async function waitForBackendReady(backendPort: number): Promise<void> {
-  const socket = await openBackendSocket(backendPort);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error("Timed out waiting for backend resync completion."));
-      }, 30_000);
+/** Identifies a connection retired by a backend world swap. */
+class BackendSessionClosed extends Error {}
 
-      socket.addEventListener("message", async (event) => {
+/** Observes resync completion, releasing listeners on every terminal outcome. */
+async function waitForSocketReady(
+  socket: WebSocket,
+  timeoutMs: number,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    /** Removes this attempt's timer and listeners before settling it. */
+    function finish(error?: Error): void {
+      clearTimeout(timeout);
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("close", onClose);
+      socket.removeEventListener("error", onError);
+      if (error) reject(error);
+      else resolve();
+    }
+    /** Decodes readiness frames and reports malformed backend responses immediately. */
+    async function onMessage(event: MessageEvent): Promise<void> {
+      try {
         const message = await decodeBackendFrame(event.data);
         if (
           message &&
@@ -104,65 +128,126 @@ async function waitForBackendReady(backendPort: number): Promise<void> {
             (message.type === "AppState" &&
               "data" in message &&
               message.data === "Ready"))
-        ) {
-          clearTimeout(timeout);
-          resolve();
-        }
-      });
-      socket.addEventListener(
-        "error",
-        () => {
-          clearTimeout(timeout);
-          reject(new Error("Backend websocket errored while waiting."));
-        },
-        { once: true },
+        )
+          finish();
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+    /** Requests a fresh connection when the current world retires its listener. */
+    function onClose(): void {
+      finish(new BackendSessionClosed("Backend session closed during resync."));
+    }
+    /** Treats transport failures as a retired session during world replacement. */
+    function onError(): void {
+      finish(
+        new BackendSessionClosed("Backend websocket errored during resync."),
       );
-      socket.send(
-        JSON.stringify({
-          command_id: crypto.randomUUID(),
-          module: "EngineCommand",
-          command: { type: "ResyncState" },
-        }),
-      );
-    });
-  } finally {
-    socket.close();
-  }
+    }
+    const timeout = setTimeout(() => {
+      finish(new Error("Timed out waiting for backend resync completion."));
+    }, timeoutMs);
+    socket.addEventListener("message", onMessage);
+    socket.addEventListener("close", onClose);
+    socket.addEventListener("error", onError);
+    if (socket.readyState !== WebSocket.OPEN) {
+      onClose();
+      return;
+    }
+    socket.send(
+      JSON.stringify({
+        command_id: crypto.randomUUID(),
+        module: "EngineCommand",
+        command: { type: "ResyncState" },
+      }),
+    );
+  });
 }
 
-/** Replaces one test backend with a blank showfile and waits until it is ready. */
+/** Reconnects across world swaps without extending the resync deadline. */
+async function waitForBackendReady(backendPort: number): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const socket = await openBackendSocket(backendPort, deadline);
+    try {
+      await waitForSocketReady(socket, Math.max(1, deadline - Date.now()));
+      return;
+    } catch (error) {
+      if (!(error instanceof BackendSessionClosed)) throw error;
+    } finally {
+      socket.close();
+    }
+    await sleep(100);
+  }
+  throw new Error("Timed out waiting for backend resync completion.");
+}
+
+/** Creates a uniquely named blank showfile, waits for resync, and returns its name. */
 export async function prepareFreshBackendShowfile(
   backendPort: number,
-): Promise<void> {
+): Promise<string> {
   await waitForBackendReady(backendPort);
   const socket = await openBackendSocket(backendPort);
+  const commandId = crypto.randomUUID();
+  const showfileName = `playwright-${crypto.randomUUID()}`;
   try {
     await new Promise<void>((resolve, reject) => {
+      /** Removes all listeners before reporting the swap or its command failure. */
+      function finish(error?: Error): void {
+        clearTimeout(timeout);
+        socket.removeEventListener("message", onMessage);
+        socket.removeEventListener("close", onClose);
+        socket.removeEventListener("error", onError);
+        if (error) reject(error);
+        else resolve();
+      }
+      /** Surfaces correlated command failures instead of waiting for a nonexistent swap. */
+      async function onMessage(event: MessageEvent): Promise<void> {
+        try {
+          const message = await decodeBackendFrame(event.data);
+          if (
+            !message ||
+            typeof message !== "object" ||
+            !("type" in message) ||
+            message.type !== "CommandResult" ||
+            !("data" in message)
+          )
+            return;
+          const result = message.data as CommandResult;
+          if (result.command_id !== commandId) return;
+          if (result.outcome.type === "Failed") {
+            finish(
+              new Error(
+                `Fresh showfile creation failed (${result.outcome.data.code}): ${result.outcome.data.message}`,
+              ),
+            );
+          }
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+      /** A successful world replacement retires its websocket listener. */
+      function onClose(): void {
+        finish();
+      }
+      /** World replacement can retire the transport with an error before close. */
+      function onError(): void {
+        finish();
+      }
       const timeout = setTimeout(() => {
-        reject(new Error("Timed out waiting for backend world swap."));
+        finish(new Error("Timed out waiting for backend world swap."));
       }, 30_000);
-
-      socket.addEventListener(
-        "close",
-        () => {
-          clearTimeout(timeout);
-          resolve();
-        },
-        { once: true },
-      );
-      socket.addEventListener(
-        "error",
-        () => {
-          clearTimeout(timeout);
-          resolve();
-        },
-        { once: true },
-      );
+      socket.addEventListener("message", onMessage);
+      socket.addEventListener("close", onClose);
+      socket.addEventListener("error", onError);
       socket.send(
         JSON.stringify({
-          command_id: crypto.randomUUID(),
+          command_id: commandId,
           module: "DeskCommand",
-          command: { type: "NewShowfile" },
+          command: {
+            type: "NewNamedShowfile",
+            data: { name: showfileName, includeSampleData: false },
+          },
         }),
       );
     });
@@ -171,4 +256,5 @@ export async function prepareFreshBackendShowfile(
   }
 
   await waitForBackendReady(backendPort);
+  return showfileName;
 }

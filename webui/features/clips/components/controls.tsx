@@ -34,6 +34,7 @@ export interface ControlsProps {
   clipStates: () => Record<string, [Clip, boolean]>;
 }
 
+/** Arranges fader strips to fill the section while scrolling horizontally. */
 export function Controls(props: ControlsProps): JSX.Element {
   /** Returns the configured number of visible controls. */
   const controlCount = () => props.controlCount ?? 10;
@@ -73,8 +74,8 @@ export function Controls(props: ControlsProps): JSX.Element {
   };
 
   return (
-    <div class="controls">
-      <div class="flex gap-1 overflow-x-auto pb-2">
+    <div class="controls h-full min-h-0">
+      <div class="flex h-full min-h-0 gap-1 overflow-x-auto pb-2">
         <For each={Array.from({ length: controlCount() }, (_, i) => i + 1)}>
           {(controlIndex) => {
             /** Returns the backend snapshot for this control slot. */

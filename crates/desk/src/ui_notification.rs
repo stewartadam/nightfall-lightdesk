@@ -8,6 +8,7 @@
 
 use bevy_ecs::prelude::{Message, Resource};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Severity levels used when displaying UI toast messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,21 +29,48 @@ pub enum UiNotification {
     /// Show a toast/notification in the UI
     ShowToast { level: ToastLevel, message: String },
     /// Update the frontend's remembered current showfile name.
-    CurrentShowfileChanged { name: Option<String> },
+    CurrentShowfileChanged {
+        name: Option<String>,
+        change_id: Uuid,
+    },
 }
 
-/// UI notifications that should be replayed after the next websocket resync.
-#[derive(Debug, Default, Resource)]
-pub struct PendingUiNotifications(Vec<UiNotification>);
+impl UiNotification {
+    /// Identifies a confirmed showfile change so clients can deduplicate resync replays.
+    pub fn current_showfile_changed(name: Option<String>) -> Self {
+        Self::CurrentShowfileChanged {
+            name,
+            change_id: Uuid::new_v4(),
+        }
+    }
+}
 
-impl PendingUiNotifications {
-    /// Queues one notification for delivery after the next state resync.
+/// One-shot UI notifications and confirmed showfile identity replayed during resync.
+#[derive(Debug, Default, Resource)]
+pub struct UiNotificationState {
+    pending: Vec<UiNotification>,
+    current_showfile: Option<UiNotification>,
+}
+
+impl UiNotificationState {
+    /// Queues transient notifications and retains confirmed identity for every resync.
     pub fn push(&mut self, notification: UiNotification) {
-        self.0.push(notification);
+        if matches!(notification, UiNotification::CurrentShowfileChanged { .. }) {
+            self.current_showfile = Some(notification);
+        } else {
+            self.pending.push(notification);
+        }
     }
 
-    /// Drains queued notifications in insertion order.
-    pub fn drain(&mut self) -> impl Iterator<Item = UiNotification> + '_ {
-        self.0.drain(..)
+    /// Records live identity changes without queuing transient notifications again.
+    pub fn observe(&mut self, notification: &UiNotification) {
+        if matches!(notification, UiNotification::CurrentShowfileChanged { .. }) {
+            self.current_showfile = Some(notification.clone());
+        }
+    }
+
+    /// Drains transient notifications and replays the latest confirmed identity.
+    pub fn take_for_resync(&mut self) -> impl Iterator<Item = UiNotification> + '_ {
+        self.pending.drain(..).chain(self.current_showfile.clone())
     }
 }

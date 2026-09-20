@@ -1,12 +1,12 @@
 [aliases]
-done = "git -C {{ primary_worktree_path }} pull && wt remove {{ args }}"
+done = "node {{ worktree_path }}/scripts/worktree-done.mjs {{ args }}"
 kill-backend = "WORKTREE_TARGET={{ managed_worktree_path | default(worktree_path) }} node ./scripts/stop-processes.mjs"
 
 [[pre-start]]
 setup-env = "node ./scripts/setup-env.mjs"
 
 [[pre-start]]
-install = "npm install"
+install = "npm install && npm run postinstall"
 typeshare = "npm run typeshare"
 
 [[post-start]]

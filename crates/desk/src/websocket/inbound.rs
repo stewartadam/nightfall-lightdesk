@@ -148,8 +148,10 @@ pub fn forward_desk_commands(
 pub fn forward_ui_notifications(
     mut events: MessageReader<UiNotification>,
     broadcaster: Res<ClientEventSink>,
+    mut pending: ResMut<UiNotificationState>,
 ) {
     for event in events.read() {
+        pending.observe(event);
         tracing::trace!(?event, "Forwarding UiNotification to UI");
         broadcaster.publish(
             DISCRIMINATOR_NON_DROPPABLE,
@@ -158,16 +160,16 @@ pub fn forward_ui_notifications(
     }
 }
 
-/// Broadcasts queued startup notifications and removes each notification after it is sent.
+/// Broadcasts queued transient notifications and the retained showfile identity.
 pub(super) fn flush_pending_ui_notifications(
-    pending_ui_notifications: Option<&mut PendingUiNotifications>,
+    pending_ui_notifications: Option<&mut UiNotificationState>,
     broadcaster: &ClientEventSink,
 ) {
     let Some(pending_ui_notifications) = pending_ui_notifications else {
         return;
     };
 
-    for notification in pending_ui_notifications.drain() {
+    for notification in pending_ui_notifications.take_for_resync() {
         tracing::trace!(
             ?notification,
             "Replaying pending UiNotification after resync"

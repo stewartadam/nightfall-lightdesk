@@ -18,10 +18,23 @@ interface TimelineProps extends BasePanelComponentProps {
   initialTimelineUid: string;
 }
 
+/** Keeps a timeline editor's tab and contents aligned with its backing timeline. */
 export default function TimelineEditor(props: TimelineProps) {
   const $timelineDefinitionsLoaded = useStore(timelineDefinitionsLoaded);
   const $timelines = useShallowStore(timelines);
   let closedMissingTimelinePanel = false;
+
+  /** Refreshes the tab title when the timeline name or display ID changes. */
+  createEffect(() => {
+    const timeline = $timelines()[props.initialTimelineUid];
+    if (!timeline) return;
+    const label = timeline.identifiers.label.trim();
+    props.panelApi?.setTitle(
+      label
+        ? `Timeline ${timeline.identifiers.id}: ${label}`
+        : `Timeline ${timeline.identifiers.id}`,
+    );
+  });
 
   /** Closes timeline editor panels once their backing timeline is deleted. */
   createEffect(() => {

@@ -908,19 +908,24 @@ fn max_layer_release_duration(layer: &Layer) -> Duration {
 
 #[cfg(test)]
 mod tests {
+    mod fixture {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../fx-module/tests/support/mod.rs"
+        ));
+    }
+
     use std::{
-        path::Path,
-        process::Command,
         sync::{Mutex, OnceLock},
         time::Instant,
     };
 
     use bevy_app::{App, Update};
     use bevy_ecs::{message::Messages, schedule::Schedule};
+    use fixture::test_component_bytes;
     use moonshine_kind::prelude::Instance;
     use nightfall_dmx::prelude::ParameterValue;
     use uuid::Uuid;
-    use wit_component::ComponentEncoder;
 
     use super::*;
 
@@ -2322,43 +2327,6 @@ mod tests {
         nightfall::set_nightfall_data_dir(None);
 
         let _ = std::fs::remove_dir_all(&temp_root);
-    }
-
-    fn test_component_bytes() -> &'static [u8] {
-        static COMPONENT: OnceLock<Vec<u8>> = OnceLock::new();
-        COMPONENT.get_or_init(build_test_component).as_slice()
-    }
-
-    fn build_test_component() -> Vec<u8> {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("guest-module")
-            .join("Cargo.toml");
-        let guest_dir = manifest.parent().unwrap();
-
-        let status = Command::new("cargo")
-            .arg("build")
-            .arg("--manifest-path")
-            .arg(&manifest)
-            .arg("--target")
-            .arg("wasm32-unknown-unknown")
-            .current_dir(guest_dir)
-            .status()
-            .expect("failed to build playback module component");
-        assert!(status.success(), "module component build failed");
-
-        let guest_wasm = guest_dir
-            .join("target")
-            .join("wasm32-unknown-unknown")
-            .join("debug")
-            .join("fx_module_test_module.wasm");
-        let module = std::fs::read(&guest_wasm).expect("failed to read module wasm");
-
-        ComponentEncoder::default()
-            .module(&module)
-            .expect("failed to attach module to component encoder")
-            .encode()
-            .expect("failed to encode component")
     }
 }
 

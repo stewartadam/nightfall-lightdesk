@@ -73,12 +73,17 @@ export function LayerPanelController(props: BasePanelComponentProps) {
   const [openLayerKeys, setOpenLayerKeys] = createSignal<Set<string>>(
     new Set(),
   );
+  const [visibleLayerKeys, setVisibleLayerKeys] = createSignal<Set<string>>(
+    new Set(),
+  );
+  let scrollRoot!: HTMLDivElement;
   /** Tracks whether the panel should render without exposing raw snapshot identity. */
   const layerCount = createMemo(() => $layersRaw().length);
   /** Keeps rendered layer rows keyed by logical layer identity instead of snapshot object identity. */
   const layerEntries = createMemo<LayerPanelEntry[]>((previous = []) => {
     return measurePerformanceScope("layer-panel.layer-entries", () => {
       const openKeys = openLayerKeys();
+      const visibleKeys = visibleLayerKeys();
       const navigationLayerIndex = $layerNavigationRequest()?.layerIndex;
       const previousByKey = new Map(
         previous.map((entry) => [entry.key, entry]),
@@ -102,7 +107,10 @@ export function LayerPanelController(props: BasePanelComponentProps) {
               ? previousSummary
               : nextSummary,
           );
-          if (openKeys.has(key) || navigationLayerIndex === index) {
+          if (
+            (openKeys.has(key) && visibleKeys.has(key)) ||
+            navigationLayerIndex === index
+          ) {
             existing.setLayer(() => layer);
           }
           existing.setIndex(index);
@@ -417,7 +425,10 @@ export function LayerPanelController(props: BasePanelComponentProps) {
           panelId={panelId}
         />
 
-        <div class="min-h-0 flex-1 space-y-2 overflow-auto p-2">
+        <div
+          ref={scrollRoot}
+          class="min-h-0 flex-1 space-y-2 overflow-auto p-2"
+        >
           <InputContributionTrace
             fixtures={$fixtures()}
             trace={$inputTrace()}
@@ -428,8 +439,10 @@ export function LayerPanelController(props: BasePanelComponentProps) {
             onNavigateToLayerObject={handleNavigateToLayerObject}
             onNavigationHandled={handleLayerNavigationHandled}
             onOpenChange={handleLayerOpenChange}
+            onVisibleLayersChange={setVisibleLayerKeys}
             openLayerKeys={openLayerKeys()}
             panelId={panelId}
+            scrollRoot={scrollRoot}
           />
         </div>
       </div>

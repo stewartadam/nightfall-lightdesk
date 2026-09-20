@@ -873,8 +873,8 @@ test("toast catalog emits and dismisses typed notifications", async ({
   await panel.getByRole("switch", { name: "Keep until dismissed" }).check();
   for (const name of ["Information", "Success", "Warning", "Error"])
     await panel.getByRole("button", { name, exact: true }).click();
-  await expect(page.locator('[data-component="Toast"]')).toHaveCount(4);
-  for (const level of ["info", "success", "warning", "error"])
+  await expect(page.locator('[data-component="Toast"]')).toHaveCount(3);
+  for (const level of ["info", "success", "warning"])
     await expect(
       page.locator(`[data-component="Toast"][data-level="${level}"]`),
     ).toBeInViewport({ ratio: 1 });

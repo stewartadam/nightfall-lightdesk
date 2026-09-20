@@ -25,4 +25,8 @@ export function developmentNotices(): NoticesDocument;
 /** Render the same inventory as a standalone offline notice file. */
 export function renderNotices(document: NoticesDocument): string;
 /** Collect and package the actual web and optional desktop dependency inventories. */
-export function packageNotices(outDir: string, target?: string): void;
+export function packageNotices(
+  outDir: string,
+  target?: string,
+  embeddedDemo?: boolean,
+): void;

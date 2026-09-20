@@ -540,6 +540,7 @@ pub enum ParameterType {
     /// Controls a global variable
     GlobalVariable(String),
     /// Controls the rate master (speed) of a clip
+    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
     RateMaster(Uuid),
 }
 

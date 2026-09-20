@@ -134,8 +134,8 @@ test("legacy Dockview session layouts gain hidden default edge groups", async ()
       },
       left: {
         collapsed: true,
-        group: { id: "edge-Programmer", views: [] },
-        size: 360,
+        group: { id: "edge-Clips", views: [] },
+        size: 550,
         visible: false,
       },
       right: {
@@ -209,8 +209,8 @@ test("edge group migration preserves existing stored edge group state", async ()
       },
       left: {
         collapsed: true,
-        group: { id: "edge-Programmer", views: [] },
-        size: 360,
+        group: { id: "edge-Clips", views: [] },
+        size: 550,
         visible: false,
       },
       right: rightEdgeGroup,
@@ -269,7 +269,7 @@ test("edge group migration fills missing stored edge group sizes", async () => {
   assert.ok(loadedLayout, "expected migrated session layout");
   const edgeGroups = (loadedLayout.layout as any).edgeGroups;
 
-  assert.equal(edgeGroups.left.size, 360);
+  assert.equal(edgeGroups.left.size, 550);
   assert.equal(edgeGroups.right.size, 340);
 });
 

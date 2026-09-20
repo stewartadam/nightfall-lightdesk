@@ -96,7 +96,7 @@ async function installFakeWebsocketWorker(
               type: "UiNotification",
               data: {
                 type: "CurrentShowfileChanged",
-                data: showfileName === "default" ? {} : { name: showfileName },
+                data: { name: showfileName, change_id: crypto.randomUUID() },
               },
             });
             this.emitBackendMessage({ type: "AppState", data: "Ready" });
@@ -191,7 +191,7 @@ test("bootstrap html presents startup splash before app shell mounts", async ({
     page.getByRole("status", { name: "Starting nightfall" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "nightfall" })).toBeVisible();
-  await expect(page.getByText("Starting engine")).toBeVisible();
+  await expect(page.getByText("Starting nightfall")).toBeVisible();
   await expect(page.getByRole("img", { name: "nightfall logo" })).toBeVisible();
   const bootstrapFaders = page.locator("#bootstrap-splash .bootstrap-fader");
   await expect(bootstrapFaders).toHaveCount(3);
@@ -305,6 +305,48 @@ test("startup splash presents beat-synced logo faders and bottom build metadata"
         .evaluate((element) => getComputedStyle(element).transitionDuration),
     )
     .toContain("0.22s");
+
+  const bootstrapPage = await page.context().newPage();
+  await bootstrapPage.route("**/main.tsx", (route) =>
+    route.fulfill({ contentType: "application/javascript", body: "" }),
+  );
+  await bootstrapPage.goto("/", { waitUntil: "domcontentloaded" });
+  const bootstrap = bootstrapPage.locator("#bootstrap-splash");
+  /** Captures typography and layout properties that must survive the handoff. */
+  const appearance = (element: Element) => {
+    const style = getComputedStyle(element);
+    return {
+      font: style.font,
+      color: style.color,
+      width: element.getBoundingClientRect().width,
+      height: element.getBoundingClientRect().height,
+    };
+  };
+  expect(await bootstrap.locator("h1").evaluate(appearance)).toEqual(
+    await splash.locator("h1").evaluate(appearance),
+  );
+  expect(await bootstrap.locator("svg").evaluate(appearance)).toEqual(
+    await logo.evaluate(appearance),
+  );
+  expect(
+    await bootstrap.locator(".bootstrap-status-dots").evaluate(appearance),
+  ).toEqual(await statusDots.evaluate(appearance));
+  expect(
+    await bootstrap.evaluate((el) => getComputedStyle(el).backgroundColor),
+  ).toBe(await splash.evaluate((el) => getComputedStyle(el).backgroundColor));
+  await expect(bootstrap.locator(".startup-status-dot")).toHaveCount(3);
+  await bootstrapPage.screenshot({
+    path: testInfo.outputPath("bootstrap-parity.png"),
+  });
+  await bootstrapPage.evaluate(() => {
+    document.documentElement.dataset.reducedMotion = "true";
+  });
+  for (const animated of await bootstrap
+    .locator(".bootstrap-fader, .startup-status-dot")
+    .all()) {
+    await expect(animated).toHaveCSS("animation-name", "none");
+  }
+  await bootstrapPage.close();
 
   const metadata = splash.getByText(/^v.+\(.+\)$/);
   await expect(metadata).toBeVisible();

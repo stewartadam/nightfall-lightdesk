@@ -48,6 +48,7 @@ beatgrid-detect = ["dep:rodio", "dep:rten", "dep:rten-tensor", "dep:rustfft", "d
 http = ["dep:axum", "dep:nightfall-websocket"]
 
 [dev-dependencies]
+minicbor-serde.workspace = true
 nightfall-flow = { path = "../flow" }
 nightfall-fx-module = { path = "../fx-module" }
 

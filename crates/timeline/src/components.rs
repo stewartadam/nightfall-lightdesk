@@ -41,6 +41,8 @@ pub struct MaterializedTimeline {
     pub is_active: bool,
     /// Whether the timeline has had a significant state change that should trigger audio changes
     pub audio_needs_sync: bool,
+    /// Whether the previous timecode update had reached this timeline's start.
+    audio_start_reached: bool,
     /// Current parameter values (track_id, parameter_id) -> current_value
     pub parameter_values: HashMap<(String, String), f32>,
     /// Action trigger state (action_id -> triggered_at)
@@ -60,6 +62,7 @@ impl MaterializedTimeline {
             timeline,
             is_active: false,
             audio_needs_sync: false,
+            audio_start_reached: false,
             parameter_values: HashMap::new(),
             triggered_actions: HashMap::new(),
             audio_sink_id: None,
@@ -102,9 +105,10 @@ impl MaterializedTimeline {
                 return;
             }
 
-            // Check if audio playing state needs to change
-            let should_be_playing = timecode_time >= self.timeline.timecode_start;
-            if should_be_playing != self.audio_sink_id.is_some() {
+            // Detect transport transitions independently of the host's audio resources.
+            let start_reached = timecode_time >= self.timeline.timecode_start;
+            if start_reached != self.audio_start_reached {
+                self.audio_start_reached = start_reached;
                 self.audio_needs_sync = true;
             }
         }
@@ -173,7 +177,7 @@ impl MaterializedTimeline {
     }
 
     /// Process automation lanes and calculate current values based on timeline position
-    /// Returns a map of all parameters that changed value
+    /// Returns changed values and active rate lanes, which must also reach newly started clips.
     pub fn process_parameters(
         &mut self,
         timeline_time: Duration,
@@ -236,15 +240,13 @@ impl MaterializedTimeline {
 
                 // Check if the value has changed significantly
                 let param_key = (track.id.clone(), param.id.clone());
-                let previous_value = self
-                    .parameter_values
-                    .get(&param_key)
-                    .copied()
-                    .unwrap_or(0.0);
+                let previous_value = self.parameter_values.get(&param_key).copied();
 
                 // If the value changed by more than a small threshold, consider it changed
                 // This prevents tiny floating point changes from triggering updates
-                if (previous_value - value).abs() > 0.001 {
+                if previous_value.is_none_or(|previous| (previous - value).abs() > 0.001)
+                    || matches!(param.parameter_type, ParameterType::RateMaster(_))
+                {
                     self.parameter_values.insert(param_key.clone(), value);
                     changed_parameters.insert(param_key, value);
                 }

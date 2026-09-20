@@ -22,9 +22,8 @@ use super::{
     current_showfile_metadata,
     manifest::{read_current_showfile_manifest_from_dir, snapshot_hash_label},
     paths::{
-        LEGACY_SHOWFILE_DRAFT_METADATA_FILENAME, SHOWFILE_MANIFEST_FILENAME,
-        SHOWFILE_SNAPSHOT_FILENAME, show_data_dir_path, showfile_draft_dir_path,
-        showfile_folder_name,
+        LEGACY_SHOWFILE_DRAFT_METADATA_FILENAME, SHOWFILE_MANIFEST_FILENAME, show_data_dir_path,
+        showfile_draft_dir_path, showfile_folder_name,
     },
     snapshot_from_save_state,
     storage::{
@@ -124,7 +123,7 @@ pub(super) fn prepare_showfile_session(
     source_dir: &std::path::Path,
     showfile_name: Option<&str>,
 ) -> Result<ShowfileSnapshot, String> {
-    let snapshot = read_showfile_snapshot_from_path(&source_dir.join(SHOWFILE_SNAPSHOT_FILENAME))?;
+    let snapshot = read_showfile_snapshot_from_path(source_dir)?;
     validate_showfile_asset_versions(&snapshot)?;
     let draft_dir = showfile_draft_dir_path(showfile_name)?;
     if paths_refer_to_same_file(source_dir, &draft_dir) {

@@ -125,8 +125,9 @@ pub(crate) use save::{
     refresh_clean_snapshot_hash_from_world, serialize_showfile_snapshot_json_from_world,
 };
 pub use state::{CurrentShowfile, ShowfileCleanSnapshotHash};
+pub(crate) use storage::read_showfile_snapshot_from_path;
 use storage::{
-    hash_showfile_snapshot_with_metadata, read_showfile_snapshot, read_showfile_snapshot_from_path,
+    hash_showfile_snapshot_with_metadata, read_showfile_snapshot,
     repair_showfile_manifest_for_existing_snapshot_to_dir, replace_showfile_dir_with_temp,
     temporary_showfile_dir, write_showfile_snapshot_with_manifest_to_dir,
 };

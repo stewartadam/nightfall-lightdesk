@@ -315,6 +315,84 @@ fn blueprint_category_application_warns_when_target_has_no_applicable_values() {
     }));
 }
 
+/// Large pixel selections produce bounded feedback instead of one toast per pixel.
+#[test]
+fn blueprint_incompatible_pixel_selection_emits_one_summary() {
+    let mut app = setup_app();
+    let mut pan_tilt = blueprint(2, Uuid::new_v4(), "Pan Tilt");
+    pan_tilt.values = HashMap::from([
+        (
+            Attribute::Pan,
+            ValueSource::Inline(ParameterValue::Absolute { value: 25.0 }),
+        ),
+        (
+            Attribute::Tilt,
+            ValueSource::Inline(ParameterValue::Absolute { value: 75.0 }),
+        ),
+    ]);
+    app.world_mut()
+        .resource_mut::<DataProvider<Blueprint>>()
+        .add(pan_tilt)
+        .unwrap();
+    let mut selection = Vec::new();
+    for id in 310..326 {
+        let uid = Uuid::from_u128(id as u128);
+        app.world_mut()
+            .resource_mut::<FixtureDataProviderExt>()
+            .inner
+            .add(Fixture {
+                identifiers: Identifiers {
+                    id,
+                    uid,
+                    label: format!("Tape {id}"),
+                },
+                elements: vec![
+                    FixtureElement {
+                        parameters: vec![ParameterMetadata {
+                            attribute: Attribute::Red,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    };
+                    40
+                ],
+                ..Default::default()
+            })
+            .unwrap();
+        selection.push(FixtureRef {
+            fixture_uid: uid,
+            index: None,
+        });
+    }
+    app.world_mut()
+        .resource_mut::<Programmer>()
+        .set_active_selection(SelectionExpr::Resolved(selection));
+    send_command(
+        &mut app,
+        ProgrammerCommand::ApplyAttributeOperations {
+            selection: None,
+            operations: vec![ProgrammerAttributeOperation {
+                target: BlueprintSelector::All,
+                source: ProgrammerAttributeSource::Blueprint {
+                    address: BlueprintAddress::Id(2),
+                    resolution: BlueprintResolution::Reference,
+                },
+            }],
+            transitions: Default::default(),
+            transitions_by_attribute: Default::default(),
+        },
+    );
+    let notices = command_notices(&mut app);
+    assert_eq!(
+        notices.len(),
+        1,
+        "compatibility feedback must not flood the UI"
+    );
+    assert!(notices[0].contains("640"));
+    assert!(notices[0].contains("blueprint.no_applicable_values"));
+    assert!(notices[0].len() < 1000);
+}
+
 /// Blueprint capture applies ordered whole-fixture overrides to earlier element rows.
 #[test]
 fn blueprint_capture_expands_overlapping_fixture_and_element_selections() {

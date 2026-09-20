@@ -6,19 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 /** Persists structural changes and resizing without rewriting storage when focus changes. */
 test("Dockview persists layout mutations without focus-only writes", async ({
   page,
-  backendSlot,
 }, testInfo) => {
   test.setTimeout(60_000);
   // Leave room for all three groups above their content-driven minimum widths.
   await page.setViewportSize({ width: 2400, height: 1000 });
-  await prepareFreshBackendShowfile(backendSlot.backendPort);
   await page.addInitScript(() => {
     if (sessionStorage.getItem("dockview-test-seeded")) return;
     localStorage.clear();
@@ -36,6 +33,7 @@ test("Dockview persists layout mutations without focus-only writes", async ({
   });
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
+    api.clear();
     api.addPanel({
       id: "layout-test-a",
       component: "SequenceList",
@@ -118,6 +116,36 @@ test("Dockview persists layout mutations without focus-only writes", async ({
       title: "Renamed layout panel",
       params: { persistenceMarker: "updated" },
     });
+  await page.evaluate(() => {
+    const panel = (window as any).appStores.dockApi
+      .get()
+      .getPanel("layout-test-a");
+    panel.api.maximize();
+    panel.api.updateParameters({ persistenceMarker: "maximized" });
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = JSON.parse(localStorage.getItem("nightfall-ui-layouts")!);
+        return state.sessionLayout.layout.panels["layout-test-a"].params
+          .persistenceMarker;
+      }),
+    )
+    .toBe("maximized");
+  // A rendering frame and real input must remain available after serialization.
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(resolve)),
+  );
+  await page.locator("#header-cmdline").fill("clear");
+  await expect(page.locator("#header-cmdline")).toHaveValue("clear");
+  await page.screenshot({ path: testInfo.outputPath("maximized-layout.png") });
+  await page.locator("#header-cmdline").clear();
+  await page.evaluate(() => {
+    (window as any).appStores.dockApi
+      .get()
+      .getPanel("layout-test-a")
+      .api.exitMaximized();
+  });
   const beforeResize = await page.evaluate(() =>
     localStorage.getItem("nightfall-ui-layouts"),
   );

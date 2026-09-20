@@ -29,7 +29,9 @@ export const visualLanguageDockTheme: DockviewTheme = {
   className: "dockview-theme-nightfall-graphite",
   colorScheme: "dark",
   gap: 16,
-  tabAnimation: "smooth",
+  // Dockview 8.3.1 smooth reordering uses horizontal coordinates for vertical tabs.
+  // Standard drop targets honor the header orientation on both edge rails.
+  tabAnimation: "default",
 };
 
 interface DockviewHostProps {

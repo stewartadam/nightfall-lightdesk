@@ -189,7 +189,9 @@ async fn serve_current_showfile_resource(
             );
         }
     };
+    let is_snapshot = resource_path == super::paths::SHOWFILE_SNAPSHOT_FILENAME;
     let resource_path = match resolve_showfile_resource_path_from(&show_data_dir, &resource_path) {
+        Ok(_) if is_snapshot => super::paths::showfile_snapshot_path_in_dir(&show_data_dir),
         Ok(path) => path,
         Err(error) => return showfile_resource_error(StatusCode::BAD_REQUEST, error),
     };
@@ -233,6 +235,24 @@ async fn serve_current_showfile_resource(
         }
     };
 
+    if is_snapshot {
+        return match tokio::task::spawn_blocking(move || {
+            super::storage::read_showfile_json_from_path(&canonical_resource_path)
+        })
+        .await
+        {
+            Ok(Ok(json)) => without_showfile_resource_cache(
+                ([(header::CONTENT_TYPE, "application/json")], json).into_response(),
+            ),
+            error => {
+                tracing::warn!(?error, "Failed to decode the current showfile snapshot");
+                showfile_resource_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to read showfile snapshot",
+                )
+            }
+        };
+    }
     let mut service = ServeFile::new(canonical_resource_path);
     match service.try_call(request).await {
         Ok(response) => without_showfile_resource_cache(response.map(Body::new)),

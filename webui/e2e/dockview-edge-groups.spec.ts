@@ -6,12 +6,111 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { Locator } from "@playwright/test";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 const EDGE_DROP_HOLD_DELAY_MS = 500;
 const LAYOUT_STORAGE_KEY = "nightfall-ui-layouts";
 const COMMAND_INPUT_PLACEHOLDER = "Type a command or search...";
+
+test.use({ sampleDataOnly: true });
+
+/** Drags a tab to the leading or trailing end of another vertical tab. */
+async function dragToVerticalTab(
+  page: Page,
+  source: Locator,
+  target: Locator,
+  before: boolean,
+) {
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error("Missing drag tab bounds");
+  await page.mouse.move(
+    sourceBox.x + sourceBox.width / 2,
+    sourceBox.y + sourceBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    sourceBox.x + sourceBox.width / 2,
+    sourceBox.y + sourceBox.height + 20,
+    { steps: 6 },
+  );
+  await page.mouse.move(
+    targetBox.x + targetBox.width / 2,
+    targetBox.y + (before ? 3 : targetBox.height - 3),
+    { steps: 20 },
+  );
+  await page.waitForTimeout(350);
+  await page.screenshot({
+    path: test
+      .info()
+      .outputPath(
+        before ? "before-drop-preview.png" : "after-drop-preview.png",
+      ),
+  });
+  await page.mouse.up();
+}
+
+for (const side of ["left", "right"] as const) {
+  for (const collapsed of [false, true]) {
+    /** Verifies insertion and bidirectional reordering on either vertical edge rail. */
+    test(`${side} ${collapsed ? "collapsed" : "expanded"} edge accepts panel insertion and reordering`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 2048, height: 1056 });
+      await installDockviewStartupSeed(page);
+      await page.goto("/?e2e=1");
+      await waitForDockview(page);
+      await runCommand(page, "Reset Layout");
+      const targetId = await page.evaluate(
+        ({ side, collapsed }) => {
+          const api = (window as any).appStores.dockApi.get();
+          const edge = api.getEdgeGroup(side);
+          const group = api.groups.find((group: any) => group.id === edge.id);
+          const targetId = group.panels[0].id;
+          const gridGroup = api.getPanel("panel-Groups").api.group;
+          for (const panel of [...group.panels].slice(1)) {
+            panel.api.moveTo({ group: gridGroup, position: "center" });
+          }
+          const fixtures = api.getPanel("panel-FixtureGrid");
+          fixtures.api.moveTo({
+            group: api.getPanel("panel-Visualizer").api.group,
+            position: "center",
+          });
+          fixtures.api.setActive();
+          if (collapsed) edge.collapse();
+          else edge.expand();
+          return targetId;
+        },
+        { side, collapsed },
+      );
+      const source = page.getByRole("tab", { name: "Fixtures", exact: true });
+      const edgeTabs = page.locator(
+        `[data-testid="dv-edge-group-edge-${side === "left" ? "Clips" : "Properties"}"] .dv-tab`,
+      );
+      const target = edgeTabs.first();
+      await expect(target).toBeVisible();
+      /** Reads the model order independently of the rendered drop preview. */
+      const panelOrder = () =>
+        page.evaluate((side) => {
+          const api = (window as any).appStores.dockApi.get();
+          return api.groups
+            .find((group: any) => group.id === api.getEdgeGroup(side).id)
+            .panels.map((panel: any) => panel.id);
+        }, side);
+      await dragToVerticalTab(page, source, target, false);
+      await expect.poll(panelOrder).toEqual([targetId, "panel-FixtureGrid"]);
+      await dragToVerticalTab(page, edgeTabs.nth(1), edgeTabs.nth(0), true);
+      await expect.poll(panelOrder).toEqual(["panel-FixtureGrid", targetId]);
+      await dragToVerticalTab(page, edgeTabs.nth(0), edgeTabs.nth(1), false);
+      await expect.poll(panelOrder).toEqual([targetId, "panel-FixtureGrid"]);
+      await page.screenshot({
+        path: test.info().outputPath("final-edge-order.png"),
+      });
+    });
+  }
+}
 
 /** Seeds startup state so Dockview layout tests bypass the showfile picker. */
 async function installDockviewStartupSeed(
@@ -65,17 +164,17 @@ async function openPanelCommand(page: Page, panelName: string) {
   await runCommand(page, `Open ${panelName}`);
 }
 
-/** Moves the Properties panel into the main grid so the right edge group is empty. */
+/** Moves all right-edge utility panels into the main grid to expose the empty edge. */
 async function emptyRightEdgeGroup(page: Page) {
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
-    const propertiesPanel = api.getPanel("panel-PropertiesInspector");
-    const fixtureGroup = api.getPanel("panel-FixtureGrid")?.api.group;
-
-    propertiesPanel?.api.moveTo({
-      group: fixtureGroup,
-      position: "center",
-    });
+    const targetGroup = api.getPanel("panel-Groups").api.group;
+    for (const panel of [
+      ...api.getPanel("panel-PropertiesInspector").api.group.panels,
+    ]) {
+      panel.api.moveTo({ group: targetGroup, position: "center" });
+    }
+    api.getPanel("panel-PropertiesInspector").api.setActive();
   });
 
   await expect
@@ -87,15 +186,15 @@ async function emptyRightEdgeGroup(page: Page) {
     .toBe(false);
 }
 
-/** Moves the Programmer panel into the main grid so the left edge group is empty. */
+/** Moves Clips into the main grid so the left edge group is empty. */
 async function emptyLeftEdgeGroup(page: Page) {
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
-    const programmerPanel = api.getPanel("panel-ProgrammerGrid");
-    const fixtureGroup = api.getPanel("panel-FixtureGrid")?.api.group;
+    const clipsPanel = api.getPanel("panel-ClipList");
+    const targetGroup = api.getPanel("panel-Groups")?.api.group;
 
-    programmerPanel?.api.moveTo({
-      group: fixtureGroup,
+    clipsPanel?.api.moveTo({
+      group: targetGroup,
       position: "center",
     });
   });
@@ -156,8 +255,29 @@ async function resizeRightEdgeGroup(page: Page, targetWidth: number) {
   }
 
   const widthDelta = targetWidth - box.width;
-  const sashX = box.x;
-  const sashY = box.y + box.height / 2;
+  const sash = await page
+    .locator('[data-workspace-active="true"] .dv-sash')
+    .evaluateAll((elements, edge) => {
+      const y = edge.y + edge.height / 2;
+      return elements
+        .map((element) => element.getBoundingClientRect())
+        .filter(
+          (rect) =>
+            rect.width > 0 &&
+            rect.width < 30 &&
+            rect.top <= y &&
+            rect.bottom >= y,
+        )
+        .sort(
+          (a, b) =>
+            Math.abs(a.x + a.width / 2 - edge.x) -
+            Math.abs(b.x + b.width / 2 - edge.x),
+        )
+        .map((rect) => ({ x: rect.x + rect.width / 2, y }))[0];
+    }, box);
+  if (!sash) throw new Error("Unable to resolve the right edge resize handle");
+  const sashX = sash.x;
+  const sashY = sash.y;
   await page.mouse.move(sashX, sashY);
   await page.mouse.down();
   await page.mouse.move(sashX - widthDelta, sashY, { steps: 12 });
@@ -250,16 +370,14 @@ async function dragPropertiesTabToMainGridCenter(page: Page) {
   await page.evaluate(() =>
     (window as any).appStores.dockApi
       .get()
-      .getPanel("panel-FixtureGrid")
+      .getPanel("panel-Groups")
       ?.api.setActive(),
   );
-  const fixturePanel = page.locator(
-    '[data-panel-kind="fixtures"][data-panel-id="panel-FixtureGrid"]:visible',
-  );
+  const groupsPanel = page.getByRole("region", { name: "Groups", exact: true });
   await expect(propertiesTab).toBeVisible();
-  await expect(fixturePanel).toBeVisible();
+  await expect(groupsPanel).toBeVisible();
 
-  const targetBox = await fixturePanel.boundingBox();
+  const targetBox = await groupsPanel.boundingBox();
   if (!targetBox) {
     throw new Error("Unable to resolve main grid bounds for dockview drag");
   }
@@ -294,7 +412,7 @@ test("hidden empty edge groups preserve side insets across restoration", async (
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     api.getPanel("panel-CommandLine").api.moveTo({
-      group: api.getPanel("panel-FixtureGrid").api.group,
+      group: api.getPanel("panel-Groups").api.group,
       position: "center",
     });
   });
@@ -353,8 +471,7 @@ test("default layout seeds collapsible edge panels", async ({ page }) => {
           consoleLocation: api.getPanel("panel-CommandLine")?.api.location,
           leftCollapsed: api.getEdgeGroup("left")?.isCollapsed(),
           leftPosition: api.getEdgeGroup("left")?.location?.position,
-          programmerLocation: api.getPanel("panel-ProgrammerGrid")?.api
-            .location,
+          clipsLocation: api.getPanel("panel-ClipList")?.api.location,
           propertiesCollapsed: api.getEdgeGroup("right")?.isCollapsed(),
           propertiesLocation: api.getPanel("panel-PropertiesInspector")?.api
             .location,
@@ -368,7 +485,7 @@ test("default layout seeds collapsible edge panels", async ({ page }) => {
       consoleLocation: { position: "bottom", type: "edge" },
       leftCollapsed: true,
       leftPosition: "left",
-      programmerLocation: { position: "left", type: "edge" },
+      clipsLocation: { position: "left", type: "edge" },
       propertiesCollapsed: true,
       propertiesLocation: { position: "right", type: "edge" },
       rightPosition: "right",
@@ -515,12 +632,12 @@ test("edge-docked panels can be dragged back into the grid", async ({
     .poll(() =>
       page.evaluate(() => {
         const api = (window as any).appStores.dockApi.get();
-        const fixturesGroupId = api.getPanel("panel-FixtureGrid")?.api.group.id;
+        const groupsGroupId = api.getPanel("panel-Groups")?.api.group.id;
         const propertiesGroupId = api.getPanel("panel-PropertiesInspector")?.api
           .group.id;
 
         return {
-          isTabbedWithFixtures: fixturesGroupId === propertiesGroupId,
+          isTabbedWithGroups: groupsGroupId === propertiesGroupId,
           locationType: api.getPanel("panel-PropertiesInspector")?.api.location
             .type,
           rightVisible: api.isEdgeGroupVisible("right"),
@@ -528,9 +645,9 @@ test("edge-docked panels can be dragged back into the grid", async ({
       }),
     )
     .toEqual({
-      isTabbedWithFixtures: true,
+      isTabbedWithGroups: true,
       locationType: "grid",
-      rightVisible: false,
+      rightVisible: true,
     });
 });
 

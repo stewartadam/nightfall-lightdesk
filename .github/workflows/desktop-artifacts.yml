@@ -1,31 +1,7 @@
 name: Desktop and browser artifacts
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
-    paths:
-      - '.github/workflows/desktop-artifacts.yml'
-      - '.github/workflows/browser-demo.yml'
-      - '.gitignore'
-      - 'webui/index.html'
-      - 'webui/public/**'
-      - 'scripts/*browser-demo*'
-      - 'package.json'
-      - 'crates/wasm-bridge/**'
-      - 'crates/browser-runtime/**'
-      - '.github/desktop-release-notes.md'
-      - 'scripts/desktop-artifacts*'
-      - 'scripts/package-sample-audio*'
-      - 'scripts/*notices*'
-      - 'config/notices/**'
-      - 'about.toml'
-      - 'Cargo.lock'
-      - 'package-lock.json'
-      - 'vite.config.ts'
-      - 'crates/app/**'
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -36,7 +12,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Validate version and build shared web assets
+    name: Validate version and build desktop frontend
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     outputs:
@@ -67,18 +43,11 @@ jobs:
           cargo install --locked typeshare-cli --version 1.13.3
           cargo install --locked cargo-about --version 0.8.4
           npm run typeshare
-      - name: Check the reduced browser dependency graph
-        run: npm run check:browser-demo-dependencies
-      - name: Build release WASM once for both distributions
-        run: npm run wasm-build
-      - uses: actions/upload-artifact@v6
+      - name: Download shared release bridge
+        uses: actions/download-artifact@v8
         with:
-          name: release-wasm-${{ github.sha }}
-          path: |
-            webui/assets/wasm/
-            webui/assets/browser-runtime/
-          if-no-files-found: error
-          retention-days: 7
+          name: release-wasm-bridge-${{ github.sha }}
+          path: webui/assets/wasm
       - name: Build shared desktop frontend
         run: |
           npm run build
@@ -89,12 +58,6 @@ jobs:
             webui/dist/
           if-no-files-found: error
           retention-days: 7
-
-  browser-demo:
-    needs: prepare
-    # Version tags publish desktop installers; main and PRs also validate the demo.
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-    uses: ./.github/workflows/browser-demo.yml
 
   build:
     name: Package ${{ matrix.target }}

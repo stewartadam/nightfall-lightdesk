@@ -188,7 +188,9 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
       props.onClose();
     } catch (caught) {
       log.warn("failed to open showfile selection", caught);
-      setError("Could not open showfile.");
+      setError(
+        caught instanceof Error ? caught.message : "Could not open showfile.",
+      );
     }
   };
 
@@ -246,7 +248,10 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
 
             <Show when={!isLoading() && error()}>
               {(message) => (
-                <div class="space-y-3 rounded border border-red-900/60 bg-red-950/30 px-4 py-4">
+                <div
+                  role="alert"
+                  class="space-y-3 rounded border border-red-900/60 bg-red-950/30 px-4 py-4"
+                >
                   <p class="text-sm text-red-200">{message()}</p>
                   <Button
                     variant="danger"

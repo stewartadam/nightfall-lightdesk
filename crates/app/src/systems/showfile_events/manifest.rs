@@ -16,7 +16,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::paths::{
-    LEGACY_SHOWFILE_DRAFT_METADATA_FILENAME, SHOWFILE_MANIFEST_FILENAME, SHOWFILE_SNAPSHOT_FILENAME,
+    LEGACY_SHOWFILE_DRAFT_METADATA_FILENAME, SHOWFILE_MANIFEST_FILENAME,
+    showfile_snapshot_path_in_dir,
 };
 
 const SHOWFILE_MANIFEST_SCHEMA_VERSION: u32 = 1;
@@ -88,7 +89,7 @@ pub(super) fn write_showfile_manifest_to_dir(
     state_hash: u64,
     based_on_state_hash: Option<u64>,
 ) -> Result<(), String> {
-    let snapshot_path = show_data_dir.join(SHOWFILE_SNAPSHOT_FILENAME);
+    let snapshot_path = showfile_snapshot_path_in_dir(show_data_dir);
     let (snapshot_size_bytes, snapshot_modified_at_unix_nanos) =
         snapshot_file_identity(&snapshot_path)?;
     let manifest = ShowfileManifest {
@@ -148,7 +149,7 @@ pub(super) fn read_current_showfile_manifest_from_dir(
         ));
     }
 
-    let snapshot_path = show_data_dir.join(SHOWFILE_SNAPSHOT_FILENAME);
+    let snapshot_path = showfile_snapshot_path_in_dir(show_data_dir);
     let (snapshot_size_bytes, snapshot_modified_at_unix_nanos) =
         snapshot_file_identity(&snapshot_path)?;
     if snapshot_size_bytes != manifest.snapshot.snapshot_size_bytes {

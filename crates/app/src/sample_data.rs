@@ -18,7 +18,6 @@ use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_clips::{Clip, Source};
 use nightfall_cues::prelude::*;
-#[cfg(feature = "midi")]
 use nightfall_desk::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
@@ -61,4 +60,7 @@ pub fn populate_sample_entities(world: &mut World) {
     flows::add_flows(world);
     timelines::add_tc(world);
     input_mappings::add_midi_mappings(world);
+    world.insert_resource(Controls::from_assignments(
+        &[1, 2, 26, 28, 30].map(|id| Some(ControlAssignment::Clip(id))),
+    ));
 }

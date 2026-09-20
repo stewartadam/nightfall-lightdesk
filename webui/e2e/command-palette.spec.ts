@@ -37,8 +37,9 @@ test("toolbar buttons open command and object palettes", async ({
   await header
     .getByRole("button", { name: "Open command palette", exact: true })
     .click();
-  await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeVisible();
+  await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeHidden();
   await header
     .getByRole("button", { name: "Open object palette", exact: true })
     .click();
@@ -46,7 +47,9 @@ test("toolbar buttons open command and object palettes", async ({
   await expect(
     page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER),
   ).not.toBeVisible();
+  await expect(page.getByPlaceholder(OBJECT_INPUT_PLACEHOLDER)).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(page.getByPlaceholder(OBJECT_INPUT_PLACEHOLDER)).toBeHidden();
 });
 
 /** Opens a unique blank showfile before palette interactions. */

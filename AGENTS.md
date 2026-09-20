@@ -10,6 +10,13 @@
 - Use Bevy `SystemParam`s to resolve mutually exclusive SystemParam conflicts or encapsulate complex sets of system dependencies.
 - Questions are just that, questions. Answer the question, do jump straight to implementation.
 
+## Command execution
+
+- Use the patch tool for source and test edits. Do not use Python, Node, or shell redirection merely to write files.
+- Omit `2>&1` unless combining streams is necessary for the command's behavior.
+- Prefer direct commands and the execution tool's working-directory parameter over unnecessary shell wrappers or `cd` chains.
+- Run Playwright only through the repository wrapper described below.
+
 ## Cloud agent setup
 
 When running remotely, check `CONTRIBUTING.md` subsection *Nightfall setup* for setup instructions.
@@ -33,22 +40,22 @@ bd init --branch beads-sync --actor agent
   - If a service was already running at the start of the turn, leave it running at completion unless the user explicitly asks you to stop it.
   - When reporting completion, mention any services left running.
 
-### Main-branch task workflow
+### Protected-branches task workflow
 
-When the user provides implementation tasks while the current worktree is on `main`, default to this workflow:
+When the user provides implementation tasks while the current worktree is on `main` or `develop`, default to this workflow:
 
 1. Create one isolated worktree per task with `wt switch --create <task-slug>`.
 2. Track each task in `bd`; mark active work `in_progress`.
 3. Keep each worktree, branch, and commit focused on one small task or tightly related set of changes.
 4. Work the task to completion in its worktree.
 5. Validate with the relevant quality gates, including Playwright for UI-facing changes and Cargo tests for Rust changes.
-6. Commit the validated changes, push the branch, and open a PR.
+6. Commit the validated changes
    - When committing changes, do not add untracked files unless you created them.
-7. Perform a formal review pass after the PR exists and before handing work back.
+7. Perform a formal review pass before handing work back.
    - Use the review skill/workflow (`/review` when available); do not substitute an implicit sanity check.
    - Surface review findings explicitly in the handoff, ordered by severity with file/line references when applicable.
    - If there are no findings, say that clearly and note any remaining test gaps or residual risk.
-8. Stop before merging or deleting the worktree so the user can review, manually test, and guide the next direction.
+8. Stop before pushing the branch or opening a PR so the user can review, manually test, and guide the next direction.
 
 When the user explicitly asks to work on multiple items in parallel:
 

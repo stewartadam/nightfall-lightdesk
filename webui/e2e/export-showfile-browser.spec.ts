@@ -7,8 +7,9 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { readShowfileJsonSync } from "../../scripts/showfile-storage.mjs";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
@@ -41,7 +42,7 @@ test("downloads a live showfile ZIP from the browser footer menu", async ({
     "drafts",
     "browser-export-test.nightfall-show",
   );
-  const before = readFileSync(join(source, "showfile.json"), "utf8");
+  const before = readShowfileJsonSync(join(source, "showfile.json"));
   writeFileSync(join(source, "extra.txt"), "showfile reference");
   const result = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
@@ -107,7 +108,7 @@ test("downloads a live showfile ZIP from the browser footer menu", async ({
     await expect(dialog.getByRole("status")).toContainText(
       `Download started: ${exportName}.nightfall-show.zip`,
     );
-    expect(readFileSync(join(source, "showfile.json"), "utf8")).toBe(before);
+    expect(readShowfileJsonSync(join(source, "showfile.json"))).toBe(before);
   }
   await page.screenshot({
     path: testInfo.outputPath("browser-export-complete.png"),

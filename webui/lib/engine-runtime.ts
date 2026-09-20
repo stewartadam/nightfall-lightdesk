@@ -33,6 +33,7 @@ import {
 } from "./performance-marks";
 import { recordExternalPerformanceMeasure } from "./performance-measure-collector";
 import {
+  applyConfirmedShowfileChange,
   currentShowfileName,
   normalizedShowfileName,
   persistCurrentShowfileName,
@@ -58,6 +59,7 @@ const WEBSOCKET_WORKER_DELIVERY_MEASURE = "nightfall:websocket.worker-to-main";
 const REACTIVE_PARAMETER_STATE_INTERVAL_MS = 50;
 const mainThreadMessageHandlers = createMainThreadMessageHandlerRegistry();
 
+import EngineRuntimeWorker from "#engine-runtime-worker?worker";
 import {
   addConsoleSendError,
   addExternalConsoleCommand,
@@ -131,7 +133,6 @@ import {
   normalizeCorrelationId,
 } from "./console-scrollback";
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
-import EngineRuntimeWorker from "./engine-runtime-worker?worker";
 import { applyFlowDeltaToDefinition } from "./flow-delta";
 import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
@@ -1766,9 +1767,12 @@ function handleUiNotification(notification: types.UiNotification) {
       break;
     }
     case "CurrentShowfileChanged": {
-      persistCurrentShowfileName(notification.data.name, {
-        bumpRevision: true,
-      });
+      const changeId = decodeCorrelationId(notification.data.change_id);
+      if (!changeId) {
+        log.error("Current showfile notification has an invalid change ID");
+        break;
+      }
+      applyConfirmedShowfileChange(notification.data.name, changeId);
       break;
     }
   }

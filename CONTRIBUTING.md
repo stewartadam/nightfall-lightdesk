@@ -121,6 +121,12 @@ npm run wasm-build:dev
 cargo build --workspace --locked
 ```
 
+If npm lifecycle scripts are disabled, run `npm run postinstall` after `npm ci`
+to apply the required dependency patches. This also invalidates Vite's optimized
+dependency cache; restart any running Vite server afterward. Worktrunk's install
+hook runs this patch step explicitly, including when `ignore-scripts=true`.
+See [dependency patches](patches/README.md) for details.
+
 Production web and Tauri builds generate dependency notices. Install their
 pinned collector with `cargo install cargo-about --locked --version 0.8.4`.
 See [distribution notices](docs/src/developer-reference/distribution-notices.md)
@@ -137,6 +143,15 @@ Beatgrid detection uses a Rust mel-spectrogram frontend and the MIT-licensed Bea
 A clean clone does not include a personal fixture or object library. Put compatible fixture definitions in the application's data directory, as described in the [Fixture Library guide](docs/src/user-guide/panels/fixture-library.md). Set `NIGHTFALL_DATA_DIR` in `.env` to an isolated writable directory for development. Use `NIGHTFALL_SAMPLE_DATA=1` when you intentionally want the engine's generated sample show data; do not enable it against a show you intend to preserve unchanged.
 
 Worktrunk is optional. `wt switch --create <branch>` runs the repository hooks to create the environment, install packages, generate types/assets, and seed build and application data from the main worktree. These hooks assume the general prerequisites above are installed. Check their output before starting services; a background build may still be running.
+
+After merging a GitHub PR, run `wt done` in its worktree, or `wt done <branch>`
+from another worktree. The alias requires an authenticated `gh` CLI and a merged
+PR in the `origin` repository. It fetches the PR's actual target (`main`, `develop`,
+or another branch) and uses it for Worktrunk's normal merge-safety checks without
+changing the repository's default branch or pulling another worktree. Local
+commits that are not integrated into the target keep their branch, and dirty
+worktrees are refused. For branches without merged PRs or manual cleanup, use
+`wt remove` directly. Run `wt done -- --help` for supported options.
 
 Sample MP3s are tracked with Git LFS and packaged as external resources. Run
 `git lfs pull` before packaging or creating a sample show in development. Rust
@@ -396,6 +411,12 @@ Add `{{#include ../includes/human-review-disclaimer.md}}` immediately below the 
 Check rendered pages and local links after edits. The generated `docs/book/` and `docs/internal/book/` directories are ignored and should not be committed. Build each book into a clean output directory when validating or publishing so stale pages from previous builds are not retained. Keep the getting-started tutorial aligned with actual labels and commands, and validate changed workflows with the Playwright wrapper.
 
 ### Validating showfile restore idempotency
+
+Saved snapshots and working drafts use `showfile.json.gz` (gzip-compressed JSON).
+The discovery manifest remains plain JSON. To inspect a snapshot, run
+`gzip -dc /path/to/showfile.json.gz | jq .`. Show folders containing plain
+`showfile.json` can also be loaded or imported; ZIP exports include plain JSON
+and let the ZIP container compress it. Saving a loaded show writes gzip storage.
 
 Use this flow to validate that `save -> restart -> load -> save` restores identical persisted state:
 

@@ -339,5 +339,6 @@ pub fn initialize_showfile_resources(world: &mut World) {
     world.init_resource::<OscMappings>();
     world.init_resource::<GlobalVariables>();
     world.init_resource::<DeskSettings>();
+    world.init_resource::<Controls>();
     world.init_resource::<IoRuntimeSettings>();
 }

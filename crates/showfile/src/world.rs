@@ -63,6 +63,7 @@ pub struct ShowfileSaveState<'w, 's> {
     osc_mappings: Res<'w, OscMappings>,
     clip_query: Query<'w, 's, &'static Clip>,
     global_variables: Res<'w, GlobalVariables>,
+    controls: Res<'w, Controls>,
     /// Mutable desk settings allow the native save workflow to apply save-time UI state first.
     pub desk_settings: ResMut<'w, DeskSettings>,
     io_settings: Res<'w, IoRuntimeSettings>,
@@ -74,6 +75,7 @@ pub fn snapshot_from_save_state(
 ) -> ShowfileSnapshot {
     let desk_state_contributor = DeskStateSaveContributor::new(
         showfile_save_state.global_variables.as_ref(),
+        &showfile_save_state.controls,
         &showfile_save_state.desk_settings,
         &showfile_save_state.io_settings,
     );

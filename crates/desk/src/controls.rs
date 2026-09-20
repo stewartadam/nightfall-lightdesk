@@ -352,6 +352,15 @@ struct ControlActions {
     intensity_value: Option<f32>,
 }
 
+/// Persisted target assigned to a desk fader, independent of playback state.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ControlAssignment {
+    /// Playable clip identifier.
+    Clip(u32),
+    /// Master identifier.
+    Master(u32),
+}
+
 /// Resource storing control slots and action assignments.
 #[derive(Resource, Clone, Debug)]
 pub struct Controls {
@@ -367,6 +376,35 @@ impl Default for Controls {
 }
 
 impl Controls {
+    /// Copy each slot's assignment in fader order without transient playback or hardware state.
+    pub fn assignments(&self) -> Vec<Option<ControlAssignment>> {
+        self.slots
+            .iter()
+            .map(|slot| {
+                slot.assigned_clip_id
+                    .map(ControlAssignment::Clip)
+                    .or_else(|| slot.assigned_master_id.map(ControlAssignment::Master))
+            })
+            .collect()
+    }
+
+    /// Restore ordered assignments into a fresh bank, leaving unused faders unassigned.
+    pub fn from_assignments(assignments: &[Option<ControlAssignment>]) -> Self {
+        let mut controls = Self::default();
+        controls.slots.resize(
+            assignments.len().max(DEFAULT_CONTROL_COUNT),
+            Control::default(),
+        );
+        for (slot, assignment) in controls.slots.iter_mut().zip(assignments) {
+            match assignment {
+                Some(ControlAssignment::Clip(id)) => slot.assigned_clip_id = Some(*id),
+                Some(ControlAssignment::Master(id)) => slot.assigned_master_id = Some(*id),
+                None => {}
+            }
+        }
+        controls
+    }
+
     fn slot_mut(&mut self, control_index: u32) -> Option<&mut Control> {
         let zero_based = usize::try_from(control_index.checked_sub(1)?).ok()?;
         self.slots.get_mut(zero_based)
@@ -1003,6 +1041,29 @@ mod tests {
             take_control_result(&mut app).outcome,
             CommandOutcome::Failed(error) if error.code == "control.not_found"
         ));
+    }
+
+    /// Restoring assignments resets hardware pickup and pending playback changes without losing targets.
+    #[test]
+    fn persisted_assignments_exclude_runtime_state() {
+        let mut controls = Controls::from_assignments(&[
+            Some(ControlAssignment::Clip(1)),
+            None,
+            Some(ControlAssignment::Master(2)),
+        ]);
+        let slot = controls.slot_mut(1).unwrap();
+        slot.reset_to(80.0);
+        slot.pending_console_sync = true;
+        let restored = Controls::from_assignments(&controls.assignments());
+        assert_eq!(restored.assignments(), controls.assignments());
+        assert_eq!(
+            restored.slots[0],
+            Control {
+                assigned_clip_id: Some(1),
+                ..Control::default()
+            }
+        );
+        assert_eq!(restored.slots[1], Control::default());
     }
 
     #[test]

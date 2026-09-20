@@ -56,6 +56,9 @@ export function createTimelineTrackController(
 ) {
   const [addPointEvent, setAddPointEvent] = createSignal<AddPointEvent>();
   const [addTrackEvent, setAddTrackEvent] = createSignal<AddTrackEvent>();
+  const [lanesChangedEvent, setLanesChangedEvent] = createSignal<{
+    trackId: string;
+  }>();
   const [removeTrackEvent, setRemoveTrackEvent] =
     createSignal<RemoveTrackEvent>();
   const [renameTrackEvent, setRenameTrackEvent] =
@@ -213,6 +216,54 @@ export function createTimelineTrackController(
       }),
     );
     if (event) setSoloEvent(event);
+  };
+
+  /** Creates an empty parameter lane and expands its track for point editing. */
+  const addLane = (
+    trackId: string,
+    name: string,
+    parameterType: types.ParameterType,
+  ) => {
+    const track = state.tracks().find((candidate) => candidate.id === trackId);
+    if (!track || !name.trim() || !parameterType.data.trim()) return;
+    const lane: types.AutomationLane = {
+      id: createTrackId(),
+      name: name.trim(),
+      color: "#60a5fa",
+      parameter_type: parameterType,
+      points: [],
+    };
+    state.setTracks(
+      state.tracks().map((candidate) =>
+        candidate.id === trackId
+          ? {
+              ...candidate,
+              expanded: true,
+              automation_lanes: [...candidate.automation_lanes, lane],
+            }
+          : candidate,
+      ),
+    );
+    setLanesChangedEvent({ trackId });
+  };
+
+  /** Deletes a parameter lane and its points while preserving sibling lanes. */
+  const removeLane = (trackId: string, laneId: string) => {
+    const track = state.tracks().find((candidate) => candidate.id === trackId);
+    if (!track?.automation_lanes.some((lane) => lane.id === laneId)) return;
+    state.setTracks(
+      state.tracks().map((candidate) =>
+        candidate.id === trackId
+          ? {
+              ...candidate,
+              automation_lanes: candidate.automation_lanes.filter(
+                (lane) => lane.id !== laneId,
+              ),
+            }
+          : candidate,
+      ),
+    );
+    setLanesChangedEvent({ trackId });
   };
 
   /** Adds an automation point and emits its persistence event. */
@@ -425,6 +476,9 @@ export function createTimelineTrackController(
   };
 
   return {
+    addLane,
+    removeLane,
+    lanesChangedEvent,
     addTrack,
     removeTrack,
     renameTrack,

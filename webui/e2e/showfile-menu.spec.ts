@@ -7,7 +7,7 @@
  */
 
 import { expect, type Page, test } from "./playwright-fixtures";
-import { routeShowfileDiscovery } from "./showfile-startup";
+import { routeShowfileDiscovery, waitForDockviewApp } from "./showfile-startup";
 
 type MockCommandResult =
   | { type: "Succeeded"; data: unknown }
@@ -143,8 +143,10 @@ async function captureWorkerSends(
                   type: "UiNotification",
                   data: {
                     type: "CurrentShowfileChanged",
-                    data:
-                      showfileName === "default" ? {} : { name: showfileName },
+                    data: {
+                      name: showfileName,
+                      change_id: crypto.randomUUID(),
+                    },
                   },
                 });
                 postWorkerMessage(this, {
@@ -164,7 +166,7 @@ async function captureWorkerSends(
                   type: "UiNotification",
                   data: {
                     type: "CurrentShowfileChanged",
-                    data: { name: "tour" },
+                    data: { name: "tour", change_id: crypto.randomUUID() },
                   },
                 });
                 postWorkerMessage(this, {
@@ -184,7 +186,10 @@ async function captureWorkerSends(
                   type: "UiNotification",
                   data: {
                     type: "CurrentShowfileChanged",
-                    data: { name: "command-new" },
+                    data: {
+                      name: "command-new",
+                      change_id: crypto.randomUUID(),
+                    },
                   },
                 });
                 postWorkerMessage(this, {
@@ -224,16 +229,25 @@ async function disableE2eStartupAutoOpen(page: Page): Promise<void> {
   });
 }
 
+/** Connects to the owned backend session without auto-loading a saved seed file. */
+async function openShowfileTestApp(page: Page): Promise<void> {
+  const startupErrors: string[] = [];
+  /** Records failed startup loads instead of accepting the recovered shell as success. */
+  const captureStartupError = (error: Error) =>
+    startupErrors.push(error.message);
+  page.on("pageerror", captureStartupError);
+  await disableE2eStartupAutoOpen(page);
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  page.off("pageerror", captureStartupError);
+  expect(startupErrors).toEqual([]);
+}
+
+/** Verifies showfile menu grouping and import controls in the connected test session. */
 test("shows grouped showfile actions in the status bar menu", async ({
   page,
 }) => {
-  await routeShowfileDiscovery(page, async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ showfiles: [] }),
-    });
-  });
-  await page.goto("/?e2e=1");
+  await openShowfileTestApp(page);
 
   const menuButton = page.locator("button[title='Menu']");
   await expect(menuButton).toBeVisible();
@@ -252,6 +266,7 @@ test("shows grouped showfile actions in the status bar menu", async ({
     page.getByRole("button", { name: "Save Showfile" }),
   ).toBeVisible();
   await expect(page.locator("hr")).toHaveCount(2);
+  await page.screenshot({ path: test.info().outputPath("showfile-menu.png") });
 
   await page.getByRole("button", { name: "Import Showfile" }).click();
   const dialog = page.getByRole("dialog", { name: "Import Showfile" });
@@ -265,6 +280,27 @@ test("shows grouped showfile actions in the status bar menu", async ({
   await showfilePathDropZone.click();
   const fileChooser = await fileChooserPromise;
   expect(fileChooser.isMultiple()).toBe(false);
+  // Select the compressed snapshot even when folder enumeration puts other files first.
+  await dialog.locator('input[type="file"]').evaluate((input) => {
+    const transfer = new DataTransfer();
+    for (const name of [
+      "showfile-manifest.json",
+      "asset.bin",
+      "showfile.json",
+      "showfile.json.gz",
+    ]) {
+      const file = new File(["test"], name);
+      Object.defineProperty(file, "webkitRelativePath", {
+        value: `Tour.nightfall-show/${name}`,
+      });
+      transfer.items.add(file);
+    }
+    (input as HTMLInputElement).files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(showfilePathDropZone).toContainText(
+    "Tour.nightfall-show/showfile.json.gz",
+  );
   await expect(dialog.getByLabel("Timelines import policy")).toHaveValue(
     "Skip",
   );
@@ -309,6 +345,9 @@ test("shows grouped showfile actions in the status bar menu", async ({
     "Overwrite",
   );
 
+  await dialog.screenshot({
+    path: test.info().outputPath("showfile-import.png"),
+  });
   await dialog
     .getByRole("button", { name: "Close import showfile dialog" })
     .click();
@@ -319,12 +358,6 @@ test("shows grouped showfile actions in the status bar menu", async ({
 test("triggers draft preservation on pagehide without dirty tracking", async ({
   page,
 }) => {
-  await routeShowfileDiscovery(page, async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ showfiles: [] }),
-    });
-  });
   await page.addInitScript(() => {
     const globalWindow = window as Window & {
       __nightfallBeaconUrls?: string[];
@@ -339,7 +372,7 @@ test("triggers draft preservation on pagehide without dirty tracking", async ({
     });
   });
 
-  await page.goto("/?e2e=1");
+  await openShowfileTestApp(page);
   await expect(page.locator("button[title='Menu']")).toBeVisible();
   await page.evaluate(() => {
     window.dispatchEvent(new Event("pagehide"));
@@ -639,7 +672,9 @@ test("opens another showfile from the startup draft prompt", async ({
 });
 
 /** Verifies startup recovery can start a new show before revealing the app. */
-test("creates a new show from the startup draft prompt", async ({ page }) => {
+test("creates a new show from the startup draft prompt", async ({
+  page,
+}, testInfo) => {
   await disableE2eStartupAutoOpen(page);
   await captureWorkerSends(page);
   await routeShowfileDiscovery(
@@ -677,9 +712,34 @@ test("creates a new show from the startup draft prompt", async ({ page }) => {
   });
   await expect(recoveryDialog).toBeVisible();
 
-  const prompt = answerShowNamePrompt(page, "recovered-new");
+  const recoveryAction = recoveryDialog.getByRole("button", {
+    name: "Load Draft",
+  });
+  await expect(recoveryAction).toHaveCSS("height", "28px");
+  await recoveryDialog.screenshot({
+    path: testInfo.outputPath("recovery-dialog.png"),
+  });
   await recoveryDialog.getByRole("button", { name: "New showfile" }).click();
-  await prompt;
+  const nameDialog = page.getByRole("dialog", {
+    name: "New Showfile",
+    exact: true,
+  });
+  await expect(nameDialog).toBeVisible();
+  for (const control of [
+    nameDialog.getByRole("textbox", { name: "Show name" }),
+    nameDialog.getByRole("button", { name: "Cancel", exact: true }),
+    nameDialog.getByRole("button", { name: "Create Show" }),
+    nameDialog.getByRole("button", { name: "Close new showfile dialog" }),
+  ]) {
+    await expect(control).toHaveCSS("height", "28px");
+  }
+  await nameDialog.screenshot({
+    path: testInfo.outputPath("new-showfile-dialog.png"),
+  });
+  await nameDialog
+    .getByRole("textbox", { name: "Show name" })
+    .fill("recovered-new");
+  await nameDialog.getByRole("button", { name: "Create Show" }).click();
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -901,13 +961,7 @@ test("creates a new startup show when no showfiles are available", async ({
 /** Verifies command-line showfile loads update the remembered startup name. */
 test("remembers showfile loaded from the command line", async ({ page }) => {
   await captureWorkerSends(page);
-  await routeShowfileDiscovery(page, async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ showfiles: [] }),
-    });
-  });
-  await page.goto("/?e2e=1");
+  await openShowfileTestApp(page);
   await expect(page.locator("button[title='Menu']")).toBeVisible();
 
   const commandLine = page.locator("#header-cmdline");
@@ -1042,6 +1096,54 @@ test("keeps saved startup showfile by discarding draft and loading saved copy", 
       }),
     )
     .toBe(true);
+});
+
+/** Shows the backend size-limit reason when a selected gzip snapshot cannot be loaded. */
+test("explains the 1 GiB limit when opening an oversized showfile", async ({
+  page,
+}, testInfo) => {
+  const message =
+    "Showfile /tmp/oversized.nightfall-show/showfile.json.gz is too large. The maximum uncompressed snapshot size is 1 GiB.";
+  await disableE2eStartupAutoOpen(page);
+  await captureWorkerSends(page, {
+    commandResults: {
+      LoadNamedShowfile: {
+        type: "Failed",
+        data: { code: "showfile.world_swap_failed", message, details: null },
+      },
+    },
+  });
+  await routeShowfileDiscovery(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        showfiles: [
+          {
+            name: "oversized",
+            path: "/tmp/oversized.nightfall-show",
+            hasSavedSnapshot: true,
+            modifiedMs: 1_700_000_000_000,
+            revisions: [],
+          },
+        ],
+      }),
+    });
+  });
+  await page.goto("/?e2e=1&startup:bypassBackendReadiness=1");
+  const dialog = page.getByRole("dialog", { name: "Open Showfile" });
+  await dialog
+    .getByRole("button", { name: "Show revisions for oversized" })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Open saved showfile oversized" })
+    .click();
+  await expect(dialog.getByRole("alert")).toHaveText(`${message}Retry`);
+  await expect(
+    dialog.getByRole("button", { name: "Retry", exact: true }),
+  ).toBeVisible();
+  await dialog.screenshot({
+    path: testInfo.outputPath("oversized-showfile-error.png"),
+  });
 });
 
 /** Verifies saved startup recovery restores the prompt when backend commands fail. */
@@ -1565,21 +1667,25 @@ test("expands a showfile and opens a draft", async ({ page }) => {
     .toBe(true);
 });
 
+/** Verifies picker discovery failures independently of startup auto-open selection. */
 test("shows empty and error states for available showfiles", async ({
   page,
 }) => {
+  await openShowfileTestApp(page);
   await routeShowfileDiscovery(page, async (route) => {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ showfiles: [] }),
     });
   });
-  await page.goto("/?e2e=1");
 
   await page.locator("button[title='Menu']").click();
   await page.getByRole("button", { name: "Open Showfile" }).click();
   const dialog = page.getByRole("dialog", { name: "Open Showfile" });
   await expect(dialog.getByText("No showfiles found.")).toBeVisible();
+  await dialog.screenshot({
+    path: test.info().outputPath("showfile-picker-empty.png"),
+  });
 
   await page.unroute("**/api/showfiles");
   await routeShowfileDiscovery(page, async (route) => {
@@ -1592,4 +1698,7 @@ test("shows empty and error states for available showfiles", async ({
   await page.getByRole("button", { name: "Open Showfile" }).click();
   await expect(dialog.getByText("Could not load showfiles.")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Retry" })).toBeVisible();
+  await dialog.screenshot({
+    path: test.info().outputPath("showfile-picker-error.png"),
+  });
 });

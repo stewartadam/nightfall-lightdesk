@@ -44,7 +44,7 @@ const log = getLogger(import.meta.url);
 const EDGE_GROUP_SIZE_TARGETS = [
   {
     position: "left",
-    testId: "dv-edge-group-edge-Programmer",
+    testId: "dv-edge-group-edge-Clips",
   },
   {
     position: "bottom",
@@ -332,8 +332,13 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
       if (!hasInitializedLayout || isRestoringLayout || saveQueued) return;
       saveQueued = true;
       window.queueMicrotask(() => {
-        saveQueued = false;
-        if (!disposed) persistActiveLayout();
+        try {
+          // Serialization temporarily restores maximized groups and emits resize events.
+          // Keep the save queued until it finishes so those events cannot queue another save.
+          if (!disposed) persistActiveLayout();
+        } finally {
+          saveQueued = false;
+        }
       });
     };
 

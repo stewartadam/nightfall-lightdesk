@@ -91,10 +91,13 @@ test("assigned clip controls keep an enabled, visible handle", async ({
   await expect
     .poll(async () =>
       sliderHandle.evaluate((el) => {
-        const computed = getComputedStyle(el);
-        const color = document.createElement("span").style;
-        color.color = computed.getPropertyValue("--accent").trim();
-        return computed.borderColor === color.color;
+        const track = el
+          .closest(".vertical-range-slider")!
+          .querySelector(".noUi-connect")!;
+        return (
+          getComputedStyle(el).borderColor ===
+          getComputedStyle(track).backgroundColor
+        );
       }),
     )
     .toBe(true);
@@ -226,4 +229,68 @@ test("fractional control values remain passive until the operator edits", async 
   await control.screenshot({
     path: testInfo.outputPath("fractional-control-keyboard.png"),
   });
+});
+
+/** Keeps faders and actions inside both resize limits and honors motion preferences. */
+test("clip controls fill bounded heights and animate only toggles", async ({
+  page,
+}) => {
+  await openClipPanel(page);
+  await seedAssignedControl(page);
+  const section = page.locator("[data-clip-controls-section]");
+  const resize = page.locator("[data-clip-controls-resize-handle]");
+  const toggle = page.locator("[data-clip-controls-toggle]");
+  const control = page.locator('[data-control-index="3"]');
+  const track = control.locator(".vertical-range-slider");
+  await resize.focus();
+  for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowDown");
+  expect((await section.boundingBox())?.height).toBe(300);
+  const shortTrack = (await track.boundingBox())!;
+  expect(shortTrack.height).toBeGreaterThan(50);
+  const smallSection = (await section.boundingBox())!;
+  const smallControl = (await control.boundingBox())!;
+  expect(smallControl.y + smallControl.height).toBeLessThanOrEqual(
+    smallSection.y + smallSection.height,
+  );
+  await expect(
+    control.getByRole("button", { name: "Go control 3" }),
+  ).toBeInViewport();
+  await section.screenshot({
+    path: test.info().outputPath("controls-minimum.png"),
+  });
+
+  for (let i = 0; i < 50; i++) await page.keyboard.press("ArrowUp");
+  const tallSection = (await section.boundingBox())!;
+  const tallTrack = (await track.boundingBox())!;
+  expect(tallTrack.height - shortTrack.height).toBeCloseTo(
+    tallSection.height - smallSection.height,
+    0,
+  );
+  expect(
+    await section.evaluate((el) => getComputedStyle(el).transitionDuration),
+  ).toBe("0s");
+  await section.screenshot({
+    path: test.info().outputPath("controls-maximum.png"),
+  });
+
+  await toggle.click();
+  await expect
+    .poll(() => section.evaluate((el) => el.getAnimations().length))
+    .toBeGreaterThan(0);
+  await expect(control).toHaveCount(0);
+  await expect.poll(async () => (await section.boundingBox())?.height).toBe(46);
+  await toggle.click();
+  await expect
+    .poll(() => section.evaluate((el) => el.getAnimations().length))
+    .toBeGreaterThan(0);
+  await expect
+    .poll(async () => (await section.boundingBox())?.height)
+    .toBe(tallSection.height);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await toggle.click();
+  await expect(control).toHaveCount(0);
+  expect(await section.evaluate((el) => el.getAnimations().length)).toBe(0);
+  await toggle.click();
+  await expect(control).toBeVisible();
+  expect((await section.boundingBox())?.height).toBe(tallSection.height);
 });

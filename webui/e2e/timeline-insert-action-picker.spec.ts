@@ -395,6 +395,13 @@ test("insert action picker keeps keyboard selection visible", async ({
   page,
 }, testInfo) => {
   const timelineUid = await openOwnedTimelineApp(page);
+  /** Keeps the tested timeline visible when the workspace narrows. */
+  await page.evaluate((uid) => {
+    const api = (window as any).appStores.dockApi.get();
+    for (const panel of [...api.panels]) {
+      if (panel.id !== `e2e-insert-picker-timeline-${uid}`) panel.api.close();
+    }
+  }, timelineUid);
   await seedScrollableClipTargets(page);
   const timelineSurface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
@@ -431,10 +438,13 @@ test("insert action picker keeps keyboard selection visible", async ({
   await picker.screenshot({
     path: testInfo.outputPath("shared-insert-picker.png"),
   });
-  await page.setViewportSize({ width: 390, height: 720 });
   await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+  await page.setViewportSize({ width: 390, height: 720 });
   await timelineSurface.click();
   await page.keyboard.press("i");
+  await expect(picker).toBeVisible();
   const box = await picker.boundingBox();
   expect(box).not.toBeNull();
   expect(box!.x).toBeGreaterThanOrEqual(0);

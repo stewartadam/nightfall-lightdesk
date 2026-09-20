@@ -93,7 +93,7 @@ type DefaultEdgeGroupPosition = (typeof DEFAULT_EDGE_GROUP_POSITIONS)[number];
 
 const DEFAULT_EDGE_GROUP_IDS: Record<DefaultEdgeGroupPosition, string> = {
   bottom: "edge-Console",
-  left: "edge-Programmer",
+  left: "edge-Clips",
   right: "edge-Properties",
 };
 
@@ -1158,7 +1158,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
     });
   });
 
-  // Function to create the default layout
+  /** Seeds the performance workspace with visible clips, show objects, and visualization. */
   function createDefaultLayout(api: DockviewApi) {
     /** Removes structural edge slots that survive Dockview's panel clear. */
     const removeDefaultEdgeGroups = () => {
@@ -1169,11 +1169,13 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       }
     };
 
-    /** Collapses seeded edge groups so inactive panels do not reserve empty content panes. */
-    const collapseDefaultEdgeGroups = () => {
-      for (const edgePosition of DEFAULT_EDGE_GROUP_POSITIONS) {
+    /** Opens clips when the three columns fit, keeping utility panels collapsed. */
+    const applyDefaultEdgeState = () => {
+      for (const edgePosition of ["bottom", "right"] as const) {
         api.getEdgeGroup(edgePosition)?.collapse();
       }
+      if (expandClips) api.getEdgeGroup("left")?.expand();
+      else api.getEdgeGroup("left")?.collapse();
     };
 
     // Clear the saved layout and panel UI
@@ -1181,7 +1183,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
     removeDefaultEdgeGroups();
     api.clear();
 
-    // Helper function to add a panel with proper typing and error handling
+    /** Adds a registered panel and reports missing components or docking failures. */
     const addPanel = <T extends Record<string, unknown>>(
       definition: PanelDefinition,
       position: {
@@ -1259,11 +1261,25 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       );
     };
 
+    const width = dockviewHostRef?.clientWidth ?? api.width;
+    const height = dockviewHostRef?.clientHeight ?? api.height;
+    const clipsWidth = Math.max(550, Math.round(width * 0.28));
+    const visualizerEnabled = isVisualizerDefaultPanelEnabled();
+    const gridMinimumWidth =
+      panelDefinitionByName("GroupsPanel").minWidth +
+      (visualizerEnabled ? panelDefinitionByName("Visualizer").minWidth : 0);
+    const expandClips =
+      width >=
+      clipsWidth +
+        gridMinimumWidth +
+        EDGE_GROUP_COLLAPSED_SIZE +
+        4 * (visualLanguageDockTheme.gap ?? 0);
+
     addEdgePanel(
       "left",
       DEFAULT_EDGE_GROUP_IDS.left,
-      panelDefinitionByName("ProgrammerGrid"),
-      360,
+      panelDefinitionByName("ClipList"),
+      clipsWidth,
     );
 
     addEdgePanel(
@@ -1280,59 +1296,106 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       340,
     );
 
-    // Build the show-object tabs in the left column.
-    const cuePanel = addPanel(panelDefinitionByName("CueList"), {
+    for (const componentName of [
+      "ProgrammerGrid",
+      "SelectionVisualizer",
+      "TapPattern",
+    ] as const) {
+      addPanel(
+        panelDefinitionByName(componentName),
+        {
+          referenceGroup: DEFAULT_EDGE_GROUP_IDS.bottom,
+          direction: "within",
+        },
+        {},
+        true,
+      );
+    }
+
+    for (const componentName of [
+      "StatusDisplay",
+      "FixtureGrid",
+      "PatchEditor",
+      "Instrumentation",
+    ] as const) {
+      addPanel(
+        panelDefinitionByName(componentName),
+        {
+          referenceGroup: DEFAULT_EDGE_GROUP_IDS.right,
+          direction: "within",
+        },
+        {},
+        true,
+      );
+    }
+
+    const groupsPanel = addPanel(panelDefinitionByName("GroupsPanel"), {
       direction: "left",
     });
 
-    addPanel(panelDefinitionByName("SequenceList"), {
-      referencePanel: cuePanel.id,
-      direction: "within",
-    });
+    addPanel(
+      panelDefinitionByName("SequenceList"),
+      {
+        referencePanel: groupsPanel.id,
+        direction: "within",
+      },
+      {},
+      true,
+    );
 
-    const fxListDefinition = panelDefinitionByName("FxList");
-    addPanel(fxListDefinition, {
-      referencePanel: cuePanel.id,
-      direction: "within",
-    });
+    addPanel(
+      panelDefinitionByName("FxList"),
+      {
+        referencePanel: groupsPanel.id,
+        direction: "within",
+      },
+      {},
+      true,
+    );
 
-    const flowListDefinition = panelDefinitionByName("FlowList");
     if (areExperimentalFlowsEnabled()) {
-      addPanel(flowListDefinition, {
-        referencePanel: fxListDefinition.panelId,
-        direction: "within",
-      });
+      addPanel(
+        panelDefinitionByName("FlowList"),
+        {
+          referencePanel: groupsPanel.id,
+          direction: "within",
+        },
+        {},
+        true,
+      );
     }
 
-    const groupsDefinition = panelDefinitionByName("GroupsPanel");
-    addPanel(groupsDefinition, {
-      referencePanel: fxListDefinition.panelId,
-      direction: "within",
+    addPanel(panelDefinitionByName("TimelinesPanel"), {
+      referencePanel: groupsPanel.id,
+      direction: "below",
     });
 
-    addPanel(panelDefinitionByName("ClipList"), {
-      referencePanel: groupsDefinition.panelId,
-      direction: "within",
-    });
-
-    // Build right column: Fixtures, Programmer, 3D Visualizer
-    const fixturesPanel = addPanel(panelDefinitionByName("FixtureGrid"));
-
-    if (isVisualizerDefaultPanelEnabled()) {
+    // Add the visualizer beside the entire vertically split center column.
+    if (visualizerEnabled) {
       addPanel(panelDefinitionByName("Visualizer"), {
-        referencePanel: fixturesPanel.id,
-        direction: "within",
+        direction: "right",
       });
     }
 
-    collapseDefaultEdgeGroups();
+    groupsPanel.api.setActive();
+    applyDefaultEdgeState();
 
-    const width = dockviewHostRef?.clientWidth ?? api.width;
-    const height = dockviewHostRef?.clientHeight ?? api.height;
     if (width > 0 && height > 0) {
       requestAnimationFrame(() => {
-        collapseDefaultEdgeGroups();
+        applyDefaultEdgeState();
         api.layout(width, height, true);
+        groupsPanel.api.setSize({
+          height: Math.round((height - EDGE_GROUP_COLLAPSED_SIZE) / 2),
+        });
+        const visualizer = api.getPanel("panel-Visualizer");
+        visualizer?.api.setSize({
+          width: Math.round(
+            (width -
+              (expandClips ? clipsWidth : EDGE_GROUP_COLLAPSED_SIZE) -
+              EDGE_GROUP_COLLAPSED_SIZE) *
+              0.43,
+          ),
+        });
       });
     }
   }
