@@ -6,12 +6,97 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { Locator } from "@playwright/test";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 const EDGE_DROP_HOLD_DELAY_MS = 500;
 const LAYOUT_STORAGE_KEY = "nightfall-ui-layouts";
 const COMMAND_INPUT_PLACEHOLDER = "Type a command or search...";
+
+/** Drags a tab to the leading or trailing end of another vertical tab. */
+async function dragToVerticalTab(
+  page: Page,
+  source: Locator,
+  target: Locator,
+  before: boolean,
+) {
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error("Missing drag tab bounds");
+  await page.mouse.move(
+    sourceBox.x + sourceBox.width / 2,
+    sourceBox.y + sourceBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    sourceBox.x + sourceBox.width / 2,
+    sourceBox.y + sourceBox.height + 20,
+    { steps: 6 },
+  );
+  await page.mouse.move(
+    targetBox.x + targetBox.width / 2,
+    targetBox.y + (before ? 3 : targetBox.height - 3),
+    { steps: 20 },
+  );
+  await page.waitForTimeout(350);
+  await page.screenshot({
+    path: test
+      .info()
+      .outputPath(
+        before ? "before-drop-preview.png" : "after-drop-preview.png",
+      ),
+  });
+  await page.mouse.up();
+}
+
+for (const side of ["left", "right"] as const) {
+  for (const collapsed of [false, true]) {
+    /** Verifies insertion and bidirectional reordering on either vertical edge rail. */
+    test(`${side} ${collapsed ? "collapsed" : "expanded"} edge accepts panel insertion and reordering`, async ({
+      page,
+    }) => {
+      await installDockviewStartupSeed(page);
+      await page.goto("/?e2e=1");
+      await waitForDockview(page);
+      await runCommand(page, "Reset Layout");
+      const targetId = await page.evaluate(
+        ({ side, collapsed }) => {
+          const api = (window as any).appStores.dockApi.get();
+          const edge = api.getEdgeGroup(side);
+          if (collapsed) edge.collapse();
+          else edge.expand();
+          const group = api.groups.find((group: any) => group.id === edge.id);
+          return group.panels[0].id;
+        },
+        { side, collapsed },
+      );
+      const source = page.getByRole("tab", { name: "Fixtures", exact: true });
+      const edgeTabs = page.locator(
+        `[data-testid="dv-edge-group-edge-${side === "left" ? "Programmer" : "Properties"}"] .dv-tab`,
+      );
+      const target = edgeTabs.first();
+      await expect(target).toBeVisible();
+      /** Reads the model order independently of the rendered drop preview. */
+      const panelOrder = () =>
+        page.evaluate((side) => {
+          const api = (window as any).appStores.dockApi.get();
+          return api.groups
+            .find((group: any) => group.id === api.getEdgeGroup(side).id)
+            .panels.map((panel: any) => panel.id);
+        }, side);
+      await dragToVerticalTab(page, source, target, false);
+      await expect.poll(panelOrder).toEqual([targetId, "panel-FixtureGrid"]);
+      await dragToVerticalTab(page, edgeTabs.nth(1), edgeTabs.nth(0), true);
+      await expect.poll(panelOrder).toEqual(["panel-FixtureGrid", targetId]);
+      await dragToVerticalTab(page, edgeTabs.nth(0), edgeTabs.nth(1), false);
+      await expect.poll(panelOrder).toEqual([targetId, "panel-FixtureGrid"]);
+      await page.screenshot({
+        path: test.info().outputPath("final-edge-order.png"),
+      });
+    });
+  }
+}
 
 /** Seeds startup state so Dockview layout tests bypass the showfile picker. */
 async function installDockviewStartupSeed(
