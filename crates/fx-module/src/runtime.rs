@@ -547,10 +547,15 @@ fn from_wit_fade_curve(curve: bindings::nightfall::fx_module::shared::FadeCurve)
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
-    use std::sync::OnceLock;
+    mod fixture {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../fx-module/tests/support/mod.rs"
+        ));
+    }
 
-    use wit_component::ComponentEncoder;
+    use fixture::build_test_guest_module_path;
+    use fixture::test_component_bytes;
 
     use super::*;
 
@@ -740,46 +745,5 @@ mod tests {
             }
             other => panic!("expected guest invalid-input error, got {other:?}"),
         }
-    }
-
-    fn test_component_bytes() -> &'static [u8] {
-        static COMPONENT: OnceLock<Vec<u8>> = OnceLock::new();
-        COMPONENT.get_or_init(build_test_component).as_slice()
-    }
-
-    fn build_test_component() -> Vec<u8> {
-        let guest_wasm = build_test_guest_module_path();
-        let module = std::fs::read(&guest_wasm).expect("failed to read module wasm");
-
-        ComponentEncoder::default()
-            .module(&module)
-            .expect("failed to attach module to component encoder")
-            .encode()
-            .expect("failed to encode component")
-    }
-
-    fn build_test_guest_module_path() -> PathBuf {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("guest-module")
-            .join("Cargo.toml");
-        let guest_dir = manifest.parent().unwrap();
-
-        let status = Command::new("cargo")
-            .arg("build")
-            .arg("--manifest-path")
-            .arg(&manifest)
-            .arg("--target")
-            .arg("wasm32-unknown-unknown")
-            .current_dir(guest_dir)
-            .status()
-            .expect("failed to build test module component");
-        assert!(status.success(), "module component build failed");
-
-        guest_dir
-            .join("target")
-            .join("wasm32-unknown-unknown")
-            .join("debug")
-            .join("fx_module_test_module.wasm")
     }
 }
