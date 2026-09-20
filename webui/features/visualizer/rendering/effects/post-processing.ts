@@ -15,7 +15,7 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { outline } from "three/addons/tsl/display/OutlineNode.js";
 import { color, float, pass } from "three/tsl";
 import type { Camera, Object3D, Scene } from "three/webgpu";
-import { PostProcessing, type WebGPURenderer } from "three/webgpu";
+import { RenderPipeline, type WebGPURenderer } from "three/webgpu";
 
 /** Post-processing configuration */
 export interface PostProcessingConfig {
@@ -95,7 +95,7 @@ export const defaultPostProcessingConfig: PostProcessingConfig = {
 
 /** State for post-processing effects */
 export interface PostProcessingState {
-  postProcessing: PostProcessing;
+  postProcessing: RenderPipeline;
   scenePass: ReturnType<typeof pass>;
   bloomPass: ReturnType<typeof bloom>;
   outlinePass: ReturnType<typeof outline>;
@@ -188,7 +188,7 @@ export function createPostProcessing(
     .mul(float(config.activeSpanOutlineStrength));
 
   // Create post-processing with combined output.
-  const postProcessing = new PostProcessing(renderer);
+  const postProcessing = new RenderPipeline(renderer);
   postProcessing.outputNode = scenePassColor
     .add(bloomPass)
     .add(selectionOutlineColor)
