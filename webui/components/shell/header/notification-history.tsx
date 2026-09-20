@@ -25,6 +25,7 @@ import {
   notificationHistory,
   type ToastLevel,
 } from "../../../state/appStores";
+import { runNotificationAction } from "../../../state/notifications";
 import {
   DialogBody,
   DialogHeader,
@@ -154,6 +155,27 @@ function NotificationHistoryContent(props: {
                         <div class="whitespace-pre-wrap break-words leading-5">
                           {entry.message}
                         </div>
+                        <Show when={entry.count > 1}>
+                          <div class="mt-1 text-xs text-neutral-400">
+                            Repeated {entry.count} times
+                          </div>
+                        </Show>
+                        <Show when={entry.actions.length > 0}>
+                          <div class="mt-2 flex flex-wrap gap-2">
+                            <For each={entry.actions}>
+                              {(action, index) => (
+                                <Button
+                                  size="compact"
+                                  onClick={() =>
+                                    runNotificationAction(entry.id, index())
+                                  }
+                                >
+                                  {action.label}
+                                </Button>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
                       </td>
                       <td>
                         <div class="font-mono text-neutral-200">
