@@ -786,6 +786,26 @@ test("welcome basics toggles a clip and opens properties", async ({
   await page
     .getByRole("button", { name: "Close settings", exact: true })
     .click();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Edits apply as you work" }),
+  ).toBeVisible();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await page.getByRole("button", { name: /Save Showfile/ }).click();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await page.getByRole("button", { name: /Keyboard Shortcuts/ }).click();
+  await expect(
+    page.getByRole("region", { name: "Keyboard shortcuts", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("welcome-keyboard-shortcuts.png"),
+  });
+  await page
+    .locator('[data-dialog-kind="shortcuts"]')
+    .getByTitle("Close", { exact: true })
+    .click();
 });
 
 for (const platform of ["MacIntel", "Win32"]) {
@@ -987,7 +1007,7 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   ).toBeVisible();
   await expect(guide.getByRole("button", { name: "Skip step" })).toHaveCount(0);
   await expect(guide.getByRole("status", { name: "Current step" })).toHaveText(
-    "3/13",
+    "3/16",
   );
   await expect(
     guide

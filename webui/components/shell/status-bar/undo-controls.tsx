@@ -145,7 +145,7 @@ export default function UndoControls(props: { placement: "above" | "below" }) {
   });
 
   return (
-    <div class="flex items-center gap-1">
+    <div class="flex items-center gap-1" data-guide-target="undo-redo">
       <ToolbarButton
         type="button"
         disabled={!undo().can_undo || isUndoTimelineJumping()}
