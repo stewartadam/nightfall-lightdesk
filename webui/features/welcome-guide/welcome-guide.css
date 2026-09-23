@@ -148,7 +148,7 @@
 }
 @keyframes nf-guide-target-pulse {
   50% {
-    transform: scale(1.04);
+    inset: -5px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
