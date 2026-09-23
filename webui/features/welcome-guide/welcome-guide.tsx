@@ -178,8 +178,18 @@ export default function WelcomeGuide() {
   );
   const [card, setCard] = createSignal<HTMLElement>();
   const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
-  /** Resolves authored sequence and cue identities to their current card or Trigger cell. */
+  /** Resolves authored object identities to clip tiles, inspect buttons, sequence cards, or Trigger cells. */
   const targetSelector = createMemo(() => {
+    const clipTarget = step()?.targetClip;
+    if (clipTarget) {
+      const clip = Object.values(clipMap()).find(
+        ([entry]) => entry.identifiers.id === clipTarget.id,
+      )?.[0];
+      if (!clip) return undefined;
+      return clipTarget.gear
+        ? `[aria-label="Inspect clip ${clipTarget.id}"]`
+        : `[data-crud-select-id="${clip.identifiers.uid}"]`;
+    }
     const target = step()?.targetSequence;
     if (!target) return step()?.target;
     const sequence = Object.values(sequenceMap()).find(
@@ -382,7 +392,7 @@ export default function WelcomeGuide() {
                       onClick={() => startGuideLesson(entry.id)}
                     >
                       <span class="nf-guide-lesson-meta">
-                        {entry.id === "welcome"
+                        {entry.id === "basics"
                           ? "START HERE"
                           : "FOLLOW-ON LESSON"}{" "}
                         · {entry.duration}

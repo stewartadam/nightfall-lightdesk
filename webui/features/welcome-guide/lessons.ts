@@ -29,6 +29,7 @@ export interface GuideStep {
   highlightClipId?: number;
   target?: string;
   targetSequence?: { id: number; cueId?: number };
+  targetClip?: { id: number; gear?: boolean };
   placement?: "above";
   focusTarget?: boolean;
   observe?: GuideObservation;
@@ -42,12 +43,27 @@ export interface GuideLesson {
 }
 export const GUIDE_LESSONS: GuideLesson[] = [
   {
-    id: "welcome",
-    title: "Your first lights",
-    duration: "8–10 min",
+    id: "basics",
+    title: "Welcome to Nightfall",
+    duration: "3–5 min",
     introduction:
-      "Take control of the pixel strips, edit two looks, and play them with a fader and Go.",
+      "Explore the Visualizer, play the sample timeline and clips, and find their properties.",
     steps: [
+      {
+        id: "visualizer",
+        title: "Meet your sample rig",
+        content: [
+          {
+            type: "text",
+            text: "The 3D Visualizer shows the sample rig responding to live lighting instructions. Watch it as you explore playback.",
+          },
+          { type: "prerequisite", panels: ["Visualizer"] },
+          {
+            type: "action",
+            body: "Find the pixel strips, moving heads, and strobes in the Visualizer, then continue.",
+          },
+        ],
+      },
       {
         id: "open-timeline",
         title: "Open the sample timeline",
@@ -107,6 +123,83 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
         ],
       },
+
+      {
+        id: "start-clip",
+        title: "Launch a clip",
+        targetClip: { id: 1 },
+        observe: { type: "clip-playing", clipId: 1 },
+        content: [
+          {
+            type: "text",
+            text: "A clip plays a sequence or effect. The timeline launched clips for you; you can also launch them directly.",
+          },
+          { type: "prerequisite", panels: ["ClipList", "Visualizer"] },
+          {
+            type: "action",
+            body: "Click clip 1: RGB cycle (full) to start it, and watch the Visualizer.",
+          },
+        ],
+      },
+      {
+        id: "stop-clip",
+        title: "Stop a clip",
+        targetClip: { id: 1 },
+        observe: { type: "clip-stopped", clipId: 1 },
+        content: [
+          {
+            type: "text",
+            text: "Clicking a running clip again stops its playback.",
+          },
+          { type: "action", body: "Click RGB cycle (full) again to stop it." },
+          {
+            type: "action",
+            title: "Command alternative",
+            body: "You can also stop the clip from the command input.",
+            command: "clip 1 stop",
+          },
+        ],
+      },
+      {
+        id: "properties",
+        title: "Explore clip properties",
+        targetClip: { id: 1, gear: true },
+        observe: { type: "panel", component: "PropertiesInspector" },
+        content: [
+          {
+            type: "text",
+            text: "Properties shows settings for the object you inspect. A clip’s Source tells you which sequence or effect it plays.",
+          },
+          { type: "prerequisite", panels: ["ClipList"] },
+          {
+            type: "action",
+            body: "Click the gear on RGB cycle (full) to open its Properties. Look for Source and the linked sequence.",
+          },
+        ],
+      },
+      {
+        id: "ready",
+        title: "Ready to make your own lights",
+        content: [
+          {
+            type: "text",
+            text: "The Visualizer shows the result, clips play lighting instructions, timelines arrange clips over time, and Properties lets you inspect and edit them.",
+          },
+          {
+            type: "action",
+            body: "Finish this introduction, then choose Your first lights to build your own Red and Blue sequence.",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "welcome",
+    title: "Your first lights",
+    duration: "8–10 min",
+    introduction:
+      "Take control of four pixel strips, create your own Red and Blue sequence, and play it with a fader and Go.",
+    steps: [
       {
         id: "navigate-palette",
         title: "Find your way around",
@@ -370,7 +463,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "create-clip",
         title: "Create your playback clip",
         target: '[aria-label="Add clip"]',
-        observe: { type: "clip-sequence", clipId: 50, sequenceId: 50 },
+        observe: { type: "clip-created", clipId: 50 },
         content: [
           {
             type: "text",
@@ -382,10 +475,28 @@ export const GUIDE_LESSONS: GuideLesson[] = [
             title: "Create clip 50: First Lights",
             body: "In Clips, click Add clip. Set ID to 50 and Label to First Lights, then click Create.",
           },
+        ],
+      },
+      {
+        id: "link-clip",
+        title: "Choose your clip’s sequence",
+        targetClip: { id: 50, gear: true },
+        observe: { type: "clip-sequence", clipId: 50, sequenceId: 50 },
+        content: [
+          {
+            type: "text",
+            text: "A clip’s Source is the sequence or effect it plays. Link First Lights to the sequence you just made.",
+          },
+          { type: "prerequisite", panels: ["ClipList"] },
           {
             type: "action",
-            title: "Link it to your sequence:",
-            body: "Type this command and press Enter to make First Lights play sequence 50.",
+            title: "Choose sequence 50 in Properties",
+            body: "Click the gear on First Lights. In Properties, under Source, choose Sequence, then find and select sequence 50.",
+          },
+          {
+            type: "action",
+            title: "Command alternative",
+            body: "You can also set the same source from the command input.",
             command: "set clip 50 target=sequence 50",
           },
         ],
@@ -479,7 +590,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "stop",
         title: "Stop your clip",
-        target: "#header-cmdline",
+        targetClip: { id: 50 },
         observe: {
           type: "clip-stopped",
           clipId: 50,
@@ -487,12 +598,18 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "Lowering a fader is different from stopping playback.",
+            text: "Stopping the clip will stop the sequence and allow the fixtures to be controlled by other active clips, if any.",
+          },
+          { type: "prerequisite", panels: ["ClipList"] },
+          {
+            type: "action",
+            title: "Click First Lights again",
+            body: "Click the running First Lights tile to stop its playback.",
           },
           {
             type: "action",
-            title: "Type this command, then press Enter:",
-            body: "Enter clip 50 stop, or right-click First Lights and choose Stop Clip.",
+            title: "Command alternative",
+            body: "You can also stop a clip via the command input.",
             command: "clip 50 stop",
           },
         ],
