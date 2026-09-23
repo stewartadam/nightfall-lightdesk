@@ -343,7 +343,7 @@ export default function StatusBar() {
             shortcut="⌘S"
             onClick={saveShowfile}
           >
-            Save Showfile
+            <span data-guide-target="save-showfile">Save Showfile</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             icon={FileArrowDownIcon}
@@ -364,7 +364,9 @@ export default function StatusBar() {
             onClick={showShortcutsPopup}
             shortcut="⇧?"
           >
-            Keyboard Shortcuts
+            <span data-guide-target="keyboard-shortcuts">
+              Keyboard Shortcuts
+            </span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem icon={InfoIcon} onClick={openAbout}>
@@ -490,7 +492,7 @@ export default function StatusBar() {
         />
         <Show when={connStatus() === "connected"}>
           <div class="contents">
-            <div class={STATUS_ICON_GROUP_CLASS}>
+            <div class={STATUS_ICON_GROUP_CLASS} data-guide-target="undo-redo">
               <ToolbarButton
                 type="button"
                 disabled={!undo().can_undo || isUndoTimelineJumping()}
