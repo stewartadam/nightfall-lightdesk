@@ -786,7 +786,6 @@ test("welcome basics toggles a clip and opens properties", async ({
   await page
     .getByRole("button", { name: "Close settings", exact: true })
     .click();
-  await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(
     guide.getByRole("heading", { name: "Edits apply as you work" }),
   ).toBeVisible();
@@ -815,6 +814,9 @@ test("welcome basics toggles a clip and opens properties", async ({
     .locator('[data-dialog-kind="shortcuts"]')
     .getByTitle("Close", { exact: true })
     .click();
+  await expect(
+    guide.getByRole("heading", { name: "Ready to explore", exact: true }),
+  ).toBeVisible();
 });
 
 for (const platform of ["MacIntel", "Win32"]) {
@@ -1409,6 +1411,10 @@ test("first lights builds its own Red and Blue sequence", async ({
     .locator('[data-component="PropertiesInspector"]')
     .getByText(/^50:/)
     .click();
+  await expect(
+    guide.getByRole("heading", { name: "Make room for the Visualizer" }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Properties", exact: true }).click();
   await expect(
     guide.getByRole("heading", { name: "Put First Lights on control 6" }),
   ).toBeVisible();
