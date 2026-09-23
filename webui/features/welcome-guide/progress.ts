@@ -21,6 +21,7 @@ import type { ControlSnapshot } from "../../types";
 
 export type GuideObservation =
   | { type: "command-palette" }
+  | { type: "settings" }
   | { type: "sample-panels" }
   | { type: "panel"; component: PanelComponentName }
   | { type: "sequence-editor"; sequenceId: number }
@@ -44,6 +45,7 @@ export type GuideObservation =
 
 export interface GuideSnapshot {
   commandPaletteOpen?: boolean;
+  settingsOpen?: boolean;
   panel?: string;
   openPanels?: {
     component: string;
@@ -87,6 +89,8 @@ export function guideCompletionToken(
   switch (observation.type) {
     case "command-palette":
       return state.commandPaletteOpen ? "open" : "";
+    case "settings":
+      return state.settingsOpen ? "open" : "";
     case "sample-panels":
       return timeline &&
         state.openPanels?.some((panel) => panel.component === "Visualizer") &&

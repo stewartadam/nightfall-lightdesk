@@ -698,6 +698,41 @@ test("welcome basics toggles a clip and opens properties", async ({
   await page.screenshot({
     path: testInfo.outputPath("welcome-basics-properties.png"),
   });
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    guide.getByRole("heading", {
+      name: "A shortcut for lighting instructions",
+    }),
+  ).toBeVisible();
+  await expect(page.locator("#header-cmdline")).toBeFocused();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Arrange your workspace" }),
+  ).toBeVisible();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Open command palette", exact: true })
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Open Settings", exact: true }),
+  ).toBeVisible();
+  const search = page.locator('[data-dialog-kind="command-palette"] input');
+  await search.fill("Open Settings");
+  await search.press("Enter");
+  await expect(
+    guide.getByRole("heading", { name: "Choose your accent color" }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Violet accent", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Violet accent", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.screenshot({ path: testInfo.outputPath("welcome-accent.png") });
+  await page
+    .getByRole("button", { name: "Close settings", exact: true })
+    .click();
 });
 
 for (const platform of ["MacIntel", "Win32"]) {
@@ -899,7 +934,7 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   ).toBeVisible();
   await expect(guide.getByRole("button", { name: "Skip step" })).toHaveCount(0);
   await expect(guide.getByRole("status", { name: "Current step" })).toHaveText(
-    "3/8",
+    "3/13",
   );
   await expect(
     guide

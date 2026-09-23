@@ -15,6 +15,7 @@ import {
   onCleanup,
   untrack,
 } from "solid-js";
+import { useAppShell } from "../../components/providers/app-shell";
 import { useCommandPalette } from "../../components/providers/command-registry";
 import {
   activeInstances,
@@ -41,6 +42,7 @@ export function useGuideProgress(
   advance: () => void,
 ): void {
   const { isOpen: commandPaletteOpen } = useCommandPalette();
+  const { isSettingsOpen } = useAppShell();
   const fixtureMap = useStore(fixtures);
   const selection = useStore(programmerSelection);
   const programmer = useStore(programmerState);
@@ -93,6 +95,7 @@ export function useGuideProgress(
     const token = () =>
       guideCompletionToken(target, {
         commandPaletteOpen: commandPaletteOpen(),
+        settingsOpen: isSettingsOpen(),
         panel: panel(),
         openPanels: openPanels(),
         fixtures: fixtureMap(),
