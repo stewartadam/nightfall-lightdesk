@@ -44,3 +44,4 @@
 - [Glossary](user-guide/glossary.md)
 
 - [CI builds](developer-reference/ci-builds.md)
+- [GDTF test bench](developer-reference/gdtf-test-bench.md)
