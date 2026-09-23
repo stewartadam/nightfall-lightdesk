@@ -66,6 +66,12 @@ Shared logical functions occupy their physical channel only once. Fixed breaks
 use their first matching reference entry; Overwrite uses the final entry, which
 may target that same break at a different offset (covered by Spiider and synthetic
 tests). These checks do not prove engine encoding/decoding or effective light.
+`ChannelWire::read_raw` and `write_raw` provide allocation-free successful byte
+I/O against a caller-selected, fixture-relative break buffer. Synthetic tests
+check independent sparse byte vectors at all four widths, exact 32-bit values,
+unchanged gaps, and rejected writes leaving the entire buffer unchanged. Virtual
+controls have no `ChannelWire`. These primitives do not yet perform engine
+patching, whole-frame transactions, physical conversion, or relation evaluation.
 
 The `functions` stage normalizes integer defaults/highlight and inclusive raw
 ranges through 32 bits. Mutually exclusive logical channels and ModeMaster

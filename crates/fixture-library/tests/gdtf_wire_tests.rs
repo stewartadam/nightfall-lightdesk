@@ -226,3 +226,80 @@ fn fixed_and_overwrite_entries_remain_distinct_on_the_same_break() {
     assert_eq!(wires.channels[6], physical(2, &[101]));
     assert_eq!(wires.channels[7], physical(2, &[201]));
 }
+
+/// Independently authored buffers verify byte significance, gaps, and exact values at every width.
+#[test]
+fn raw_codec_preserves_sparse_slots_and_integer_precision() {
+    for (offsets, raw, expected) in [
+        (vec![4], 0xab, vec![0xee, 0xee, 0xee, 0xab]),
+        (vec![4, 1], 0xabcd, vec![0xcd, 0xee, 0xee, 0xab]),
+        (vec![4, 1, 3], 0xabcdef, vec![0xcd, 0xee, 0xef, 0xab]),
+        (vec![4, 1, 3, 2], 0xabcdef01, vec![0xcd, 0x01, 0xef, 0xab]),
+    ] {
+        let wire = ChannelWire {
+            dmx_break: 7,
+            offsets,
+        };
+        assert_eq!(wire.read_raw(&expected).unwrap(), raw);
+        let mut output = vec![0xee; 4];
+        wire.write_raw(raw, &mut output).unwrap();
+        assert_eq!(output, expected);
+        let maximum = u32::MAX >> ((4 - wire.offsets.len()) * 8);
+        for value in [0, 1, maximum - 1, maximum] {
+            wire.write_raw(value, &mut output).unwrap();
+            assert_eq!(wire.read_raw(&output).unwrap(), value);
+        }
+    }
+}
+
+/// Rejected writes are transactional even when a valid byte precedes an invalid one.
+#[test]
+fn raw_codec_rejects_invalid_layouts_and_overflow_without_partial_writes() {
+    for (dmx_break, offsets, raw, expected) in [
+        (0, vec![1], 1, "invalid_break"),
+        (1, vec![], 1, "invalid_channel_width"),
+        (1, vec![1, 2, 3, 4, 5], 1, "invalid_channel_width"),
+        (1, vec![1, 0], 1, "invalid_offset"),
+        (1, vec![1, 5], 1, "wire_buffer_too_short"),
+        (1, vec![1, 1], 1, "duplicate_byte"),
+        (1, vec![1], 256, "raw_value_out_of_range"),
+        (1, vec![1, 3], 65536, "raw_value_out_of_range"),
+        (1, vec![1, 3, 2], 16777216, "raw_value_out_of_range"),
+    ] {
+        let wire = ChannelWire { dmx_break, offsets };
+        let mut output = [0x99; 4];
+        assert_eq!(wire.write_raw(raw, &mut output).unwrap_err().code, expected);
+        assert_eq!(output, [0x99; 4]);
+        if expected != "raw_value_out_of_range" {
+            assert_eq!(wire.read_raw(&output).unwrap_err().code, expected);
+        }
+    }
+}
+
+/// Compiled reference mappings write only their selected break and do not allocate virtual slots.
+#[test]
+fn compiled_channels_encode_independent_break_buffers() {
+    let wires = wires(&description()).unwrap();
+    let values = [0x1234, 0x5678, 0xffff, 0xffff, 11, 21, 12, 22, 13, 23];
+    let mut first = [0xa5; 5];
+    let mut second = [0xa5; 22];
+    for (wire, value) in wires.channels.iter().zip(values) {
+        if let Some(wire) = wire {
+            let buffer: &mut [u8] = match wire.dmx_break {
+                1 => &mut first,
+                2 => &mut second,
+                _ => panic!("unexpected break"),
+            };
+            wire.write_raw(value, buffer).unwrap();
+            assert_eq!(wire.read_raw(buffer).unwrap(), value);
+        }
+    }
+    assert_eq!(first, [0x12, 0x56, 0xa5, 0x34, 0x78]);
+    assert_eq!(
+        second,
+        [
+            0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 11, 12, 13, 0xa5, 0xa5, 0xa5,
+            0xa5, 0xa5, 0xa5, 0xa5, 21, 22, 23
+        ]
+    );
+}
