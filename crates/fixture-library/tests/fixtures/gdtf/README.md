@@ -95,6 +95,16 @@ nodes, but no DMXProfile or SubChannelSet nodes and no nonempty DMXProfile links
 Those capabilities therefore require independent synthetic coverage; a green
 real-archive sweep cannot establish profile or sub-channel-unit support.
 
+`gdtf_profile_tests` covers the owned piecewise cubic profile compiler separately.
+XML breakpoint percentages are fractions (0–1), while coefficients produce
+percentage output; tests reproduce the [builder's S-curve example](https://gdtf-development.com/help/users/gdtf_builder/physical_descriptions/index.html)
+at five independent sample points. Profiles retain discontinuities and
+non-monotonic output, select the new polynomial exactly at a breakpoint, and
+return zero before the first point. Invalid links, duplicate names/points,
+nonfinite values, overflow and point budgets are diagnosed. Raw interval tests
+retain distinct 32-bit values. This evaluator does not yet connect curves to
+function Min/Max or sub-channel units, invert them, or apply them in the engine.
+
 The `activation` stage compiles a bounded dependency order and evaluates each
 mode's raw defaults. Function links require the target function to be active;
 channel links use only the master's raw value. Cyclic function dependencies fail
