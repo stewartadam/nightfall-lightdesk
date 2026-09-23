@@ -8,10 +8,19 @@
 
 import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo, For, Match, Show, Switch } from "solid-js";
-import { Input, Textarea } from "../../../components/ui/form-controls";
+import {
+  Input,
+  NativeSelect,
+  Textarea,
+} from "../../../components/ui/form-controls";
 import { durationToMs, msToDuration } from "../../../lib/utils";
-import { timelineLookaheadActionStatuses } from "../../../state/appStores";
+import {
+  actionCatalog,
+  timelineActionDiagnostics,
+  timelineLookaheadActionStatuses,
+} from "../../../state/appStores";
 import * as types from "../../../types";
+import { createActionBindingChoices } from "../../action-mapping";
 import type { SelectedAction } from "../context/timeline-context";
 
 type SelectedActionRecord = {
@@ -177,6 +186,9 @@ export default function TimelineActionProperties(
   props: TimelineActionPropertiesProps,
 ) {
   const $lookaheadItemStatuses = useStore(timelineLookaheadActionStatuses);
+  const $catalog = useStore(actionCatalog);
+  const $diagnostics = useStore(timelineActionDiagnostics);
+  const bindingChoices = createActionBindingChoices();
 
   /** Resolves the selected action against the latest timeline track list. */
   const selectedRecord = createMemo<SelectedActionRecord | undefined>(() => {
@@ -191,6 +203,56 @@ export default function TimelineActionProperties(
     );
     return track && action ? { track, action } : undefined;
   });
+
+  /** Finds the backend validation error for this exact saved action. */
+  const selectedDiagnostic = createMemo(() => {
+    const selected = props.selectedItem();
+    return $diagnostics().find(
+      (diagnostic) =>
+        diagnostic.timeline_uid === props.timelineUid &&
+        diagnostic.track_id === selected?.trackId &&
+        diagnostic.action_id === selected?.actionId,
+    );
+  });
+
+  /** Resolves the owning domain's current choices without interpreting its saved arguments. */
+  const registeredChoices = createMemo(() => {
+    const action = selectedRecord()?.action.action;
+    return action?.type === "RegisteredAction"
+      ? bindingChoices().find((choice) => choice.actionId === action.data.id)
+      : undefined;
+  });
+  /** Uses catalog labels for registered actions while retaining native action labels. */
+  const selectedActionLabel = createMemo(() => {
+    const action = selectedRecord()?.action.action;
+    if (!action) return "";
+    return action.type === "RegisteredAction"
+      ? ($catalog().find((descriptor) => descriptor.id === action.data.id)
+          ?.label ?? "Unavailable action")
+      : actionLabel(action);
+  });
+  /** Keeps missing or deleted targets unselected instead of retargeting the saved binding. */
+  const registeredTargetIndex = createMemo(() => {
+    const action = selectedRecord()?.action.action;
+    const choices = registeredChoices();
+    if (action?.type !== "RegisteredAction" || !choices) return "";
+    const target = choices.resolve(action.data);
+    const index = target ? choices.options.indexOf(target) : -1;
+    return index < 0 ? "" : String(index);
+  });
+
+  /** Replaces the selected action's arguments with an explicit immutable domain choice. */
+  const updateRegisteredTarget = (value: string) => {
+    if (!value) return;
+    const option = registeredChoices()?.options[Number(value)];
+    if (!option) return;
+    updateSelectedItem({
+      action: {
+        type: "RegisteredAction",
+        data: structuredClone(option.action),
+      },
+    });
+  };
 
   /** Resolves backend-authored Move in Black status for the selected action. */
   const selectedLookaheadStatus = createMemo(() => {
@@ -363,11 +425,20 @@ export default function TimelineActionProperties(
               </div>
               <div>
                 <div class="uppercase tracking-wide">Action</div>
-                <div class="mt-1 text-neutral-200">
-                  {actionLabel(record().action.action)}
-                </div>
+                <div class="mt-1 text-neutral-200">{selectedActionLabel()}</div>
               </div>
             </div>
+            <Show when={selectedDiagnostic()}>
+              {(diagnostic) => (
+                <div
+                  role="status"
+                  class="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-sm text-amber-200"
+                >
+                  <div class="font-medium">Action unavailable</div>
+                  <div>{diagnostic().message}</div>
+                </div>
+              )}
+            </Show>
           </section>
 
           <section class="space-y-3">
@@ -509,12 +580,42 @@ export default function TimelineActionProperties(
               </Match>
 
               <Match when={record().action.action.type === "RegisteredAction"}>
-                <div class="space-y-2">
-                  <div class="text-xs text-neutral-400">Arguments</div>
-                  <div class="rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-300">
-                    {registeredActionArgumentsLabel(record().action.action)}
-                  </div>
-                </div>
+                <Show
+                  when={registeredChoices()}
+                  fallback={
+                    <div class="space-y-2">
+                      <div class="text-xs text-neutral-400">Arguments</div>
+                      <div class="rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-300">
+                        {registeredActionArgumentsLabel(record().action.action)}
+                      </div>
+                    </div>
+                  }
+                >
+                  {(choices) => (
+                    <label class="block space-y-1">
+                      <span class="text-xs text-neutral-400">Target</span>
+                      <NativeSelect
+                        aria-label="Action target"
+                        density="compact"
+                        value={registeredTargetIndex()}
+                        onChange={(event) =>
+                          updateRegisteredTarget(event.currentTarget.value)
+                        }
+                      >
+                        <option value="" disabled>
+                          Target unavailable
+                        </option>
+                        <For each={choices().options}>
+                          {(option, index) => (
+                            <option value={String(index())}>
+                              {option.label}
+                            </option>
+                          )}
+                        </For>
+                      </NativeSelect>
+                    </label>
+                  )}
+                </Show>
               </Match>
             </Switch>
           </section>

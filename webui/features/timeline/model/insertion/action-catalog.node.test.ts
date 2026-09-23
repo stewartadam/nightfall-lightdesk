@@ -9,12 +9,48 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type * as types from "../../../../types";
+import { ActionInputKind, ActionSurface } from "../../../../types";
 import {
   buildActionKind,
   getDefaultTargetForAction,
+  getPlannableActionDescriptors,
   getTargetsForAction,
   resolveTrackCompatibility,
 } from "./action-catalog";
+
+/** New domain actions are discoverable by capability, while incompatible contracts stay excluded. */
+test("timeline discovery uses capability and surface instead of known action IDs", () => {
+  const descriptor: types.ActionDescriptor = {
+    id: "independent-domain.play",
+    label: "Independent action",
+    input_kind: ActionInputKind.Trigger,
+    argument_schema: {},
+    allowed_surfaces: [ActionSurface.Timeline],
+    capabilities: [
+      { id: "timeline.playback.v1", surface: ActionSurface.Timeline },
+    ],
+  };
+  assert.deepEqual(
+    getPlannableActionDescriptors([
+      descriptor,
+      { ...descriptor, id: "missing-capability", capabilities: [] },
+      {
+        ...descriptor,
+        id: "hardware-only",
+        allowed_surfaces: [ActionSurface.Midi],
+      },
+      {
+        ...descriptor,
+        id: "wrong-capability-surface",
+        capabilities: [
+          { id: "timeline.playback.v1", surface: ActionSurface.Midi },
+        ],
+      },
+      { ...descriptor, id: "continuous", input_kind: ActionInputKind.Scalar },
+    ]),
+    [descriptor],
+  );
+});
 
 /** Builds shared action target fixtures for action catalog tests. */
 function buildTargets() {

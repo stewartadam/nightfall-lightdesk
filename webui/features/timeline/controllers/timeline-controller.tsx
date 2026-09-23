@@ -291,28 +291,22 @@ export const TimelineController = (props: TimelineControllerProps) => {
 
   const playbackCommands = {
     onPlay: () => {
-      if (isManualTriggerMode()) {
-        sendTimelineCommand((timelineId) => ({
-          type: "StartTimeline",
-          data: timelineId,
-        }));
-      }
-      sendTimecodeCommand((timecodeId) => ({
-        type: "StartTimecode",
-        data: timecodeId,
-      }));
+      engineRuntime.sendCommand({
+        module: "TimelineTransportCommand",
+        command: {
+          type: "SetPlaying",
+          data: { timeline_uid: props.initialTimelineUid, playing: true },
+        },
+      });
     },
     onPause: () => {
-      if (isManualTriggerMode()) {
-        sendTimelineCommand((timelineId) => ({
-          type: "StopTimeline",
-          data: timelineId,
-        }));
-      }
-      sendTimecodeCommand((timecodeId) => ({
-        type: "PauseTimecode",
-        data: timecodeId,
-      }));
+      engineRuntime.sendCommand({
+        module: "TimelineTransportCommand",
+        command: {
+          type: "SetPlaying",
+          data: { timeline_uid: props.initialTimelineUid, playing: false },
+        },
+      });
     },
     onSeek: (position: number) =>
       sendTimecodeCommand((timecodeId) => ({

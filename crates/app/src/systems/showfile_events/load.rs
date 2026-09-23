@@ -73,6 +73,8 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
     pub(in crate::systems::showfile_events) scheduled_commands:
         Option<ResMut<'w, DelayedCommandQueue>>,
     pub(in crate::systems::showfile_events) undo_manager: Option<ResMut<'w, UndoManager>>,
+    pub(in crate::systems::showfile_events) controller_learning:
+        Option<ResMut<'w, nightfall_engine::controller_learning::ControllerLearning>>,
     pub(in crate::systems::showfile_events) programmer: Option<ResMut<'w, Programmer>>,
     pub(in crate::systems::showfile_events) global_variables: Res<'w, GlobalVariables>,
     pub(in crate::systems::showfile_events) desk_settings: ResMut<'w, DeskSettings>,
@@ -113,6 +115,7 @@ pub(super) fn load_showfile_in_place(
     pending_commands: &mut PendingCommandBuffer,
     scheduled_commands: Option<&mut DelayedCommandQueue>,
     undo_manager: Option<&mut UndoManager>,
+    controller_learning: Option<&mut nightfall_engine::controller_learning::ControllerLearning>,
     programmer: Option<&mut Programmer>,
     global_variables: &GlobalVariables,
     desk_settings: &mut DeskSettings,
@@ -120,6 +123,9 @@ pub(super) fn load_showfile_in_place(
     commands: &mut Commands,
 ) -> Result<(), String> {
     validate_showfile_asset_versions(&showfile_snapshot)?;
+    if let Some(learning) = controller_learning {
+        learning.end_for_show_change();
+    }
 
     tracing::trace!("Clearing existing state");
     reset_showfile_state(
@@ -229,6 +235,7 @@ pub(super) fn load_showfile_snapshot_from_state(
         global_variables,
         desk_settings,
         io_settings,
+        controller_learning,
     } = showfile_load_state;
 
     load_showfile_in_place(
@@ -265,6 +272,7 @@ pub(super) fn load_showfile_snapshot_from_state(
         pending_commands.as_mut(),
         scheduled_commands.as_deref_mut(),
         undo_manager.as_deref_mut(),
+        controller_learning.as_deref_mut(),
         programmer.as_deref_mut(),
         global_variables.as_ref(),
         desk_settings.as_mut(),

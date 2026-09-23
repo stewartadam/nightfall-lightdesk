@@ -14,6 +14,7 @@ bevy_state.workspace = true
 bimap.workspace = true
 dashmap.workspace = true
 nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine-derive = { path = "../engine-derive" }

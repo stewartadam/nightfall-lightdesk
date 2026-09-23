@@ -117,6 +117,10 @@ pub fn process_json_envelopes(world: &mut World) {
             continue;
         }
 
+        world
+            .resource_mut::<CommandTracker>()
+            .attach_client_connection(command_id, envelope.client_connection);
+
         // Look up the deserializer - we need to get it from the registry while
         // we have immutable world access, then call it with mutable access
         let deserializer_result = {
@@ -243,6 +247,7 @@ mod tests {
     /// Creates an inbound command envelope with a deterministic module and identity.
     fn envelope(module: &str, command: serde_json::Value) -> CommandJsonEnvelope {
         CommandJsonEnvelope {
+            client_connection: None,
             command_id: CommandId::new(),
             undo_id: None,
             module: module.to_string(),

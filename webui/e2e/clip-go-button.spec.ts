@@ -377,7 +377,7 @@ async function seedClipControlScenario(
   });
 }
 
-/** Verifies control Go buttons issue Start, Go, or no command from owned state. */
+/** Verifies Go buttons delegate slot decisions to the backend and start inactive assignments. */
 test("each control has a go button with per-target start and go behavior", async ({
   backendSlot,
   page,
@@ -433,7 +433,6 @@ test("each control has a go button with per-target start and go behavior", async
           type WindowWithWorkerMessages = Window & {
             __workerMessages?: unknown[];
           };
-          type IdExpr = { type: "Single"; data: number };
 
           const messages = (window as WindowWithWorkerMessages)
             .__workerMessages;
@@ -449,15 +448,17 @@ test("each control has a go button with per-target start and go behavior", async
                   type?: string;
                   data?: {
                     module?: string;
-                    command?: { type?: string; data?: IdExpr };
+                    command?: {
+                      type?: string;
+                      data?: { control_index: number };
+                    };
                   };
                 };
 
                 if (
                   candidate.type !== "submit" ||
-                  candidate.data?.module !== "ClipCommand" ||
-                  !candidate.data.command?.type ||
-                  candidate.data.command.data?.type !== "Single"
+                  candidate.data?.module !== "ControlCommand" ||
+                  candidate.data.command?.type !== "Go"
                 ) {
                   return [];
                 }
@@ -465,7 +466,7 @@ test("each control has a go button with per-target start and go behavior", async
                 return [
                   {
                     type: candidate.data.command.type,
-                    id: candidate.data.command.data.data,
+                    index: candidate.data.command.data?.control_index,
                   },
                 ];
               })
@@ -475,8 +476,21 @@ test("each control has a go button with per-target start and go behavior", async
       { timeout: 10_000 },
     )
     .toEqual([
-      { type: "StartClip", id: scenario.inactiveSequenceId },
-      { type: "GoClip", id: scenario.activeSequenceId },
-      { type: "StartClip", id: scenario.inactiveFxId },
+      { type: "Go", index: 1 },
+      { type: "Go", index: 2 },
+      { type: "Go", index: 3 },
+      { type: "Go", index: 4 },
     ]);
+  await expect
+    .poll(() =>
+      page.evaluate((ids) => {
+        const clips = Object.values(
+          (window as any).appStores.clips.get(),
+        ) as any[];
+        return ids.map(
+          (id) => clips.find(([clip]) => clip.identifiers.id === id)?.[1],
+        );
+      }, Object.values(scenario)),
+    )
+    .toEqual([true, true, true, true]);
 });

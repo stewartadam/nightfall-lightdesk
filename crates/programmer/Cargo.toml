@@ -9,6 +9,7 @@ bevy_app.workspace = true
 bevy_ecs.workspace = true
 moonshine-kind.workspace = true
 nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-cues = { path = "../cues" }
 nightfall-engine = { path = "../engine" }

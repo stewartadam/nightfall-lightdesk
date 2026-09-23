@@ -169,6 +169,16 @@ pub(super) fn dispatch_timeline_reconstruction_actions(
                 }
             }
             ActionKind::RegisteredAction(action) => {
+                if !registered_action_allows_live_dispatch(
+                    &action,
+                    dispatch.action_registry.as_deref(),
+                ) {
+                    tracing::warn!(
+                        action_id = action.id.as_str(),
+                        "Skipping invalid registered action during seek reconstruction"
+                    );
+                    continue;
+                }
                 match timeline.timeline.nondeterministic_seek_behavior {
                     TimelineNondeterministicSeekBehavior::Ignore => {
                         tracing::warn!(

@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { NativeSelect } from "../../../components/ui/form-controls";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { Button } from "../../../components/ui/visual-language/button";
 import DataGrid, {
@@ -39,19 +40,22 @@ import {
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
 import { engineRuntime } from "../../../lib/engine-runtime";
-import { setStoreAction } from "../../../lib/nanostore-action";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
+  actionCatalog,
   midiDevices,
   midiLastEvent,
+  midiMappingDiagnostics,
   midiMappings,
 } from "../../../state/appStores";
 import type { MidiMapping } from "../../../types";
 import {
-  cloneMidiAction,
-  formatMidiAction,
-  parseMidiAction,
-} from "./model/action-format";
+  ActionInputKind,
+  ActionSurface,
+  MidiBindingInput,
+} from "../../../types";
+import { ActionBindingEditor } from "../../action-mapping";
+import { cloneMidiAction, formatMidiAction } from "./model/action-format";
 
 export interface MidiInputPanelProps extends BasePanelComponentProps {}
 
@@ -101,6 +105,8 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
 /** Deep clone a mapping to ensure it's a plain object that can be sent via postMessage */
 function cloneMapping(m: MidiMapping): MidiMapping {
   return {
+    id: m.id,
+    input: m.input,
     device_name: m.device_name,
     channel: m.channel,
     note: m.note,
@@ -112,8 +118,59 @@ function cloneMapping(m: MidiMapping): MidiMapping {
 export default function MidiInputPanel(props: MidiInputPanelProps) {
   const $midiDevices = useStore(midiDevices);
   const $midiMappings = useStore(midiMappings);
+  const $mappingDiagnostics = useStore(midiMappingDiagnostics);
   const $midiLastEvent = useStore(midiLastEvent);
   const panelId = props.id;
+  const [draft, setDraft] = createSignal<{
+    mapping: MidiMapping;
+    expected?: MidiMapping;
+  }>();
+  const [draftValid, setDraftValid] = createSignal(false);
+  const [saving, setSaving] = createSignal(false);
+  const [editError, setEditError] = createSignal<string>();
+
+  /** Saves only the version the operator edited, leaving other clients' bindings intact. */
+  async function persistMapping(
+    mapping: MidiMapping,
+    expected?: MidiMapping,
+  ): Promise<boolean> {
+    try {
+      const result = await engineRuntime.sendCommandAndAwait({
+        module: "MidiCommand",
+        command: { type: "StoreMapping", data: { mapping, expected } },
+      });
+      if (result.outcome.type === "Failed")
+        throw new Error(result.outcome.data.message);
+      setEditError(undefined);
+      return true;
+    } catch (error) {
+      setEditError(String(error));
+      return false;
+    }
+  }
+
+  /** Captures the selected binding version before its action editor opens. */
+  function editSelectedAction() {
+    const row = displayRows()[selectedRows()[0]];
+    if (row)
+      setDraft({
+        mapping: cloneMapping(row.mapping),
+        expected: cloneMapping(row.mapping),
+      });
+  }
+
+  /** Commits the validated action draft and retains it if the backend reports a conflict. */
+  async function saveDraft() {
+    const current = draft();
+    if (!current || !draftValid() || saving()) return;
+    setSaving(true);
+    try {
+      if (await persistMapping(current.mapping, current.expected))
+        setDraft(undefined);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   // Row selection state using shared helpers
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -194,7 +251,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
               kind: GridCellKind.Text,
               data: actionStr,
               displayData: actionStr,
-              allowOverlay: true,
+              allowOverlay: false,
             };
           }
           default:
@@ -266,88 +323,158 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
             val === "" || val === "any" ? undefined : Number(val);
           break;
         }
-        case "action": {
-          if (newValue.kind !== GridCellKind.Text) continue;
-          const parsed = parseMidiAction(String(value ?? ""));
-          if (parsed) {
-            rowData.action = parsed;
-          }
-          break;
-        }
+        case "action":
+          continue;
       }
 
       currentMappings[originalIndex] = cloneMapping(rowData);
     }
 
-    // Optimistically update the store immediately for instant UI feedback
-    setStoreAction(midiMappings, "Update MIDI Mappings", currentMappings);
-
-    // Send update to backend
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+    for (const mapping of currentMappings) {
+      const expected = mappings.find((previous) => previous.id === mapping.id);
+      if (expected && JSON.stringify(expected) !== JSON.stringify(mapping))
+        void persistMapping(mapping, cloneMapping(expected));
+    }
   };
 
   /** Delete selected mappings */
-  const deleteSelected = () => {
-    const indices = selectedRows();
-    if (indices.length === 0) return;
-
-    // Sort indices in descending order so we delete from the end first
-    const visibleRows = displayRows();
-    const sortedIndices = indices
-      .map((index) => visibleRows[index]?.index)
-      .filter((index): index is number => index !== undefined)
-      .sort((a, b) => b - a);
-
-    // Build new mappings array without the selected rows
-    const currentMappings = $midiMappings().map(cloneMapping);
-    for (const idx of sortedIndices) {
-      currentMappings.splice(idx, 1);
+  /** Deletes exact selected versions without replacing the complete binding collection. */
+  const deleteSelected = async () => {
+    const selected = selectedRows()
+      .map((index) => displayRows()[index]?.mapping)
+      .filter((mapping): mapping is MidiMapping => Boolean(mapping))
+      .map(cloneMapping);
+    try {
+      for (const expected of selected) {
+        const result = await engineRuntime.sendCommandAndAwait({
+          module: "MidiCommand",
+          command: { type: "RemoveMapping", data: { expected } },
+        });
+        if (result.outcome.type === "Failed") {
+          setEditError(result.outcome.data.message);
+          return;
+        }
+      }
+      setEditError(undefined);
+      clearGridSelection();
+    } catch (error) {
+      setEditError(String(error));
     }
-
-    clearGridSelection();
-
-    // Send update to backend
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
   };
-
   /** Apply last event to a new mapping row */
+  /** Freezes the last observed source while the operator chooses a registered action. */
   const applyLastEvent = () => {
     const event = $midiLastEvent();
     if (!event) return;
-
-    // Deep clone existing mappings to ensure plain objects for postMessage
-    const currentMappings = $midiMappings().map(cloneMapping);
-    currentMappings.push({
-      device_name: event.device,
-      channel: event.channel,
-      note: event.note,
-      velocity: event.velocity,
-      action: parseMidiAction("StartClip(1)")!,
-    });
-
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
+    setDraft({
+      mapping: {
+        id: crypto.randomUUID().replace(/-/g, ""),
+        input: MidiBindingInput.Press,
+        device_name: event.device,
+        channel:
+          (event.channel & 0xf0) === 0x80
+            ? 0x90 | (event.channel & 0x0f)
+            : event.channel,
+        note: event.note,
+        velocity: undefined,
+        action: { id: "", arguments: {} },
       },
     });
   };
-
   return (
     <div class="flex flex-col h-full">
+      <Show when={editError()}>
+        {(error) => (
+          <p role="alert" class="p-3 text-sm text-red-400">
+            {error()}
+          </p>
+        )}
+      </Show>
+      <Show when={draft()}>
+        {(current) => (
+          <section
+            aria-label="MIDI mapping action editor"
+            class="p-3 border-b border-gray-700 space-y-2"
+          >
+            <p class="text-xs text-gray-400">
+              Source: {current().mapping.device_name} · {current().mapping.note}
+            </p>
+            <ActionBindingEditor
+              surface={ActionSurface.Midi}
+              value={current().mapping.action}
+              onValidityChange={setDraftValid}
+              onChange={(action) => {
+                const value = current();
+                const scalar =
+                  actionCatalog
+                    .get()
+                    .find((descriptor) => descriptor.id === action.id)
+                    ?.input_kind === ActionInputKind.Scalar;
+                setDraft({
+                  ...value,
+                  mapping: {
+                    ...value.mapping,
+                    action,
+                    input: scalar
+                      ? MidiBindingInput.Continuous
+                      : value.mapping.input === MidiBindingInput.Continuous
+                        ? MidiBindingInput.Press
+                        : value.mapping.input,
+                  },
+                });
+              }}
+            />
+            <Show
+              when={current().mapping.input !== MidiBindingInput.Continuous}
+              fallback={
+                <p class="text-xs text-gray-400">
+                  Controller values 0–127 map to the action’s full range.
+                </p>
+              }
+            >
+              <label class="block text-xs">
+                Activation
+                <NativeSelect
+                  aria-label="MIDI activation"
+                  value={current().mapping.input}
+                  onChange={(event) => {
+                    const input = event.currentTarget.value;
+                    if (
+                      input === MidiBindingInput.Press ||
+                      input === MidiBindingInput.Release
+                    )
+                      setDraft({
+                        ...current(),
+                        mapping: { ...current().mapping, input },
+                      });
+                  }}
+                >
+                  <option value={MidiBindingInput.Press}>Button press</option>
+                  <option value={MidiBindingInput.Release}>
+                    Button release
+                  </option>
+                </NativeSelect>
+              </label>
+            </Show>
+            <div class="flex gap-2">
+              <Button
+                size="compact"
+                disabled={!draftValid() || saving()}
+                onClick={() => void saveDraft()}
+              >
+                Save mapping
+              </Button>
+              <Button
+                size="compact"
+                disabled={saving()}
+                onClick={() => setDraft(undefined)}
+              >
+                Cancel edit
+              </Button>
+            </div>
+          </section>
+        )}
+      </Show>
       {/* Device List Section */}
       <div class="p-3 border-b border-gray-700">
         <h3 class="text-sm font-medium text-gray-300 mb-2">
@@ -392,6 +519,16 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
 
       {/* Mappings Section */}
       <div class="flex-1 flex flex-col min-h-0">
+        <For each={$mappingDiagnostics()}>
+          {(error, index) => (
+            <Show when={error}>
+              <p role="alert" class="px-3 py-1 text-sm text-amber-400">
+                Mapping {index() + 1} disabled: {error?.message}. Edit or remove
+                this mapping to repair it.
+              </p>
+            </Show>
+          )}
+        </For>
         <PanelToolbar
           leftClass="min-w-0 flex-1"
           rightClass="flex h-8 shrink-0 items-center gap-2"
@@ -399,13 +536,17 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-300">MIDI Mappings</h3>
               <p class="truncate text-xs text-gray-500">
-                Edit cells to configure. Action format: StartClip(1),
-                StopClip(2), etc.
+                Edit source cells or select a mapping and choose Edit action.
               </p>
             </div>
           }
           right={
             <>
+              <Show when={selectedRows().length === 1}>
+                <Button size="compact" onClick={editSelectedAction}>
+                  Edit action
+                </Button>
+              </Show>
               <Show when={selectedRows().length > 0}>
                 <Button
                   size="compact"

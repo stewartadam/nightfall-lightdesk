@@ -383,6 +383,9 @@ pub enum PlannedPlaybackInterventionKind {
 }
 
 /// Deterministic timeline meaning supplied by a registered domain action.
+pub const TIMELINE_PLAYBACK_CAPABILITY_ID: &str = "timeline.playback.v1";
+
+/// Deterministic timeline meaning supplied by a registered domain action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TimelinePlaybackActionPlan {
     /// Stable runtime owner addressed by the action.

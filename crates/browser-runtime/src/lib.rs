@@ -64,6 +64,7 @@ pub struct RuntimeInfo {
 /// Browser-owned engine instance that runs entirely inside a dedicated worker.
 #[wasm_bindgen]
 pub struct BrowserEngine {
+    connection_lease: nightfall_engine::prelude::ClientConnectionLease,
     app: App,
     command_tx: Sender<CommandJsonEnvelope>,
     update_tx: Sender<UpdateJsonEnvelope>,
@@ -231,6 +232,7 @@ impl BrowserEngine {
         set_construction_stage(0);
 
         Ok(Self {
+            connection_lease: Default::default(),
             app,
             command_tx,
             update_tx,
@@ -246,7 +248,8 @@ impl BrowserEngine {
     }
 
     /// Queue one parsed command envelope without entering an async executor.
-    fn enqueue_command_core(&self, envelope: CommandJsonEnvelope) -> Result<(), String> {
+    fn enqueue_command_core(&self, mut envelope: CommandJsonEnvelope) -> Result<(), String> {
+        envelope.client_connection = Some(self.connection_lease.connection());
         self.command_tx
             .try_send(envelope)
             .map_err(|error| format!("Unable to enqueue browser command: {error}"))

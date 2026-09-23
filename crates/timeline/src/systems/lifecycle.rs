@@ -231,6 +231,7 @@ fn timeline_matches_stop_signal(
 }
 
 pub fn reset_timeline_triggers_system(
+    transport_stops: Option<Res<crate::automation_actions::TimelineTransportStops>>,
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
     mut timeline_actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
@@ -242,6 +243,9 @@ pub fn reset_timeline_triggers_system(
         stopped_timecode_uids_from_timecode_events(&mut timecode_events, &timecode_uid_by_id);
     let mut stopped_timeline_ids = stopped_timeline_ids_from_timeline_events(&mut timeline_events);
     stopped_timeline_ids.extend(stopped_timeline_ids_from_actions(&mut timeline_actions));
+    if let Some(stops) = transport_stops {
+        stopped_timeline_ids.extend(stops.0.iter().copied());
+    }
     for (_, mut timeline) in timeline_query.iter_mut() {
         if timeline_matches_stop_signal(&timeline, &stopped_timecode_uids, &stopped_timeline_ids)
             && timeline.timeline.stop_behavior == TimelineStopBehavior::ResetAndReleaseOwnedActions
@@ -257,6 +261,7 @@ pub fn reset_timeline_triggers_system(
 
 /// Records timelines whose driving timecode received a stop command.
 pub fn record_stopped_timeline_release_clocks(
+    transport_stops: Option<Res<crate::automation_actions::TimelineTransportStops>>,
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
     mut timeline_actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
@@ -269,6 +274,9 @@ pub fn record_stopped_timeline_release_clocks(
         stopped_timecode_uids_from_timecode_events(&mut timecode_events, &timecode_uid_by_id);
     let mut stopped_timeline_ids = stopped_timeline_ids_from_timeline_events(&mut timeline_events);
     stopped_timeline_ids.extend(stopped_timeline_ids_from_actions(&mut timeline_actions));
+    if let Some(stops) = transport_stops {
+        stopped_timeline_ids.extend(stops.0.iter().copied());
+    }
     if stopped_timecode_uids.is_empty() && stopped_timeline_ids.is_empty() {
         return;
     }
@@ -335,6 +343,7 @@ pub fn detach_stopped_timeline_release_clocks(
 
 /// Sends stop commands for clip entities owned by stopped timelines before event consumers run.
 pub fn stop_timeline_owned_clips(
+    transport_stops: Option<Res<crate::automation_actions::TimelineTransportStops>>,
     timeline_query: Query<&MaterializedTimeline>,
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
@@ -351,6 +360,9 @@ pub fn stop_timeline_owned_clips(
         stopped_timecode_uids_from_timecode_events(&mut timecode_events, &timecode_uid_by_id);
     let mut stopped_timeline_ids = stopped_timeline_ids_from_timeline_events(&mut timeline_events);
     stopped_timeline_ids.extend(stopped_timeline_ids_from_actions(&mut timeline_actions));
+    if let Some(stops) = transport_stops {
+        stopped_timeline_ids.extend(stops.0.iter().copied());
+    }
 
     if stopped_timecode_uids.is_empty() && stopped_timeline_ids.is_empty() {
         return;
@@ -395,6 +407,7 @@ pub fn stop_timeline_owned_clips(
 
 /// System that cleans up entities spawned by a timeline when the timeline stops
 pub fn cleanup_timeline_entities(
+    transport_stops: Option<Res<crate::automation_actions::TimelineTransportStops>>,
     mut timeline_query: Query<&mut MaterializedTimeline>,
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
@@ -409,6 +422,9 @@ pub fn cleanup_timeline_entities(
         stopped_timecode_uids_from_timecode_events(&mut timecode_events, &timecode_uid_by_id);
     let mut stopped_timeline_ids = stopped_timeline_ids_from_timeline_events(&mut timeline_events);
     stopped_timeline_ids.extend(stopped_timeline_ids_from_actions(&mut timeline_actions));
+    if let Some(stops) = transport_stops {
+        stopped_timeline_ids.extend(stops.0.iter().copied());
+    }
 
     // Release or despawn non-clip entities spawned by stopped timelines.
     if !stopped_timecode_uids.is_empty() || !stopped_timeline_ids.is_empty() {

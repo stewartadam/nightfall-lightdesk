@@ -32,6 +32,8 @@
 //! }
 //! ```
 
+use std::sync::{Arc, Weak};
+
 use async_channel::{Receiver, Sender};
 use bevy_app::{App, Plugin, Update};
 use bevy_ecs::prelude::*;
@@ -53,6 +55,33 @@ pub const DISCRIMINATOR_NON_DROPPABLE: u8 = 0;
 /// Snapshot-like message types that may be coalesced or dropped under load.
 pub const DISCRIMINATOR_DROPPABLE: u8 = 1;
 
+/// Host-owned lifetime of one connection; dropping it revokes that connection's identity.
+#[derive(Debug, Default)]
+pub struct ClientConnectionLease(Arc<()>);
+
+impl ClientConnectionLease {
+    /// Returns an unforgeable in-process identity without extending the connection lifetime.
+    pub fn connection(&self) -> ClientConnection {
+        ClientConnection(Arc::downgrade(&self.0))
+    }
+}
+
+/// Trusted host context, never deserialized from client-controlled JSON.
+#[derive(Debug, Clone)]
+pub struct ClientConnection(Weak<()>);
+
+impl ClientConnection {
+    /// Reports whether the host still owns the connection.
+    pub fn is_connected(&self) -> bool {
+        self.0.strong_count() > 0
+    }
+
+    /// Compares connection identities independently of client-supplied session tokens.
+    pub fn same_connection(&self, other: &Self) -> bool {
+        self.0.ptr_eq(&other.0)
+    }
+}
+
 /// Pre-encoded client message ready for transport delivery.
 ///
 /// Contains a discriminator byte followed by CBOR-encoded payload.
@@ -69,9 +98,13 @@ impl EncodedClientMessage {
     ///
     /// Returns `None` if CBOR serialization fails.
     pub fn new<T: Serialize>(discriminator: u8, payload: &T) -> Option<Self> {
-        minicbor_serde::to_vec(payload).ok().map(|cbor_data| Self {
+        let mut serializer = minicbor_serde::Serializer::new(Vec::new());
+        // JSON null uses Serde's unit representation; preserve it as CBOR null.
+        serializer.serialize_unit_as_null(true);
+        payload.serialize(&mut serializer).ok()?;
+        Some(Self {
             discriminator,
-            payload: cbor_data,
+            payload: serializer.into_encoder().into_writer(),
         })
     }
 
@@ -333,6 +366,9 @@ impl CommandDeserializerRegistry {
 /// ```
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct CommandJsonEnvelope {
+    /// Connection context stamped by the receiving host, not accepted from JSON.
+    #[serde(skip)]
+    pub client_connection: Option<ClientConnection>,
     /// Identity used to track the command through its terminal result.
     pub command_id: CommandId,
     /// Undo group owned by this command, defaulting to its command identity.
@@ -394,6 +430,17 @@ pub struct UpdateJsonEnvelope {
 #[cfg(test)]
 mod command_json_envelope_tests {
     use super::*;
+
+    /// Client JSON cannot inject the host-owned connection identity.
+    #[test]
+    fn connection_context_is_never_deserialized() {
+        let envelope: CommandJsonEnvelope = serde_json::from_value(serde_json::json!({
+            "command_id": CommandId::new(), "module": "ControllerLearningCommand", "command": {},
+            "client_connection": "pretend-owner",
+        }))
+        .unwrap();
+        assert!(envelope.client_connection.is_none());
+    }
 
     /// Verifies that omitted undo identity defaults to the independently submitted command.
     #[test]
@@ -457,6 +504,17 @@ mod client_bridge_tests {
     fn decode_message(bytes: &[u8]) -> serde_json::Value {
         assert_eq!(bytes[0], DISCRIMINATOR_NON_DROPPABLE);
         minicbor_serde::from_slice(&bytes[1..]).unwrap()
+    }
+
+    /// Opaque action arguments and error details retain nulls without changing empty arrays.
+    #[test]
+    fn client_encoding_preserves_nested_json_nulls() {
+        let payload = serde_json::json!({
+            "arguments": {"metadata": null, "array": [], "nested": [null, {"value": null}]},
+            "details": {"source": null, "velocity": null}
+        });
+        let encoded = EncodedClientMessage::new(DISCRIMINATOR_NON_DROPPABLE, &payload).unwrap();
+        assert_eq!(decode_message(&encoded.to_bytes()), payload);
     }
 
     /// Pins the legacy discriminator-plus-CBOR bytes for a resync completion event.
@@ -532,6 +590,7 @@ mod client_bridge_tests {
         let sender = app.world().resource::<ClientBridgeHost>().command_sender();
         sender
             .try_send(CommandJsonEnvelope {
+                client_connection: None,
                 command_id,
                 undo_id: None,
                 module: "MissingCommand".to_string(),

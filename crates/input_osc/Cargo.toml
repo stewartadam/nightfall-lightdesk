@@ -10,6 +10,7 @@ bevy_ecs.workspace = true
 nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-engine = { path = "../engine" }
+nightfall-undo = { path = "../undo" }
 nightfall-service-host = { path = "../service_host" }
 serde.workspace = true
 serde_json.workspace = true
@@ -18,8 +19,11 @@ tracing.workspace = true
 typeshare.workspace = true
 rosc.workspace = true
 uuid.workspace = true
+web-time.workspace = true
 
 [dev-dependencies]
+async-channel.workspace = true
+minicbor-serde.workspace = true
 nightfall-config = { path = "../config" }
 
 [lints]

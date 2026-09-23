@@ -17,6 +17,8 @@ pub(super) fn add_midi_mappings(world: &mut World) {
 
     midi_mappings.set_mappings(vec![MidiMapping {
         device_name: "Grid".to_string(),
+        id: uuid::Uuid::from_u128(1),
+        input: nightfall_input_midi::command::MidiBindingInput::Continuous,
         channel: 176,
         note: 36,
         velocity: None,

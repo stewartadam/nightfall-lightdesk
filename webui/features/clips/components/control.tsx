@@ -12,6 +12,10 @@ import { Button } from "../../../components/ui/visual-language/button";
 import { shouldShowDisparateControlValues } from "../../../lib/control-display";
 import { getLogger } from "../../../lib/logger";
 import { type Clip, type Master, MasterKind } from "../../../types";
+import {
+  createActionMappingTarget,
+  useActionMappingArmed,
+} from "../../action-mapping";
 
 export interface ControlProps {
   /** Control index (1-based for display) */
@@ -44,6 +48,18 @@ const log = getLogger(import.meta.url);
 
 /** Renders a full-height fader strip with fixed-size assignment and playback actions. */
 export function Control(props: ControlProps): JSX.Element {
+  const mappingArmed = useActionMappingArmed();
+  const levelMapping = createActionMappingTarget(() => ({
+    action: {
+      id: "control.set-external",
+      arguments: { control_index: props.index },
+    },
+    label: `Control ${props.index} level`,
+  }));
+  const goMapping = createActionMappingTarget(() => ({
+    action: { id: "control.go", arguments: { control_index: props.index } },
+    label: `Control ${props.index} Go`,
+  }));
   const [isDragOver, setIsDragOver] = createSignal(false);
 
   /** Returns whether the backend and control positions differ visibly. */
@@ -131,6 +147,8 @@ export function Control(props: ControlProps): JSX.Element {
           when={props.assignedClip || props.assignedMaster}
           fallback={
             <VerticalRangeSlider
+              ref={levelMapping}
+              ariaLabel={`Control ${props.index} level`}
               value={props.displayValue}
               onChange={props.onConsoleValueChange}
               min={0}
@@ -141,11 +159,13 @@ export function Control(props: ControlProps): JSX.Element {
               markerValue={
                 showDisparateValues() ? props.hardwareValue : undefined
               }
-              disabled={true}
+              disabled={!mappingArmed()}
             />
           }
         >
           <VerticalRangeSlider
+            ref={levelMapping}
+            ariaLabel={`Control ${props.index} level`}
             value={props.displayValue}
             onChange={props.onConsoleValueChange}
             min={0}
@@ -210,9 +230,10 @@ export function Control(props: ControlProps): JSX.Element {
         size="compact"
         type="button"
         data-control-go-index={props.index}
+        ref={goMapping}
         aria-label={`Go control ${props.index}`}
         class="w-full shrink-0"
-        disabled={!canGo()}
+        disabled={!canGo() && !mappingArmed()}
         onClick={props.onGo}
         title={
           !props.assignedClip

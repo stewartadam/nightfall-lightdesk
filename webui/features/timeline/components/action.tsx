@@ -27,6 +27,10 @@ import { openOrFocusPanel } from "../../../lib/panel-open-command";
 import { durationToMs, pixelsToMs } from "../../../lib/utils";
 import { dockApi } from "../../../state/appStores";
 import * as types from "../../../types";
+import {
+  createActionBindingChoices,
+  resolveActionBindingOption,
+} from "../../action-mapping";
 import { useTimelineContext } from "../context/timeline-context";
 import {
   type ActionDragPosition,
@@ -154,6 +158,14 @@ export const getMarkerStyle = (
 export const Action = (props: ActionProps & { trackId: string }) => {
   log.trace("mounting");
   const ctx = useTimelineContext();
+  const bindingChoices = createActionBindingChoices();
+  /** Uses domain-provided display metadata while leaving the stored action reference intact. */
+  const presentationAction = createMemo(() =>
+    props.action.type === "RegisteredAction"
+      ? (resolveActionBindingOption(bindingChoices(), props.action.data)
+          ?.timelinePresentation ?? props.action)
+      : props.action,
+  );
   const $dockApi = useStore(dockApi);
   const { invokePanelCapability } = usePanelCapabilityRegistry();
   const [left, setLeft] = createSignal(0);
@@ -468,7 +480,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     });
   };
 
-  const markerStyle = () => getMarkerStyle(props.actionType);
+  const markerStyle = () => getMarkerStyle(presentationAction().type);
 
   const markerLayer = () => {
     if (isDragging()) return 10;
@@ -503,11 +515,15 @@ export const Action = (props: ActionProps & { trackId: string }) => {
 
   /** Resolves the editor panel that best matches the current timeline action target. */
   const resolveEditorTarget = () =>
-    resolveActionEditorTarget(props.action, props.label, props.targetIndex);
+    resolveActionEditorTarget(
+      presentationAction(),
+      props.label,
+      props.targetIndex,
+    );
 
   /** Resolves the clip properties target directly controlled by this action. */
   const resolveClipPropertiesTarget = () =>
-    resolveActionClipPropertiesTarget(props.action, props.targetIndex);
+    resolveActionClipPropertiesTarget(presentationAction(), props.targetIndex);
 
   /** Opens or focuses the editor panel for the resolved timeline action target. */
   const openEditorTarget = () => {
@@ -541,7 +557,11 @@ export const Action = (props: ActionProps & { trackId: string }) => {
   };
 
   const displayLabel = createMemo(() =>
-    resolveActionDisplayLabel(props.action, props.label, props.targetIndex),
+    resolveActionDisplayLabel(
+      presentationAction(),
+      props.label,
+      props.targetIndex,
+    ),
   );
 
   /** Converts the action duration into a renderable trail width. */

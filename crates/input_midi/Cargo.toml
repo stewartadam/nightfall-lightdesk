@@ -12,6 +12,7 @@ nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-coremidi-hotplug = { path = "../coremidi_hotplug" }
 nightfall-engine = { path = "../engine" }
+nightfall-undo = { path = "../undo" }
 nightfall-service-host = { path = "../service_host" }
 serde.workspace = true
 serde_json.workspace = true
@@ -19,6 +20,11 @@ tokio.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
+web-time.workspace = true
+
+[dev-dependencies]
+async-channel.workspace = true
+minicbor-serde.workspace = true
 
 [lints]
 workspace = true

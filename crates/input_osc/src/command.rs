@@ -153,6 +153,10 @@ impl OscType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct OscMapping {
+    /// Persistent binding identity, independent of its position in the editor.
+    pub id: uuid::Uuid,
+    /// Runtime interpretation of OSC arguments.
+    pub input: OscBindingInput,
     /// Optional source address filter (`ip:port`).
     pub source: Option<String>,
     /// OSC address pattern to match (exact string match).
@@ -163,6 +167,47 @@ pub struct OscMapping {
     pub arg_value: Option<String>,
     /// Action to trigger when mapping criteria match.
     pub action: ActionReference,
+}
+
+/// Input conversion selected when binding an OSC control to a domain action.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(tag = "type", content = "data")]
+pub enum OscBindingInput {
+    /// Trigger on a false/zero to true/nonzero transition.
+    Press,
+    /// Trigger on a true/nonzero to false/zero transition.
+    Release,
+    /// Trigger once per message, for addresses that carry discrete pulses.
+    Pulse,
+    /// Convert an explicitly configured range into normalized domain input.
+    Continuous {
+        /// Source value corresponding to the destination minimum.
+        minimum: f32,
+        /// Source value corresponding to the destination maximum.
+        maximum: f32,
+    },
+}
+
+impl OscType {
+    /// Reads a finite control value without guessing units or clamping source data.
+    pub fn control_value(&self) -> Option<f32> {
+        let value = match self {
+            Self::Int(value) => *value as f32,
+            Self::Float(value) => *value,
+            Self::Double(value) => *value as f32,
+            Self::Long(value) => value.parse().ok()?,
+            Self::Bool(value) => {
+                if *value {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            _ => return None,
+        };
+        value.is_finite().then_some(value)
+    }
 }
 
 /// Latest OSC event observed by the backend.
@@ -208,6 +253,31 @@ pub struct OscExternalEval {
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
 pub enum OscCommand {
+    /// Creates or edits one binding without overwriting concurrent changes to other bindings.
+    StoreMapping {
+        /// Exact version being replaced, or none when creating a new binding.
+        expected: Option<OscMapping>,
+        /// Validated desired binding; edits must preserve its persistent identity.
+        mapping: OscMapping,
+    },
+    /// Saves the backend-captured source with domain arguments and optional replacement.
+    BindLearned {
+        /// Owner of the capture session.
+        session_id: uuid::Uuid,
+        /// Destination selected in the UI.
+        action: ActionReference,
+        /// Previously read record, required for replacing an existing binding.
+        replace: Option<OscMapping>,
+        /// Argument used as the input value; defaults to the first argument.
+        arg_index: Option<u8>,
+        /// Optional explicit conversion; defaults to gesture-based trigger or unit scalar.
+        input: Option<OscBindingInput>,
+    },
+    /// Deletes the exact record the user saw, rejecting stale edits.
+    RemoveMapping {
+        /// Expected existing binding.
+        expected: OscMapping,
+    },
     /// Replace all mappings.
     StoreMappings(Vec<OscMapping>),
     /// Delete mapping by index.

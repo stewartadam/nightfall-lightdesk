@@ -401,7 +401,55 @@ fn process_actions_dispatches_registered_clip_action() {
 /// Verifies actions unknown to timeline are delegated to the generic invocation registry.
 #[test]
 fn process_actions_delegates_registered_domain_action() {
+    assert_registered_action_dispatch(
+        ActionReference::new("custom.domain-action", serde_json::json!({ "slot": 3 })),
+        true,
+    );
+}
+
+/// Invalid bindings and failed deterministic plans must not turn into live invocations.
+#[test]
+fn process_actions_rejects_unregistered_disallowed_and_invalid_actions() {
+    use nightfall_desk::automation_actions::go_clip_action;
+
+    for action in [
+        ActionReference::new("unknown.action", serde_json::json!({})),
+        ActionReference::new("control.go", serde_json::json!({"control_index": 1})),
+        ActionReference::new("custom.domain-action", serde_json::json!({"slot": "bad"})),
+        go_clip_action(ClipTarget::Id(1)),
+    ] {
+        assert_registered_action_dispatch(action, false);
+    }
+}
+
+/// Runs one timeline frame and checks whether the saved reference reaches live dispatch.
+fn assert_registered_action_dispatch(action: ActionReference, should_dispatch: bool) {
+    /// Typed arguments reject malformed saved bindings before the live command queue.
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct CustomArguments {
+        slot: u32,
+    }
+
     let mut app = App::new();
+    app.init_resource::<nightfall_actions::ActionRegistry>();
+    nightfall_desk::automation_actions::register_desk_actions(&mut app);
+    app.world_mut()
+        .resource_mut::<nightfall_actions::ActionRegistry>()
+        .register::<CustomArguments, _>(
+            nightfall_actions::ActionDescriptor {
+                id: nightfall_actions::ActionId::new("custom.domain-action"),
+                label: "Independent domain action".to_owned(),
+                allowed_surfaces: vec![ActionSurface::Timeline],
+                input_kind: nightfall_actions::ActionInputKind::Trigger,
+                argument_schema: serde_json::json!({"type": "object"}),
+                capabilities: Vec::new(),
+            },
+            |_world, arguments, _invocation| {
+                assert_eq!(arguments.slot, 3);
+                Ok(nightfall_actions::InvocationDispatch::succeeded())
+            },
+        );
     app.add_message::<EngineActionEnvelope<DeskAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
@@ -414,7 +462,6 @@ fn process_actions_delegates_registered_domain_action() {
     app.add_systems(Update, process_actions_system);
 
     let timeline_id = 44;
-    let action = ActionReference::new("custom.domain-action", serde_json::json!({ "slot": 3 }));
     let timeline = Timeline {
         identifiers: Identifiers {
             id: timeline_id,
@@ -450,9 +497,15 @@ fn process_actions_delegates_registered_domain_action() {
         .resource_mut::<Messages<ActionInvocation>>()
         .drain()
         .collect::<Vec<_>>();
-    assert_eq!(invocations.len(), 1);
-    assert_eq!(invocations[0].action, action);
-    assert_eq!(invocations[0].surface, ActionSurface::Timeline);
+    assert_eq!(
+        invocations.len(),
+        usize::from(should_dispatch),
+        "{action:?}"
+    );
+    if should_dispatch {
+        assert_eq!(invocations[0].action, action);
+        assert_eq!(invocations[0].surface, ActionSurface::Timeline);
+    }
 }
 
 /// Verifies live FireCue actions keep cue playback clocks synced to timeline position.

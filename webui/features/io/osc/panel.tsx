@@ -39,20 +39,20 @@ import {
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
 import { engineRuntime } from "../../../lib/engine-runtime";
-import { setStoreAction } from "../../../lib/nanostore-action";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
+  actionCatalog,
   oscLastEvent,
   oscListenerStatus,
+  oscMappingDiagnostics,
   oscMappings,
   oscSources,
 } from "../../../state/appStores";
 import type { OscMapping, OscType } from "../../../types";
-import {
-  cloneOscAction,
-  formatOscAction,
-  parseOscAction,
-} from "./model/action-format";
+import { ActionInputKind, ActionSurface } from "../../../types";
+import { ActionBindingEditor } from "../../action-mapping";
+import { OscInputOptions } from "./input-options";
+import { cloneOscAction, formatOscAction } from "./model/action-format";
 
 export interface OscInputPanelProps extends BasePanelComponentProps {}
 
@@ -152,6 +152,8 @@ function parseArgIndex(value: string): number | undefined | null {
 
 function cloneMapping(mapping: OscMapping): OscMapping {
   return {
+    id: mapping.id,
+    input: mapping.input,
     source: mapping.source,
     address: mapping.address,
     arg_index: mapping.arg_index,
@@ -163,9 +165,61 @@ function cloneMapping(mapping: OscMapping): OscMapping {
 export default function OscInputPanel(props: OscInputPanelProps) {
   const $oscSources = useStore(oscSources);
   const $oscMappings = useStore(oscMappings);
+  const $mappingDiagnostics = useStore(oscMappingDiagnostics);
   const $oscLastEvent = useStore(oscLastEvent);
   const $oscListenerStatus = useStore(oscListenerStatus);
   const panelId = props.id;
+  const [draft, setDraft] = createSignal<{
+    mapping: OscMapping;
+    expected?: OscMapping;
+  }>();
+  const [draftValid, setDraftValid] = createSignal(false);
+  const [inputValid, setInputValid] = createSignal(false);
+  const [saving, setSaving] = createSignal(false);
+  const [editError, setEditError] = createSignal<string>();
+
+  /** Saves only the version the operator edited, leaving other clients' bindings intact. */
+  async function persistMapping(
+    mapping: OscMapping,
+    expected?: OscMapping,
+  ): Promise<boolean> {
+    try {
+      const result = await engineRuntime.sendCommandAndAwait({
+        module: "OscCommand",
+        command: { type: "StoreMapping", data: { mapping, expected } },
+      });
+      if (result.outcome.type === "Failed")
+        throw new Error(result.outcome.data.message);
+      setEditError(undefined);
+      return true;
+    } catch (error) {
+      setEditError(String(error));
+      return false;
+    }
+  }
+
+  /** Captures the selected binding version before its action editor opens. */
+  function editSelectedAction() {
+    const row = displayRows()[selectedRows()[0]];
+    if (row)
+      setDraft({
+        mapping: cloneMapping(row.mapping),
+        expected: cloneMapping(row.mapping),
+      });
+  }
+
+  /** Commits the validated action draft and retains it if the backend reports a conflict. */
+  async function saveDraft() {
+    const current = draft();
+    if (!current || !draftValid() || !inputValid() || saving()) return;
+    setSaving(true);
+    try {
+      if (await persistMapping(current.mapping, current.expected))
+        setDraft(undefined);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const [selection, setSelection] = createSignal<GridSelection>(
     emptyGridSelection(),
@@ -248,7 +302,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
             const actionStr = formatOscAction(rowData.action);
             return {
               kind: GridCellKind.Text,
-              allowOverlay: true,
+              allowOverlay: false,
               displayData: actionStr,
               data: actionStr,
             };
@@ -305,76 +359,130 @@ export default function OscInputPanel(props: OscInputPanelProps) {
           rowData.arg_value = trimmed === "" ? undefined : trimmed;
           break;
         }
-        case "action": {
-          const parsed = parseOscAction(value);
-          if (parsed) {
-            rowData.action = parsed;
-          }
-          break;
-        }
+        case "action":
+          continue;
       }
       currentMappings[originalIndex] = cloneMapping(rowData);
     }
 
-    setStoreAction(oscMappings, "Update OSC Mappings", currentMappings);
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
-  };
-
-  const deleteSelected = () => {
-    const indices = selectedRows();
-    if (indices.length === 0) return;
-
-    const visibleRows = displayRows();
-    const sortedIndices = indices
-      .map((index) => visibleRows[index]?.index)
-      .filter((index): index is number => index !== undefined)
-      .sort((a, b) => b - a);
-    const currentMappings = $oscMappings().map(cloneMapping);
-    for (const index of sortedIndices) {
-      currentMappings.splice(index, 1);
+    for (const mapping of currentMappings) {
+      const expected = mappings.find((previous) => previous.id === mapping.id);
+      if (expected && JSON.stringify(expected) !== JSON.stringify(mapping))
+        void persistMapping(mapping, cloneMapping(expected));
     }
-    clearGridSelection();
-
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
   };
 
+  /** Deletes exact selected versions without replacing the complete binding collection. */
+  const deleteSelected = async () => {
+    const selected = selectedRows()
+      .map((index) => displayRows()[index]?.mapping)
+      .filter((mapping): mapping is OscMapping => Boolean(mapping))
+      .map(cloneMapping);
+    try {
+      for (const expected of selected) {
+        const result = await engineRuntime.sendCommandAndAwait({
+          module: "OscCommand",
+          command: { type: "RemoveMapping", data: { expected } },
+        });
+        if (result.outcome.type === "Failed") {
+          setEditError(result.outcome.data.message);
+          return;
+        }
+      }
+      setEditError(undefined);
+      clearGridSelection();
+    } catch (error) {
+      setEditError(String(error));
+    }
+  };
+  /** Freezes the last observed source while the operator chooses a registered action. */
   const applyLastEvent = () => {
     const event = $oscLastEvent();
     if (!event) return;
-
-    const currentMappings = $oscMappings().map(cloneMapping);
-    currentMappings.push({
-      source: undefined,
-      address: event.address,
-      arg_index: event.args.length > 0 ? 0 : undefined,
-      arg_value:
-        event.args.length > 0 ? formatArgValue(event.args[0]) : undefined,
-      action: parseOscAction("StartClip(1)")!,
-    });
-
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
+    setDraft({
+      mapping: {
+        id: crypto.randomUUID().replace(/-/g, ""),
+        input: { type: event.args.length ? "Press" : "Pulse" },
+        source: undefined,
+        address: event.address,
+        arg_index: event.args.length ? 0 : undefined,
+        arg_value: undefined,
+        action: { id: "", arguments: {} },
       },
     });
   };
-
   return (
     <div class="flex flex-col h-full">
+      <Show when={editError()}>
+        {(error) => (
+          <p role="alert" class="p-3 text-sm text-red-400">
+            {error()}
+          </p>
+        )}
+      </Show>
+      <Show when={draft()}>
+        {(current) => (
+          <section
+            aria-label="OSC mapping action editor"
+            class="p-3 border-b border-gray-700 space-y-2"
+          >
+            <p class="text-xs text-gray-400">
+              Source: {current().mapping.address}
+            </p>
+            <ActionBindingEditor
+              surface={ActionSurface.Osc}
+              value={current().mapping.action}
+              onValidityChange={setDraftValid}
+              onChange={(action) => {
+                const value = current();
+                const scalar =
+                  actionCatalog
+                    .get()
+                    .find((descriptor) => descriptor.id === action.id)
+                    ?.input_kind === ActionInputKind.Scalar;
+                setDraft({
+                  ...value,
+                  mapping: {
+                    ...value.mapping,
+                    action,
+                    input: scalar
+                      ? value.mapping.input.type === "Continuous"
+                        ? value.mapping.input
+                        : {
+                            type: "Continuous",
+                            data: { minimum: 0, maximum: 1 },
+                          }
+                      : value.mapping.input.type === "Continuous"
+                        ? { type: "Press" }
+                        : value.mapping.input,
+                  },
+                });
+              }}
+            />
+            <OscInputOptions
+              mapping={current().mapping}
+              onValidityChange={setInputValid}
+              onChange={(mapping) => setDraft({ ...current(), mapping })}
+            />
+            <div class="flex gap-2">
+              <Button
+                size="compact"
+                disabled={!draftValid() || !inputValid() || saving()}
+                onClick={() => void saveDraft()}
+              >
+                Save mapping
+              </Button>
+              <Button
+                size="compact"
+                disabled={saving()}
+                onClick={() => setDraft(undefined)}
+              >
+                Cancel edit
+              </Button>
+            </div>
+          </section>
+        )}
+      </Show>
       <div class="p-3 border-b border-gray-700">
         <h3 class="text-sm font-medium text-gray-300 mb-2">OSC Listener</h3>
         <Show
@@ -438,6 +546,16 @@ export default function OscInputPanel(props: OscInputPanelProps) {
       </div>
 
       <div class="flex-1 flex flex-col min-h-0">
+        <For each={$mappingDiagnostics()}>
+          {(error, index) => (
+            <Show when={error}>
+              <p role="alert" class="px-3 py-1 text-sm text-amber-400">
+                Mapping {index() + 1} disabled: {error?.message}. Edit or remove
+                this mapping to repair it.
+              </p>
+            </Show>
+          )}
+        </For>
         <PanelToolbar
           leftClass="min-w-0 flex-1"
           rightClass="flex h-8 shrink-0 items-center gap-2"
@@ -445,14 +563,18 @@ export default function OscInputPanel(props: OscInputPanelProps) {
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-300">OSC Mappings</h3>
               <p class="truncate text-xs text-gray-500">
-                Leave Source blank to match any sender. Action format:
-                StartClip(1), StopClip(2), GoClip(3), SetControl(1), Eval(clip 1
-                go)
+                Leave Source blank to match any sender. Select a mapping to edit
+                its action.
               </p>
             </div>
           }
           right={
             <>
+              <Show when={selectedRows().length === 1}>
+                <Button size="compact" onClick={editSelectedAction}>
+                  Edit action
+                </Button>
+              </Show>
               <Show when={selectedRows().length > 0}>
                 <Button
                   size="compact"

@@ -15,11 +15,19 @@ import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import { browserDemoAudioHost } from "../../../lib/browser-demo-audio";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
+import { createActionMappingTarget } from "../../action-mapping";
 import { useTimelineContext } from "../context/timeline-context";
 
 /** Controls timeline playback and recording with shared toolbar actions. */
 export const InstanceControls = () => {
   const ctx = useTimelineContext();
+  const playbackMapping = createActionMappingTarget(() => ({
+    action: {
+      id: "timeline.toggle-playback",
+      arguments: { timeline_uid: ctx.timelineUid },
+    },
+    label: "Start / pause timeline",
+  }));
 
   /** Serialize browser-media priming before asking the embedded runtime to play. */
   const togglePaused = async () => {
@@ -68,6 +76,7 @@ export const InstanceControls = () => {
   return (
     <div class="flex items-center gap-1">
       <ToolbarButton
+        ref={playbackMapping}
         ariaPressed={!ctx.paused()}
         onClick={() => void togglePaused()}
         disabled={connectionStatus() !== "connected"}

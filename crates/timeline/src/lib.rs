@@ -24,9 +24,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
+mod action_validation;
 /// AST converter for timeline commands
 pub mod ast_conv;
 mod audio_integration;
+pub mod automation_actions;
 #[cfg(feature = "beatgrid-detect")]
 pub mod beat_model;
 #[cfg(feature = "beatgrid-detect")]
@@ -116,6 +118,7 @@ impl Plugin for TimelinePlugin {
         let _ = self.http_enabled;
         register_ingress_command::<TimelineCommand>(app);
         register_engine_action::<TimelineAction>(app);
+        automation_actions::install(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimelineAstConverter,
         >();
@@ -185,6 +188,7 @@ impl Plugin for TimelinePlugin {
             (
                 websocket::forward_timeline_commands,
                 websocket::send_timelines_on_change,
+                action_validation::publish_diagnostics,
                 websocket::send_timeline_recording_states_on_change,
                 websocket::send_timeline_recording_previews_on_change,
                 websocket::send_timeline_lookahead_item_statuses_on_change,

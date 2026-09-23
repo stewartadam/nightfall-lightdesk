@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createMemo,
@@ -29,6 +30,12 @@ import {
   visiblePaletteRowCount,
 } from "../../../../lib/palette-navigation";
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
+import { actionCatalog } from "../../../../state/appStores";
+import type { ActionReference } from "../../../../types";
+import {
+  type ActionBindingOption,
+  createActionBindingChoices,
+} from "../../../action-mapping";
 import type {
   ActionTargetOption,
   InsertableActionType,
@@ -36,7 +43,7 @@ import type {
 import {
   type ActionTargets,
   getActionFamilyForType,
-  getInsertableActionDefinition,
+  getPlannableActionDescriptors,
   getTargetsForAction,
   INSERTABLE_ACTIONS,
   type InsertableActionDefinition,
@@ -54,15 +61,32 @@ type InsertActionPickerProps = {
     rate?: number;
   }) => void;
   onClose: () => void;
+  onRegisteredInsert: (option: ActionBindingOption) => void;
 };
 
 type PickerStep = "action" | "command" | "target" | "rate";
 
 type ActionCommand = {
-  action: InsertableActionDefinition;
+  action: PickerActionDefinition;
   category: string;
   available: boolean;
 };
+
+type PickerActionType = InsertableActionType | `registered:${string}`;
+type PickerActionDefinition = Omit<
+  InsertableActionDefinition,
+  "type" | "family"
+> & {
+  type: PickerActionType;
+  family: InsertableActionDefinition["family"] | "registered";
+  bindingOptions?: ActionBindingOption[];
+};
+type PickerTarget = ActionTargetOption & { binding?: ActionReference };
+
+/** Narrows built-in actions before consulting their native argument editor. */
+function isNativeAction(type: PickerActionType): type is InsertableActionType {
+  return !type.startsWith("registered:");
+}
 
 const hasTargetForAction = (
   action: InsertableActionDefinition,
@@ -73,13 +97,15 @@ const hasTargetForAction = (
 };
 
 export const InsertActionPicker = (props: InsertActionPickerProps) => {
+  const $catalog = useStore(actionCatalog);
+  const bindingChoices = createActionBindingChoices();
   const workspaceActive = useWorkspaceActivity();
   const [step, setStep] = createSignal<PickerStep>("action");
   const [actionQuery, setActionQuery] = createSignal("");
   const [targetQuery, setTargetQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [selectedActionType, setSelectedActionType] = createSignal<
-    InsertableActionType | undefined
+    PickerActionType | undefined
   >(undefined);
   const [pendingTarget, setPendingTarget] = createSignal<
     ActionTargetOption | undefined
@@ -101,8 +127,20 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     return Math.max(12, Math.min(props.y, window.innerHeight - 420));
   };
 
-  const allActions = createMemo<ActionCommand[]>(() =>
-    INSERTABLE_ACTIONS.map((action) => ({
+  /** Combines native editors with domain-provided bindings that advertise deterministic planning. */
+  const allActions = createMemo<ActionCommand[]>(() => {
+    const registered = getPlannableActionDescriptors($catalog());
+    const choices = new Map(
+      bindingChoices().map((choice) => [choice.actionId, choice]),
+    );
+    const replaced = new Set(
+      registered.map(
+        (descriptor) => choices.get(descriptor.id)?.legacyTimelineType,
+      ),
+    );
+    const native: ActionCommand[] = INSERTABLE_ACTIONS.filter(
+      (action) => !replaced.has(action.type),
+    ).map((action) => ({
       action,
       category:
         getActionFamilyForType(action.type) === "cue"
@@ -111,8 +149,27 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
             ? "Desk Actions"
             : "Clip Actions",
       available: hasTargetForAction(action, props.targets),
-    })),
-  );
+    }));
+    return [
+      ...native,
+      ...registered.map((descriptor): ActionCommand => {
+        const options = choices.get(descriptor.id)?.options ?? [];
+        return {
+          action: {
+            type: `registered:${descriptor.id}`,
+            label: descriptor.label,
+            description: options.length
+              ? "Choose a target"
+              : "No available targets",
+            family: "registered",
+            bindingOptions: options,
+          },
+          category: "Registered Actions",
+          available: options.length > 0,
+        };
+      }),
+    ];
+  });
 
   const filteredActions = createMemo<ActionCommand[]>(() => {
     const normalizedQuery = actionQuery().trim().toLowerCase();
@@ -141,16 +198,25 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
 
   const selectedAction = createMemo(() => {
     const actionType = selectedActionType();
-    return actionType ? getInsertableActionDefinition(actionType) : undefined;
+    return allActions().find((entry) => entry.action.type === actionType)
+      ?.action;
   });
 
-  const targetOptions = createMemo<ActionTargetOption[]>(() => {
+  const targetOptions = createMemo<PickerTarget[]>(() => {
     const action = selectedAction();
     if (!action) return [];
+    if (!isNativeAction(action.type)) {
+      return (action.bindingOptions ?? []).map((option, index) => ({
+        uid: `${index}`,
+        label: option.label,
+        description: option.description,
+        binding: option.action,
+      }));
+    }
     return getTargetsForAction(action.type, props.targets);
   });
 
-  const filteredTargets = createMemo<ActionTargetOption[]>(() => {
+  const filteredTargets = createMemo<PickerTarget[]>(() => {
     const normalizedQuery = targetQuery().trim().toLowerCase();
     if (!normalizedQuery) return targetOptions();
 
@@ -234,7 +300,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     requestAnimationFrame(() => inputRef?.focus());
   };
 
-  const selectAction = (actionType: InsertableActionType) => {
+  const selectAction = (actionType: PickerActionType) => {
     const action = filteredActions().find(
       (entry) => entry.action.type === actionType,
     );
@@ -247,9 +313,18 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     focusSearchInput();
   };
 
-  const selectTarget = (target: ActionTargetOption) => {
+  const selectTarget = (target: PickerTarget) => {
     const action = selectedAction();
     if (!action) return;
+    if (target.binding) {
+      props.onRegisteredInsert({
+        label: target.label,
+        description: target.description,
+        action: structuredClone(target.binding),
+      });
+      return;
+    }
+    if (!isNativeAction(action.type)) return;
     if (action.requiresRate) {
       setPendingTarget(target);
       setTargetQuery("1");
@@ -270,7 +345,8 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
   const insertCommandAction = () => {
     const action = selectedAction();
     const commandText = targetQuery().trim();
-    if (!action || commandText.length === 0) return;
+    if (!action || !isNativeAction(action.type) || commandText.length === 0)
+      return;
     props.onInsert({
       actionType: action.type,
       targetUid: commandText,
@@ -283,7 +359,13 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     const action = selectedAction();
     const target = pendingTarget();
     const rate = Number.parseFloat(targetQuery().trim());
-    if (!action || !target || !Number.isFinite(rate)) return;
+    if (
+      !action ||
+      !isNativeAction(action.type) ||
+      !target ||
+      !Number.isFinite(rate)
+    )
+      return;
     props.onInsert({
       actionType: action.type,
       targetUid: target.uid,

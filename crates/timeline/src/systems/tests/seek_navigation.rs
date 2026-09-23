@@ -900,7 +900,33 @@ fn seek_replay_dispatches_desk_eval_clip_back_when_configured() {
 /// Verifies registered desk eval actions use the same seek replay policy as native desk eval.
 #[test]
 fn seek_replay_dispatches_registered_desk_eval_when_configured() {
+    assert_registered_seek_dispatch(desk_eval_action("group 1 at 50"), true);
+}
+
+/// Seek's dispatch policy does not grant permission to run an invalid or unplannable reference.
+#[test]
+fn seek_replay_rejects_invalid_registered_actions_even_when_dispatch_is_configured() {
+    use nightfall_actions::ActionReference;
+    use nightfall_desk::automation_actions::{ClipTarget, go_clip_action};
+
+    for action in [
+        ActionReference::new("unknown.action", serde_json::json!({})),
+        ActionReference::new("control.go", serde_json::json!({"control_index": 1})),
+        ActionReference::new(DESK_EVAL_ACTION_ID, serde_json::json!({"command": 42})),
+        go_clip_action(ClipTarget::Id(1)),
+    ] {
+        assert_registered_seek_dispatch(action, false);
+    }
+}
+
+/// Seeks across a saved action with replay enabled and checks the generic invocation queue.
+fn assert_registered_seek_dispatch(
+    action: nightfall_actions::ActionReference,
+    should_dispatch: bool,
+) {
     let mut app = App::new();
+    app.init_resource::<nightfall_actions::ActionRegistry>();
+    nightfall_desk::automation_actions::register_desk_actions(&mut app);
     app.add_message::<EngineActionEnvelope<DeskAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
@@ -913,7 +939,6 @@ fn seek_replay_dispatches_registered_desk_eval_when_configured() {
     app.add_systems(Update, handle_timeline_seek_system);
 
     let timeline_id = 998;
-    let command = "group 1 at 50";
     let timeline = Timeline {
         identifiers: Identifiers {
             id: timeline_id,
@@ -933,7 +958,7 @@ fn seek_replay_dispatches_registered_desk_eval_when_configured() {
                 label: "Registered desk eval".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::RegisteredAction(desk_eval_action(command)),
+                action: ActionKind::RegisteredAction(action.clone()),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -954,12 +979,14 @@ fn seek_replay_dispatches_registered_desk_eval_when_configured() {
         .resource_mut::<Messages<ActionInvocation>>()
         .drain()
         .collect();
-    assert_eq!(action_invocations.len(), 1);
     assert_eq!(
-        action_invocations[0].action.id.as_str(),
-        DESK_EVAL_ACTION_ID
+        action_invocations.len(),
+        usize::from(should_dispatch),
+        "{action:?}"
     );
-    assert_eq!(action_invocations[0].action.arguments["command"], command);
+    if should_dispatch {
+        assert_eq!(action_invocations[0].action, action);
+    }
 }
 
 /// Verifies desk eval does not participate in planned sequence materialization.

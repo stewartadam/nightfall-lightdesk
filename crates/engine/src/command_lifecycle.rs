@@ -23,6 +23,8 @@ use crate::prelude::{
 /// Context retained while one accepted command is active.
 #[derive(Clone, Debug)]
 pub struct ActiveCommand {
+    /// Trusted connection that submitted this command, when supplied by the host.
+    pub client_connection: Option<crate::client_bridge::ClientConnection>,
     /// Undo group that owns mutations produced by the command.
     pub undo_id: UndoId,
     /// External surface that accepted the command.
@@ -130,6 +132,7 @@ impl CommandTracker {
         self.active.insert(
             command_id,
             ActiveCommand {
+                client_connection: None,
                 undo_id,
                 origin,
                 reply_target,
@@ -142,6 +145,17 @@ impl CommandTracker {
             },
         );
         Ok(())
+    }
+
+    /// Attaches trusted host context to a command after successful identity registration.
+    pub(crate) fn attach_client_connection(
+        &mut self,
+        command_id: CommandId,
+        connection: Option<crate::client_bridge::ClientConnection>,
+    ) {
+        if let Some(command) = self.active.get_mut(&command_id) {
+            command.client_connection = connection;
+        }
     }
 
     /// Returns whether the supplied command is currently awaiting a terminal result.
@@ -367,6 +381,17 @@ pub struct CommandResponder<'w> {
 }
 
 impl CommandResponder<'_> {
+    /// Reads trusted connection context before completing the command.
+    pub fn client_connection(
+        &self,
+        command_id: CommandId,
+    ) -> Option<crate::client_bridge::ClientConnection> {
+        self.tracker
+            .active
+            .get(&command_id)
+            .and_then(|command| command.client_connection.clone())
+    }
+
     /// Registers a short-lived lifecycle for internally initiated work that must publish a result.
     pub fn register_context(
         &mut self,

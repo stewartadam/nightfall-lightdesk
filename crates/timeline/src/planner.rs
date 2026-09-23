@@ -206,8 +206,10 @@ fn plan_registered_action(
         push_unsupported_registered_action(plan, owner, action.id.as_str(), None);
         return;
     };
-    let capability = match action_registry.resolve_capability::<TimelinePlaybackActionPlan>(action)
-    {
+    let capability = match action_registry.resolve_capability::<TimelinePlaybackActionPlan>(
+        action,
+        nightfall_actions::ActionSurface::Timeline,
+    ) {
         Ok(Some(capability)) => capability,
         Ok(None) => {
             push_unsupported_registered_action(plan, owner, action.id.as_str(), None);
@@ -644,15 +646,19 @@ mod tests {
         let mut registry = ActionRegistry::default();
         registry.register::<TestTimelineArguments, _>(
             ActionDescriptor {
+                capabilities: Vec::new(),
                 id: ActionId::new("test-domain.timeline-start"),
                 label: "Test-domain timeline start".to_owned(),
                 allowed_surfaces: vec![ActionSurface::Timeline],
+                input_kind: nightfall_actions::ActionInputKind::Trigger,
                 argument_schema: json!({ "type": "object" }),
             },
             |_world, _arguments, _invocation| Ok(InvocationDispatch::Accepted),
         );
         registry.register_capability::<TestTimelineArguments, TimelinePlaybackActionPlan, _>(
             "test-domain.timeline-start",
+            nightfall_playback_planner::TIMELINE_PLAYBACK_CAPABILITY_ID,
+            nightfall_actions::ActionSurface::Timeline,
             |arguments| {
                 Ok(TimelinePlaybackActionPlan {
                     owner_uid: arguments.owner_uid,

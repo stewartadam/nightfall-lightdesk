@@ -40,6 +40,7 @@ mod runtime;
 #[cfg(test)]
 mod tests;
 mod timecode_lifecycle;
+pub(crate) mod validation;
 
 #[cfg(test)]
 use beatgrid::{
@@ -76,6 +77,8 @@ pub(crate) struct TimelineRecordingStores<'w> {
 /// Cohesive mutable dependencies shared by timeline definition command handlers.
 #[derive(SystemParam)]
 pub(crate) struct TimelineMutationContext<'w, 's> {
+    /// Domain registrations used to validate saved action bindings before mutation.
+    action_registry: Option<Res<'w, nightfall_actions::ActionRegistry>>,
     /// Deferred ECS mutation queue.
     commands: Commands<'w, 's>,
     /// Materialized timelines synchronized with persisted definitions.
@@ -118,6 +121,12 @@ pub fn crud_events(
     mut actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
 ) {
     for event in events.read() {
+        if let Err(error) =
+            validation::validate_command(&event.command, context.action_registry.as_deref())
+        {
+            fail_timeline_command(&mut context.responder, event.command_id, error);
+            continue;
+        }
         match &event.command {
             TimelineCommand::StoreTimeline(_)
             | TimelineCommand::RenameTimeline { .. }
@@ -151,6 +160,13 @@ pub fn crud_events(
     }
 
     for event in actions.read() {
+        if let TimelineAction::InsertRecordedActions { actions, .. } = &event.action
+            && let Err(error) =
+                validation::validate_actions(actions.iter(), context.action_registry.as_deref())
+        {
+            tracing::warn!(operation_id = %event.operation_id, %error, "Rejected recorded action bindings");
+            continue;
+        }
         recording_mutations::handle_action(&mut context, event);
     }
 }
