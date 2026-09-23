@@ -33,14 +33,14 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     title: "Your first lights",
     duration: "8–10 min",
     introduction:
-      "Take control of the Demo Wash lights, edit two looks, and play them with a fader and Go.",
+      "Take control of the pixel strips, edit two looks, and play them with a fader and Go.",
     steps: [
       {
         id: "open-timeline",
         title: "Open the sample timeline",
-        body: "Nightfall Demo starts the Nightfall Looks sequence and Nightfall Wave effect.",
+        body: "Lo-fi starts the RGB cycle (full) clip and the red waveform effect fx3.",
         action:
-          "In Timelines, open timeline 1: Nightfall Demo. Keep the 3D Visualizer visible beside it.",
+          "In Timelines, open timeline 1: Lo-fi. Keep the 3D Visualizer visible beside it.",
         panels: ["TimelinesPanel", "Visualizer"],
         observe: { type: "panel", component: "Timeline" },
       },
@@ -49,19 +49,19 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Start the sample show",
         body: "A timeline turns individual looks and effects into a timed show.",
         action:
-          "Press Play timeline on Nightfall Demo and watch the six washes in the Visualizer.",
+          "Press Play timeline on Lo-fi and watch the pixel strips in the Visualizer.",
         target: '[aria-label="Play timeline"]',
-        hint: "Start Nightfall Demo.",
+        hint: "Start Lo-fi.",
         observe: { type: "timeline-playing" },
       },
       {
         id: "watch",
         title: "Watch, then stop",
-        body: "Nightfall Looks changes the colors; Nightfall Wave animates their intensity.",
+        body: "RGB cycle (full) advances through colors; fx3 varies the red channel across the pixel strips.",
         action:
           "Watch for a few seconds, then press Stop timeline before programming your own look.",
         target: '[aria-label="Stop timeline"]',
-        hint: "Stop Nightfall Demo when you’re ready.",
+        hint: "Stop Lo-fi when you’re ready.",
         observe: { type: "timeline-stopped" },
       },
       {
@@ -78,12 +78,12 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "select",
         title: "Select lights by number",
-        body: "Demo Wash 1 through Demo Wash 6 have fixture IDs 1–6. The > operator selects an inclusive range.",
+        body: "The sample’s pixel strips include fixtures 310–313. The > operator selects an inclusive range.",
         action:
-          "Enter fix 1>5 and press Enter. The first five lights become selected; Demo Wash 6 does not.",
+          "Enter fix 310>313 and press Enter. The four pixel strips become selected; the other fixtures do not.",
         panels: ["FixtureGrid", "Visualizer"],
         target: "#header-cmdline",
-        hint: "Type fix 1>5 and press Enter.",
+        hint: "Type fix 310>313 and press Enter.",
         observe: { type: "selection" },
       },
       {
@@ -91,7 +91,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Bring up the lights",
         body: "The Programmer holds live lighting instructions.",
         action:
-          "Enter @ 100 to bring the five selected washes to full intensity.",
+          "Enter @ 100 to bring the four selected pixel strips to full intensity.",
         panels: ["ProgrammerGrid"],
         target: "#header-cmdline",
         hint: "Type @ 100 and press Enter.",
@@ -100,9 +100,9 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "red",
         title: "Make a red look",
-        body: "These washes mix red, green, and blue to set their color.",
+        body: "These pixel strips mix red, green, and blue to set their color.",
         action:
-          "Enter fix 1>5 red @ 100 green @ 0 blue @ 0. Watch the five selected washes turn red.",
+          "Enter fix 310>313 red @ 100 green @ 0 blue @ 0. Watch the four selected pixel strips turn red.",
         target: "#header-cmdline",
         hint: "Set red to 100, green and blue to 0.",
         observe: { type: "color", color: "Red" },
@@ -110,7 +110,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "cue-one",
         title: "Store the red cue",
-        body: "Sequence 1, Nightfall Looks, already contains two cues. We’ll replace its first sample look.",
+        body: "Sequence 1 (abs 255) contains four cues and is played by clip 1: RGB cycle (full). We’ll replace its first two looks.",
         action:
           "In Programmer, choose Store cue. Set Sequence ID to 1, Cue ID to 1, and Label to Guide Red. Confirm Store Cue, accepting replacement if prompted.",
         panels: ["ProgrammerGrid"],
@@ -123,7 +123,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Make a blue look",
         body: "A contrasting second look makes the Go button’s effect easy to see.",
         action:
-          "Enter fix 1>5 red @ 0 green @ 0 blue @ 100. Watch the same five washes turn blue.",
+          "Enter fix 310>313 red @ 0 green @ 0 blue @ 100. Watch the same four pixel strips turn blue.",
         target: "#header-cmdline",
         hint: "Set blue to 100, red and green to 0.",
         observe: { type: "color", color: "Blue" },
@@ -153,24 +153,24 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "assign",
-        title: "Put Nightfall Looks on control 1",
+        title: "Put RGB cycle (full) on control 6",
         body: "Clip 1 already points to sequence 1. A control slot gives it a fader and a Go button.",
         action:
-          "Open Clips and drag clip 1: Nightfall Looks onto control 1’s Drop target. Expand Controls first if collapsed.",
+          "Open Clips and drag clip 1: RGB cycle (full) onto control 6’s Drop target. Expand Controls first if collapsed.",
         panels: ["ClipList"],
-        target: '[data-clip-dropzone-index="1"]',
-        hint: "Drop Nightfall Looks on control 1.",
-        observe: { type: "assigned", clipId: 1, control: 1 },
+        target: '[data-clip-dropzone-index="6"]',
+        hint: "Drop RGB cycle (full) on control 6.",
+        observe: { type: "assigned", clipId: 1, control: 6 },
       },
       {
         id: "go",
-        title: "Start Nightfall Looks",
+        title: "Start RGB cycle (full)",
         body: "Go starts the sequence at its first cue: Guide Red.",
         action:
-          "Raise control 1’s fader, then press its Go button. The five washes show your red look.",
+          "Raise control 6’s fader, then press its Go button. The four pixel strips show your red look.",
         panels: ["Visualizer", "ClipList"],
-        target: '[data-control-go-index="1"]:not(:disabled)',
-        hint: "Press Go on control 1.",
+        target: '[data-control-go-index="6"]:not(:disabled)',
+        hint: "Press Go on control 6.",
         observe: { type: "clip-playing", clipId: 1 },
       },
       {
@@ -178,8 +178,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Advance to blue",
         body: "The next Go advances the running sequence to Guide Blue.",
         action:
-          "Press Go on control 1 again and watch the washes change from red to blue.",
-        target: '[data-control-go-index="1"]:not(:disabled)',
+          "Press Go on control 6 again and watch the pixel strips change from red to blue.",
+        target: '[data-control-go-index="6"]:not(:disabled)',
         hint: "Press Go again for Guide Blue.",
         observe: { type: "cue-playing", clipId: 1, position: 2 },
       },
@@ -188,17 +188,17 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Control the level",
         body: "The fader scales intensity while keeping the programmed color.",
         action:
-          "Move control 1’s fader down and up. Watch the blue washes dim and brighten. Continue when you’ve tried a few levels.",
+          "Move control 6’s fader down and up. Watch the blue pixel strips dim and brighten. Continue when you’ve tried a few levels.",
         target:
-          '[data-control-index="1"] .noUi-target:not([disabled]) [role="slider"]',
-        hint: "Try a few levels on control 1.",
+          '[data-control-index="6"] .noUi-target:not([disabled]) [role="slider"]',
+        hint: "Try a few levels on control 6.",
       },
       {
         id: "stop",
         title: "Stop your clip",
         body: "Lowering a fader is different from stopping playback.",
         action:
-          "Enter clip 1 stop, or right-click Nightfall Looks and choose Stop Clip.",
+          "Enter clip 1 stop, or right-click RGB cycle (full) and choose Stop Clip.",
         target: "#header-cmdline",
         hint: "Type clip 1 stop.",
         observe: { type: "clip-stopped", clipId: 1 },
@@ -209,31 +209,31 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     id: "patch",
     title: "Patching fixtures",
     duration: "4 min",
-    introduction:
-      "Explore how the six Aurora Wash fixtures describe the demo rig.",
+    introduction: "Explore how the sample fixtures describe the demo rig.",
     steps: [
       {
         id: "open",
         title: "Open the sample patch",
-        body: "All six demo washes use the same model and mode.",
-        action: "Open Patch and find Demo Wash 1, fixture ID 1.",
+        body: "All four pixel strips use the same model and mode.",
+        action:
+          "Open Patch and find pixel strip 310, model RGBPixelTape 120ch RGB.",
         panels: ["PatchEditor"],
         observe: { type: "panel", component: "PatchEditor" },
       },
       {
         id: "inspect",
-        title: "Inspect Demo Wash 1",
-        body: "RGB + Position supplies intensity, red, green, blue, pan, and tilt.",
+        title: "Inspect pixel strip 310",
+        body: "RGB mode supplies 40 RGB pixels, with virtual intensity for dimming.",
         action:
-          "Inspect Demo Wash 1’s manufacturer, model, and mode. Compare it with Demo Wash 2.",
+          "Inspect pixel strip 310’s manufacturer, model, and mode. Compare it with pixel strip 311.",
         panels: ["PatchEditor"],
       },
       {
         id: "address",
-        title: "Understand the unassigned patch",
-        body: "The sample has no DMX bindings. The washes can still run in the Visualizer; a physical rig also needs channel addresses and output routing.",
+        title: "Understand the disabled patch",
+        body: "The sample has disabled output bindings. The fixtures still run in the Visualizer; physical output needs enabled bindings and transport routing.",
         action:
-          "Switch Patch to DMX I/O and inspect the empty list. Fixture ID 1 is a selection number, not DMX address 1.",
+          "Switch Patch to DMX I/O and inspect the disabled bindings. Fixture ID 310 is a selection number, not a DMX address.",
         panels: ["PatchEditor"],
         more: "A universe contains 512 channels. In the real app, Add fixture walks through a library definition, mode, quantity, and console DMX address. This virtual sample does not need that setup.",
       },
@@ -242,10 +242,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Select the patched fixture",
         body: "Selection uses the fixture ID regardless of whether a hardware route exists.",
         action:
-          "Enter fix 1, then inspect Demo Wash 1 in Programmer and the Visualizer.",
+          "Enter fix 310, then inspect pixel strip 310 in Programmer and the Visualizer.",
         panels: ["ProgrammerGrid", "Visualizer"],
         target: "#header-cmdline",
-        hint: "Type fix 1 and inspect Demo Wash 1.",
+        hint: "Type fix 310 and inspect pixel strip 310.",
       },
     ],
   },
@@ -259,7 +259,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "routing",
         title: "Open I/O Transports",
-        body: "A binding maps attributes to channels; a transport carries those channels to hardware. The sample has target definitions but no fixture bindings.",
+        body: "A binding maps attributes to channels; a transport carries those channels to hardware. The sample’s fixture output bindings are disabled.",
         action:
           "Open I/O Transports and locate the network and USB output sections.",
         panels: ["IoTransports"],
@@ -279,7 +279,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Separate output from visualization",
         body: "The Visualizer does not require a transport. The browser demo cannot send network or USB DMX.",
         action:
-          "Open Console DMX and compare it with the unbound sample patch. There is no hardware route to test. Return to the creative lessons to work with the virtual washes.",
+          "Open Console DMX and compare it with the disabled sample patch. There is no hardware route to test. Return to the creative lessons to work with the virtual fixtures.",
         panels: ["DmxUniverse", "PatchEditor"],
       },
     ],
@@ -288,48 +288,47 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     id: "waveform",
     title: "Waveform effects",
     duration: "5 min",
-    introduction:
-      "Play and reshape Nightfall Wave, the sample’s intensity effect.",
+    introduction: "Play and reshape fx3, the sample’s red-channel effect.",
     steps: [
       {
         id: "play",
-        title: "Start Nightfall Wave",
-        body: "Clip 2 already plays the intensity wave across all six washes.",
-        action: "Enter clip 2 start and watch the Visualizer.",
+        title: "Start fx3",
+        body: "Clip 6 already plays the red-channel wave across all pixel strips.",
+        action:
+          "Stop Lo-fi and any running clips, clear the Programmer, then enter clip 6 start and watch the Visualizer.",
         panels: ["Visualizer"],
         target: "#header-cmdline",
-        hint: "Type clip 2 start.",
-        observe: { type: "clip-playing", clipId: 2 },
+        hint: "Type clip 6 start.",
+        observe: { type: "clip-playing", clipId: 6 },
       },
       {
         id: "open",
-        title: "Open Nightfall Wave",
-        body: "This effect repeats a sine wave with different phases across the six lights.",
-        action:
-          "In FX List, select 1: Nightfall Wave and choose Edit selected effect.",
+        title: "Open fx3",
+        body: "This effect repeats a sine wave with different phases across the pixel strips.",
+        action: "In FX List, select 3: fx3 and choose Edit selected effect.",
         panels: ["FxList"],
         target: '[aria-label="Edit selected effect"]:not(:disabled)',
-        hint: "Edit Nightfall Wave.",
+        hint: "Edit fx3.",
         observe: { type: "panel", component: "FxEditor" },
       },
       {
         id: "shape",
-        title: "Explore the intensity wave",
-        body: "Nightfall Wave uses Intensity, a four-second cycle, and a full cycle of phase spread.",
+        title: "Explore the red wave",
+        body: "fx3 uses Red, a four-second cycle, and a full cycle of phase spread.",
         action:
-          "Change its cycle rate and phase range, save, and compare how the six washes move through the pattern.",
+          "Change its cycle rate and phase range, save, and compare how the pixel strips move through the pattern.",
         panels: ["Visualizer"],
         more: "Try a slower cycle, then reduce the phase range to bring the lights closer together in the pattern.",
       },
       {
         id: "stop",
-        title: "Stop Nightfall Wave",
+        title: "Stop fx3",
         body: "Release the effect before trying another lesson.",
         action:
-          "Enter clip 2 stop. If you also started an editor preview, stop that preview too.",
+          "Enter clip 6 stop. If you also started an editor preview, stop that preview too.",
         target: "#header-cmdline",
-        hint: "Type clip 2 stop.",
-        observe: { type: "clip-stopped", clipId: 2 },
+        hint: "Type clip 6 stop.",
+        observe: { type: "clip-stopped", clipId: 6 },
       },
     ],
   },
@@ -337,13 +336,14 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     id: "step-fx",
     title: "Step FX designer",
     duration: "7 min",
-    introduction: "Build a two-step intensity chase for the six demo washes.",
+    introduction: "Build a two-step intensity chase for the four pixel strips.",
     steps: [
       {
         id: "create",
         title: "Open the Step FX designer",
         body: "Step FX describes a repeating pattern as explicit values and durations.",
-        action: "In FX List, choose Add effect → Step FX to open a new effect.",
+        action:
+          "Stop Lo-fi and any running clips, then clear the Programmer. Enter fix 310>313 red @ 100 green @ 0 blue @ 0 to give the chase a red base. In FX List, choose Add effect → Step FX.",
         panels: ["FxList"],
         target: '[aria-label="Add effect"]',
         hint: "Choose Step FX.",
@@ -351,12 +351,12 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "selection",
-        title: "Use the six demo washes",
+        title: "Use the four pixel strips",
         body: "The selection tells the chase which lights participate.",
         action:
-          "Label the effect Demo Chase. Set Selection to fix 1>6 and choose the Intensity lane.",
+          "Label the effect Demo Chase. Set Selection to fix 310>313 and choose the Intensity lane.",
         target: '[aria-label="Step FX attributes"]',
-        hint: "Choose Intensity for the washes.",
+        hint: "Choose Intensity for the pixel strips.",
       },
       {
         id: "steps",
@@ -370,10 +370,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "spread",
-        title: "Spread across the washes",
+        title: "Spread across the pixel strips",
         body: "Different start positions make the lights alternate instead of flashing together.",
         action:
-          "Preview Demo Chase and adjust Start position / Spread. Watch Demo Wash 1 through Demo Wash 6 move through the steps.",
+          "Preview Demo Chase and adjust Start position / Spread. Watch fixtures 310 through 313 move through the steps.",
         panels: ["Visualizer"],
         target: '[aria-label="Preview"], [aria-label="Stop preview"]',
         hint: "Preview Demo Chase while changing spread.",
@@ -393,22 +393,22 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     id: "timeline",
     title: "Timeline programming",
     duration: "5 min",
-    introduction: "Edit when Nightfall Demo starts the Nightfall Wave clip.",
+    introduction: "Edit when Lo-fi starts the fx3 clip.",
     steps: [
       {
         id: "open",
-        title: "Open Nightfall Demo",
-        body: "Looks and Effects contains Start Looks, Sunrise Look, and Intensity Wave.",
-        action: "Open timeline 1: Nightfall Demo from Timelines.",
+        title: "Open Lo-fi",
+        body: "FX Track contains Exec 5 (fx3); Seq Track starts and advances RGB cycle (full).",
+        action: "Open timeline 1: Lo-fi from Timelines.",
         panels: ["TimelinesPanel"],
         observe: { type: "panel", component: "Timeline" },
       },
       {
         id: "inspect",
-        title: "Inspect Intensity Wave",
-        body: "Intensity Wave starts clip 2. Start Looks starts clip 1, and Sunrise Look advances its sequence.",
+        title: "Inspect Exec 5 (fx3)",
+        body: "Despite its older label, Exec 5 (fx3) starts clip 6: fx3. Seq Track starts and advances clip 1.",
         action:
-          "Select Intensity Wave and inspect its target and timing in Properties.",
+          "Select Exec 5 (fx3) and inspect its target and timing in Properties.",
         panels: ["PropertiesInspector"],
       },
       {
@@ -416,29 +416,29 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Move the wave earlier",
         body: "An action’s position determines when it happens.",
         action:
-          "Move Intensity Wave from 2.5 seconds to 2 seconds by dragging it or editing its position in Properties.",
+          "Move Exec 5 (fx3) from 3.6 seconds to 3 seconds by dragging it or editing its position in Properties.",
         panels: ["PropertiesInspector"],
         observe: { type: "timeline-action-moved" },
       },
       {
         id: "play",
         title: "Play your arrangement",
-        body: "The intensity effect will begin half a second earlier.",
+        body: "The red waveform effect will begin 0.6 seconds earlier.",
         action: "Press Play timeline and watch the Visualizer.",
         panels: ["Visualizer"],
         target: '[aria-label="Play timeline"]',
-        hint: "Play the edited Nightfall Demo.",
+        hint: "Play the edited Lo-fi.",
         observe: { type: "timeline-playing" },
       },
       {
         id: "stop",
         title: "Finish the rehearsal",
-        body: "Watch the color changes and earlier wave, then stop playback.",
+        body: "Watch the color changes and earlier red wave, then stop playback.",
         action:
           "Press Stop timeline. Check Status Display and stop any clips you started manually.",
         panels: ["StatusDisplay"],
         target: '[aria-label="Stop timeline"]',
-        hint: "Stop Nightfall Demo.",
+        hint: "Stop Lo-fi.",
         observe: { type: "timeline-stopped" },
       },
     ],

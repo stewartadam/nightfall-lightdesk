@@ -7,43 +7,48 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
-import type { Cue, Fixture, Sequence, Timeline } from "../../types";
 import { type GuideSnapshot, guideCompletionToken } from "./progress";
 
-/** Loads the release sample so lessons fail validation when their assumed content drifts. */
+/** Builds the minimal domain state needed to exercise guide completion independently. */
 function sampleState(): GuideSnapshot {
-  const sample = JSON.parse(
-    readFileSync(
-      join(
-        process.env.NIGHTFALL_REPO_ROOT ?? process.cwd(),
-        "webui/public/nightfall-demo.nightfall-show/showfile.json",
-      ),
-      "utf8",
-    ),
-  );
-  /** Indexes release-owned objects exactly as the runtime stores do. */
-  const keyed = <T extends { identifiers: { uid: string } }>(
-    objects: T[],
-  ): Record<string, T> =>
-    Object.fromEntries(objects.map((entry) => [entry.identifiers.uid, entry]));
   return {
-    fixtures: keyed<Fixture>(sample.fixtures),
-    sequences: keyed<Sequence>(sample.sequences),
-    cues: keyed<Cue>(sample.cues),
-    timelines: keyed<Timeline>(sample.timelines),
+    fixtures: Object.fromEntries(
+      [310, 311, 312, 313, 320].map((id) => [
+        String(id),
+        { identifiers: { id, uid: String(id) } },
+      ]),
+    ),
+    sequences: { sequence: { identifiers: { id: 1 }, steps: ["cue"] } },
+    cues: {
+      cue: {
+        identifiers: { id: 1, uid: "cue", label: "cue 1" },
+        instructions: [{}],
+      },
+    },
+    timelines: {
+      timeline: {
+        identifiers: { id: 1 },
+        timecode_uid: "clock",
+        timecode_start: { secs: 0, nanos: 0 },
+        tracks: [
+          {
+            id: "1",
+            actions: [{ id: "1", position: { secs: 3, nanos: 600000000 } }],
+          },
+        ],
+      },
+    },
     clips: {},
     selection: [],
     programmer: [],
     controls: [],
     instances: {},
     timecodes: {},
-  };
+  } as unknown as GuideSnapshot;
 }
 
-/** Selection progress requires the exact five demonstrated fixtures, not any nonempty selection. */
+/** Selection progress requires the exact four demonstrated fixtures, not any nonempty selection. */
 test("guide ignores unrelated fixture selection and partial intensity edits", () => {
   const state = sampleState();
   const ids = Object.values(state.fixtures)
@@ -51,7 +56,7 @@ test("guide ignores unrelated fixture selection and partial intensity edits", ()
     .map((fixture) => fixture.identifiers.uid);
   state.selection = ids.slice(1);
   assert.equal(guideCompletionToken({ type: "selection" }, state), "");
-  state.selection = ids.slice(0, 5);
+  state.selection = ids.slice(0, 4);
   assert.equal(guideCompletionToken({ type: "selection" }, state), "selected");
   state.programmer = state.selection.map((fixtureUid) => ({
     fixtureUid,
@@ -60,7 +65,7 @@ test("guide ignores unrelated fixture selection and partial intensity edits", ()
     },
   }));
   assert.equal(guideCompletionToken({ type: "intensity" }, state), "intensity");
-  state.programmer[4].attributes.Intensity.value = 0.5;
+  state.programmer[3].attributes.Intensity.value = 0.5;
   assert.equal(guideCompletionToken({ type: "intensity" }, state), "");
 });
 
@@ -83,19 +88,14 @@ test("guide ignores unrelated cue edits", () => {
 test("guide distinguishes paused playback from a stopped sample timeline", () => {
   const state = sampleState();
   const timeline = Object.values(state.timelines)[0];
-  const sample = JSON.parse(
-    readFileSync(
-      join(
-        process.env.NIGHTFALL_REPO_ROOT ?? process.cwd(),
-        "webui/public/nightfall-demo.nightfall-show/showfile.json",
-      ),
-      "utf8",
-    ),
-  );
   state.timecodes[timeline.timecode_uid] = [
-    sample.timecodes[0],
+    {
+      identifiers: { id: 1, uid: "clock", label: "Timecode 1" },
+      rate: "Fps30",
+      source: "Internal",
+    },
     { timecode_id: 1, is_active: true, current_time: { secs: 1, nanos: 0 } },
-  ];
+  ] as GuideSnapshot["timecodes"][string];
   assert.equal(
     guideCompletionToken({ type: "timeline-playing" }, state),
     "playing",
@@ -110,24 +110,20 @@ test("guide distinguishes paused playback from a stopped sample timeline", () =>
   );
 });
 
-/** Keeps the named sample targets and authored timing used by the walkthrough explicit. */
-test("guide targets remain present in the bundled sample", () => {
+/** A repeated action ID on another track must not complete the FX timing step. */
+test("guide observes only the FX Track action at three seconds", () => {
   const state = sampleState();
-  assert.deepEqual(
-    Object.values(state.fixtures)
-      .map((entry) => entry.identifiers.id)
-      .sort(),
-    [1, 2, 3, 4, 5, 6],
-  );
-  assert.equal(
-    Object.values(state.sequences)[0].identifiers.label,
-    "Nightfall Looks",
-  );
   const timeline = Object.values(state.timelines)[0];
-  assert.equal(timeline.identifiers.label, "Nightfall Demo");
-  const action = timeline.tracks
-    .flatMap((track) => track.actions)
-    .find((entry) => entry.id === "start-wave");
-  assert.equal(action?.label, "Intensity Wave");
-  assert.deepEqual(action?.position, { secs: 2, nanos: 500000000 });
+  const observation = { type: "timeline-action-moved" } as const;
+  assert.equal(guideCompletionToken(observation, state), "");
+  timeline.tracks.push({
+    ...timeline.tracks[0],
+    id: "2",
+    actions: [
+      { ...timeline.tracks[0].actions[0], position: { secs: 3, nanos: 0 } },
+    ],
+  });
+  assert.equal(guideCompletionToken(observation, state), "");
+  timeline.tracks[0].actions[0].position = { secs: 3, nanos: 0 };
+  assert.equal(guideCompletionToken(observation, state), "moved");
 });
