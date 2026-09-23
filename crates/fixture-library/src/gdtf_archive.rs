@@ -243,6 +243,16 @@ impl ArchiveSnapshot {
 }
 
 impl ParsedArchive {
+    /// Construct the prospective identity used for cache lookup; compile still validates the mode exists.
+    pub fn definition_key(&self, mode: &str) -> DefinitionKey {
+        DefinitionKey {
+            archive_sha256: self.snapshot.sha256.clone(),
+            mode: mode.into(),
+            compiler_version: COMPILER_VERSION,
+            schema_version: DEFINITION_SCHEMA_VERSION,
+        }
+    }
+
     /// Inspect the single validated fixture type for metadata and resource compilation.
     pub fn fixture(&self) -> &gdtf::fixture_type::FixtureType {
         &self.description.fixture_types[0]
@@ -256,12 +266,7 @@ impl ParsedArchive {
     ) -> Result<CompiledDefinition, ResolveError> {
         let compiled = compile_mode(self.fixture(), mode, limits)?;
         Ok(CompiledDefinition {
-            key: DefinitionKey {
-                archive_sha256: self.snapshot.sha256.clone(),
-                mode: compiled.name().into(),
-                compiler_version: COMPILER_VERSION,
-                schema_version: DEFINITION_SCHEMA_VERSION,
-            },
+            key: self.definition_key(compiled.name()),
             mode: compiled,
             archive: self.snapshot.clone(),
         })

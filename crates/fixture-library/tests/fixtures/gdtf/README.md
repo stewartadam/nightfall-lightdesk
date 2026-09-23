@@ -127,6 +127,18 @@ collapsed upstream and cannot yet be rejected (`nightfall-lightdesk-oaa.2.4`).
 Full XML-depth/parser-work bounds also remain necessary; a byte cap alone does
 not prove a parse-time bound.
 
+`DefinitionCache` reuses immutable definitions by the complete content/mode/version
+key and evicts least-recently-used entries under count and admission-weight
+limits. Compilation budgets are fixed for a cache's lifetime. Admission weight
+is archive bytes plus serialized contract bytes (counted without creating a
+second serialized buffer); shared archive bytes are charged for every cached
+mode. This is not an allocator/GPU memory measurement and needs calibration in
+the performance phase. Oversized definitions remain usable but are returned
+uncached without evicting the working set. Active fixture handles survive both
+eviction and clearing. Synthetic tests cover reuse across separate parses,
+resource revisions, exact weight boundaries, recency, failed requests and handle
+lifetimes. Library-manager adoption and async loading remain pending.
+
 The `functions` stage normalizes integer defaults/highlight and inclusive raw
 ranges through 32 bits. Mutually exclusive logical channels and ModeMaster
 conditions retain separate ranges. Selector source links and their ranges are

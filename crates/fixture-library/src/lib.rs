@@ -23,6 +23,7 @@ pub mod gdtf_activation;
 pub mod gdtf_archive;
 pub mod gdtf_attributes;
 pub mod gdtf_bindings;
+pub mod gdtf_cache;
 pub mod gdtf_channels;
 pub mod gdtf_compiler;
 pub mod gdtf_functions;
