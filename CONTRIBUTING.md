@@ -3,6 +3,12 @@
 
 For desktop artifact builds and the tagged-release procedure, see [Desktop builds and releases](docs/desktop-releases.md).
 
+Every PR must include user-facing `Notes:` in its description, or explicitly omit
+them with `Notes: none (specific reason)`. See [PR release notes](docs/contributing/release-notes.md)
+for examples and the required check. No changelog fragment files are needed.
+
+Detailed contribution guides live in [`docs/contributing/`](docs/contributing/).
+
 - [Legal](#legal)
 - [Getting started](#getting-started)
   - [Required setup](#required-setup)

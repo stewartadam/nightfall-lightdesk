@@ -1,0 +1,32 @@
+name: PR release notes
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-notes-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-notes:
+    name: Release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Test the PR merge commit so additions and edits to the validator run too.
+      # This pull_request job has read-only permissions and receives no repository secrets.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - name: Check the current PR description
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-notes.mjs check
