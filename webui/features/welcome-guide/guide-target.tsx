@@ -11,6 +11,7 @@ import { Portal } from "solid-js/web";
 import Tooltip from "../../components/ui/tooltip";
 
 interface GuideTargetProps {
+  stepId: string;
   selector?: string;
   hint?: string;
 }
@@ -100,13 +101,14 @@ export function GuideTarget(props: GuideTargetProps) {
             />
             <Show when={props.hint}>
               <Tooltip
+                surfaceClass="nf-guide-tooltip"
                 content={() => (
                   <span class="block max-w-60 whitespace-normal">
                     {props.hint}
                   </span>
                 )}
                 anchorRect={() => rect()}
-                animationKey={() => props.selector}
+                animationKey={() => props.stepId}
                 forceVisible={() => true}
                 position={
                   rect().bottom + 90 > window.innerHeight ? "top" : "bottom"
