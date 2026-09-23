@@ -126,7 +126,10 @@ export function Control(props: ControlProps): JSX.Element {
       onDrop={handleDrop}
     >
       {/* Vertical slider */}
-      <div class="flex min-h-0 flex-1 w-full justify-center pb-2 pt-1">
+      <div
+        data-guide="clip-control"
+        class="flex min-h-0 flex-1 w-full justify-center pb-2 pt-1"
+      >
         <Show
           when={props.assignedClip || props.assignedMaster}
           fallback={

@@ -13,6 +13,9 @@ import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
 import { AboutDialog, SettingsOverlay } from "../../../features/settings";
 import { ShowfileDialogs } from "../../../features/showfile";
+import WelcomeGuide, {
+  GuideInvitation,
+} from "../../../features/welcome-guide/welcome-guide";
 import { compactViewport } from "../../../state/viewport";
 import ConnectionOverlay from "../../overlays/connection";
 import ShellOverlayHosts from "../../overlays/shell-hosts";
@@ -54,10 +57,14 @@ function ShellRuntime() {
 function DockedContent() {
   return (
     <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <div class="min-h-0 w-full flex-1 overflow-hidden">
-        <ShowfileTransitionVeil>
-          <DockviewApp />
-        </ShowfileTransitionVeil>
+      <GuideInvitation />
+      <div class="nf-guide-workspace flex min-h-0 w-full flex-1 overflow-hidden">
+        <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <ShowfileTransitionVeil>
+            <DockviewApp />
+          </ShowfileTransitionVeil>
+        </div>
+        <WelcomeGuide />
       </div>
       <StatusBar />
     </div>
