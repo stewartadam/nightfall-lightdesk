@@ -93,8 +93,20 @@ export function GuideTarget(props: GuideTargetProps) {
       }
     };
     update();
+    let scrollFrame: number | undefined;
+    /** Follows nested scrollers on the next frame rather than waiting for geometry polling. */
+    const onScroll = () => {
+      if (scrollFrame !== undefined) return;
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = undefined;
+        update();
+      });
+    };
+    document.addEventListener("scroll", onScroll, true);
     const timer = window.setInterval(update, 250);
     onCleanup(() => {
+      document.removeEventListener("scroll", onScroll, true);
+      if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
       window.clearInterval(timer);
       if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
     });
