@@ -12,6 +12,7 @@ use gdtf::fixture_type::FixtureType;
 use serde::Serialize;
 
 use crate::gdtf_channels::{ChannelLimits, CompiledChannels, compile_channels};
+use crate::gdtf_controls::{ControlGroups, compile_controls};
 use crate::gdtf_geometry::{CompiledGeometry, compile_geometry};
 use crate::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
 
@@ -45,6 +46,7 @@ pub struct CompiledMode {
     name: String,
     geometry: CompiledGeometry,
     channels: CompiledChannels,
+    controls: ControlGroups,
 }
 
 /// Resolve one selected root once, then publish geometry and channels only if all passes succeed.
@@ -61,14 +63,21 @@ pub fn compile_mode(
         &fixture.physical_descriptions.dmx_profiles,
         limits.channels,
     )?;
+    let controls = compile_controls(&geometry, &channels)?;
     Ok(CompiledMode {
         name: resolved.name,
         geometry,
         channels,
+        controls,
     })
 }
 
 impl CompiledMode {
+    /// Inspect pinned selectable element ordering and explicit channel ownership.
+    pub fn controls(&self) -> &ControlGroups {
+        &self.controls
+    }
+
     /// Return the exact authored mode name, including significant whitespace.
     pub fn name(&self) -> &str {
         &self.name

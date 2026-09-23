@@ -250,6 +250,21 @@ acceptance evidence and must not be inferred from this inventory.
 
 ## Synthetic source
 
+The owned compiler also records control groups and reverse channel ownership.
+The initial grouping policy collects channels targeting the same instantiated
+geometry, orders groups by first authored channel occurrence, and excludes parts
+without controls. Labels do not determine identity or numbering. All matching
+attribute functions remain candidates; lookup does not silently select a winner.
+The probe includes these groups in `compiled_mode` output and their count in
+`definition` output. Compiler/schema version 2 distinguishes this contract.
+
+Synthetic control tests verify separate nested Tilt targets, referenced pixel
+ownership, label changes, source ordering, and multiple functions on one channel.
+This is an intermediate compiler representation: merging conventional pan/tilt
+into useful head groups, whole-fixture master selection, active-function command
+resolution, and production CLI/engine integration remain required. It does not
+establish final operator numbering for newly patched real fixtures.
+
 `nested-sparse.xml` is a repository-owned, resource-free parser/compiler input.
 Its parser test establishes that the dependency preserves the required inputs;
 it does not assert that Nightfall already resolves them correctly.

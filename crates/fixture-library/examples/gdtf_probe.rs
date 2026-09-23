@@ -82,6 +82,7 @@ fn main() {
                 "key": definition.key(),
                 "geometry_count": definition.mode().geometry().nodes().len(),
                 "channel_count": definition.mode().channels().channels().len(),
+                "control_group_count": definition.mode().controls().groups().len(),
             })),
             Err(error) => {
                 failed = true;
@@ -135,6 +136,7 @@ fn main() {
                         "stage": "compiled_mode", "status": "passed", "mode": mode,
                         "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
                         "geometry": program.geometry(), "channel_count": program.channels().channels().len(),
+                        "controls": program.controls(),
                     })),
                     Err(error) => {
                         failed = true;

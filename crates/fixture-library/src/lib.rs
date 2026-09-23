@@ -26,6 +26,7 @@ pub mod gdtf_bindings;
 pub mod gdtf_cache;
 pub mod gdtf_channels;
 pub mod gdtf_compiler;
+pub mod gdtf_controls;
 pub mod gdtf_functions;
 pub mod gdtf_geometry;
 pub mod gdtf_metadata;

@@ -20,9 +20,9 @@ use crate::gdtf_compiler::{CompileLimits, CompiledMode, compile_mode};
 use crate::gdtf_resolver::ResolveError;
 
 /// Bump when interpretation changes so cached compiled behavior cannot cross compiler revisions.
-pub const COMPILER_VERSION: u32 = 1;
+pub const COMPILER_VERSION: u32 = 2;
 /// Version of the owned definition contract, independent of the GDTF input file's version.
-pub const DEFINITION_SCHEMA_VERSION: u32 = 1;
+pub const DEFINITION_SCHEMA_VERSION: u32 = 2;
 
 /// Archive I/O limits applied before parser and geometry expansion budgets.
 #[derive(Debug, Clone, Copy)]
