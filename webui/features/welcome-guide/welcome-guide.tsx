@@ -6,12 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-// SPDX-License-Identifier: MPL-2.0
-
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
+import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommand } from "../../components/providers/command-registry";
+import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
 import {
   type PanelComponentName,
@@ -19,12 +19,7 @@ import {
 } from "../../lib/panel-definitions";
 import { openOrFocusPanelDefinition } from "../../lib/panel-open-command";
 import { isEmbeddedDemoRuntime } from "../../lib/runtime-config";
-import {
-  cues,
-  programmerSelection,
-  programmerState,
-  runtimeCapabilities,
-} from "../../state/appStores";
+import { runtimeCapabilities } from "../../state/appStores";
 import { GuideTarget } from "./guide-target";
 import { GUIDE_LESSONS } from "./lessons";
 import {
@@ -37,6 +32,7 @@ import {
   openWelcomeGuide,
   startGuideLesson,
 } from "./state";
+import { useGuideProgress } from "./use-guide-progress";
 import "./welcome-guide.css";
 
 /** Offers an unobtrusive first-visit invitation in the browser demo only. */
@@ -68,11 +64,8 @@ export default function WelcomeGuide() {
   const index = useStore(guideStepIndex);
   const completed = useStore(guideCompleted);
   const capabilities = useStore(runtimeCapabilities);
-  const selection = useStore(programmerSelection);
-  const programmer = useStore(programmerState);
-  const cueMap = useStore(cues);
   const { dockviewApi } = useAppShell();
-  const [observed, setObserved] = createSignal(false);
+  let guideElement: HTMLElement | undefined;
   let heading: HTMLHeadingElement | undefined;
   /** Resolves lesson data without retaining stale content when returning to the library. */
   const lesson = createMemo(() =>
@@ -108,40 +101,66 @@ export default function WelcomeGuide() {
     guideLessonId.set(null);
   };
 
-  /** Watches acknowledged domain changes rather than treating clicks as successful edits. */
+  useGuideProgress(
+    () => (opened() ? step()?.observe : undefined),
+    dockviewApi,
+    () => guideStepIndex.set(guideStepIndex.get() + 1),
+  );
+
+  /** Reserves the guide's visible region when portal dialogs lay out their backdrops. */
   createEffect(() => {
-    const current = step();
-    const active = opened();
-    setObserved(false);
-    if (!current || !active || !current.observe) return;
-    const initialCues = JSON.stringify(cues.get());
-    const initialSelection = JSON.stringify(programmerSelection.get());
-    const initialProgrammer = JSON.stringify(programmerState.get());
-    /** Updates success feedback when this step's domain operation has taken effect. */
-    createEffect(() => {
-      const changed =
-        current.observe === "selection"
-          ? selection().length > 0 &&
-            JSON.stringify(selection()) !== initialSelection
-          : current.observe === "look"
-            ? programmer().length > 0 &&
-              JSON.stringify(programmer()) !== initialProgrammer
-            : current.observe === "cue"
-              ? JSON.stringify(cueMap()) !== initialCues
-              : selection().length === 0 && programmer().length === 0;
-      if (changed) setObserved(true);
+    if (!opened() || !guideElement) return;
+    const root = document.documentElement;
+    /** Measures the actual guide size, including the bottom layout on narrow windows. */
+    const reserveGuide = () => {
+      const rect = guideElement?.getBoundingClientRect();
+      if (!rect) return;
+      const bottomLayout = window.matchMedia("(max-width: 760px)").matches;
+      root.style.setProperty(
+        "--guide-overlay-right",
+        bottomLayout ? "0px" : `${window.innerWidth - rect.left}px`,
+      );
+      root.style.setProperty(
+        "--guide-overlay-bottom",
+        bottomLayout ? `${window.innerHeight - rect.top}px` : "0px",
+      );
+    };
+    reserveGuide();
+    const observer = new ResizeObserver(reserveGuide);
+    observer.observe(guideElement);
+    window.addEventListener("resize", reserveGuide);
+    onCleanup(() => {
+      observer.disconnect();
+      window.removeEventListener("resize", reserveGuide);
+      root.style.removeProperty("--guide-overlay-right");
+      root.style.removeProperty("--guide-overlay-bottom");
     });
   });
 
   return (
     <Show when={opened()}>
       <aside
+        ref={guideElement}
         class="nf-welcome-guide"
         aria-label="Welcome guide"
         data-testid="welcome-guide"
       >
         <header class="nf-guide-header">
-          <span>LEARN NIGHTFALL</span>
+          <div class="nf-guide-title">
+            <Show when={lesson()}>
+              <Tooltip content={() => "All lessons"} position="bottom">
+                <Button
+                  size="icon"
+                  variant="subtle"
+                  aria-label="All lessons"
+                  onClick={() => guideLessonId.set(null)}
+                >
+                  <ArrowLeftIcon class="size-4" aria-hidden />
+                </Button>
+              </Tooltip>
+            </Show>
+            <span>LEARN NIGHTFALL</span>
+          </div>
           <Button
             size="compact"
             onClick={closeWelcomeGuide}
@@ -188,9 +207,6 @@ export default function WelcomeGuide() {
           >
             {(current) => (
               <>
-                <Button size="compact" onClick={() => guideLessonId.set(null)}>
-                  All lessons
-                </Button>
                 <p class="nf-guide-eyebrow">
                   {current().title} ·{" "}
                   {index() < 0
@@ -204,7 +220,7 @@ export default function WelcomeGuide() {
                     max={current().steps.length}
                   />
                 </Show>
-                <h2 ref={heading} tabIndex={-1}>
+                <h2 ref={heading} tabIndex={-1} aria-live="polite">
                   {index() < 0
                     ? current().title
                     : (step()?.title ?? "Ready to explore")}
@@ -212,13 +228,13 @@ export default function WelcomeGuide() {
                 <Show when={index() < 0}>
                   <p>{current().introduction}</p>
                   <div class="nf-guide-action">
-                    <strong>Before you start</strong>
+                    <strong>In this lesson</strong>
                     <p>{current().prerequisite}</p>
                   </div>
                   <p>
-                    Work at your own pace. Each step offers panel shortcuts;
-                    hints appear when the relevant control is visible. The guide
-                    never resets or replaces your show.
+                    Follow along with the sample show. Steps advance when you
+                    complete the requested action; exploratory steps let you
+                    continue at your own pace.
                   </p>
                   <Button variant="primary" onClick={() => moveTo(0)}>
                     Start lesson
@@ -253,19 +269,14 @@ export default function WelcomeGuide() {
                           <p>{instruction().more}</p>
                         </details>
                       </Show>
-                      <Show when={observed()}>
-                        <p class="nf-guide-success" role="status">
-                          Change detected. Take a moment to explore, then
-                          continue.
-                        </p>
-                      </Show>
                       <GuideTarget
                         selector={instruction().target}
                         hint={instruction().hint}
                       />
                       <p class="nf-guide-note">
-                        If a control is hidden, open its panel or finish the
-                        current dialog. You can also skip this step.
+                        {instruction().observe
+                          ? "This step advances automatically when the action completes. You can also continue or skip."
+                          : "Take time to explore, then continue when you’re ready."}
                       </p>
                       <div class="nf-guide-navigation">
                         <Button

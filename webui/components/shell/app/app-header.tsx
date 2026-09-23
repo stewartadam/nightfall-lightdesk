@@ -14,7 +14,7 @@ import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { Show } from "solid-js";
 import { useShowfileObjectPalette } from "../../../features/showfile";
-import { openWelcomeGuide } from "../../../features/welcome-guide/state";
+import { openWelcomeGuide } from "../../../features/welcome-guide";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import { currentShowfileName } from "../../../lib/showfile-loading";

@@ -6,10 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-// SPDX-License-Identifier: MPL-2.0
-
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import Tooltip from "../../components/ui/tooltip";
 
 interface GuideTargetProps {
   selector?: string;
@@ -28,9 +27,18 @@ export function GuideTarget(props: GuideTargetProps) {
     let previous = "";
     /** Ignores hidden, clipped, disabled, or modal-obscured controls. */
     const update = () => {
-      const modal = document.querySelector(
-        '[role="dialog"][aria-modal="true"]',
-      );
+      const modal = [
+        ...document.querySelectorAll<HTMLElement>(
+          '.nf-dialog-backdrop, [role="dialog"][aria-modal="true"]',
+        ),
+      ].find((element) => {
+        const rect = element.getBoundingClientRect();
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          getComputedStyle(element).visibility !== "hidden"
+        );
+      });
       const target = [...document.querySelectorAll<HTMLElement>(selector)].find(
         (element) => {
           if (modal && !modal.contains(element)) return false;
@@ -91,15 +99,21 @@ export function GuideTarget(props: GuideTargetProps) {
               }}
             />
             <Show when={props.hint}>
-              <div
-                class="nf-guide-hint"
-                style={{
-                  left: `${Math.max(8, Math.min(window.innerWidth - 248, rect().left))}px`,
-                  top: `${Math.max(8, rect().bottom + 76 > window.innerHeight ? rect().top - 70 : rect().bottom + 10)}px`,
-                }}
+              <Tooltip
+                content={() => (
+                  <span class="block max-w-60 whitespace-normal">
+                    {props.hint}
+                  </span>
+                )}
+                anchorRect={() => rect()}
+                animationKey={() => props.selector}
+                forceVisible={() => true}
+                position={
+                  rect().bottom + 90 > window.innerHeight ? "top" : "bottom"
+                }
               >
-                {props.hint}
-              </div>
+                {null}
+              </Tooltip>
             </Show>
           </div>
         )}

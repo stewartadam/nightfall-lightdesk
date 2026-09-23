@@ -13,9 +13,7 @@ import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
 import { AboutDialog, SettingsOverlay } from "../../../features/settings";
 import { ShowfileDialogs } from "../../../features/showfile";
-import WelcomeGuide, {
-  GuideInvitation,
-} from "../../../features/welcome-guide/welcome-guide";
+import { GuideInvitation, WelcomeGuide } from "../../../features/welcome-guide";
 import { compactViewport } from "../../../state/viewport";
 import ConnectionOverlay from "../../overlays/connection";
 import ShellOverlayHosts from "../../overlays/shell-hosts";
