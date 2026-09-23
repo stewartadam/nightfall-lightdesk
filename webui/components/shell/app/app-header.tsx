@@ -72,6 +72,7 @@ export default function AppHeader() {
             <HeaderNotificationHistory />
             <Button
               size="compact"
+              class="h-8"
               onClick={openWelcomeGuide}
               aria-label="Open Welcome Guide"
             >
