@@ -1119,6 +1119,41 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
     .toBe(0);
 });
 
+/** Keeps header actions equally tall and makes Guide return to the menu from active or closed lessons. */
+test("Guide always opens the lesson menu and matches header button height", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  const button = page.getByRole("button", {
+    name: "Open Welcome Guide",
+    exact: true,
+  });
+  const search = page.getByRole("button", {
+    name: "Open command palette",
+    exact: true,
+  });
+  expect((await button.boundingBox())!.height).toBe(
+    (await search.boundingBox())!.height,
+  );
+  await button.click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /Your first lights/i }).click();
+  await expect(
+    guide.getByRole("button", { name: "Continue", exact: true }),
+  ).toBeVisible();
+  await button.click();
+  await expect(
+    guide.getByRole("button", { name: /Your first lights/i }),
+  ).toBeVisible();
+  await guide.getByRole("button", { name: /Your first lights/i }).click();
+  await guide.getByRole("button", { name: "Exit welcome guide" }).click();
+  await button.click();
+  await expect(
+    guide.getByRole("button", { name: /Your first lights/i }),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("guide-header-menu.png") });
+});
+
 /** Covers optional entry, independent lessons, capability messaging, narrow screens and persistence. */
 test("lesson library starts sample lessons immediately and preserves completion", async ({
   page,
