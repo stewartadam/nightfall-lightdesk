@@ -184,6 +184,21 @@ class CorpusTests(unittest.TestCase):
         report.write_text(json.dumps(record) + "\n")
         self.assertEqual(CORPUS.check_wire_expectations(report, [case])[0]["status"], "failed")
 
+    def test_function_samples_preserve_descending_physical_ranges(self):
+        """A plausible sorted angular range must not hide reversed fixture movement semantics."""
+        report = self.root / "functions.jsonl"
+        record = {"stage": "functions", "status": "passed", "mode": "Mode", "channels": [{
+            "bytes": 2, "default": 32768, "highlight": None, "initialFunction": 0,
+            "functions": [{"rawFrom": 0, "rawTo": 65535, "physicalFrom": 270, "physicalTo": -270}]}]}
+        case = {"mode": "Mode", "issue": "test", "function_samples": [{
+            "channel_index": 0, "bytes": 2, "default": 32768, "highlight": None,
+            "initialFunction": 0, "ranges": [[0, 65535, 270, -270]]}]}
+        report.write_text(json.dumps(record) + "\n")
+        self.assertEqual(CORPUS.check_function_expectations(report, [case])[0]["status"], "passed")
+        record["channels"][0]["functions"][0].update({"physicalFrom": -270, "physicalTo": 270})
+        report.write_text(json.dumps(record) + "\n")
+        self.assertEqual(CORPUS.check_function_expectations(report, [case])[0]["status"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()

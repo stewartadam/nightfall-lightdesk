@@ -181,16 +181,17 @@ def run_probe(executable, archive, report, timeout, expected_modes):
         except subprocess.TimeoutExpired:
             terminal_error = f"Probe exceeded {timeout}s"
     stages = []
-    for line in report.read_text().splitlines():
-        try:
-            record = json.loads(line)
-            stages.append({key: record[key] for key in
-                           ("stage", "status", "mode", "error", "diagnostic", "duration_ms") if key in record})
-        except json.JSONDecodeError:
-            terminal_error = terminal_error or "Probe emitted an incomplete JSON record"
+    with report.open() as stream:
+        for line in stream:
+            try:
+                record = json.loads(line)
+                stages.append({key: record[key] for key in
+                               ("stage", "status", "mode", "error", "diagnostic", "duration_ms") if key in record})
+            except json.JSONDecodeError:
+                terminal_error = terminal_error or "Probe emitted an incomplete JSON record"
     if not stages:
         terminal_error = terminal_error or "Probe emitted no stage results"
-    for stage in ("resolution", "wire", "conversion"):
+    for stage in ("resolution", "wire", "functions", "conversion"):
         reported_modes = [s.get("mode") for s in stages if s.get("stage") == stage]
         if reported_modes != expected_modes:
             terminal_error = terminal_error or f"Probe did not report every expected mode in order for {stage}"
@@ -201,22 +202,26 @@ def run_probe(executable, archive, report, timeout, expected_modes):
             "report": str(report), "stages": stages, "error": terminal_error}
 
 
-def read_stage_records(report, stage):
-    """Read completed records for one stage, leaving missing records detectable by callers."""
+def read_stage_records(report, stage, modes):
+    """Stream one stage, retaining only requested modes and leaving missing records detectable."""
+    modes = set(modes)
     records = {}
-    for line in report.read_text().splitlines():
-        try:
-            record = json.loads(line)
-            if record.get("stage") == stage:
-                records[record.get("mode")] = record
-        except json.JSONDecodeError:
-            continue
+    if not modes:
+        return records
+    with report.open() as stream:
+        for line in stream:
+            try:
+                record = json.loads(line)
+                if record.get("stage") == stage and record.get("mode") in modes:
+                    records[record["mode"]] = record
+            except json.JSONDecodeError:
+                continue
     return records
 
 
 def check_resolution_expectations(report, cases):
     """Check selected-root expansion and explicit joint links separately from production output."""
-    records = read_stage_records(report, "resolution")
+    records = read_stage_records(report, "resolution", (case["mode"] for case in cases))
     results = []
     for case in cases:
         record = records.get(case["mode"], {})
@@ -239,7 +244,7 @@ def check_resolution_expectations(report, cases):
 
 def check_wire_expectations(report, cases):
     """Compare every selected channel slot against independently authored count/stride tables."""
-    records = read_stage_records(report, "wire")
+    records = read_stage_records(report, "wire", (case["mode"] for case in cases if "wire" in case))
     results = []
     for case in cases:
         if "wire" not in case:
@@ -266,7 +271,7 @@ def check_wire_expectations(report, cases):
 
 def check_geometry_expectations(report, cases):
     """Compare independent initial-mode targets to probe output without blessing known gaps."""
-    records = read_stage_records(report, "conversion")
+    records = read_stage_records(report, "conversion", (case["mode"] for case in cases))
     results = []
     for case in cases:
         record = records.get(case["mode"], {})
@@ -285,6 +290,33 @@ def check_geometry_expectations(report, cases):
             matches = [node.get("axis") for node in nodes if node.get("name") == name]
             checks.append({"capability": f"joint:{name}", "expected": [axis], "actual": matches,
                            "status": "passed" if matches == [axis] else "failed"})
+        results.append({"mode": case["mode"], "issue": case["issue"], "checks": checks,
+                        "status": "passed" if all(c["status"] == "passed" for c in checks) else "failed"})
+    return results
+
+
+def check_function_expectations(report, cases):
+    """Verify selected authored defaults and signed physical endpoints independently of the importer."""
+    cases = [case for case in cases if case.get("function_samples")]
+    records = read_stage_records(report, "functions", (case["mode"] for case in cases))
+    results = []
+    for case in cases:
+        record = records.get(case["mode"], {})
+        channels = record.get("channels", [])
+        checks = [{"capability": "functions_available", "expected": True,
+                   "actual": record.get("status") == "passed",
+                   "status": "passed" if record.get("status") == "passed" else "failed"}]
+        for sample in case["function_samples"]:
+            index = sample["channel_index"]
+            expected = {key: value for key, value in sample.items() if key != "channel_index"}
+            actual = None
+            if index < len(channels):
+                channel = channels[index]
+                actual = {key: channel.get(key) for key in ("bytes", "default", "highlight", "initialFunction")}
+                actual["ranges"] = [[f.get(key) for key in ("rawFrom", "rawTo", "physicalFrom", "physicalTo")]
+                                    for f in channel.get("functions", [])]
+            checks.append({"capability": f"channel:{index}", "expected": expected, "actual": actual,
+                           "status": "passed" if actual == expected else "failed"})
         results.append({"mode": case["mode"], "issue": case["issue"], "checks": checks,
                         "status": "passed" if all(c["status"] == "passed" for c in checks) else "failed"})
     return results
@@ -336,7 +368,9 @@ def main():
                 Path(result["nightfall"]["report"]), cases)
             result["wire_acceptance"] = check_wire_expectations(
                 Path(result["nightfall"]["report"]), cases)
-    scope = ("archive identity, XML inventory, Rust resolution/wire/conversion, and selected targets"
+            result["function_acceptance"] = check_function_expectations(
+                Path(result["nightfall"]["report"]), cases)
+    scope = ("archive identity, XML inventory, Rust resolution/wire/functions/conversion, and selected targets"
              if args.probe else "archive identity and XML inventory only")
     report = {"schema_version": 1, "scope": scope,
               "provision_errors": errors, "fixtures": results}
@@ -348,7 +382,7 @@ def main():
     for result in results:
         if result["status"] != "passed":
             print(f"{result['id']}: {result['stage']}: {result['error']}", file=sys.stderr)
-        for kind in ("geometry_acceptance", "resolution_acceptance", "wire_acceptance"):
+        for kind in ("geometry_acceptance", "resolution_acceptance", "wire_acceptance", "function_acceptance"):
             for case in result.get(kind, []):
                 if case["status"] != "passed":
                     print(f"{result['id']}: {kind} targets unmet in {case['mode']} ({case['issue']})", file=sys.stderr)
@@ -358,7 +392,7 @@ def main():
     return int(bool(errors) or passed != len(results)
                or any(r.get("nightfall", {}).get("status") == "failed" for r in results)
                or any(c["status"] != "passed" for r in results
-                      for kind in ("geometry_acceptance", "resolution_acceptance", "wire_acceptance")
+                      for kind in ("geometry_acceptance", "resolution_acceptance", "wire_acceptance", "function_acceptance")
                       for c in r.get(kind, [])))
 
 

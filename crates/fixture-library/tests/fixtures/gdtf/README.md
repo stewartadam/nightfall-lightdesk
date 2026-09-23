@@ -67,6 +67,20 @@ use their first matching reference entry; Overwrite uses the final entry, which
 may target that same break at a different offset (covered by Spiider and synthetic
 tests). These checks do not prove engine encoding/decoding or effective light.
 
+The `functions` stage normalizes integer defaults/highlight and inclusive raw
+ranges through 32 bits. Mutually exclusive logical channels and ModeMaster
+conditions retain separate ranges. Selector source links and their ranges are
+validated at the master's resolution; binding those selectors to referenced
+instances is a later pass. Complete source functions remain available for
+profiles, channel sets, relations and resource compilation. Mirroring and shifting
+operate on the parsed literal bytes with independent hexadecimal test vectors.
+
+`function_acceptance` checks selected Sharpy, MAC Aura and Hydrabeam defaults and
+physical endpoints against authored XML. Descending ranges must remain descending.
+Hydrabeam's sampled axes declare 0..1, which is retained without claiming accurate
+mechanical limits. Neither successful normalization nor these samples establish
+complete function evaluation or operator behavior.
+
 The pinned parser mishandles dotted `Universe.Address` reference offsets; this is
 tracked as `nightfall-lightdesk-oaa.2.2` and must be fixed before claiming complete
 address compatibility. All 18 curated archives use decimal reference offsets.

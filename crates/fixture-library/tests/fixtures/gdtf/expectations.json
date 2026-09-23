@@ -90,7 +90,25 @@
             "offsets": [16]
           }
         ]
-      }
+      },
+      "function_samples": [
+        {
+          "channel_index": 9,
+          "bytes": 2,
+          "default": 32768,
+          "highlight": null,
+          "initialFunction": 0,
+          "ranges": [[0, 65535, -270, 270]]
+        },
+        {
+          "channel_index": 10,
+          "bytes": 2,
+          "default": 32768,
+          "highlight": null,
+          "initialFunction": 0,
+          "ranges": [[0, 65535, -125, 125]]
+        }
+      ]
     },
     {
       "id": "mac-aura",
@@ -225,7 +243,33 @@
             "offsets": [25]
           }
         ]
-      }
+      },
+      "function_samples": [
+        {
+          "channel_index": 1,
+          "bytes": 1,
+          "default": 0,
+          "highlight": 255,
+          "initialFunction": 0,
+          "ranges": [[0, 255, 0, 1]]
+        },
+        {
+          "channel_index": 3,
+          "bytes": 2,
+          "default": 32768,
+          "highlight": null,
+          "initialFunction": 0,
+          "ranges": [[0, 65535, 270, -270]]
+        },
+        {
+          "channel_index": 4,
+          "bytes": 2,
+          "default": 32768,
+          "highlight": null,
+          "initialFunction": 0,
+          "ranges": [[0, 65535, 116, -116]]
+        }
+      ]
     },
     {
       "id": "magicpanel",
@@ -586,8 +630,35 @@
             "offsets": [19]
           }
         ]
-      }
+      },
+      "function_samples": [
+        {
+          "channel_index": 0,
+          "bytes": 1,
+          "default": 0,
+          "highlight": null,
+          "initialFunction": 0,
+          "ranges": [[0, 255, 0, 1]]
+        },
+        {
+          "channel_index": 6,
+          "bytes": 1,
+          "default": 0,
+          "highlight": null,
+          "initialFunction": 0,
+          "ranges": [[0, 255, 0, 1]]
+        },
+        {
+          "channel_index": 7,
+          "bytes": 1,
+          "default": 0,
+          "highlight": null,
+          "initialFunction": 0,
+          "ranges": [[0, 255, 0, 1]]
+        }
+      ]
     }
   ],
-  "wire_basis": "Independently checked selected-mode XML offsets and reference increments. Groups follow authored channel order; count/stride describe repeated instances. This checks compiler wire locations, not engine output or vendor firmware."
+  "wire_basis": "Independently checked selected-mode XML offsets and reference increments. Groups follow authored channel order; count/stride describe repeated instances. This checks compiler wire locations, not engine output or vendor firmware.",
+  "function_basis": "Selected defaults/highlight and physical endpoints checked directly in pinned XML. Hydrabeam declares 0..1 for the sampled axes; retaining that data does not establish physical angular accuracy."
 }
