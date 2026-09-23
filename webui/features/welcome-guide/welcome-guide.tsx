@@ -219,6 +219,7 @@ export default function WelcomeGuide() {
                         </details>
                       </Show>
                       <GuideTarget
+                        stepId={instruction().id}
                         selector={instruction().target}
                         hint={instruction().hint}
                       />
