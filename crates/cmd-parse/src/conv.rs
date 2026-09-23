@@ -343,7 +343,7 @@ pub fn parameter_value_from_ast_with_mode(
 ) -> Result<ParameterValue, AstConvError> {
     let s = v.0;
     let numeric_value = s
-        .parse::<f32>()
+        .parse::<f64>()
         .map_err(|_| AstConvError::Invalid("value"))?;
     let percentage = Percentage::from(numeric_value / 100.0);
     if mode == ast::ParameterValueMode::Relative {
@@ -384,7 +384,7 @@ pub fn validate_parameter_values_for_attribute(
     }
     for value in values {
         if let ParameterValue::AbsolutePercent { value } = value {
-            let percent = value.as_f32();
+            let percent = value.as_f64();
             if percent < 0.0 {
                 return Err(AstConvError::Invalid("unsigned absolute value"));
             }

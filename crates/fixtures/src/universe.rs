@@ -535,7 +535,7 @@ mod tests {
                     ..Default::default()
                 },
                 values: ParameterValues {
-                    current_value: 0xabcd as f32,
+                    current_value: 0xabcd as f64,
                     ..Default::default()
                 },
             },

@@ -2,6 +2,10 @@
 
 This example is a minimal fx module guest crate that renders a seeded intensity pulse across the resolved selection.
 
+The `nightfall:fx-module@0.2.0` interface uses double precision for parameter
+values and ranges. Rebuild modules against the current WIT interface; components
+built against version 0.1.0 are not compatible with this host contract.
+
 Build, package, and install it:
 
 ```bash

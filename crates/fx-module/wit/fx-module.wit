@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-package nightfall:fx-module@0.1.0;
+package nightfall:fx-module@0.2.0;
 
 interface shared {
   type uuid = string;
@@ -49,10 +49,10 @@ interface shared {
   }
 
   variant parameter-value {
-    absolute(f32),
-    absolute-percent(f32),
-    relative(f32),
-    relative-percent(f32),
+    absolute(f64),
+    absolute-percent(f64),
+    relative(f64),
+    relative-percent(f64),
   }
 
   enum fade-curve {
@@ -111,8 +111,8 @@ interface shared {
     resolution: dmx-value-resolution,
     attribute: attribute-label,
     native-unit: parameter-unit,
-    min: f32,
-    max: f32,
+    min: f64,
+    max: f64,
     offset: parameter-value,
     is-inverted: bool,
     is-snap: bool,

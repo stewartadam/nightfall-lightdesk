@@ -242,7 +242,7 @@ fn convert_logical_channel_to_parameter(
 fn gdtf_position_physical_range(
     logical_channel: &gdtf::dmx_mode::LogicalChannel,
     fixture_type: &gdtf::fixture_type::FixtureType,
-) -> Option<(f32, f32)> {
+) -> Option<(f64, f64)> {
     let [function] = logical_channel.channel_functions.as_slice() else {
         return None;
     };
@@ -254,7 +254,7 @@ fn gdtf_position_physical_range(
         return None;
     }
 
-    Some((function.physical_from as f32, function.physical_to as f32))
+    Some((function.physical_from, function.physical_to))
 }
 
 /// Map GDTF attribute name to nightfall Attribute

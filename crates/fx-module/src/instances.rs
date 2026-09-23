@@ -2251,7 +2251,7 @@ mod tests {
             .expect("exactly one active preview fx module entity should exist")
     }
 
-    fn active_layer_absolute_value(app: &mut App) -> f32 {
+    fn active_layer_absolute_value(app: &mut App) -> f64 {
         let mut query = app
             .world_mut()
             .query_filtered::<&Layer, (With<ActiveFxModuleLayer>, Without<ReleaseMarker>)>();
@@ -2270,7 +2270,7 @@ mod tests {
         }
     }
 
-    fn active_preview_layer_absolute_value(app: &mut App) -> f32 {
+    fn active_preview_layer_absolute_value(app: &mut App) -> f64 {
         let mut query = app.world_mut().query_filtered::<&Layer, (
             With<PreviewFxModule>,
             With<ActiveFxModuleLayer>,

@@ -460,11 +460,11 @@ fn resolve_fanned_value(
         return values[fixture_index];
     }
 
-    let t = fixture_index as f32 / (total_fixtures - 1).max(1) as f32;
+    let t = fixture_index as f64 / (total_fixtures - 1).max(1) as f64;
     let max_segment = values.len() - 1;
-    let segment_position = t * max_segment as f32;
+    let segment_position = t * max_segment as f64;
     let segment_idx = (segment_position as usize).min(max_segment - 1);
-    let segment_t = segment_position - segment_idx as f32;
+    let segment_t = segment_position - segment_idx as f64;
     interpolate_parameter_values(values[segment_idx], values[segment_idx + 1], segment_t)
 }
 
@@ -472,15 +472,15 @@ fn resolve_fanned_value(
 fn interpolate_parameter_values(
     start: ParameterValue,
     end: ParameterValue,
-    factor: f32,
+    factor: f64,
 ) -> ParameterValue {
     match (start, end) {
         (
             ParameterValue::AbsolutePercent { value: start_value },
             ParameterValue::AbsolutePercent { value: end_value },
         ) => {
-            let start = start_value.as_f32();
-            let end = end_value.as_f32();
+            let start = start_value.as_f64();
+            let end = end_value.as_f64();
             ParameterValue::AbsolutePercent {
                 value: (start + factor * (end - start)).into(),
             }
@@ -491,8 +491,8 @@ fn interpolate_parameter_values(
             },
             ParameterValue::RelativePercent { offset: end_offset },
         ) => {
-            let start = start_offset.as_f32();
-            let end = end_offset.as_f32();
+            let start = start_offset.as_f64();
+            let end = end_offset.as_f64();
             ParameterValue::RelativePercent {
                 offset: (start + factor * (end - start)).into(),
             }
@@ -519,7 +519,7 @@ fn is_absolute_value(value: &ParameterValue) -> bool {
 fn absolute_value_is_zero_or_less(value: &ParameterValue) -> bool {
     match value {
         ParameterValue::Absolute { value } => *value <= 0.0,
-        ParameterValue::AbsolutePercent { value } => value.as_f32() <= 0.0,
+        ParameterValue::AbsolutePercent { value } => value.as_f64() <= 0.0,
         ParameterValue::Relative { .. } | ParameterValue::RelativePercent { .. } => false,
     }
 }
@@ -620,7 +620,7 @@ mod tests {
     }
 
     /// Builds an inline absolute value source.
-    fn absolute(value: f32) -> ValueSource {
+    fn absolute(value: f64) -> ValueSource {
         ValueSource::Inline(ParameterValue::Absolute { value })
     }
 

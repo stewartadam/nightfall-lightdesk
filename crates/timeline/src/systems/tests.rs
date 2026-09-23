@@ -1209,7 +1209,7 @@ fn set_single_timecode(app: &mut App, current_time: Duration, is_active: bool) {
 fn sequence_runtime_snapshot(
     app: &mut App,
     parameter: Instance<Parameter>,
-) -> (u32, Duration, f32, InstanceStatus) {
+) -> (u32, Duration, f64, InstanceStatus) {
     let (position, playback_position, mut layer, compositing_context, status, is_releasing) = {
         let mut sequence_query = app.world_mut().query::<(
             &MaterializedSequence,
@@ -1251,7 +1251,7 @@ fn sequence_runtime_snapshot(
 fn sequence_runtime_values_snapshot(
     app: &mut App,
     parameters: &[Instance<Parameter>],
-) -> (u32, Duration, Vec<f32>, InstanceStatus) {
+) -> (u32, Duration, Vec<f64>, InstanceStatus) {
     let (position, playback_position, mut layer, compositing_context, status, is_releasing) = {
         let mut sequence_query = app.world_mut().query::<(
             &MaterializedSequence,
@@ -1378,7 +1378,7 @@ fn drive_four_cue_live_timeline_to(app: &mut App, target_timeline_position: Dura
 }
 
 /// Asserts each evaluated output value is within a small DMX-style tolerance.
-fn assert_values_close(actual: &[f32], expected: &[f32], context: &str) {
+fn assert_values_close(actual: &[f64], expected: &[f64], context: &str) {
     assert_eq!(
         actual.len(),
         expected.len(),

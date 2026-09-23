@@ -13,24 +13,24 @@ use std::ops::{Add, Sub};
 
 use serde::{Deserialize, Serialize};
 
-/// A normalized percentage-like value backed by `f32`.
+/// A normalized percentage-like value backed by `f64` to retain 32-bit DMX precision.
 ///
 /// Values are not implicitly clamped because some runtime paths use signed
 /// percentages or offsets. Callers that require a bounded interval should use
 /// [`Percentage::clamp`].
 #[derive(Clone, Copy, Default, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Percentage(f32);
+pub struct Percentage(f64);
 
 impl Percentage {
-    /// Returns this percentage as an `f32` for runtime DMX math.
+    /// Narrow to single precision for waveform phase and other approximate calculations.
     pub fn as_f32(self) -> f32 {
-        self.0
+        self.0 as f32
     }
 
-    /// Returns this percentage as an `f64` for wire-format compatibility.
+    /// Return the stored precision for logical parameter arithmetic and serialization.
     pub fn as_f64(self) -> f64 {
-        self.0.into()
+        self.0
     }
 
     /// Returns this percentage clamped to the inclusive range `[min, max]`.
@@ -41,13 +41,13 @@ impl Percentage {
 
 impl From<f32> for Percentage {
     fn from(value: f32) -> Self {
-        Self(value)
+        Self(f64::from(value))
     }
 }
 
 impl From<f64> for Percentage {
     fn from(value: f64) -> Self {
-        Self(value as f32)
+        Self(value)
     }
 }
 
@@ -87,7 +87,7 @@ impl Debug for Percentage {
 
 impl Display for Percentage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let percentage = f64::from(self.0) * 100.0;
+        let percentage = self.0 * 100.0;
         let display_value = if (percentage - percentage.round()).abs() < 0.000_01 {
             percentage.round()
         } else {

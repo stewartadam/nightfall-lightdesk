@@ -926,7 +926,7 @@ mod edge_case_tests {
             let mut layer = Layer::new(format!("cue{}", i), Priority(1));
             layer
                 .absolute
-                .insert(param, (ParameterValue::Absolute { value: i as f32 }, None));
+                .insert(param, (ParameterValue::Absolute { value: i as f64 }, None));
             layers.push((entity, create_object_ref(i), layer, false));
         }
 

@@ -74,7 +74,7 @@ pub(super) fn tracked_parameter_value_for_source(
             let scaled_position = position * segment_count as f64;
             let lower = scaled_position.floor() as usize;
             let upper = (lower + 1).min(values.len() - 1);
-            let t = (scaled_position - lower as f64) as f32;
+            let t = (scaled_position - lower as f64) as f64;
             Some(interpolate_tracked_parameter_values(
                 values[lower],
                 values[upper],
@@ -89,15 +89,15 @@ pub(super) fn tracked_parameter_value_for_source(
 pub(super) fn interpolate_tracked_parameter_values(
     from: ParameterValue,
     to: ParameterValue,
-    factor: f32,
+    factor: f64,
 ) -> ParameterValue {
     match (from, to) {
         (
             ParameterValue::AbsolutePercent { value: from_value },
             ParameterValue::AbsolutePercent { value: to_value },
         ) => {
-            let start = from_value.as_f32();
-            let end = to_value.as_f32();
+            let start = from_value.as_f64();
+            let end = to_value.as_f64();
             ParameterValue::AbsolutePercent {
                 value: (start + (end - start) * factor).clamp(0.0, 1.0).into(),
             }
@@ -114,8 +114,8 @@ pub(super) fn interpolate_tracked_parameter_values(
             },
             ParameterValue::RelativePercent { offset: to_offset },
         ) => {
-            let start = from_offset.as_f32();
-            let end = to_offset.as_f32();
+            let start = from_offset.as_f64();
+            let end = to_offset.as_f64();
             ParameterValue::RelativePercent {
                 offset: (start + (end - start) * factor).into(),
             }

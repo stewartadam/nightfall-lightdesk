@@ -464,13 +464,13 @@ fn to_wit_parameter_value(
             bindings::nightfall::fx_module::shared::ParameterValue::Absolute(*value)
         }
         ParameterValue::AbsolutePercent { value } => {
-            bindings::nightfall::fx_module::shared::ParameterValue::AbsolutePercent(value.as_f32())
+            bindings::nightfall::fx_module::shared::ParameterValue::AbsolutePercent(value.as_f64())
         }
         ParameterValue::Relative { offset } => {
             bindings::nightfall::fx_module::shared::ParameterValue::Relative(*offset)
         }
         ParameterValue::RelativePercent { offset } => {
-            bindings::nightfall::fx_module::shared::ParameterValue::RelativePercent(offset.as_f32())
+            bindings::nightfall::fx_module::shared::ParameterValue::RelativePercent(offset.as_f64())
         }
     }
 }

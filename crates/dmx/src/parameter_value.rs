@@ -62,7 +62,7 @@ impl ParameterValue {
                 *value
             }
             ParameterValue::AbsolutePercent { value }
-            | ParameterValue::RelativePercent { offset: value } => value.as_f32() * range,
+            | ParameterValue::RelativePercent { offset: value } => value.as_f64() * range,
         }
     }
 
@@ -78,9 +78,9 @@ impl ParameterValue {
                 value: min + max - *value,
             },
             ParameterValue::AbsolutePercent { value } => {
-                let value_f = value.as_f32();
+                let value_f = value.as_f64();
                 let inverted = match value_polarity {
-                    ParameterValuePolarity::Unsigned => 1.0_f32 - value_f,
+                    ParameterValuePolarity::Unsigned => 1.0_f64 - value_f,
                     ParameterValuePolarity::Signed => -value_f,
                 };
                 ParameterValue::AbsolutePercent {
@@ -89,7 +89,7 @@ impl ParameterValue {
             }
             ParameterValue::Relative { offset } => ParameterValue::Relative { offset: -*offset },
             ParameterValue::RelativePercent { offset } => {
-                let offset_f = offset.as_f32();
+                let offset_f = offset.as_f64();
                 ParameterValue::RelativePercent {
                     offset: (-offset_f).into(),
                 }
@@ -101,6 +101,47 @@ impl ParameterValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Adjacent high-resolution values remain distinct through absolute/percentage JSON and inversion.
+    #[test]
+    fn json_and_percentage_math_preserve_32_bit_steps() {
+        let maximum = f64::from(u32::MAX);
+        for raw in [
+            1_u32,
+            16777217,
+            0x80000001,
+            0xabcdef01,
+            u32::MAX - 1,
+            u32::MAX,
+        ] {
+            let absolute = ParameterValue::Absolute {
+                value: f64::from(raw),
+            };
+            let decoded: ParameterValue =
+                serde_json::from_str(&serde_json::to_string(&absolute).unwrap()).unwrap();
+            assert_eq!(decoded, absolute);
+            let percent = ParameterValue::AbsolutePercent {
+                value: (f64::from(raw) / maximum).into(),
+            };
+            let decoded: ParameterValue =
+                serde_json::from_str(&serde_json::to_string(&percent).unwrap()).unwrap();
+            assert_eq!(
+                decoded.resolve_as_dmx_offset(0.0, maximum).round() as u32,
+                raw
+            );
+            assert_eq!(
+                decoded
+                    .inverted(0.0, maximum, ParameterValuePolarity::Unsigned)
+                    .resolve_as_dmx_offset(0.0, maximum)
+                    .round() as u32,
+                u32::MAX - raw
+            );
+            assert_ne!(
+                Percentage::from(f64::from(raw) / maximum),
+                Percentage::from(f64::from(raw - 1) / maximum)
+            );
+        }
+    }
 
     /// Verifies unsigned absolute percentages keep the existing mirror-around-half behavior.
     #[test]
@@ -126,7 +167,7 @@ mod tests {
         let ParameterValue::AbsolutePercent { value } = inverted else {
             panic!("expected inverted signed absolute percent");
         };
-        let value_f = value.as_f32();
+        let value_f = value.as_f64();
         assert!((value_f - 0.15).abs() < 0.000_01);
     }
 }
@@ -144,7 +185,7 @@ impl Display for ParameterValue {
                 }
             }
             ParameterValue::RelativePercent { offset } => {
-                if offset.as_f32() >= 0.0 {
+                if offset.as_f64() >= 0.0 {
                     write!(f, "+{}", offset)
                 } else {
                     write!(f, "{}", offset)

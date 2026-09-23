@@ -449,7 +449,7 @@ pub fn apply_master_inhibition(
             continue;
         }
 
-        parameter.values.current_value *= scale;
+        parameter.values.current_value *= f64::from(scale);
         scale_final_layer_parameter(&mut final_layer_output.0, parameter_instance, scale);
     }
 }
@@ -570,10 +570,10 @@ fn scale_final_layer_parameter(
     scale: f32,
 ) {
     if let Some(value) = final_layer_output.absolute.get_mut(parameter) {
-        *value *= scale;
+        *value *= f64::from(scale);
     }
     if let Some(value) = final_layer_output.relative.get_mut(parameter) {
-        *value *= scale;
+        *value *= f64::from(scale);
     }
 }
 

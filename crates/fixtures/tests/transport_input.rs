@@ -19,6 +19,111 @@ use nightfall_io::{
 };
 use web_time::Instant;
 
+/// Four-byte input retains low bits through percentage assertions, compositing and sparse output.
+#[test]
+fn raw_32_bit_values_survive_the_complete_parameter_pipeline() {
+    use nightfall_compositor::prelude::{FinalLayerAttributedAssertions, compositor};
+    let mut app = App::new();
+    app.add_plugins(TransportInputPlugin);
+    app.init_resource::<FinalLayerAttributedAssertions>();
+    let mut parameter = make_coarse_parameter();
+    parameter.metadata.resolution = DmxValueResolution::Uber;
+    parameter.metadata.max = f64::from(u32::MAX);
+    let entity = app
+        .world_mut()
+        .spawn((
+            parameter,
+            ResolvedOutputDestinations {
+                destinations: vec![OutputDestination {
+                    transport: OutputTransport::Disabled,
+                    universe: 8,
+                    addresses: vec![4, 1, 3, 2],
+                }],
+            },
+        ))
+        .id();
+    let input_layer = spawn_transport_input_layer(&mut app);
+    app.world_mut()
+        .entity_mut(input_layer)
+        .insert(nightfall_compositor::types::ObjectRefMarker(
+            nightfall::prelude::ObjectRef::ById {
+                object_type: nightfall::prelude::ObjectType::Parameter,
+                id: 0,
+            },
+        ));
+    app.world_mut()
+        .resource_mut::<ResolvedInputBindings>()
+        .bindings = vec![ResolvedInputBinding {
+        source: ResolvedInputSource::Transport {
+            transport: BindingTransport::ArtNet,
+            universe: 7,
+            address: 100,
+        },
+        priority: 0,
+        destination: ResolvedInputDestination::Fixture {
+            targets: vec![ResolvedInputTarget {
+                entity,
+                offsets: vec![3, 0, 2, 1],
+            }],
+        },
+    }];
+    app.add_systems(
+        Update,
+        (
+            compositor::<Parameter>,
+            nightfall_fixtures::universe::dmx_universes,
+        )
+            .chain()
+            .after(DmxInputSet::Apply),
+    );
+    let mut values = vec![
+        0,
+        1,
+        65535,
+        16777215,
+        16777216,
+        16777217,
+        0x80000001,
+        0xabcdef01,
+        u32::MAX - 1,
+        u32::MAX,
+    ];
+    let mut seed = 12345_u32;
+    for _ in 0..256 {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        values.push(seed);
+    }
+    for raw in values {
+        let [a, b, c, d] = raw.to_be_bytes();
+        app.world_mut()
+            .write_message(make_frame(7, &[(103, a), (100, b), (102, c), (101, d)]));
+        app.update();
+        assert!(
+            (app.world()
+                .get::<Parameter>(entity)
+                .unwrap()
+                .values
+                .current_value
+                - f64::from(raw))
+            .abs()
+                < 0.000001,
+            "raw={raw}, actual={}",
+            app.world()
+                .get::<Parameter>(entity)
+                .unwrap()
+                .values
+                .current_value
+        );
+        let universes = app.world().resource::<ConsoleDmxUniverses>();
+        assert_eq!(&universes.get_universe(8)[..4], &[b, d, c, a], "raw={raw}");
+        assert_eq!(
+            &universes.get_output_universe(&OutputTransport::Disabled, 8)[..4],
+            &[b, d, c, a],
+            "raw={raw}"
+        );
+    }
+}
+
 /// Creates a persistent assertion layer for routing tests.
 fn spawn_transport_input_layer(app: &mut App) -> Entity {
     app.world_mut()
@@ -108,7 +213,7 @@ fn accepted_input_decodes_sparse_significant_bytes() {
             panic!("expected absolute input percentage");
         };
         let expected = ParameterValue::AbsolutePercent {
-            value: (raw as f32 / maximum as f32).into(),
+            value: (raw as f64 / maximum as f64).into(),
         };
         assert_eq!(ParameterValue::AbsolutePercent { value }, expected);
     }
@@ -158,7 +263,7 @@ fn invalid_input_mapping_does_not_claim_target_precedence() {
         assert_eq!(
             layer.absolute.values().next().unwrap().0,
             ParameterValue::AbsolutePercent {
-                value: (43981.0_f32 / 65535.0).into(),
+                value: (43981.0_f64 / 65535.0).into(),
             }
         );
     }
@@ -241,7 +346,7 @@ fn accepted_input_applies_only_bound_channels() {
     assert_eq!(
         layer.absolute.values().next().map(|(value, _)| *value),
         Some(ParameterValue::AbsolutePercent {
-            value: (42.0_f32 / 255.0).into()
+            value: (42.0_f64 / 255.0).into()
         })
     );
     assert_eq!(unbound.values.current_value, 0.0);
@@ -445,7 +550,7 @@ fn routing_preserves_binding_precedence_and_consumes_each_frame_once() {
             .unwrap()
             .0,
         ParameterValue::AbsolutePercent {
-            value: (42.0_f32 / 255.0).into()
+            value: (42.0_f64 / 255.0).into()
         }
     );
     app.world_mut()

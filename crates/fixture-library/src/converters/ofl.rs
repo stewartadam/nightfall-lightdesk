@@ -89,8 +89,8 @@ fn apply_ofl_position_ranges(
         .flat_map(|element| element.parameters.iter_mut())
     {
         let physical_range = match parameter.attribute {
-            Attribute::Pan => pan_max.map(|max| (0.0, max)),
-            Attribute::Tilt => tilt_max.map(|max| (0.0, max)),
+            Attribute::Pan => pan_max.map(|max| (0.0, f64::from(max))),
+            Attribute::Tilt => tilt_max.map(|max| (0.0, f64::from(max))),
             _ => None,
         };
         apply_position_physical_range(parameter, physical_range);
@@ -441,7 +441,7 @@ pub(super) fn parse_dmx_value(value: &Option<serde_json::Value>) -> Option<Param
         Some(serde_json::Value::String(s)) => {
             // Handle percentage strings like "50%"
             if s.ends_with('%') {
-                let percent = s.trim_end_matches('%').parse::<f32>().ok()?;
+                let percent = s.trim_end_matches('%').parse::<ParameterDmxValue>().ok()?;
                 Some(percent / 100.0 * 255.0)
             } else {
                 s.parse::<ParameterDmxValue>().ok()

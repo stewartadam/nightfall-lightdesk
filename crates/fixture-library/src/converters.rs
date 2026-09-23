@@ -17,14 +17,14 @@ pub mod ofl;
 /// Apply a physical angular range to position metadata, or retain percentage semantics.
 fn apply_position_physical_range(
     metadata: &mut ParameterMetadata,
-    physical_range: Option<(f32, f32)>,
+    physical_range: Option<(f64, f64)>,
 ) {
     if !matches!(metadata.attribute, Attribute::Pan | Attribute::Tilt) {
         return;
     }
 
     let Some((first, second)) = physical_range.filter(|(first, second)| {
-        first.is_finite() && second.is_finite() && (*first - *second).abs() > f32::EPSILON
+        first.is_finite() && second.is_finite() && (*first - *second).abs() > f64::EPSILON
     }) else {
         metadata.native_unit = ParameterUnit::Percent;
         return;

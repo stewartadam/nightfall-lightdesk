@@ -557,15 +557,15 @@ fn sample_color_path_scalar(path: &ColorPath, start: f32, end: f32, t: f32) -> f
 fn normalize_emitter_value(parameter: &InstanceRef<Parameter>, value: ParameterDmxValue) -> f32 {
     let min = parameter.metadata.logical_min();
     let max = parameter.metadata.logical_max();
-    if (max - min).abs() <= f32::EPSILON {
+    if (max - min).abs() <= f64::EPSILON {
         return 0.0;
     }
-    ((value - min) / (max - min)).clamp(0.0, 1.0)
+    ((value - min) / (max - min)).clamp(0.0, 1.0) as f32
 }
 
 /// Converts a normalized color sample back into an emitter DMX value.
 fn denormalize_emitter_value(parameter: &InstanceRef<Parameter>, value: f32) -> ParameterDmxValue {
     let min = parameter.metadata.logical_min();
     let max = parameter.metadata.logical_max();
-    min + value.clamp(0.0, 1.0) * (max - min)
+    min + f64::from(value.clamp(0.0, 1.0)) * (max - min)
 }

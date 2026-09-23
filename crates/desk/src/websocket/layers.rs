@@ -307,7 +307,7 @@ pub(super) fn is_transition_active(
         ParameterValue::AbsolutePercent { value } => {
             let clamped_percent = (*value).clamp(0.0.into(), 1.0.into());
             let range = parameter.metadata.max - parameter.metadata.min;
-            Some(range * clamped_percent.as_f32())
+            Some(range * clamped_percent.as_f64())
         }
         ParameterValue::Relative { .. } | ParameterValue::RelativePercent { .. } => None,
     };

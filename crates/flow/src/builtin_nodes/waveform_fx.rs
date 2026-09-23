@@ -302,7 +302,7 @@ fn sample_waveform(
             let mut value = waveform.base + amplitude * normalized;
             value = value.clamp(0.0, 1.0);
             value = value.clamp(0.0, 1.0);
-            (value * 255.0).round().clamp(0.0, 255.0)
+            f64::from((value * 255.0).round().clamp(0.0, 255.0))
         })
         .collect()
 }

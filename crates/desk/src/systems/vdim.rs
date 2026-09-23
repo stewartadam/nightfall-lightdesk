@@ -43,8 +43,8 @@ pub const VDIM_AFFECTED_ATTRIBUTES: &[Attribute] = &[
 /// Human brightness perception follows Stevens' power law. Gamma correction
 /// compensates so that 50% dimmer appears as half brightness.
 #[inline]
-pub fn gamma_correct(value: f32, gamma: f32) -> f32 {
-    value.powf(gamma)
+pub fn gamma_correct(value: f64, gamma: f32) -> f64 {
+    value.powf(f64::from(gamma))
 }
 
 /// System that applies virtual dimmer scaling to color channels.
@@ -124,7 +124,7 @@ mod tests {
     fn test_gamma_correct_monotonic() {
         // Gamma correction should be monotonic increasing for positive gamma
         let values = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0];
-        let corrected: Vec<f32> = values
+        let corrected: Vec<f64> = values
             .iter()
             .map(|&v| gamma_correct(v, DEFAULT_GAMMA))
             .collect();

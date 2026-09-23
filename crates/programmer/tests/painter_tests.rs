@@ -175,7 +175,7 @@ fn set_instance_clock_position(app: &mut App, position: Duration) {
 }
 
 /// Helper function to read a parameter's current output value.
-fn parameter_value(app: &App, parameter: Instance<Parameter>) -> f32 {
+fn parameter_value(app: &App, parameter: Instance<Parameter>) -> f64 {
     app.world()
         .get::<Parameter>(parameter.entity())
         .expect("parameter should exist")

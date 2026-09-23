@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(
             layer.absolute.values().next().map(|(value, _)| *value),
             Some(ParameterValue::AbsolutePercent {
-                value: (77.0_f32 / 255.0).into()
+                value: (77.0_f64 / 255.0).into()
             })
         );
 

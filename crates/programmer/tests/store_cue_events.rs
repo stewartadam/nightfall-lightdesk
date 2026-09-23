@@ -80,7 +80,7 @@ fn fixture_with_elements(fixture_id: u32, element_count: usize) -> Fixture {
 }
 
 /// Builds a single-attribute cue instruction for test payloads.
-fn cue_instruction(attribute: Attribute, value: f32) -> CueInstruction {
+fn cue_instruction(attribute: Attribute, value: f64) -> CueInstruction {
     CueInstruction {
         blueprint_application: None,
         values: HashMap::from([(
@@ -95,7 +95,7 @@ fn cue_instruction(attribute: Attribute, value: f32) -> CueInstruction {
 }
 
 /// Builds a bound instruction for one resolved fixture.
-fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f32) -> BoundCueInstruction {
+fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f64) -> BoundCueInstruction {
     BoundCueInstruction {
         selection: SelectionExpr::Resolved(vec![fixture]).into(),
         cue_instruction: cue_instruction(attribute, value),
@@ -103,7 +103,7 @@ fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f32) -> B
 }
 
 /// Adds a programmer instruction for a selection with absolute attribute values.
-fn add_programmer_values(app: &mut App, selection: SelectionExpr, values: &[(Attribute, f32)]) {
+fn add_programmer_values(app: &mut App, selection: SelectionExpr, values: &[(Attribute, f64)]) {
     app.world_mut()
         .resource_mut::<Programmer>()
         .add_instruction(BoundCueInstruction {
@@ -189,7 +189,7 @@ fn store_cue_instruction_fixture(instruction: &BoundCueInstruction) -> Option<&F
 fn assert_absolute_value(
     instruction: &BoundCueInstruction,
     attribute: Attribute,
-    expected_value: f32,
+    expected_value: f64,
 ) {
     let value = instruction
         .cue_instruction

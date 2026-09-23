@@ -1694,7 +1694,7 @@ mod tests {
         app
     }
 
-    fn flow_layer_output(app: &mut App) -> (Instance<Parameter>, f32) {
+    fn flow_layer_output(app: &mut App) -> (Instance<Parameter>, f64) {
         let mut query = app.world_mut().query::<&Layer>();
         let layer = query
             .single(app.world())

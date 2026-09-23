@@ -42,11 +42,11 @@ impl Guest for BasicModule {
 
     /// Render one seeded intensity pulse after validating fixture host access.
     fn render(input: RenderInput) -> Result<FxModuleLayer, FxModuleError> {
-        let elapsed_secs = input.elapsed_since_start_micros as f32 / 1_000_000.0;
+        let elapsed_secs = input.elapsed_since_start_micros as f64 / 1_000_000.0;
         let seed_phase = STATE.with(|state| {
             let state = state.borrow();
             let state = state.as_ref().expect("module state should be initialized");
-            (state.seed % 97) as f32 * 0.03
+            (state.seed % 97) as f64 * 0.03
         });
 
         let mut absolute = Vec::new();
@@ -68,7 +68,7 @@ impl Guest for BasicModule {
             }
 
             let phase =
-                elapsed_secs * std::f32::consts::TAU + seed_phase + index as f32 * 0.35;
+                elapsed_secs * std::f64::consts::TAU + seed_phase + index as f64 * 0.35;
             let value = ((phase.sin() + 1.0) * 0.5 * 255.0).clamp(0.0, 255.0);
             absolute.push(LayerInstruction {
                 fixture_uid: target.fixture_uid,

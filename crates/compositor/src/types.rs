@@ -239,11 +239,11 @@ pub(crate) mod test_support {
             match value {
                 ParameterValue::Absolute { value } => *value,
                 ParameterValue::AbsolutePercent { value } => {
-                    self.min + (self.max - self.min) * value.as_f32()
+                    self.min + (self.max - self.min) * value.as_f64()
                 }
                 ParameterValue::Relative { offset } => self.current_value + *offset,
                 ParameterValue::RelativePercent { offset } => {
-                    self.current_value + (self.max - self.min) * offset.as_f32()
+                    self.current_value + (self.max - self.min) * offset.as_f64()
                 }
             }
         }

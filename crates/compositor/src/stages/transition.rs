@@ -266,7 +266,7 @@ fn interpolate_value(
     target: ParameterDmxValue,
     ratio: f32,
 ) -> ParameterDmxValue {
-    target - (target - base) * (1.0 - ratio)
+    target - (target - base) * (1.0 - f64::from(ratio))
 }
 
 /// Returns the absolute target a releasing layer should fade toward before it is removed.
@@ -1008,7 +1008,7 @@ mod tests {
         );
 
         assert!(
-            (first_value - second_value).abs() < f32::EPSILON,
+            (first_value - second_value).abs() < f64::EPSILON,
             "parameters in one release evaluation should share transition time; got {first_value} and {second_value}"
         );
     }

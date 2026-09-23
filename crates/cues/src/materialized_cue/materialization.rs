@@ -345,13 +345,13 @@ impl MaterializedCue {
             return values[fixture_index];
         }
 
-        let t = fixture_index as f32 / (total_fixtures - 1).max(1) as f32;
+        let t = fixture_index as f64 / (total_fixtures - 1).max(1) as f64;
 
         // Map t to a position in the values array
         let max_segment = values.len() - 1;
-        let segment_position = t * max_segment as f32;
+        let segment_position = t * max_segment as f64;
         let segment_idx = (segment_position as usize).min(max_segment - 1);
-        let segment_t = segment_position - segment_idx as f32;
+        let segment_t = segment_position - segment_idx as f64;
 
         // Interpolate between values[segment_idx] and values[segment_idx + 1]
         let start = &values[segment_idx];
@@ -363,9 +363,8 @@ impl MaterializedCue {
                 ParameterValue::AbsolutePercent { value: start_val },
                 ParameterValue::AbsolutePercent { value: end_val },
             ) => {
-                // Use multiplication with 1.0f32 to extract the float value
-                let start_f = start_val.as_f32();
-                let end_f = end_val.as_f32();
+                let start_f = start_val.as_f64();
+                let end_f = end_val.as_f64();
                 let interpolated = start_f + segment_t * (end_f - start_f);
                 ParameterValue::AbsolutePercent {
                     value: interpolated.into(),
@@ -375,8 +374,8 @@ impl MaterializedCue {
                 ParameterValue::RelativePercent { offset: start_off },
                 ParameterValue::RelativePercent { offset: end_off },
             ) => {
-                let start_f = start_off.as_f32();
-                let end_f = end_off.as_f32();
+                let start_f = start_off.as_f64();
+                let end_f = end_off.as_f64();
                 let interpolated = start_f + segment_t * (end_f - start_f);
                 ParameterValue::RelativePercent {
                     offset: interpolated.into(),

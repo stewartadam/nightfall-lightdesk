@@ -141,7 +141,7 @@ fn insert_multi_element_fixtures(
 }
 
 /// Builds a single-attribute cue instruction for block test payloads.
-fn cue_instruction(attribute: Attribute, value: f32) -> CueInstruction {
+fn cue_instruction(attribute: Attribute, value: f64) -> CueInstruction {
     CueInstruction {
         blueprint_application: None,
         values: HashMap::from([(
@@ -156,7 +156,7 @@ fn cue_instruction(attribute: Attribute, value: f32) -> CueInstruction {
 }
 
 /// Builds a bound instruction for one resolved fixture.
-fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f32) -> BoundCueInstruction {
+fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f64) -> BoundCueInstruction {
     BoundCueInstruction {
         selection: SelectionExpr::Resolved(vec![fixture]).into(),
         cue_instruction: cue_instruction(attribute, value),

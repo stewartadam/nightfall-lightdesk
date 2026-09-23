@@ -72,7 +72,7 @@ impl FxWaveformParams {
     /// Sample the waveform at a given phase in radians.
     pub fn sample(&self, phase_radians: f32) -> ParameterDmxValue {
         let normalized = sample_waveform_radians(self.kind, phase_radians, self.duty_cycle);
-        let scaled = self.min + normalized * (self.max - self.min);
+        let scaled = self.min + f64::from(normalized) * (self.max - self.min);
         scaled.clamp(0.0, 255.0)
     }
 }
@@ -127,7 +127,7 @@ impl FxWaveform {
         let (phase_start, phase_end) = self.phase_range;
         let phase_span = phase_end - phase_start;
         let spacing = phase_span / fixture_count as f32;
-        let width_scale = self.width.as_f32();
+        let width_scale = self.width.as_f64();
 
         selection
             .indexes()
@@ -141,7 +141,7 @@ impl FxWaveform {
                     + 2.0 * std::f32::consts::PI * percent.as_f32();
                 let raw_value = self.params.sample(phase);
                 // Scale amplitude around midpoint (127.5)
-                let midpoint = 127.5_f32;
+                let midpoint = 127.5_f64;
                 let deviation = raw_value - midpoint;
                 let scaled = midpoint + (deviation * width_scale);
                 scaled.clamp(0.0, 255.0)

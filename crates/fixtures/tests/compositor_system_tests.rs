@@ -53,7 +53,7 @@ fn write_tracked_fixture_command(app: &mut App, command: FixtureCommand) {
 }
 
 /// Helper function to create a test layer.
-fn create_test_layer(priority: i8, param_entity: Entity, value: f32) -> Layer {
+fn create_test_layer(priority: i8, param_entity: Entity, value: f64) -> Layer {
     let mut layer = Layer::new("test".to_owned(), Priority(priority));
 
     // Create a mock Instance<Parameter>
@@ -71,7 +71,7 @@ fn create_test_layer(priority: i8, param_entity: Entity, value: f32) -> Layer {
 }
 
 /// Spawns an intensity parameter with LTP merge semantics for compositor tests.
-fn spawn_test_parameter(app: &mut App, default_value: f32, current_value: f32) -> Entity {
+fn spawn_test_parameter(app: &mut App, default_value: f64, current_value: f64) -> Entity {
     app.world_mut()
         .spawn(Parameter {
             metadata: ParameterMetadata {
@@ -99,7 +99,7 @@ fn spawn_test_parameter(app: &mut App, default_value: f32, current_value: f32) -
 #[derive(Component)]
 struct RunningFixtureEffect {
     fixture_uid: uuid::Uuid,
-    value: f32,
+    value: f64,
 }
 
 #[derive(Resource, Default)]

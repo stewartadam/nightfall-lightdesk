@@ -319,8 +319,8 @@ fn f32_from_param(p: &ParameterValue) -> Option<f32> {
     match p {
         ParameterValue::AbsolutePercent { value } => Some(value.as_f32()),
         ParameterValue::RelativePercent { offset } => Some(offset.as_f32()),
-        ParameterValue::Absolute { value } => Some(*value),
-        ParameterValue::Relative { offset } => Some(*offset),
+        ParameterValue::Absolute { value } => Some(*value as f32),
+        ParameterValue::Relative { offset } => Some(*offset as f32),
     }
 }
 

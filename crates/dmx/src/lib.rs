@@ -40,8 +40,9 @@ pub mod prelude {
 #[typeshare::typeshare]
 pub type ChannelDmxValue = u8;
 /// A logical DMX channel value for a parameter, that may be clamped or split into multiple hardware channels on output.
+/// Double precision retains every 32-bit raw integer before physical or percentage conversion.
 #[typeshare::typeshare]
-pub type ParameterDmxValue = f32;
+pub type ParameterDmxValue = f64;
 
 /// Parameter resolution defines how many adjacent DMX channels should be
 /// used to specify this parameter's value, permitting for more precision

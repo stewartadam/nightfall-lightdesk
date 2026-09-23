@@ -466,13 +466,13 @@ pub fn interpolate_parameter_values(
     to: &ParameterValue,
     factor: f32,
 ) -> ParameterValue {
-    let factor = factor.clamp(0.0, 1.0);
+    let factor = f64::from(factor.clamp(0.0, 1.0));
     match (from, to) {
         (
             ParameterValue::AbsolutePercent { value: from },
             ParameterValue::AbsolutePercent { value: to },
         ) => ParameterValue::AbsolutePercent {
-            value: (from.as_f32() + (to.as_f32() - from.as_f32()) * factor).into(),
+            value: (from.as_f64() + (to.as_f64() - from.as_f64()) * factor).into(),
         },
         (ParameterValue::Absolute { value: from }, ParameterValue::Absolute { value: to }) => {
             ParameterValue::Absolute {
@@ -483,7 +483,7 @@ pub fn interpolate_parameter_values(
             ParameterValue::RelativePercent { offset: from },
             ParameterValue::RelativePercent { offset: to },
         ) => ParameterValue::RelativePercent {
-            offset: (from.as_f32() + (to.as_f32() - from.as_f32()) * factor).into(),
+            offset: (from.as_f64() + (to.as_f64() - from.as_f64()) * factor).into(),
         },
         (ParameterValue::Relative { offset: from }, ParameterValue::Relative { offset: to }) => {
             ParameterValue::Relative {

@@ -147,7 +147,7 @@ fn test_intensity_cue(
     id: u32,
     label: &str,
     fixture_ref: &FixtureRef,
-    value: f32,
+    value: f64,
     transitions: PartialTransition,
 ) -> Cue {
     Cue {
@@ -947,7 +947,7 @@ async fn sample_data_element_virtual_dimmer_overrides_parent_fixture_intensity()
             .current_value
     };
     assert!(
-        (element_vdim_value - 204.0).abs() < f32::EPSILON,
+        (element_vdim_value - 204.0).abs() < f64::EPSILON,
         "element virtual intensity should be 80%, got {element_vdim_value}"
     );
 }

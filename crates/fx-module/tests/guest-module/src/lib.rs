@@ -106,7 +106,7 @@ impl Guest for TestGuest {
                     element_index: target.element_index,
                     attribute: "Intensity".to_string(),
                     value: ParameterValue::Absolute(
-                        input.elapsed_since_start_micros as f32 / 1_000.0,
+                        input.elapsed_since_start_micros as f64 / 1_000.0,
                     ),
                     materialized_transition: None,
                 }],
@@ -127,7 +127,7 @@ impl Guest for TestGuest {
                     fixture_uid: target.fixture_uid,
                     element_index: target.element_index,
                     attribute: "Intensity".to_string(),
-                    value: ParameterValue::Absolute(input.delta_micros as f32 / 1_000.0),
+                    value: ParameterValue::Absolute(input.delta_micros as f64 / 1_000.0),
                     materialized_transition: None,
                 }],
                 relative: vec![],
@@ -137,7 +137,7 @@ impl Guest for TestGuest {
         let value = STATE.with(|state| {
             let mut state = state.borrow_mut();
             let state = state.as_mut().expect("guest state should be initialized");
-            let value = state.seed as f32 + state.renders as f32;
+            let value = state.seed as f64 + state.renders as f64;
             state.renders += 1;
             value
         });
@@ -187,7 +187,7 @@ fn render_fixture_metadata_layer(
             message: "fixture metadata did not include parameter metadata".to_string(),
         })?;
 
-    let mut value = selected_element.parameters.len() as f32;
+    let mut value = selected_element.parameters.len() as f64;
     if first_parameter.attribute == "Intensity" {
         value += 10.0;
     }

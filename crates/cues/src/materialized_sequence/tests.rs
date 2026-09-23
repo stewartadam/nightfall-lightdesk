@@ -1160,13 +1160,14 @@ fn sequence_render_prefix_cache_reuses_stable_prefix_for_later_playback_position
         Some(ParameterValue::Absolute { value: 70.0 }),
         "later render should start from the cached stable prefix"
     );
-    assert_eq!(
-        later_layer
-            .absolute
-            .get(&second_parameter)
-            .map(|(value, _)| *value),
-        Some(ParameterValue::Absolute { value: 15.0 }),
-        "active tail should still render at the later playback position"
+    let Some((ParameterValue::Absolute { value }, _)) = later_layer.absolute.get(&second_parameter)
+    else {
+        panic!("active tail should render an absolute value");
+    };
+    // Fade timing uses single precision even though parameter values retain double precision.
+    assert!(
+        (*value - 15.0).abs() < 0.000_001,
+        "active tail should still render at the later playback position: {value}"
     );
 }
 
@@ -1473,7 +1474,11 @@ fn sequence_setup_compositing_context_uses_sequence_start_position() {
         .map(|(value, _)| *value)
         .expect("sequence should render the setup value");
 
-    assert_eq!(rendered, ParameterValue::Absolute { value: 20.0 });
+    let ParameterValue::Absolute { value } = rendered else {
+        panic!("setup cue should render an absolute value");
+    };
+    // Fade timing uses single precision even though parameter values retain double precision.
+    assert!((value - 20.0).abs() < 0.000_001, "setup value: {value}");
 }
 
 /// Verifies sequence definition rematerialization preserves setup cue clock anchors.

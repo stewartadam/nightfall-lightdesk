@@ -2046,7 +2046,7 @@ fn materialize_cue_parts_share_start_and_override_in_order() {
     let fixture =
         add_single_element_fixture(app.world_mut(), 1, &[(Attribute::Intensity, 0.0, 255.0)]).0;
 
-    let instruction = |value: f32| BoundCueInstruction {
+    let instruction = |value: f64| BoundCueInstruction {
         selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture.clone()])),
         cue_instruction: CueInstruction {
             blueprint_application: None,

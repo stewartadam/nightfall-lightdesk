@@ -127,10 +127,10 @@ impl ParameterMetadata {
         match self.value_polarity {
             ParameterValuePolarity::Unsigned => {
                 let clamped_percent = value.clamp(0.0.into(), 1.0.into());
-                min + range * clamped_percent.as_f32()
+                min + range * clamped_percent.as_f64()
             }
             ParameterValuePolarity::Signed => {
-                let percent = value.clamp((-1.0).into(), 1.0.into()).as_f32();
+                let percent = value.clamp((-1.0).into(), 1.0.into()).as_f64();
                 min + range * ((percent + 1.0) / 2.0)
             }
         }
@@ -304,7 +304,7 @@ impl Parameter {
             ParameterValue::Relative { offset } => current_value + *offset,
             ParameterValue::RelativePercent { offset } => {
                 let range = self.metadata.logical_range();
-                let delta = range * offset.as_f32();
+                let delta = range * offset.as_f64();
                 current_value + delta
             }
         }

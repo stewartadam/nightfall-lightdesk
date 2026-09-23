@@ -285,7 +285,7 @@ fn spawn_layer(
             parameters[parameter_index],
             (
                 ParameterValue::Absolute {
-                    value: ((assertion_index + layer_index) % 256) as f32,
+                    value: ((assertion_index + layer_index) % 256) as f64,
                 },
                 benchmark_transition(case.transition_mode),
             ),
@@ -336,7 +336,7 @@ fn spawn_parameters(app: &mut App, parameter_count: usize) -> Vec<Instance<Param
     (0..parameter_count)
         .map(|index| {
             let mut values = ParameterValues::default();
-            values.default_value = (index % 256) as f32;
+            values.default_value = (index % 256) as f64;
             values.current_value = 255.0 - values.default_value;
 
             let entity = app

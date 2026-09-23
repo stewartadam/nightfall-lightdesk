@@ -88,8 +88,18 @@ mapping before decoding; invalid targets do not claim precedence over a later
 valid binding. Input contribution traces validate the same mapping and report
 its most significant address. Synthetic plugin tests exercise all four widths,
 reversed significance, gaps, boundaries and invalid-binding precedence. This does
-not yet connect compiled GDTF breaks to patch bindings or replace floating
-parameter values with an exact raw 32-bit runtime representation.
+not yet connect compiled GDTF breaks to patch bindings.
+
+Logical parameter values and percentages use double precision; byte assembly
+and encoding retain `u32`. A pipeline regression checks 266 raw values, including
+adjacent values above the single-precision integer limit, through transport
+input, percentage assertions, compositing and sparse console/transport output.
+JSON and inversion tests cover the same precision boundary. Physical mappings
+and nonlinear color/effect processing have their own numerical tolerances; these
+tests do not establish lossless inverse mappings for every physical range.
+The FX-module value/range contract uses `f64` in WIT version 0.2.0 and requires
+guest rebuilding. Logical scalar storage grows from four to eight bytes; overall
+memory and frame-time impact must be measured with the performance bench.
 
 The `compiled_channels` stage builds one owned channel program using the wire,
 function, selector, physical and relation passes, then evaluates every active

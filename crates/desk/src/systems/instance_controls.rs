@@ -24,18 +24,19 @@ const INTENSITY_ATTRIBUTES: &[Attribute] = &[Attribute::Intensity, Attribute::Vi
 
 /// Scales a ParameterValue by a given intensity factor (0.0 - 1.0).
 fn scale_parameter_value(value: &ParameterValue, scale: f32) -> ParameterValue {
+    let scale = f64::from(scale);
     match value {
         ParameterValue::Absolute { value } => ParameterValue::Absolute {
             value: *value * scale,
         },
         ParameterValue::AbsolutePercent { value } => ParameterValue::AbsolutePercent {
-            value: Percentage::from(value.as_f32() * scale),
+            value: Percentage::from(value.as_f64() * scale),
         },
         ParameterValue::Relative { offset } => ParameterValue::Relative {
             offset: *offset * scale,
         },
         ParameterValue::RelativePercent { offset } => ParameterValue::RelativePercent {
-            offset: Percentage::from(offset.as_f32() * scale),
+            offset: Percentage::from(offset.as_f64() * scale),
         },
     }
 }
