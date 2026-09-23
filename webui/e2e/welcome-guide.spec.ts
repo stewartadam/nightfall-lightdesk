@@ -78,7 +78,12 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await expect(
     guide.locator("header").getByRole("button", { name: "All lessons" }),
   ).toBeVisible();
-  await guide.getByRole("button", { name: "Start lesson" }).click();
+  await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
+    0,
+  );
+  await expect(
+    guide.getByRole("button", { name: "Back", exact: true }),
+  ).toBeDisabled();
   await guide
     .getByRole("button", { name: "Open Timelines", exact: true })
     .click();
@@ -148,7 +153,12 @@ test("welcome guide teaches live selection and cue storage without blocking the 
     guide.getByRole("button", { name: /FOLLOW-ON LESSON/ }),
   ).toHaveCount(5);
   await guide.getByRole("button", { name: /START HERE/ }).click();
-  await guide.getByRole("button", { name: "Start lesson" }).click();
+  await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
+    0,
+  );
+  await expect(
+    guide.getByRole("button", { name: "Back", exact: true }),
+  ).toBeDisabled();
   await reachStep(page, "Select lights by number");
   await expect(page.getByTestId("guide-target")).toBeVisible();
   const command = page.getByRole("textbox", {
@@ -224,7 +234,12 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
   await page.getByRole("button", { name: "Take the tour" }).click();
   const guide = page.getByTestId("welcome-guide");
   await guide.getByRole("button", { name: /START HERE/ }).click();
-  await guide.getByRole("button", { name: "Start lesson" }).click();
+  await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
+    0,
+  );
+  await expect(
+    guide.getByRole("button", { name: "Back", exact: true }),
+  ).toBeDisabled();
   await reachStep(page, "Put Nightfall Looks on control 1");
   await guide.getByRole("button", { name: "Open Clips", exact: true }).click();
   const expand = page.getByRole("button", {
@@ -310,7 +325,12 @@ test("lesson library remains optional and adapts to demo capabilities", async ({
   await expect(guide).toBeVisible();
   await guide.getByRole("button", { name: /Transports and output/ }).click();
   await expect(guide).toContainText("Hardware output is unavailable here");
-  await guide.getByRole("button", { name: "Start lesson" }).click();
+  await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
+    0,
+  );
+  await expect(
+    guide.getByRole("button", { name: "Back", exact: true }),
+  ).toBeDisabled();
   for (let index = 0; index < 3; index += 1)
     await guide.getByRole("button", { name: "Skip step" }).click();
   await guide.getByRole("button", { name: "Finish lesson" }).click();
@@ -318,7 +338,12 @@ test("lesson library remains optional and adapts to demo capabilities", async ({
     guide.getByRole("button", { name: /Transports and output/ }),
   ).toContainText("Completed");
   await guide.getByRole("button", { name: /Step FX designer/ }).click();
-  await guide.getByRole("button", { name: "Start lesson" }).click();
+  await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
+    0,
+  );
+  await expect(
+    guide.getByRole("button", { name: "Back", exact: true }),
+  ).toBeDisabled();
   await guide.getByRole("button", { name: "Open FX List" }).click();
   await page.getByRole("button", { name: "Add effect", exact: true }).click();
   await page.getByRole("button", { name: "Step FX", exact: true }).click();

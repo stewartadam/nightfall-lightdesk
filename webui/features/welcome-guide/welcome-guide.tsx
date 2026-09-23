@@ -71,7 +71,7 @@ export default function WelcomeGuide() {
   const lesson = createMemo(() =>
     GUIDE_LESSONS.find((entry) => entry.id === lessonId()),
   );
-  /** Treats introduction and completion as explicit positions outside the action steps. */
+  /** Resolves the current instruction, leaving completion outside the action steps. */
   const step = createMemo(() => lesson()?.steps[index()]);
 
   useCommand({
@@ -209,9 +209,7 @@ export default function WelcomeGuide() {
               <>
                 <p class="nf-guide-eyebrow">
                   {current().title} ·{" "}
-                  {index() < 0
-                    ? current().duration
-                    : `${Math.min(index() + 1, current().steps.length)} / ${current().steps.length}`}
+                  {`${Math.min(index() + 1, current().steps.length)} / ${current().steps.length}`}
                 </p>
                 <Show when={index() >= 0 && index() < current().steps.length}>
                   <progress
@@ -221,25 +219,8 @@ export default function WelcomeGuide() {
                   />
                 </Show>
                 <h2 ref={heading} tabIndex={-1} aria-live="polite">
-                  {index() < 0
-                    ? current().title
-                    : (step()?.title ?? "Ready to explore")}
+                  {step()?.title ?? "Ready to explore"}
                 </h2>
-                <Show when={index() < 0}>
-                  <p>{current().introduction}</p>
-                  <div class="nf-guide-action">
-                    <strong>In this lesson</strong>
-                    <p>{current().prerequisite}</p>
-                  </div>
-                  <p>
-                    Follow along with the sample show. Steps advance when you
-                    complete the requested action; exploratory steps let you
-                    continue at your own pace.
-                  </p>
-                  <Button variant="primary" onClick={() => moveTo(0)}>
-                    Start lesson
-                  </Button>
-                </Show>
                 <Show when={step()}>
                   {(instruction) => (
                     <>
@@ -281,6 +262,7 @@ export default function WelcomeGuide() {
                       <div class="nf-guide-navigation">
                         <Button
                           size="compact"
+                          disabled={index() === 0}
                           onClick={() => moveTo(index() - 1)}
                         >
                           Back
