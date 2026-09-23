@@ -17,6 +17,8 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { useCommand } from "../../components/providers/command-registry";
+import { PersistentToast } from "../../components/ui/persistent-toast";
 import { Button } from "../../components/ui/visual-language/button";
 import { CommandClient } from "../../lib/command-client";
 import { decodeCorrelationId } from "../../lib/console-scrollback";
@@ -26,6 +28,7 @@ import {
   engineRuntime,
 } from "../../lib/engine-runtime";
 import { actionCatalog, controllerLearning } from "../../state/appStores";
+import { pushToast } from "../../state/notifications";
 import {
   ActionInputKind,
   type ActionReference,
@@ -98,6 +101,7 @@ export function ActionMappingProvider(props: ParentProps) {
 
   /** Starts fresh capture only after the backend has acknowledged learning mode. */
   async function begin(selectedSurface: ActionSurface) {
+    if (busy() || session()) return;
     setBusy(true);
     const id = crypto.randomUUID().replace(/-/g, "");
     try {
@@ -113,7 +117,7 @@ export function ActionMappingProvider(props: ParentProps) {
         `Touch ${selectedSurface === ActionSurface.Midi ? "a MIDI" : "an OSC"} control, then select a highlighted action.`,
       );
     } catch (error) {
-      setMessage(String(error));
+      pushToast("error", String(error));
     } finally {
       setBusy(false);
     }
@@ -178,7 +182,7 @@ export function ActionMappingProvider(props: ParentProps) {
       setSession(undefined);
       setConflict(undefined);
       setTarget(undefined);
-      setMessage(`Mapped to ${selected.label}.`);
+      pushToast("success", `Mapped to ${selected.label}.`);
     } catch (error) {
       setMessage(String(error));
     } finally {
@@ -196,6 +200,7 @@ export function ActionMappingProvider(props: ParentProps) {
           if (session() !== id) return;
           setMessage(String(error));
           setSession(undefined);
+          pushToast("error", String(error));
         },
       );
     }, 4000);
@@ -228,31 +233,45 @@ export function ActionMappingProvider(props: ParentProps) {
     },
   };
 
+  useCommand({
+    id: "controller.learn-midi",
+    name: "Map MIDI controller",
+    description: "Touch a MIDI control, then select an action to map",
+    category: "Controller mapping",
+    execute: () => void begin(ActionSurface.Midi),
+  });
+  useCommand({
+    id: "controller.learn-osc",
+    name: "Map OSC controller",
+    description: "Touch an OSC control, then select an action to map",
+    category: "Controller mapping",
+    execute: () => void begin(ActionSurface.Osc),
+  });
+  useCommand({
+    id: "controller.cancel-learning",
+    name: "Cancel controller mapping",
+    description: "Exit controller learning mode",
+    category: "Controller mapping",
+    execute: () => void cancel(),
+  });
+
   return (
     <Context.Provider value={context}>
       {props.children}
-      <aside class="action-mapping-toolbar" aria-label="Controller mapping">
-        <Show
-          when={session()}
-          fallback={
-            <>
-              <Button
-                size="compact"
-                disabled={busy()}
-                onClick={() => void begin(ActionSurface.Midi)}
-              >
-                Map MIDI
-              </Button>
-              <Button
-                size="compact"
-                disabled={busy()}
-                onClick={() => void begin(ActionSurface.Osc)}
-              >
-                Map OSC
-              </Button>
-            </>
-          }
-        >
+      <Show when={session()}>
+        <PersistentToast label="Controller mapping">
+          <p class="font-semibold mb-2">
+            {surface() === ActionSurface.Midi ? "MIDI" : "OSC"} learning active
+          </p>
+          <p role="status" class="mb-3">
+            {learning()?.session_id === session()
+              ? learning()?.captured?.label
+              : ""}{" "}
+            {learning()?.session_id === session()
+              ? learning()?.input_diagnostic
+              : ""}{" "}
+            {message()}
+          </p>
           <Button
             size="compact"
             disabled={busy()}
@@ -260,31 +279,22 @@ export function ActionMappingProvider(props: ParentProps) {
           >
             Cancel mapping
           </Button>
-        </Show>
-        <span role="status">
-          {learning()?.session_id === session()
-            ? learning()?.captured?.label
-            : ""}{" "}
-          {learning()?.session_id === session()
-            ? learning()?.input_diagnostic
-            : ""}{" "}
-          {message()}
-        </span>
-        <Show when={conflict()}>
-          {(existing) => (
-            <Button
-              size="compact"
-              disabled={busy()}
-              onClick={() => {
-                const selected = target();
-                if (selected) void save(selected, existing());
-              }}
-            >
-              Replace existing mapping
-            </Button>
-          )}
-        </Show>
-      </aside>
+          <Show when={conflict()}>
+            {(existing) => (
+              <Button
+                size="compact"
+                disabled={busy()}
+                onClick={() => {
+                  const selected = target();
+                  if (selected) void save(selected, existing());
+                }}
+              >
+                Replace existing mapping
+              </Button>
+            )}
+          </Show>
+        </PersistentToast>
+      </Show>
     </Context.Provider>
   );
 }

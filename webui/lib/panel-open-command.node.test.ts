@@ -147,6 +147,7 @@ test("openOrFocusPanel focuses existing panel when present", () => {
 test("openOrFocusPanel expands edge group for existing edge panel", () => {
   let focusCalls = 0;
   let expandCalls = 0;
+  let visible = false;
 
   const api = createDockApi({
     getPanel: (id) =>
@@ -160,6 +161,7 @@ test("openOrFocusPanel expands edge group for existing edge panel", () => {
               },
             },
             focus: () => {
+              assert.equal(visible, true);
               focusCalls += 1;
             },
           }
@@ -168,10 +170,15 @@ test("openOrFocusPanel expands edge group for existing edge panel", () => {
       position === "bottom"
         ? {
             expand: () => {
+              assert.equal(visible, true);
               expandCalls += 1;
             },
           }
         : undefined,
+    setEdgeGroupVisible: (position, value) => {
+      assert.equal(position, "bottom");
+      visible = value;
+    },
   });
 
   const result = openOrFocusPanel(

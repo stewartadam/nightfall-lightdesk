@@ -97,7 +97,7 @@ test("native MIDI fader follows group master reassignment", async ({
       exact: true,
     });
     await expect(fader).toBeVisible();
-    await page.getByRole("button", { name: "Map MIDI", exact: true }).click();
+    await runMappingCommand(page, "Map MIDI controller");
     await expect
       .poll(() =>
         page.evaluate(
@@ -231,7 +231,7 @@ test("native MIDI button maps timeline Start Pause", async ({
       )
       .getByRole("button", { name: "Play timeline", exact: true });
     await expect(play).toBeVisible();
-    await page.getByRole("button", { name: "Map MIDI", exact: true }).click();
+    await runMappingCommand(page, "Map MIDI controller");
     await expect
       .poll(() =>
         page.evaluate(
@@ -360,7 +360,7 @@ test("native MIDI button maps control Go", async ({ page }, testInfo) => {
     });
     clipId = clip.id;
     expect(clip.outcome).toBe("Succeeded");
-    await page.getByRole("button", { name: "Map MIDI", exact: true }).click();
+    await runMappingCommand(page, "Map MIDI controller");
     await expect
       .poll(() =>
         page.evaluate(
@@ -895,7 +895,7 @@ test("learning belongs to its connection and ends on disconnect", async ({
   const other = await page.context().newPage();
   await other.goto(page.url());
   await waitForDockviewApp(other);
-  await page.getByRole("button", { name: "Map OSC", exact: true }).click();
+  await runMappingCommand(page, "Map OSC controller");
   await expect
     .poll(() =>
       page.evaluate(
@@ -950,7 +950,7 @@ test("learning belongs to its connection and ends on disconnect", async ({
       { timeout: 5000 },
     )
     .toBeNull();
-  await other.getByRole("button", { name: "Map OSC", exact: true }).click();
+  await runMappingCommand(other, "Map OSC controller");
   await expect(
     other.getByRole("button", { name: "Cancel mapping", exact: true }),
   ).toBeVisible();
@@ -967,7 +967,7 @@ test("learning belongs to its connection and ends on disconnect", async ({
 /** Backend termination clears local interception without waiting for the next heartbeat. */
 test("backend learning termination disarms UI controls", async ({ page }) => {
   await openMappingShow(page);
-  await page.getByRole("button", { name: "Map OSC", exact: true }).click();
+  await runMappingCommand(page, "Map OSC controller");
   await expect
     .poll(() =>
       page.evaluate(
@@ -995,8 +995,8 @@ test("backend learning termination disarms UI controls", async ({ page }) => {
     page.getByRole("button", { name: "Cancel mapping", exact: true }),
   ).not.toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Map OSC", exact: true }),
-  ).toBeEnabled();
+    page.getByRole("region", { name: "Controller mapping", exact: true }),
+  ).not.toBeVisible();
 });
 
 /** Relearning an occupied source requires explicit replacement and remains undoable. */
@@ -1036,7 +1036,7 @@ test("OSC relearning requires explicit replacement and preserves undo", async ({
   expect(setup.result.outcome.type).toBe("Succeeded");
   const go = page.getByRole("button", { name: "Go control 1", exact: true });
   for (const replace of [false, true]) {
-    await page.getByRole("button", { name: "Map OSC", exact: true }).click();
+    await runMappingCommand(page, "Map OSC controller");
     await expect(go).toHaveAttribute("data-mapping-state", "waiting");
     await sendOscButton(setup.port, 1);
     await expect(go).toHaveAttribute("data-mapping-state", "compatible");
@@ -1068,8 +1068,8 @@ test("OSC relearning requires explicit replacement and preserves undo", async ({
         .click();
     }
     await expect(
-      page.getByRole("button", { name: "Map OSC", exact: true }),
-    ).toBeEnabled();
+      page.getByRole("region", { name: "Controller mapping", exact: true }),
+    ).not.toBeVisible();
     await expect(replacement).not.toBeVisible();
   }
   await expect
@@ -1166,7 +1166,7 @@ test("empty control Go can be learned before assignment", async ({ page }) => {
   expect(target.result.outcome.type).toBe("Succeeded");
   const go = page.getByRole("button", { name: "Go control 1", exact: true });
   await expect(go).toBeDisabled();
-  await page.getByRole("button", { name: "Map OSC", exact: true }).click();
+  await runMappingCommand(page, "Map OSC controller");
   await expect
     .poll(() =>
       page.evaluate(
@@ -1250,7 +1250,7 @@ test("OSC fader maps a rate master and survives panel closure", async ({
       port: stores.oscListenerStatus.get().port,
     };
   });
-  await page.getByRole("button", { name: "Map OSC", exact: true }).click();
+  await runMappingCommand(page, "Map OSC controller");
   await expect
     .poll(() =>
       page.evaluate(
@@ -1299,7 +1299,7 @@ test("OSC fader maps a rate master and survives panel closure", async ({
       ),
     )
     .toBe("programmer.clear");
-  await page.getByRole("button", { name: "Map OSC", exact: true }).click();
+  await runMappingCommand(page, "Map OSC controller");
   await expect
     .poll(() =>
       page.evaluate(
@@ -1635,7 +1635,7 @@ test("OSC press maps Clear Programmer and executes only on subsequent presses", 
   const port = await page.evaluate(
     () => (window as any).appStores.oscListenerStatus.get().port as number,
   );
-  await page.getByRole("button", { name: "Map OSC", exact: true }).click();
+  await runMappingCommand(page, "Map OSC controller");
   await expect
     .poll(() =>
       page.evaluate(
@@ -1757,7 +1757,7 @@ test("learned timeline playback survives closing its panel", async ({
     )
     .getByRole("button", { name: "Play timeline", exact: true });
   await expect(play).toBeVisible();
-  await page.getByRole("button", { name: "Map OSC", exact: true }).click();
+  await runMappingCommand(page, "Map OSC controller");
   await expect
     .poll(() =>
       page.evaluate(
@@ -1888,5 +1888,140 @@ for (const transport of ["MIDI", "OSC"]) {
         ]),
       ),
     ).toBe(before);
+  });
+}
+
+/** Executes learning commands through the same palette entry points available to operators. */
+async function runMappingCommand(page: Page, name: string) {
+  await page
+    .getByRole("button", { name: "Open command palette", exact: true })
+    .click();
+  const input = page.getByPlaceholder("Type a command or search...");
+  await input.fill(name);
+  await page.getByText(name, { exact: true }).click();
+  await expect(input).not.toBeVisible();
+}
+
+for (const transport of ["OSC", "MIDI"] as const) {
+  /** Learning updates a mounted mapping table and remains visible when that panel is reopened. */
+  test(`${transport} learned mappings appear in the mapping panel`, async ({
+    page,
+  }, testInfo) => {
+    const controller =
+      transport === "MIDI" ? await startMidiController() : undefined;
+    try {
+      await openMappingShow(page);
+      await page.evaluate((transport) => {
+        const api = (window as any).appStores.dockApi.get();
+        api.addPanel({
+          id: "learned-mappings",
+          component: transport === "OSC" ? "OscInput" : "MidiInput",
+          title: "Learned mappings",
+          params: {},
+          position: { direction: "right" },
+        });
+        for (const panel of [...api.panels])
+          if (panel.id !== "learned-mappings") panel.api.close();
+      }, transport);
+      await expect(
+        page.getByRole("button", { name: `Map ${transport}`, exact: true }),
+      ).toHaveCount(0);
+      await runMappingCommand(page, `Map ${transport} controller`);
+      const status = page.getByRole("region", {
+        name: "Controller mapping",
+        exact: true,
+      });
+      await expect(status).toContainText(`${transport} learning active`);
+      if (transport === "OSC") {
+        // Verify activity survives the ordinary four-second notification expiry.
+        await page.waitForTimeout(4500);
+        await expect(status).toBeVisible();
+      }
+      await expect
+        .poll(async () => (await status.boundingBox())?.y ?? -1)
+        .toBeGreaterThanOrEqual(14);
+      if (controller) {
+        await expect
+          .poll(() =>
+            page.evaluate(
+              (name) =>
+                (window as any).appStores.midiDevices
+                  .get()
+                  .some((device: any) => device.name.includes(name)),
+              controller.name,
+            ),
+          )
+          .toBe(true);
+        controller.send(0x90, 61, 127);
+      } else {
+        const port = await page.evaluate(
+          () => (window as any).appStores.oscListenerStatus.get().port,
+        );
+        await sendOscButton(port, 1);
+      }
+      const clear = page
+        .getByRole("button", { name: "Clear programmer", exact: true })
+        .first();
+      await expect(clear).toHaveAttribute("data-mapping-state", "compatible");
+      await page.screenshot({
+        path: testInfo.outputPath("learning-active.png"),
+        fullPage: true,
+      });
+      await clear.click();
+      await expect(status).not.toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate((transport) => {
+            const stores = (window as any).appStores;
+            return (
+              transport === "OSC" ? stores.oscMappings : stores.midiMappings
+            )
+              .get()
+              .some((mapping: any) => mapping.action.id === "programmer.clear");
+          }, transport),
+        )
+        .toBe(true);
+      await expect(
+        page.getByRole("gridcell", { name: "programmer.clear", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath("learned-mapping-row.png"),
+        fullPage: true,
+      });
+      await page.evaluate(() => {
+        const api = (window as any).appStores.dockApi.get();
+        api.addPanel({
+          id: "mapping-controls",
+          component: "ClipList",
+          title: "Controls",
+          params: {},
+        });
+        api.getPanel("learned-mappings").api.close();
+      });
+      await expect(
+        page.getByRole("tab", { name: "Learned mappings", exact: true }),
+      ).not.toBeVisible();
+      await runMappingCommand(page, `Open ${transport} Input`);
+      await expect(
+        page.getByRole("gridcell", { name: "programmer.clear", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath("reopened-mapping-row.png"),
+        fullPage: true,
+        animations: "disabled",
+      });
+      await runMappingCommand(page, `Map ${transport} controller`);
+      await expect(status).toBeVisible();
+      await status
+        .getByRole("button", { name: "Cancel mapping", exact: true })
+        .click();
+      await expect(status).not.toBeVisible();
+      await expect(clear).toHaveAttribute("data-mapping-state", "inactive");
+      await runMappingCommand(page, `Map ${transport} controller`);
+      await runMappingCommand(page, "Cancel controller mapping");
+      await expect(status).not.toBeVisible();
+    } finally {
+      await controller?.close();
+    }
   });
 }
