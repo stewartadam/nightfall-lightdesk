@@ -273,7 +273,7 @@ test("floating lessons provide context, selectable commands and manual placement
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
   await reachStep(page, "Select lights by number");
   await expect(
     page.getByRole("textbox", { name: "Command input", exact: true }),
@@ -391,7 +391,7 @@ test("guide accepts stored cue identity without its suggested label", async ({
   await command.press("Enter");
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
   await reachStep(page, "Store the red cue");
   await guide
     .getByRole("button", { name: "Open Programmer", exact: true })
@@ -415,9 +415,9 @@ test("guide content waits for prerequisites and renders text after actions", asy
   await page.evaluate(async () => {
     const path = "/features/welcome-guide/lessons.ts";
     const { GUIDE_LESSONS } = await import(path);
-    const intensity = GUIDE_LESSONS[0].steps.find(
-      (step: any) => step.id === "intensity",
-    );
+    const intensity = GUIDE_LESSONS.find(
+      (lesson: any) => lesson.id === "welcome",
+    ).steps.find((step: any) => step.id === "intensity");
     intensity.content.push({
       type: "text",
       text: "Text after the action callout.",
@@ -427,7 +427,7 @@ test("guide content waits for prerequisites and renders text after actions", asy
   });
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
   await reachStep(page, "Bring up the lights");
   await expect(guide).toContainText(
     "The Programmer holds live lighting instructions.",
@@ -472,7 +472,7 @@ test("guide shortcuts follow panel visibility", async ({ page }, testInfo) => {
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
   await reachStep(page, "Bring up the lights");
   const shortcut = guide.getByRole("button", {
     name: "Open Programmer",
@@ -559,7 +559,8 @@ test("Stop guidance prefers above the timeline", async ({ page }, testInfo) => {
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await guide
     .getByRole("button", { name: "Open Timeline 1: Lo-Fi", exact: true })
     .click();
@@ -595,6 +596,72 @@ test("Stop guidance prefers above the timeline", async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath("guide-stop-above.png") });
 });
 
+/** Introduces direct clip playback and properties without using commands. */
+test("welcome basics toggles a clip and opens properties", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await guide
+    .getByRole("button", { name: "Open Timeline 1: Lo-Fi", exact: true })
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Start the sample show" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Play timeline", exact: true })
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Stop playback", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Stop timeline", exact: true })
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Launch a clip" }),
+  ).toBeVisible();
+  await guide.getByRole("button", { name: "Open Clips", exact: true }).click();
+  const uid = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.clips.get()) as any[]).find(
+        ([clip]) => clip.identifiers.id === 1,
+      )[0].identifiers.uid,
+  );
+  const tile = page.locator(`[data-crud-select-id="${uid}"]`);
+  await tile.click();
+  await expect(
+    guide.getByRole("heading", { name: "Stop a clip" }),
+  ).toBeVisible();
+  const pulse = page.locator(".nf-guide-highlight");
+  expect(
+    await pulse.evaluate(
+      (element) => getComputedStyle(element, "::after").animationName,
+    ),
+  ).toBe("nf-guide-target-pulse");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(
+    await pulse.evaluate(
+      (element) => getComputedStyle(element, "::after").animationName,
+    ),
+  ).toBe("none");
+  await tile.click();
+  await expect(
+    guide.getByRole("heading", { name: "Explore clip properties" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Inspect clip 1", exact: true })
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Ready to make your own lights" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("welcome-basics-properties.png"),
+  });
+});
+
 for (const platform of ["MacIntel", "Win32"]) {
   /** Shows the platform modifier as shared keycaps and verifies the advertised binding opens the palette. */
   test(`guide palette shortcut matches ${platform}`, async ({
@@ -608,7 +675,7 @@ for (const platform of ["MacIntel", "Win32"]) {
       await page.setViewportSize({ width: 1100, height: 1000 });
     await page.getByRole("button", { name: "Open Welcome Guide" }).click();
     const guide = page.getByTestId("welcome-guide");
-    await guide.getByRole("button", { name: /START HERE/ }).click();
+    await guide.getByRole("button", { name: /Your first lights/ }).click();
     await reachStep(page, "Find your way around");
     const keys = guide.locator(".nf-guide-inline-shortcut kbd");
     await expect(keys).toHaveCount(3);
@@ -690,7 +757,7 @@ test("lesson hot reload preserves the guide and Dockview layout", async ({
   await openSample(page, false);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
   await reachStep(page, "Bring up the lights");
   const stepLabel = await guide
     .getByRole("status", { name: "Current step" })
@@ -772,7 +839,8 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   });
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await guide
     .getByRole("button", { name: "Open Timeline 1: Lo-Fi", exact: true })
     .click();
@@ -793,7 +861,7 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   ).toBeVisible();
   await expect(guide.getByRole("button", { name: "Skip step" })).toHaveCount(0);
   await expect(guide.getByRole("status", { name: "Current step" })).toHaveText(
-    "2/16",
+    "3/8",
   );
   await expect(
     guide
@@ -835,7 +903,8 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   });
   await reachStep(page, "Ready to explore");
   await guide.getByRole("button", { name: "Finish lesson" }).click();
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(
     guide.getByRole("heading", { name: "Start the sample show" }),
   ).toBeVisible();
@@ -848,7 +917,8 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(guide).toContainText("Lo-fi");
   await expect(
     guide.locator("header").getByRole("button", { name: "All lessons" }),
@@ -869,11 +939,13 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
     .getByRole("button", { name: "Play timeline", exact: true })
     .click();
   await expect(
-    guide.getByRole("heading", { name: "Watch, then stop" }),
+    guide.getByRole("heading", { name: "Stop playback" }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Stop timeline", exact: true })
     .click();
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
   await expect(
     guide.getByRole("heading", { name: "Find your way around" }),
   ).toBeVisible();
@@ -949,7 +1021,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
   await expect(
     guide.getByRole("button", { name: /FOLLOW-ON LESSON/ }),
   ).toHaveCount(5);
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
   await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
     0,
   );
@@ -1070,7 +1142,7 @@ test("first lights builds its own Red and Blue sequence", async ({
   );
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
   await reachStep(page, "Store the red cue");
   await guide
     .getByRole("button", { name: "Open Programmer", exact: true })
@@ -1171,8 +1243,17 @@ test("first lights builds its own Red and Blue sequence", async ({
       ),
     )
     .toBe(true);
-  await input.fill("set clip 50 target=sequence 50");
-  await input.press("Enter");
+  await expect(
+    guide.getByRole("heading", { name: "Choose your clip’s sequence" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Inspect clip 50", exact: true })
+    .click();
+  await page.getByPlaceholder("Find a sequence...").fill("50");
+  await page
+    .locator('[data-component="PropertiesInspector"]')
+    .getByText(/^50:/)
+    .click();
   await expect(
     guide.getByRole("heading", { name: "Put First Lights on control 6" }),
   ).toBeVisible();
@@ -1304,13 +1385,8 @@ test("first lights builds its own Red and Blue sequence", async ({
   await page.screenshot({
     path: testInfo.outputPath("welcome-guide-clips.png"),
   });
-  const command = page.getByRole("textbox", {
-    name: "Command input",
-    exact: true,
-  });
   await guide.getByRole("button", { name: "Continue", exact: true }).click();
-  await command.fill("clip 50 stop");
-  await command.press("Enter");
+  await clipCard.click();
   await expect
     .poll(() =>
       page.evaluate(
