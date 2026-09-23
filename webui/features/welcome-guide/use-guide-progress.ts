@@ -99,6 +99,23 @@ export function useGuideProgress(
     const target = observation();
     if (!target) return;
     const [accentPicked, setAccentPicked] = createSignal(false);
+    const [saveShowfilePressed, setSaveShowfilePressed] = createSignal(false);
+    /** Observes the enabled save menu action, including keyboard-generated clicks. */
+    const pressSaveShowfile = (event: MouseEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          '[data-component="DropdownMenuItem"]:has([data-guide-target="save-showfile"]):not([disabled])',
+        )
+      )
+        setSaveShowfilePressed(true);
+    };
+    if (target.type === "save-showfile") {
+      document.addEventListener("click", pressSaveShowfile, true);
+      onCleanup(() =>
+        document.removeEventListener("click", pressSaveShowfile, true),
+      );
+    }
     /** Counts a deliberate swatch choice, including reselecting the current color. */
     const pickAccent = (event: MouseEvent) => {
       if (
@@ -119,6 +136,7 @@ export function useGuideProgress(
         settingsOpen: isSettingsOpen(),
         shortcutsOpen: isShortcutsPopupVisible(),
         accentPicked: accentPicked(),
+        saveShowfilePressed: saveShowfilePressed(),
         panel: panel(),
         openPanels: openPanels(),
         fixtures: fixtureMap(),

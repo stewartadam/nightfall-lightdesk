@@ -302,6 +302,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "save-showfile",
+        observe: { type: "save-showfile" },
         title: "Keep a saved version of your show",
         target:
           '[data-component="DropdownMenuItem"]:has([data-guide-target="save-showfile"]), [aria-label="Menu"]:not([aria-expanded="true"])',
@@ -312,7 +313,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Open Menu at the bottom left and choose Save Showfile to save the sample show’s current state. Then continue.",
+            body: "Open Menu at the bottom left and choose Save Showfile to save the sample show’s current state.",
           },
         ],
       },

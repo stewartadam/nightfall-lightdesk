@@ -22,6 +22,7 @@ import type { ControlSnapshot } from "../../types";
 export type GuideObservation =
   | { type: "command-palette" }
   | { type: "settings" }
+  | { type: "save-showfile" }
   | { type: "accent-settings-closed" | "shortcuts-closed" }
   | { type: "panel-hidden"; component: PanelComponentName }
   | { type: "sample-panels" }
@@ -50,6 +51,7 @@ export interface GuideSnapshot {
   settingsOpen?: boolean;
   shortcutsOpen?: boolean;
   accentPicked?: boolean;
+  saveShowfilePressed?: boolean;
   panel?: string;
   openPanels?: {
     component: string;
@@ -95,6 +97,8 @@ export function guideCompletionToken(
       return state.commandPaletteOpen ? "open" : "";
     case "settings":
       return state.settingsOpen ? "open" : "";
+    case "save-showfile":
+      return state.saveShowfilePressed ? "pressed" : "";
     case "accent-settings-closed":
       return state.accentPicked && !state.settingsOpen ? "closed" : "";
     case "shortcuts-closed":
