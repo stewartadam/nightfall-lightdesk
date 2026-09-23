@@ -376,6 +376,58 @@ test("floating lessons provide context, selectable commands and manual placement
   });
 });
 
+/** Shows prerequisite shortcuts again when their panels become hidden, collapsed, or closed. */
+test("guide shortcuts follow panel visibility", async ({ page }, testInfo) => {
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await reachStep(page, "Bring up the lights");
+  const shortcut = guide.getByRole("button", {
+    name: "Open Programmer",
+    exact: true,
+  });
+  await expect(shortcut).toBeVisible();
+  await shortcut.click();
+  await expect(shortcut).toHaveCount(0);
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.panels.find(
+      (entry: any) => entry.api.component === "ProgrammerGrid",
+    );
+    api.getEdgeGroup(panel.api.location.position).collapse();
+  });
+  await expect(shortcut).toBeVisible();
+  await shortcut.click();
+  await expect(shortcut).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Store cue", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("guide-visible-programmer.png"),
+  });
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.panels.find(
+      (entry: any) => entry.api.component === "ProgrammerGrid",
+    );
+    const sibling = panel.group.panels.find(
+      (entry: any) => entry.id !== panel.id,
+    );
+    sibling.api.setActive();
+  });
+  await expect(shortcut).toBeVisible();
+  await shortcut.click();
+  await expect(shortcut).toHaveCount(0);
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    api.removePanel(
+      api.panels.find((entry: any) => entry.api.component === "ProgrammerGrid"),
+    );
+  });
+  await expect(shortcut).toBeVisible();
+});
+
 /** Keeps sample fixture identities and swatches readable in the Programmer's compact dock. */
 test("programmer columns fit selected sample fixtures", async ({
   page,
@@ -763,9 +815,9 @@ test("welcome guide teaches live selection and cue storage without blocking the 
   await expect(
     guide.getByRole("heading", { name: "Store the red cue" }),
   ).toBeVisible();
-  await guide
-    .getByRole("button", { name: "Open Programmer", exact: true })
-    .click();
+  await expect(
+    guide.getByRole("button", { name: "Open Programmer", exact: true }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Store cue", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Store Cue" });
   await dialog.getByLabel("Sequence ID", { exact: true }).fill("1");

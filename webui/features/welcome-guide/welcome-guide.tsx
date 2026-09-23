@@ -9,7 +9,14 @@
 import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { ShortcutKeys } from "../../components/overlays/keyboard-shortcuts";
 import { useAppShell } from "../../components/providers/app-shell";
 import {
@@ -85,6 +92,39 @@ export default function WelcomeGuide() {
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
   );
   const { dockviewApi } = useAppShell();
+  const [visiblePanels, setVisiblePanels] = createSignal<
+    { component: string; timelineUid?: string }[]
+  >([]);
+  /** Tracks usable panels as tabs activate, groups expand, and the workspace layout changes. */
+  createEffect(() => {
+    const api = dockviewApi();
+    /** Excludes inactive tabs and collapsed groups from the guide's ready panels. */
+    const update = () =>
+      setVisiblePanels(
+        api?.panels
+          .filter((panel) => {
+            return panel.api.isVisible && !panel.group.api.isCollapsed();
+          })
+          .map((panel) => ({
+            component: panel.api.component,
+            timelineUid: panel.params?.initialTimelineUid,
+          })) ?? [],
+      );
+    update();
+    const subscriptions = [
+      api?.onDidLayoutChange(update),
+      api?.onDidActivePanelChange(update),
+      api?.onDidAddPanel(update),
+      api?.onDidRemovePanel(update),
+      api?.onDidTabGroupCollapsedChange(update),
+      ...(["left", "right", "top", "bottom"] as const).map((position) =>
+        api?.getEdgeGroup(position)?.onDidCollapsedChange(update),
+      ),
+    ];
+    onCleanup(() => {
+      for (const subscription of subscriptions) subscription?.dispose();
+    });
+  });
   let heading: HTMLHeadingElement | undefined;
   /** Resolves lesson data without retaining stale content when returning to the library. */
   const lesson = createMemo(() =>
@@ -92,6 +132,23 @@ export default function WelcomeGuide() {
   );
   /** Resolves the current instruction, leaving completion outside the action steps. */
   const step = createMemo(() => lesson()?.steps[index()]);
+  /** Offers shortcuts only for prerequisite panels that are not currently usable. */
+  const panelsToOpen = createMemo(
+    () =>
+      step()?.panels?.filter(
+        (name) => !visiblePanels().some((panel) => panel.component === name),
+      ) ?? [],
+  );
+  /** Hides the sample shortcut only when timeline one itself is visible. */
+  const timelineToOpen = createMemo(
+    () =>
+      step()?.sampleTimeline &&
+      !visiblePanels().some(
+        (panel) =>
+          panel.component === "Timeline" &&
+          panel.timelineUid === sampleTimeline()?.identifiers.uid,
+      ),
+  );
   const [card, setCard] = createSignal<HTMLElement>();
   const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
   const floating = useFloatingGuide(
@@ -298,14 +355,9 @@ export default function WelcomeGuide() {
                   {(instruction) => (
                     <>
                       <p>{instruction().body}</p>
-                      <Show
-                        when={
-                          instruction().sampleTimeline ||
-                          instruction().panels?.length
-                        }
-                      >
+                      <Show when={timelineToOpen() || panelsToOpen().length}>
                         <div class="nf-guide-shortcuts">
-                          <Show when={instruction().sampleTimeline}>
+                          <Show when={timelineToOpen()}>
                             <Button
                               size="compact"
                               onClick={openSampleTimeline}
@@ -314,7 +366,7 @@ export default function WelcomeGuide() {
                               Open Timeline 1: Lo-Fi
                             </Button>
                           </Show>
-                          <For each={instruction().panels}>
+                          <For each={panelsToOpen()}>
                             {(name) => (
                               <Button
                                 size="compact"
