@@ -84,11 +84,16 @@ fn main() {
                             path: mode.clone(),
                             message: "Missing fixture type".into(),
                         })?;
-                resolve_mode(fixture, &mode, ResolveLimits::default())
-                    .map(|resolved| (resolved, &fixture.physical_descriptions.dmx_profiles))
+                resolve_mode(fixture, &mode, ResolveLimits::default()).map(|resolved| {
+                    (
+                        resolved,
+                        &fixture.attribute_definitions,
+                        &fixture.physical_descriptions.dmx_profiles,
+                    )
+                })
             });
         match resolved {
-            Ok((resolved, profile_sources)) => {
+            Ok((resolved, attributes, profile_sources)) => {
                 emit(json!({
                 "stage": "resolution", "status": "passed", "mode": mode,
                 "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
@@ -97,12 +102,16 @@ fn main() {
                 "resolved": resolved,
                 }));
                 let started = Instant::now();
-                let compiled =
-                    compile_channels(&resolved, profile_sources, ChannelLimits::default())
-                        .and_then(|program| {
-                            let values = program.evaluate_physical(&program.defaults())?;
-                            Ok((program.channels().len(), values))
-                        });
+                let compiled = compile_channels(
+                    &resolved,
+                    attributes,
+                    profile_sources,
+                    ChannelLimits::default(),
+                )
+                .and_then(|program| {
+                    let values = program.evaluate_physical(&program.defaults())?;
+                    Ok((program.channels().len(), values))
+                });
                 match compiled {
                     Ok((channels, values)) => emit(json!({
                         "stage": "compiled_channels", "status": "passed", "mode": mode,

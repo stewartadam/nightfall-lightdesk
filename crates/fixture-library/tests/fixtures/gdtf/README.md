@@ -76,12 +76,17 @@ patching, whole-frame transactions, physical conversion, or relation evaluation.
 The `compiled_channels` stage builds one owned channel program using the wire,
 function, selector, physical and relation passes, then evaluates every active
 function at the initial raw snapshot. It retains channel/geometry identities,
-attribute links, defaults/highlight and function intervals without borrowing the
+resolved attribute indices, defaults/highlight and function intervals without borrowing the
 parsed archive. Tests drop the source before evaluating sparse DMX inputs and
 local selectors, and verify overlapping logical functions remain separately
 observable. Returned physical values are not relation-adjusted semantic fractions.
-This is the channel portion of the planned definition; attribute/subunit and
-optical metadata, geometry/resources, revision persistence and engine adoption
+Its owned attribute table retains exact names, display labels, physical units
+and auxiliary unit declarations. Function links must resolve exactly; missing
+or duplicate names, duplicate auxiliary types and nonfinite auxiliary ranges are
+diagnosed, with explicit table-size budgets. Synthetic tests check that declared
+units survive even when they differ from what a name might suggest.
+This is the channel portion of the planned definition; subchannel mappings,
+attribute grouping/color and optical metadata, geometry/resources, revision persistence and engine adoption
 are still required. Serialization here is diagnostic output, not a finalized
 showfile or worker contract.
 

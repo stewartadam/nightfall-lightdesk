@@ -18,7 +18,12 @@ fn compile(
 ) -> Result<CompiledChannels, ResolveError> {
     let fixture = &description.fixture_types[0];
     let mode = resolve_mode(fixture, "Nested sparse", ResolveLimits::default())?;
-    compile_channels(&mode, &fixture.physical_descriptions.dmx_profiles, limits)
+    compile_channels(
+        &mode,
+        &fixture.attribute_definitions,
+        &fixture.physical_descriptions.dmx_profiles,
+        limits,
+    )
 }
 
 /// Parse a small reference-expanded mode with two independent tilt controls.
@@ -52,8 +57,14 @@ fn owned_program_evaluates_after_source_disposal() {
     assert_eq!(evaluated[1][0].value, 180.0);
     assert_eq!(evaluated[4][0].value, 1.0);
     assert_eq!(evaluated[5][0].value, 0.0);
-    assert_eq!(program.channels()[0].functions[0].attribute, "Tilt");
-    assert_eq!(program.channels()[4].functions[0].attribute, "ColorAdd_R");
+    assert_eq!(
+        program.attributes().attributes()[program.channels()[0].functions[0].attribute].name,
+        "Tilt"
+    );
+    assert_eq!(
+        program.attributes().attributes()[program.channels()[4].functions[0].attribute].name,
+        "ColorAdd_R"
+    );
     assert_ne!(
         program.channels()[4].geometry,
         program.channels()[5].geometry
@@ -134,4 +145,16 @@ fn composed_program_rejects_invalid_inputs() {
         program.evaluate_physical(&raw).unwrap_err().code,
         "invalid_raw_snapshot"
     );
+}
+
+/// A bad function attribute link is diagnosed against the instantiated function rather than guessed.
+#[test]
+fn function_attribute_links_are_validated_during_compilation() {
+    let mut source = description();
+    source.fixture_types[0].dmx_modes[0].dmx_channels[0].logical_channels[0].channel_functions[0]
+        .attribute = serde_json::from_value(serde_json::json!("Missing")).unwrap();
+    let error = compile(source, ChannelLimits::default()).unwrap_err();
+    assert_eq!(error.code, "invalid_attribute_link");
+    assert!(error.message.contains("Missing"));
+    assert!(error.path.starts_with("c/0/"));
 }

@@ -8,10 +8,12 @@
 
 //! Owned channel semantics compiled together from one resolved mode.
 
+use gdtf::attribute::AttributeDefinitions;
 use gdtf::physical_descriptions::DmxProfile;
 use serde::Serialize;
 
 use crate::gdtf_activation::{ActivationProgram, compile_activation};
+use crate::gdtf_attributes::{AttributeLibrary, compile_attributes};
 use crate::gdtf_bindings::bind_selectors;
 use crate::gdtf_functions::resolve_functions;
 use crate::gdtf_physical::{PhysicalMappings, compile_physical};
@@ -23,6 +25,10 @@ use crate::gdtf_wire::{ModeWires, resolve_wires};
 /// Expanded semantic budgets, independent of geometry-resolution limits.
 #[derive(Debug, Clone, Copy)]
 pub struct ChannelLimits {
+    /// Maximum number of declared attributes.
+    pub attributes: usize,
+    /// Maximum declared auxiliary physical units across all attributes.
+    pub subunits: usize,
     /// Maximum total instantiated functions, checked before normalization.
     pub functions: usize,
     /// Maximum total instantiated channel sets.
@@ -37,6 +43,8 @@ impl Default for ChannelLimits {
     /// Provide the same semantic budgets used by the corpus probe.
     fn default() -> Self {
         Self {
+            attributes: 100_000,
+            subunits: 100_000,
             functions: 1_000_000,
             sets: 1_000_000,
             profile_points: 100_000,
@@ -51,8 +59,8 @@ impl Default for ChannelLimits {
 pub struct CompiledFunction {
     /// Definition-local function identity.
     pub id: String,
-    /// Attribute link, not an inferred semantic classification or display label.
-    pub attribute: String,
+    /// Resolved index into the program's attribute table, independent of display labels.
+    pub attribute: usize,
     /// Authored logical channel index; several logical channels may be active together.
     pub logical_channel: usize,
     /// Authored function index within its logical channel.
@@ -90,6 +98,7 @@ pub struct CompiledChannel {
 /// remain separate and must use the same definition identity before production adoption.
 #[derive(Debug, Serialize)]
 pub struct CompiledChannels {
+    attributes: AttributeLibrary,
     channels: Vec<CompiledChannel>,
     wires: ModeWires,
     activation: ActivationProgram,
@@ -109,6 +118,7 @@ pub struct ActivePhysicalValue {
 /// Compile all channel passes from one mode, rejecting failures before publishing any result.
 pub fn compile_channels(
     mode: &ResolvedMode<'_>,
+    attributes: &AttributeDefinitions,
     profiles: &[DmxProfile],
     limits: ChannelLimits,
 ) -> Result<CompiledChannels, ResolveError> {
@@ -125,6 +135,7 @@ pub fn compile_channels(
                 })?;
         }
     }
+    let attributes = compile_attributes(attributes, limits.attributes, limits.subunits)?;
     let wires = resolve_wires(mode)?;
     let functions = resolve_functions(mode)?;
     let bindings = bind_selectors(mode, &functions)?;
@@ -142,29 +153,40 @@ pub fn compile_channels(
     let channels = functions
         .iter()
         .zip(&mode.channels)
-        .map(|(channel, instance)| CompiledChannel {
-            id: channel.id.clone(),
-            geometry: instance.geometry,
-            bytes: channel.bytes,
-            initial_function: channel.initial_function,
-            default: channel.default,
-            highlight: channel.highlight,
-            functions: channel
-                .functions
-                .iter()
-                .map(|function| CompiledFunction {
-                    id: function.id.clone(),
-                    attribute: function.source.attribute.to_string(),
-                    logical_channel: function.logical_channel,
-                    function: function.function,
-                    raw_from: function.raw_from,
-                    raw_to: function.raw_to,
-                    default: function.default,
-                })
-                .collect(),
+        .map(|(channel, instance)| {
+            Ok(CompiledChannel {
+                id: channel.id.clone(),
+                geometry: instance.geometry,
+                bytes: channel.bytes,
+                initial_function: channel.initial_function,
+                default: channel.default,
+                highlight: channel.highlight,
+                functions: channel
+                    .functions
+                    .iter()
+                    .map(|function| {
+                        Ok(CompiledFunction {
+                            id: function.id.clone(),
+                            attribute: attributes.resolve(&function.source.attribute).map_err(
+                                |mut error| {
+                                    error.message = format!("{}: {}", error.message, error.path);
+                                    error.path = function.id.clone();
+                                    error
+                                },
+                            )?,
+                            logical_channel: function.logical_channel,
+                            function: function.function,
+                            raw_from: function.raw_from,
+                            raw_to: function.raw_to,
+                            default: function.default,
+                        })
+                    })
+                    .collect::<Result<_, ResolveError>>()?,
+            })
         })
-        .collect();
+        .collect::<Result<_, ResolveError>>()?;
     Ok(CompiledChannels {
+        attributes,
         channels,
         wires,
         activation,
@@ -174,6 +196,11 @@ pub fn compile_channels(
 }
 
 impl CompiledChannels {
+    /// Inspect resolved attribute labels and physical units used by function metadata.
+    pub fn attributes(&self) -> &AttributeLibrary {
+        &self.attributes
+    }
+
     /// Inspect metadata without permitting mutation that could invalidate evaluator indices.
     pub fn channels(&self) -> &[CompiledChannel] {
         &self.channels
