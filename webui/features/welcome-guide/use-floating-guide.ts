@@ -146,11 +146,11 @@ export function useFloatingGuide(
         0,
         Math.min(point.y + height, rect.bottom) - Math.max(point.y, rect.top),
       );
-    /** Preserves the action first, then the teaching panel and Visualizer, with proximity as a tie-breaker. */
+    /** Keeps header actions nearby; panel actions also preserve their teaching panel and Visualizer. */
     const score = (point: { x: number; y: number }) =>
       overlap(point, target) * 10000 +
       (panel ? overlap(point, panel) * 2 : 0) +
-      (visualizer ? overlap(point, visualizer) : 0) +
+      (visualizer && (panel || !anchor()) ? overlap(point, visualizer) : 0) +
       Math.hypot(point.x - target.x, point.y - target.y) * 0.001;
     candidates.sort((a, b) => score(a) - score(b));
     setPosition(candidates[0]);
