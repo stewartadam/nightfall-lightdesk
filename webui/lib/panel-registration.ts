@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type Component, lazy } from "solid-js";
+import { type Component, createComponent, lazy } from "solid-js";
 import { gateExperimentalFlowPanel } from "../features/flow/panels/experimental-flow-panel";
 import { isExperimentalFlowPanel } from "./experimental-features";
 import { PANEL_MODULES } from "./panel-manifest";
@@ -15,7 +15,9 @@ import { registerPanelComponent } from "./panel-registry";
 
 /** Resolves a panel component implementation from its descriptor-owned loader. */
 function resolvePanelComponent(panelModule: PanelModule): Component<any> {
-  const Panel = lazy(panelModule.loadComponent) as Component<any>;
+  /** Owns each lazy resource per mount so retiring a workspace cannot strand another panel. */
+  const Panel: Component<any> = (props) =>
+    createComponent(lazy(panelModule.loadComponent), props);
   return isExperimentalFlowPanel(panelModule.componentName)
     ? gateExperimentalFlowPanel(Panel)
     : Panel;
