@@ -222,6 +222,9 @@ export default function WelcomeGuide() {
                         stepId={instruction().id}
                         selector={instruction().target}
                         hint={instruction().hint}
+                        command={instruction().command}
+                        paletteHint={instruction().paletteHint}
+                        focusTarget={instruction().focusTarget}
                       />
                       <p class="nf-guide-note">
                         {instruction().observe
