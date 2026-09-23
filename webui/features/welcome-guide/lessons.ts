@@ -16,6 +16,7 @@ export interface GuideStep {
   action: string;
   panels?: PanelComponentName[];
   sampleTimeline?: boolean;
+  highlightClipId?: number;
   target?: string;
   hint?: string;
   command?: string;
@@ -158,7 +159,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           "Press Clear programmer twice: once to clear selection, then again to release values.",
         panels: ["ProgrammerGrid"],
         target: '[aria-label="Clear programmer"]',
-        hint: "Clear selection, then values.",
+        hint: "Click twice to clear the programmer",
         observe: { type: "clear" },
         more: "Setting intensity to zero leaves a live instruction. Clearing allows stored cues to control the lights.",
       },
@@ -170,6 +171,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           "Open Clips and drag clip 1: RGB cycle (full) onto control 6’s Drop target. Expand Controls first if collapsed.",
         panels: ["ClipList"],
         target: '[data-clip-dropzone-index="6"]',
+        highlightClipId: 1,
         hint: "Drop RGB cycle (full) on control 6.",
         observe: { type: "assigned", clipId: 1, control: 6 },
       },
