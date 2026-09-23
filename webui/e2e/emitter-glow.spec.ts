@@ -116,6 +116,33 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
       };
       pipeline.bloomPass.strength.value = 0;
       const faces = await capture();
+      // Force sustained GPU overload without depending on the test machine's speed.
+      const start = performance.now() - 10_000;
+      for (let id = 0; id < 10; id++)
+        pipeline.atmosphereBudget.update(
+          { id, milliseconds: 20 },
+          start + id * 1001,
+        );
+      for (let id = 10; id < 13; id++)
+        renderWithPostProcessing(pipeline, { id, milliseconds: 20 });
+      const overloadedFaces = await capture();
+      let faceDifference = 0;
+      for (let i = 0; i < faces.pixels.length; i++)
+        faceDifference = Math.max(
+          faceDifference,
+          Math.abs(faces.pixels[i] - overloadedFaces.pixels[i]),
+        );
+      const scales = {
+        scene: pipeline.scenePass.getResolutionScale(),
+        fog: pipeline.volumePass.getResolutionScale(),
+        glow: pipeline.bloomPass.getResolutionScale(),
+        sceneWidth: (
+          pipeline.scenePass.getTexture("output").image as { width: number }
+        ).width,
+        sceneHeight: (
+          pipeline.scenePass.getTexture("output").image as { height: number }
+        ).height,
+      };
       pipeline.bloomPass.strength.value = pipeline.config.bloomStrength;
       const glow = await capture();
       let haloPixels = 0;
@@ -143,7 +170,13 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
       if ("ledBarData" in fixture) disposeLedBar(fixture);
       else disposeStrobePanel(fixture);
       renderer.dispose();
-      return { haloPixels, blackoutMax, image: glow.image };
+      return {
+        haloPixels,
+        blackoutMax,
+        faceDifference,
+        scales,
+        image: glow.image,
+      };
     }, kind);
     await testInfo.attach(`${kind}-glow.png`, {
       body: Buffer.from(result.image.split(",")[1], "base64"),
@@ -152,5 +185,13 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
     expect(errors).toEqual([]);
     expect(result.haloPixels).toBeGreaterThan(500);
     expect(result.blackoutMax).toBeLessThan(3);
+    expect(result.faceDifference).toBe(0);
+    expect(result.scales).toEqual({
+      scene: 1,
+      fog: 0.25,
+      glow: 0.25,
+      sceneWidth: 500,
+      sceneHeight: 400,
+    });
   });
 }

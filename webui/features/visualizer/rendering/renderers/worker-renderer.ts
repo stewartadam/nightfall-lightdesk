@@ -998,7 +998,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       fps,
       framePacing: this.pacing.snapshot(),
       atmosphereScale: this.postProcessing?.atmosphereBudget.scale,
-      sceneScale: this.postProcessing?.sceneBudget.scale,
+      sceneScale: this.postProcessing?.scenePass.getResolutionScale(),
       reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
       reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
       omittedSurfaceLights:

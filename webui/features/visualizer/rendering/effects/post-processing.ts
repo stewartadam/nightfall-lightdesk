@@ -16,11 +16,7 @@ import { outline } from "three/addons/tsl/display/OutlineNode.js";
 import { color, float, pass } from "three/tsl";
 import type { Camera, Object3D, Scene } from "three/webgpu";
 import { RenderPipeline, type WebGPURenderer } from "three/webgpu";
-import {
-  AtmosphereBudget,
-  type GpuBudgetSample,
-  ResolutionBudget,
-} from "./atmosphere-budget";
+import { AtmosphereBudget, type GpuBudgetSample } from "./atmosphere-budget";
 import { createOpticalRenderContext } from "./optical-render-context";
 import { OpticalSurfaceLighting } from "./optical-surface-lighting";
 import { ShadowRefreshBudget } from "./shadow-refresh-budget";
@@ -111,7 +107,6 @@ export interface PostProcessingState {
   visibleOutlineProxies: Set<Object3D>;
   surfaceLighting?: OpticalSurfaceLighting;
   atmosphereBudget: AtmosphereBudget;
-  sceneBudget: ResolutionBudget;
   volumePass: ReturnType<typeof pass>;
   postProcessing: RenderPipeline;
   scenePass: ReturnType<typeof pass>;
@@ -152,8 +147,8 @@ export function createPostProcessing(
     ...options?.configOverrides,
   };
 
-  // Create scene pass
-  const scenePass = pass(scene, camera);
+  // Keep native pixel detail; single-sample offscreen targets avoid the bandwidth cost of MSAA.
+  const scenePass = pass(scene, camera, { samples: 0 });
   scenePass.getTexture("output").name = "scene";
   const scenePassColor = scenePass.getTextureNode("output");
   const opticalContext = createOpticalRenderContext(
@@ -163,7 +158,9 @@ export function createPostProcessing(
     surfaceLighting?.goboAtlas,
     surfaceLighting?.shadows,
   );
-  const volumePass = pass(opticalContext.scene, camera).setResolutionScale(0.5);
+  const volumePass = pass(opticalContext.scene, camera, {
+    samples: 0,
+  }).setResolutionScale(0.5);
   volumePass.getTexture("output").name = "atmosphere";
   const litColor = scenePassColor.add(volumePass.getTextureNode("output"));
 
@@ -242,7 +239,6 @@ export function createPostProcessing(
     visibleOutlineProxies: new Set(),
     surfaceLighting,
     atmosphereBudget: new AtmosphereBudget(),
-    sceneBudget: new ResolutionBudget([1, 0.75, 0.5]),
     volumePass,
     postProcessing,
     scenePass,
@@ -342,11 +338,11 @@ export function renderWithPostProcessing(
 ): void {
   const started = performance.now();
   const scale = state.atmosphereBudget.update(gpu, started);
-  const sceneScale = state.sceneBudget.update(gpu, started);
-  if (state.scenePass.getResolutionScale() !== sceneScale)
-    state.scenePass.setResolutionScale(sceneScale);
   if (state.volumePass.getResolutionScale() !== scale)
     state.volumePass.setResolutionScale(scale);
+  // Preserve native-resolution geometry; only the soft effects trade pixels for GPU headroom.
+  if (state.bloomPass.getResolutionScale() !== scale)
+    state.bloomPass.setResolutionScale(scale);
   const allowShadowRefresh = state.shadowBudget.canRefresh(gpu, updateMs);
   state.surfaceLighting?.shadows.update(
     state.renderer,

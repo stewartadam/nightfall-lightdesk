@@ -394,7 +394,8 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
           startedAt: metrics.startedAt,
           atmosphereScale:
             this.rendererState?.postProcessing?.atmosphereBudget.scale,
-          sceneScale: this.rendererState?.postProcessing?.sceneBudget.scale,
+          sceneScale:
+            this.rendererState?.postProcessing?.scenePass.getResolutionScale(),
           omittedSurfaceLights:
             this.rendererState?.postProcessing?.surfaceLighting
               ?.omittedPointLights,
