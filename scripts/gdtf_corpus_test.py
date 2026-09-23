@@ -113,13 +113,13 @@ class CorpusTests(unittest.TestCase):
         """Earlier passes cannot conceal missing binding or activation evidence."""
         def incomplete_run(*args, **kwargs):
             """Simulate successful earlier stages without instance binding evidence."""
-            for stage in ("parse", "resolution", "wire", "functions", "sets", "physical", "relations", "bindings", "activation", "conversion"):
+            for stage in ("parse", "resolution", "wire", "functions", "sets", "physical", "relations", "bindings", "activation", "compiled_channels", "conversion"):
                 if stage == missing:
                     continue
                 kwargs["stdout"].write(json.dumps({"stage": stage, "status": "passed", "mode": "Mode"}) + "\n")
             return subprocess.CompletedProcess(args, 0, stderr="")
 
-        for missing in ("sets", "physical", "relations", "bindings", "activation"):
+        for missing in ("sets", "physical", "relations", "bindings", "activation", "compiled_channels"):
             with self.subTest(missing=missing), patch.object(CORPUS.subprocess, "run", side_effect=incomplete_run):
                 result = CORPUS.run_probe(Path("probe"), self.path, self.root / "probe.jsonl", 1, ["Mode"])
             self.assertEqual(result["status"], "failed")

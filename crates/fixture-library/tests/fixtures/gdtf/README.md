@@ -73,6 +73,18 @@ unchanged gaps, and rejected writes leaving the entire buffer unchanged. Virtual
 controls have no `ChannelWire`. These primitives do not yet perform engine
 patching, whole-frame transactions, physical conversion, or relation evaluation.
 
+The `compiled_channels` stage builds one owned channel program using the wire,
+function, selector, physical and relation passes, then evaluates every active
+function at the initial raw snapshot. It retains channel/geometry identities,
+attribute links, defaults/highlight and function intervals without borrowing the
+parsed archive. Tests drop the source before evaluating sparse DMX inputs and
+local selectors, and verify overlapping logical functions remain separately
+observable. Returned physical values are not relation-adjusted semantic fractions.
+This is the channel portion of the planned definition; attribute/subunit and
+optical metadata, geometry/resources, revision persistence and engine adoption
+are still required. Serialization here is diagnostic output, not a finalized
+showfile or worker contract.
+
 The `functions` stage normalizes integer defaults/highlight and inclusive raw
 ranges through 32 bits. Mutually exclusive logical channels and ModeMaster
 conditions retain separate ranges. Selector source links and their ranges are

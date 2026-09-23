@@ -19,6 +19,7 @@ use nightfall_fixture_library::GdtfMetadata;
 use nightfall_fixture_library::converters::gdtf::convert_gdtf_to_fixture;
 use nightfall_fixture_library::gdtf_activation::compile_activation;
 use nightfall_fixture_library::gdtf_bindings::bind_selectors;
+use nightfall_fixture_library::gdtf_channels::{ChannelLimits, compile_channels};
 use nightfall_fixture_library::gdtf_functions::resolve_functions;
 use nightfall_fixture_library::gdtf_physical::compile_physical;
 use nightfall_fixture_library::gdtf_profiles::compile_profiles;
@@ -95,6 +96,28 @@ fn main() {
                 "beam_count": resolved.geometries.iter().filter(|g| matches!(g.source, gdtf::geometry::Geometry::Beam(_))).count(),
                 "resolved": resolved,
                 }));
+                let started = Instant::now();
+                let compiled =
+                    compile_channels(&resolved, profile_sources, ChannelLimits::default())
+                        .and_then(|program| {
+                            let values = program.evaluate_physical(&program.defaults())?;
+                            Ok((program.channels().len(), values))
+                        });
+                match compiled {
+                    Ok((channels, values)) => emit(json!({
+                        "stage": "compiled_channels", "status": "passed", "mode": mode,
+                        "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                        "channel_count": channels, "physical_defaults": values,
+                    })),
+                    Err(error) => {
+                        failed = true;
+                        emit(
+                            json!({"stage": "compiled_channels", "status": "failed", "mode": mode,
+                            "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                            "error": error.to_string(), "diagnostic": error}),
+                        );
+                    }
+                }
                 let started = Instant::now();
                 match resolve_wires(&resolved) {
                     Ok(wires) => emit(json!({"stage": "wire", "status": "passed", "mode": mode,
@@ -280,6 +303,10 @@ fn main() {
                 );
                 emit(json!({"stage": "wire", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; wire compilation unavailable"}));
+                emit(
+                    json!({"stage": "compiled_channels", "status": "failed", "mode": mode,
+                    "error": "Geometry resolution failed; owned channel compilation unavailable"}),
+                );
                 emit(
                     json!({"stage": "functions", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; function compilation unavailable"}),

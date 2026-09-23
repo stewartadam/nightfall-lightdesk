@@ -21,6 +21,7 @@ pub mod commands;
 pub mod converters;
 pub mod gdtf_activation;
 pub mod gdtf_bindings;
+pub mod gdtf_channels;
 pub mod gdtf_functions;
 pub mod gdtf_metadata;
 pub mod gdtf_physical;
