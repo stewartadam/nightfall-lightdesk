@@ -211,7 +211,27 @@ fn channel_set_overrides_do_not_restart_inherited_ranges() {
     assert_eq!(physical.evaluate_function(0, 0, 100).unwrap(), 100.0);
     assert_eq!(
         physical.encode_linear(0, 0, 100.0).unwrap_err().code,
-        "set_inverse_unavailable"
+        "physical_outside_function"
+    );
+    assert_eq!(physical.encode_linear(0, 0, 300.0).unwrap(), 200);
+    assert_eq!(physical.encode_linear(0, 0, 255.0).unwrap(), 254);
+    assert_eq!(
+        physical.encode_linear(0, 0, 90.0).unwrap_err().code,
+        "ambiguous_physical_inverse"
+    );
+    assert_eq!(physical.encode_set_linear(0, 0, 1, 90.0).unwrap(), 100);
+    assert_eq!(physical.encode_set_linear(0, 0, 1, -90.0).unwrap(), 199);
+    assert_eq!(physical.encode_set_linear(0, 0, 1, 0.0).unwrap(), 150);
+    assert_eq!(physical.encode_set_linear(0, 0, 0, 90.0).unwrap(), 90);
+    assert_eq!(physical.encode_set_linear(0, 0, 2, 300.0).unwrap(), 200);
+    assert_eq!(physical.encode_set_linear(0, 0, 3, 0.0).unwrap(), 255);
+    assert_eq!(
+        physical.encode_set_linear(0, 0, 1, 100.0).unwrap_err().code,
+        "physical_outside_set"
+    );
+    assert_eq!(
+        physical.encode_set_linear(0, 0, 999, 0.0).unwrap_err().code,
+        "missing_channel_set"
     );
     assert_eq!(
         compile_physical(&channels, compile_profiles(&[], 0).unwrap(), 100, 3)
@@ -252,5 +272,87 @@ fn curves_and_overrides_do_not_silently_double_apply() {
     assert_eq!(
         physical.evaluate(0, 0, 65535).unwrap_err().code,
         "profile_set_composition_unavailable"
+    );
+}
+
+/// Choosing a constant set is intentional; an unqualified physical inverse remains ambiguous.
+#[test]
+fn explicit_constant_set_selection_uses_its_first_raw_value() {
+    let mut description = description();
+    description.fixture_types[0].dmx_modes[0].dmx_channels[0].logical_channels[0]
+        .channel_functions[0]
+        .channel_sets = serde_json::from_value(
+        serde_json::json!([{"@DMXFrom":"0/1","@PhysicalFrom":5,"@PhysicalTo":5}]),
+    )
+    .unwrap();
+    let mode = resolve_mode(
+        &description.fixture_types[0],
+        "Nested sparse",
+        ResolveLimits::default(),
+    )
+    .unwrap();
+    let channels = resolve_functions(&mode).unwrap();
+    let physical =
+        compile_physical(&channels, compile_profiles(&[], 0).unwrap(), 100, 100).unwrap();
+    assert_eq!(
+        physical.encode_linear(0, 0, 5.0).unwrap_err().code,
+        "ambiguous_physical_inverse"
+    );
+    assert_eq!(physical.encode_set_linear(0, 0, 0, 5.0).unwrap(), 0);
+    assert_eq!(
+        physical.encode_linear(0, 0, 6.0).unwrap_err().code,
+        "physical_outside_function"
+    );
+    for value in [f64::NAN, f64::INFINITY] {
+        assert_eq!(
+            physical.encode_linear(0, 0, value).unwrap_err().code,
+            "physical_outside_function"
+        );
+    }
+}
+
+/// Disjoint set ranges round trip through all four significant bytes without crossing a set boundary.
+#[test]
+fn set_inverse_preserves_full_resolution() {
+    let mut description = description();
+    let channel = &mut description.fixture_types[0].dmx_modes[0].dmx_channels[0];
+    channel.offset = Some(vec![1, 2, 3, 4]);
+    channel.logical_channels[0].channel_functions[0].channel_sets =
+        serde_json::from_value(serde_json::json!([
+            {"@DMXFrom":"0/4","@PhysicalFrom":-100,"@PhysicalTo":-200},
+            {"@DMXFrom":"2147483648/4","@PhysicalFrom":100,"@PhysicalTo":200}
+        ]))
+        .unwrap();
+    let mode = resolve_mode(
+        &description.fixture_types[0],
+        "Nested sparse",
+        ResolveLimits::default(),
+    )
+    .unwrap();
+    let channels = resolve_functions(&mode).unwrap();
+    let physical =
+        compile_physical(&channels, compile_profiles(&[], 0).unwrap(), 100, 100).unwrap();
+    for raw in [
+        0,
+        1,
+        0x7fff_fffe,
+        0x7fff_ffff,
+        0x8000_0000,
+        0x8000_0001,
+        u32::MAX - 1,
+        u32::MAX,
+    ] {
+        let value = physical.evaluate(0, 0, raw).unwrap();
+        assert_eq!(physical.encode_linear(0, 0, value).unwrap(), raw);
+        assert_eq!(
+            physical
+                .encode_set_linear(0, 0, usize::from(raw >= 0x8000_0000), value)
+                .unwrap(),
+            raw
+        );
+    }
+    assert_eq!(
+        physical.encode_linear(0, 0, 0.0).unwrap_err().code,
+        "physical_outside_function"
     );
 }

@@ -117,9 +117,12 @@ its starting physical value. Combining explicit set overrides with a function
 profile currently reports `profile_set_composition_unavailable` pending verified
 composition semantics. This stage does not select active functions, apply
 relations, map sub-channel units, or run in the engine yet.
-Linear inverse requests on functions with explicit set overrides report
-`set_inverse_unavailable` until set selection and inverse ambiguity are handled;
-they must not encode using the parent ramp and return a different physical value.
+Linear inverse requests search the effective set ranges and any unlabeled prefix.
+A unique range can be encoded; overlapping ranges and unselected constant ranges
+report an ambiguous inverse. Explicit set selection restricts encoding to that
+set, with its first raw value chosen for a constant range. Values in physical gaps
+are rejected. Synthetic tests verify reversed ranges, overlaps, constant choices,
+and four-byte round trips. Profile inversion remains a separate unsupported path.
 
 The `activation` stage compiles a bounded dependency order and evaluates each
 mode's raw defaults. Function links require the target function to be active;

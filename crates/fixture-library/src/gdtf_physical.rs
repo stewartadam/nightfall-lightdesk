@@ -43,6 +43,42 @@ fn error(code: &'static str, path: &str, message: &str) -> ResolveError {
     }
 }
 
+/// Quantize one interval; explicit set selection permits the first of several equivalent constant values.
+fn inverse_interval(
+    id: &str,
+    raw_from: u32,
+    raw_to: u32,
+    from: f64,
+    to: f64,
+    value: f64,
+    selected: bool,
+) -> Result<Option<u32>, ResolveError> {
+    if !value.is_finite() {
+        return Err(error(
+            "physical_outside_function",
+            id,
+            "Physical target must be finite",
+        ));
+    }
+    if value < from.min(to) || value > from.max(to) {
+        return Ok(None);
+    }
+    if from == to {
+        if selected || raw_from == raw_to {
+            return Ok(Some(raw_from));
+        }
+        return Err(error(
+            "ambiguous_physical_inverse",
+            id,
+            "Multiple raw values represent this constant physical target; select a set explicitly",
+        ));
+    }
+    let fraction = (value - from) / (to - from);
+    Ok(Some(
+        raw_from + (fraction * f64::from(raw_to - raw_from)).round() as u32,
+    ))
+}
+
 /// Bind function profiles and physical endpoints without retaining parser references.
 pub fn compile_physical(
     channels: &[ChannelFunctions<'_>],
@@ -117,6 +153,92 @@ pub fn compile_physical(
 }
 
 impl PhysicalMappings {
+    /// Encode within an explicitly selected set; constant sets deterministically use their first raw value.
+    pub fn encode_set_linear(
+        &self,
+        channel: usize,
+        function: usize,
+        set_index: usize,
+        value: f64,
+    ) -> Result<u32, ResolveError> {
+        let mapping = self.mapping(channel, function)?;
+        if mapping.profile.is_some() {
+            return Err(error(
+                "profile_inverse_unavailable",
+                &mapping.id,
+                "Profile inversion requires explicit inverse analysis",
+            ));
+        }
+        let set = mapping.sets.sets.get(set_index).ok_or_else(|| {
+            error(
+                "missing_channel_set",
+                &mapping.id,
+                "Selected channel set is outside this function",
+            )
+        })?;
+        let from = self.evaluate(channel, function, set.raw_from)?;
+        let to = self.evaluate(channel, function, set.raw_to)?;
+        inverse_interval(&set.id, set.raw_from, set.raw_to, from, to, value, true)?.ok_or_else(
+            || {
+                error(
+                    "physical_outside_set",
+                    &set.id,
+                    "Physical target lies outside the selected channel set",
+                )
+            },
+        )
+    }
+
+    /// Search each piecewise linear interval, rejecting multiple candidates rather than picking a set.
+    fn encode_sets(
+        &self,
+        channel: usize,
+        function: usize,
+        value: f64,
+    ) -> Result<u32, ResolveError> {
+        let mapping = self.mapping(channel, function)?;
+        let prefix = mapping
+            .sets
+            .sets
+            .first()
+            .filter(|set| set.raw_from > mapping.raw_from)
+            .map(|set| (mapping.raw_from, set.raw_from - 1));
+        let intervals = prefix.into_iter().chain(
+            mapping
+                .sets
+                .sets
+                .iter()
+                .map(|set| (set.raw_from, set.raw_to)),
+        );
+        let mut candidate = None;
+        for (from, to) in intervals {
+            if let Some(raw) = inverse_interval(
+                &mapping.id,
+                from,
+                to,
+                self.evaluate(channel, function, from)?,
+                self.evaluate(channel, function, to)?,
+                value,
+                false,
+            )? {
+                if candidate.replace(raw).is_some() {
+                    return Err(error(
+                        "ambiguous_physical_inverse",
+                        &mapping.id,
+                        "Several channel-set ranges represent this physical target; select a set explicitly",
+                    ));
+                }
+            }
+        }
+        candidate.ok_or_else(|| {
+            error(
+                "physical_outside_function",
+                &mapping.id,
+                "No channel-set range represents this physical target",
+            )
+        })
+    }
+
     /// Expose immutable labeled ranges for operator choices and capability checks.
     pub fn channel_sets(
         &self,
@@ -237,11 +359,7 @@ impl PhysicalMappings {
             .iter()
             .any(|set| set.physical_from.is_some() || set.physical_to.is_some())
         {
-            return Err(error(
-                "set_inverse_unavailable",
-                &mapping.id,
-                "Physical encoding with channel-set overrides requires explicit set selection and inverse analysis",
-            ));
+            return self.encode_sets(channel, function, value);
         }
         if !value.is_finite()
             || value < mapping.physical_from.min(mapping.physical_to)
