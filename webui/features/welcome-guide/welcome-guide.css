@@ -137,7 +137,9 @@
     0 0 16px color-mix(in srgb, var(--accent, #50d2b4) 45%, transparent);
 }
 .nf-guide-command {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 6px;
   padding: 6px 8px;
   border-radius: 4px;
@@ -146,6 +148,13 @@
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+.nf-guide-command code {
+  flex: 1;
+  min-width: 0;
+}
+.nf-guide-command button {
+  flex-shrink: 0;
 }
 .nf-guide-invitation {
   display: flex;
