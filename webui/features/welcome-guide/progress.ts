@@ -63,12 +63,13 @@ export function guideCompletionToken(
   );
   const expectedFixtures = Object.values(state.fixtures)
     .filter(
-      (fixture) => fixture.identifiers.id >= 1 && fixture.identifiers.id <= 5,
+      (fixture) =>
+        fixture.identifiers.id >= 310 && fixture.identifiers.id <= 313,
     )
     .map((fixture) => fixture.identifiers.uid);
-  /** Requires all five intended fixtures, so unrelated programmer edits cannot complete a step. */
+  /** Requires all four intended strips, so unrelated programmer edits cannot complete a step. */
   const allRowsMatch = (match: (row: ProgrammerRow) => boolean) =>
-    expectedFixtures.length === 5 &&
+    expectedFixtures.length === 4 &&
     expectedFixtures.every((uid) => {
       const row = state.programmer.find((entry) => entry.fixtureUid === uid);
       return row !== undefined && match(row);
@@ -91,15 +92,15 @@ export function guideCompletionToken(
         : "";
     case "timeline-action-moved": {
       const action = timeline?.tracks
-        .flatMap((track) => track.actions)
-        .find((entry) => entry.id === "start-wave");
-      return action?.position.secs === 2 && action.position.nanos === 0
+        .find((track) => track.id === "1")
+        ?.actions.find((entry) => entry.id === "1");
+      return action?.position.secs === 3 && action.position.nanos === 0
         ? "moved"
         : "";
     }
     case "selection":
-      return expectedFixtures.length === 5 &&
-        state.selection.length === 5 &&
+      return expectedFixtures.length === 4 &&
+        state.selection.length === 4 &&
         expectedFixtures.every((uid) => state.selection.includes(uid))
         ? "selected"
         : "";

@@ -6,12 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  expect,
-  type Page,
-  frontendOnlyTest as test,
-} from "./playwright-fixtures";
+import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
+
+test.use({ sampleDataOnly: true });
 
 const pageErrors = new WeakMap<Page, string[]>();
 
@@ -27,16 +25,46 @@ test.afterEach(({ page }) => {
   expect(pageErrors.get(page)).toEqual([]);
 });
 
-/** Opens the actual embedded engine and waits for its practice rig. */
-async function openDemo(page: Page) {
+/** Opens the sample_data.rs-generated show and waits for its practice rig. */
+async function openSample(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
+  await page.addInitScript(() => {
+    localStorage.removeItem("nightfall.e2eAutoOpenStartupShowfile");
+  });
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await page.waitForFunction(
     () =>
       Object.keys((window as any).appStores?.fixtures?.get() ?? {}).length ===
-      6,
+      56,
   );
+  const targets = await page.evaluate(() => {
+    const stores = (window as any).appStores;
+    return {
+      fixtures: Object.values(stores.fixtures.get()).map(
+        (entry: any) => entry.identifiers.id,
+      ),
+      clips: Object.values(stores.clips.get()).map(([clip]: any) => [
+        clip.identifiers.id,
+        clip.identifiers.label,
+      ]),
+      timelines: Object.values(stores.timelines.get()).map((entry: any) => [
+        entry.identifiers.id,
+        entry.identifiers.label,
+      ]),
+    };
+  });
+  expect(targets.fixtures).toEqual(
+    expect.arrayContaining([310, 311, 312, 313]),
+  );
+  expect(targets.fixtures).not.toContain(1);
+  expect(targets.clips).toEqual(
+    expect.arrayContaining([
+      [1, "RGB cycle (full)"],
+      [6, "fx3"],
+    ]),
+  );
+  expect(targets.timelines).toContainEqual([1, "Lo-fi"]);
 }
 
 /** Moves through guide instructions without pretending skipped actions succeeded. */
@@ -70,11 +98,11 @@ async function expectGuideOutsideBackdrop(page: Page) {
 test("sample timeline actions advance and pop-outs leave the guide undimmed", async ({
   page,
 }, testInfo) => {
-  await openDemo(page);
-  await page.getByRole("button", { name: "Take the tour" }).click();
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
   await guide.getByRole("button", { name: /START HERE/ }).click();
-  await expect(guide).toContainText("Nightfall Demo");
+  await expect(guide).toContainText("Lo-fi");
   await expect(
     guide.locator("header").getByRole("button", { name: "All lessons" }),
   ).toBeVisible();
@@ -87,9 +115,7 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await guide
     .getByRole("button", { name: "Open Timelines", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: /Timeline 1: Nightfall Demo/ })
-    .click();
+  await page.getByRole("button", { name: /Timeline 1: Lo-fi/ }).click();
   await expect(
     guide.getByRole("heading", { name: "Start the sample show" }),
   ).toBeVisible();
@@ -119,7 +145,9 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await expect(
     guide.getByRole("heading", { name: "Select lights by number" }),
   ).toBeVisible();
-  const hint = page.getByRole("tooltip").filter({ hasText: "Type fix 1>5" });
+  const hint = page
+    .getByRole("tooltip")
+    .filter({ hasText: "Type fix 310>313" });
   await expect(hint).toBeVisible();
   await page.setViewportSize({ width: 700, height: 900 });
   await page
@@ -145,8 +173,8 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
 test("welcome guide teaches live selection and cue storage without blocking the app", async ({
   page,
 }, testInfo) => {
-  await openDemo(page);
-  await page.getByRole("button", { name: "Take the tour" }).click();
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
   await expect(guide).toBeVisible();
   await expect(
@@ -165,7 +193,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
     name: "Command input",
     exact: true,
   });
-  await command.fill("fix 1>5");
+  await command.fill("fix 310>313");
   await command.press("Enter");
   await expect(
     guide.getByRole("heading", { name: "Bring up the lights" }),
@@ -176,13 +204,13 @@ test("welcome guide teaches live selection and cue storage without blocking the 
         () => (window as any).appStores.programmerSelection.get().length,
       ),
     )
-    .toBe(5);
+    .toBe(4);
   await command.fill("@ 100");
   await command.press("Enter");
   await expect(
     guide.getByRole("heading", { name: "Make a red look" }),
   ).toBeVisible();
-  await command.fill("fix 1>5 red @ 100 green @ 0 blue @ 0");
+  await command.fill("fix 310>313 red @ 100 green @ 0 blue @ 0");
   await command.press("Enter");
   await expect(
     guide.getByRole("heading", { name: "Store the red cue" }),
@@ -222,7 +250,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
     .first()
     .click();
   await expect(
-    guide.getByRole("heading", { name: "Put Nightfall Looks on control 1" }),
+    guide.getByRole("heading", { name: "Put RGB cycle (full) on control 6" }),
   ).toBeVisible();
 });
 
@@ -230,8 +258,8 @@ test("welcome guide teaches live selection and cue storage without blocking the 
 test("clip lesson permits drag assignment, Go and fader playback", async ({
   page,
 }, testInfo) => {
-  await openDemo(page);
-  await page.getByRole("button", { name: "Take the tour" }).click();
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
   await guide.getByRole("button", { name: /START HERE/ }).click();
   await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
@@ -240,7 +268,7 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
   await expect(
     guide.getByRole("button", { name: "Back", exact: true }),
   ).toBeDisabled();
-  await reachStep(page, "Put Nightfall Looks on control 1");
+  await reachStep(page, "Put RGB cycle (full) on control 6");
   await guide.getByRole("button", { name: "Open Clips", exact: true }).click();
   const expand = page.getByRole("button", {
     name: "Expand controls",
@@ -255,12 +283,12 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
   );
   await page
     .locator(`[data-crud-select-id="${clipUid}"]`)
-    .dragTo(page.locator('[data-clip-dropzone-index="1"]'));
-  await expect(page.locator('[data-control-go-index="1"]')).toBeEnabled();
+    .dragTo(page.locator('[data-clip-dropzone-index="6"]'));
+  await expect(page.locator('[data-control-go-index="6"]')).toBeEnabled();
   await expect(
-    guide.getByRole("heading", { name: "Start Nightfall Looks" }),
+    guide.getByRole("heading", { name: "Start RGB cycle (full)" }),
   ).toBeVisible();
-  await page.locator('[data-control-go-index="1"]').click();
+  await page.locator('[data-control-go-index="6"]').click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -272,11 +300,11 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
   await expect(
     guide.getByRole("heading", { name: "Advance to blue" }),
   ).toBeVisible();
-  await page.locator('[data-control-go-index="1"]').click();
+  await page.locator('[data-control-go-index="6"]').click();
   await expect(
     guide.getByRole("heading", { name: "Control the level" }),
   ).toBeVisible();
-  const fader = page.locator('[data-control-index="1"] [role="slider"]');
+  const fader = page.locator('[data-control-index="6"] [role="slider"]');
   await fader.focus();
   await fader.press("Home");
   await expect(fader).toHaveAttribute("aria-valuenow", "0.0");
@@ -306,16 +334,11 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
 });
 
 /** Covers optional entry, independent lessons, capability messaging, narrow screens and persistence. */
-test("lesson library remains optional and adapts to demo capabilities", async ({
+test("lesson library starts sample lessons immediately and preserves completion", async ({
   page,
 }, testInfo) => {
-  await openDemo(page);
-  await page.getByRole("button", { name: "Explore on my own" }).click();
-  await page.reload();
-  await waitForDockviewApp(page);
-  await expect(page.getByRole("button", { name: "Take the tour" })).toHaveCount(
-    0,
-  );
+  await openSample(page);
+  await expect(page.getByTestId("welcome-guide")).toHaveCount(0);
   await page.getByRole("button", { name: "Open command palette" }).click();
   await page
     .getByPlaceholder("Type a command or search...")
@@ -324,7 +347,9 @@ test("lesson library remains optional and adapts to demo capabilities", async ({
   const guide = page.getByTestId("welcome-guide");
   await expect(guide).toBeVisible();
   await guide.getByRole("button", { name: /Transports and output/ }).click();
-  await expect(guide).toContainText("Hardware output is unavailable here");
+  await expect(
+    guide.getByRole("heading", { name: "Open I/O Transports" }),
+  ).toBeVisible();
   await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
     0,
   );
@@ -350,9 +375,7 @@ test("lesson library remains optional and adapts to demo capabilities", async ({
   await expect(page.getByRole("tab", { name: /Step FX/ })).toBeVisible();
   await guide.getByRole("button", { name: "All lessons" }).click();
   await guide.getByRole("button", { name: /Patching fixtures/ }).click();
-  await expect(guide).toContainText(
-    "Fixture-library import is unavailable here",
-  );
+  await expect(guide).toContainText("pixel strip 310");
   await page.setViewportSize({ width: 700, height: 900 });
   await expect(guide).toBeVisible();
   const dimensions = await guide.evaluate((element) => ({
@@ -365,8 +388,8 @@ test("lesson library remains optional and adapts to demo capabilities", async ({
   await page.screenshot({
     path: testInfo.outputPath("welcome-guide-narrow.png"),
   });
-  await page.reload();
-  await waitForDockviewApp(page);
+  await guide.getByRole("button", { name: "All lessons" }).click();
+  await page.getByRole("button", { name: "Exit welcome guide" }).click();
   await page
     .getByRole("button", { name: "Open Welcome Guide", exact: true })
     .click();
