@@ -26,6 +26,9 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use uuid::Uuid;
 
+mod color;
+pub use color::{FxColorLane, FxColorStep};
+
 /// Canonical timing shared by Step FX tracks unless a lane overrides it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -261,6 +264,9 @@ pub struct StepFx {
     pub cycle_scale: StepFxCycleScale,
     /// Independent attribute lanes.
     pub lanes: Vec<FxLane>,
+    /// Whole-color steps, mutually exclusive with explicit color attribute lanes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_lane: Option<FxColorLane>,
 }
 
 impl Default for StepFx {
@@ -274,6 +280,7 @@ impl Default for StepFx {
             direction: FxDirection::default(),
             cycle_scale: StepFxCycleScale::default(),
             lanes: Vec::new(),
+            color_lane: None,
         }
     }
 }
@@ -379,6 +386,8 @@ pub struct StepFxTrackPhaseOffsets {
 /// Runtime-only normalized phase corrections retained independently for each track.
 #[derive(Component, Clone, Debug, Default)]
 pub struct StepFxLanePhaseOffsets {
+    /// Continuity correction for the whole-color lane.
+    pub color: f32,
     /// Corrections keyed by logical lane attribute.
     pub offsets: Vec<(Attribute, StepFxTrackPhaseOffsets)>,
     /// Clock position observed when the corrections were last sampled.
@@ -394,6 +403,7 @@ impl StepFxLanePhaseOffsets {
         Self {
             offsets,
             last_clock_position,
+            color: 0.0,
         }
     }
 
@@ -534,17 +544,37 @@ pub fn phase_for_selection_index(
 impl StepFx {
     /// Enumerates live Blueprint references with the attribute of their containing lane.
     pub fn blueprint_references(&self) -> impl Iterator<Item = (Uuid, &Attribute)> {
-        self.lanes.iter().flat_map(|lane| {
-            [lane.absolute.as_ref(), lane.relative.as_ref()]
-                .into_iter()
-                .flatten()
-                .flat_map(|track| track.steps.iter())
-                .filter_map(move |step| step.blueprint_uid.map(|uid| (uid, &lane.attribute)))
-        })
+        self.lanes
+            .iter()
+            .flat_map(|lane| {
+                [lane.absolute.as_ref(), lane.relative.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|track| track.steps.iter())
+                    .filter_map(move |step| step.blueprint_uid.map(|uid| (uid, &lane.attribute)))
+            })
+            .chain(
+                self.color_lane
+                    .iter()
+                    .flat_map(|lane| lane.steps.iter())
+                    .filter_map(|step| step.blueprint_uid)
+                    .flat_map(|uid| {
+                        [Attribute::Red, Attribute::Green, Attribute::Blue]
+                            .iter()
+                            .map(move |attribute| (uid, attribute))
+                    }),
+            )
     }
 
     /// Rewrites mapped Blueprint identities in both contributions, preserving unmapped references and targets.
     pub fn remap_blueprint_references(&mut self, remap: &HashMap<Uuid, Uuid>) {
+        if let Some(lane) = &mut self.color_lane {
+            for step in &mut lane.steps {
+                if let Some(replacement) = step.blueprint_uid.and_then(|uid| remap.get(&uid)) {
+                    step.blueprint_uid = Some(*replacement);
+                }
+            }
+        }
         for lane in &mut self.lanes {
             for track in [lane.absolute.as_mut(), lane.relative.as_mut()]
                 .into_iter()
@@ -580,7 +610,7 @@ impl StepFx {
         validate_timing(&self.timing, "timing", &mut issues);
         validate_phase(&self.phase, "phase", &mut issues);
         validate_cycle_scale(&self.cycle_scale, &mut issues);
-        if self.lanes.is_empty() {
+        if self.lanes.is_empty() && self.color_lane.is_none() {
             push_issue(&mut issues, "lanes", "Add at least one attribute lane");
             return issues;
         }
@@ -588,6 +618,21 @@ impl StepFx {
         let mut attributes = HashSet::new();
         let mut step_uids = HashSet::new();
         let mut has_dynamic_track = false;
+        if let Some(lane) = &self.color_lane {
+            lane.validate(&mut step_uids, &mut issues);
+            has_dynamic_track |= lane.steps.len() >= 2;
+            if self
+                .lanes
+                .iter()
+                .any(|lane| lane.attribute.category() == AttributeCategory::Color)
+            {
+                push_issue(
+                    &mut issues,
+                    "color_lane",
+                    "Color and individual color attribute lanes cannot coexist",
+                );
+            }
+        }
 
         for (lane_index, lane) in self.lanes.iter().enumerate() {
             let lane_path = format!("lanes.{lane_index}");
@@ -635,6 +680,9 @@ impl StepFx {
 
     /// Returns the representative overall cycle duration for continuity re-anchoring.
     pub fn cycle_duration(&self) -> Option<Duration> {
+        if let Some(duration) = self.color_cycle_duration() {
+            return Some(duration);
+        }
         self.lanes.iter().find_map(|lane| {
             let timing = lane.timing_override.as_ref().unwrap_or(&self.timing);
             [lane.absolute.as_ref(), lane.relative.as_ref()]
@@ -1081,13 +1129,49 @@ fn sample_track(
     attribute: &Attribute,
     blueprints: Option<&DataProvider<Blueprint>>,
 ) -> Option<ParameterValue> {
-    if track.steps.is_empty() {
+    let (previous, current, factor) = sample_step_positions(
+        &track.steps,
+        timing,
+        direction,
+        cycle_scale,
+        elapsed,
+        start_position,
+        runtime_phase_offset,
+        |step| (step.width_beats, &step.transition, &step.curve),
+    )?;
+    let previous = resolved_step_target(&track.steps[previous], attribute, blueprints);
+    let current = resolved_step_target(&track.steps[current], attribute, blueprints);
+    Some(if factor <= 0.0 {
+        previous
+    } else if factor >= 1.0 {
+        current
+    } else {
+        interpolate_parameter_values(&previous, &current, factor)
+    })
+}
+
+/// Locates the two targets and shaped interpolation progress shared by scalar and color tracks.
+fn sample_step_positions<T>(
+    steps: &[T],
+    timing: &StepFxTiming,
+    direction: &FxDirection,
+    cycle_scale: &StepFxCycleScale,
+    elapsed: Duration,
+    start_position: f32,
+    runtime_phase_offset: f32,
+    shape: impl Fn(&T) -> (f32, &StepFxTransition, &CurveType),
+) -> Option<(usize, usize, f32)> {
+    if steps.is_empty() {
         return None;
     }
-    if track.steps.len() == 1 {
-        return Some(resolved_step_target(&track.steps[0], attribute, blueprints));
+    if steps.len() == 1 {
+        return Some((0, 0, 1.0));
     }
-    let total_beats = effective_track_cycle_beats(track, cycle_scale, direction);
+    let authored_pass_beats: f32 = steps.iter().map(|step| shape(step).0).sum();
+    let total_beats = match cycle_scale {
+        StepFxCycleScale::Auto => authored_pass_beats,
+        StepFxCycleScale::Fixed(beats) => *beats,
+    } * direction_pass_count(direction);
     let cycle_seconds = timing.beat_duration.as_secs_f32() * total_beats;
     if !cycle_seconds.is_finite() || cycle_seconds <= 0.0 {
         return None;
@@ -1096,46 +1180,33 @@ fn sample_track(
         + start_cycle_position(start_position, direction)
         + runtime_phase_offset)
         .rem_euclid(1.0);
-    let authored_pass_beats = track.authored_pass_beats();
     let beat_position = authored_beat_position(cycle_position, authored_pass_beats, direction);
     if beat_position >= authored_pass_beats {
-        return track
-            .steps
-            .last()
-            .map(|step| resolved_step_target(step, attribute, blueprints));
+        return Some((steps.len() - 1, steps.len() - 1, 1.0));
     }
     let mut start = 0.0;
-    let mut step_index = track.steps.len() - 1;
-    for (index, step) in track.steps.iter().enumerate() {
-        if beat_position < start + step.width_beats {
+    let mut step_index = steps.len() - 1;
+    for (index, step) in steps.iter().enumerate() {
+        if beat_position < start + shape(step).0 {
             step_index = index;
             break;
         }
-        start += step.width_beats;
+        start += shape(step).0;
     }
-    let step = &track.steps[step_index];
-    let transition_start = step.width_beats * step.transition.start.as_f32().clamp(0.0, 1.0);
-    let transition_end = step.width_beats * step.transition.end.as_f32().clamp(0.0, 1.0);
+    let (width_beats, transition, curve) = shape(&steps[step_index]);
+    let transition_start = width_beats * transition.start.as_f32().clamp(0.0, 1.0);
+    let transition_end = width_beats * transition.end.as_f32().clamp(0.0, 1.0);
     let transition_beats = transition_end - transition_start;
-    let segment_position = (beat_position - start).clamp(0.0, step.width_beats);
-    let previous_index = step_index.checked_sub(1).unwrap_or(track.steps.len() - 1);
-    let previous = &track.steps[previous_index];
-    let previous_target = resolved_step_target(previous, attribute, blueprints);
-    let step_target = resolved_step_target(step, attribute, blueprints);
+    let segment_position = (beat_position - start).clamp(0.0, width_beats);
+    let previous_index = step_index.checked_sub(1).unwrap_or(steps.len() - 1);
     if segment_position < transition_start {
-        return Some(previous_target);
+        return Some((previous_index, step_index, 0.0));
     }
     if transition_beats <= 0.0 || segment_position >= transition_end {
-        return Some(step_target);
+        return Some((previous_index, step_index, 1.0));
     }
-    let factor = step
-        .curve
-        .evaluate((segment_position - transition_start) / transition_beats);
-    Some(interpolate_parameter_values(
-        &previous_target,
-        &step_target,
-        factor,
-    ))
+    let factor = curve.evaluate((segment_position - transition_start) / transition_beats);
+    Some((previous_index, step_index, factor))
 }
 
 /// Resolves one live Blueprint target, falling back to its last stored scalar value.
@@ -1225,6 +1296,7 @@ mod tests {
     /// Builds a valid intensity Step FX around the supplied track.
     fn test_fx(track: FxTrack) -> StepFx {
         StepFx {
+            color_lane: None,
             identifiers: Identifiers {
                 id: 1,
                 uid: Uuid::new_v4(),
@@ -1405,6 +1477,23 @@ mod tests {
         assert!((sampled(&fx, 0.25) - 0.0).abs() < 0.001);
         assert!((sampled(&fx, 1.0) - 0.5).abs() < 0.001);
         assert!((sampled(&fx, 1.75) - 1.0).abs() < 0.001);
+    }
+
+    /// Retains the previous target during holds even when scalar units differ between steps.
+    #[test]
+    fn mixed_unit_tracks_preserve_pre_ramp_holds() {
+        let mut current = step(1.0, 1.0, 1.0);
+        current.transition = StepFxTransition::new(0.5.into(), 1.0.into());
+        let mut previous = step(0.0, 1.0, 1.0);
+        previous.target = ParameterValue::Absolute { value: 42.0 };
+        let fx = test_fx(FxTrack {
+            steps: vec![current, previous],
+        });
+        let sample = fx.sample_with_phase_offset(Duration::ZERO, 0.0);
+        assert_eq!(
+            sample[0].absolute,
+            Some(ParameterValue::Absolute { value: 42.0 })
+        );
     }
 
     /// Verifies interpolation wraps from the final target into the first target.

@@ -9,6 +9,10 @@
 import { durationToSeconds, secondsToDuration } from "../../../lib/duration";
 import type * as types from "../../../types";
 import { FxDirection } from "../../../types";
+import {
+  isStepFxColorAttribute,
+  stepFxColorComponentTrack,
+} from "./step-fx-color-model";
 
 /** Operator-facing units accepted by the Step FX speed control. */
 export type StepFxSpeedUnit = "BPM" | "Hz" | "Seconds" | "Milliseconds";
@@ -532,6 +536,45 @@ export function stepFxPhaseOffset(
 
 /** Validates the complete local draft with the backend's structural rules. */
 export function validateStepFxDraft(stepFx: types.StepFx): StepFxDraftIssue[] {
+  if (stepFx.color_lane) {
+    const colorIndex = stepFx.lanes.length;
+    const scalar = {
+      ...stepFx,
+      color_lane: undefined,
+      lanes: [
+        ...stepFx.lanes,
+        {
+          attribute: { type: "Custom" as const, data: { label: "Color" } },
+          absolute: stepFxColorComponentTrack(stepFx.color_lane),
+        },
+      ],
+    };
+    const issues = validateStepFxDraft(scalar).map((issue) => ({
+      ...issue,
+      path: issue.path.replace(`lanes.${colorIndex}.absolute`, "color_lane"),
+    }));
+    if (
+      stepFx.lanes.some((lane) =>
+        isStepFxColorAttribute(stepFxAttributeName(lane.attribute)),
+      )
+    )
+      issues.push({
+        path: "color_lane",
+        message: "Color and individual color attribute lanes cannot coexist",
+      });
+    stepFx.color_lane.steps.forEach((step, index) => {
+      if (
+        Object.values(step.target).some(
+          (value) => !Number.isFinite(value) || value < 0 || value > 1,
+        )
+      )
+        issues.push({
+          path: `color_lane.steps.${index}.target`,
+          message: "Color components must be between zero and one",
+        });
+    });
+    return issues;
+  }
   const issues: StepFxDraftIssue[] = [];
   const add = (path: string, message: string) => issues.push({ path, message });
   if (!Number.isInteger(stepFx.identifiers.id) || stepFx.identifiers.id <= 0) {

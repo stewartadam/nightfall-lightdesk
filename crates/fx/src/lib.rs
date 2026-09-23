@@ -45,12 +45,12 @@ pub mod prelude {
         StepFxPreviewPlaybackStatus, StepFxPreviewTrackPhaseOffsets, step_fx_preview_status,
     };
     pub use crate::step_fx::{
-        ActiveStepFx, Bezier, CurveType, DurationInput, FxDirection, FxLane, FxLaneSample, FxStep,
-        FxTrack, Linear, MaterializedStepFxReconstructionHandle, PhaseGroups, Point2D, Snap,
-        StepFx, StepFxCycleScale, StepFxLanePhaseOffsets, StepFxPhase, StepFxTiming,
-        StepFxTrackPhaseOffsets, StepFxTransition, StepFxValidationIssue, TransitionCurve,
-        calculate_phase_distribution, interpolate_parameter_values, phase_for_selection_index,
-        spawn_reconstructed_step_fx_for_clip,
+        ActiveStepFx, Bezier, CurveType, DurationInput, FxColorLane, FxColorStep, FxDirection,
+        FxLane, FxLaneSample, FxStep, FxTrack, Linear, MaterializedStepFxReconstructionHandle,
+        PhaseGroups, Point2D, Snap, StepFx, StepFxCycleScale, StepFxLanePhaseOffsets, StepFxPhase,
+        StepFxTiming, StepFxTrackPhaseOffsets, StepFxTransition, StepFxValidationIssue,
+        TransitionCurve, calculate_phase_distribution, interpolate_parameter_values,
+        phase_for_selection_index, spawn_reconstructed_step_fx_for_clip,
     };
     pub use crate::stored_module::StoredFxModule;
     pub use crate::{FxCommand, FxPlugin};

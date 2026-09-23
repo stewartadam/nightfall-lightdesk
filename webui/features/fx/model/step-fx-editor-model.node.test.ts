@@ -10,6 +10,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { FxDirection, type StepFx } from "../../../types";
 import {
+  createStepFxColorLane,
+  stepFxColorComponentTrack,
+} from "./step-fx-color-model";
+import {
   canRestartStepFxPreview,
   deleteStepFxSteps,
   distributeStepFxWidthsEvenly,
@@ -32,6 +36,10 @@ import {
   stepFxTimingFromSpeed,
   validateStepFxDraft,
 } from "./step-fx-editor-model";
+import {
+  buildStepFxWaveformModel,
+  sampleStepFxWaveform,
+} from "./step-fx-waveform-model";
 
 /** Builds a valid default draft with deterministic top-level identity. */
 function draft(): StepFx {
@@ -65,6 +73,47 @@ function draft(): StepFx {
     ],
   };
 }
+
+/** Whole colors validate on their own and cannot compete with physical color lanes. */
+test("color lane validation preserves independent attribute ownership", () => {
+  const fx = draft();
+  fx.lanes = [];
+  fx.color_lane = createStepFxColorLane();
+  assert.deepEqual(validateStepFxDraft(fx), []);
+  fx.lanes = draft().lanes;
+  assert.deepEqual(validateStepFxDraft(fx), []);
+  fx.lanes[0].attribute = { type: "Red" };
+  assert.ok(
+    validateStepFxDraft(fx).some((issue) => issue.path === "color_lane"),
+  );
+  fx.lanes = [];
+  fx.color_lane.steps[0].transition.start = 0.9;
+  fx.color_lane.steps[0].transition.end = 0.1;
+  assert.ok(
+    validateStepFxDraft(fx).some(
+      (issue) => issue.path === "color_lane.steps.0.transition",
+    ),
+  );
+});
+
+/** A two-color fade previews the composite output and respects snap shaping. */
+test("color preview shares the existing scalar interpolation semantics", () => {
+  const lane = createStepFxColorLane();
+  const red = buildStepFxWaveformModel(stepFxColorComponentTrack(lane, "red"))!;
+  const blue = buildStepFxWaveformModel(
+    stepFxColorComponentTrack(lane, "blue"),
+  )!;
+  assert.equal(sampleStepFxWaveform(red, 0.5)?.value, 0.5);
+  assert.equal(sampleStepFxWaveform(blue, 0.5)?.value, 0.5);
+  lane.steps[0].curve = { type: "Snap", data: {} };
+  assert.equal(
+    sampleStepFxWaveform(
+      buildStepFxWaveformModel(stepFxColorComponentTrack(lane))!,
+      0.5,
+    )?.value,
+    1,
+  );
+});
 
 test("speed units round-trip through canonical beat duration", () => {
   for (const [unit, value] of [

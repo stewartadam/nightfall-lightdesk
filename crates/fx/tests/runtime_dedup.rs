@@ -59,6 +59,7 @@ fn add_selection_resources(app: &mut App) {
 /// Builds a valid two-step intensity chase for runtime lifecycle tests.
 fn minimal_step_fx(id: u32, uid: Uuid, label: &str, beat_duration: Duration) -> StepFx {
     StepFx {
+        color_lane: None,
         identifiers: Identifiers {
             id,
             uid,

@@ -79,6 +79,7 @@ import { FxDirection, type SpatialSelection } from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
 import { SpatialSelectionField } from "../../selection";
 import { FxAttributePicker } from "../components/fx-attribute-picker";
+import { StepFxColorLaneEditor } from "../components/step-fx-color-lane";
 import { StepFxPhaseField } from "../components/step-fx-phase-field";
 import {
   StepFxWaveform,
@@ -87,6 +88,11 @@ import {
 } from "../components/step-fx-waveform";
 import { createStepFxEditorController } from "../controllers/step-fx-editor-controller";
 import { getTargetFixtureAttributes } from "../model/fixture-attributes";
+import {
+  createStepFxColorLane,
+  isStepFxColorAttribute,
+  stepFxColorComponentTrack,
+} from "../model/step-fx-color-model";
 import {
   createDefaultStepFxLane,
   createDefaultStepFxTrack,
@@ -366,6 +372,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
 
   /** Returns the currently selected lane after clamping structural edits. */
   const activeLane = createMemo(() => {
+    if (selectedLane() === -1) return undefined;
     const lanes = draft()?.lanes ?? [];
     return lanes[Math.min(selectedLane(), Math.max(lanes.length - 1, 0))];
   });
@@ -379,7 +386,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
   /** Formats the active track's effective cycle after optional fixed scaling. */
   const activeCycleBeatText = createMemo(() => {
     const current = draft();
-    const beats = current ? stepFxCycleBeats(current, activeTrack()) : null;
+    const track =
+      selectedLane() === -1 && current?.color_lane
+        ? stepFxColorComponentTrack(current.color_lane)
+        : activeTrack();
+    const beats = current ? stepFxCycleBeats(current, track) : null;
     return beats === null ? null : formatStepFxBeatCount(beats);
   });
 
@@ -463,7 +474,9 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     );
     for (const lane of draft()?.lanes ?? [])
       names.add(stepFxAttributeName(lane.attribute));
-    return Array.from(names).sort();
+    return Array.from(names)
+      .filter((name) => !draft()?.color_lane || !isStepFxColorAttribute(name))
+      .sort();
   });
 
   /** Restores the selected attribute after the effect draft becomes available. */
@@ -477,7 +490,14 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
             initialViewport.selectedAttribute,
         )
       : 0;
-    selectTrack(Math.max(0, laneIndex), initialViewport.trackKind);
+    selectTrack(
+      current.color_lane &&
+        (initialViewport.selectedAttribute === "Color" ||
+          current.lanes.length === 0)
+        ? -1
+        : Math.max(0, laneIndex),
+      initialViewport.trackKind,
+    );
     setViewportHydrated(true);
   });
 
@@ -486,7 +506,12 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     if (!viewportHydrated()) return;
     const lane = activeLane();
     saveStepFxEditorViewportState(initialUid, {
-      selectedAttribute: lane ? stepFxAttributeName(lane.attribute) : undefined,
+      selectedAttribute:
+        selectedLane() === -1
+          ? "Color"
+          : lane
+            ? stepFxAttributeName(lane.attribute)
+            : undefined,
       trackKind: trackKind(),
       centerSelectedFixture: centerSelectedFixture(),
       showAllPlayheads: showAllPlayheads(),
@@ -579,6 +604,14 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     props.panelApi?.setTitle(panelTitle());
   });
 
+  let initialDraftCleared = !initialDraft;
+  /** Restores saved effects by identity instead of replaying their original creation draft. */
+  createEffect(() => {
+    if (initialDraftCleared || isDirty() || !draft()) return;
+    initialDraftCleared = true;
+    props.panelApi?.updateParameters({ initialDraft: undefined });
+  });
+
   usePropertiesInspector(
     panelId,
     propertiesLabel,
@@ -623,6 +656,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
 
   /** Adds and selects a lane for a newly chosen fixture attribute. */
   const addLane = (name: string): void => {
+    if (draft()?.color_lane && isStepFxColorAttribute(name)) return;
     mutate((next) => {
       const attribute = getAttributeMetadata(name)?.attribute ?? {
         type: "Custom" as const,
@@ -1383,6 +1417,26 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
             </Show>
             <main class="grid min-h-0 flex-1 grid-cols-[11rem_minmax(0,1fr)] overflow-hidden">
               <aside class="min-h-0 overflow-y-auto border-r border-neutral-700 bg-neutral-900/60 p-2">
+                <Show when={!current().color_lane}>
+                  <button
+                    type="button"
+                    class={`${BUTTON_CLASS} mb-2 w-full`}
+                    disabled={current().lanes.some((lane) =>
+                      isStepFxColorAttribute(
+                        stepFxAttributeName(lane.attribute),
+                      ),
+                    )}
+                    title="Color cannot be combined with individual color channels"
+                    onClick={() => {
+                      mutate((next) => {
+                        next.color_lane = createStepFxColorLane();
+                      });
+                      selectTrack(-1, "absolute");
+                    }}
+                  >
+                    Add Color lane
+                  </button>
+                </Show>
                 <FxAttributePicker
                   selectedAttributes={current().lanes.map((lane) =>
                     stepFxAttributeName(lane.attribute),
@@ -1417,6 +1471,40 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                   aria-label="Step FX attributes"
                   aria-orientation="vertical"
                 >
+                  <Show when={current().color_lane}>
+                    <div
+                      class="flex items-center rounded"
+                      classList={{
+                        "bg-blue-600": selectedLane() === -1,
+                        "bg-gray-800": selectedLane() !== -1,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        role="tab"
+                        id={`step-fx-${previewSessionId}-color-tab`}
+                        aria-controls={`step-fx-${previewSessionId}-track-panel`}
+                        aria-selected={selectedLane() === -1}
+                        class="flex-1 px-2 py-2 text-left text-sm"
+                        onClick={() => selectTrack(-1, "absolute")}
+                      >
+                        Color
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Remove Color lane"
+                        class="px-2 py-2"
+                        onClick={() => {
+                          mutate((next) => {
+                            next.color_lane = undefined;
+                          });
+                          selectTrack(0, "absolute");
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </Show>
                   <For each={current().lanes}>
                     {(lane, index) => (
                       <div
@@ -1477,9 +1565,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                 id={`step-fx-${previewSessionId}-track-panel`}
                 role="tabpanel"
                 aria-labelledby={
-                  current().lanes.length > 0
-                    ? `step-fx-${previewSessionId}-attribute-tab-${selectedLane()}`
-                    : undefined
+                  selectedLane() === -1
+                    ? `step-fx-${previewSessionId}-color-tab`
+                    : current().lanes.length > 0
+                      ? `step-fx-${previewSessionId}-attribute-tab-${selectedLane()}`
+                      : undefined
                 }
                 aria-busy={contributionSlidePhase() !== "idle"}
                 class="relative flex min-h-0 min-w-0 flex-col overflow-hidden"
@@ -1487,12 +1577,26 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                 data-contribution-slide-phase={contributionSlidePhase()}
                 data-contribution-slide-direction={contributionSlideDirection()}
               >
+                <Show when={selectedLane() === -1 && current().color_lane}>
+                  {(lane) => (
+                    <StepFxColorLaneEditor
+                      lane={lane()}
+                      onChange={(lane) =>
+                        mutate((next) => {
+                          next.color_lane = lane;
+                        })
+                      }
+                    />
+                  )}
+                </Show>
                 <Show
                   when={activeLane()}
                   fallback={
-                    <div class="m-auto text-sm text-neutral-500">
-                      Add an attribute lane to begin.
-                    </div>
+                    <Show when={selectedLane() !== -1}>
+                      <div class="m-auto text-sm text-neutral-500">
+                        Add an attribute lane to begin.
+                      </div>
+                    </Show>
                   }
                 >
                   {(lane) => (

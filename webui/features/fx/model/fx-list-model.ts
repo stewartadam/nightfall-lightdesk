@@ -86,7 +86,7 @@ export function createRegularFxListEntry(fxEntry: types.Fx): FxListEntry {
 
 /** Projects a step FX record into the shared list-row shape. */
 export function createStepFxListEntry(fxEntry: types.StepFx): FxListEntry {
-  const laneCount = fxEntry.lanes.length;
+  const laneCount = fxEntry.lanes.length + (fxEntry.color_lane ? 1 : 0);
   return {
     identifiers: fxEntry.identifiers,
     type: "step",

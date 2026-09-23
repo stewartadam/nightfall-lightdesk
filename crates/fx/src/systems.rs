@@ -13,6 +13,7 @@ use std::time::Duration;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
+use nightfall_dmx::prelude::Attribute;
 use nightfall_dmx::prelude::ParameterValue;
 use nightfall_engine::prelude::DataProvider;
 use nightfall_fixtures::prelude::*;
@@ -23,6 +24,7 @@ use nightfall_instances::{
 use nightfall_selection::filter_existing_selection;
 
 use crate::events::PreviewStepFxDefinition;
+use crate::prelude::FxLaneSample;
 use crate::step_fx::{ActiveStepFx, StepFx, StepFxLanePhaseOffsets};
 
 /// Active playback components sampled and re-anchored by the Step FX evaluator.
@@ -210,13 +212,60 @@ fn apply_fx_to_fixture(
     layer: &mut Layer,
 ) {
     let default_offsets = StepFxLanePhaseOffsets::default();
-    let samples = step_fx.sample_for_selection_index_with_offsets_and_blueprints(
+    let mut samples = step_fx.sample_for_selection_index_with_offsets_and_blueprints(
         elapsed,
         selection_index,
         selection_index_count,
         lane_phase_offsets.unwrap_or(&default_offsets),
         Some(blueprint_data_provider),
     );
+    if let Some(color) = step_fx.sample_color(
+        elapsed,
+        selection_index,
+        selection_index_count,
+        lane_phase_offsets.unwrap_or(&default_offsets).color,
+        Some(blueprint_data_provider),
+    ) {
+        let rgb = [Attribute::Red, Attribute::Green, Attribute::Blue];
+        let cmy = [Attribute::Cyan, Attribute::Magenta, Attribute::Yellow];
+        let attributes = [rgb, cmy].into_iter().find(|attributes| {
+            attributes.iter().all(|attribute| {
+                fixture_data_provider
+                    .try_parameter_for_logical_attribute(fixture_ref, attribute)
+                    .is_some()
+            })
+        });
+        if let Some(attributes) = attributes {
+            let subtractive = attributes[0] == Attribute::Cyan;
+            for (attribute, value) in
+                attributes
+                    .into_iter()
+                    .zip([color.red, color.green, color.blue])
+            {
+                samples.push(FxLaneSample {
+                    attribute,
+                    absolute: Some(ParameterValue::AbsolutePercent {
+                        value: (if subtractive { 1.0 - value } else { value }).into(),
+                    }),
+                    relative: None,
+                });
+            }
+            // Whole-color ownership excludes auxiliary emitters from a previously active look.
+            for attribute in [
+                Attribute::White,
+                Attribute::WarmWhite,
+                Attribute::CoolWhite,
+                Attribute::Amber,
+                Attribute::UV,
+            ] {
+                samples.push(FxLaneSample {
+                    attribute,
+                    absolute: Some(ParameterValue::AbsolutePercent { value: 0.0.into() }),
+                    relative: None,
+                });
+            }
+        }
+    }
 
     for sample in samples {
         let Some(resolved_parameter) = fixture_data_provider
@@ -374,6 +423,7 @@ mod tests {
     /// Builds a single-step intensity FX that samples to the provided value.
     fn intensity_step_fx(value: ParameterValue, selection: SpatialSelection) -> StepFx {
         StepFx {
+            color_lane: None,
             identifiers: Identifiers {
                 id: 1,
                 uid: uuid::Uuid::new_v4(),
@@ -517,6 +567,102 @@ mod tests {
         let active = app.world().entity(active_entity);
         assert!(active.contains::<Layer>());
         assert!(active.contains::<ObjectRefMarker>());
+    }
+
+    /// Maps whole colors into RGB and CMY fixture outputs and clears auxiliary emitters.
+    #[test]
+    fn evaluate_color_steps_for_rgbw_and_cmy_fixtures() {
+        for (attributes, expected) in [
+            (
+                vec![
+                    Attribute::Red,
+                    Attribute::Green,
+                    Attribute::Blue,
+                    Attribute::White,
+                ],
+                vec![255.0, 63.75, 0.0, 0.0],
+            ),
+            (
+                vec![Attribute::Cyan, Attribute::Magenta, Attribute::Yellow],
+                vec![0.0, 191.25, 255.0],
+            ),
+        ] {
+            let mut app = step_fx_test_app();
+            let fixture_uid = uuid::Uuid::new_v4();
+            let fixture_ref = FixtureRef {
+                fixture_uid,
+                index: Some(1),
+            };
+            let metadata = attributes
+                .iter()
+                .map(|attribute| ParameterMetadata {
+                    attribute: attribute.clone(),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            let parameters = metadata
+                .iter()
+                .map(|metadata| unsafe {
+                    Instance::<Parameter>::from_entity_unchecked(
+                        app.world_mut()
+                            .spawn(Parameter {
+                                metadata: metadata.clone(),
+                                values: ParameterValues::default(),
+                            })
+                            .id(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let mut fixtures = app.world_mut().resource_mut::<FixtureDataProviderExt>();
+            fixtures
+                .inner
+                .add(Fixture {
+                    identifiers: Identifiers {
+                        id: 1,
+                        uid: fixture_uid,
+                        label: "Color fixture".into(),
+                    },
+                    elements: vec![FixtureElement {
+                        label: "main".into(),
+                        parameters: metadata,
+                    }],
+                    ..Default::default()
+                })
+                .unwrap();
+            for (attribute, parameter) in attributes.into_iter().zip(parameters.iter()) {
+                fixtures.add_parameter(fixture_ref.clone(), attribute, *parameter);
+            }
+            drop(fixtures);
+            let mut fx = intensity_step_fx(
+                ParameterValue::AbsolutePercent { value: 1.0.into() },
+                SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
+            );
+            fx.lanes.clear();
+            fx.color_lane = Some(crate::prelude::FxColorLane {
+                steps: (0..2)
+                    .map(|_| crate::prelude::FxColorStep {
+                        uid: uuid::Uuid::new_v4(),
+                        target: ColorPathRgb {
+                            red: 1.0,
+                            green: 0.25,
+                            blue: 0.0,
+                        },
+                        blueprint_uid: None,
+                        width_beats: 1.0,
+                        transition: 1.0.into(),
+                        curve: CurveType::Linear(Linear {}),
+                    })
+                    .collect(),
+            });
+            let active = evaluate_test_step_fx(&mut app, fx);
+            let layer = app.world().get::<Layer>(active).unwrap();
+            for (parameter, value) in parameters.iter().zip(expected) {
+                assert_eq!(
+                    layer.absolute.get(parameter).map(|(value, _)| *value),
+                    Some(ParameterValue::Absolute { value })
+                );
+            }
+        }
     }
 
     /// Verifies whole-fixture selections address a single fixture element during evaluation.

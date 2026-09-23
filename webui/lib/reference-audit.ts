@@ -312,6 +312,14 @@ export function buildReferenceAudit(
   for (const stepFx of Object.values(inputs.stepFx)) {
     const source = stepFxObject(stepFx);
     auditSelection(source, stepFx.selection, "selection.source");
+    stepFx.color_lane?.steps.forEach((step, stepIndex) => {
+      if (step.blueprint_uid)
+        auditBlueprintUid(
+          source,
+          step.blueprint_uid,
+          `color_lane.steps[${stepIndex}].blueprint_uid`,
+        );
+    });
     stepFx.lanes.forEach((lane, laneIndex) => {
       for (const trackName of ["absolute", "relative"] as const) {
         lane[trackName]?.steps.forEach((step, stepIndex) => {

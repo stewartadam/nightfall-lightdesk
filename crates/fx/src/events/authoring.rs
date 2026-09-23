@@ -289,6 +289,7 @@ fn resolve_step_fx_draft(
         })
         .collect::<Result<Vec<_>, CommandError>>()?;
     Ok(StepFx {
+        color_lane: None,
         identifiers: draft.identifiers,
         selection: draft.selection,
         timing: draft.timing,

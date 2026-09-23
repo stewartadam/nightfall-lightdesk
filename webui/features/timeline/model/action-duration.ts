@@ -360,7 +360,9 @@ function stepFxClipDurationMs(
         timing: lane.timing_override ?? stepFx.timing,
       })),
   );
-  const representative = representatives[0];
+  const representative = stepFx.color_lane
+    ? { track: stepFx.color_lane, timing: stepFx.timing }
+    : representatives[0];
   if (!representative) return undefined;
   const cycleBeats =
     stepFx.cycle_scale.type === "Fixed"

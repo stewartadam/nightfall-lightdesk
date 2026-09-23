@@ -615,6 +615,7 @@ fn add_fx_module(world: &mut World, fixture_ref: FixtureRef) -> Result<(), Strin
 /// Add a step FX component.
 fn add_step_fx(world: &mut World, fixture_ref: FixtureRef) {
     world.spawn(StepFx {
+        color_lane: None,
         identifiers: Identifiers {
             id: 1,
             uid: uuid(STEP_FX_UID),

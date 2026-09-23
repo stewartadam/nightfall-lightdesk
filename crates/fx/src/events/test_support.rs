@@ -17,6 +17,7 @@ use crate::prelude::*;
 /// Builds a valid two-step intensity chase for command tests.
 pub(super) fn valid_step_fx(id: u32, uid: Uuid, selection: SpatialSelection) -> StepFx {
     StepFx {
+        color_lane: None,
         identifiers: Identifiers {
             id,
             uid,

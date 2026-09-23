@@ -358,6 +358,110 @@ async function openStepFxStartPositionControls(
   return menu;
 }
 
+/** Exercises whole-color authoring, reference preservation, and switching back to emitter lanes. */
+test("Step FX Color lane authors two colors and preserves Blueprint references", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 1100 });
+  await openStepFxEditorApp(page, backendSlot.backendPort);
+  await page.getByRole("tab", { name: "Fx" }).click();
+  await page.getByRole("button", { name: "Add effect" }).click();
+  await page.getByRole("button", { name: "Step FX", exact: true }).click();
+  const editor = page.locator("[data-step-fx-editor]");
+  await expect(editor).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).appStores.dockApi.get().activePanel.api.maximize(),
+  );
+  await editor
+    .getByRole("button", { name: "Add Color lane", exact: true })
+    .click();
+  await expect(
+    editor.getByRole("tab", { name: "Color", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    editor.getByRole("img", { name: "Color cycle preview" }),
+  ).toBeVisible();
+  await editor.getByLabel("Edit step 1 color").click();
+  await editor
+    .getByRole("button", { name: "Choose #00FF00", exact: true })
+    .click();
+  await expect
+    .poll(
+      async () => (await storedStepFx(page))?.color_lane?.steps[0].target.green,
+    )
+    .toBe(1);
+  await expect(editor.getByText("Hex #00FF00", { exact: true })).toBeVisible();
+  await editor.getByLabel("Edit step 1 color").click();
+  await editor.getByLabel("Color step 2 shape").selectOption("Snap");
+  await expect
+    .poll(
+      async () => (await storedStepFx(page))?.color_lane?.steps[1].curve.type,
+    )
+    .toBe("Snap");
+  await page.evaluate(async () => {
+    const stores = (window as any).appStores;
+    for (const data of [
+      "fix 1",
+      "red @ 100 green @ 25 blue @ 0",
+      "store blueprint 88 filter color",
+    ]) {
+      const result = await stores.sendAndAwait({
+        module: "DeskCommand",
+        command: { type: "Eval", data },
+      });
+      if (result.outcome.type !== "Succeeded")
+        throw new Error(JSON.stringify(result));
+    }
+  });
+  const source = editor.getByLabel("Step 2 color source");
+  await expect(source.locator("option")).toHaveCount(2);
+  await source.selectOption({ index: 1 });
+  await expect
+    .poll(
+      async () =>
+        (await storedStepFx(page))?.color_lane?.steps[1].blueprint_uid,
+    )
+    .toBeTruthy();
+  await expect(editor.getByText(/Live Blueprint reference/)).toBeVisible();
+  await expect(editor.getByLabel("Edit step 2 color")).toHaveCount(0);
+  const search = editor.getByRole("searchbox", { name: "Search attributes" });
+  await search.fill("Red");
+  await expect(
+    editor.getByRole("menuitemcheckbox", { name: "Red", exact: true }),
+  ).toHaveCount(0);
+  await search.press("Escape");
+  await page.screenshot({
+    path: testInfo.outputPath("step-fx-color-lane.png"),
+    fullPage: true,
+  });
+  const stopPreview = editor.getByRole("button", { name: "Stop preview" });
+  if (await stopPreview.isVisible()) await stopPreview.click();
+  await page.reload();
+  await expect(editor.locator("[data-step-fx-color-editor]")).toBeVisible();
+  await expect(editor.getByText(/Live Blueprint reference/)).toBeVisible();
+  await expect(source.locator("option:checked")).not.toContainText(
+    "Unavailable",
+  );
+  await editor
+    .getByRole("button", { name: "Remove Color lane", exact: true })
+    .click();
+  await search.fill("Red");
+  await editor
+    .getByRole("menuitemcheckbox", { name: "Red", exact: true })
+    .click();
+  await search.press("Escape");
+  await expect(
+    editor.getByRole("button", { name: "Add Color lane", exact: true }),
+  ).toBeDisabled();
+  await expect(editor.getByLabel("Step 1 value")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("step-fx-independent-channel.png"),
+    fullPage: true,
+  });
+  if (await stopPreview.isVisible()) await stopPreview.click();
+});
+
 /** Verifies the attribute catalog follows concrete fixture and group targets. */
 test("Step FX attribute search is limited to target fixtures", async ({
   backendSlot,

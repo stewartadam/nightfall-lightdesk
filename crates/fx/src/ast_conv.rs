@@ -254,6 +254,7 @@ fn step_fx_from_direct_draft(draft: StepFxDraft) -> StepFx {
         })
         .collect();
     StepFx {
+        color_lane: None,
         identifiers: draft.identifiers,
         selection: draft.selection,
         timing: draft.timing,

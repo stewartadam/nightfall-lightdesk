@@ -117,10 +117,15 @@ pub(super) fn reanchored_step_fx_runtime(
         })
         .collect();
     let last_clock_position = new_clock.position;
-    (
-        new_clock,
-        StepFxLanePhaseOffsets::new(offsets, last_clock_position),
-    )
+    let mut offsets = StepFxLanePhaseOffsets::new(offsets, last_clock_position);
+    offsets.color = reanchored_track_phase_offset(
+        old_step_fx.color_cycle_duration(),
+        new_step_fx.color_cycle_duration(),
+        old_elapsed,
+        new_elapsed,
+        previous_offsets.color,
+    );
+    (new_clock, offsets)
 }
 
 #[cfg(test)]

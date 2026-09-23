@@ -153,6 +153,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
 
     // Rainbow uses 3 sine waves offset by 120° for R, G, B
     let rainbow_step_fx = StepFx {
+        color_lane: None,
         identifiers: Identifiers {
             id: 100,
             label: "Rainbow Cycle".to_owned(),
@@ -291,6 +292,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
     // Pan (cosine): max → center → min → center → max
     // Tilt (sine):  center → max → center → min → center (90° behind Pan)
     let circle_step_fx = StepFx {
+        color_lane: None,
         identifiers: Identifiers {
             id: 101,
             label: "Circle Motion".to_owned(),
@@ -413,6 +415,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
     // 3. White bounce chase for bstrips (groups 3-10)
     // Chase effect: intensity pulses through selection with phase spread
     let chase_step_fx = StepFx {
+        color_lane: None,
         identifiers: Identifiers {
             id: 102,
             label: "White Bounce".to_owned(),
@@ -517,6 +520,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
 
     // 4. White bounce chase for bstrips - single bar at a time (no trail, groups 3-10)
     let single_bar_fx = StepFx {
+        color_lane: None,
         identifiers: Identifiers {
             id: 103,
             label: "White Bounce Single".to_owned(),
@@ -613,6 +617,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
 
     // 5. Manual strobe pixel rainbow (fixture 601 RGB pixels only)
     let strobe_pixel_rainbow_fx = StepFx {
+        color_lane: None,
         identifiers: Identifiers {
             id: 601,
             label: "Strobe Pixel Rainbow".to_owned(),
