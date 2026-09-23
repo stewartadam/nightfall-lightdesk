@@ -104,14 +104,22 @@ return zero before the first point. Invalid links, duplicate names/points,
 nonfinite values, overflow and point budgets are diagnosed. Raw interval tests
 retain distinct 32-bit values.
 
-The `physical` stage compiles parent-function mappings and evaluates both raw
-endpoints of every function. Linear mappings preserve descending ranges and
+The `physical` stage compiles mappings and evaluates both raw endpoints of every
+function and channel set. Linear mappings preserve descending ranges and
 quantize inverse requests to the nearest raw integer through 32 bits. Profiles
 scale percentage output into function Min/Max (defaulting to PhysicalFrom/To).
 Constant linear ranges report an ambiguous inverse, and profiles report an
 unavailable inverse rather than guessing. Synthetic physical tests cover those
-cases independently. This stage does not select active functions, apply channel
-set overrides or relations, map sub-channel units, or run in the engine yet.
+cases independently. Sets with no physical overrides preserve the parent mapping,
+including curves. Explicit overrides interpolate across the set's own range;
+an omitted endpoint uses the corresponding parent endpoint. A one-slot set uses
+its starting physical value. Combining explicit set overrides with a function
+profile currently reports `profile_set_composition_unavailable` pending verified
+composition semantics. This stage does not select active functions, apply
+relations, map sub-channel units, or run in the engine yet.
+Linear inverse requests on functions with explicit set overrides report
+`set_inverse_unavailable` until set selection and inverse ambiguity are handled;
+they must not encode using the parent ramp and return a different physical value.
 
 The `activation` stage compiles a bounded dependency order and evaluates each
 mode's raw defaults. Function links require the target function to be active;

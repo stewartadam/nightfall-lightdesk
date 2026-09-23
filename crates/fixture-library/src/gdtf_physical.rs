@@ -6,13 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Function-level physical conversion; selection and channel-set overrides remain separate.
+//! Physical conversion for functions and channel-set overrides; activation remains separate.
 
 use serde::Serialize;
 
 use crate::gdtf_functions::ChannelFunctions;
 use crate::gdtf_profiles::ProfileLibrary;
 use crate::gdtf_resolver::ResolveError;
+use crate::gdtf_sets::{FunctionSets, resolve_sets};
 
 /// Owned endpoints and an optional immutable profile index for one function.
 #[derive(Debug, Serialize)]
@@ -23,6 +24,7 @@ struct Mapping {
     physical_from: f64,
     physical_to: f64,
     profile: Option<usize>,
+    sets: FunctionSets,
 }
 
 /// Owned mappings in normalized channel/function order sharing one profile library.
@@ -46,6 +48,7 @@ pub fn compile_physical(
     channels: &[ChannelFunctions<'_>],
     profiles: ProfileLibrary,
     function_limit: usize,
+    set_limit: usize,
 ) -> Result<PhysicalMappings, ResolveError> {
     let mut count = 0usize;
     let mut result = Vec::with_capacity(channels.len());
@@ -60,8 +63,11 @@ pub fn compile_physical(
                     "Physical mappings exceed the compilation budget",
                 )
             })?;
+    }
+    let sets = resolve_sets(channels, set_limit)?;
+    for (channel, sets) in channels.iter().zip(sets) {
         let mut mappings = Vec::with_capacity(channel.functions.len());
-        for function in &channel.functions {
+        for (function, sets) in channel.functions.iter().zip(sets) {
             let profile = function
                 .source
                 .dmx_profile
@@ -99,6 +105,7 @@ pub fn compile_physical(
                 physical_from: from,
                 physical_to: to,
                 profile,
+                sets,
             });
         }
         result.push(mappings);
@@ -110,6 +117,51 @@ pub fn compile_physical(
 }
 
 impl PhysicalMappings {
+    /// Expose immutable labeled ranges for operator choices and capability checks.
+    pub fn channel_sets(
+        &self,
+        channel: usize,
+        function: usize,
+    ) -> Result<&[crate::gdtf_sets::ChannelSet], ResolveError> {
+        Ok(&self.mapping(channel, function)?.sets.sets)
+    }
+
+    /// Evaluate an explicitly selected function including its active channel-set override.
+    /// Labels without overrides retain the parent function's continuous mapping.
+    pub fn evaluate(&self, channel: usize, function: usize, raw: u32) -> Result<f64, ResolveError> {
+        let parent = self.evaluate_function(channel, function, raw)?;
+        let mapping = self.mapping(channel, function)?;
+        let Some(set) = mapping.sets.at(raw) else {
+            return Ok(parent);
+        };
+        if set.physical_from.is_none() && set.physical_to.is_none() {
+            return Ok(parent);
+        }
+        if mapping.profile.is_some() {
+            return Err(error(
+                "profile_set_composition_unavailable",
+                &set.id,
+                "Combining an explicit channel-set physical override with a function profile requires a verified composition rule",
+            ));
+        }
+        let from = set.physical_from.unwrap_or(mapping.sets.physical_from);
+        let to = set.physical_to.unwrap_or(mapping.sets.physical_to);
+        let fraction = if set.raw_from == set.raw_to {
+            0.0
+        } else {
+            f64::from(raw - set.raw_from) / f64::from(set.raw_to - set.raw_from)
+        };
+        let value = from + (to - from) * fraction;
+        if !value.is_finite() {
+            return Err(error(
+                "physical_output_overflow",
+                &set.id,
+                "Channel-set physical evaluation produced a nonfinite value",
+            ));
+        }
+        Ok(value)
+    }
+
     /// Reject stale or mismatched indices instead of reading a different function.
     fn mapping(&self, channel: usize, function: usize) -> Result<&Mapping, ResolveError> {
         self.channels
@@ -177,6 +229,18 @@ impl PhysicalMappings {
                 "profile_inverse_unavailable",
                 &mapping.id,
                 "A profile requires explicit inverse analysis before physical encoding",
+            ));
+        }
+        if mapping
+            .sets
+            .sets
+            .iter()
+            .any(|set| set.physical_from.is_some() || set.physical_to.is_some())
+        {
+            return Err(error(
+                "set_inverse_unavailable",
+                &mapping.id,
+                "Physical encoding with channel-set overrides requires explicit set selection and inverse analysis",
             ));
         }
         if !value.is_finite()

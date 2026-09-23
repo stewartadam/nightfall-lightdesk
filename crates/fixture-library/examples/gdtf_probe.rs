@@ -114,7 +114,9 @@ fn main() {
                         );
                         let started = Instant::now();
                         let physical = compile_profiles(profile_sources, 100_000)
-                            .and_then(|profiles| compile_physical(&functions, profiles, 1_000_000))
+                            .and_then(|profiles| {
+                                compile_physical(&functions, profiles, 1_000_000, 1_000_000)
+                            })
                             .and_then(|physical| {
                                 functions
                                     .iter()
@@ -125,6 +127,17 @@ fn main() {
                                             .iter()
                                             .enumerate()
                                             .map(|(function, source)| {
+                                                for set in
+                                                    physical.channel_sets(channel, function)?
+                                                {
+                                                    physical.evaluate(
+                                                        channel,
+                                                        function,
+                                                        set.raw_from,
+                                                    )?;
+                                                    physical
+                                                        .evaluate(channel, function, set.raw_to)?;
+                                                }
                                                 Ok((
                                                     physical.evaluate_function(
                                                         channel,
@@ -145,7 +158,8 @@ fn main() {
                         match physical {
                             Ok(endpoints) => emit(
                                 json!({"stage": "physical", "status": "passed", "mode": mode,
-                                "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "endpoints": endpoints}),
+                                "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "endpoints": endpoints,
+                                "set_endpoints_checked": true}),
                             ),
                             Err(error) => {
                                 failed = true;
