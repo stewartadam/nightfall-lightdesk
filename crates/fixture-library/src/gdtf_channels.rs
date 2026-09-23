@@ -10,6 +10,7 @@
 
 use gdtf::attribute::AttributeDefinitions;
 use gdtf::physical_descriptions::DmxProfile;
+use nightfall_dmx::wire::ModeWires;
 use serde::Serialize;
 
 use crate::gdtf_activation::{ActivationProgram, compile_activation};
@@ -20,7 +21,7 @@ use crate::gdtf_physical::{PhysicalMappings, compile_physical};
 use crate::gdtf_profiles::compile_profiles;
 use crate::gdtf_relations::{RelationPlan, plan_relations, resolve_relations};
 use crate::gdtf_resolver::{ResolveError, ResolvedMode};
-use crate::gdtf_wire::{ModeWires, resolve_wires};
+use crate::gdtf_wire::resolve_wires;
 
 /// Expanded semantic budgets, independent of geometry-resolution limits.
 #[derive(Debug, Clone, Copy)]

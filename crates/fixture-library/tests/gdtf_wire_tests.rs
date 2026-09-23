@@ -9,8 +9,9 @@
 //! Independent expected wire positions for sparse and referenced channel instances.
 
 use gdtf::dmx_mode::DmxBreak;
+use nightfall_dmx::wire::{ChannelWire, ModeWires};
 use nightfall_fixture_library::gdtf_resolver::{ResolveLimits, resolve_mode};
-use nightfall_fixture_library::gdtf_wire::{ChannelWire, ModeWires, resolve_wires};
+use nightfall_fixture_library::gdtf_wire::resolve_wires;
 
 /// Parse a resource-free mode whose expected physical positions are authored in the test.
 fn description() -> gdtf::Description {
@@ -225,55 +226,6 @@ fn fixed_and_overwrite_entries_remain_distinct_on_the_same_break() {
     assert_eq!(wires.channels[5], physical(2, &[20]));
     assert_eq!(wires.channels[6], physical(2, &[101]));
     assert_eq!(wires.channels[7], physical(2, &[201]));
-}
-
-/// Independently authored buffers verify byte significance, gaps, and exact values at every width.
-#[test]
-fn raw_codec_preserves_sparse_slots_and_integer_precision() {
-    for (offsets, raw, expected) in [
-        (vec![4], 0xab, vec![0xee, 0xee, 0xee, 0xab]),
-        (vec![4, 1], 0xabcd, vec![0xcd, 0xee, 0xee, 0xab]),
-        (vec![4, 1, 3], 0xabcdef, vec![0xcd, 0xee, 0xef, 0xab]),
-        (vec![4, 1, 3, 2], 0xabcdef01, vec![0xcd, 0x01, 0xef, 0xab]),
-    ] {
-        let wire = ChannelWire {
-            dmx_break: 7,
-            offsets,
-        };
-        assert_eq!(wire.read_raw(&expected).unwrap(), raw);
-        let mut output = vec![0xee; 4];
-        wire.write_raw(raw, &mut output).unwrap();
-        assert_eq!(output, expected);
-        let maximum = u32::MAX >> ((4 - wire.offsets.len()) * 8);
-        for value in [0, 1, maximum - 1, maximum] {
-            wire.write_raw(value, &mut output).unwrap();
-            assert_eq!(wire.read_raw(&output).unwrap(), value);
-        }
-    }
-}
-
-/// Rejected writes are transactional even when a valid byte precedes an invalid one.
-#[test]
-fn raw_codec_rejects_invalid_layouts_and_overflow_without_partial_writes() {
-    for (dmx_break, offsets, raw, expected) in [
-        (0, vec![1], 1, "invalid_break"),
-        (1, vec![], 1, "invalid_channel_width"),
-        (1, vec![1, 2, 3, 4, 5], 1, "invalid_channel_width"),
-        (1, vec![1, 0], 1, "invalid_offset"),
-        (1, vec![1, 5], 1, "wire_buffer_too_short"),
-        (1, vec![1, 1], 1, "duplicate_byte"),
-        (1, vec![1], 256, "raw_value_out_of_range"),
-        (1, vec![1, 3], 65536, "raw_value_out_of_range"),
-        (1, vec![1, 3, 2], 16777216, "raw_value_out_of_range"),
-    ] {
-        let wire = ChannelWire { dmx_break, offsets };
-        let mut output = [0x99; 4];
-        assert_eq!(wire.write_raw(raw, &mut output).unwrap_err().code, expected);
-        assert_eq!(output, [0x99; 4]);
-        if expected != "raw_value_out_of_range" {
-            assert_eq!(wire.read_raw(&output).unwrap_err().code, expected);
-        }
-    }
 }
 
 /// Compiled reference mappings write only their selected break and do not allocate virtual slots.

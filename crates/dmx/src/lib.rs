@@ -15,6 +15,7 @@ mod attributes;
 mod parameter_value;
 mod percentage;
 mod percentage_serde;
+pub mod wire;
 
 pub use percentage::Percentage;
 pub use percentage_serde::PercentageAsF64;
