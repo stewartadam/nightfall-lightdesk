@@ -604,6 +604,17 @@ test("welcome basics toggles a clip and opens properties", async ({
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
   await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await expect(page.locator(".nf-guide-highlight")).toBeVisible();
+  const visualizer = page.locator(
+    '[data-component="Visualizer"][data-panel-id]',
+  );
+  await expect
+    .poll(async () => {
+      const target = await visualizer.boundingBox();
+      const highlight = await page.locator(".nf-guide-highlight").boundingBox();
+      return target && highlight ? Math.abs(target.x - highlight.x) : Infinity;
+    })
+    .toBeLessThanOrEqual(5);
   await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await guide
     .getByRole("button", { name: "Open Timeline 1: Lo-Fi", exact: true })
@@ -611,6 +622,20 @@ test("welcome basics toggles a clip and opens properties", async ({
   await expect(
     guide.getByRole("heading", { name: "Start the sample show" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Play timeline", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const id = document
+      .querySelector('[aria-label="Play timeline"]')!
+      .closest("[data-panel-id]")!
+      .getAttribute("data-panel-id");
+    api.removePanel(api.getPanel(id));
+  });
+  await guide
+    .getByRole("button", { name: "Open Timeline 1: Lo-Fi", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Play timeline", exact: true })
     .click();
@@ -655,7 +680,20 @@ test("welcome basics toggles a clip and opens properties", async ({
     .getByRole("button", { name: "Inspect clip 1", exact: true })
     .click();
   await expect(
-    guide.getByRole("heading", { name: "Ready to make your own lights" }),
+    guide.getByRole("heading", { name: "Properties follows your focus" }),
+  ).toBeVisible();
+  const properties = page.locator(
+    '[data-component="PropertiesInspector"][data-panel-id]',
+  );
+  await expect(
+    properties.getByText("Clip Properties", { exact: true }),
+  ).toBeVisible();
+  await page
+    .locator(".dv-tab")
+    .filter({ hasText: "Timeline 1: Lo-fi" })
+    .click();
+  await expect(
+    properties.getByText("Timeline Properties", { exact: true }),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("welcome-basics-properties.png"),
