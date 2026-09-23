@@ -8,15 +8,23 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   collectReleaseNotes,
   parseReleaseNote,
   previousRelease,
   renderReleaseNotes,
+  snapshotList,
 } from "./release-notes.mjs";
 
 /** Notes remain separate from the implementation summary and support multiple user-facing entries. */
@@ -43,6 +51,83 @@ test("parses prose, bullets, comments and explicit omissions", () => {
     kind: "notes",
     entries: ["Fixed playback."],
   });
+});
+
+/** CI planning, rendering, and PR validation consume snapshots without invoking authenticated tooling. */
+test("plans and renders release notes entirely from API snapshots", (t) => {
+  const { git, commit } = repositoryFixture(t);
+  const sha = commit("feature");
+  git("tag", "v0.2.0");
+  mkdirSync("metadata/commits", { recursive: true });
+  mkdirSync(".github");
+  mkdirSync("bin");
+  writeFileSync(
+    "bin/gh",
+    "#!/bin/sh\necho 'Unexpected API access' >&2\nexit 99\n",
+    {
+      mode: 0o755,
+    },
+  );
+  writeFileSync(".github/desktop-release-notes.md", "Download the installer.");
+  writeFileSync(
+    "metadata/releases.json",
+    JSON.stringify([{ tag_name: "v0.1.0" }]),
+  );
+  const pr = pull(7, sha, "Notes: Fixed cue playback.");
+  writeFileSync(`metadata/commits/${sha}.json`, JSON.stringify([pr]));
+  const script = fileURLToPath(new URL("./release-notes.mjs", import.meta.url));
+  const options = {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GH_TOKEN: "",
+      PATH: `${join(process.cwd(), "bin")}:${process.env.PATH}`,
+      GITHUB_EVENT_PATH: join(process.cwd(), "event.json"),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  };
+  const common = ["--repo", "owner/repo", "--metadata", "metadata"];
+  execFileSync(
+    process.execPath,
+    [script, "plan", ...common, "--to", "v0.2.0", "--output", "commits.json"],
+    options,
+  );
+  assert.deepEqual(JSON.parse(readFileSync("commits.json", "utf8")), [sha]);
+  execFileSync(
+    process.execPath,
+    [script, "generate", ...common, "--to", "v0.2.0", "--output", "notes.md"],
+    options,
+  );
+  assert.match(readFileSync("notes.md", "utf8"), /Fixed cue playback/);
+  assert.equal(
+    JSON.parse(readFileSync("notes.md.json", "utf8")).from,
+    "v0.1.0",
+  );
+
+  writeFileSync("event.json", JSON.stringify({ pull_request: { number: 7 } }));
+  writeFileSync("metadata/pr.json", JSON.stringify(pr));
+  assert.match(
+    execFileSync(process.execPath, [script, "check", ...common], options),
+    /Fixed cue playback/,
+  );
+  writeFileSync("event.json", JSON.stringify({ pull_request: { number: 8 } }));
+  assert.throws(
+    () => execFileSync(process.execPath, [script, "check", ...common], options),
+    /does not match the event/,
+  );
+  rmSync(`metadata/commits/${sha}.json`);
+  assert.throws(
+    () =>
+      snapshotList("metadata")(
+        "owner/repo",
+        `commits/${sha}/pulls?per_page=100`,
+      ),
+    /ENOENT/,
+  );
+  assert.throws(
+    () => snapshotList("metadata")("owner/repo", "../../secrets"),
+    /Unsupported metadata endpoint/,
+  );
 });
 
 /** Missing declarations and accidental template defaults cannot satisfy the required check. */

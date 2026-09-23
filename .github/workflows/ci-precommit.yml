@@ -9,8 +9,7 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -18,13 +17,18 @@ concurrency:
 
 jobs:
   scope:
+    name: Acquire source and select validation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       distributions: ${{ steps.scope.outputs.distributions }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          fetch-depth: 2
+          fetch-depth: ${{ startsWith(github.ref, 'refs/tags/') && '0' || '2' }}
+          lfs: true
+          persist-credentials: false
       - name: Select distribution validation
         id: scope
         env:
@@ -47,14 +51,44 @@ jobs:
             distributions=false
           fi
           echo "distributions=$distributions" >> "$GITHUB_OUTPUT"
+      # This job never executes repository scripts, installs dependencies, or restores caches.
+      - name: Archive credential-free source and Git history
+        run: |
+          if git config --local --get-regexp '(^credential\.|\.extraheader$)' > /dev/null; then
+            echo '::error::Refusing to archive Git authentication configuration'
+            exit 1
+          fi
+          tar --exclude='./.git/hooks' --exclude='./.git/lfs' \
+            -cf "$RUNNER_TEMP/source.tar" .
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: source-${{ github.sha }}
+          path: ${{ runner.temp }}/source.tar
+          if-no-files-found: error
+          retention-days: 7
+      - name: Snapshot published releases as data
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" | jq 'add' > "$RUNNER_TEMP/releases.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: published-releases-${{ github.sha }}
+          path: ${{ runner.temp }}/releases.json
+          if-no-files-found: error
+          retention-days: 7
 
   wasm-bridge:
+    needs: scope
     uses: ./.github/workflows/wasm.yml
     with:
       package: wasm-bridge
       directory: wasm
 
   browser-runtime:
+    needs: scope
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/wasm.yml
     with:
@@ -65,10 +99,24 @@ jobs:
     needs: [scope, wasm-bridge]
     if: needs.scope.outputs.distributions == 'true'
     uses: ./.github/workflows/desktop-artifacts.yml
+    # Permission ceiling for the metadata-only job; all build/render jobs use {}.
+    permissions:
+      contents: read
+      pull-requests: read
+
+  release:
+    needs: desktop
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/release.yml
     permissions:
       contents: write
-      pull-requests: read
-    secrets: inherit
+    secrets:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
   browser-demo:
     needs: [scope, wasm-bridge, browser-runtime]
@@ -76,6 +124,7 @@ jobs:
     uses: ./.github/workflows/browser-demo.yml
 
   native:
+    needs: scope
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
@@ -94,13 +143,16 @@ jobs:
       CARGO_PROFILE_DEV_OPT_LEVEL: "0"
       SKIP: npm-typecheck,node-tests
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Download credential-free source
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          lfs: true
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
@@ -111,7 +163,7 @@ jobs:
         run: rustup show
 
       - name: Cache native dependencies and tools
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Matrix legs produce different artifacts. Stable stage keys also let
           # develop pushes warm caches that PRs can restore from their base branch.
@@ -145,7 +197,7 @@ jobs:
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           mkdir -p ci-artifacts
           cp "$target_dir/debug/nightfall-app" ci-artifacts/nightfall-app
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: matrix.stage == 'pre-push'
         with:
           name: native-test-backend-${{ github.sha }}
@@ -169,13 +221,18 @@ jobs:
           test "$NATIVE_RESULT" = success
           test "$BRIDGE_RESULT" = success
           test "$DEMO_RESULT" = success
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
       - run: rustup show
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: webui-tools
           cache-targets: false
@@ -187,18 +244,18 @@ jobs:
           cargo install --locked typeshare-cli --version 1.13.3
           npm run typeshare
       - name: Download shared release bridge
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
       - name: Download shared release demo engine
         id: wasm
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-browser-runtime-${{ github.sha }}
           path: webui/assets/browser-runtime
       - name: Download the tested native backend
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: native-test-backend-${{ github.sha }}
           path: ci-artifacts

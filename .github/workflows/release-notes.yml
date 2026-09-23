@@ -4,29 +4,59 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, edited, ready_for_review]
 
-permissions:
-  contents: read
-  pull-requests: read
+permissions: {}
 
 concurrency:
   group: release-notes-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  release-notes:
-    name: Release notes
+  metadata:
+    name: Acquire PR description and validator source
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      # Test the PR merge commit so additions and edits to the validator run too.
-      # This pull_request job has read-only permissions and receives no repository secrets.
+      # Acquire the merge-commit validator as data; execute it only on the next runner.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - name: Snapshot the current PR description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir "$RUNNER_TEMP/pr-notes"
+          test -d scripts && test ! -L scripts
+          test -f scripts/release-notes.mjs && test ! -L scripts/release-notes.mjs
+          cp scripts/release-notes.mjs "$RUNNER_TEMP/pr-notes/"
+          gh api "repos/$GH_REPO/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pr-notes/pr.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pr-notes-${{ github.sha }}
+          path: ${{ runner.temp }}/pr-notes/
+          if-no-files-found: error
+          retention-days: 7
+
+  release-notes:
+    name: Release notes
+    needs: metadata
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require successful metadata acquisition
+        env:
+          METADATA_RESULT: ${{ needs.metadata.result }}
+        run: test "$METADATA_RESULT" = success
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: pr-notes-${{ github.sha }}
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
       - name: Check the current PR description
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/release-notes.mjs check
+        run: node release-notes.mjs check --metadata .

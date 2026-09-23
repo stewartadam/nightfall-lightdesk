@@ -10,20 +10,24 @@ on:
         type: string
         required: true
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
       - run: rustup show
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-${{ inputs.package }}
           cache-on-failure: true
@@ -32,7 +36,7 @@ jobs:
         with:
           profile: release
           package: ${{ inputs.package }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-${{ inputs.package }}-${{ github.sha }}
           path: webui/assets/${{ inputs.directory }}/
