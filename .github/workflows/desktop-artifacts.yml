@@ -46,7 +46,7 @@ jobs:
             --output "$RUNNER_TEMP/release-notes.md"
       - name: Preserve release-note preview and source metadata
         if: ${{ !cancelled() && steps.release.outputs.publish == 'true' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-notes-${{ github.sha }}
           path: |
@@ -212,19 +212,20 @@ jobs:
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ github.ref_name }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Download the release notes collected during preparation
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-notes-${{ github.sha }}
           path: release-notes
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: nightfall-v${{ needs.prepare.outputs.version }}-*
           path: release-assets
@@ -232,6 +233,8 @@ jobs:
       - name: Publish only after every installer has uploaded
         working-directory: release-assets
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           sha256sum ./* > SHA256SUMS
           if state=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft); then
