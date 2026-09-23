@@ -37,7 +37,7 @@ jobs:
             git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/ci-changed-files"
             while IFS= read -r file; do
               case "$file" in
-                .github/actions/wasm-assets/*|.github/workflows/*|.github/desktop-release-notes.md|.gitignore|webui/index.html|webui/public/*|webui/lib/engine-runtime*|webui/lib/runtime-config.ts|scripts/*browser-demo*|scripts/desktop-artifacts*|scripts/package-sample-audio*|scripts/*notices*|scripts/check-distribution-wasm*|config/notices/*|about.toml|Cargo.lock|package.json|package-lock.json|vite.config.ts|crates/app/*|crates/wasm-bridge/*|crates/browser-runtime/*)
+                .github/actions/wasm-assets/*|.github/workflows/*|.github/desktop-release-notes.md|.gitignore|webui/index.html|webui/public/*|webui/lib/engine-runtime*|webui/lib/runtime-config.ts|scripts/*browser-demo*|scripts/desktop-artifacts*|scripts/release-notes*|scripts/package-sample-audio*|scripts/*notices*|scripts/check-distribution-wasm*|config/notices/*|about.toml|Cargo.lock|package.json|package-lock.json|vite.config.ts|crates/app/*|crates/wasm-bridge/*|crates/browser-runtime/*)
                   distributions=true ;;
               esac
             done < "$RUNNER_TEMP/ci-changed-files"
@@ -67,6 +67,7 @@ jobs:
     uses: ./.github/workflows/desktop-artifacts.yml
     permissions:
       contents: write
+      pull-requests: read
     secrets: inherit
 
   browser-demo:

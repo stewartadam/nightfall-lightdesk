@@ -1,0 +1,32 @@
+name: PR release notes
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-notes-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-notes:
+    name: Release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Validate with trusted base code, never code supplied by the PR author.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Check the current PR description
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-notes.mjs check

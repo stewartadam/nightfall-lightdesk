@@ -1,5 +1,10 @@
 # Native CI checks and caching
 
+PR descriptions are independently checked by the **Release notes** job in
+`release-notes.yml`, including on description edits. See
+[PR release notes](../../docs/release-notes.md) for the `Notes:` convention,
+explicit omission syntax, and required-check activation after rollout.
+
 `ci-precommit.yml` runs the native pre-commit stage (Clippy and source checks)
 and pre-push stage (Rust tests) as parallel matrix jobs with `fail-fast: false`.
 Each stage runs once. Both skip TypeScript and Node hooks, which run once in the

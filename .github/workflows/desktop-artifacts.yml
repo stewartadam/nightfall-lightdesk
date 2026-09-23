@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: desktop-${{ github.workflow }}-${{ github.ref }}
@@ -22,6 +23,8 @@ jobs:
       matrix: ${{ steps.release.outputs.matrix }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -33,6 +36,24 @@ jobs:
         run: |
           node --test scripts/desktop-artifacts.node.test.mjs
           node scripts/desktop-artifacts.mjs prepare
+      - name: Collect release notes from included pull requests
+        if: steps.release.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/release-notes.mjs generate --to "$RELEASE_TAG" \
+            --output "$RUNNER_TEMP/release-notes.md"
+      - name: Preserve release-note preview and source metadata
+        if: ${{ !cancelled() && steps.release.outputs.publish == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/release-notes.md
+            ${{ runner.temp }}/release-notes.md.json
+          if-no-files-found: error
+          retention-days: 90
       - uses: Swatinem/rust-cache@v2
         with:
           key: desktop-web
@@ -198,6 +219,11 @@ jobs:
       RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v5
+      - name: Download the release notes collected during preparation
+        uses: actions/download-artifact@v8
+        with:
+          name: release-notes-${{ github.sha }}
+          path: release-notes
       - uses: actions/download-artifact@v8
         with:
           pattern: nightfall-v${{ needs.prepare.outputs.version }}-*
@@ -218,7 +244,7 @@ jobs:
             if [ "$RELEASE_PRERELEASE" = true ]; then prerelease_args+=(--prerelease); fi
             gh release create "$RELEASE_TAG" --verify-tag --draft \
               --title "Nightfall $RELEASE_VERSION" \
-              --notes-file "$GITHUB_WORKSPACE/.github/desktop-release-notes.md" \
+              --notes-file "$GITHUB_WORKSPACE/release-notes/release-notes.md" \
               "${prerelease_args[@]}"
           fi
           gh release upload "$RELEASE_TAG" ./* --clobber
