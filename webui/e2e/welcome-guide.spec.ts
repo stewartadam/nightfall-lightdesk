@@ -166,6 +166,85 @@ test("guide resizes the whole app and leaves right-hand panels clickable", async
   await expect.poll(async () => (await app.boundingBox())!.width).toBe(700);
 });
 
+/** Gives each guide step a brief cue, then settles; reduced-motion users get the same static emphasis. */
+test("guide hints bounce briefly and respect reduced motion", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await reachStep(page, "Select lights by number");
+  const hint = page.locator('[role="tooltip"].nf-guide-tooltip');
+  await expect(hint).toBeVisible();
+  await expect
+    .poll(() =>
+      hint.evaluate((element) =>
+        element
+          .getAnimations()
+          .some(
+            (animation) =>
+              animation instanceof CSSAnimation &&
+              animation.animationName === "nf-guide-tooltip-bounce" &&
+              animation.playState === "running",
+          ),
+      ),
+    )
+    .toBe(true);
+  await expect(hint).toHaveCSS("pointer-events", "none");
+  await expect
+    .poll(() => hint.evaluate((element) => element.getAnimations().length))
+    .toBe(0);
+  await page.screenshot({
+    path: testInfo.outputPath("guide-emphasized-hint.png"),
+  });
+  const command = page.getByRole("textbox", {
+    name: "Command input",
+    exact: true,
+  });
+  await command.fill("fix 310>313");
+  await command.press("Enter");
+  await expect(hint).toContainText("Type @ 100");
+  await expect
+    .poll(() =>
+      hint.evaluate((element) =>
+        element
+          .getAnimations()
+          .some(
+            (animation) =>
+              animation instanceof CSSAnimation &&
+              animation.animationName === "nf-guide-tooltip-bounce" &&
+              animation.playState === "running",
+          ),
+      ),
+    )
+    .toBe(true);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(hint).toHaveCSS("animation-name", "none");
+  await expect(hint).toHaveCSS("transition-duration", "0s");
+  await expect(hint).toBeVisible();
+  await command.fill("@ 100");
+  await command.press("Enter");
+  await expect(hint).toContainText("Set red to 100");
+  await expect(hint).toHaveCSS("animation-name", "none");
+  await guide.getByRole("button", { name: "All lessons" }).hover();
+  const regular = page
+    .getByRole("tooltip")
+    .filter({ hasText: /^All lessons$/ });
+  await expect(regular).toBeVisible();
+  expect(
+    await regular.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    ),
+  ).not.toBe(
+    await hint.evaluate((element) => getComputedStyle(element).backgroundColor),
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("guide-reduced-motion.png"),
+  });
+});
+
 /** Drives sample playback and navigation through automatic steps while preserving modal usability. */
 test("sample timeline actions advance and pop-outs leave the guide undimmed", async ({
   page,
