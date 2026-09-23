@@ -1026,7 +1026,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
     .first()
     .click();
   await expect(
-    guide.getByRole("heading", { name: "Let Go advance to Blue" }),
+    guide.getByRole("heading", { name: "Edit your new sequence" }),
   ).toBeVisible();
   await guide
     .getByRole("button", { name: "Open Sequences", exact: true })
@@ -1052,7 +1052,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
     .getByText("Manual", { exact: true })
     .click();
   await expect(
-    guide.getByRole("heading", { name: "Create your playback clip" }),
+    guide.getByRole("heading", { name: /Create.*clip/ }),
   ).toBeVisible();
 });
 
@@ -1120,7 +1120,7 @@ test("first lights builds its own Red and Blue sequence", async ({
     .first()
     .click();
   await expect(
-    guide.getByRole("heading", { name: "Let Go advance to Blue" }),
+    guide.getByRole("heading", { name: "Edit your new sequence" }),
   ).toBeVisible();
   await guide
     .getByRole("button", { name: "Open Sequences", exact: true })
@@ -1132,6 +1132,13 @@ test("first lights builds its own Red and Blue sequence", async ({
       ).identifiers.uid,
   );
   await page.locator(`[data-crud-select-id="${sequenceUid}"]`).dblclick();
+  await expect(
+    guide.getByRole("heading", { name: "Let Go advance to Blue" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("guide-target")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("guide-blue-trigger.png"),
+  });
   const cueUid = await page.evaluate(
     (uid) => (window as any).appStores.sequences.get()[uid].steps[1],
     sequenceUid,
@@ -1146,14 +1153,24 @@ test("first lights builds its own Red and Blue sequence", async ({
     .getByText("Manual", { exact: true })
     .click();
   await expect(
-    guide.getByRole("heading", { name: "Create your playback clip" }),
+    guide.getByRole("heading", { name: /Create.*clip/ }),
   ).toBeVisible();
   await guide.getByRole("button", { name: "Open Clips", exact: true }).click();
   await page.getByRole("button", { name: "Add clip", exact: true }).click();
   const create = page.getByRole("dialog", { name: "Create clip" });
-  await create.getByLabel("ID", { exact: true }).fill("50");
   await create.getByLabel("Label", { exact: true }).fill("First Lights");
+  await create.getByLabel("ID", { exact: true }).fill("50");
+  await expect(create.getByLabel("ID", { exact: true })).toHaveValue("50");
   await create.getByRole("button", { name: "Create", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (Object.values((window as any).appStores.clips.get()) as any[]).some(
+          ([clip]) => clip.identifiers.id === 50,
+        ),
+      ),
+    )
+    .toBe(true);
   await input.fill("set clip 50 target=sequence 50");
   await input.press("Enter");
   await expect(

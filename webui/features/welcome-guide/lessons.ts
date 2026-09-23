@@ -28,6 +28,7 @@ export interface GuideStep {
   content: GuideContent[];
   highlightClipId?: number;
   target?: string;
+  targetSequence?: { id: number; cueId?: number };
   placement?: "above";
   focusTarget?: boolean;
   observe?: GuideObservation;
@@ -331,19 +332,37 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         ],
       },
       {
-        id: "manual-blue",
-        title: "Let Go advance to Blue",
-        observe: { type: "cue-manual", sequenceId: 50, id: 2 },
+        id: "open-sequence",
+        title: "Edit your new sequence",
+        targetSequence: { id: 50 },
+        observe: { type: "sequence-editor", sequenceId: 50 },
         content: [
           {
             type: "text",
-            text: "New cues follow the previous cue automatically. Set Blue to wait for you instead.",
+            text: "Your Red and Blue looks are stored in sequence 50. Open it to choose how playback advances between them.",
           },
           { type: "prerequisite", panels: ["SequenceList"] },
           {
             type: "action",
+            title: "Open sequence 50",
+            body: "In Sequences, open sequence 50 to edit your new sequence.",
+          },
+        ],
+      },
+      {
+        id: "manual-blue",
+        title: "Let Go advance to Blue",
+        targetSequence: { id: 50, cueId: 2 },
+        observe: { type: "cue-manual", sequenceId: 50, id: 2 },
+        content: [
+          {
+            type: "text",
+            text: "Follow Previous advances to Blue automatically when Red finishes its transition. Manual keeps Red playing until you press Go again.",
+          },
+          {
+            type: "action",
             title: "Set cue 50.2 to Manual",
-            body: "Open sequence 50 from Sequences. In the Blue cue’s row, double-click the Trigger cell and choose Manual.",
+            body: "In the Blue cue’s row, double-click the highlighted Trigger cell and choose Manual.",
           },
         ],
       },
