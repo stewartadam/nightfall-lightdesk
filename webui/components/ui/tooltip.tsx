@@ -34,6 +34,8 @@ export interface TooltipProps {
   forceVisible?: Accessor<boolean>;
   /** Allow pointer selection and controls inside the tooltip surface. */
   interactive?: boolean;
+  /** Optional surface styling for contextual hints without changing ordinary tooltips. */
+  surfaceClass?: string;
 }
 
 /** Controls whose tap does something of its own, so a tap must not toggle their tooltip. */
@@ -418,7 +420,7 @@ export default function Tooltip(props: TooltipProps) {
           <span
             ref={tooltipRef}
             style={tooltipStyle()}
-            class="relative overflow-visible px-2 py-1 text-xs text-white bg-gray-800 border border-gray-600 rounded shadow-[var(--shadow-elevation-low)] whitespace-pre transition-[opacity,transform] duration-150 ease-out"
+            class={`relative overflow-visible px-2 py-1 text-xs text-white bg-gray-800 border border-gray-600 rounded shadow-[var(--shadow-elevation-low)] whitespace-pre transition-[opacity,transform] duration-150 ease-out ${props.surfaceClass ?? ""}`}
             classList={{
               "pointer-events-none": !props.interactive,
               "pointer-events-auto select-text": props.interactive,
@@ -430,6 +432,8 @@ export default function Tooltip(props: TooltipProps) {
               "origin-left": position() === "right",
             }}
             data-slot="surface"
+            data-placement={position()}
+            data-visible={renderedVisible()}
             role="tooltip"
             onPointerEnter={handleTooltipPointerEnter}
             onPointerLeave={handleTooltipPointerLeave}
