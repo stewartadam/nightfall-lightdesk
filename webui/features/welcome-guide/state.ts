@@ -10,7 +10,7 @@
 
 import { atom, type WritableAtom } from "nanostores";
 import { bestEffortPersistentAtom } from "../../lib/best-effort-persistent-atom";
-import { GUIDE_LESSONS } from "./lessons";
+import { guideLessons } from "./lesson-store";
 
 /** Keeps invitation dismissal separate from lesson progress and show data. */
 export const guideDismissed = bestEffortPersistentAtom<boolean>(
@@ -49,7 +49,7 @@ export const guideCompleted = bestEffortPersistentAtom<string[]>(
         const parsed: unknown = JSON.parse(value);
         return Array.isArray(parsed)
           ? parsed.filter((id): id is string =>
-              GUIDE_LESSONS.some((lesson) => lesson.id === id),
+              guideLessons.get().some((lesson) => lesson.id === id),
             )
           : [];
       } catch {
