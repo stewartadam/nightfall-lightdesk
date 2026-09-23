@@ -240,10 +240,15 @@ test("guide hints bounce briefly and respect reduced motion", async ({
       ),
     )
     .toBe(true);
-  await expect(hint).toHaveCSS("pointer-events", "none");
+  await expect(hint).toHaveCSS("pointer-events", "auto");
+  await expect(hint).toHaveCSS("user-select", "text");
   await expect
     .poll(() => hint.evaluate((element) => element.getAnimations().length))
     .toBe(0);
+  await hint.locator("code").click({ clickCount: 3 });
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString().trim()))
+    .toBe("fix 310>313");
   await page.screenshot({
     path: testInfo.outputPath("guide-emphasized-hint.png"),
   });
@@ -274,9 +279,7 @@ test("guide hints bounce briefly and respect reduced motion", async ({
   await expect(hint).toBeVisible();
   await command.fill("@ 100");
   await command.press("Enter");
-  await expect(hint.locator("code")).toHaveText(
-    "fix 310>313 red @ 100 green @ 0 blue @ 0",
-  );
+  await expect(hint.locator("code")).toHaveText("red @ 100 green @ 0 blue @ 0");
   await expect(hint).toHaveCSS("animation-name", "none");
   await guide.getByRole("button", { name: "All lessons" }).hover();
   const regular = page
@@ -415,7 +418,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
   await expect(
     guide.getByRole("heading", { name: "Make a red look" }),
   ).toBeVisible();
-  await command.fill("fix 310>313 red @ 100 green @ 0 blue @ 0");
+  await command.fill("red @ 100 green @ 0 blue @ 0");
   await command.press("Enter");
   await expect(
     guide.getByRole("heading", { name: "Store the red cue" }),
