@@ -16,6 +16,7 @@ import { Show } from "solid-js";
 import { MappingModeToggle } from "../../../features/io";
 import { useShowfileObjectPalette } from "../../../features/showfile";
 import { TempoControls } from "../../../features/tempo";
+import { openWelcomeGuide } from "../../../features/welcome-guide/state";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import { currentShowfileName } from "../../../lib/showfile-loading";
@@ -78,6 +79,13 @@ function HeaderActions() {
         <MappingModeToggle />
       </Tooltip>
       <HeaderNotificationHistory />
+      <Button
+        size="compact"
+        onClick={openWelcomeGuide}
+        aria-label="Open Welcome Guide"
+      >
+        Guide
+      </Button>
     </>
   );
 }

@@ -1,0 +1,179 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-welcome-guide {
+  width: 340px;
+  max-width: 42vw;
+  flex: 0 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg, #17191e);
+  color: var(--text-primary, #e5e7eb);
+  border-left: 1px solid var(--border-color, #343740);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.nf-guide-header,
+.nf-guide-footer {
+  padding: 12px 16px;
+  flex-shrink: 0;
+}
+.nf-guide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #343740;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+.nf-guide-body {
+  overflow: auto;
+  min-height: 0;
+  padding: 20px 18px;
+  flex: 1;
+}
+.nf-guide-body h2 {
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 650;
+  margin: 8px 0 16px;
+}
+.nf-guide-body p {
+  margin: 10px 0 16px;
+}
+.nf-guide-body progress {
+  width: 100%;
+  height: 4px;
+  accent-color: var(--accent, #a3a3ff);
+}
+.nf-guide-eyebrow,
+.nf-guide-lesson-meta {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #b8becb;
+}
+.nf-guide-action {
+  background: #ffffff07;
+  border-left: 3px solid var(--accent, #a3a3ff);
+  padding: 12px;
+  margin: 20px 0;
+}
+.nf-guide-action p {
+  margin: 6px 0 0;
+}
+.nf-guide-shortcuts,
+.nf-guide-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0;
+}
+.nf-guide-navigation {
+  justify-content: space-between;
+}
+.nf-guide-lesson {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+  width: 100%;
+  border: 1px solid #3c404a;
+  border-radius: 8px;
+  padding: 14px;
+  margin-top: 12px;
+  cursor: pointer;
+}
+.nf-guide-lesson:hover {
+  background: #ffffff09;
+  border-color: var(--accent, #a3a3ff);
+}
+.nf-guide-lesson strong {
+  font-size: 16px;
+}
+.nf-guide-lesson:focus-visible,
+.nf-guide-body summary:focus-visible {
+  outline: 2px solid var(--accent, #a3a3ff);
+  outline-offset: 3px;
+}
+.nf-guide-body summary {
+  cursor: pointer;
+}
+.nf-guide-success {
+  color: #97dfb0;
+}
+.nf-guide-note,
+.nf-guide-footer {
+  color: #b8becb;
+  font-size: 11px;
+}
+.nf-guide-footer {
+  border-top: 1px solid #343740;
+}
+.nf-guide-anchor {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+}
+.nf-guide-highlight {
+  position: fixed;
+  border: 2px solid var(--accent, #a3a3ff);
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px #a3a3ff22;
+}
+.nf-guide-hint {
+  position: fixed;
+  width: 240px;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #e1ddff;
+  color: #201b35;
+  box-shadow: 0 5px 18px #0005;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.nf-guide-invitation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #242333;
+  border-bottom: 1px solid #494361;
+  font-size: 12px;
+}
+.nf-guide-invitation p {
+  color: #c7c2d5;
+}
+.nf-guide-invitation > div {
+  margin-right: auto;
+}
+@media (max-width: 760px) {
+  .nf-welcome-guide {
+    width: 100%;
+    max-width: none;
+    max-height: 45%;
+    border-left: 0;
+    border-top: 1px solid #343740;
+  }
+  .nf-guide-workspace {
+    flex-direction: column;
+  }
+  .nf-guide-body {
+    padding: 12px 16px;
+  }
+  .nf-guide-header,
+  .nf-guide-footer {
+    padding: 6px 16px;
+  }
+  .nf-guide-hint {
+    display: none;
+  }
+}
