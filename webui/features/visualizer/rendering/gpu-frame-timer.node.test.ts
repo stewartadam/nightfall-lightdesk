@@ -135,6 +135,31 @@ test("GPU timing samples at a bounded rate without catching up missed samples", 
   await timer.dispose();
 });
 
+/** Low quality has no compute pool, which must not reject timing readback or cleanup. */
+test("GPU timing supports a null compute pool", async () => {
+  const renderer: TimestampRenderer = {
+    backend: {
+      trackTimestamp: false,
+      timestampQueryPool: {
+        render: {
+          timestamps: new Map(),
+          currentQueryIndex: 2,
+          lastInterval: [0n, 3000000n],
+        },
+        compute: null,
+      },
+    },
+    hasFeature: () => true,
+    resolveTimestampsAsync: async (type) => (type === "render" ? 3 : undefined),
+  };
+  const timer = new GpuFrameTimer();
+  timer.begin(renderer, 0);
+  timer.end(renderer);
+  await flush();
+  assert.equal(timer.sample?.milliseconds, 3);
+  await timer.dispose();
+});
+
 /** Named passes survive asynchronous readback while timestamp history is released every frame. */
 test("GPU timing groups named passes and bounds backend timestamp history", async () => {
   const timestamps = new Map<string, number>();

@@ -7,10 +7,12 @@
  */
 
 import { Color, type Node, Scene } from "three/webgpu";
+import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import type { GoboAtlas } from "./gobo-atlas";
 import type { OpticalShadowPool } from "./optical-shadow-pool";
 
 export interface OpticalRenderContext {
+  quality: VisualizerBeamQuality;
   scene: Scene;
   viewDepth: Node<"float">;
   surfaceScene?: Scene;
@@ -27,12 +29,14 @@ export function createOpticalRenderContext(
   surfaceLighting = false,
   goboAtlas?: GoboAtlas,
   shadows?: OpticalShadowPool,
+  quality: VisualizerBeamQuality = "high",
 ): OpticalRenderContext {
   const atmosphere = new Scene();
   atmosphere.name = "AtmosphericEmitters";
   atmosphere.background = new Color(0);
   const context = {
-    scene: atmosphere,
+    quality,
+    scene: quality === "medium" ? scene : atmosphere,
     viewDepth,
     surfaceScene: surfaceLighting ? scene : undefined,
     goboAtlas,

@@ -25,7 +25,10 @@ import {
   Scene,
   WebGPURenderer,
 } from "three/webgpu";
-import { isVisualizerInspectorEnabled } from "../../../lib/feature-flags";
+import {
+  isVisualizerInspectorEnabled,
+  type VisualizerBeamQuality,
+} from "../../../lib/feature-flags";
 import {
   cancelControlsInteraction,
   createControls,
@@ -170,6 +173,7 @@ export interface RendererState extends CoreRendererState {
  */
 export async function initRenderer(
   canvas: HTMLCanvasElement,
+  quality: VisualizerBeamQuality = "high",
 ): Promise<RendererState> {
   // Create WebGPU renderer (falls back to WebGL if WebGPU unavailable)
   const renderer = createRenderer({
@@ -239,8 +243,11 @@ export async function initRenderer(
 
   // Setup post-processing with bloom
   await renderer.init();
-  const postProcessing = createPostProcessing(renderer, scene, camera);
-  await postProcessing.surfaceLighting?.shadows.prepare(renderer);
+  const postProcessing = createPostProcessing(renderer, scene, camera, {
+    quality,
+  });
+  if (quality === "high")
+    await postProcessing.surfaceLighting?.shadows.prepare(renderer);
 
   // Setup inspector parameters
   const updateInspector = inspector

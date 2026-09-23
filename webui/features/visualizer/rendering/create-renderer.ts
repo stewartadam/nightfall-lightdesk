@@ -14,7 +14,7 @@
  */
 
 import * as Comlink from "comlink";
-import { getVisualizerBeamQuality } from "../../../lib/feature-flags";
+import { visualizerQualityPreset } from "../state/settings";
 import { MainThreadRenderer } from "./renderers/main-thread-renderer";
 import type { IVisualizerRenderer } from "./renderers/renderer-api";
 import {
@@ -97,7 +97,7 @@ export async function createVisualizerRenderer(
     width,
     height,
     devicePixelRatio: window.devicePixelRatio,
-    beamQuality: getVisualizerBeamQuality(),
+    beamQuality: visualizerQualityPreset.get(),
   });
 
   await waitAtRendererInitializationTestGate();

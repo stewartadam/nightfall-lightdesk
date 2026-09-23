@@ -16,6 +16,7 @@ import { outline } from "three/addons/tsl/display/OutlineNode.js";
 import { color, float, pass } from "three/tsl";
 import type { Camera, Object3D, Scene } from "three/webgpu";
 import { RenderPipeline, type WebGPURenderer } from "three/webgpu";
+import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import { AtmosphereBudget, type GpuBudgetSample } from "./atmosphere-budget";
 import { createOpticalRenderContext } from "./optical-render-context";
 import { OpticalSurfaceLighting } from "./optical-surface-lighting";
@@ -99,6 +100,7 @@ export const defaultPostProcessingConfig: PostProcessingConfig = {
 
 /** State for post-processing effects */
 export interface PostProcessingState {
+  quality: VisualizerBeamQuality;
   renderer: WebGPURenderer;
   scene: Scene;
   camera: Camera;
@@ -126,6 +128,7 @@ export function createPostProcessing(
   scene: Scene,
   camera: Camera,
   options?: {
+    quality?: VisualizerBeamQuality;
     selectedObjects?: Object3D[];
     editSelectionObjects?: Object3D[];
     programmerValueObjects?: Object3D[];
@@ -140,8 +143,12 @@ export function createPostProcessing(
       renderer.renderObject(...args);
     },
   );
-  const surfaceLighting = new OpticalSurfaceLighting();
-  renderer.lighting = surfaceLighting;
+  const quality = options?.quality ?? "high";
+  const surfaceLighting =
+    quality === "low"
+      ? undefined
+      : new OpticalSurfaceLighting(quality === "high");
+  if (surfaceLighting) renderer.lighting = surfaceLighting;
   const config = {
     ...defaultPostProcessingConfig,
     ...options?.configOverrides,
@@ -157,12 +164,16 @@ export function createPostProcessing(
     surfaceLighting !== undefined,
     surfaceLighting?.goboAtlas,
     surfaceLighting?.shadows,
+    quality,
   );
   const volumePass = pass(opticalContext.scene, camera, {
     samples: 0,
   }).setResolutionScale(0.5);
   volumePass.getTexture("output").name = "atmosphere";
-  const litColor = scenePassColor.add(volumePass.getTextureNode("output"));
+  const litColor =
+    quality === "high"
+      ? scenePassColor.add(volumePass.getTextureNode("output"))
+      : scenePassColor;
 
   // Create bloom pass
   const bloomPass = bloom(
@@ -225,13 +236,14 @@ export function createPostProcessing(
   // Create post-processing with combined output.
   const postProcessing = new RenderPipeline(renderer);
   postProcessing.outputNode = litColor
-    .add(bloomPass)
+    .add(quality === "high" ? bloomPass : float(0))
     .add(selectionOutlineColor)
     .add(editSelectionOutlineColor)
     .add(programmerValueOutlineColor)
     .add(activeSpanOutlineColor);
 
   const state: PostProcessingState = {
+    quality,
     renderer,
     scene,
     camera,
@@ -344,13 +356,14 @@ export function renderWithPostProcessing(
   if (state.bloomPass.getResolutionScale() !== scale)
     state.bloomPass.setResolutionScale(scale);
   const allowShadowRefresh = state.shadowBudget.canRefresh(gpu, updateMs);
-  state.surfaceLighting?.shadows.update(
-    state.renderer,
-    state.scene,
-    state.camera,
-    started,
-    allowShadowRefresh,
-  );
+  if (state.quality === "high")
+    state.surfaceLighting?.shadows.update(
+      state.renderer,
+      state.scene,
+      state.camera,
+      started,
+      allowShadowRefresh,
+    );
   state.postProcessing.render();
   state.shadowBudget.recordRender(performance.now() - started);
 }

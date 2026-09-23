@@ -6,13 +6,17 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { attribute, uv } from "three/tsl";
 import {
+  AdditiveBlending,
   BoxGeometry,
+  ConeGeometry,
   DynamicDrawUsage,
   InstancedInterleavedBuffer,
   InstancedMesh,
   InterleavedBufferAttribute,
   Matrix4,
+  MeshBasicNodeMaterial,
   type Object3D,
   Quaternion,
   type Scene,
@@ -89,14 +93,30 @@ export class EmitterVolumeBatch {
     this.surfaceScene = context?.surfaceScene;
     this.shadows = context?.shadows;
     this.target = context?.scene ?? scene;
-    this.volume = createEmitterVolumeMaterial({
-      instanced: true,
-      viewDepth: context?.viewDepth,
-      goboTexture: this.goboAtlas.texture,
-      goboStacks: this.goboAtlas.stacks.texture,
-      shadows: this.shadows,
-    });
-    this.material = this.volume.material;
+    this.volume =
+      context?.quality === "medium"
+        ? undefined
+        : createEmitterVolumeMaterial({
+            instanced: true,
+            viewDepth: context?.viewDepth,
+            goboTexture: this.goboAtlas.texture,
+            goboStacks: this.goboAtlas.stacks.texture,
+            shadows: this.shadows,
+          });
+    if (this.volume) {
+      this.material = this.volume.material;
+    } else {
+      const material = new MeshBasicNodeMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+      });
+      material.colorNode = attribute<"vec3">("volumeRadiance", "vec3").mul(
+        0.12,
+      );
+      material.opacityNode = uv().y.mul(0.3);
+      this.material = material;
+    }
     this.resize(256);
   }
 
@@ -451,7 +471,9 @@ export class EmitterVolumeBatch {
   /** Reallocates instance buffers geometrically rather than once per additional fixture. */
   private resize(capacity: number): void {
     const previous = this.mesh;
-    const geometry = new BoxGeometry(1, 1, 1);
+    const geometry = this.volume
+      ? new BoxGeometry(1, 1, 1)
+      : new ConeGeometry(0.25, 1, 12, 1, true).rotateX(Math.PI / 2);
     const attributes = {} as Record<AttributeName, InterleavedBufferAttribute>;
     const records = new InstancedInterleavedBuffer(
       new Float32Array(capacity * RECORD_SIZE),
@@ -466,7 +488,7 @@ export class EmitterVolumeBatch {
       geometry.setAttribute(name, attribute);
     }
     const mesh = new InstancedMesh(geometry, this.material, capacity);
-    mesh.name = "EmitterVolumes";
+    mesh.name = this.volume ? "EmitterVolumes" : "EmitterBeams";
     mesh.count = this.ids.length;
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -483,7 +505,8 @@ export class EmitterVolumeBatch {
     this.dirty = true;
     /** Uploads all changed emitter records once for the submitted frame. */
     mesh.onBeforeRender = () => {
-      this.volume.atlasColumns.value = this.goboAtlas.tilesPerRow;
+      if (this.volume)
+        this.volume.atlasColumns.value = this.goboAtlas.tilesPerRow;
       if (!this.dirty) return;
       this.records.needsUpdate = true;
       mesh.instanceMatrix.needsUpdate = true;

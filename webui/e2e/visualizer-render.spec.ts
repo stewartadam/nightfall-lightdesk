@@ -165,6 +165,10 @@ test.beforeEach(async ({ backendSlot, page }) => {
       window.sessionStorage.getItem("visualizer-render-owned-init") !== "true"
     ) {
       window.localStorage.clear();
+      window.localStorage.setItem(
+        "nightfall-visualizer-settings",
+        JSON.stringify({ qualityPreset: "high" }),
+      );
       window.sessionStorage.setItem("visualizer-render-owned-init", "true");
     }
     window.localStorage.setItem("nightfall.currentShowfileName", "default");
@@ -435,6 +439,89 @@ test("3D visualizer main-thread renderer paints the canvas", async ({
     expect.stringContaining("localStorage"),
   );
 });
+
+for (const worker of [false, true]) {
+  /** Switches the running renderer through every preset and checks persistence and visible output. */
+  test(`quality settings replace the ${worker ? "worker" : "main"} renderer live`, async ({
+    page,
+  }, testInfo) => {
+    await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
+    const pageErrors = collectPageErrors(page);
+    await waitForVisualizerReady(page);
+    if (worker) await waitForWorkerVisualizerApi(page);
+    else await waitForMainThreadVisualizerApi(page);
+    const uid = await installRotatingWashBeamFixture(page);
+    await waitForFixtureStoreHydration(page);
+    await holdRotatingWashBeamImmediateOutput(page, uid);
+    for (const preset of ["medium", "low", "high"] as const) {
+      await page.evaluate(() => {
+        (window as any).__previousQualityApi = (window as any).visualizerApi;
+      });
+      await page.keyboard.press("ControlOrMeta+,");
+      const dialog = page.getByRole("dialog", {
+        name: "Settings",
+        exact: true,
+      });
+      await dialog
+        .getByRole("tab", { name: "Visualizer", exact: true })
+        .click();
+      await dialog.getByLabel(/Quality preset/).selectOption(preset);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as any).visualizerApi !==
+                (window as any).__previousQualityApi &&
+              Boolean((window as any).visualizerApi),
+          ),
+        )
+        .toBe(true);
+      await page.keyboard.press("Escape");
+      if (worker) await waitForWorkerVisualizerApi(page);
+      else {
+        await waitForMainThreadVisualizerApi(page);
+        await expect
+          .poll(() =>
+            page.evaluate(async () => {
+              const scene = (window as any).visualizerApi.getScene();
+              const { getOpticalRenderContext } = await import(
+                "/features/visualizer/rendering/effects/optical-render-context.ts"
+              );
+              const context = getOpticalRenderContext(scene);
+              return {
+                quality: context?.quality,
+                cones: !!scene.getObjectByName("EmitterBeams"),
+                volumes: !!context?.scene.getObjectByName("EmitterVolumes"),
+              };
+            }),
+          )
+          .toEqual({
+            quality: preset,
+            cones: preset === "medium",
+            volumes: preset === "high",
+          });
+      }
+      await holdRotatingWashBeamImmediateOutput(page, uid);
+      await expectVisualizerFpsLabel(page);
+      const screenshot = await page.screenshot({
+        path: testInfo.outputPath(`quality-${preset}.png`),
+        clip: await largestVisibleCanvasBox(page),
+      });
+      await testInfo.attach(`quality-${preset}`, {
+        body: screenshot,
+        contentType: "image/png",
+      });
+      expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
+    }
+    await page.reload();
+    await waitForVisualizerReady(page);
+    await page.keyboard.press("ControlOrMeta+,");
+    const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+    await dialog.getByRole("tab", { name: "Visualizer", exact: true }).click();
+    await expect(dialog.getByLabel(/Quality preset/)).toHaveValue("high");
+    expect(pageErrors).toEqual([]);
+  });
+}
 
 /** Verifies camera panning retargets the orbit controls to the stage floor. */
 test("camera pan updates orbit target to the floor intersection", async ({
@@ -772,8 +859,8 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
     });
 });
 
-/** Verifies low quality retains shared optical projection without drawing legacy cone meshes. */
-test("generic wash beam low-quality setting uses shared atmosphere", async ({
+/** Verifies low quality retains visible fixtures without light projections or beams. */
+test("generic wash beam low-quality setting omits light effects", async ({
   page,
 }) => {
   await page.goto("/");
@@ -789,7 +876,7 @@ test("generic wash beam low-quality setting uses shared atmosphere", async ({
       }),
     );
   });
-  await page.goto("/?startup:draftRecovery=false");
+  await page.goto("/?startup:draftRecovery=false&visualizer:beamQuality=low");
 
   await expect
     .poll(() =>
@@ -821,9 +908,9 @@ test("generic wash beam low-quality setting uses shared atmosphere", async ({
   await expect
     .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
     .toEqual({
-      opticalBeamCount: 12,
-      atmosphericBeamCount: 12,
-      atmosphericDraws: 1,
+      opticalBeamCount: 0,
+      atmosphericBeamCount: 0,
+      atmosphericDraws: 0,
       visibleBeamCount: 0,
       visibleSpotLightCount: 0,
     });

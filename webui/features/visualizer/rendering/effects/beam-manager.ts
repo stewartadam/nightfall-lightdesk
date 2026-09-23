@@ -69,18 +69,18 @@ type BeamInstanceMap = Map<string, BeamInstance>;
  * BeamManager creates and updates volumetric light beams for fixtures.
  */
 export class BeamManager {
-  private readonly volumeBatch: EmitterVolumeBatch;
+  private readonly volumeBatch?: EmitterVolumeBatch;
 
   /** Reports illuminated emitters whose active masks exceed the shader sampling budget. */
   get reducedGoboEmitters(): number {
-    return this.volumeBatch.goboAtlas.stacks.reducedStacks;
+    return this.volumeBatch?.goboAtlas.stacks.reducedStacks ?? 0;
   }
   private readonly resolvedOptics = new WeakMap<
     BeamOptics,
     ReturnType<typeof resolveEmitterOptics>
   >();
   private beams: BeamInstanceMap = new Map();
-  private beamQuality: VisualizerBeamQuality;
+  readonly beamQuality: VisualizerBeamQuality;
   /** Default beam specification when fixture doesn't provide one */
   private defaultBeamSpec: BeamSpec = {
     beamAngle: 15,
@@ -90,11 +90,13 @@ export class BeamManager {
 
   constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
     this.beamQuality = beamQuality;
-    this.volumeBatch = new EmitterVolumeBatch(scene);
+    if (beamQuality !== "low") this.volumeBatch = new EmitterVolumeBatch(scene);
   }
 
   /** Resolves a source image once during fixture setup, including non-ASCII archive paths. */
   loadGobo(path: string, media: string) {
+    if (this.beamQuality !== "high" || !this.volumeBatch)
+      return { index: 0, status: "failed" as const };
     const bytes = new TextEncoder().encode(path);
     const encoded = btoa(
       Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""),
@@ -109,7 +111,10 @@ export class BeamManager {
 
   /** Allocates imported prism capacity while fixture geometry is being synchronized. */
   reserveOpticalBeam(id: string, maxFacetCount: number): void {
-    this.volumeBatch.reserve(id, maxFacetCount);
+    this.volumeBatch?.reserve(
+      id,
+      this.beamQuality === "high" ? maxFacetCount : 1,
+    );
   }
 
   /** Publishes one imported aperture to the shared atmospheric draw. */
@@ -126,6 +131,7 @@ export class BeamManager {
     focusDistance = 0,
     gobos?: readonly import("./emitter-optical-state").GoboStage[],
   ): void {
+    if (!this.volumeBatch) return;
     if (!this.resolvedOptics.has(optics))
       this.resolvedOptics.set(optics, resolveEmitterOptics(optics));
     const resolved = this.resolvedOptics.get(optics);
@@ -145,19 +151,19 @@ export class BeamManager {
         color,
         30,
         zoomScale,
-        goboSlot,
+        this.beamQuality === "high" ? goboSlot : 0,
         goboRotation,
-        facets,
+        this.beamQuality === "high" ? facets : undefined,
         prismRotation,
         focusDistance,
-        gobos,
+        this.beamQuality === "high" ? gobos : undefined,
       );
     else this.volumeBatch.remove(id);
   }
 
   /** Removes an aperture immediately on blackout rather than retaining stale scattering. */
   removeOpticalBeam(id: string): void {
-    this.volumeBatch.remove(id);
+    this.volumeBatch?.remove(id);
   }
 
   /**
@@ -354,7 +360,7 @@ export class BeamManager {
    * Beam IDs use format "fixtureUid:emitterName" for multi-emitter fixtures.
    */
   syncWithFixtures(fixtures: Map<string, ExtendedFixtureInstance>): void {
-    this.volumeBatch.sync(fixtures);
+    this.volumeBatch?.sync(fixtures);
     for (const [beamId, beam] of this.beams) {
       const separator = beamId.indexOf(":");
       const fixture = fixtures.get(beamId.slice(0, separator));
@@ -369,7 +375,7 @@ export class BeamManager {
    * Dispose all beams.
    */
   dispose(): void {
-    this.volumeBatch.clear();
+    this.volumeBatch?.clear();
     for (const fixtureUid of [...this.beams.keys()]) {
       this.removeBeam(fixtureUid);
     }
@@ -378,6 +384,6 @@ export class BeamManager {
   /** Releases shared GPU resources when the owning scene is destroyed. */
   destroy(): void {
     this.dispose();
-    this.volumeBatch.dispose();
+    this.volumeBatch?.dispose();
   }
 }

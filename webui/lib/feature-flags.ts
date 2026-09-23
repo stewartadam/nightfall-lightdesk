@@ -12,7 +12,7 @@ const log = getLogger(import.meta.url);
 
 const STORAGE_KEY = "nightfall-feature-flags";
 
-export type VisualizerBeamQuality = "high" | "low";
+export type VisualizerBeamQuality = "high" | "medium" | "low";
 
 interface FeatureFlags {
   visualizerOffscreenCanvas: boolean;
@@ -41,7 +41,20 @@ function parseVisualizerOffscreenCanvas(value: string): boolean {
 
 /** Parses visualizer beam quality from a URL parameter or stored setting. */
 function parseVisualizerBeamQuality(value: unknown): VisualizerBeamQuality {
-  return value === "low" ? "low" : DEFAULT_FEATURES.visualizerBeamQuality;
+  return value === "low" || value === "medium"
+    ? value
+    : DEFAULT_FEATURES.visualizerBeamQuality;
+}
+
+let visualizerQualityUrlOverride: VisualizerBeamQuality | undefined;
+
+/** Consumes an explicit diagnostic URL override once, so Settings remains authoritative afterward. */
+export function consumeVisualizerQualityUrlOverride():
+  | VisualizerBeamQuality
+  | undefined {
+  const quality = visualizerQualityUrlOverride;
+  visualizerQualityUrlOverride = undefined;
+  return quality;
 }
 
 let startupDraftRecoveryUrlOverride: boolean | undefined;
@@ -152,6 +165,7 @@ function parseFeatureFlagUrlParams(): boolean {
     const beamQuality = params.get("visualizer:beamQuality");
     if (beamQuality !== null) {
       const value = parseVisualizerBeamQuality(beamQuality);
+      visualizerQualityUrlOverride = value;
       saveFeatureFlags({ visualizerBeamQuality: value });
       log.debug(`URL param set visualizerBeamQuality=${value}`);
       changed = true;

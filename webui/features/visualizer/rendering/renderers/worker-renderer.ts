@@ -573,12 +573,6 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     // Setup scene environment
     this.environment = createSceneEnvironment(this.scene);
 
-    // Create scene manager (handles fixtures, beams, selection)
-    this.sceneManager = new SceneManager(this.scene, config.beamQuality);
-
-    // Create debug overlays (from base class)
-    this.initDebugOverlays();
-
     // Create camera with initial state if provided
     this.camera = createCamera(width / height);
     if (initialCameraState) {
@@ -621,8 +615,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       this.renderer,
       this.scene,
       this.camera,
+      { quality: config.beamQuality },
     );
-    await this.postProcessing.surfaceLighting?.shadows.prepare(this.renderer);
+    if (config.beamQuality === "high")
+      await this.postProcessing.surfaceLighting?.shadows.prepare(this.renderer);
+    this.sceneManager = new SceneManager(this.scene, config.beamQuality);
+    this.initDebugOverlays();
     setOutlineSelectedObjects(
       this.postProcessing,
       this.sceneManager.getSelectionOutlineObjects(),

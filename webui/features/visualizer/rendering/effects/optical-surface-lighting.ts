@@ -382,6 +382,10 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
 
 /** Installs clustered optical surface sources while retaining Three's ambient and directional lighting. */
 export class OpticalSurfaceLighting extends Lighting {
+  /** Lower presets retain projected illumination without compiling or preparing shadow maps. */
+  constructor(private readonly shadowsEnabled = true) {
+    super();
+  }
   readonly goboAtlas = new GoboAtlas();
   readonly shadows = new OpticalShadowPool();
   private readonly nodes = new Set<OpticalClusteredLightsNode>();
@@ -407,8 +411,8 @@ export class OpticalSurfaceLighting extends Lighting {
     const node = new OpticalClusteredLightsNode(
       1024,
       64,
-      this.goboAtlas,
-      this.shadows,
+      this.shadowsEnabled ? this.goboAtlas : undefined,
+      this.shadowsEnabled ? this.shadows : undefined,
     );
     node.setLights(lights);
     this.nodes.add(node);

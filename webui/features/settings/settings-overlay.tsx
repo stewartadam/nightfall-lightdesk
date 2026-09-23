@@ -733,6 +733,13 @@ export function SettingsOverlay() {
                         )}
                       </For>
                     </NativeSelect>
+                    <p class="mt-1 text-xs text-gray-500">
+                      {quality() === "low"
+                        ? "Fixture colors and scene geometry only."
+                        : quality() === "medium"
+                          ? "Surface lighting and simple beams, without fog or glow."
+                          : "Atmospheric beams, fog, glow, and optical effects."}
+                    </p>
                   </label>
                   <label class="block">
                     <span class="text-sm text-gray-400">Rotation mode</span>

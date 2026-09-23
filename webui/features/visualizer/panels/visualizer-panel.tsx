@@ -16,19 +16,25 @@
  * - Panel is scrolled out of view (IntersectionObserver)
  */
 
+import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
   createSignal,
   onCleanup,
   onMount,
+  Show,
 } from "solid-js";
-import { isOffscreenCanvasEnabled } from "../../../lib/feature-flags";
+import {
+  consumeVisualizerQualityUrlOverride,
+  isOffscreenCanvasEnabled,
+} from "../../../lib/feature-flags";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { usePropertiesInspector } from "../../property-inspector";
+import { visualizerQualityPreset } from "../state/settings";
 
 const log = getLogger(import.meta.url);
 
@@ -52,6 +58,9 @@ interface VisualizerPanelProps extends BasePanelComponentProps {
 }
 
 const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
+  const override = consumeVisualizerQualityUrlOverride();
+  if (override) visualizerQualityPreset.set(override);
+  const quality = useStore(visualizerQualityPreset);
   log.trace("mounting");
   let visualizerApi: VisualizerCanvasApi | null = null;
   const [visualizerHandle, setVisualizerHandle] =
@@ -147,18 +156,22 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
         <VisualizerToolToolbar />
         <VisualizerErrorBoundary>
           <div class="min-h-0 flex-1">
-            <VisualizerCanvas
-              class="h-full w-full"
-              forceMainThread={!isOffscreenCanvasEnabled()}
-              apiRef={(api) => {
-                visualizerApi = api;
-                setVisualizerHandle(api);
-                syncVisualizerVisibility();
-                if (isDockviewVisible()) {
-                  setActiveVisualizerDebugApiPanel(panelId);
-                }
-              }}
-            />
+            <Show when={quality()} keyed>
+              {(_preset) => (
+                <VisualizerCanvas
+                  class="h-full w-full"
+                  forceMainThread={!isOffscreenCanvasEnabled()}
+                  apiRef={(api) => {
+                    visualizerApi = api;
+                    setVisualizerHandle(api);
+                    syncVisualizerVisibility();
+                    if (isDockviewVisible()) {
+                      setActiveVisualizerDebugApiPanel(panelId);
+                    }
+                  }}
+                />
+              )}
+            </Show>
           </div>
         </VisualizerErrorBoundary>
       </div>

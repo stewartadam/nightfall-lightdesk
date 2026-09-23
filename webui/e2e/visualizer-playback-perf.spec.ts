@@ -24,6 +24,7 @@ import {
 /** Opt-in until nightfall-lightdesk-ocx replaces the operator's show with owned data. */
 const enabled = process.env.NIGHTFALL_VISUALIZER_PLAYBACK_PERF === "1";
 const workerMode = process.env.NIGHTFALL_VISUALIZER_RENDER_MODE === "worker";
+const quality = process.env.NIGHTFALL_VISUALIZER_QUALITY ?? "high";
 const gpuTimingDisabled =
   process.env.NIGHTFALL_VISUALIZER_DISABLE_GPU_TIMING === "1";
 
@@ -101,7 +102,7 @@ async function openWorkload(page: Page): Promise<PlaybackTarget> {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await seedStartupShowfileName(page, "default");
   await page.goto(
-    `/?e2e=1&startup:draftRecovery=false&visualizer:beamQuality=high&visualizer:offscreenCanvas=${workerMode}`,
+    `/?e2e=1&startup:draftRecovery=false&visualizer:beamQuality=${quality}&visualizer:offscreenCanvas=${workerMode}`,
   );
   // Let the app-owned automatic open finish before the general readiness helper
   // can click the showfile picker and enqueue a second load of the same show.

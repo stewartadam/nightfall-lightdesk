@@ -48,7 +48,7 @@ export interface TimestampRenderer {
           currentQueryIndex?: number;
           lastInterval?: readonly [bigint, bigint];
           frameIntervals?: ReadonlyMap<number, readonly [bigint, bigint]>;
-        }
+        } | null
       >
     >;
   };
@@ -168,9 +168,11 @@ export class GpuFrameTimer {
     this.pending = true;
     // Three returns the previous duration when a pool has no queries this frame.
     const hasRenderQueries =
-      renderer.backend.timestampQueryPool?.render?.currentQueryIndex !== 0;
+      !!renderer.backend.timestampQueryPool?.render &&
+      renderer.backend.timestampQueryPool.render.currentQueryIndex !== 0;
     const hasComputeQueries =
-      renderer.backend.timestampQueryPool?.compute?.currentQueryIndex !== 0;
+      !!renderer.backend.timestampQueryPool?.compute &&
+      renderer.backend.timestampQueryPool.compute.currentQueryIndex !== 0;
     // Calling before disabling tracking lets the backend enqueue the resolve.
     const result = Promise.allSettled([
       renderer.resolveTimestampsAsync("render"),
@@ -207,6 +209,7 @@ export class GpuFrameTimer {
           for (const pool of Object.values(
             renderer.backend.timestampQueryPool ?? {},
           )) {
+            if (!pool) continue;
             for (const [uid, duration] of pool.timestamps) {
               const label = this.passLabels.labels.get(uid);
               if (
@@ -231,7 +234,7 @@ export class GpuFrameTimer {
         for (const pool of Object.values(
           renderer.backend.timestampQueryPool ?? {},
         ))
-          pool.timestamps.clear();
+          pool?.timestamps.clear();
         this.pending = false;
       });
   }
