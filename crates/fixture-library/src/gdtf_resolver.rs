@@ -101,7 +101,7 @@ pub struct ChannelInstance<'a> {
 }
 
 /// A position attribute attached to its physical joint, independent of labels/node type.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JointBinding {
     /// Index into the instantiated channel array.
@@ -394,23 +394,37 @@ impl<'a> Resolver<'a> {
 
 /// Reject non-finite rest transforms before they can poison scene bounds or world matrices.
 fn validate_position(position: Matrix, path: &str) -> Result<(), ResolveError> {
+    matrix_rows(position, path).map(|_| ())
+}
+
+/// Read finite numeric rows through the parser's sole public matrix representation.
+pub(crate) fn matrix_rows(position: Matrix, path: &str) -> Result<[[f64; 4]; 4], ResolveError> {
     // The parser exposes matrix components only through its string serializer.
     let serialized = serde_json::to_value(position)
         .map_err(|error| failure("invalid_transform", path, error.to_string()))?;
-    let finite = serialized.as_str().is_some_and(|value| {
-        value
-            .split(['{', '}', ','])
-            .filter(|v| !v.is_empty())
-            .all(|v| v.parse::<f64>().is_ok_and(f64::is_finite))
-    });
-    if !finite {
-        return Err(failure(
+    let invalid = || {
+        failure(
             "invalid_transform",
             path,
-            "Rest transform contains a non-finite component",
-        ));
+            "Rest transform must contain sixteen finite components",
+        )
+    };
+    let value = serialized.as_str().ok_or_else(invalid)?;
+    let mut values = value.split(['{', '}', ',']).filter(|v| !v.is_empty());
+    let mut rows = [[0.0; 4]; 4];
+    for row in &mut rows {
+        for component in row {
+            *component = values
+                .next()
+                .and_then(|value| value.parse::<f64>().ok())
+                .filter(|value| value.is_finite())
+                .ok_or_else(invalid)?;
+        }
     }
-    Ok(())
+    if values.next().is_some() {
+        return Err(invalid());
+    }
+    Ok(rows)
 }
 
 /// Read the common authored matrix without assigning meaning based on geometry names.

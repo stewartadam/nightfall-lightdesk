@@ -20,6 +20,7 @@ use nightfall_fixture_library::converters::gdtf::convert_gdtf_to_fixture;
 use nightfall_fixture_library::gdtf_activation::compile_activation;
 use nightfall_fixture_library::gdtf_bindings::bind_selectors;
 use nightfall_fixture_library::gdtf_channels::{ChannelLimits, compile_channels};
+use nightfall_fixture_library::gdtf_compiler::{CompileLimits, compile_mode};
 use nightfall_fixture_library::gdtf_functions::resolve_functions;
 use nightfall_fixture_library::gdtf_physical::compile_physical;
 use nightfall_fixture_library::gdtf_profiles::compile_profiles;
@@ -89,11 +90,12 @@ fn main() {
                         resolved,
                         &fixture.attribute_definitions,
                         &fixture.physical_descriptions.dmx_profiles,
+                        fixture,
                     )
                 })
             });
         match resolved {
-            Ok((resolved, attributes, profile_sources)) => {
+            Ok((resolved, attributes, profile_sources, fixture)) => {
                 emit(json!({
                 "stage": "resolution", "status": "passed", "mode": mode,
                 "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
@@ -101,6 +103,22 @@ fn main() {
                 "beam_count": resolved.geometries.iter().filter(|g| matches!(g.source, gdtf::geometry::Geometry::Beam(_))).count(),
                 "resolved": resolved,
                 }));
+                let started = Instant::now();
+                match compile_mode(fixture, &mode, CompileLimits::default()) {
+                    Ok(program) => emit(json!({
+                        "stage": "compiled_mode", "status": "passed", "mode": mode,
+                        "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                        "geometry": program.geometry(), "channel_count": program.channels().channels().len(),
+                    })),
+                    Err(error) => {
+                        failed = true;
+                        emit(
+                            json!({"stage": "compiled_mode", "status": "failed", "mode": mode,
+                            "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                            "error": error.to_string(), "diagnostic": error}),
+                        );
+                    }
+                }
                 let started = Instant::now();
                 let compiled = compile_channels(
                     &resolved,
@@ -315,6 +333,10 @@ fn main() {
                 emit(
                     json!({"stage": "compiled_channels", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; owned channel compilation unavailable"}),
+                );
+                emit(
+                    json!({"stage": "compiled_mode", "status": "failed", "mode": mode,
+                    "error": "Geometry resolution failed; owned mode compilation unavailable"}),
                 );
                 emit(
                     json!({"stage": "functions", "status": "failed", "mode": mode,

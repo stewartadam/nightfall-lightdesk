@@ -99,6 +99,19 @@ and optical metadata, geometry/resources, revision persistence and engine adopti
 are still required. Serialization here is diagnostic output, not a finalized
 showfile or worker contract.
 
+The `compiled_mode` stage exercises the single owned mode compiler. It resolves
+one hierarchy and builds geometry and channel programs with coherent indices.
+Geometry retains structural IDs, reference labels, parent/child order, numeric
+row-major rest matrices in GDTF coordinates/metres, effective model indices,
+explicit channel-to-joint bindings and per-beam optical declarations. It checks
+model identity/dimensions and finite optical values. Resource stems and spectrum
+links remain declarations; this stage does not prove resource availability or
+rendering. Non-beam geometry categories remain distinguishable, but specialized
+media/laser/wiring behavior is not simulated. Synthetic tests verify source
+disposal, nested joints, reference model overrides, separate beams and asymmetric
+rest matrices. Archive identity/versioning, resolved resources, worker/showfile
+contracts and engine/renderer adoption still surround this owned mode contract.
+
 The `functions` stage normalizes integer defaults/highlight and inclusive raw
 ranges through 32 bits. Mutually exclusive logical channels and ModeMaster
 conditions retain separate ranges. Selector source links and their ranges are
