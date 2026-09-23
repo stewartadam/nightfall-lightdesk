@@ -10,6 +10,9 @@ The selection combines recognizable production fixtures with fixtures whose
 geometry, controls, or authoring exercise distinct capabilities. A fixture's
 inclusion does not imply that Nightfall currently supports all of its features.
 
+The [implementation plan](gdtf-implementation-plan.md) defines the proposed
+architecture, delivery phases, integration effects, and acceptance gates.
+
 ## Selection rationale
 
 The **initial** group is the first six-fixture implementation bench. All other
