@@ -71,16 +71,22 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         observe: { type: "timeline-stopped" },
       },
       {
-        id: "navigate",
+        id: "navigate-palette",
         title: "Find your way around",
-        body: "The Command Palette opens panels. The Programmer shows your selected fixtures and their live values.",
-        action:
-          "Click the button or press {command-palette-shortcut} to open it.",
+        body: "The Command Palette opens panels or dialogs.",
+        action: "Click here or press {command-palette-shortcut} to open it.",
         target:
           '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
-        hint: "Use the Command Palette to open panels",
+        observe: { type: "command-palette" },
+      },
+      {
+        id: "navigate-programmer",
+        title: "Open the Programmer",
+        body: "You can use the Command Palette to open new panels.",
+        action: "Search for 'Programmer' and press Enter.",
+        target:
+          '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
         observe: { type: "panel", component: "ProgrammerGrid" },
-        more: "Drag panel tabs to arrange the workspace. Open Properties from the same palette to inspect a selected object.",
       },
       {
         id: "select",
