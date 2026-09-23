@@ -34,7 +34,11 @@ export function bindPanelClipping(api: DockviewApi, host: HTMLElement) {
     const changes: { element: HTMLElement; clip: string }[] = [];
     for (const panel of api.panels) {
       if (panel.api.location.type !== "grid" || !panel.api.isVisible) continue;
-      const element = panel.view.content.element;
+      const content = panel.view.content.element;
+      // Dockview's detached focus wrapper receives pointer events even where its
+      // child is clipped. Clip the wrapper so hidden pixels cannot activate it.
+      const element =
+        content.closest<HTMLElement>(".dv-render-overlay") ?? content;
       // Detached content is positioned on a later frame after a tab becomes visible.
       // Its in-grid placeholder already has the destination bounds.
       const container = panel.group.element.querySelector<HTMLElement>(
@@ -56,11 +60,15 @@ export function bindPanelClipping(api: DockviewApi, host: HTMLElement) {
       });
     }
     for (const element of clipped) {
-      if (!next.has(element)) element.style.removeProperty("clip-path");
+      if (!next.has(element)) {
+        element.classList.remove("nf-grid-panel-clip");
+        element.style.removeProperty("--nf-grid-panel-clip");
+      }
     }
     clipped.clear();
     for (const { element, clip } of changes) {
-      element.style.clipPath = clip;
+      element.classList.add("nf-grid-panel-clip");
+      element.style.setProperty("--nf-grid-panel-clip", clip);
       clipped.add(element);
     }
   }
@@ -75,7 +83,10 @@ export function bindPanelClipping(api: DockviewApi, host: HTMLElement) {
       subscription.dispose();
       resize.disconnect();
       if (frame !== undefined) cancelAnimationFrame(frame);
-      for (const element of clipped) element.style.removeProperty("clip-path");
+      for (const element of clipped) {
+        element.classList.remove("nf-grid-panel-clip");
+        element.style.removeProperty("--nf-grid-panel-clip");
+      }
       clipped.clear();
     },
   };

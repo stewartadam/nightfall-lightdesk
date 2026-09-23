@@ -152,6 +152,17 @@
 .nf-guide-tooltip[data-placement="top"] {
   --guide-bounce-y: -6px;
 }
+.nf-guide-command {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #081b1714;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .nf-guide-tooltip[data-visible="true"] {
   animation: nf-guide-tooltip-bounce 650ms ease-in-out 3;
 }
