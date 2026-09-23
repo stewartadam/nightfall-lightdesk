@@ -19,7 +19,7 @@ import {
 } from "../../lib/panel-definitions";
 import { openOrFocusPanelDefinition } from "../../lib/panel-open-command";
 import { isEmbeddedDemoRuntime } from "../../lib/runtime-config";
-import { runtimeCapabilities, timelines } from "../../state/appStores";
+import { clips, runtimeCapabilities, timelines } from "../../state/appStores";
 import { normalizeTimelineUid } from "../timeline/model/timeline-list-model";
 import { GuideTarget } from "./guide-target";
 import { GUIDE_LESSONS } from "./lessons";
@@ -66,6 +66,7 @@ export default function WelcomeGuide() {
   const completed = useStore(guideCompleted);
   const capabilities = useStore(runtimeCapabilities);
   const timelineMap = useStore(timelines);
+  const clipMap = useStore(clips);
   /** Finds the generated sample timeline without relying on its session-specific UID. */
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
@@ -78,6 +79,17 @@ export default function WelcomeGuide() {
   );
   /** Resolves the current instruction, leaving completion outside the action steps. */
   const step = createMemo(() => lesson()?.steps[index()]);
+  /** Locates the drag source by sample clip identity in either card or list view. */
+  const clipHighlightSelector = createMemo(() => {
+    const id = step()?.highlightClipId;
+    if (id === undefined) return undefined;
+    const clip = Object.values(clipMap()).find(
+      ([entry]) => entry.identifiers.id === id,
+    )?.[0];
+    if (!clip) return undefined;
+    const uid = CSS.escape(clip.identifiers.uid);
+    return `[data-crud-select-id="${uid}"], [data-grid-row-key="${uid}"][data-grid-column-key="label"]`;
+  });
 
   useCommand({
     id: "welcome-guide",
@@ -267,6 +279,10 @@ export default function WelcomeGuide() {
                         command={instruction().command}
                         paletteHint={instruction().paletteHint}
                         focusTarget={instruction().focusTarget}
+                      />
+                      <GuideTarget
+                        stepId={instruction().id}
+                        selector={clipHighlightSelector()}
                       />
                       <p class="nf-guide-note">
                         {instruction().observe
