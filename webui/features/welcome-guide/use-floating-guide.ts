@@ -54,6 +54,7 @@ export function useFloatingGuide(
     };
   });
   let manual = false;
+  let placedGeometry = "";
   /** Finds an open dialog's content so the card avoids its controls as well as the step target. */
   const dialogBounds = () => {
     const surfaces = [
@@ -95,7 +96,8 @@ export function useFloatingGuide(
     const visualizer = document
       .querySelector('[aria-label="3D visualizer viewport"]')
       ?.getBoundingClientRect();
-    const target = dialogBounds() ?? anchor() ?? visualizer;
+    const dialog = dialogBounds();
+    const target = anchor() ?? dialog ?? visualizer;
     const width = card.offsetWidth;
     const height = card.offsetHeight;
     if (!target) {
@@ -120,30 +122,34 @@ export function useFloatingGuide(
       ?.getBoundingClientRect();
     /** Offers placements outside both the action and the panel whose content explains the lesson. */
     const beside = (rect: DOMRect) => [
-      { x: rect.right + 16, y: rect.top },
-      { x: rect.left - width - 16, y: rect.top },
-      { x: rect.left, y: rect.bottom + 16 },
-      { x: rect.left, y: rect.top - height - 16 },
+      { x: rect.right + 16, y: target.y + target.height / 2 - height / 2 },
+      {
+        x: rect.left - width - 16,
+        y: target.y + target.height / 2 - height / 2,
+      },
+      { x: target.x + target.width / 2 - width / 2, y: rect.bottom + 16 },
+      { x: target.x + target.width / 2 - width / 2, y: rect.top - height - 16 },
     ];
     const candidates = [
       ...beside(target),
+      ...(dialog ? beside(dialog) : []),
       ...(panel ? beside(panel) : []),
       ...(panel
         ? [
             {
               x: panel.right + 16,
-              y: target.y + target.height / 2 - height / 2,
+              y: panel.top,
             },
             {
               x: panel.left - width - 16,
-              y: target.y + target.height / 2 - height / 2,
+              y: panel.top,
             },
             {
-              x: target.x + target.width / 2 - width / 2,
+              x: panel.left,
               y: panel.bottom + 16,
             },
             {
-              x: target.x + target.width / 2 - width / 2,
+              x: panel.left,
               y: panel.top - height - 16,
             },
           ]
@@ -166,11 +172,60 @@ export function useFloatingGuide(
         0,
         Math.min(point.y + height, rect.bottom) - Math.max(point.y, rect.top),
       );
+    const geometry = `${target.x},${target.y},${target.width},${target.height},${width},${height}`;
+    const current = untrack(position);
+    const bounded = clamp(current);
+    // Changes to result lists do not invalidate an otherwise usable placement.
+    if (
+      geometry === placedGeometry &&
+      current.x === bounded.x &&
+      current.y === bounded.y &&
+      overlap(current, target) === 0 &&
+      (!dialog || overlap(current, dialog) === 0)
+    )
+      return;
+    placedGeometry = geometry;
+    const panels = [
+      ...document.querySelectorAll<HTMLElement>("[data-panel-id]"),
+    ]
+      .map((entry) => entry.getBoundingClientRect())
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+    for (const point of [...candidates]) {
+      for (const rect of panels) {
+        for (const x of [rect.left, rect.right - width]) {
+          if (Math.abs(x - point.x) <= 12)
+            candidates.push(clamp({ ...point, x }));
+        }
+        for (const y of [rect.top, rect.bottom - height]) {
+          if (Math.abs(y - point.y) <= 12)
+            candidates.push(clamp({ ...point, y }));
+        }
+      }
+    }
+    /** Prefers clean alignment with nearby panel edges without pulling a centered pointer away. */
+    const alignment = (point: { x: number; y: number }) =>
+      Math.min(
+        16,
+        ...panels.flatMap((rect) => [
+          Math.abs(point.x - rect.left),
+          Math.abs(point.x + width - rect.right),
+          Math.abs(point.y - rect.top),
+          Math.abs(point.y + height - rect.bottom),
+        ]),
+      );
+    /** Measures how far the target is from the center of the pointer-bearing card edge. */
+    const centering = (point: { x: number; y: number }) =>
+      point.x >= target.right || point.x + width <= target.left
+        ? Math.abs(point.y + height / 2 - target.y - target.height / 2)
+        : Math.abs(point.x + width / 2 - target.x - target.width / 2);
     /** Keeps header actions nearby; panel actions also preserve their teaching panel and Visualizer. */
     const score = (point: { x: number; y: number }) =>
       overlap(point, target) * 10000 +
+      (dialog ? overlap(point, dialog) * 10000 : 0) +
       (panel ? overlap(point, panel) * 2 : 0) +
       (visualizer && (panel || !anchor()) ? overlap(point, visualizer) : 0) +
+      centering(point) +
+      alignment(point) * 0.1 +
       Math.hypot(point.x - target.x, point.y - target.y) * 0.001;
     candidates.sort((a, b) => score(a) - score(b));
     setPosition(candidates[0]);
@@ -179,6 +234,7 @@ export function useFloatingGuide(
   createEffect(() => {
     step();
     manual = false;
+    placedGeometry = "";
     untrack(place);
   });
   /** Tracks geometry changes without moving the card in response to ordinary pointer movement. */
