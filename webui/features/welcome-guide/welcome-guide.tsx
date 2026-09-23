@@ -7,8 +7,9 @@
  */
 
 import { useStore } from "@nanostores/solid";
+import { createDraggable } from "@neodrag/solid";
 import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommand } from "../../components/providers/command-registry";
 import Tooltip from "../../components/ui/tooltip";
@@ -33,6 +34,7 @@ import {
   openWelcomeGuide,
   startGuideLesson,
 } from "./state";
+import { useFloatingGuide } from "./use-floating-guide";
 import { useGuideProgress } from "./use-guide-progress";
 import "./welcome-guide.css";
 
@@ -58,7 +60,7 @@ export function GuideInvitation() {
   );
 }
 
-/** Hosts reusable lessons beside the workspace; all engine actions remain user initiated. */
+/** Hosts the lesson library and floating instructions; all engine actions remain user initiated. */
 export default function WelcomeGuide() {
   const opened = useStore(guideOpen);
   const lessonId = useStore(guideLessonId);
@@ -79,6 +81,15 @@ export default function WelcomeGuide() {
   );
   /** Resolves the current instruction, leaving completion outside the action steps. */
   const step = createMemo(() => lesson()?.steps[index()]);
+  const [card, setCard] = createSignal<HTMLElement>();
+  const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
+  const floating = useFloatingGuide(
+    () => (lesson() && opened() ? card() : undefined),
+    () => `${lessonId()}:${index()}`,
+    anchor,
+  );
+  const { draggable } = createDraggable();
+  void draggable;
   /** Locates the drag source by sample clip identity in either card or list view. */
   const clipHighlightSelector = createMemo(() => {
     const id = step()?.highlightClipId;
@@ -149,7 +160,17 @@ export default function WelcomeGuide() {
   return (
     <Show when={opened()}>
       <aside
+        ref={setCard}
         class="nf-welcome-guide"
+        classList={{ "nf-guide-floating": Boolean(lesson()) }}
+        use:draggable={{
+          disabled: !lesson(),
+          handle: ".nf-guide-move",
+          position: lesson() ? floating.position() : { x: 0, y: 0 },
+          bounds: { left: 12, right: 12, top: 12, bottom: 12 },
+          onDrag: ({ offsetX, offsetY }) =>
+            floating.move({ x: offsetX, y: offsetY }),
+        }}
         aria-label="Welcome guide"
         data-testid="welcome-guide"
       >
@@ -167,7 +188,17 @@ export default function WelcomeGuide() {
                 </Button>
               </Tooltip>
             </Show>
-            <span>LEARN NIGHTFALL</span>
+            <Show when={lesson()} fallback={<span>LEARN NIGHTFALL</span>}>
+              <button
+                type="button"
+                class="nf-guide-move"
+                aria-label="Move guide"
+                title="Drag to move, or use arrow keys when focused"
+                onKeyDown={floating.onKeyDown}
+              >
+                ⠿ LEARN NIGHTFALL
+              </button>
+            </Show>
           </div>
           <Button
             size="compact"
@@ -234,8 +265,13 @@ export default function WelcomeGuide() {
                     <>
                       <p>{instruction().body}</p>
                       <div class="nf-guide-action">
-                        <strong>Try it</strong>
+                        <strong>{instruction().hint ?? "Try it"}</strong>
                         <p>{instruction().action}</p>
+                        <Show when={instruction().command}>
+                          <code class="nf-guide-command">
+                            {instruction().command}
+                          </code>
+                        </Show>
                       </div>
                       <Show
                         when={
@@ -275,10 +311,8 @@ export default function WelcomeGuide() {
                       <GuideTarget
                         stepId={instruction().id}
                         selector={instruction().target}
-                        hint={instruction().hint}
-                        command={instruction().command}
-                        paletteHint={instruction().paletteHint}
                         focusTarget={instruction().focusTarget}
+                        onBounds={setAnchor}
                       />
                       <GuideTarget
                         stepId={instruction().id}
@@ -286,7 +320,7 @@ export default function WelcomeGuide() {
                       />
                       <p class="nf-guide-note">
                         {instruction().observe
-                          ? "This step advances automatically when the action completes. You can also continue or skip."
+                          ? "Advances automatically when you complete the action."
                           : "Take time to explore, then continue when you’re ready."}
                       </p>
                       <div class="nf-guide-navigation">
