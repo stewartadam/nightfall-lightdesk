@@ -81,6 +81,20 @@ only one instance remains an unambiguous target. Ambiguous repeated targets fail
 instead of selecting the first instance. Synthetic tests cover local, shared,
 and nested repeated assemblies.
 
+The `sets` stage normalizes channel-set boundaries at the channel's full raw
+precision and rejects non-increasing or out-of-function ranges. It retains
+labels, explicit physical overrides, parent endpoints, and zero-based wheel
+slots without converting the parser's slot index twice. Unlabeled values before
+the first set remain unlabeled. A total expanded-set budget bounds this pass.
+Synthetic tests check sparse boundaries, inherited versus explicit values,
+descending endpoints, slot indices and malformed sets. Resolving a slot index
+does not yet validate its linked wheel or render it.
+
+An XML inventory of the 18 pinned archives contains 32,160 authored ChannelSet
+nodes, but no DMXProfile or SubChannelSet nodes and no nonempty DMXProfile links.
+Those capabilities therefore require independent synthetic coverage; a green
+real-archive sweep cannot establish profile or sub-channel-unit support.
+
 The `activation` stage compiles a bounded dependency order and evaluates each
 mode's raw defaults. Function links require the target function to be active;
 channel links use only the master's raw value. Cyclic function dependencies fail

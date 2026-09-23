@@ -21,6 +21,7 @@ use nightfall_fixture_library::gdtf_activation::compile_activation;
 use nightfall_fixture_library::gdtf_bindings::bind_selectors;
 use nightfall_fixture_library::gdtf_functions::resolve_functions;
 use nightfall_fixture_library::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
+use nightfall_fixture_library::gdtf_sets::resolve_sets;
 use nightfall_fixture_library::gdtf_wire::resolve_wires;
 use serde_json::json;
 
@@ -109,6 +110,19 @@ fn main() {
                         "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "channels": functions}),
                         );
                         let started = Instant::now();
+                        match resolve_sets(&functions, 1_000_000) {
+                            Ok(sets) => {
+                                emit(json!({"stage": "sets", "status": "passed", "mode": mode,
+                                "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "sets": sets}))
+                            }
+                            Err(error) => {
+                                failed = true;
+                                emit(json!({"stage": "sets", "status": "failed", "mode": mode,
+                                    "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                                    "error": error.to_string(), "diagnostic": error}));
+                            }
+                        }
+                        let started = Instant::now();
                         match bind_selectors(&resolved, &functions) {
                             Ok(bindings) => {
                                 emit(
@@ -160,6 +174,8 @@ fn main() {
                             json!({"stage": "bindings", "status": "failed", "mode": mode,
                             "error": "Function normalization failed; selector binding unavailable"}),
                         );
+                        emit(json!({"stage": "sets", "status": "failed", "mode": mode,
+                            "error": "Function normalization failed; channel sets unavailable"}));
                         emit(
                             json!({"stage": "activation", "status": "failed", "mode": mode,
                             "error": "Function normalization failed; activation unavailable"}),
@@ -184,6 +200,8 @@ fn main() {
                     json!({"stage": "bindings", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; selector binding unavailable"}),
                 );
+                emit(json!({"stage": "sets", "status": "failed", "mode": mode,
+                    "error": "Geometry resolution failed; channel sets unavailable"}));
                 emit(
                     json!({"stage": "activation", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; activation unavailable"}),

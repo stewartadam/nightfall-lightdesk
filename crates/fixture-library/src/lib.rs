@@ -24,6 +24,7 @@ pub mod gdtf_bindings;
 pub mod gdtf_functions;
 pub mod gdtf_metadata;
 pub mod gdtf_resolver;
+pub mod gdtf_sets;
 pub mod gdtf_wire;
 pub mod http_routes;
 pub mod manager;
