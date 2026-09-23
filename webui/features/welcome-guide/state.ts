@@ -54,8 +54,8 @@ export function closeWelcomeGuide(): void {
   guideOpen.set(false);
 }
 
-/** Starts a lesson at its introduction; starting never changes engine state. */
+/** Starts directly at the first instruction without changing engine state. */
 export function startGuideLesson(id: string): void {
   guideLessonId.set(id);
-  guideStepIndex.set(-1);
+  guideStepIndex.set(0);
 }
