@@ -1,5 +1,7 @@
 # Pull request release notes
 
+Part of the [contributing guide](../../CONTRIBUTING.md).
+
 Every PR declares its release-note intent in its description. Notes stay on GitHub;
 there are no per-change fragments in the development branch. Review the wording
 alongside the code: describe the effect on users, conditions under which a fix

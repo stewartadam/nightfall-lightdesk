@@ -23,7 +23,7 @@ This repository supplies the tagged GitHub Release assets. The `nightfall.live/d
 
 ## Cutting a release
 
-1. Set the same version in `Cargo.toml` under `[workspace.package]` and in `crates/app/tauri.conf.json`. Update `Cargo.lock` through Cargo and merge the version change after validation. Include a `Notes:` declaration on every PR, including version-only PRs; see [PR release notes](release-notes.md). Preserve commit ancestry when promoting `develop` to `main` so the release includes the original PR notes.
+1. Set the same version in `Cargo.toml` under `[workspace.package]` and in `crates/app/tauri.conf.json`. Update `Cargo.lock` through Cargo and merge the version change after validation. Include a `Notes:` declaration on every PR, including version-only PRs; see [PR release notes](contributing/release-notes.md). Preserve commit ancestry when promoting `develop` to `main` so the release includes the original PR notes.
 2. Verify the `main` artifacts on each target operating system, including startup, showfile save/open, and beat detection from the installed application.
 3. Create and push the matching version tag, for example:
 
