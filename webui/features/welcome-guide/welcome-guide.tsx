@@ -178,7 +178,7 @@ export default function WelcomeGuide() {
     () => (lesson() && opened() ? card() : undefined),
     () => `${lessonId()}:${index()}`,
     anchor,
-    () => (blocked() ? undefined : step()?.target),
+    () => step()?.target,
     () => step()?.placement,
   );
   const { draggable } = createDraggable();
@@ -404,8 +404,9 @@ export default function WelcomeGuide() {
                       </For>
                       <GuideTarget
                         stepId={instruction().id}
-                        selector={blocked() ? undefined : instruction().target}
-                        focusTarget={instruction().focusTarget}
+                        selector={instruction().target}
+                        highlight={!blocked()}
+                        focusTarget={!blocked() && instruction().focusTarget}
                         onBounds={setAnchor}
                       />
                       <GuideTarget

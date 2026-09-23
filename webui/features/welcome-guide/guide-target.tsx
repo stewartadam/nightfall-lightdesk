@@ -13,6 +13,7 @@ interface GuideTargetProps {
   stepId: string;
   selector?: string;
   focusTarget?: boolean;
+  highlight?: boolean;
   onBounds?: (bounds: DOMRect | null) => void;
 }
 
@@ -114,7 +115,7 @@ export function GuideTarget(props: GuideTargetProps) {
 
   return (
     <Portal>
-      <Show when={bounds()}>
+      <Show when={props.highlight !== false && bounds()}>
         {(rect) => (
           <div
             class="nf-guide-anchor"
