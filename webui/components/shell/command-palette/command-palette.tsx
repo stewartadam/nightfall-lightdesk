@@ -359,8 +359,7 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
         ref={containerRef}
         class="max-w-2xl"
         style={{
-          "max-height":
-            "calc(100dvh - var(--guide-overlay-bottom, 0px) - 96px)",
+          "max-height": "calc(var(--app-viewport-height, 100dvh) - 96px)",
         }}
       >
         <SearchPickerInput

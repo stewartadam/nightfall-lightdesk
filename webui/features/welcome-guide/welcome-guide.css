@@ -37,14 +37,6 @@
   align-items: center;
   gap: 8px;
 }
-/* Portal dialogs occupy the working area while the lesson remains readable. */
-.nf-dialog-backdrop {
-  right: var(--guide-overlay-right, 0px);
-  bottom: var(--guide-overlay-bottom, 0px);
-}
-.nf-dialog-backdrop .nf-dialog-surface {
-  max-height: calc(100dvh - var(--guide-overlay-bottom, 0px) - 32px);
-}
 .nf-guide-body {
   overflow: auto;
   min-height: 0;
@@ -164,9 +156,6 @@
     max-height: 45%;
     border-left: 0;
     border-top: 1px solid #343740;
-  }
-  .nf-guide-workspace {
-    flex-direction: column;
   }
   .nf-guide-body {
     padding: 12px 16px;
