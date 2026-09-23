@@ -40,6 +40,9 @@ Publication (fresh runner; contents: write; no Apple credentials)
   `permissions: {}`. Build jobs receive no explicit secrets and never checkout
   with an authenticated token. Reusable build workflows must be called after
   source acquisition in the same run. Build caches remain inside this boundary.
+  Windows restores symlinks as regular files containing their target paths,
+  matching Git's `core.symlinks=false` checkout behavior without requiring
+  symlink privileges or relying on archive entry order.
 - **Release metadata:** permissionless preparation plans which commit IDs need PR
   associations. A separate read-only job accepts only hexadecimal commit IDs and
   fetches those API responses with inline `gh` commands; it never downloads or

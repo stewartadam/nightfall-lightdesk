@@ -97,8 +97,34 @@ jobs:
           name: source-${{ github.sha }}
           path: .ci-source
       - name: Restore source and Git history
+        if: runner.os != 'Windows'
         shell: bash
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - name: Restore Windows source and Git history
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import os
+          import pathlib
+          import shutil
+          import subprocess
+          import tarfile
+
+          # Match a Windows Git checkout with core.symlinks=false. Git Bash tar
+          # tries to copy symlink targets, which may not have been extracted yet.
+          with tarfile.open('.ci-source/source.tar') as archive:
+              for member in archive:
+                  if member.issym():
+                      target = os.fsencode(member.linkname)
+                      member.type = tarfile.REGTYPE
+                      member.size = 0
+                      member.linkname = ''
+                      archive.extract(member, filter='data')
+                      pathlib.Path(member.name).write_bytes(target)
+                  else:
+                      archive.extract(member, filter='data')
+          subprocess.run(['git', 'config', 'core.symlinks', 'false'], check=True)
+          shutil.rmtree('.ci-source')
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24

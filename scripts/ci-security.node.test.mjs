@@ -250,6 +250,56 @@ test("source handoff retains Git metadata and media without hooks or credentials
   assert.notEqual(spawnSync("bash", ["-e", "-c", archive], options).status, 0);
 });
 
+/** Windows restores links without privileges, including targets later in the archive or absent. */
+test("Windows source restoration uses Git's regular-file symlink representation", (t) => {
+  const directory = fixtureDirectory(t);
+  const options = {
+    cwd: directory,
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+    ),
+  };
+  execFileSync(
+    "python3",
+    [
+      "-c",
+      `
+import io, pathlib, tarfile
+pathlib.Path('.ci-source').mkdir()
+with tarfile.open('.ci-source/source.tar', 'w') as archive:
+    for name, target in [('CLAUDE.md', 'AGENTS.md'), ('dangling', 'absent')]:
+        entry = tarfile.TarInfo(name)
+        entry.type = tarfile.SYMTYPE
+        entry.linkname = target
+        archive.addfile(entry)
+    for name, data in [('AGENTS.md', b'instructions'), ('.git/config', b'[core]\\nsymlinks = true\\n')]:
+        entry = tarfile.TarInfo(name)
+        entry.size = len(data)
+        archive.addfile(entry, io.BytesIO(data))
+`,
+    ],
+    { cwd: directory },
+  );
+  execFileSync("git", ["init", "--quiet"], options);
+  const restore = workflows["desktop-artifacts.yml"].jobs.build.steps.find(
+    (step) => step.name === "Restore Windows source and Git history",
+  );
+  assert.equal(restore.if, "runner.os == 'Windows'");
+  assert.equal(restore.shell, "python");
+  execFileSync("python3", ["-c", restore.run], options);
+  assert.equal(readFileSync(join(directory, "CLAUDE.md"), "utf8"), "AGENTS.md");
+  assert.equal(readFileSync(join(directory, "dangling"), "utf8"), "absent");
+  assert.equal(
+    readFileSync(join(directory, "AGENTS.md"), "utf8"),
+    "instructions",
+  );
+  assert.equal(existsSync(join(directory, ".ci-source")), false);
+  assert.match(
+    readFileSync(join(directory, ".git/config"), "utf8"),
+    /symlinks = false/,
+  );
+});
+
 /** The payload is copied as bytes, retains executable bits, and never retains setuid bits. */
 test("valid macOS payload is unpacked without executing its binary", (t) => {
   const directory = fixtureDirectory(t);
