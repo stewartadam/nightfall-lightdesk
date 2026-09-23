@@ -45,7 +45,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
   {
     id: "basics",
     title: "Welcome to Nightfall",
-    duration: "5–7 min",
+    duration: "6–8 min",
     introduction:
       "Explore playback and properties, find your way around, and personalize Nightfall.",
     steps: [
@@ -281,6 +281,53 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             type: "action",
             body: "Select Appearance in Settings, then choose an accent swatch. Try a few colors and keep your favorite. Close Settings when you’re happy, then continue.",
+          },
+        ],
+      },
+      {
+        id: "undo-redo",
+        title: "Edits apply as you work",
+        target: '[data-guide-target="undo-redo"]',
+        content: [
+          {
+            type: "text",
+            text: "Changes to lighting objects apply automatically as you edit them. Use Undo to reverse an edit.",
+          },
+          {
+            type: "action",
+            body: "Mouse over the undo or redo buttons to preview the action; the arrow beside them opens the undo history. You don’t need to undo anything now—continue when you’re ready.",
+          },
+        ],
+      },
+      {
+        id: "save-showfile",
+        title: "Keep a saved version of your show",
+        target:
+          '[data-component="DropdownMenuItem"]:has([data-guide-target="save-showfile"]), [aria-label="Menu"]:not([aria-expanded="true"])',
+        content: [
+          {
+            type: "text",
+            text: "Nightfall automatically saves your showfile changes to a draft. Save Showfile explicitly updates the saved version of the whole show. A draft lets you recover work made since that saved version.",
+          },
+          {
+            type: "action",
+            body: "Open Menu at the bottom left and choose Save Showfile to save the sample show’s current state. Then continue.",
+          },
+        ],
+      },
+      {
+        id: "keyboard-shortcuts",
+        title: "Discover keyboard shortcuts",
+        target:
+          '[data-dialog-kind="shortcuts"] [aria-label="Keyboard shortcuts"], [data-component="DropdownMenuItem"]:has([data-guide-target="keyboard-shortcuts"]), [aria-label="Menu"]:not([aria-expanded="true"])',
+        content: [
+          {
+            type: "text",
+            text: "The keyboard shortcut reference lists bindings for navigation, editing, and playback. You can return to it whenever you want to learn a faster way to work.",
+          },
+          {
+            type: "action",
+            body: "Open Menu at the bottom left, then choose Keyboard Shortcuts. Browse the reference, close it, and continue to finish the introduction.",
           },
         ],
       },
