@@ -590,7 +590,28 @@ for (const platform of ["MacIntel", "Win32"]) {
     const paletteInput = page.locator(
       '[data-dialog-kind="command-palette"] input',
     );
+    await expect(guide.locator(".nf-guide-pointer")).toBeVisible();
+    const placement = await guide.boundingBox();
+    const paletteHeight = (await page
+      .locator('[data-dialog-kind="command-palette"] > :first-child')
+      .boundingBox())!.height;
     await paletteInput.fill("Open Programmer");
+    await expect
+      .poll(
+        async () =>
+          (await page
+            .locator('[data-dialog-kind="command-palette"] > :first-child')
+            .boundingBox())!.height,
+      )
+      .toBeLessThan(paletteHeight);
+    // Allow both the resize observer and dialog polling to run before checking stability.
+    await page.waitForTimeout(600);
+    const filteredPlacement = (await guide.boundingBox())!;
+    expect(filteredPlacement.x).toBeCloseTo(placement!.x, 0);
+    expect(filteredPlacement.y).toBeCloseTo(placement!.y, 0);
+    await page.screenshot({
+      path: testInfo.outputPath("guide-filtered-palette-stable.png"),
+    });
     await expect(
       guide.getByRole("heading", { name: "Open the Programmer", exact: true }),
     ).toBeVisible();
