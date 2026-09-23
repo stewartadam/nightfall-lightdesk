@@ -52,6 +52,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "visualizer",
         title: "Meet your sample rig",
+        target: '[data-component="Visualizer"][data-panel-id]',
         content: [
           {
             type: "text",
@@ -97,6 +98,11 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             type: "text",
             text: "A timeline turns individual looks and effects into a timed show.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["Visualizer"],
+            sampleTimeline: true,
           },
           {
             type: "action",
@@ -179,15 +185,21 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "ready",
-        title: "Ready to make your own lights",
+        title: "Properties follows your focus",
+        target: '[data-component="PropertiesInspector"][data-panel-id]',
         content: [
           {
             type: "text",
-            text: "The Visualizer shows the result, clips play lighting instructions, timelines arrange clips over time, and Properties lets you inspect and edit them.",
+            text: "Properties changes with the panel you focus. It currently shows the clip you inspected; focusing the timeline reveals its settings instead.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["PropertiesInspector"],
+            sampleTimeline: true,
           },
           {
             type: "action",
-            body: "Finish this introduction, then choose Your first lights to build your own Red and Blue sequence.",
+            body: "Click the Timeline 1: Lo-fi tab to focus it. Watch Properties switch from clip settings to timeline settings, then continue.",
           },
         ],
       },
