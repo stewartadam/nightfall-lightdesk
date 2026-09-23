@@ -20,7 +20,6 @@ export interface GuideStep {
   target?: string;
   hint?: string;
   command?: string;
-  paletteHint?: string;
   focusTarget?: boolean;
   more?: string;
   observe?: GuideObservation;
@@ -78,7 +77,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         target:
           '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
         hint: "Use the Command Palette to open panels",
-        paletteHint: "Open the Programmer panel",
         observe: { type: "panel", component: "ProgrammerGrid" },
         more: "Drag panel tabs to arrange the workspace. Open Properties from the same palette to inspect a selected object.",
       },
@@ -87,7 +85,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Select lights by number",
         body: "The sample’s pixel strips include fixtures 310–313. The > operator selects an inclusive range.",
         action:
-          "Enter fix 310>313 and press Enter. Look for the four selected pixel strips in the Programmer.",
+          "Enter the command below and press Enter. Look for the four selected pixel strips in the Programmer.",
         panels: ["ProgrammerGrid", "Visualizer"],
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
@@ -100,7 +98,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Bring up the lights",
         body: "The Programmer holds live lighting instructions.",
         action:
-          "Enter @ 100 to bring the four selected pixel strips to full intensity. Check their intensity values in the Programmer and watch the Visualizer.",
+          "Bring the selected strips to full intensity with the command below. Check their values in the Programmer and watch the Visualizer.",
         panels: ["ProgrammerGrid"],
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
@@ -112,7 +110,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Make a red look",
         body: "These pixel strips mix red, green, and blue to set their color.",
         action:
-          "Enter red @ 100 green @ 0 blue @ 0. Watch the four selected pixel strips turn red.",
+          "Enter the command below. Watch the four selected pixel strips turn red.",
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
         command: "red @ 100 green @ 0 blue @ 0",
@@ -134,7 +132,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Make a blue look",
         body: "A contrasting second look makes the Go button’s effect easy to see.",
         action:
-          "Enter red @ 0 green @ 0 blue @ 100. Watch the same four pixel strips turn blue.",
+          "Enter the command below. Watch the same four pixel strips turn blue.",
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
         command: "red @ 0 green @ 0 blue @ 100",

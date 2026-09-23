@@ -80,7 +80,7 @@ async function reachStep(page: Page, title: string) {
   throw new Error(`Did not reach guide step: ${title}`);
 }
 
-/** Verifies palette backdrops exclude the guide, including the stacked narrow layout. */
+/** Verifies the floating lesson remains above app dialogs and within the viewport. */
 async function expectGuideOutsideBackdrop(page: Page) {
   const app = await page.locator(".nf-app-viewport").boundingBox();
   const guide = await page.getByTestId("welcome-guide").boundingBox();
@@ -92,10 +92,27 @@ async function expectGuideOutsideBackdrop(page: Page) {
   expect(app).not.toBeNull();
   expect(backdrop!.width).toBeCloseTo(app!.width, 0);
   expect(backdrop!.height).toBeCloseTo(app!.height, 0);
-  expect(
-    backdrop!.x + backdrop!.width <= guide!.x + 1 ||
-      backdrop!.y + backdrop!.height <= guide!.y + 1,
-  ).toBe(true);
+  const handle = page.getByRole("button", { name: "Move guide", exact: true });
+  await handle.click({ trial: true });
+  await expect
+    .poll(async () => {
+      const card = (await page.getByTestId("welcome-guide").boundingBox())!;
+      const input = (await page
+        .getByPlaceholder("Type a command or search...")
+        .boundingBox())!;
+      return (
+        card.x >= input.x + input.width ||
+        card.x + card.width <= input.x ||
+        card.y >= input.y + input.height ||
+        card.y + card.height <= input.y
+      );
+    })
+    .toBe(true);
+  const viewport = page.viewportSize()!;
+  expect(guide!.x).toBeGreaterThanOrEqual(0);
+  expect(guide!.y).toBeGreaterThanOrEqual(0);
+  expect(guide!.x + guide!.width).toBeLessThanOrEqual(viewport.width);
+  expect(guide!.y + guide!.height).toBeLessThanOrEqual(viewport.height);
 }
 
 /** Keeps constrained divider grips visible when the guide reduces the workspace width. */
@@ -245,8 +262,8 @@ test("guide leaves Status Display and Fixtures edge tabs reachable", async ({
   await page.getByRole("tab", { name: "Status Display", exact: true }).click();
 });
 
-/** Gives each guide step a brief cue, then settles; reduced-motion users get the same static emphasis. */
-test("guide hints bounce briefly and respect reduced motion", async ({
+/** Combines context and copyable commands in a movable card without reducing the app viewport. */
+test("floating lessons provide context, selectable commands and manual placement", async ({
   page,
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -258,27 +275,36 @@ test("guide hints bounce briefly and respect reduced motion", async ({
   await expect(
     page.getByRole("textbox", { name: "Command input", exact: true }),
   ).toBeFocused();
-  const hint = page.locator('[role="tooltip"].nf-guide-tooltip');
+  const hint = guide;
   await expect(hint).toBeVisible();
+  await expect(page.locator(".nf-app-viewport")).toHaveCSS("width", "1440px");
+  await expect(hint).toContainText("inclusive range");
+  const before = (await hint.boundingBox())!;
+  const commandBounds = (await page.locator("#header-cmdline").boundingBox())!;
+  expect(
+    before.y >= commandBounds.y + commandBounds.height ||
+      before.x >= commandBounds.x + commandBounds.width,
+  ).toBe(true);
+  const handle = guide.getByRole("button", { name: "Move guide", exact: true });
+  const grip = (await handle.boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    grip.x + grip.width / 2 + 100,
+    grip.y + grip.height / 2 + 60,
+    { steps: 8 },
+  );
+  await page.mouse.up();
   await expect
-    .poll(() =>
-      hint.evaluate((element) =>
-        element
-          .getAnimations()
-          .some(
-            (animation) =>
-              animation instanceof CSSAnimation &&
-              animation.animationName === "nf-guide-tooltip-bounce" &&
-              animation.playState === "running",
-          ),
-      ),
-    )
-    .toBe(true);
+    .poll(async () => (await hint.boundingBox())!.x)
+    .toBeCloseTo(before.x + 100, 0);
+  await handle.focus();
+  await handle.press("ArrowDown");
+  await expect
+    .poll(async () => (await hint.boundingBox())!.y)
+    .toBeCloseTo(before.y + 80, 0);
   await expect(hint).toHaveCSS("pointer-events", "auto");
   await expect(hint).toHaveCSS("user-select", "text");
-  await expect
-    .poll(() => hint.evaluate((element) => element.getAnimations().length))
-    .toBe(0);
   await hint.locator("code").click({ clickCount: 3 });
   await expect
     .poll(() => page.evaluate(() => window.getSelection()?.toString().trim()))
@@ -293,23 +319,8 @@ test("guide hints bounce briefly and respect reduced motion", async ({
   await command.fill("fix 310>313");
   await command.press("Enter");
   await expect(hint.locator("code")).toHaveText("@ 100");
-  await expect
-    .poll(() =>
-      hint.evaluate((element) =>
-        element
-          .getAnimations()
-          .some(
-            (animation) =>
-              animation instanceof CSSAnimation &&
-              animation.animationName === "nf-guide-tooltip-bounce" &&
-              animation.playState === "running",
-          ),
-      ),
-    )
-    .toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(hint).toHaveCSS("animation-name", "none");
-  await expect(hint).toHaveCSS("transition-duration", "0s");
   await expect(hint).toBeVisible();
   await command.fill("@ 100");
   await command.press("Enter");
@@ -405,16 +416,12 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await expect(
     guide.getByRole("heading", { name: "Find your way around" }),
   ).toBeVisible();
-  await expect(page.locator(".nf-guide-tooltip")).toHaveText(
-    "Use the Command Palette to open panels",
-  );
+  await expect(guide).toContainText("Use the Command Palette to open panels");
   await page
     .getByRole("button", { name: "Open command palette", exact: true })
     .click();
   await expectGuideOutsideBackdrop(page);
-  await expect(page.locator(".nf-guide-tooltip")).toHaveText(
-    "Open the Programmer panel",
-  );
+  await expect(guide).toContainText("Open Programmer");
   await page.screenshot({
     path: testInfo.outputPath("guide-palette-desktop.png"),
   });
@@ -425,7 +432,7 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await expect(
     guide.getByRole("heading", { name: "Select lights by number" }),
   ).toBeVisible();
-  const hint = page.getByRole("tooltip").filter({ hasText: "fix 310>313" });
+  const hint = guide.locator("code");
   await expect(hint).toBeVisible();
   await page.setViewportSize({ width: 700, height: 900 });
   await page
