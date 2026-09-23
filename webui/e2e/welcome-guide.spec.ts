@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { WebSocketRoute } from "@playwright/test";
+import { utimes } from "node:fs/promises";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -18,7 +18,7 @@ const pageErrors = new WeakMap<Page, string[]>();
 test.beforeEach(({ page }) => {
   const errors: string[] = [];
   pageErrors.set(page, errors);
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
 });
 
 /** Fails on stale tooltip callbacks and other unexpected browser errors. */
@@ -27,12 +27,14 @@ test.afterEach(({ page }) => {
 });
 
 /** Opens the sample_data.rs-generated show and waits for its practice rig. */
-async function openSample(page: Page) {
+async function openSample(page: Page, offscreenCanvas = true) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.addInitScript(() => {
     localStorage.removeItem("nightfall.e2eAutoOpenStartupShowfile");
   });
-  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await page.goto(
+    `/?startup:draftRecovery=false&e2e=1&visualizer:offscreenCanvas=${offscreenCanvas}`,
+  );
   await waitForDockviewApp(page);
   await page.waitForFunction(
     () =>
@@ -680,19 +682,12 @@ for (const platform of ["MacIntel", "Win32"]) {
   });
 }
 
-/** Retains session stores through dependency reloads and renders edited copy on component refresh. */
-test("hot reload keeps the active lesson and step", async ({
+/** Exercises Vite's file watcher and dependency graph while preserving the mounted workspace. */
+test("lesson hot reload preserves the guide and Dockview layout", async ({
   page,
 }, testInfo) => {
-  let hmrSocket: WebSocketRoute | undefined;
-  await page.routeWebSocket(
-    (url) => url.pathname !== "/ws",
-    (socket) => {
-      socket.connectToServer();
-      hmrSocket = socket;
-    },
-  );
-  await openSample(page);
+  // Worker CSS HMR currently throws in Vite's client (nightfall-lightdesk-bbg).
+  await openSample(page, false);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
   await guide.getByRole("button", { name: /START HERE/ }).click();
@@ -703,57 +698,34 @@ test("hot reload keeps the active lesson and step", async ({
   await guide
     .getByRole("button", { name: "Open Programmer", exact: true })
     .click();
-  const timestamp = Date.now();
-  const progress = await page.evaluate(async (stamp) => {
-    const state = await import(`/features/welcome-guide/state.ts?t=${stamp}`);
+  await expect(
+    page.getByText("Programmer is empty.", { exact: true }),
+  ).toBeVisible();
+  const workspace = await page.evaluateHandle(() => {
+    const api = (window as any).appStores.dockApi.get();
     return {
-      open: state.guideOpen.get(),
-      lesson: state.guideLessonId.get(),
-      index: state.guideStepIndex.get(),
+      api,
+      layout: JSON.stringify(api.toJSON()),
+      shell: document.querySelector(".nf-app-viewport"),
+      guide: document.querySelector('[data-testid="welcome-guide"]'),
     };
-  }, timestamp);
-  expect(progress).toEqual({
-    open: true,
-    lesson: "welcome",
-    index: Number(stepLabel.split("/")[0]) - 1,
   });
   await page.route("**/features/welcome-guide/lessons.ts?*", async (route) => {
     const response = await route.fetch();
     await route.fulfill({
       response,
-      body: (await response.text()).replace(
-        "Bring up the lights",
-        "Preview edited copy",
-      ),
+      body: (await response.text())
+        .replace("Bring up the lights", "Preview edited copy")
+        .replace("Your first lights", "Updated lesson title"),
     });
   });
-  const modulePath = "/features/welcome-guide/welcome-guide.tsx";
-  await page.route(
-    "**/features/welcome-guide/welcome-guide.tsx?*",
-    async (route) => {
-      const response = await route.fetch();
-      await route.fulfill({
-        response,
-        body: (await response.text()).replace(
-          /\/features\/welcome-guide\/lessons\.ts(?:\?t=\d+)?/g,
-          `/features/welcome-guide/lessons.ts?t=${timestamp}`,
-        ),
-      });
-    },
-  );
-  await expect.poll(() => Boolean(hmrSocket)).toBe(true);
-  hmrSocket!.send(
-    JSON.stringify({
-      type: "update",
-      updates: [
-        {
-          type: "js-update",
-          path: modulePath,
-          acceptedPath: modulePath,
-          timestamp,
-        },
-      ],
-    }),
+  await page.screenshot({ path: testInfo.outputPath("guide-before-hmr.png") });
+  // Trigger the real update graph without changing the author's lesson content.
+  const modified = new Date();
+  await utimes(
+    new URL("../features/welcome-guide/lessons.ts", import.meta.url),
+    modified,
+    modified,
   );
   await expect(
     guide.getByRole("heading", { name: "Preview edited copy" }),
@@ -762,7 +734,31 @@ test("hot reload keeps the active lesson and step", async ({
     stepLabel,
   );
   await expect(guide.locator("code")).toHaveText("@ 100");
+  expect(
+    await workspace.evaluate((previous) => {
+      const api = (window as any).appStores.dockApi.get();
+      return {
+        sameApi: api === previous.api,
+        sameLayout: JSON.stringify(api.toJSON()) === previous.layout,
+        sameShell:
+          document.querySelector(".nf-app-viewport") === previous.shell,
+        sameGuide:
+          document.querySelector('[data-testid="welcome-guide"]') ===
+          previous.guide,
+      };
+    }),
+  ).toEqual({
+    sameApi: true,
+    sameLayout: true,
+    sameShell: true,
+    sameGuide: true,
+  });
   await page.screenshot({ path: testInfo.outputPath("guide-after-hmr.png") });
+  await guide.getByRole("button", { name: "Exit welcome guide" }).click();
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await expect(
+    guide.getByRole("button", { name: /Updated lesson title/ }),
+  ).toBeVisible();
 });
 
 /** Requires both sample panels and skips setup when those panels are already open. */
