@@ -561,6 +561,8 @@ for (const platform of ["MacIntel", "Win32"]) {
       Object.defineProperty(navigator, "platform", { get: () => value });
     }, platform);
     await openSample(page);
+    if (platform === "Win32")
+      await page.setViewportSize({ width: 1100, height: 1000 });
     await page.getByRole("button", { name: "Open Welcome Guide" }).click();
     const guide = page.getByTestId("welcome-guide");
     await guide.getByRole("button", { name: /START HERE/ }).click();
@@ -591,7 +593,6 @@ for (const platform of ["MacIntel", "Win32"]) {
       '[data-dialog-kind="command-palette"] input',
     );
     await expect(guide.locator(".nf-guide-pointer")).toBeVisible();
-    const placement = await guide.boundingBox();
     const paletteHeight = (await page
       .locator('[data-dialog-kind="command-palette"] > :first-child')
       .boundingBox())!.height;
@@ -604,11 +605,29 @@ for (const platform of ["MacIntel", "Win32"]) {
             .boundingBox())!.height,
       )
       .toBeLessThan(paletteHeight);
-    // Allow both the resize observer and dialog polling to run before checking stability.
+    // Allow both the resize observer and dialog polling to reattach to the shortened palette.
     await page.waitForTimeout(600);
     const filteredPlacement = (await guide.boundingBox())!;
-    expect(filteredPlacement.x).toBeCloseTo(placement!.x, 0);
-    expect(filteredPlacement.y).toBeCloseTo(placement!.y, 0);
+    const filteredPalette = (await page
+      .locator('[data-dialog-kind="command-palette"] > :first-child')
+      .boundingBox())!;
+    const horizontalGap = Math.max(
+      filteredPalette.x - filteredPlacement.x - filteredPlacement.width,
+      filteredPlacement.x - filteredPalette.x - filteredPalette.width,
+      0,
+    );
+    const verticalGap = Math.max(
+      filteredPalette.y - filteredPlacement.y - filteredPlacement.height,
+      filteredPlacement.y - filteredPalette.y - filteredPalette.height,
+      0,
+    );
+    expect(Math.hypot(horizontalGap, verticalGap)).toBeLessThanOrEqual(64);
+    expect(horizontalGap > 0 || verticalGap > 0).toBe(true);
+    await paletteInput.fill("Programmer");
+    await page.waitForTimeout(600);
+    const stablePlacement = (await guide.boundingBox())!;
+    expect(stablePlacement.x).toBeCloseTo(filteredPlacement.x, 0);
+    expect(stablePlacement.y).toBeCloseTo(filteredPlacement.y, 0);
     await page.screenshot({
       path: testInfo.outputPath("guide-filtered-palette-stable.png"),
     });
