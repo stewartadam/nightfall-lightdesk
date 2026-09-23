@@ -532,6 +532,28 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
         ([clip]) => clip.identifiers.id === 1,
       )[0].identifiers.uid,
   );
+  const clipCard = page.locator(`[data-crud-select-id="${clipUid}"]`);
+  await expect
+    .poll(async () => {
+      const card = await clipCard.boundingBox();
+      if (!card) return false;
+      return page.locator(".nf-guide-highlight").evaluateAll(
+        (highlights, rect) =>
+          highlights.some((highlight) => {
+            const bounds = highlight.getBoundingClientRect();
+            return (
+              Math.abs(bounds.left - (rect.x - 4)) < 1 &&
+              Math.abs(bounds.top - (rect.y - 4)) < 1 &&
+              Math.abs(bounds.width - (rect.width + 8)) < 1
+            );
+          }),
+        card,
+      );
+    })
+    .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("guide-clip-source-highlight.png"),
+  });
   await page
     .locator(`[data-crud-select-id="${clipUid}"]`)
     .dragTo(page.locator('[data-clip-dropzone-index="6"]'));
