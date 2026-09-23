@@ -45,9 +45,9 @@ export const GUIDE_LESSONS: GuideLesson[] = [
   {
     id: "basics",
     title: "Welcome to Nightfall",
-    duration: "3–5 min",
+    duration: "5–7 min",
     introduction:
-      "Explore the Visualizer, play the sample timeline and clips, and find their properties.",
+      "Explore playback and properties, find your way around, and personalize Nightfall.",
     steps: [
       {
         id: "visualizer",
@@ -200,6 +200,87 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             type: "action",
             body: "Click the Timeline 1: Lo-fi tab to focus it. Watch Properties switch from clip settings to timeline settings, then continue.",
+          },
+        ],
+      },
+      {
+        id: "command-input",
+        title: "A shortcut for lighting instructions",
+        target: "#header-cmdline",
+        focusTarget: true,
+        content: [
+          {
+            type: "text",
+            text: "The command input lets you select fixtures, set values, and control playback by typing. It is separate from the Command Palette, which finds panels and app actions.",
+          },
+          {
+            type: "action",
+            body: "Find the command input at the top left. You’ll use it in Your first lights; leave it empty for now and continue.",
+          },
+        ],
+      },
+      {
+        id: "layouts",
+        title: "Arrange your workspace",
+        target: '[aria-label="Layout switcher"]',
+        content: [
+          {
+            type: "text",
+            text: "Layouts save arrangements of panels, so you can keep different workspaces for programming and playback. The layout switcher shows your current layout and lets you choose another.",
+          },
+          {
+            type: "action",
+            body: "Find the layout switcher in the top toolbar. Keep the current layout for this introduction, then continue.",
+          },
+        ],
+      },
+      {
+        id: "command-palette",
+        title: "Find panels and app actions",
+        target:
+          '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
+        observe: { type: "command-palette" },
+        content: [
+          {
+            type: "text",
+            text: "The Command Palette searches for panels and app actions. You can open it from any workspace.",
+          },
+          {
+            type: "action",
+            body: "Click Search or press {command-palette-shortcut} to open the Command Palette.",
+          },
+        ],
+      },
+      {
+        id: "open-settings",
+        title: "Open Settings",
+        target:
+          '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
+        observe: { type: "settings" },
+        content: [
+          {
+            type: "text",
+            text: "Settings includes appearance preferences and application behavior. Let’s personalize the accent color.",
+          },
+          {
+            type: "action",
+            body: "Search for Open Settings in the Command Palette, then press Enter.",
+          },
+        ],
+      },
+      {
+        id: "accent",
+        title: "Choose your accent color",
+        target:
+          '[aria-label="Settings"] .nf-accent-picker, [aria-label="Settings"]:not(:has(.nf-accent-picker)) [role="tab"][id$="-appearance"]',
+        content: [
+          {
+            type: "text",
+            text: "Appearance settings change how Nightfall looks. The accent color marks active controls and highlights throughout the app.",
+          },
+          {
+            type: "action",
+            body: "Select Appearance in Settings, then choose an accent swatch. Try a few colors and keep your favorite. Close Settings when you’re happy, then continue.",
           },
         ],
       },
