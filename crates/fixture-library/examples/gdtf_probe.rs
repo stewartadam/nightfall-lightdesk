@@ -22,6 +22,7 @@ use nightfall_fixture_library::gdtf_bindings::bind_selectors;
 use nightfall_fixture_library::gdtf_functions::resolve_functions;
 use nightfall_fixture_library::gdtf_physical::compile_physical;
 use nightfall_fixture_library::gdtf_profiles::compile_profiles;
+use nightfall_fixture_library::gdtf_relations::resolve_relations;
 use nightfall_fixture_library::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
 use nightfall_fixture_library::gdtf_sets::resolve_sets;
 use nightfall_fixture_library::gdtf_wire::resolve_wires;
@@ -112,6 +113,21 @@ fn main() {
                             json!({"stage": "functions", "status": "passed", "mode": mode,
                         "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "channels": functions}),
                         );
+                        let started = Instant::now();
+                        match resolve_relations(&resolved, &functions, 1_000_000) {
+                            Ok(relations) => emit(
+                                json!({"stage": "relations", "status": "passed", "mode": mode,
+                                "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "relations": relations}),
+                            ),
+                            Err(error) => {
+                                failed = true;
+                                emit(
+                                    json!({"stage": "relations", "status": "failed", "mode": mode,
+                                    "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                                    "error": error.to_string(), "diagnostic": error}),
+                                );
+                            }
+                        }
                         let started = Instant::now();
                         let physical = compile_profiles(profile_sources, 100_000)
                             .and_then(|profiles| {
@@ -242,6 +258,10 @@ fn main() {
                             "error": "Function normalization failed; physical mapping unavailable"}),
                         );
                         emit(
+                            json!({"stage": "relations", "status": "failed", "mode": mode,
+                            "error": "Function normalization failed; relation binding unavailable"}),
+                        );
+                        emit(
                             json!({"stage": "activation", "status": "failed", "mode": mode,
                             "error": "Function normalization failed; activation unavailable"}),
                         );
@@ -270,6 +290,10 @@ fn main() {
                 emit(
                     json!({"stage": "physical", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; physical mapping unavailable"}),
+                );
+                emit(
+                    json!({"stage": "relations", "status": "failed", "mode": mode,
+                    "error": "Geometry resolution failed; relation binding unavailable"}),
                 );
                 emit(
                     json!({"stage": "activation", "status": "failed", "mode": mode,

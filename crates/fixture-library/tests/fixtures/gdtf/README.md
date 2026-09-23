@@ -81,6 +81,14 @@ only one instance remains an unambiguous target. Ambiguous repeated targets fail
 instead of selecting the first instance. Synthetic tests cover local, shared,
 and nested repeated assemblies.
 
+The `relations` stage binds each declared follower function instance to its local
+or shared master using those same reference scopes. Multiply and Override remain
+distinct, as do physical and virtual channels. Repeated identical edges and
+ambiguous links are diagnosed, and expansion has an explicit relation budget.
+Synthetic tests check local pixels, shared controls and invalid links. This stage
+does not yet evaluate relations, validate dependency cycles, or decide which
+virtual operations are baked into DMX versus simulated alongside physical masters.
+
 The `sets` stage normalizes channel-set boundaries at the channel's full raw
 precision and rejects non-increasing or out-of-function ranges. It retains
 labels, explicit physical overrides, parent endpoints, and zero-based wheel

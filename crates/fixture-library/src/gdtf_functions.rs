@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 
 use gdtf::dmx_mode::{ChannelFunction, DmxChannel, DmxMode, ModeMasterNode};
-use gdtf::values::DmxValue;
+use gdtf::values::{DmxValue, Node};
 use serde::Serialize;
 
 use crate::gdtf_resolver::{ResolveError, ResolvedMode};
@@ -156,18 +156,26 @@ fn channel_bytes(channel: &DmxChannel, path: &str) -> Result<u8, ResolveError> {
     Ok(bytes as u8)
 }
 
-/// Resolve selector source links safely and normalize conditions using the master's byte width.
-fn condition(
-    source: &ModeMasterNode,
+/// Authored control identity shared by selector and relation link resolution.
+pub(crate) struct SourceLink {
+    /// Index into the authored mode channel list.
+    pub channel: usize,
+    /// Optional authored logical-channel and function indices.
+    pub function: Option<(usize, usize)>,
+}
+
+/// Resolve exact source channel/function names without depending on parser convenience methods.
+pub(crate) fn resolve_source_link(
+    node: &Node,
     mode: &DmxMode,
     path: &str,
-) -> Result<FunctionCondition, ResolveError> {
-    let parts = source.node.as_ref();
+) -> Result<SourceLink, ResolveError> {
+    let parts = node.as_ref();
     if parts.len() != 1 && parts.len() != 3 {
         return Err(error(
-            "invalid_mode_master",
+            "invalid_source_link",
             path,
-            "ModeMaster must reference a channel or a channel function",
+            "Link must reference a channel or a channel function",
         ));
     }
     let matches: Vec<_> = mode
@@ -186,9 +194,9 @@ fn condition(
         .collect();
     let [(source_channel, master)] = matches.as_slice() else {
         return Err(error(
-            "invalid_mode_master",
+            "invalid_source_link",
             path,
-            "ModeMaster channel is missing or ambiguous",
+            "Source channel is missing or ambiguous",
         ));
     };
     let source_function = if parts.len() == 3 {
@@ -211,24 +219,40 @@ fn condition(
             [indices] => Some(*indices),
             _ => {
                 return Err(error(
-                    "invalid_mode_master",
+                    "invalid_source_link",
                     path,
-                    "ModeMaster function is missing or ambiguous",
+                    "Source function is missing or ambiguous",
                 ));
             }
         }
     } else {
         None
     };
-    let bytes = channel_bytes(master, path)?;
+    Ok(SourceLink {
+        channel: *source_channel,
+        function: source_function,
+    })
+}
+
+/// Normalize a selector's interval in its resolved master's byte width.
+fn condition(
+    source: &ModeMasterNode,
+    mode: &DmxMode,
+    path: &str,
+) -> Result<FunctionCondition, ResolveError> {
+    let link = resolve_source_link(&source.node, mode, path).map_err(|mut error| {
+        error.code = "invalid_mode_master";
+        error
+    })?;
+    let bytes = channel_bytes(&mode.dmx_channels[link.channel], path)?;
     let raw_from = value_at(source.from, bytes, path)?;
     let raw_to = value_at(source.to, bytes, path)?;
     if raw_from > raw_to {
         return Err(error("invalid_mode_range", path, "ModeFrom exceeds ModeTo"));
     }
     Ok(FunctionCondition {
-        source_channel: *source_channel,
-        source_function,
+        source_channel: link.channel,
+        source_function: link.function,
         raw_from,
         raw_to,
     })

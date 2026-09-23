@@ -44,6 +44,48 @@ fn error(code: &'static str, path: &str, message: &str) -> ResolveError {
 }
 
 /// Resolve local masters in the same reference scope, or a shared enclosing scope.
+pub(crate) fn bind_channel_instance(
+    mode: &ResolvedMode<'_>,
+    context: usize,
+    candidates: &[usize],
+    path: &str,
+) -> Result<usize, ResolveError> {
+    if let [single] = candidates {
+        return Ok(*single);
+    }
+    let scope = mode.channel_scope(&mode.channels[context]);
+    let mut best = None;
+    let mut ambiguous = false;
+    for &candidate in candidates {
+        let target_scope = mode.channel_scope(&mode.channels[candidate]);
+        if target_scope.len() > scope.len()
+            || !target_scope
+                .iter()
+                .zip(scope)
+                .all(|(a, b)| std::ptr::eq(*a, *b))
+        {
+            continue;
+        }
+        match best {
+            Some((depth, _)) if depth > target_scope.len() => {}
+            Some((depth, _)) if depth == target_scope.len() => ambiguous = true,
+            _ => {
+                best = Some((target_scope.len(), candidate));
+                ambiguous = false;
+            }
+        }
+    }
+    match best {
+        Some((_, target)) if !ambiguous => Ok(target),
+        _ => Err(error(
+            "ambiguous_selector_instance",
+            path,
+            "Link does not identify one master in this part's reference scope",
+        )),
+    }
+}
+
+/// Bind each function's selector to the corresponding local or shared channel instance.
 pub fn bind_selectors(
     mode: &ResolvedMode<'_>,
     functions: &[ChannelFunctions<'_>],
@@ -66,7 +108,6 @@ pub fn bind_selectors(
     }
     let mut channels = Vec::with_capacity(functions.len());
     for (index, channel) in functions.iter().enumerate() {
-        let scope = mode.channel_scope(&mode.channels[index]);
         let mut bindings = Vec::with_capacity(channel.functions.len());
         for function in &channel.functions {
             let Some(condition) = &function.condition else {
@@ -80,41 +121,7 @@ pub fn bind_selectors(
                     "Selector source channel is outside this mode",
                 )
             })?;
-            let target = if let [single] = candidates.as_slice() {
-                *single
-            } else {
-                let mut best = None;
-                let mut ambiguous = false;
-                for &candidate in candidates {
-                    let target_scope = mode.channel_scope(&mode.channels[candidate]);
-                    if target_scope.len() > scope.len()
-                        || !target_scope
-                            .iter()
-                            .zip(scope)
-                            .all(|(a, b)| std::ptr::eq(*a, *b))
-                    {
-                        continue;
-                    }
-                    match best {
-                        Some((depth, _)) if depth > target_scope.len() => {}
-                        Some((depth, _)) if depth == target_scope.len() => ambiguous = true,
-                        _ => {
-                            best = Some((target_scope.len(), candidate));
-                            ambiguous = false;
-                        }
-                    }
-                }
-                match best {
-                    Some((_, target)) if !ambiguous => target,
-                    _ => {
-                        return Err(error(
-                            "ambiguous_selector_instance",
-                            &function.id,
-                            "Selector does not identify one master in this part's reference scope",
-                        ));
-                    }
-                }
-            };
+            let target = bind_channel_instance(mode, index, candidates, &function.id)?;
             let target_function = condition
                 .source_function
                 .map(|(logical, authored)| {
