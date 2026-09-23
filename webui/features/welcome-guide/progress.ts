@@ -34,6 +34,8 @@ export type GuideObservation =
     }
   | { type: "color"; color: "Red" | "Blue" }
   | { type: "cue"; sequenceId: number; id: number }
+  | { type: "cue-manual"; sequenceId: number; id: number }
+  | { type: "clip-sequence"; clipId: number; sequenceId: number }
   | { type: "assigned"; clipId: number; control: number }
   | { type: "clip-playing" | "clip-stopped"; clipId: number }
   | { type: "cue-playing"; clipId: number; position: number };
@@ -147,6 +149,7 @@ export function guideCompletionToken(
       )
         ? observation.color
         : "";
+    case "cue-manual":
     case "cue": {
       const sequence = Object.values(state.sequences).find(
         (entry) => entry.identifiers.id === observation.sequenceId,
@@ -154,8 +157,24 @@ export function guideCompletionToken(
       const cue = sequence?.steps
         .map((uid) => state.cues[uid])
         .find((entry) => entry?.identifiers.id === observation.id);
+      if (observation.type === "cue-manual")
+        return cue?.trigger.type === "Manual" ? "manual" : "";
       return cue && cue.instructions.length > 0
         ? JSON.stringify(cue.instructions)
+        : "";
+    }
+    case "clip-sequence": {
+      const sequence = Object.values(state.sequences).find(
+        (entry) => entry.identifiers.id === observation.sequenceId,
+      );
+      return sequence &&
+        Object.values(state.clips).some(
+          ([clip]) =>
+            clip.identifiers.id === observation.clipId &&
+            clip.source?.type === "Sequence" &&
+            clip.source.data === sequence.identifiers.uid,
+        )
+        ? "linked"
         : "";
     }
     case "clear":

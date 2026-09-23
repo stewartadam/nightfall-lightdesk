@@ -233,13 +233,13 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         target: '[aria-label="Store cue"]',
         observe: {
           type: "cue",
-          sequenceId: 1,
+          sequenceId: 50,
           id: 1,
         },
         content: [
           {
             type: "text",
-            text: "Sequence 1 contains four cues and is played by clip 1: RGB cycle (full). We’ll replace its first two looks.",
+            text: "Let’s build a sequence of our own. Sequence 50 is unused in the sample, so its cues will contain only the four strips we selected.",
           },
           {
             type: "prerequisite",
@@ -247,8 +247,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            title: "Overwrite cue 1.1",
-            body: "In Programmer, choose Store cue. Select cue 1.1 (Sequence 1, Cue 1) and confirm.",
+            title: "Store cue 50.1",
+            body: "In Programmer, choose Store cue. Enter Sequence ID 50, Cue ID 1, and Label Red, then confirm. This creates sequence 50.",
           },
         ],
       },
@@ -283,13 +283,13 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         target: '[aria-label="Store cue"]',
         observe: {
           type: "cue",
-          sequenceId: 1,
+          sequenceId: 50,
           id: 2,
         },
         content: [
           {
             type: "text",
-            text: "The sample cues use Manual triggers, so Go advances them.",
+            text: "Keep the same four fixtures selected. Our second cue stores their blue look in the same sequence; Go will advance between the two cues.",
           },
           {
             type: "prerequisite",
@@ -297,8 +297,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            title: "Overwrite cue 1.2",
-            body: "Choose Store cue again. Select cue 1.2 (Sequence 1, Cue 2) and confirm.",
+            title: "Store cue 50.2",
+            body: "Choose Store cue again. Enter Sequence ID 50, Cue ID 2, and Label Blue, then confirm.",
           },
         ],
       },
@@ -331,19 +331,60 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         ],
       },
       {
+        id: "manual-blue",
+        title: "Let Go advance to Blue",
+        observe: { type: "cue-manual", sequenceId: 50, id: 2 },
+        content: [
+          {
+            type: "text",
+            text: "New cues follow the previous cue automatically. Set Blue to wait for you instead.",
+          },
+          { type: "prerequisite", panels: ["SequenceList"] },
+          {
+            type: "action",
+            title: "Set cue 50.2 to Manual",
+            body: "Open sequence 50 from Sequences. In the Blue cue’s row, double-click the Trigger cell and choose Manual.",
+          },
+        ],
+      },
+      {
+        id: "create-clip",
+        title: "Create your playback clip",
+        target: '[aria-label="Add clip"]',
+        observe: { type: "clip-sequence", clipId: 50, sequenceId: 50 },
+        content: [
+          {
+            type: "text",
+            text: "A clip connects a stored sequence to playback controls. We’ll give our two-cue sequence its own clip.",
+          },
+          { type: "prerequisite", panels: ["ClipList"] },
+          {
+            type: "action",
+            title: "Create clip 50: First Lights",
+            body: "In Clips, click Add clip. Set ID to 50 and Label to First Lights, then click Create.",
+          },
+          {
+            type: "action",
+            title: "Link it to your sequence:",
+            body: "Type this command and press Enter to make First Lights play sequence 50.",
+            command: "set clip 50 target=sequence 50",
+          },
+        ],
+      },
+      {
         id: "assign",
-        title: "Put RGB cycle (full) on control 6",
+        title: "Put First Lights on control 6",
         target: '[data-clip-dropzone-index="6"]',
-        highlightClipId: 1,
+        highlightClipId: 50,
         observe: {
           type: "assigned",
-          clipId: 1,
+          clipId: 50,
           control: 6,
         },
         content: [
           {
             type: "text",
-            text: "Clip 1 starts playback of sequence 1. A control slot gives it a fader and a Go button.",
+            text: "Clip 50 starts playback of your new sequence. A control slot gives it a fader and a Go button.",
           },
           {
             type: "prerequisite",
@@ -351,18 +392,18 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            title: "Drop RGB cycle (full) on control 6.",
-            body: "Drag clip 1: RGB cycle (full) onto control 6’s Drop target. You might need to scroll right, depending on your screen size.",
+            title: "Drop First Lights on control 6.",
+            body: "Drag clip 50: First Lights onto control 6’s Drop target. You might need to scroll right, depending on your screen size.",
           },
         ],
       },
       {
         id: "go",
-        title: "Start RGB cycle (full)",
+        title: "Start First Lights",
         target: '[data-control-go-index="6"]:not(:disabled)',
         observe: {
           type: "clip-playing",
-          clipId: 1,
+          clipId: 50,
         },
         content: [
           {
@@ -385,7 +426,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         target: '[data-control-go-index="6"]:not(:disabled)',
         observe: {
           type: "cue-playing",
-          clipId: 1,
+          clipId: 50,
           position: 2,
         },
         content: [
@@ -422,7 +463,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         target: "#header-cmdline",
         observe: {
           type: "clip-stopped",
-          clipId: 1,
+          clipId: 50,
         },
         content: [
           {
@@ -432,8 +473,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             type: "action",
             title: "Type this command, then press Enter:",
-            body: "Enter clip 1 stop, or right-click RGB cycle (full) and choose Stop Clip.",
-            command: "clip 1 stop",
+            body: "Enter clip 50 stop, or right-click First Lights and choose Stop Clip.",
+            command: "clip 50 stop",
           },
         ],
       },

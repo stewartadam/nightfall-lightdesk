@@ -398,7 +398,7 @@ test("guide accepts stored cue identity without its suggested label", async ({
     .click();
   await page.getByRole("button", { name: "Store cue", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Store Cue" });
-  await dialog.getByLabel("Sequence ID", { exact: true }).fill("1");
+  await dialog.getByLabel("Sequence ID", { exact: true }).fill("50");
   await dialog.getByLabel("Cue ID", { exact: true }).fill("1");
   await dialog.getByLabel("Label", { exact: true }).fill("My red look");
   await dialog.getByRole("button", { name: "Store Cue", exact: true }).click();
@@ -989,7 +989,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Store cue", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Store Cue" });
-  await dialog.getByLabel("Sequence ID", { exact: true }).fill("1");
+  await dialog.getByLabel("Sequence ID", { exact: true }).fill("50");
   await dialog.getByLabel("Cue ID", { exact: true }).fill("1");
   await dialog.getByLabel("Label", { exact: true }).fill("Guide Red");
   await dialog.getByRole("button", { name: "Store Cue", exact: true }).click();
@@ -1026,26 +1026,155 @@ test("welcome guide teaches live selection and cue storage without blocking the 
     .first()
     .click();
   await expect(
-    guide.getByRole("heading", { name: "Put RGB cycle (full) on control 6" }),
+    guide.getByRole("heading", { name: "Let Go advance to Blue" }),
+  ).toBeVisible();
+  await guide
+    .getByRole("button", { name: "Open Sequences", exact: true })
+    .click();
+  const sequenceUid = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.sequences.get()) as any[]).find(
+        (s) => s.identifiers.id === 50,
+      ).identifiers.uid,
+  );
+  await page.locator(`[data-crud-select-id="${sequenceUid}"]`).dblclick();
+  const cueUid = await page.evaluate(
+    (uid) => (window as any).appStores.sequences.get()[uid].steps[1],
+    sequenceUid,
+  );
+  await page
+    .locator(
+      `[data-grid-column-key="trigger"][data-grid-row-key="${cueUid}:cue"]`,
+    )
+    .dblclick();
+  await page
+    .locator("[data-hs-select-dropdown].opened")
+    .getByText("Manual", { exact: true })
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Create your playback clip" }),
   ).toBeVisible();
 });
 
-/** Keeps the lesson visible while assigning a clip, starting it, and changing its fader. */
-test("clip lesson permits drag assignment, Go and fader playback", async ({
+/** Builds both looks and a dedicated clip without modifying the sample sequence. */
+test("first lights builds its own Red and Blue sequence", async ({
   page,
 }, testInfo) => {
   await openSample(page);
+  const original = await page.evaluate(() =>
+    JSON.stringify(
+      (Object.values((window as any).appStores.sequences.get()) as any[]).find(
+        (s) => s.identifiers.id === 1,
+      ),
+    ),
+  );
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
   await guide.getByRole("button", { name: /START HERE/ }).click();
-  await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
-    0,
-  );
+  await reachStep(page, "Store the red cue");
+  await guide
+    .getByRole("button", { name: "Open Programmer", exact: true })
+    .click();
+  const input = page.locator("#header-cmdline");
+  for (const command of [
+    "fix 310>313",
+    "@ 100",
+    "red @ 100 green @ 0 blue @ 0",
+  ]) {
+    await input.fill(command);
+    await input.press("Enter");
+  }
+  for (const [id, label] of [
+    ["1", "Red"],
+    ["2", "Blue"],
+  ]) {
+    if (id === "2") {
+      await expect(
+        guide.getByRole("heading", { name: "Make a blue look" }),
+      ).toBeVisible();
+      await input.fill("red @ 0 green @ 0 blue @ 100");
+      await input.press("Enter");
+      await expect(
+        guide.getByRole("heading", { name: "Store the blue cue" }),
+      ).toBeVisible();
+    }
+    await page.getByRole("button", { name: "Store cue", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Store Cue" });
+    await dialog.getByLabel("Sequence ID", { exact: true }).fill("50");
+    await dialog.getByLabel("Cue ID", { exact: true }).fill(id);
+    await dialog.getByLabel("Label", { exact: true }).fill(label);
+    await dialog
+      .getByRole("button", { name: "Store Cue", exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+  }
   await expect(
-    guide.getByRole("button", { name: "Back", exact: true }),
-  ).toBeDisabled();
-  await reachStep(page, "Put RGB cycle (full) on control 6");
+    guide.getByRole("heading", { name: "Clear the Programmer" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Clear programmer", exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("button", { name: "Clear programmer", exact: true })
+    .first()
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Let Go advance to Blue" }),
+  ).toBeVisible();
+  await guide
+    .getByRole("button", { name: "Open Sequences", exact: true })
+    .click();
+  const sequenceUid = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.sequences.get()) as any[]).find(
+        (s) => s.identifiers.id === 50,
+      ).identifiers.uid,
+  );
+  await page.locator(`[data-crud-select-id="${sequenceUid}"]`).dblclick();
+  const cueUid = await page.evaluate(
+    (uid) => (window as any).appStores.sequences.get()[uid].steps[1],
+    sequenceUid,
+  );
+  await page
+    .locator(
+      `[data-grid-column-key="trigger"][data-grid-row-key="${cueUid}:cue"]`,
+    )
+    .dblclick();
+  await page
+    .locator("[data-hs-select-dropdown].opened")
+    .getByText("Manual", { exact: true })
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Create your playback clip" }),
+  ).toBeVisible();
   await guide.getByRole("button", { name: "Open Clips", exact: true }).click();
+  await page.getByRole("button", { name: "Add clip", exact: true }).click();
+  const create = page.getByRole("dialog", { name: "Create clip" });
+  await create.getByLabel("ID", { exact: true }).fill("50");
+  await create.getByLabel("Label", { exact: true }).fill("First Lights");
+  await create.getByRole("button", { name: "Create", exact: true }).click();
+  await input.fill("set clip 50 target=sequence 50");
+  await input.press("Enter");
+  await expect(
+    guide.getByRole("heading", { name: "Put First Lights on control 6" }),
+  ).toBeVisible();
+  const state = await page.evaluate(() => {
+    const stores = (window as any).appStores;
+    const sequences = Object.values(stores.sequences.get()) as any[];
+    const sequence = sequences.find((s) => s.identifiers.id === 50);
+    return {
+      original: JSON.stringify(sequences.find((s) => s.identifiers.id === 1)),
+      cues: sequence.steps.map(
+        (uid: string) => stores.cues.get()[uid].identifiers.label,
+      ),
+    };
+  });
+  expect(state.original).toBe(original);
+  expect(state.cues).toEqual(["Red", "Blue"]);
+  await page.screenshot({
+    path: testInfo.outputPath("first-lights-sequence.png"),
+  });
   const expand = page.getByRole("button", {
     name: "Expand controls",
     exact: true,
@@ -1054,7 +1183,7 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
   const clipUid = await page.evaluate(
     () =>
       (Object.values((window as any).appStores.clips.get()) as any[]).find(
-        ([clip]) => clip.identifiers.id === 1,
+        ([clip]) => clip.identifiers.id === 50,
       )[0].identifiers.uid,
   );
   const clipCard = page.locator(`[data-crud-select-id="${clipUid}"]`);
@@ -1084,7 +1213,7 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
     .dragTo(page.locator('[data-clip-dropzone-index="6"]'));
   await expect(page.locator('[data-control-go-index="6"]')).toBeEnabled();
   await expect(
-    guide.getByRole("heading", { name: "Start RGB cycle (full)" }),
+    guide.getByRole("heading", { name: "Start First Lights" }),
   ).toBeVisible();
   const goTarget = page.locator('[data-control-go-index="6"]');
   const scrollChange = await goTarget.evaluate((element) => {
@@ -1163,7 +1292,7 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
     exact: true,
   });
   await guide.getByRole("button", { name: "Continue", exact: true }).click();
-  await command.fill("clip 1 stop");
+  await command.fill("clip 50 stop");
   await command.press("Enter");
   await expect
     .poll(() =>
