@@ -42,7 +42,7 @@ export function useGuideProgress(
   advance: () => void,
 ): void {
   const { isOpen: commandPaletteOpen } = useCommandPalette();
-  const { isSettingsOpen } = useAppShell();
+  const { isSettingsOpen, isShortcutsPopupVisible } = useAppShell();
   const fixtureMap = useStore(fixtures);
   const selection = useStore(programmerSelection);
   const programmer = useStore(programmerState);
@@ -75,6 +75,11 @@ export function useGuideProgress(
     const added = api?.onDidAddPanel(updateOpenPanels);
     const removed = api?.onDidRemovePanel(updateOpenPanels);
     const layout = api?.onDidLayoutChange(updateOpenPanels);
+    const collapsed = api?.onDidTabGroupCollapsedChange(updateOpenPanels);
+    const edges = ["left", "right", "top", "bottom"] as const;
+    const edgeSubscriptions = edges.map((edge) =>
+      api?.getEdgeGroup(edge)?.onDidCollapsedChange(updateOpenPanels),
+    );
     setPanel(api?.activePanel?.api.component);
     const subscription = api?.onDidActivePanelChange(() =>
       setPanel(api.activePanel?.api.component),
@@ -84,6 +89,8 @@ export function useGuideProgress(
       added?.dispose();
       removed?.dispose();
       layout?.dispose();
+      collapsed?.dispose();
+      for (const subscription of edgeSubscriptions) subscription?.dispose();
     });
   });
 
@@ -91,11 +98,27 @@ export function useGuideProgress(
   createEffect(() => {
     const target = observation();
     if (!target) return;
+    const [accentPicked, setAccentPicked] = createSignal(false);
+    /** Counts a deliberate swatch choice, including reselecting the current color. */
+    const pickAccent = (event: MouseEvent) => {
+      if (
+        isSettingsOpen() &&
+        event.target instanceof Element &&
+        event.target.closest('[aria-label="Settings"] .nf-accent-picker button')
+      )
+        setAccentPicked(true);
+    };
+    if (target.type === "accent-settings-closed") {
+      document.addEventListener("click", pickAccent, true);
+      onCleanup(() => document.removeEventListener("click", pickAccent, true));
+    }
     /** Reads a pure completion token from the current acknowledged application snapshot. */
     const token = () =>
       guideCompletionToken(target, {
         commandPaletteOpen: commandPaletteOpen(),
         settingsOpen: isSettingsOpen(),
+        shortcutsOpen: isShortcutsPopupVisible(),
+        accentPicked: accentPicked(),
         panel: panel(),
         openPanels: openPanels(),
         fixtures: fixtureMap(),
@@ -110,7 +133,9 @@ export function useGuideProgress(
         timecodes: clocks(),
       });
     let previous =
-      target.type === "sample-panels" || target.type === "sequence-editor"
+      target.type === "sample-panels" ||
+      target.type === "sequence-editor" ||
+      target.type === "panel-hidden"
         ? ""
         : untrack(token);
     let pending: ReturnType<typeof setTimeout> | undefined;

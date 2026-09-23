@@ -270,6 +270,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "accent",
+        observe: { type: "accent-settings-closed" },
         title: "Choose your accent color",
         target:
           '[aria-label="Settings"] .nf-accent-picker, [aria-label="Settings"]:not(:has(.nf-accent-picker)) [role="tab"][id$="-appearance"]',
@@ -280,7 +281,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Select Appearance in Settings, then choose an accent swatch. Try a few colors and keep your favorite. Close Settings when you’re happy, then continue.",
+            body: "Select Appearance in Settings, then choose an accent swatch. Try a few colors and keep your favorite. Close Settings when you’re happy to move on.",
           },
         ],
       },
@@ -317,6 +318,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "keyboard-shortcuts",
+        observe: { type: "shortcuts-closed" },
         title: "Discover keyboard shortcuts",
         target:
           '[data-dialog-kind="shortcuts"] [aria-label="Keyboard shortcuts"], [data-component="DropdownMenuItem"]:has([data-guide-target="keyboard-shortcuts"]), [aria-label="Menu"]:not([aria-expanded="true"])',
@@ -327,7 +329,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Open Menu at the bottom left, then choose Keyboard Shortcuts. Browse the reference, close it, and continue to finish the introduction.",
+            body: "Open Menu at the bottom left, then choose Keyboard Shortcuts. Browse the reference, then close it to finish the introduction.",
           },
         ],
       },
@@ -638,6 +640,22 @@ export const GUIDE_LESSONS: GuideLesson[] = [
             title: "Command alternative",
             body: "You can also set the same source from the command input.",
             command: "set clip 50 target=sequence 50",
+          },
+        ],
+      },
+      {
+        id: "collapse-properties",
+        title: "Make room for the Visualizer",
+        target: '[role="tab"][aria-label="Properties"]',
+        observe: { type: "panel-hidden", component: "PropertiesInspector" },
+        content: [
+          {
+            type: "text",
+            text: "Your clip is linked to sequence 50. Collapse Properties to reveal more of the Visualizer before trying playback.",
+          },
+          {
+            type: "action",
+            body: "Click the active Properties tab on the right edge to collapse its panel.",
           },
         ],
       },
