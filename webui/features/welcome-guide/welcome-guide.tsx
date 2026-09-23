@@ -8,17 +8,24 @@
 
 import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
+import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommand } from "../../components/providers/command-registry";
 import { Button } from "../../components/ui/visual-language/button";
+import { getLogger } from "../../lib/logger";
 import {
   type PanelComponentName,
   panelDefinitionByName,
 } from "../../lib/panel-definitions";
 import { openOrFocusPanelDefinition } from "../../lib/panel-open-command";
 import { isEmbeddedDemoRuntime } from "../../lib/runtime-config";
-import { clips, runtimeCapabilities, timelines } from "../../state/appStores";
+import {
+  clips,
+  pushToast,
+  runtimeCapabilities,
+  timelines,
+} from "../../state/appStores";
 import { normalizeTimelineUid } from "../timeline/model/timeline-list-model";
 import { GuideTarget } from "./guide-target";
 import { GUIDE_LESSONS } from "./lessons";
@@ -35,6 +42,8 @@ import {
 import { useFloatingGuide } from "./use-floating-guide";
 import { useGuideProgress } from "./use-guide-progress";
 import "./welcome-guide.css";
+
+const log = getLogger(import.meta.url);
 
 /** Offers an unobtrusive first-visit invitation in the browser demo only. */
 export function GuideInvitation() {
@@ -89,6 +98,22 @@ export default function WelcomeGuide() {
   );
   const { draggable } = createDraggable();
   void draggable;
+  /** Copies the current lesson command exactly, without submitting it to the app. */
+  const copyCommand = async () => {
+    const command = step()?.command;
+    if (!command) return;
+    if (!navigator.clipboard?.writeText) {
+      pushToast("error", "Clipboard access unavailable");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(command);
+      pushToast("success", "Copied command");
+    } catch (error) {
+      log.error("Failed to copy guide command", error);
+      pushToast("error", "Could not copy command");
+    }
+  };
   /** Locates the drag source by sample clip identity in either card or list view. */
   const clipHighlightSelector = createMemo(() => {
     const id = step()?.highlightClipId;
@@ -273,9 +298,18 @@ export default function WelcomeGuide() {
                         <strong>{instruction().hint ?? "Try it"}</strong>
                         <p>{instruction().action}</p>
                         <Show when={instruction().command}>
-                          <code class="nf-guide-command">
-                            {instruction().command}
-                          </code>
+                          <div class="nf-guide-command">
+                            <code>{instruction().command}</code>
+                            <Button
+                              size="icon"
+                              variant="subtle"
+                              aria-label="Copy command"
+                              title="Copy command"
+                              onClick={copyCommand}
+                            >
+                              <CopyIcon class="size-4" aria-hidden />
+                            </Button>
+                          </div>
                         </Show>
                       </div>
                       <Show

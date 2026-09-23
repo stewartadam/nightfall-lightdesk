@@ -325,6 +325,13 @@ test("floating lessons provide context, selectable commands and manual placement
   await command.fill("@ 100");
   await command.press("Enter");
   await expect(hint.locator("code")).toHaveText("red @ 100 green @ 0 blue @ 0");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await guide
+    .getByRole("button", { name: "Copy command", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("red @ 100 green @ 0 blue @ 0");
   await expect(hint).toHaveCSS("animation-name", "none");
   await expect(guide.getByRole("button", { name: "All lessons" })).toHaveCount(
     0,
