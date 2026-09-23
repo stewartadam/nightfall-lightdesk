@@ -156,6 +156,50 @@ impl ArchiveSnapshot {
     /// Check indexed ZIP budgets and decoded name collisions, then parse bounded XML with the existing GDTF parser.
     /// The ZIP dependency collapses identical raw names before indexing; rejecting those remains an upstream requirement.
     pub fn parse(self, limits: ArchiveLimits) -> Result<ParsedArchive, ResolveError> {
+        let mut archive = self.open_validated(limits)?;
+        let description_file = archive
+            .by_name("description.xml")
+            .map_err(|err| error("missing_description", &self.sha256, err.to_string()))?;
+        if description_file.size() > limits.description_bytes {
+            return Err(error(
+                "description_size_limit",
+                &self.sha256,
+                "Description exceeds the XML byte budget",
+            ));
+        }
+        let mut xml = String::new();
+        description_file
+            .take(limits.description_bytes.saturating_add(1))
+            .read_to_string(&mut xml)
+            .map_err(|err| error("description_read", &self.sha256, err.to_string()))?;
+        if xml.len() as u64 > limits.description_bytes {
+            return Err(error(
+                "description_size_limit",
+                &self.sha256,
+                "Description exceeds the XML byte budget",
+            ));
+        }
+        let description: gdtf::Description = xml
+            .parse()
+            .map_err(|err| error("description_parse", &self.sha256, format!("{err}")))?;
+        if description.fixture_types.len() != 1 {
+            return Err(error(
+                "ambiguous_fixture_type",
+                &self.sha256,
+                "Archive must describe exactly one fixture type",
+            ));
+        }
+        Ok(ParsedArchive {
+            snapshot: self,
+            description,
+        })
+    }
+
+    /// Validate the shared ZIP index and size budgets without parsing XML for a resource-only request.
+    pub(crate) fn open_validated(
+        &self,
+        limits: ArchiveLimits,
+    ) -> Result<zip::ZipArchive<Cursor<Arc<[u8]>>>, ResolveError> {
         if self.bytes.len() as u64 > limits.archive_bytes {
             return Err(error(
                 "archive_size_limit",
@@ -203,42 +247,7 @@ impl ArchiveSnapshot {
                     )
                 })?;
         }
-        let description_file = archive
-            .by_name("description.xml")
-            .map_err(|err| error("missing_description", &self.sha256, err.to_string()))?;
-        if description_file.size() > limits.description_bytes {
-            return Err(error(
-                "description_size_limit",
-                &self.sha256,
-                "Description exceeds the XML byte budget",
-            ));
-        }
-        let mut xml = String::new();
-        description_file
-            .take(limits.description_bytes.saturating_add(1))
-            .read_to_string(&mut xml)
-            .map_err(|err| error("description_read", &self.sha256, err.to_string()))?;
-        if xml.len() as u64 > limits.description_bytes {
-            return Err(error(
-                "description_size_limit",
-                &self.sha256,
-                "Description exceeds the XML byte budget",
-            ));
-        }
-        let description: gdtf::Description = xml
-            .parse()
-            .map_err(|err| error("description_parse", &self.sha256, format!("{err}")))?;
-        if description.fixture_types.len() != 1 {
-            return Err(error(
-                "ambiguous_fixture_type",
-                &self.sha256,
-                "Archive must describe exactly one fixture type",
-            ));
-        }
-        Ok(ParsedArchive {
-            snapshot: self,
-            description,
-        })
+        Ok(archive)
     }
 }
 

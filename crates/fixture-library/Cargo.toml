@@ -23,6 +23,7 @@ serde_json.workspace = true
 sha2 = "0.10"
 thiserror.workspace = true
 tracing.workspace = true
+tokio.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
@@ -30,7 +31,6 @@ zip = { version = "8.6", default-features = false, features = ["deflate"] }
 [dev-dependencies]
 async-channel.workspace = true
 tempfile.workspace = true
-tokio.workspace = true
 
 [lints]
 workspace = true

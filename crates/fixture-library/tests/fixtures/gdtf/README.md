@@ -112,6 +112,17 @@ Compiler integration tests exercise this state with the patched nested fixture.
 Compositor ownership, function/relation evaluation and production instance
 creation still need to adopt these shared contracts together.
 
+The live mesh HTTP route now accepts only paths in the current installed/package
+GDTF index. It shares the archive snapshot/index budgets used by compilation,
+bounds actual resource reads, and performs extraction in blocking workers with
+at most two concurrent extractions. Missing/empty GLB permits 3DS fallback;
+corrupt or oversized resources fail explicitly. Mutable path URLs return
+`Cache-Control: no-store`. This does not yet replace them with content-addressed
+resource URLs, pin old resources across library revisions, change the frontend
+mesh cache, or validate external references inside GLB data. Those remain part
+of resource/renderer integration. Route tests cover index refresh/removal,
+unindexed paths, resource naming, limits, corruption, fallback and headers.
+
 Logical parameter values and percentages use double precision; byte assembly
 and encoding retain `u32`. A pipeline regression checks 266 raw values, including
 adjacent values above the single-precision integer limit, through transport

@@ -14,6 +14,9 @@
 use std::io::Read;
 use std::path::Path;
 
+use crate::gdtf_archive::{ArchiveLimits, ArchiveSnapshot};
+use crate::gdtf_resolver::ResolveError;
+
 /// Format of the extracted mesh data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeshFormat {
@@ -45,8 +48,10 @@ pub struct ExtractedMesh {
 /// Error types for mesh extraction.
 #[derive(Debug)]
 pub enum MeshExtractionError {
-    /// Failed to open the GDTF file.
-    FileNotFound(String),
+    /// Resource names must remain a single archive-local model stem.
+    InvalidModelName,
+    /// Shared archive validation rejected a resource request.
+    ArchiveError(ResolveError),
     /// Failed to parse the GDTF file.
     ParseError(String),
     /// Mesh not found in the GDTF archive.
@@ -56,11 +61,13 @@ pub enum MeshExtractionError {
 }
 
 impl std::fmt::Display for MeshExtractionError {
+    /// Describe extraction failures without erasing bounded-archive diagnostic context.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MeshExtractionError::FileNotFound(path) => {
-                write!(f, "GDTF file not found: {}", path)
+            Self::InvalidModelName => {
+                write!(f, "Model name must be a single nonempty resource stem")
             }
+            Self::ArchiveError(error) => write!(f, "{error}"),
             MeshExtractionError::ParseError(msg) => {
                 write!(f, "Failed to parse GDTF file: {}", msg)
             }
@@ -77,6 +84,7 @@ impl std::fmt::Display for MeshExtractionError {
 impl std::error::Error for MeshExtractionError {}
 
 impl From<std::io::Error> for MeshExtractionError {
+    /// Preserve decompression or resource-read failures rather than silently trying another format.
     fn from(e: std::io::Error) -> Self {
         MeshExtractionError::IoError(e)
     }
@@ -98,43 +106,52 @@ pub fn extract_mesh_from_gdtf(
     gdtf_path: &Path,
     model_name: &str,
 ) -> Result<ExtractedMesh, MeshExtractionError> {
-    let file = std::fs::File::open(gdtf_path)
-        .map_err(|_| MeshExtractionError::FileNotFound(gdtf_path.display().to_string()))?;
+    extract_mesh_with_limits(gdtf_path, model_name, ArchiveLimits::default())
+}
 
-    let mut gdtf_file = gdtf::GdtfFile::new(file)
-        .map_err(|e| MeshExtractionError::ParseError(format!("{:?}", e)))?;
-
-    // Try to load GLB format first (preferred)
-    if let Ok(mut resource) = gdtf_file.resources.read_model_mesh(
-        model_name,
-        gdtf::Model3Format::Gltf,
-        gdtf::Model3Detail::Default,
-    ) {
-        let mut data = Vec::with_capacity(resource.size() as usize);
-        if resource.read_to_end(&mut data).is_ok() && !data.is_empty() {
-            return Ok(ExtractedMesh {
-                data,
-                format: MeshFormat::Glb,
-            });
+/// Load an immutable bounded archive snapshot and extract only the requested model resource.
+/// GLB is preferred; missing or empty GLB permits 3DS fallback, but corrupt/oversized data is an error.
+pub fn extract_mesh_with_limits(
+    gdtf_path: &Path,
+    model_name: &str,
+    limits: ArchiveLimits,
+) -> Result<ExtractedMesh, MeshExtractionError> {
+    if model_name.is_empty()
+        || matches!(model_name, "." | "..")
+        || model_name.contains(['/', '\\', '\0'])
+    {
+        return Err(MeshExtractionError::InvalidModelName);
+    }
+    let snapshot = ArchiveSnapshot::read(gdtf_path, limits.archive_bytes)
+        .map_err(MeshExtractionError::ArchiveError)?;
+    let mut archive = snapshot
+        .open_validated(limits)
+        .map_err(MeshExtractionError::ArchiveError)?;
+    for (path, format) in [
+        (format!("models/gltf/{model_name}.glb"), MeshFormat::Glb),
+        (format!("models/3ds/{model_name}.3ds"), MeshFormat::ThreeDs),
+    ] {
+        let resource = match archive.by_name(&path) {
+            Ok(resource) => resource,
+            Err(zip::result::ZipError::FileNotFound) => continue,
+            Err(error) => return Err(MeshExtractionError::ParseError(error.to_string())),
+        };
+        let mut data = Vec::new();
+        resource
+            .take(limits.entry_bytes.saturating_add(1))
+            .read_to_end(&mut data)?;
+        if data.len() as u64 > limits.entry_bytes {
+            return Err(MeshExtractionError::ArchiveError(ResolveError {
+                code: "resource_size_limit",
+                path,
+                message: "Decoded mesh exceeds the resource byte budget".into(),
+            }));
+        }
+        if !data.is_empty() {
+            return Ok(ExtractedMesh { data, format });
         }
     }
-
-    // Try to load 3DS format as fallback
-    if let Ok(mut resource) = gdtf_file.resources.read_model_mesh(
-        model_name,
-        gdtf::Model3Format::Max3ds,
-        gdtf::Model3Detail::Default,
-    ) {
-        let mut data = Vec::with_capacity(resource.size() as usize);
-        if resource.read_to_end(&mut data).is_ok() && !data.is_empty() {
-            return Ok(ExtractedMesh {
-                data,
-                format: MeshFormat::ThreeDs,
-            });
-        }
-    }
-
-    Err(MeshExtractionError::MeshNotFound(model_name.to_string()))
+    Err(MeshExtractionError::MeshNotFound(model_name.into()))
 }
 
 /// Decode a base64url-encoded GDTF path.

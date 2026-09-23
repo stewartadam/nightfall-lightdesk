@@ -21,6 +21,7 @@ use crate::watcher::{FixtureLibraryEvent, FixtureLibraryWatcher};
 pub struct FixtureLibraryPlugin;
 
 impl Plugin for FixtureLibraryPlugin {
+    /// Register library commands, indexed resource serving, watching and runtime geometry lookup.
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering FixtureLibraryPlugin");
         assert!(
@@ -30,6 +31,9 @@ impl Plugin for FixtureLibraryPlugin {
 
         // Initialize the fixture library manager as a resource
         app.init_resource::<FixtureLibraryManager>();
+        let mesh_access =
+            crate::http_routes::MeshAccess::new(app.world().resource::<FixtureLibraryManager>());
+        app.insert_resource(mesh_access.clone());
 
         // Register the fixture library message
         app.add_message::<FixtureLibraryEvent>();
@@ -47,7 +51,7 @@ impl Plugin for FixtureLibraryPlugin {
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>()
             .register(
                 "/api/mesh/{gdtf_path}/{model_name}",
-                axum::routing::get(crate::http_routes::serve_mesh),
+                axum::routing::get(crate::http_routes::serve_mesh).with_state(mesh_access),
             );
 
         // Try to initialize the file watcher (optional - may fail if library path doesn't exist)
@@ -114,10 +118,15 @@ impl nightfall_fixtures::prelude::GeometryProvider for LibraryGeometryProvider {
 }
 
 /// Refreshes fixture geometry lookup when the library or selected showfile package changes.
-fn register_geometry_provider(mut commands: Commands, library: Res<FixtureLibraryManager>) {
+fn register_geometry_provider(
+    mut commands: Commands,
+    library: Res<FixtureLibraryManager>,
+    mesh_access: Res<crate::http_routes::MeshAccess>,
+) {
     if !library.is_changed() {
         return;
     }
+    mesh_access.refresh(&library);
     let library_arc = std::sync::Arc::new(std::sync::RwLock::new(library.clone()));
 
     commands.insert_resource(nightfall_fixtures::prelude::GeometryProviderResource::new(
