@@ -212,7 +212,8 @@ export function createEmitterVolumeMaterial(
     const phase = float(0.35).add(
       pow(max(dot(ray.negate(), forward), 0), 8).mul(1.65),
     );
-    return vec4(integral.mul(phase).mul(0.045), 1);
+    // Display exposure strengthens scattering without changing beam spread or source flux.
+    return vec4(integral.mul(phase).mul(0.045 * 3), 1);
   })();
 
   return {

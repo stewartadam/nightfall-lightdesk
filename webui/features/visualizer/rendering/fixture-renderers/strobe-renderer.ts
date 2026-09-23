@@ -30,6 +30,7 @@ import {
 } from "three/webgpu";
 import type { FixtureElement } from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
+import { EMITTER_RADIANCE } from "../emitter-radiance";
 
 /** Strobe panel dimensions (meters) */
 const STROBE_PANEL_WIDTH = 0.515;
@@ -559,12 +560,8 @@ export function buildRgbStrobeBarFixture(
 }
 
 /** Applies display gain in place without allocating a color for each emitter on every update. */
-function boostColor(baseColor: Color, intensity: number, cap = 1.15): Color {
-  const boosted = baseColor.multiplyScalar(intensity * 2.0);
-  boosted.r = Math.min(boosted.r, cap);
-  boosted.g = Math.min(boosted.g, cap);
-  boosted.b = Math.min(boosted.b, cap);
-  return boosted;
+function boostColor(baseColor: Color, intensity: number): Color {
+  return baseColor.multiplyScalar(intensity * EMITTER_RADIANCE);
 }
 
 /** Resolves independent RGB cell output into its persistent linear material color. */

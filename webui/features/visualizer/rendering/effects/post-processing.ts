@@ -27,9 +27,9 @@ import { ShadowRefreshBudget } from "./shadow-refresh-budget";
 
 /** Post-processing configuration */
 export interface PostProcessingConfig {
-  /** Bloom strength (default: 0.4) */
+  /** Bloom strength (default: 0.8) */
   bloomStrength: number;
-  /** Bloom radius (default: 0.3) */
+  /** Bloom radius (default: 0.85) */
   bloomRadius: number;
   /** Bloom threshold (default: 0.8) */
   bloomThreshold: number;
@@ -76,8 +76,8 @@ export interface PostProcessingConfig {
 }
 
 export const defaultPostProcessingConfig: PostProcessingConfig = {
-  bloomStrength: 0.4,
-  bloomRadius: 0.3,
+  bloomStrength: 0.8,
+  bloomRadius: 0.85,
   bloomThreshold: 0.8,
   outlineStrength: 1.4,
   outlineThickness: 1.2,

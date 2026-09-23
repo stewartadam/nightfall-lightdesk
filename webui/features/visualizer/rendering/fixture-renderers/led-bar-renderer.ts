@@ -34,6 +34,7 @@ import type {
   FixturePhysical,
 } from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
+import { EMITTER_RADIANCE } from "../emitter-radiance";
 
 const LED_BAR_HOUSING_HEIGHT = 0.06;
 const LED_BAR_HANGING_HOUSING_Y = -LED_BAR_HOUSING_HEIGHT / 2;
@@ -262,15 +263,9 @@ export function updateLedBarColors(
     color.setRGB(dmx.red, dmx.green, dmx.blue);
     color.convertSRGBToLinear();
 
-    // Boost color brightness for emissive-like effect
-    const boostFactor = dmx.intensity * 2.0;
-    const maxValue = 1.15; // Just under bloom threshold
-    const r = Math.min(color.r * boostFactor, maxValue);
-    const g = Math.min(color.g * boostFactor, maxValue);
-    const b = Math.min(color.b * boostFactor, maxValue);
-
-    const alpha = Math.max(0.2, dmx.intensity);
-    instanceColor.setXYZ(cellIndex, r * alpha, g * alpha, b * alpha);
+    // Preserve HDR output so saturated cells participate in the shared haze glow.
+    color.multiplyScalar(dmx.intensity * EMITTER_RADIANCE);
+    instanceColor.setXYZ(cellIndex, color.r, color.g, color.b);
   }
 
   instanceColor.needsUpdate = true;
