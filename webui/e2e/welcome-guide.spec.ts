@@ -552,6 +552,47 @@ test("programmer columns fit selected sample fixtures", async ({
   });
 });
 
+/** Places Stop guidance above the timeline, centered on its target without covering the panel. */
+test("Stop guidance prefers above the timeline", async ({ page }, testInfo) => {
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide
+    .getByRole("button", { name: "Open Timeline 1: Lo-Fi", exact: true })
+    .click();
+  await reachStep(page, "Stop playback");
+  await expect(
+    page.getByRole("button", { name: "Stop timeline", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const timeline = api.getPanel(
+      document
+        .querySelector('[aria-label="Stop timeline"]')!
+        .closest("[data-panel-id]")!
+        .getAttribute("data-panel-id"),
+    );
+    timeline.api.moveTo({
+      group: api.getPanel("panel-Visualizer").group,
+      position: "bottom",
+    });
+  });
+  const stop = page.getByRole("button", { name: "Stop timeline", exact: true });
+  await expect(stop).toBeVisible();
+  await expect
+    .poll(async () => {
+      const card = (await guide.boundingBox())!;
+      const target = (await stop.boundingBox())!;
+      return card.y + card.height <= target.y;
+    })
+    .toBe(true);
+  const card = (await guide.boundingBox())!;
+  const target = (await stop.boundingBox())!;
+  expect(card.x + card.width / 2).toBeCloseTo(target.x + target.width / 2, 0);
+  await page.screenshot({ path: testInfo.outputPath("guide-stop-above.png") });
+});
+
 for (const platform of ["MacIntel", "Win32"]) {
   /** Shows the platform modifier as shared keycaps and verifies the advertised binding opens the palette. */
   test(`guide palette shortcut matches ${platform}`, async ({
