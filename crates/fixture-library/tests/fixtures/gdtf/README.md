@@ -70,10 +70,17 @@ tests). These checks do not prove engine encoding/decoding or effective light.
 The `functions` stage normalizes integer defaults/highlight and inclusive raw
 ranges through 32 bits. Mutually exclusive logical channels and ModeMaster
 conditions retain separate ranges. Selector source links and their ranges are
-validated at the master's resolution; binding those selectors to referenced
-instances is a later pass. Complete source functions remain available for
+validated at the master's resolution. Complete source functions remain available for
 profiles, channel sets, relations and resource compilation. Mirroring and shifting
 operate on the parsed literal bytes with independent hexadecimal test vectors.
+
+The `bindings` stage connects ModeMaster selectors to instantiated channels and
+functions. Repeated pixels use masters in their own reference scope; shared
+masters resolve in the nearest enclosing scope. An explicit source channel with
+only one instance remains an unambiguous target. Ambiguous repeated targets fail
+instead of selecting the first instance. Synthetic tests cover local, shared,
+and nested repeated assemblies. Runtime activation and selector dependency cycle
+checks remain separate work; binding success does not establish those behaviors.
 
 `function_acceptance` checks selected Sharpy, MAC Aura and Hydrabeam defaults and
 physical endpoints against authored XML. Descending ranges must remain descending.

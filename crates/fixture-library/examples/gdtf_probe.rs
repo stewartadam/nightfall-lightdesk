@@ -17,6 +17,7 @@ use std::time::Instant;
 
 use nightfall_fixture_library::GdtfMetadata;
 use nightfall_fixture_library::converters::gdtf::convert_gdtf_to_fixture;
+use nightfall_fixture_library::gdtf_bindings::bind_selectors;
 use nightfall_fixture_library::gdtf_functions::resolve_functions;
 use nightfall_fixture_library::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
 use nightfall_fixture_library::gdtf_wire::resolve_wires;
@@ -101,16 +102,37 @@ fn main() {
                 }
                 let started = Instant::now();
                 match resolve_functions(&resolved) {
-                    Ok(functions) => emit(
-                        json!({"stage": "functions", "status": "passed", "mode": mode,
+                    Ok(functions) => {
+                        emit(
+                            json!({"stage": "functions", "status": "passed", "mode": mode,
                         "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "channels": functions}),
-                    ),
+                        );
+                        let started = Instant::now();
+                        match bind_selectors(&resolved, &functions) {
+                            Ok(bindings) => emit(
+                                json!({"stage": "bindings", "status": "passed", "mode": mode,
+                                "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "bindings": bindings}),
+                            ),
+                            Err(error) => {
+                                failed = true;
+                                emit(
+                                    json!({"stage": "bindings", "status": "failed", "mode": mode,
+                                    "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                                    "error": error.to_string(), "diagnostic": error}),
+                                );
+                            }
+                        }
+                    }
                     Err(error) => {
                         failed = true;
                         emit(
                             json!({"stage": "functions", "status": "failed", "mode": mode,
                             "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
                             "error": error.to_string(), "diagnostic": error}),
+                        );
+                        emit(
+                            json!({"stage": "bindings", "status": "failed", "mode": mode,
+                            "error": "Function normalization failed; selector binding unavailable"}),
                         );
                     }
                 }
@@ -127,6 +149,10 @@ fn main() {
                 emit(
                     json!({"stage": "functions", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; function compilation unavailable"}),
+                );
+                emit(
+                    json!({"stage": "bindings", "status": "failed", "mode": mode,
+                    "error": "Geometry resolution failed; selector binding unavailable"}),
                 );
             }
         }

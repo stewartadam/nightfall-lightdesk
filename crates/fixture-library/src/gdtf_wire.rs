@@ -87,16 +87,8 @@ pub fn resolve_wires(mode: &ResolvedMode<'_>) -> Result<ModeWires, ResolveError>
                 "A channel cannot reuse the same byte offset",
             ));
         }
-        let geometry = &mode.geometries[channel.geometry];
-        // Controls authored on a reference itself belong to its containing scope,
-        // so that reference's overrides apply only to its template's channels.
-        let scope_end = geometry
-            .references
-            .iter()
-            .position(|reference| reference.name.as_ref() == Some(&channel.source.geometry))
-            .unwrap_or(geometry.references.len());
         let mut dmx_break = channel.source.dmx_break;
-        for reference in geometry.references[..scope_end].iter().rev() {
+        for reference in mode.channel_scope(channel).iter().rev() {
             let mapping = match dmx_break {
                 DmxBreak::Overwrite => reference.breaks.last(),
                 // A later Overwrite entry may use the same target break with

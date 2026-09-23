@@ -131,6 +131,18 @@ pub struct ResolvedMode<'a> {
     pub source: &'a DmxMode,
 }
 
+impl<'a> ResolvedMode<'a> {
+    /// Return enclosing references; a control on a reference belongs outside its template.
+    pub fn channel_scope(&self, channel: &ChannelInstance<'_>) -> &[&'a ReferenceGeometry] {
+        let references = &self.geometries[channel.geometry].references;
+        let end = references
+            .iter()
+            .position(|reference| reference.name.as_ref() == Some(&channel.source.geometry))
+            .unwrap_or(references.len());
+        &references[..end]
+    }
+}
+
 /// Create a contextual failure without throwing away the location or category.
 fn failure(code: &'static str, path: &str, message: impl Into<String>) -> ResolveError {
     ResolveError {

@@ -109,6 +109,19 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(result["stages"][0]["stage"], "parse")
         self.assertIn("exceeded", result["error"])
 
+    def test_probe_requires_selector_bindings_for_every_mode(self):
+        """Earlier compiler passes cannot conceal a missing selector binding pass."""
+        def incomplete_run(*args, **kwargs):
+            """Simulate successful earlier stages without instance binding evidence."""
+            for stage in ("parse", "resolution", "wire", "functions", "conversion"):
+                kwargs["stdout"].write(json.dumps({"stage": stage, "status": "passed", "mode": "Mode"}) + "\n")
+            return subprocess.CompletedProcess(args, 0, stderr="")
+
+        with patch.object(CORPUS.subprocess, "run", side_effect=incomplete_run):
+            result = CORPUS.run_probe(Path("probe"), self.path, self.root / "probe.jsonl", 1, ["Mode"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("bindings", result["error"])
+
     def test_geometry_counts_do_not_hide_missing_joint_bindings(self):
         """Matching emitter counts cannot pass when a named moving part has no axis binding."""
         report = self.root / "geometry.jsonl"
