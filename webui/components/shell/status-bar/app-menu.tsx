@@ -125,7 +125,7 @@ export default function AppMenu(props: {
           shortcut="⌘S"
           onClick={saveShowfile}
         >
-          Save Showfile
+          <span data-guide-target="save-showfile">Save Showfile</span>
         </DropdownMenuItem>
         <DropdownMenuItem
           icon={FileArrowDownIcon}
@@ -175,7 +175,7 @@ export default function AppMenu(props: {
         onClick={showShortcutsPopup}
         shortcut="⇧?"
       >
-        Keyboard Shortcuts
+        <span data-guide-target="keyboard-shortcuts">Keyboard Shortcuts</span>
       </DropdownMenuItem>
       <DropdownMenuItem icon={InfoIcon} onClick={openAbout}>
         About
