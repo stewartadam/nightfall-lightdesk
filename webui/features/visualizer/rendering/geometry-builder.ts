@@ -40,8 +40,9 @@ import {
   type PrimitiveType,
 } from "../../../types";
 import type { EmitterData, FixtureInstance } from "../model/types";
+import { fixtureMeshCache } from "./mesh-cache";
 import { loadMesh } from "./mesh-loader";
-import { cloneFixtureMesh, disposeFixtureMesh } from "./mesh-ownership";
+import { disposeFixtureMesh } from "./mesh-ownership";
 
 const log = getLogger(import.meta.url);
 
@@ -65,8 +66,6 @@ const PRIMITIVE_ASSET_PATHS: Partial<Record<PrimitiveType, string>> = {
 /** Shared GLTF loader for asset models */
 const gltfLoader = new GLTFLoader();
 
-/** Cache for loaded asset models: primitiveType -> Promise<Group> */
-const assetModelCache = new Map<string, Promise<Group>>();
 const disposedInstances = new WeakSet<Group>();
 
 /**
@@ -78,58 +77,48 @@ async function loadAssetModel(
   const assetPath = PRIMITIVE_ASSET_PATHS[primitiveType];
   if (!assetPath) return null;
 
-  // Check cache
-  if (assetModelCache.has(primitiveType)) {
-    try {
-      const cached = await assetModelCache.get(primitiveType);
-      return cached ? cloneFixtureMesh(cached) : null;
-    } catch {
-      assetModelCache.delete(primitiveType);
-    }
-  }
-
-  // Load model
-  const loadPromise = new Promise<Group>((resolve, reject) => {
-    gltfLoader.load(
-      assetPath,
-      (gltf) => {
-        // Apply standard fixture material
-        gltf.scene.traverse((child) => {
-          if ((child as Mesh).isMesh) {
-            const mesh = child as Mesh;
-            if (Array.isArray(mesh.material)) {
-              for (const mat of mesh.material) {
-                mat.dispose();
-              }
-            } else if (mesh.material) {
-              mesh.material.dispose();
-            }
-            mesh.material = new MeshStandardMaterial({
-              color: 0x3a3a3a,
-              metalness: 0.6,
-              roughness: 0.4,
-            });
-            mesh.castShadow = false;
-            mesh.receiveShadow = false;
-          }
-        });
-        resolve(gltf.scene);
-      },
-      undefined,
-      (error) => {
-        log.warn(`Failed to load asset model for ${primitiveType}:`, error);
-        reject(error);
-      },
-    );
-  });
-
-  assetModelCache.set(primitiveType, loadPromise);
-
   try {
-    const loaded = await loadPromise;
-    return cloneFixtureMesh(loaded);
+    return await fixtureMeshCache.load(
+      `bundled:${assetPath}`,
+      () =>
+        new Promise<Group>((resolve, reject) => {
+          gltfLoader.load(
+            assetPath,
+            (gltf) => {
+              // Apply standard fixture material
+              gltf.scene.traverse((child) => {
+                if ((child as Mesh).isMesh) {
+                  const mesh = child as Mesh;
+                  if (Array.isArray(mesh.material)) {
+                    for (const mat of mesh.material) {
+                      mat.dispose();
+                    }
+                  } else if (mesh.material) {
+                    mesh.material.dispose();
+                  }
+                  mesh.material = new MeshStandardMaterial({
+                    color: 0x3a3a3a,
+                    metalness: 0.6,
+                    roughness: 0.4,
+                  });
+                  mesh.castShadow = false;
+                  mesh.receiveShadow = false;
+                }
+              });
+              resolve(gltf.scene);
+            },
+            undefined,
+            (error) => {
+              log.warn(
+                `Failed to load asset model for ${primitiveType}:`,
+                error,
+              );
+              reject(error);
+            },
+          );
+        }),
+    );
   } catch {
-    assetModelCache.delete(primitiveType);
     return null;
   }
 }

@@ -135,8 +135,15 @@ its materials without disposing geometry still used by another instance or the
 cache. Late loads release their instance resources instead of attaching to removed
 fixtures. Node tests check final-owner disposal and repeated removal; the browser
 test checks independent materials and removal during a shared pending request.
+Archive and bundled templates share an LRU cache capped at 64 ready templates
+and 64 MiB of geometry backing buffers. Shared buffers inside a template count
+once; this accounting excludes JavaScript objects, textures and GPU overhead.
+Eviction releases the template's ownership while live copies retain their
+geometry. Oversized models serve current waiters without remaining cached.
+Pending requests coalesce, including failures; retries require a later request.
+These are retention limits, not limits on pending decode work or live scenes.
 Retaining old archives across library revisions and save/reload, external GLB
-reference restrictions, bounded mesh caches, and lifecycle memory/GPU budgets
+reference restrictions, bounded decode work, and lifecycle memory/GPU budgets
 remain part of resource/renderer integration.
 
 Logical parameter values and percentages use double precision; byte assembly

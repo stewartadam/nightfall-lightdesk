@@ -23,7 +23,7 @@ import {
 import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
 import type { GdtfGeometrySource } from "../../../types/index";
-import { cloneFixtureMesh } from "./mesh-ownership";
+import { fixtureMeshCache } from "./mesh-cache";
 import { meshResourceKey, meshResourcePath } from "./mesh-resource";
 
 const log = getLogger(import.meta.url);
@@ -31,9 +31,6 @@ const log = getLogger(import.meta.url);
 // Shared loaders
 const gltfLoader = new GLTFLoader();
 const tdsLoader = new TDSLoader();
-
-// Mesh cache: archive revision and model name -> Promise<Group>
-const meshCache = new Map<string, Promise<Group>>();
 
 /**
  * Create a MeshStandardMaterial that preserves transparency from the original material.
@@ -99,58 +96,46 @@ export async function loadMesh(
 ): Promise<Group | null> {
   const cacheKey = meshResourceKey(source, modelName);
 
-  if (meshCache.has(cacheKey)) {
-    try {
-      const cached = await meshCache.get(cacheKey);
-      return cached ? cloneFixtureMesh(cached) : null;
-    } catch {
-      // Cache entry failed, will retry below
-      meshCache.delete(cacheKey);
-    }
-  }
-
   const url = `${getBackendUrl()}${meshResourcePath(source, modelName)}`;
 
-  const loadPromise = new Promise<Group>((resolve, reject) => {
-    // Try loading as GLB/GLTF first
-    gltfLoader.load(
-      url,
-      (gltf) => {
-        applyFixtureMaterial(gltf.scene);
-        resolve(gltf.scene);
-      },
-      undefined,
-      () => {
-        // GLB failed, try 3DS as fallback
-        tdsLoader.load(
-          url,
-          (object: Group) => {
-            // 3DS files in GDTF are authored in Z-up coordinate system.
-            // TDSLoader loads the raw vertex data without coordinate conversion,
-            // so the mesh is already in Z-up space (matching GDTF transforms).
-            // The final group rotation (-90° X) converts everything to Y-up.
-            applyFixtureMaterial(object);
-            resolve(object);
-          },
-          undefined,
-          () => {
-            log.warn(
-              `Failed to load mesh ${modelName} from ${source.path} at revision ${source.archiveSha256}`,
-            );
-            reject(new Error("Failed to load mesh"));
-          },
-        );
-      },
-    );
-  });
-
-  meshCache.set(cacheKey, loadPromise);
-
   try {
-    const loaded = await loadPromise;
-    return cloneFixtureMesh(loaded);
+    return await fixtureMeshCache.load(
+      cacheKey,
+      () =>
+        new Promise<Group>((resolve, reject) => {
+          // Try loading as GLB/GLTF first
+          gltfLoader.load(
+            url,
+            (gltf) => {
+              applyFixtureMaterial(gltf.scene);
+              resolve(gltf.scene);
+            },
+            undefined,
+            () => {
+              // GLB failed, try 3DS as fallback
+              tdsLoader.load(
+                url,
+                (object: Group) => {
+                  // 3DS files in GDTF are authored in Z-up coordinate system.
+                  // TDSLoader loads the raw vertex data without coordinate conversion,
+                  // so the mesh is already in Z-up space (matching GDTF transforms).
+                  // The final group rotation (-90° X) converts everything to Y-up.
+                  applyFixtureMaterial(object);
+                  resolve(object);
+                },
+                undefined,
+                () => {
+                  log.warn(
+                    `Failed to load mesh ${modelName} from ${source.path} at revision ${source.archiveSha256}`,
+                  );
+                  reject(new Error("Failed to load mesh"));
+                },
+              );
+            },
+          );
+        }),
+    );
   } catch {
-    meshCache.delete(cacheKey);
     return null;
   }
 }
