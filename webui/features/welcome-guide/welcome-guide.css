@@ -198,11 +198,9 @@
   max-width: calc(100vw - 24px);
   max-height: min(620px, calc(100dvh - 24px));
   z-index: 2147483647;
-  border: 1px solid var(--accent, #50d2b4);
+  border: 1px solid var(--muted);
   border-radius: 12px;
-  box-shadow:
-    0 12px 36px #0008,
-    0 0 0 1px #50d2b420;
+  box-shadow: 0 12px 36px #0008;
   overflow: visible;
   user-select: text;
 }
@@ -211,7 +209,7 @@
   width: 12px;
   height: 12px;
   background: var(--panel-bg, #17191e);
-  border: solid var(--accent, #50d2b4);
+  border: solid var(--muted);
   border-width: 1px 0 0 1px;
   pointer-events: none;
 }

@@ -13,6 +13,7 @@ export interface GuideStep {
   id: string;
   title: string;
   body: string;
+  context?: string;
   action: string;
   panels?: PanelComponentName[];
   sampleTimeline?: boolean;
@@ -97,8 +98,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "intensity",
         title: "Bring up the lights",
         body: "The Programmer holds live lighting instructions.",
+        context:
+          "The @ command sets the selected strips’ intensity. At 100, they reach full brightness.",
         action:
-          "Bring the selected strips to full intensity with the command below. Check their values in the Programmer and watch the Visualizer.",
+          "Check the values in the Programmer and watch the Visualizer after entering the command.",
         panels: ["ProgrammerGrid"],
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
@@ -108,7 +111,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "red",
         title: "Make a red look",
-        body: "These pixel strips mix red, green, and blue to set their color.",
+        body: "These pixel strips mix red, green, and blue to set their color. Full red with green and blue at zero produces a red look.",
         action:
           "Enter the command below. Watch the four selected pixel strips turn red.",
         target: "#header-cmdline",
@@ -130,7 +133,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "blue",
         title: "Make a blue look",
-        body: "A contrasting second look makes the Go button’s effect easy to see.",
+        body: "A contrasting second look makes the Go button’s effect easy to see. Full blue with red and green at zero produces a blue look.",
         action:
           "Enter the command below. Watch the same four pixel strips turn blue.",
         target: "#header-cmdline",
@@ -176,9 +179,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "go",
         title: "Start RGB cycle (full)",
-        body: "Go starts the sequence at its first cue: Guide Red.",
-        action:
-          "Raise control 6’s fader, then press its Go button. The four pixel strips show your red look.",
+        body: "Go starts the sequence at its first cue: Guide Red. The four pixel strips will show your red look.",
+        action: "Raise control 6’s fader, then press its Go button.",
         panels: ["Visualizer", "ClipList"],
         target: '[data-control-go-index="6"]:not(:disabled)',
         hint: "Press Go on control 6.",
@@ -243,9 +245,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "address",
         title: "Understand the disabled patch",
-        body: "The sample has disabled output bindings. The fixtures still run in the Visualizer; physical output needs enabled bindings and transport routing.",
-        action:
-          "Switch Patch to DMX I/O and inspect the disabled bindings. Fixture ID 310 is a selection number, not a DMX address.",
+        body: "The sample has disabled output bindings. The fixtures still run in the Visualizer; physical output needs enabled bindings and transport routing. Fixture ID 310 is a selection number, not a DMX address.",
+        action: "Switch Patch to DMX I/O and inspect the disabled bindings.",
         panels: ["PatchEditor"],
         more: "A universe contains 512 channels. In the real app, Add fixture walks through a library definition, mode, quantity, and console DMX address. This virtual sample does not need that setup.",
       },
@@ -290,9 +291,9 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "test",
         title: "Separate output from visualization",
-        body: "The Visualizer does not require a transport. The browser demo cannot send network or USB DMX.",
+        body: "The Visualizer does not require a transport. The browser demo cannot send network or USB DMX, so there is no hardware route to test.",
         action:
-          "Open Console DMX and compare it with the disabled sample patch. There is no hardware route to test. Return to the creative lessons to work with the virtual fixtures.",
+          "Compare Console DMX with the disabled sample patch. Return to the creative lessons to work with the virtual fixtures.",
         panels: ["DmxUniverse", "PatchEditor"],
       },
     ],
