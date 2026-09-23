@@ -408,15 +408,23 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
         title: "ID",
         id: "id",
         width: 85,
+        minWidth: 85,
         filter: { kind: "number", value: (row) => row.id },
       },
       {
         title: "Fixture",
         id: "name",
-        width: 150,
+        width: 240,
+        minWidth: 240,
         filter: { value: (row) => row.name },
       },
-      { title: "", id: "color", width: COLOR_SWATCH_COLUMN_WIDTH },
+      {
+        title: "",
+        id: "color",
+        width: COLOR_SWATCH_COLUMN_WIDTH,
+        minWidth: COLOR_SWATCH_COLUMN_WIDTH,
+        sizing: "fixed",
+      },
     ];
 
     // Create value columns for all attributes
