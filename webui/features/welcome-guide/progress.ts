@@ -33,7 +33,7 @@ export type GuideObservation =
         | "clear";
     }
   | { type: "color"; color: "Red" | "Blue" }
-  | { type: "cue"; id: number; label: string }
+  | { type: "cue"; sequenceId: number; id: number }
   | { type: "assigned"; clipId: number; control: number }
   | { type: "clip-playing" | "clip-stopped"; clipId: number }
   | { type: "cue-playing"; clipId: number; position: number };
@@ -60,9 +60,6 @@ export function guideCompletionToken(
   state: GuideSnapshot,
 ): string {
   const timeline = Object.values(state.timelines).find(
-    (entry) => entry.identifiers.id === 1,
-  );
-  const sequence = Object.values(state.sequences).find(
     (entry) => entry.identifiers.id === 1,
   );
   const expectedFixtures = Object.values(state.fixtures)
@@ -151,12 +148,14 @@ export function guideCompletionToken(
         ? observation.color
         : "";
     case "cue": {
+      const sequence = Object.values(state.sequences).find(
+        (entry) => entry.identifiers.id === observation.sequenceId,
+      );
       const cue = sequence?.steps
         .map((uid) => state.cues[uid])
         .find((entry) => entry?.identifiers.id === observation.id);
-      return cue?.identifiers.label === observation.label &&
-        cue.instructions.length > 0
-        ? JSON.stringify(cue)
+      return cue && cue.instructions.length > 0
+        ? JSON.stringify(cue.instructions)
         : "";
     }
     case "clear":
