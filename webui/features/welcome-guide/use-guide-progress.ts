@@ -27,9 +27,13 @@ import {
   timecodes,
   timelines,
 } from "../../state/appStores";
-import { type GuideObservation, guideCompletionToken } from "./progress";
+import {
+  type GuideObservation,
+  type GuideSnapshot,
+  guideCompletionToken,
+} from "./progress";
 
-/** Advances on fresh acknowledged actions, without consuming old state or stealing input focus. */
+/** Advances on fresh actions, or immediately when the required sample panels are already open. */
 export function useGuideProgress(
   observation: Accessor<GuideObservation | undefined>,
   dockApi: Accessor<DockviewApi | undefined>,
@@ -46,15 +50,33 @@ export function useGuideProgress(
   const timelineMap = useStore(timelines);
   const clocks = useStore(timecodes);
   const [panel, setPanel] = createSignal<string>();
+  const [openPanels, setOpenPanels] = createSignal<GuideSnapshot["openPanels"]>(
+    [],
+  );
 
-  /** Mirrors active-panel changes using Dockview's lifecycle rather than polling the DOM. */
+  /** Mirrors active and open panels using Dockview's lifecycle rather than polling the DOM. */
   createEffect(() => {
     const api = dockApi();
+    /** Captures editor identities whenever panels are added or removed. */
+    const updateOpenPanels = () =>
+      setOpenPanels(
+        api?.panels.map((entry) => ({
+          component: entry.api.component,
+          timelineUid: entry.params?.initialTimelineUid,
+        })) ?? [],
+      );
+    updateOpenPanels();
+    const added = api?.onDidAddPanel(updateOpenPanels);
+    const removed = api?.onDidRemovePanel(updateOpenPanels);
     setPanel(api?.activePanel?.api.component);
     const subscription = api?.onDidActivePanelChange(() =>
       setPanel(api.activePanel?.api.component),
     );
-    onCleanup(() => subscription?.dispose());
+    onCleanup(() => {
+      subscription?.dispose();
+      added?.dispose();
+      removed?.dispose();
+    });
   });
 
   /** Arms a new observation at entry, and cancels pending advancement on navigation or exit. */
@@ -65,6 +87,7 @@ export function useGuideProgress(
     const token = () =>
       guideCompletionToken(target, {
         panel: panel(),
+        openPanels: openPanels(),
         fixtures: fixtureMap(),
         selection: selection(),
         programmer: programmer(),
@@ -76,7 +99,7 @@ export function useGuideProgress(
         timelines: timelineMap(),
         timecodes: clocks(),
       });
-    let previous = untrack(token);
+    let previous = target.type === "sample-panels" ? "" : untrack(token);
     let pending: ReturnType<typeof setTimeout> | undefined;
     /** Advances once per step after a new matching state is published. */
     createEffect(() => {

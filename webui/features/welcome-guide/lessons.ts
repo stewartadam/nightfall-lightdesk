@@ -15,6 +15,7 @@ export interface GuideStep {
   body: string;
   action: string;
   panels?: PanelComponentName[];
+  sampleTimeline?: boolean;
   target?: string;
   hint?: string;
   command?: string;
@@ -43,9 +44,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Open the sample timeline",
         body: "Lo-fi starts the RGB cycle (full) clip and the red waveform effect fx3.",
         action:
-          "In Timelines, open timeline 1: Lo-fi. Keep the 3D Visualizer visible beside it.",
-        panels: ["TimelinesPanel", "Visualizer"],
-        observe: { type: "panel", component: "Timeline" },
+          "Open Timeline 1: Lo-Fi and keep the 3D Visualizer open beside it.",
+        sampleTimeline: true,
+        panels: ["Visualizer"],
+        observe: { type: "sample-panels" },
       },
       {
         id: "play-timeline",
