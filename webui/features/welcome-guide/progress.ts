@@ -206,12 +206,12 @@ export function guideCompletionToken(
         ? JSON.stringify(cue.instructions)
         : "";
     }
-    case "clip-created":
-      return Object.values(state.clips).some(
+    case "clip-created": {
+      const clip = Object.values(state.clips).find(
         ([clip]) => clip.identifiers.id === observation.clipId,
-      )
-        ? "created"
-        : "";
+      )?.[0];
+      return clip ? JSON.stringify(clip) : "";
+    }
     case "clip-sequence": {
       const sequence = Object.values(state.sequences).find(
         (entry) => entry.identifiers.id === observation.sequenceId,

@@ -35,6 +35,12 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
   const [isEditModalOpen, setIsEditModalOpen] = createSignal(false);
   const [createInitialId, setCreateInitialId] = createSignal(1);
   const [createInitialLabel, setCreateInitialLabel] = createSignal("");
+  const [pendingOverwrite, setPendingOverwrite] = createSignal<{
+    id: number;
+    label: string;
+    uid: string;
+    existingLabel: string;
+  }>();
   const [editInitialId, setEditInitialId] = createSignal(1);
   const [editInitialLabel, setEditInitialLabel] = createSignal("");
   const [editingClipUid, setEditingClipUid] = createSignal<string | null>(null);
@@ -48,7 +54,10 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
 
   /** Returns whether any modal currently blocks clip list interaction. */
   const isModalOpen = () =>
-    isDeleteModalOpen() || isCreateModalOpen() || isEditModalOpen();
+    isDeleteModalOpen() ||
+    isCreateModalOpen() ||
+    isEditModalOpen() ||
+    !!pendingOverwrite();
 
   /** Finds the lowest positive numeric clip ID not currently in use. */
   const nextClipId = () => {
@@ -69,12 +78,15 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
     setIsCreateModalOpen(true);
   };
 
-  /** Builds and stores a new clip from the create dialog payload. */
-  const submitCreate = (payload: { id: number; label: string }) => {
+  /** Stores a fresh clip configuration, preserving identity when overwriting. */
+  const createClip = (
+    payload: { id: number; label: string },
+    uid: string = crypto.randomUUID(),
+  ) => {
     storeClip({
       identifiers: {
         id: payload.id,
-        uid: crypto.randomUUID(),
+        uid,
         label: payload.label,
       },
       source: undefined,
@@ -85,6 +97,46 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
       },
     });
     setIsCreateModalOpen(false);
+  };
+
+  /** Requests confirmation rather than silently rejecting an occupied clip ID. */
+  const submitCreate = (payload: { id: number; label: string }) => {
+    const existing = Object.values(options.clips()).find(
+      ([clip]) => clip.identifiers.id === payload.id,
+    )?.[0];
+    if (existing) {
+      setCreateInitialId(payload.id);
+      setCreateInitialLabel(payload.label);
+      setIsCreateModalOpen(false);
+      setPendingOverwrite({
+        ...payload,
+        uid: existing.identifiers.uid,
+        existingLabel: existing.identifiers.label,
+      });
+      return;
+    }
+    createClip(payload);
+  };
+
+  /** Returns to the creation form without modifying the existing clip. */
+  const cancelOverwrite = () => {
+    setPendingOverwrite(undefined);
+    setIsCreateModalOpen(true);
+  };
+
+  /** Rechecks identity so confirmation never replaces a different, newly assigned clip. */
+  const confirmOverwrite = () => {
+    const pending = pendingOverwrite();
+    if (!pending) return;
+    const existing = Object.values(options.clips()).find(
+      ([clip]) => clip.identifiers.id === pending.id,
+    )?.[0];
+    setPendingOverwrite(undefined);
+    if (existing && existing.identifiers.uid !== pending.uid) {
+      submitCreate(pending);
+      return;
+    }
+    createClip(pending, existing?.identifiers.uid);
   };
 
   /** Opens the edit dialog for the single selected clip. */
@@ -176,6 +228,9 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
   };
 
   return {
+    pendingOverwrite,
+    cancelOverwrite,
+    confirmOverwrite,
     createInitialId,
     createInitialLabel,
     editInitialId,
