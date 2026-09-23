@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { WebSocketRoute } from "@playwright/test";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -373,6 +374,88 @@ test("floating lessons provide context, selectable commands and manual placement
   await page.screenshot({
     path: testInfo.outputPath("guide-reduced-motion.png"),
   });
+});
+
+/** Retains session stores through dependency reloads and renders edited copy on component refresh. */
+test("hot reload keeps the active lesson and step", async ({
+  page,
+}, testInfo) => {
+  let hmrSocket: WebSocketRoute | undefined;
+  await page.routeWebSocket(
+    (url) => url.pathname !== "/ws",
+    (socket) => {
+      socket.connectToServer();
+      hmrSocket = socket;
+    },
+  );
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await reachStep(page, "Bring up the lights");
+  const stepLabel = await guide
+    .getByRole("status", { name: "Current step" })
+    .innerText();
+  const timestamp = Date.now();
+  const progress = await page.evaluate(async (stamp) => {
+    const state = await import(`/features/welcome-guide/state.ts?t=${stamp}`);
+    return {
+      open: state.guideOpen.get(),
+      lesson: state.guideLessonId.get(),
+      index: state.guideStepIndex.get(),
+    };
+  }, timestamp);
+  expect(progress).toEqual({
+    open: true,
+    lesson: "welcome",
+    index: Number(stepLabel.split("/")[0]) - 1,
+  });
+  await page.route("**/features/welcome-guide/lessons.ts?*", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      body: (await response.text()).replace(
+        "Bring up the lights",
+        "Preview edited copy",
+      ),
+    });
+  });
+  const modulePath = "/features/welcome-guide/welcome-guide.tsx";
+  await page.route(
+    "**/features/welcome-guide/welcome-guide.tsx?*",
+    async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        body: (await response.text()).replace(
+          /\/features\/welcome-guide\/lessons\.ts(?:\?t=\d+)?/g,
+          `/features/welcome-guide/lessons.ts?t=${timestamp}`,
+        ),
+      });
+    },
+  );
+  await expect.poll(() => Boolean(hmrSocket)).toBe(true);
+  hmrSocket!.send(
+    JSON.stringify({
+      type: "update",
+      updates: [
+        {
+          type: "js-update",
+          path: modulePath,
+          acceptedPath: modulePath,
+          timestamp,
+        },
+      ],
+    }),
+  );
+  await expect(
+    guide.getByRole("heading", { name: "Preview edited copy" }),
+  ).toBeVisible();
+  await expect(guide.getByRole("status", { name: "Current step" })).toHaveText(
+    stepLabel,
+  );
+  await expect(guide.locator("code")).toHaveText("@ 100");
+  await page.screenshot({ path: testInfo.outputPath("guide-after-hmr.png") });
 });
 
 /** Requires both sample panels and skips setup when those panels are already open. */
