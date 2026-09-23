@@ -799,6 +799,15 @@ test("welcome basics toggles a clip and opens properties", async ({
   await expect(
     page.getByRole("region", { name: "Keyboard shortcuts", exact: true }),
   ).toBeVisible();
+  await expect
+    .poll(async () => {
+      const reference = (await page
+        .getByRole("region", { name: "Keyboard shortcuts", exact: true })
+        .boundingBox())!;
+      const ring = await page.locator(".nf-guide-highlight").boundingBox();
+      return ring ? Math.abs(ring.x - reference.x + 4) : Infinity;
+    })
+    .toBeLessThan(2);
   await page.screenshot({
     path: testInfo.outputPath("welcome-keyboard-shortcuts.png"),
   });
