@@ -177,14 +177,16 @@ export function useFloatingGuide(
     // Honor teaching-specific placement before falling back to general overlap scoring.
     const preferred = dialog
       ? beside(dialog).slice(0, 2).map(clamp)
-      : preference() === "above"
-        ? [
-            {
-              x: target.x + target.width / 2 - width / 2,
-              y: (panel?.top ?? target.top) - height - 16,
-            },
-          ]
-        : [];
+      : targetElement?.matches("[data-panel-id]")
+        ? beside(target).map(clamp)
+        : preference() === "above"
+          ? [
+              {
+                x: target.x + target.width / 2 - width / 2,
+                y: (panel?.top ?? target.top) - height - 16,
+              },
+            ]
+          : [];
     const preferredPosition = preferred.find((point) => {
       const bounded = clamp(point);
       return (

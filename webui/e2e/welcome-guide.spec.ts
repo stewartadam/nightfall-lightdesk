@@ -685,6 +685,26 @@ test("welcome basics toggles a clip and opens properties", async ({
   const properties = page.locator(
     '[data-component="PropertiesInspector"][data-panel-id]',
   );
+  await page.setViewportSize({ width: 2048, height: 1000 });
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const timeline = api.panels.find(
+      (panel: any) => panel.api.component === "Timeline",
+    );
+    api
+      .getPanel("panel-Visualizer")
+      .api.moveTo({ group: timeline.group, position: "right" });
+  });
+  await page
+    .getByRole("button", { name: "Inspect clip 1", exact: true })
+    .click();
+  await expect
+    .poll(async () => {
+      const card = (await guide.boundingBox())!;
+      const panel = (await properties.boundingBox())!;
+      return Math.abs(panel.x - card.x - card.width - 16);
+    })
+    .toBeLessThan(2);
   await expect(
     properties.getByText("Clip Properties", { exact: true }),
   ).toBeVisible();
