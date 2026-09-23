@@ -48,6 +48,21 @@ function sampleState(): GuideSnapshot {
   } as unknown as GuideSnapshot;
 }
 
+/** Opening the palette and activating the Programmer satisfy distinct guide observations. */
+test("guide distinguishes the command palette from the Programmer panel", () => {
+  const state = sampleState();
+  const palette = { type: "command-palette" } as const;
+  const programmer = { type: "panel", component: "ProgrammerGrid" } as const;
+  assert.equal(guideCompletionToken(palette, state), "");
+  state.commandPaletteOpen = true;
+  assert.equal(guideCompletionToken(palette, state), "open");
+  assert.equal(guideCompletionToken(programmer, state), "");
+  state.commandPaletteOpen = false;
+  state.panel = "ProgrammerGrid";
+  assert.equal(guideCompletionToken(palette, state), "");
+  assert.equal(guideCompletionToken(programmer, state), "ProgrammerGrid");
+});
+
 /** Selection progress requires the exact four demonstrated fixtures, not any nonempty selection. */
 test("guide ignores unrelated fixture selection and partial intensity edits", () => {
   const state = sampleState();
