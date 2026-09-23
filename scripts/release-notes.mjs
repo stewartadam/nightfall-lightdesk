@@ -8,7 +8,7 @@
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -98,6 +98,28 @@ export function githubList(repository, endpoint) {
   return pages.flat();
 }
 
+/** Reads only explicitly supported API snapshots; missing metadata never falls back to authentication. */
+export function snapshotList(directory) {
+  /** Maps release and commit-association endpoints to data files collected by the read-only job. */
+  return (_repository, endpoint) => {
+    const commit = endpoint.match(
+      /^commits\/([a-f0-9]{40})\/pulls\?per_page=100$/,
+    );
+    const filename =
+      endpoint === "releases?per_page=100"
+        ? "releases.json"
+        : commit
+          ? `commits/${commit[1]}.json`
+          : null;
+    if (!filename)
+      throw new Error(`Unsupported metadata endpoint: ${endpoint}`);
+    const data = JSON.parse(readFileSync(join(directory, filename), "utf8"));
+    if (!Array.isArray(data))
+      throw new Error(`Expected an API list: ${filename}`);
+    return data;
+  };
+}
+
 /** Tests reachability while distinguishing unrelated commits from Git failures. */
 export function isAncestor(ancestor, descendant) {
   try {
@@ -149,8 +171,8 @@ function isPromotion(pr, repository) {
   );
 }
 
-/** Collects original merged PRs from all parents of the release range, deduplicating promotion associations. */
-export function collectReleaseNotes(repository, from, to, list = githubList) {
+/** Resolves an ancestral range and enumerates every commit whose PR associations are needed. */
+export function releaseRange(from, to) {
   const base = commitId(from);
   const target = commitId(to);
   if (!isAncestor(base, target))
@@ -163,6 +185,12 @@ export function collectReleaseNotes(repository, from, to, list = githubList) {
   ])
     .split("\n")
     .filter(Boolean);
+  return { base, target, commits };
+}
+
+/** Collects original merged PRs from all parents of the release range, deduplicating promotion associations. */
+export function collectReleaseNotes(repository, from, to, list = githubList) {
+  const { base, target, commits } = releaseRange(from, to);
   const included = new Set(commits);
   const pulls = new Map();
   const unmatched = [];
@@ -250,6 +278,7 @@ function main() {
       to: { type: "string" },
       output: { type: "string" },
       report: { type: "string" },
+      metadata: { type: "string" },
     },
     allowPositionals: true,
   });
@@ -264,10 +293,14 @@ function main() {
     if (!Number.isSafeInteger(number))
       throw new Error("Expected a pull request event.");
     const pr = JSON.parse(
-      execFileSync("gh", ["api", `repos/${repository}/pulls/${number}`], {
-        encoding: "utf8",
-      }),
+      values.metadata
+        ? readFileSync(join(values.metadata, "pr.json"), "utf8")
+        : execFileSync("gh", ["api", `repos/${repository}/pulls/${number}`], {
+            encoding: "utf8",
+          }),
     );
+    if (pr.number !== number)
+      throw new Error("PR metadata does not match the event.");
     const note = parseReleaseNote(pr.body);
     const summary =
       note.kind === "none"
@@ -279,10 +312,22 @@ function main() {
         process.env.GITHUB_STEP_SUMMARY,
         `## Release note preview\n\n${summary}\n`,
       );
-  } else if (positionals[0] === "generate" && values.to && values.output) {
+  } else if (
+    ["plan", "generate"].includes(positionals[0]) &&
+    values.to &&
+    values.output
+  ) {
+    const list = values.metadata ? snapshotList(values.metadata) : githubList;
     const target = commitId(values.to);
-    const from = values.from ?? previousRelease(repository, target);
-    const report = collectReleaseNotes(repository, from, values.to);
+    const from = values.from ?? previousRelease(repository, target, list);
+    if (positionals[0] === "plan") {
+      writeFileSync(
+        values.output,
+        `${JSON.stringify(releaseRange(from, values.to).commits)}\n`,
+      );
+      return;
+    }
+    const report = collectReleaseNotes(repository, from, values.to, list);
     writeFileSync(
       values.output,
       renderReleaseNotes(
@@ -299,7 +344,7 @@ function main() {
     );
   } else
     throw new Error(
-      "Usage: release-notes.mjs check --repo OWNER/REPO | generate --repo OWNER/REPO --to REF --output FILE [--from REF] [--report FILE]",
+      "Usage: release-notes.mjs check --repo OWNER/REPO [--metadata DIR] | plan|generate --repo OWNER/REPO --to REF --output FILE [--from REF] [--report FILE] [--metadata DIR]",
     );
 }
 

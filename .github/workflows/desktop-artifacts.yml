@@ -1,11 +1,9 @@
-name: Desktop and browser artifacts
+name: Unsigned desktop artifacts
 
 on:
   workflow_call:
 
-permissions:
-  contents: read
-  pull-requests: read
+permissions: {}
 
 concurrency:
   group: desktop-${{ github.workflow }}-${{ github.ref }}
@@ -22,10 +20,13 @@ jobs:
       prerelease: ${{ steps.release.outputs.prerelease }}
       matrix: ${{ steps.release.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v5
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
@@ -36,25 +37,27 @@ jobs:
         run: |
           node --test scripts/desktop-artifacts.node.test.mjs
           node scripts/desktop-artifacts.mjs prepare
-      - name: Collect release notes from included pull requests
+      - name: Download the published-release snapshot
+        if: steps.release.outputs.publish == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: published-releases-${{ github.sha }}
+          path: release-metadata
+      - name: Plan release-note metadata requests without credentials
         if: steps.release.outputs.publish == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          node scripts/release-notes.mjs generate --to "$RELEASE_TAG" \
-            --output "$RUNNER_TEMP/release-notes.md"
-      - name: Preserve release-note preview and source metadata
-        if: ${{ !cancelled() && steps.release.outputs.publish == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+          node scripts/release-notes.mjs plan --to "$RELEASE_TAG" \
+            --metadata release-metadata --output "$RUNNER_TEMP/commits.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: steps.release.outputs.publish == 'true'
         with:
-          name: release-notes-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/release-notes.md
-            ${{ runner.temp }}/release-notes.md.json
+          name: release-note-commits-${{ github.sha }}
+          path: ${{ runner.temp }}/commits.json
           if-no-files-found: error
-          retention-days: 90
-      - uses: Swatinem/rust-cache@v2
+          retention-days: 7
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: desktop-web
           cache-on-failure: true
@@ -65,14 +68,14 @@ jobs:
           cargo install --locked cargo-about --version 0.8.4
           npm run typeshare
       - name: Download shared release bridge
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
       - name: Build shared desktop frontend
         run: |
           npm run build
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-web-${{ github.sha }}
           path: |
@@ -89,16 +92,46 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          lfs: true
-      - uses: actions/setup-node@v5
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - name: Restore Windows source and Git history
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import os
+          import pathlib
+          import shutil
+          import subprocess
+          import tarfile
+
+          # Match a Windows Git checkout with core.symlinks=false. Git Bash tar
+          # tries to copy symlink targets, which may not have been extracted yet.
+          with tarfile.open('.ci-source/source.tar') as archive:
+              for member in archive:
+                  if member.issym():
+                      target = os.fsencode(member.linkname)
+                      member.type = tarfile.REGTYPE
+                      member.size = 0
+                      member.linkname = ''
+                      archive.extract(member, filter='data')
+                      pathlib.Path(member.name).write_bytes(target)
+                  else:
+                      archive.extract(member, filter='data')
+          subprocess.run(['git', 'config', 'core.symlinks', 'false'], check=True)
+          shutil.rmtree('.ci-source')
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
       - name: Load the repository Rust toolchain
         run: rustup target add ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: desktop-${{ matrix.target }}
           cache-on-failure: true
@@ -110,7 +143,7 @@ jobs:
             libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf file wget
       - run: npm ci
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: desktop-web-${{ github.sha }}
           path: webui/dist
@@ -118,70 +151,41 @@ jobs:
         run: |
           cargo install --locked cargo-about --version 0.8.4
           node scripts/distribution-notices.mjs ${{ matrix.target }}
-      - name: Validate macOS signing credentials
-        if: runner.os == 'macOS' && github.event_name != 'pull_request'
-        shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Missing required repository secret: $name"
-              exit 1
-            fi
-          done
-          if [[ "$APPLE_SIGNING_IDENTITY" != "Developer ID Application: "* ]]; then
-            echo "::error::APPLE_SIGNING_IDENTITY must be a Developer ID Application identity."
-            exit 1
-          fi
-      - name: Build signed and notarized macOS installers
-        if: runner.os == 'macOS' && github.event_name != 'pull_request'
-        id: tauri-signed
-        uses: tauri-apps/tauri-action@v1
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        with:
-          projectPath: crates/app
-          tauriScript: npx tauri
-          args: --ci --target ${{ matrix.target }} --bundles app,${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
       - name: Build credential-free desktop installers
-        if: runner.os != 'macOS' || github.event_name == 'pull_request'
         id: tauri
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
         with:
           projectPath: crates/app
           tauriScript: npx tauri
           args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
-      - name: Verify macOS signature and notarization ticket
-        if: runner.os == 'macOS' && github.event_name != 'pull_request'
+      - name: Archive the macOS app for isolated signing
+        if: runner.os == 'macOS' && needs.prepare.outputs.publish == 'true'
         shell: bash
         env:
           DESKTOP_TARGET: ${{ matrix.target }}
         run: |
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
-          app="$target_dir/$DESKTOP_TARGET/release/bundle/macos/Nightfall.app"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          xcrun stapler validate "$app"
-          spctl --assess --type execute --verbose=2 "$app"
+          COPYFILE_DISABLE=1 tar -cf "$RUNNER_TEMP/unsigned-macos.tar" \
+            -C "$target_dir/$DESKTOP_TARGET/release/bundle/macos" Nightfall.app
+      - name: Upload the unsigned app
+        if: runner.os == 'macOS' && needs.prepare.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unsigned-macos-${{ github.sha }}
+          path: ${{ runner.temp }}/unsigned-macos.tar
+          if-no-files-found: error
+          retention-days: 7
       - name: Stage versioned installers
         env:
           DESKTOP_TARGET: ${{ matrix.target }}
-          TAURI_ARTIFACT_PATHS: ${{ steps.tauri-signed.outputs.artifactPaths || steps.tauri.outputs.artifactPaths }}
+          TAURI_ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
         run: node scripts/desktop-artifacts.mjs stage
       - name: Upload primary installer
-        uses: actions/upload-artifact@v7
+        # Release DMGs are uploaded only by the isolated signing job.
+        if: runner.os != 'macOS' || needs.prepare.outputs.publish != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           path: desktop-artifacts/*${{ matrix.extensions[0] }}
           archive: false
@@ -189,14 +193,14 @@ jobs:
           retention-days: 14
       - name: Upload additional installer
         if: matrix.extensions[1] != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           path: desktop-artifacts/*${{ matrix.extensions[1] }}
           archive: false
           if-no-files-found: error
           retention-days: 14
       - name: Upload target notice inventory
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-notices-${{ matrix.target }}-${{ github.sha }}
           path: desktop-artifacts/notices-*.json
@@ -209,73 +213,98 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: desktop-notices-*-${{ github.sha }}
           path: desktop-notices
           merge-multiple: true
       - run: node scripts/desktop-artifacts.mjs combine-notices
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           path: release-notices/THIRD-PARTY-NOTICES-v*.txt
           archive: false
           if-no-files-found: error
           retention-days: 14
 
-  publish:
-    name: Publish version-tag release
-    needs: [prepare, build, notices]
-    if: needs.prepare.outputs.publish == 'true'
+  release-note-metadata:
+    name: Collect PR metadata without executing repository code
+    needs: prepare
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
-      contents: write
-    env:
-      GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ github.ref_name }}
-      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-      RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      contents: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: Download the release notes collected during preparation
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: release-notes-${{ github.sha }}
-          path: release-notes
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: nightfall-v${{ needs.prepare.outputs.version }}-*
-          path: release-assets
-          merge-multiple: true
-      - uses: actions/download-artifact@v8
-        with:
-          name: THIRD-PARTY-NOTICES-v${{ needs.prepare.outputs.version }}.txt
-          path: release-assets
-      - name: Publish only after every installer has uploaded
-        working-directory: release-assets
-        shell: bash
+          name: release-note-commits-${{ github.sha }}
+          path: requests
+      - name: Fetch only validated commit associations
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          sha256sum ./* > SHA256SUMS
-          if state=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft); then
-            if [ "$state" != true ]; then
-              echo "Release $RELEASE_TAG is already public; refusing to replace its assets."
-              exit 1
-            fi
-          else
-            prerelease_args=()
-            if [ "$RELEASE_PRERELEASE" = true ]; then prerelease_args+=(--prerelease); fi
-            gh release create "$RELEASE_TAG" --verify-tag --draft \
-              --title "Nightfall $RELEASE_VERSION" \
-              --notes-file "$GITHUB_WORKSPACE/release-notes/release-notes.md" \
-              "${prerelease_args[@]}"
-          fi
-          gh release upload "$RELEASE_TAG" ./* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false
+          jq -e 'type == "array" and all(.[]; type == "string" and test("^[a-f0-9]{40}$"))' requests/commits.json > /dev/null
+          jq -r '.[]' requests/commits.json > "$RUNNER_TEMP/commits"
+          mkdir -p release-metadata/commits
+          while IFS= read -r sha; do
+            gh api --paginate --slurp "repos/$GH_REPO/commits/$sha/pulls?per_page=100" \
+              | jq 'add' > "release-metadata/commits/$sha.json"
+          done < "$RUNNER_TEMP/commits"
+          # Keep an artifact even when the release range contains no commits.
+          cp requests/commits.json release-metadata/commits.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-note-metadata-${{ github.sha }}
+          path: release-metadata/
+          if-no-files-found: error
+          retention-days: 90
+
+  release-notes:
+    name: Render release notes without credentials
+    needs: release-note-metadata
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: published-releases-${{ github.sha }}
+          path: release-metadata
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-note-metadata-${{ github.sha }}
+          path: release-metadata
+      - name: Collect release notes from included pull requests
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/release-notes.mjs generate --to "$RELEASE_TAG" \
+            --metadata release-metadata --output "$RUNNER_TEMP/release-notes.md"
+      - name: Preserve release-note preview and source metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-notes-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/release-notes.md
+            ${{ runner.temp }}/release-notes.md.json
+          if-no-files-found: error
+          retention-days: 90

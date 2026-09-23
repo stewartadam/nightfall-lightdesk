@@ -4,8 +4,7 @@ name: Browser demo artifact
 on:
   workflow_call:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: browser-${{ github.workflow }}-${{ github.ref }}
@@ -18,13 +17,16 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Download credential-free source
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          lfs: true
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
@@ -33,7 +35,7 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install system dependencies
         run: |
@@ -55,13 +57,13 @@ jobs:
         run: npm run typeshare
 
       - name: Download shared release WASM
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
 
       - name: Download shared demo engine
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-browser-runtime-${{ github.sha }}
           path: webui/assets/browser-runtime
@@ -85,7 +87,7 @@ jobs:
         run: npm run test:browser-demo-artifact -- --browser firefox
 
       - name: Upload the immutable demo artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: nightfall-browser-demo-${{ github.sha }}
           path: webui/dist/

@@ -14,10 +14,10 @@ Generated macOS installers target Apple Silicon only.
 
 ## Build channels
 
-- Pushes to `main` build GitHub Actions artifacts, retained for 14 days. They do not create a GitHub Release and must not appear on `nightfall.live/downloads`.
+- Pushes to `main` build unsigned/ad-hoc GitHub Actions artifacts, retained for 14 days. They do not create a GitHub Release and must not appear on `nightfall.live/downloads`.
 - Pull requests changing distribution workflows, their build inputs, runtime entry points, or Tauri packaging configuration exercise the same builds without publishing.
 - Manual workflow runs produce CI artifacts only, including when run against a tag.
-- A pushed `v<version>` tag publishes a GitHub Release after every platform build succeeds. The tag must exactly match the Tauri application version and Cargo workspace version. Versions such as `v0.2.0-beta.1` produce prereleases.
+- A pushed `v<version>` tag signs/notarizes macOS on an isolated runner and publishes a GitHub Release after every platform build and signing succeeds. The tag must exactly match the Tauri application version and Cargo workspace version. Versions such as `v0.2.0-beta.1` produce prereleases.
 
 This repository supplies the tagged GitHub Release assets. The `nightfall.live/downloads` site should list published releases and their installers, excluding Actions artifacts and drafts.
 
@@ -40,7 +40,7 @@ Installer names include the version and architecture target, for example `nightf
 
 ## Signing status
 
-macOS builds on pushes to `main`, version-tag pushes, and manual workflow runs use a Developer ID Application certificate and Apple notarization. Both Apple Silicon and Intel jobs require all six repository secrets below; missing credentials fail the build instead of falling back to ad-hoc signing.
+Only version-tag pushes use a Developer ID Application certificate and Apple notarization. The isolated Apple Silicon signing job requires all six repository secrets below; missing credentials fail the release instead of falling back to ad-hoc signing.
 
 | Repository secret | Value |
 | --- | --- |
@@ -51,11 +51,11 @@ macOS builds on pushes to `main`, version-tag pushes, and manual workflow runs u
 | `APPLE_PASSWORD` | App-specific password for that account |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
 
-Tauri imports the signing identity, signs and notarizes the app, and staples its ticket. Signed builds retain both the app bundle and DMG so the app can be verified; only the DMG is staged as an installer. The workflow verifies the app signature, stapled ticket, and Gatekeeper assessment before staging installers. Publication requires every build to succeed.
+Tauri builds an ad-hoc signed app without credentials. A fresh runner downloads only the app artifact and uses system tools to sign, notarize, staple, and verify it before creating the release DMG. The DMG is also signed, notarized, and stapled. No project scripts, dependency installation, or compilation run on this runner. Publication occurs on a third runner after every build and signing succeeds. See [CI trust boundaries](ci-security.md) for the design philosophy, artifact validation, and maintenance rules.
 
-Pull requests, including same-repository PRs, receive no signing credentials and use an ad-hoc macOS identity (`-`). Linux and Windows packaging receive no Apple credentials. Windows installers remain unsigned.
+Pull requests (including same-repository PRs), branch pushes, and manual runs receive no signing credentials and use an ad-hoc macOS identity (`-`). Linux and Windows packaging receive no Apple credentials. Windows installers remain unsigned.
 
-To validate credential setup, manually run **CI (Prek Parity + WebUI Tests)** from a trusted branch containing the signing workflow. Manual runs produce artifacts without publishing a release. Download each macOS DMG through a browser and verify that the installed app opens without a security override. The normal confirmation for an Internet download may still appear.
+Manual runs validate unsigned packaging only. Validate real credentials on an intentional prerelease tag after reviewing and testing the commit. Download the published macOS DMG through a browser and verify that the installed app opens without a security override. The normal confirmation for an Internet download may still appear.
 
 See the official [Tauri macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) for certificate export and credential setup. Keep credentials in GitHub Actions secrets, never in repository files.
 
@@ -63,6 +63,7 @@ See the official [Tauri macOS signing guide](https://v2.tauri.app/distribute/sig
 
 ```sh
 node --test scripts/desktop-artifacts.node.test.mjs
+node --test scripts/ci-security.node.test.mjs
 node scripts/desktop-artifacts.mjs prepare
 ```
 

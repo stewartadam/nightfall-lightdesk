@@ -5,6 +5,19 @@ PR descriptions are independently checked by the **Release notes** job in
 [PR release notes](../../docs/contributing/release-notes.md) for the `Notes:` convention,
 explicit omission syntax, and required-check activation after rollout.
 
+## Security model
+
+Follow [CI trust boundaries](../../docs/ci-security.md): jobs that execute
+repository or dependency code have `permissions: {}` and no release secrets.
+The read-only `scope` job acquires source and LFS data without executing project
+code. Builds consume its credential-free source artifact. Signing and publishing
+use fresh runners, consume artifacts only as data, and restore no build caches.
+Read-only metadata jobs fetch PR/release API responses; permissionless jobs use
+those snapshots to validate descriptions and generate changelogs.
+Keep these boundaries intact when adding checks, tools, caches, or release steps.
+
+## Native checks
+
 `ci-precommit.yml` runs the native pre-commit stage (Clippy and source checks)
 and pre-push stage (Rust tests) as parallel matrix jobs with `fail-fast: false`.
 Each stage runs once. Both skip TypeScript and Node hooks, which run once in the

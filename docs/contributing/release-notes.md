@@ -37,11 +37,12 @@ useful and whether the omission is justified; the check validates structure.
 
 The **Release notes** job in `release-notes.yml` validates the current description
 on PR creation, reopening, new commits, description edits, and readiness changes.
-It runs the parser from the PR merge commit with read-only permissions and writes
-a preview to the Actions job summary. This also validates PRs that introduce or
-modify the parser. The `pull_request` workflow receives no repository secrets and
-does not persist checkout credentials. Changes to the parser and workflow need
-review, like changes to other CI checks.
+A read-only acquisition job snapshots the live description and the parser from
+the PR merge commit. The **Release notes** job executes that parser on a fresh
+runner with `permissions: {}` and writes a preview to the Actions job summary.
+This also validates PRs that introduce or modify the parser. The `pull_request`
+workflow receives no repository secrets and does not persist checkout credentials.
+Changes to the parser and workflow need review, like changes to other CI checks.
 
 After this workflow and its script reach both PR base branches (`develop` and
 `main`), add **Release notes** (GitHub Actions) to the **Protected branches**
@@ -103,10 +104,19 @@ omission reasons, and unmatched commits. Avoid putting generated files in Git.
 The workflow saves both files as `release-notes-<commit>` for 90 days. The existing
 publisher uses this Markdown and the standard installation information when
 creating its draft release, then publishes after every installer upload succeeds.
-It does not reread PR descriptions during publishing. A full rerun of preparation
-does reread them; PR descriptions are mutable until the release is cut. An
+It does not reread PR descriptions during publishing. A full rerun including the
+metadata acquisition job does reread them; PR descriptions are mutable until the release is cut. An
 existing draft's manually edited body is preserved on publication retry. Published
 releases remain immutable under the existing workflow.
+
+CI separates API collection from script execution: source acquisition snapshots
+published releases, permissionless preparation plans commit IDs, a read-only job
+fetches their PR associations, and a permissionless job renders the final notes.
+The script's `--metadata DIR` mode reads those snapshots without invoking `gh`;
+missing snapshots fail rather than falling back to authentication. The `plan`
+command emits the same ancestry range used by `generate`. Local previews can
+still query GitHub directly when `--metadata` is omitted. See
+[CI trust boundaries](../ci-security.md) for the security model.
 
 ## Validation
 
