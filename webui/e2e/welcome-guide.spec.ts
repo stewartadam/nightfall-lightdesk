@@ -821,6 +821,36 @@ test("welcome basics toggles a clip and opens properties", async ({
   ).toBeVisible();
 });
 
+/** Replaces native saving instructions when the runtime cannot persist showfiles. */
+test("welcome saving explains unavailable persistence", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  await page.evaluate(() => {
+    const store = (window as any).appStores.runtimeCapabilities;
+    store.set({ ...store.get(), persistence: "Unavailable" });
+  });
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await reachStep(page, "Demo edits are temporary");
+  await expect(
+    guide.getByText(
+      /Automatic draft recovery and Save Showfile are unavailable here/,
+    ),
+  ).toBeVisible();
+  await expect(
+    guide.getByText(/Open Menu at the bottom left and choose Save Showfile/),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("welcome-no-persistence.png"),
+  });
+  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Discover keyboard shortcuts" }),
+  ).toBeVisible();
+});
+
 for (const platform of ["MacIntel", "Win32"]) {
   /** Shows the platform modifier as shared keycaps and verifies the advertised binding opens the palette. */
   test(`guide palette shortcut matches ${platform}`, async ({
