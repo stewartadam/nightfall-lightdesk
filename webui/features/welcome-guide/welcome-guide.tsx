@@ -19,7 +19,8 @@ import {
 } from "../../lib/panel-definitions";
 import { openOrFocusPanelDefinition } from "../../lib/panel-open-command";
 import { isEmbeddedDemoRuntime } from "../../lib/runtime-config";
-import { runtimeCapabilities } from "../../state/appStores";
+import { runtimeCapabilities, timelines } from "../../state/appStores";
+import { normalizeTimelineUid } from "../timeline/model/timeline-list-model";
 import { GuideTarget } from "./guide-target";
 import { GUIDE_LESSONS } from "./lessons";
 import {
@@ -64,6 +65,11 @@ export default function WelcomeGuide() {
   const index = useStore(guideStepIndex);
   const completed = useStore(guideCompleted);
   const capabilities = useStore(runtimeCapabilities);
+  const timelineMap = useStore(timelines);
+  /** Finds the generated sample timeline without relying on its session-specific UID. */
+  const sampleTimeline = createMemo(() =>
+    Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
+  );
   const { dockviewApi } = useAppShell();
   let heading: HTMLHeadingElement | undefined;
   /** Resolves lesson data without retaining stale content when returning to the library. */
@@ -84,6 +90,28 @@ export default function WelcomeGuide() {
   /** Opens panels through the same placement and expansion policy as the palette. */
   const openPanel = (name: PanelComponentName) => {
     openOrFocusPanelDefinition(dockviewApi(), panelDefinitionByName(name));
+  };
+
+  /** Opens the sample editor using the same identity and parameters as the timeline list. */
+  const openSampleTimeline = () => {
+    const api = dockviewApi();
+    const timeline = sampleTimeline();
+    if (!api || !timeline) return;
+    const uid = normalizeTimelineUid(timeline.identifiers.uid);
+    const id = `panel-Timeline-${uid}`;
+    const existing = api.getPanel(id);
+    if (existing) {
+      if (existing.api.location.type === "edge")
+        api.getEdgeGroup(existing.api.location.position)?.expand();
+      existing.focus();
+      return;
+    }
+    api.addPanel({
+      id,
+      component: "Timeline",
+      title: "Timeline 1",
+      params: { initialTimelineUid: uid },
+    });
   };
 
   /** Changes instructional position and returns focus to its heading for keyboard users. */
@@ -197,8 +225,22 @@ export default function WelcomeGuide() {
                         <strong>Try it</strong>
                         <p>{instruction().action}</p>
                       </div>
-                      <Show when={instruction().panels?.length}>
+                      <Show
+                        when={
+                          instruction().sampleTimeline ||
+                          instruction().panels?.length
+                        }
+                      >
                         <div class="nf-guide-shortcuts">
+                          <Show when={instruction().sampleTimeline}>
+                            <Button
+                              size="compact"
+                              onClick={openSampleTimeline}
+                              disabled={!dockviewApi() || !sampleTimeline()}
+                            >
+                              Open Timeline 1: Lo-Fi
+                            </Button>
+                          </Show>
                           <For each={instruction().panels}>
                             {(name) => (
                               <Button
