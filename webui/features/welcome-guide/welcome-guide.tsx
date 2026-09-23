@@ -193,7 +193,7 @@ export default function WelcomeGuide() {
                 title="Drag to move, or use arrow keys when focused"
                 onKeyDown={floating.onKeyDown}
               >
-                ⠿ LEARN NIGHTFALL
+                ⠿ LEARN NIGHTFALL ·{" "}
                 <span class="nf-guide-current-lesson">{lesson()?.title}</span>
               </button>
             </Show>

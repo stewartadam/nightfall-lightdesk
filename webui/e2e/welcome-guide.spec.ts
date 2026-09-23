@@ -452,6 +452,29 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
     guide.getByRole("heading", { name: "Find your way around" }),
   ).toBeVisible();
   await expect(guide).toContainText("Use the Command Palette to open panels");
+  await expect
+    .poll(async () => {
+      const card = (await guide.boundingBox())!;
+      const button = (await page
+        .getByRole("button", { name: "Open command palette", exact: true })
+        .boundingBox())!;
+      return Math.hypot(
+        Math.max(
+          0,
+          card.x - button.x - button.width,
+          button.x - card.x - card.width,
+        ),
+        Math.max(
+          0,
+          card.y - button.y - button.height,
+          button.y - card.y - card.height,
+        ),
+      );
+    })
+    .toBeLessThanOrEqual(20);
+  await page.screenshot({
+    path: testInfo.outputPath("guide-palette-button.png"),
+  });
   await page
     .getByRole("button", { name: "Open command palette", exact: true })
     .click();
