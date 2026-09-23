@@ -98,6 +98,40 @@ async function expectGuideOutsideBackdrop(page: Page) {
   ).toBe(true);
 }
 
+/** Keeps constrained divider grips visible when the guide reduces the workspace width. */
+test("guide preserves divider grips at panel minimum widths", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const divider = page
+    .locator(
+      ".dv-dockview .dv-horizontal > .dv-sash-container > .dv-sash.dv-disabled",
+    )
+    .first();
+  await expect(divider).toBeVisible();
+  await expect
+    .poll(() =>
+      divider.evaluate(
+        (element) => getComputedStyle(element, "::after").content,
+      ),
+    )
+    .toBe('""');
+  await expect
+    .poll(() =>
+      divider.evaluate(
+        (element) => getComputedStyle(element, "::after").opacity,
+      ),
+    )
+    .toBe("0.45");
+  await page.screenshot({
+    path: testInfo.outputPath("guide-constrained-divider.png"),
+  });
+  await page.getByRole("button", { name: "Exit welcome guide" }).click();
+  await expect(divider).toHaveCount(0);
+});
+
 /** Keeps the complete shell and right-hand Dockview content inside the app's own viewport. */
 test("guide resizes the whole app and leaves right-hand panels clickable", async ({
   page,
