@@ -153,6 +153,11 @@ impl ArchiveSnapshot {
         &self.bytes
     }
 
+    /// Transfer retained bytes into a parser-owned reader without copying or reopening a mutable path.
+    pub(crate) fn into_reader(self) -> Cursor<Arc<[u8]>> {
+        Cursor::new(self.bytes)
+    }
+
     /// Check indexed ZIP budgets and decoded name collisions, then parse bounded XML with the existing GDTF parser.
     /// The ZIP dependency collapses identical raw names before indexing; rejecting those remains an upstream requirement.
     pub fn parse(self, limits: ArchiveLimits) -> Result<ParsedArchive, ResolveError> {

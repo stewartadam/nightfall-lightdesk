@@ -101,7 +101,7 @@ fn main() {
                 path: mode.clone(),
                 message: error.to_string(),
             })
-            .and_then(|archive| {
+            .and_then(|(archive, _digest)| {
                 let fixture =
                     archive
                         .description
@@ -396,8 +396,11 @@ fn main() {
                 // Generated runtime identifiers do not belong in structural baselines.
                 fixture.identifiers.uid = uuid::Uuid::nil();
                 let mut geometry = geometry;
-                if let Some(geometry) = geometry.as_mut() {
-                    geometry.gdtf_path = None;
+                if let Some(source) = geometry
+                    .as_mut()
+                    .and_then(|geometry| geometry.gdtf.as_mut())
+                {
+                    source.path.clear();
                 }
                 emit(
                     json!({"stage": "conversion", "status": "passed", "mode": mode,

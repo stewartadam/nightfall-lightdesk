@@ -377,9 +377,9 @@ export function buildGeometryTree(
       const meshFileName = node.model.meshFile;
       const primitiveType = node.model.primitiveType;
 
-      if (meshFileName && geometry.gdtfPath) {
+      if (meshFileName && geometry.gdtf) {
         // Load mesh from GDTF archive
-        loadMesh(geometry.gdtfPath, meshFileName).then((meshGroup) => {
+        loadMesh(geometry.gdtf, meshFileName).then((meshGroup) => {
           if (meshGroup) {
             replacePrimitiveWithMesh(obj, node.name, meshGroup);
           }

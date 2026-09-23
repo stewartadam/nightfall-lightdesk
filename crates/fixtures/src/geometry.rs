@@ -196,7 +196,7 @@ pub struct MeshResource {
 /// Complete geometry tree for a fixture.
 ///
 /// Contains all geometry nodes in a flat array with parent/child indices,
-/// plus available mesh resources and the source GDTF file path.
+/// plus available mesh resources and the exact source GDTF revision and mode.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(rename_all = "camelCase")]
@@ -208,9 +208,22 @@ pub struct FixtureGeometry {
     /// Available mesh resources keyed by model name.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub mesh_resources: HashMap<String, MeshResource>,
-    /// Path to source GDTF file for mesh loading.
+    /// Exact source revision and mode used to construct this geometry.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub gdtf_path: Option<String>,
+    pub gdtf: Option<GdtfGeometrySource>,
+}
+
+/// Source identity tying geometry and resource requests to the same immutable archive bytes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct GdtfGeometrySource {
+    /// Indexed server path used to locate the requested archive revision.
+    pub path: String,
+    /// SHA-256 of the exact bytes parsed to construct the geometry.
+    pub archive_sha256: String,
+    /// Exact selected mode; geometry bindings may differ between modes of one archive.
+    pub mode: String,
 }
 
 /// Trait for providing geometry data for fixtures.

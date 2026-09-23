@@ -48,6 +48,8 @@ pub struct ExtractedMesh {
 /// Error types for mesh extraction.
 #[derive(Debug)]
 pub enum MeshExtractionError {
+    /// The indexed path no longer contains the revision requested by the geometry.
+    RevisionUnavailable,
     /// Resource names must remain a single archive-local model stem.
     InvalidModelName,
     /// Shared archive validation rejected a resource request.
@@ -64,6 +66,7 @@ impl std::fmt::Display for MeshExtractionError {
     /// Describe extraction failures without erasing bounded-archive diagnostic context.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::RevisionUnavailable => write!(f, "Requested archive revision is unavailable"),
             Self::InvalidModelName => {
                 write!(f, "Model name must be a single nonempty resource stem")
             }
@@ -116,14 +119,38 @@ pub fn extract_mesh_with_limits(
     model_name: &str,
     limits: ArchiveLimits,
 ) -> Result<ExtractedMesh, MeshExtractionError> {
+    let snapshot = ArchiveSnapshot::read(gdtf_path, limits.archive_bytes)
+        .map_err(MeshExtractionError::ArchiveError)?;
+    extract_mesh_from_snapshot(&snapshot, model_name, limits)
+}
+
+/// Serve only bytes from the requested archive revision, even if its indexed path was replaced.
+pub fn extract_mesh_from_revision(
+    gdtf_path: &Path,
+    archive_sha256: &str,
+    model_name: &str,
+) -> Result<ExtractedMesh, MeshExtractionError> {
+    let limits = ArchiveLimits::default();
+    let snapshot = ArchiveSnapshot::read(gdtf_path, limits.archive_bytes)
+        .map_err(MeshExtractionError::ArchiveError)?;
+    if snapshot.sha256() != archive_sha256 {
+        return Err(MeshExtractionError::RevisionUnavailable);
+    }
+    extract_mesh_from_snapshot(&snapshot, model_name, limits)
+}
+
+/// Extract a resource from retained source bytes, sharing the same path for current and pinned archives.
+pub fn extract_mesh_from_snapshot(
+    snapshot: &ArchiveSnapshot,
+    model_name: &str,
+    limits: ArchiveLimits,
+) -> Result<ExtractedMesh, MeshExtractionError> {
     if model_name.is_empty()
         || matches!(model_name, "." | "..")
         || model_name.contains(['/', '\\', '\0'])
     {
         return Err(MeshExtractionError::InvalidModelName);
     }
-    let snapshot = ArchiveSnapshot::read(gdtf_path, limits.archive_bytes)
-        .map_err(MeshExtractionError::ArchiveError)?;
     let mut archive = snapshot
         .open_validated(limits)
         .map_err(MeshExtractionError::ArchiveError)?;

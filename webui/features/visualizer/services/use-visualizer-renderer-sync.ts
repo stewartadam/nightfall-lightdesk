@@ -60,6 +60,7 @@ function buildElementSignature(fixture: RenderableFixture): string {
   return fixture.elements.map((element) => element.label).join("|");
 }
 
+/** Rebuild geometry when its archive revision or selected mode changes, even with identical node counts. */
 function buildGeometrySignature(fixture: RenderableFixture): string {
   const geometry = fixture.geometry;
   if (!geometry) {
@@ -69,7 +70,10 @@ function buildGeometrySignature(fixture: RenderableFixture): string {
   const meshResourceCount = geometry.meshResources
     ? Object.keys(geometry.meshResources).length
     : 0;
-  return `${geometry.gdtfPath ?? ""}|n:${geometry.nodes.length}|r:${geometry.roots.length}|m:${meshResourceCount}`;
+  const source = geometry.gdtf
+    ? JSON.stringify([geometry.gdtf.archiveSha256, geometry.gdtf.mode])
+    : "";
+  return `${source}|n:${geometry.nodes.length}|r:${geometry.roots.length}|m:${meshResourceCount}`;
 }
 
 function toFixtureSyncSnapshot(

@@ -50,7 +50,7 @@ impl Plugin for FixtureLibraryPlugin {
         app.world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>()
             .register(
-                "/api/mesh/{gdtf_path}/{model_name}",
+                "/api/mesh/{gdtf_path}/{archive_sha256}/{model_name}",
                 axum::routing::get(crate::http_routes::serve_mesh).with_state(mesh_access),
             );
 

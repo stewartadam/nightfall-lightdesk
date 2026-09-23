@@ -30,7 +30,7 @@ pub fn convert_gdtf_to_fixture(
     id: u32,
 ) -> Result<(Fixture, Option<FixtureGeometry>)> {
     // Re-parse the GDTF file to access full data
-    let mut gdtf = metadata.reparse()?;
+    let (mut gdtf, archive_sha256) = metadata.reparse()?;
 
     // Get the first fixture type (most GDTF files have only one)
     let fixture_type = gdtf
@@ -118,7 +118,14 @@ pub fn convert_gdtf_to_fixture(
     let physical = extract_physical_properties(fixture_type);
 
     // Extract geometry tree for 3D visualization
-    let geometry = extract_geometry_tree(fixture_type, dmx_mode, &mut gdtf.resources, metadata);
+    let geometry = extract_geometry_tree(
+        fixture_type,
+        dmx_mode,
+        &mut gdtf.resources,
+        metadata,
+        &archive_sha256,
+        mode_name,
+    );
 
     let fixture = Fixture {
         identifiers: Identifiers {
@@ -147,7 +154,7 @@ pub fn convert_gdtf_to_fixture(
 /// useful for materializing fixtures that were loaded from a showfile.
 pub fn get_gdtf_geometry(metadata: &GdtfMetadata, mode_name: &str) -> Result<FixtureGeometry> {
     // Re-parse the GDTF file to access full data
-    let mut gdtf = metadata.reparse()?;
+    let (mut gdtf, archive_sha256) = metadata.reparse()?;
 
     // Get the first fixture type (most GDTF files have only one)
     let fixture_type = gdtf
@@ -173,9 +180,15 @@ pub fn get_gdtf_geometry(metadata: &GdtfMetadata, mode_name: &str) -> Result<Fix
         })?;
 
     // Extract geometry tree for 3D visualization
-    extract_geometry_tree(fixture_type, dmx_mode, &mut gdtf.resources, metadata).ok_or_else(|| {
-        FixtureLibraryError::Conversion("No geometry found in GDTF file".to_string())
-    })
+    extract_geometry_tree(
+        fixture_type,
+        dmx_mode,
+        &mut gdtf.resources,
+        metadata,
+        &archive_sha256,
+        mode_name,
+    )
+    .ok_or_else(|| FixtureLibraryError::Conversion("No geometry found in GDTF file".to_string()))
 }
 
 /// Convert a GDTF logical channel to a parameter
@@ -554,6 +567,8 @@ fn extract_geometry_tree(
     dmx_mode: &gdtf::dmx_mode::DmxMode,
     resources: &mut gdtf::ResourceMap,
     metadata: &GdtfMetadata,
+    archive_sha256: &str,
+    mode_name: &str,
 ) -> Option<FixtureGeometry> {
     if fixture_type.geometries.is_empty() {
         return None;
@@ -597,7 +612,11 @@ fn extract_geometry_tree(
         nodes,
         roots,
         mesh_resources,
-        gdtf_path: Some(metadata.file_path.to_string_lossy().to_string()),
+        gdtf: Some(nightfall_fixtures::geometry::GdtfGeometrySource {
+            path: metadata.file_path.to_string_lossy().to_string(),
+            archive_sha256: archive_sha256.into(),
+            mode: mode_name.into(),
+        }),
     })
 }
 

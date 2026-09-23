@@ -22,7 +22,7 @@ use bevy_ecs::prelude::Resource;
 use tokio::sync::Semaphore;
 
 use crate::manager::{FixtureLibraryManager, FixtureSource};
-use crate::mesh::{MeshExtractionError, decode_gdtf_path, extract_mesh_from_gdtf};
+use crate::mesh::{MeshExtractionError, decode_gdtf_path, extract_mesh_from_revision};
 
 /// Shared current library index and admission limit for expensive mesh extraction requests.
 #[derive(Clone, Resource)]
@@ -66,8 +66,15 @@ impl MeshAccess {
 /// Serve only indexed GDTF resources with bounded extraction away from async executor threads.
 pub async fn serve_mesh(
     State(access): State<MeshAccess>,
-    Path((encoded_path, model_name)): Path<(String, String)>,
+    Path((encoded_path, archive_sha256, model_name)): Path<(String, String, String)>,
 ) -> Response {
+    if archive_sha256.len() != 64
+        || !archive_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return error_response(StatusCode::BAD_REQUEST, "Invalid archive revision");
+    }
     let path = match decode_gdtf_path(&encoded_path) {
         Ok(path) => PathBuf::from(path),
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid archive identifier"),
@@ -90,23 +97,31 @@ pub async fn serve_mesh(
             "Archive is no longer in the fixture library",
         );
     }
+    let etag = format!("\"{archive_sha256}\"");
     let result = tokio::task::spawn_blocking(move || {
         // Keep admission ownership inside the worker even if its HTTP request is cancelled.
         let _slot = slot;
-        extract_mesh_from_gdtf(&path, &model_name)
+        extract_mesh_from_revision(&path, &archive_sha256, &model_name)
     })
     .await;
     match result {
         Ok(Ok(mesh)) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, mesh.format.content_type())
-            // This path-based URL can change contents; immutable caching requires revisioned URLs.
-            .header(header::CACHE_CONTROL, "no-store")
+            .header(
+                header::CACHE_CONTROL,
+                "private, max-age=31536000, immutable",
+            )
+            .header(header::ETAG, etag)
             .body(Body::from(mesh.data))
             .expect("valid mesh response"),
         Ok(Err(error)) => {
             tracing::warn!(%error, "Fixture mesh extraction failed");
             let (status, message) = match error {
+                MeshExtractionError::RevisionUnavailable => (
+                    StatusCode::CONFLICT,
+                    "Requested archive revision is unavailable",
+                ),
                 MeshExtractionError::InvalidModelName => {
                     (StatusCode::BAD_REQUEST, "Invalid model resource name")
                 }

@@ -116,12 +116,22 @@ The live mesh HTTP route now accepts only paths in the current installed/package
 GDTF index. It shares the archive snapshot/index budgets used by compilation,
 bounds actual resource reads, and performs extraction in blocking workers with
 at most two concurrent extractions. Missing/empty GLB permits 3DS fallback;
-corrupt or oversized resources fail explicitly. Mutable path URLs return
-`Cache-Control: no-store`. This does not yet replace them with content-addressed
-resource URLs, pin old resources across library revisions, change the frontend
-mesh cache, or validate external references inside GLB data. Those remain part
-of resource/renderer integration. Route tests cover index refresh/removal,
-unindexed paths, resource naming, limits, corruption, fallback and headers.
+corrupt or oversized resources fail explicitly. Geometry records the SHA-256 of
+the exact snapshot parsed, its indexed path and selected mode. Mesh URLs include
+that revision; extraction verifies the hash and reads resources from the same
+snapshot. Replacing a file at its original path makes an old revision request
+fail with HTTP 409 rather than return different bytes. Successful responses use
+private immutable caching; errors use no-store. The frontend shares mesh loads
+by archive hash and model, and encodes source paths as UTF-8.
+
+Route tests cover index refresh/removal, unindexed paths, resource naming,
+limits, corruption, fallback, replacement and headers. A browser test exercises
+the production mesh loader with two owned synthetic GLB responses, checks request
+counts and decoded dimensions, and renders both revisions for inspection. This
+does not establish native archive-to-stage parity or resolve WebGPU rendering
+issues. Retaining old archives across library revisions and save/reload,
+external GLB reference restrictions, and renderer resource ownership remain
+part of resource/renderer integration.
 
 Logical parameter values and percentages use double precision; byte assembly
 and encoding retain `u32`. A pipeline regression checks 266 raw values, including

@@ -22,6 +22,8 @@ import {
 } from "three/webgpu";
 import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
+import type { GdtfGeometrySource } from "../../../types/index";
+import { meshResourceKey, meshResourcePath } from "./mesh-resource";
 
 const log = getLogger(import.meta.url);
 
@@ -29,7 +31,7 @@ const log = getLogger(import.meta.url);
 const gltfLoader = new GLTFLoader();
 const tdsLoader = new TDSLoader();
 
-// Mesh cache: gdtfPath:modelName -> Promise<Group>
+// Mesh cache: archive revision and model name -> Promise<Group>
 const meshCache = new Map<string, Promise<Group>>();
 
 /**
@@ -83,26 +85,18 @@ function applyFixtureMaterial(group: Group): void {
 }
 
 /**
- * Encode a file path to base64url format for safe URL usage.
- */
-function encodeGdtfPath(path: string): string {
-  const base64 = btoa(path);
-  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-/**
  * Load a fixture mesh from the backend GDTF archive.
  * Tries GLB first, then falls back to 3DS if available.
  *
- * @param gdtfPath - Path to the GDTF file on the server
+ * @param source - Indexed archive path and the exact revision used to build this geometry
  * @param modelName - Name of the model/mesh to load (without extension)
  * @returns A cloned Group containing the mesh, or null if loading failed
  */
 export async function loadMesh(
-  gdtfPath: string,
+  source: GdtfGeometrySource,
   modelName: string,
 ): Promise<Group | null> {
-  const cacheKey = `${gdtfPath}:${modelName}`;
+  const cacheKey = meshResourceKey(source, modelName);
 
   if (meshCache.has(cacheKey)) {
     try {
@@ -114,8 +108,7 @@ export async function loadMesh(
     }
   }
 
-  const encodedPath = encodeGdtfPath(gdtfPath);
-  const url = `${getBackendUrl()}/api/mesh/${encodedPath}/${encodeURIComponent(modelName)}`;
+  const url = `${getBackendUrl()}${meshResourcePath(source, modelName)}`;
 
   const loadPromise = new Promise<Group>((resolve, reject) => {
     // Try loading as GLB/GLTF first
@@ -140,7 +133,9 @@ export async function loadMesh(
           },
           undefined,
           () => {
-            log.warn(`Failed to load mesh ${modelName} from ${gdtfPath}`);
+            log.warn(
+              `Failed to load mesh ${modelName} from ${source.path} at revision ${source.archiveSha256}`,
+            );
             reject(new Error("Failed to load mesh"));
           },
         );

@@ -15,6 +15,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::gdtf_archive::{ArchiveLimits, ArchiveSnapshot};
 use crate::{FixtureLibraryError, Result};
 
 /// Metadata extracted from a GDTF file
@@ -51,11 +52,18 @@ impl GdtfMetadata {
         })
     }
 
-    /// Re-parse the GDTF file for conversion
-    pub fn reparse(&self) -> Result<gdtf::GdtfFile> {
-        let file = std::fs::File::open(&self.file_path)?;
-        gdtf::GdtfFile::new(file)
-            .map_err(|e| FixtureLibraryError::Gdtf(format!("Failed to re-parse GDTF file: {}", e)))
+    /// Parse a bounded immutable snapshot and return its exact digest for geometry/resource identity.
+    pub fn reparse(&self) -> Result<(gdtf::GdtfFile, String)> {
+        let limits = ArchiveLimits::default();
+        let snapshot = ArchiveSnapshot::read(&self.file_path, limits.archive_bytes)
+            .map_err(|error| FixtureLibraryError::Gdtf(error.to_string()))?;
+        snapshot
+            .open_validated(limits)
+            .map_err(|error| FixtureLibraryError::Gdtf(error.to_string()))?;
+        let digest = snapshot.sha256().to_owned();
+        let file = gdtf::GdtfFile::new(snapshot.into_reader())
+            .map_err(|e| FixtureLibraryError::Gdtf(format!("Failed to re-parse GDTF file: {e}")))?;
+        Ok((file, digest))
     }
 }
 

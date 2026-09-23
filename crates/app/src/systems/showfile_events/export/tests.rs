@@ -438,7 +438,7 @@ fn all_references_reload_without_the_original_libraries() {
     let geometry = library
         .get_geometry("Export Test", "Export Fixture", "Default")
         .expect("packaged GDTF geometry");
-    assert!(Path::new(geometry.gdtf_path.as_ref().unwrap()).starts_with(prepared.path()));
+    assert!(Path::new(&geometry.gdtf.as_ref().unwrap().path).starts_with(prepared.path()));
     library.set_showfile_directory(None).unwrap();
     assert!(
         library
