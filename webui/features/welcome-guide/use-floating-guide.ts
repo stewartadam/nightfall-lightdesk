@@ -128,6 +128,26 @@ export function useFloatingGuide(
     const candidates = [
       ...beside(target),
       ...(panel ? beside(panel) : []),
+      ...(panel
+        ? [
+            {
+              x: panel.right + 16,
+              y: target.y + target.height / 2 - height / 2,
+            },
+            {
+              x: panel.left - width - 16,
+              y: target.y + target.height / 2 - height / 2,
+            },
+            {
+              x: target.x + target.width / 2 - width / 2,
+              y: panel.bottom + 16,
+            },
+            {
+              x: target.x + target.width / 2 - width / 2,
+              y: panel.top - height - 16,
+            },
+          ]
+        : []),
       { x: 12, y: 80 },
       { x: window.innerWidth - width - 12, y: 80 },
       { x: 12, y: window.innerHeight - height - 12 },
