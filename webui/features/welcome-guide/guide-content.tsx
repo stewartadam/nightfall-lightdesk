@@ -17,19 +17,28 @@ import {
 } from "../../lib/panel-definitions";
 import type { GuideContent } from "./lessons";
 
+// TODO: Replace shortcut placeholders with action references so shortcuts can be discovered and injected automatically.
+const lessonShortcuts: Record<string, string> = {
+  "{command-palette-shortcut}": OPEN_COMMAND_PALETTE_SHORTCUT,
+  "{clear-shortcut}": "Shift+Escape",
+};
+
 /** Expands shortcut placeholders in any text block using the actual platform binding. */
 function GuideText(props: { text: string }) {
   return (
-    <For each={props.text.split("{command-palette-shortcut}")}>
-      {(text, index) => (
-        <>
-          <Show when={index() > 0}>
+    <For
+      each={props.text.split(
+        /(\{command-palette-shortcut\}|\{clear-shortcut\})/g,
+      )}
+    >
+      {(text) => (
+        <Show when={lessonShortcuts[text]} fallback={text}>
+          {(shortcut) => (
             <span class="nf-guide-inline-shortcut">
-              <ShortcutKeys shortcut={OPEN_COMMAND_PALETTE_SHORTCUT} />
+              <ShortcutKeys shortcut={shortcut()} />
             </span>
-          </Show>
-          {text}
-        </>
+          )}
+        </Show>
       )}
     </For>
   );
