@@ -25,7 +25,6 @@ export interface GuideLesson {
   title: string;
   duration: string;
   introduction: string;
-  prerequisite: string;
   steps: GuideStep[];
 }
 export const GUIDE_LESSONS: GuideLesson[] = [
@@ -35,8 +34,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     duration: "8–10 min",
     introduction:
       "Take control of the Demo Wash lights, edit two looks, and play them with a fader and Go.",
-    prerequisite:
-      "We’ll use Nightfall Demo, fixtures 1–5, and clip 1: Nightfall Looks. You’ll replace its two sample cues with red and blue looks. Demo Wash 6 stays outside your selection so you can see the difference.",
     steps: [
       {
         id: "open-timeline",
@@ -214,8 +211,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     duration: "4 min",
     introduction:
       "Explore how the six Aurora Wash fixtures describe the demo rig.",
-    prerequisite:
-      "We’ll inspect Demo Wash 1 in Patch. The sample includes its Nightfall / Aurora Wash definition and RGB + Position mode; no library download is needed.",
     steps: [
       {
         id: "open",
@@ -260,8 +255,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     duration: "4 min",
     introduction:
       "Inspect the sample’s output targets and understand physical routing.",
-    prerequisite:
-      "We’ll inspect the sample’s sacn, artnet, and udmx targets. The washes are unbound, so this lesson explains routing without sending a lighting test.",
     steps: [
       {
         id: "routing",
@@ -297,8 +290,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     duration: "5 min",
     introduction:
       "Play and reshape Nightfall Wave, the sample’s intensity effect.",
-    prerequisite:
-      "We’ll use effect 1: Nightfall Wave and its existing clip 2. It targets all six washes. Stop Nightfall Demo and clip 1, then clear the Programmer.",
     steps: [
       {
         id: "play",
@@ -347,8 +338,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     title: "Step FX designer",
     duration: "7 min",
     introduction: "Build a two-step intensity chase for the six demo washes.",
-    prerequisite:
-      "We’ll create Demo Chase for fixtures 1–6. Stop Nightfall Demo and clips 1 and 2, then clear the Programmer so only the new chase controls the lights.",
     steps: [
       {
         id: "create",
@@ -405,8 +394,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     title: "Timeline programming",
     duration: "5 min",
     introduction: "Edit when Nightfall Demo starts the Nightfall Wave clip.",
-    prerequisite:
-      "We’ll edit Intensity Wave on the Looks and Effects track in timeline 1: Nightfall Demo. It starts clip 2 at 2.5 seconds in the original sample.",
     steps: [
       {
         id: "open",
