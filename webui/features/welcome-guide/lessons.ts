@@ -109,10 +109,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Make a red look",
         body: "These pixel strips mix red, green, and blue to set their color.",
         action:
-          "Enter fix 310>313 red @ 100 green @ 0 blue @ 0. Watch the four selected pixel strips turn red.",
+          "Enter red @ 100 green @ 0 blue @ 0. Watch the four selected pixel strips turn red.",
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
-        command: "fix 310>313 red @ 100 green @ 0 blue @ 0",
+        command: "red @ 100 green @ 0 blue @ 0",
         observe: { type: "color", color: "Red" },
       },
       {
@@ -131,10 +131,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Make a blue look",
         body: "A contrasting second look makes the Go button’s effect easy to see.",
         action:
-          "Enter fix 310>313 red @ 0 green @ 0 blue @ 100. Watch the same four pixel strips turn blue.",
+          "Enter red @ 0 green @ 0 blue @ 100. Watch the same four pixel strips turn blue.",
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
-        command: "fix 310>313 red @ 0 green @ 0 blue @ 100",
+        command: "red @ 0 green @ 0 blue @ 100",
         observe: { type: "color", color: "Blue" },
       },
       {
