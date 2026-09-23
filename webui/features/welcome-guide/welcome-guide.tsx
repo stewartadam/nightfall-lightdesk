@@ -8,7 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
-import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommand } from "../../components/providers/command-registry";
 import Tooltip from "../../components/ui/tooltip";
@@ -65,7 +65,6 @@ export default function WelcomeGuide() {
   const completed = useStore(guideCompleted);
   const capabilities = useStore(runtimeCapabilities);
   const { dockviewApi } = useAppShell();
-  let guideElement: HTMLElement | undefined;
   let heading: HTMLHeadingElement | undefined;
   /** Resolves lesson data without retaining stale content when returning to the library. */
   const lesson = createMemo(() =>
@@ -107,40 +106,9 @@ export default function WelcomeGuide() {
     () => guideStepIndex.set(guideStepIndex.get() + 1),
   );
 
-  /** Reserves the guide's visible region when portal dialogs lay out their backdrops. */
-  createEffect(() => {
-    if (!opened() || !guideElement) return;
-    const root = document.documentElement;
-    /** Measures the actual guide size, including the bottom layout on narrow windows. */
-    const reserveGuide = () => {
-      const rect = guideElement?.getBoundingClientRect();
-      if (!rect) return;
-      const bottomLayout = window.matchMedia("(max-width: 760px)").matches;
-      root.style.setProperty(
-        "--guide-overlay-right",
-        bottomLayout ? "0px" : `${window.innerWidth - rect.left}px`,
-      );
-      root.style.setProperty(
-        "--guide-overlay-bottom",
-        bottomLayout ? `${window.innerHeight - rect.top}px` : "0px",
-      );
-    };
-    reserveGuide();
-    const observer = new ResizeObserver(reserveGuide);
-    observer.observe(guideElement);
-    window.addEventListener("resize", reserveGuide);
-    onCleanup(() => {
-      observer.disconnect();
-      window.removeEventListener("resize", reserveGuide);
-      root.style.removeProperty("--guide-overlay-right");
-      root.style.removeProperty("--guide-overlay-bottom");
-    });
-  });
-
   return (
     <Show when={opened()}>
       <aside
-        ref={guideElement}
         class="nf-welcome-guide"
         aria-label="Welcome guide"
         data-testid="welcome-guide"

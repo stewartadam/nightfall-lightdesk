@@ -82,17 +82,89 @@ async function reachStep(page: Page, title: string) {
 
 /** Verifies palette backdrops exclude the guide, including the stacked narrow layout. */
 async function expectGuideOutsideBackdrop(page: Page) {
+  const app = await page.locator(".nf-app-viewport").boundingBox();
   const guide = await page.getByTestId("welcome-guide").boundingBox();
   const backdrop = await page
     .locator('[data-dialog-kind="command-palette"]')
     .boundingBox();
   expect(guide).not.toBeNull();
   expect(backdrop).not.toBeNull();
+  expect(app).not.toBeNull();
+  expect(backdrop!.width).toBeCloseTo(app!.width, 0);
+  expect(backdrop!.height).toBeCloseTo(app!.height, 0);
   expect(
     backdrop!.x + backdrop!.width <= guide!.x + 1 ||
       backdrop!.y + backdrop!.height <= guide!.y + 1,
   ).toBe(true);
 }
+
+/** Keeps the complete shell and right-hand Dockview content inside the app's own viewport. */
+test("guide resizes the whole app and leaves right-hand panels clickable", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  const app = page.locator(".nf-app-viewport");
+  const original = await app.boundingBox();
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await expect
+    .poll(async () => (await app.boundingBox())!.width)
+    .toBeLessThan(original!.width);
+  const viewport = (await app.boundingBox())!;
+  const lesson = (await guide.boundingBox())!;
+  expect(viewport.x + viewport.width).toBeCloseTo(lesson.x, 0);
+  expect(lesson.y).toBe(0);
+  expect(lesson.height).toBe(1000);
+  const header = (await page
+    .getByRole("navigation", { name: "Global", exact: true })
+    .boundingBox())!;
+  expect(header.x + header.width).toBeLessThanOrEqual(lesson.x);
+  const visualizer = page.getByLabel("3D visualizer viewport", { exact: true });
+  await expect(visualizer).toBeVisible();
+  const canvas = (await visualizer.boundingBox())!;
+  expect(canvas.x + canvas.width).toBeLessThanOrEqual(lesson.x + 1);
+  await visualizer.click({
+    position: { x: canvas.width - 20, y: canvas.height / 2 },
+    trial: true,
+  });
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    api.addPanel({
+      id: "guide-right-fixtures",
+      component: "FixtureGrid",
+      title: "Guide right fixtures",
+      position: { referencePanel: "panel-Visualizer", direction: "within" },
+    });
+  });
+  const panel = page.locator(
+    '[data-panel-id="guide-right-fixtures"][data-component="FixtureGrid"]',
+  );
+  await expect(panel).toBeVisible();
+  await expect
+    .poll(async () => {
+      const bounds = (await panel.boundingBox())!;
+      return bounds.x + bounds.width;
+    })
+    .toBeLessThanOrEqual(lesson.x + 1);
+  await panel.getByRole("button").first().click({ trial: true });
+  await page.screenshot({
+    path: testInfo.outputPath("guide-full-app-desktop.png"),
+  });
+  await page.setViewportSize({ width: 700, height: 900 });
+  await expect
+    .poll(async () => (await app.boundingBox())!.height)
+    .toBeLessThan(900);
+  const narrowApp = (await app.boundingBox())!;
+  const narrowGuide = (await guide.boundingBox())!;
+  expect(narrowApp.y + narrowApp.height).toBeCloseTo(narrowGuide.y, 0);
+  expect(narrowGuide.y + narrowGuide.height).toBeCloseTo(900, 0);
+  await page.screenshot({
+    path: testInfo.outputPath("guide-full-app-narrow.png"),
+  });
+  await guide.getByRole("button", { name: "Exit welcome guide" }).click();
+  await expect.poll(async () => (await app.boundingBox())!.height).toBe(900);
+  await expect.poll(async () => (await app.boundingBox())!.width).toBe(700);
+});
 
 /** Drives sample playback and navigation through automatic steps while preserving modal usability. */
 test("sample timeline actions advance and pop-outs leave the guide undimmed", async ({
@@ -245,6 +317,13 @@ test("welcome guide teaches live selection and cue storage without blocking the 
     .getByRole("button", { name: "Clear programmer", exact: true })
     .first()
     .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.programmerSelection.get().length,
+      ),
+    )
+    .toBe(0);
   await page
     .getByRole("button", { name: "Clear programmer", exact: true })
     .first()
