@@ -17,6 +17,7 @@ use std::time::Instant;
 
 use nightfall_fixture_library::GdtfMetadata;
 use nightfall_fixture_library::converters::gdtf::convert_gdtf_to_fixture;
+use nightfall_fixture_library::gdtf_activation::compile_activation;
 use nightfall_fixture_library::gdtf_bindings::bind_selectors;
 use nightfall_fixture_library::gdtf_functions::resolve_functions;
 use nightfall_fixture_library::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
@@ -109,16 +110,41 @@ fn main() {
                         );
                         let started = Instant::now();
                         match bind_selectors(&resolved, &functions) {
-                            Ok(bindings) => emit(
-                                json!({"stage": "bindings", "status": "passed", "mode": mode,
+                            Ok(bindings) => {
+                                emit(
+                                    json!({"stage": "bindings", "status": "passed", "mode": mode,
                                 "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "bindings": bindings}),
-                            ),
+                                );
+                                let started = Instant::now();
+                                let defaults: Vec<_> =
+                                    functions.iter().map(|channel| channel.default).collect();
+                                match compile_activation(&functions, &bindings, 1_000_000)
+                                    .and_then(|program| program.evaluate(&defaults))
+                                {
+                                    Ok(active) => emit(
+                                        json!({"stage": "activation", "status": "passed", "mode": mode,
+                                        "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "active_defaults": active}),
+                                    ),
+                                    Err(error) => {
+                                        failed = true;
+                                        emit(
+                                            json!({"stage": "activation", "status": "failed", "mode": mode,
+                                            "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                                            "error": error.to_string(), "diagnostic": error}),
+                                        );
+                                    }
+                                }
+                            }
                             Err(error) => {
                                 failed = true;
                                 emit(
                                     json!({"stage": "bindings", "status": "failed", "mode": mode,
                                     "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
                                     "error": error.to_string(), "diagnostic": error}),
+                                );
+                                emit(
+                                    json!({"stage": "activation", "status": "failed", "mode": mode,
+                                    "error": "Selector binding failed; activation unavailable"}),
                                 );
                             }
                         }
@@ -133,6 +159,10 @@ fn main() {
                         emit(
                             json!({"stage": "bindings", "status": "failed", "mode": mode,
                             "error": "Function normalization failed; selector binding unavailable"}),
+                        );
+                        emit(
+                            json!({"stage": "activation", "status": "failed", "mode": mode,
+                            "error": "Function normalization failed; activation unavailable"}),
                         );
                     }
                 }
@@ -153,6 +183,10 @@ fn main() {
                 emit(
                     json!({"stage": "bindings", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; selector binding unavailable"}),
+                );
+                emit(
+                    json!({"stage": "activation", "status": "failed", "mode": mode,
+                    "error": "Geometry resolution failed; activation unavailable"}),
                 );
             }
         }

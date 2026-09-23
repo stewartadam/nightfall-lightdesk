@@ -79,8 +79,17 @@ functions. Repeated pixels use masters in their own reference scope; shared
 masters resolve in the nearest enclosing scope. An explicit source channel with
 only one instance remains an unambiguous target. Ambiguous repeated targets fail
 instead of selecting the first instance. Synthetic tests cover local, shared,
-and nested repeated assemblies. Runtime activation and selector dependency cycle
-checks remain separate work; binding success does not establish those behaviors.
+and nested repeated assemblies.
+
+The `activation` stage compiles a bounded dependency order and evaluates each
+mode's raw defaults. Function links require the target function to be active;
+channel links use only the master's raw value. Cyclic function dependencies fail
+explicitly. Evaluation retains all eligible logical functions, including
+NoFeature ranges, instead of choosing a single arbitrary winner. Synthetic tests
+cover inclusive boundaries, local independence, cascades, invalid snapshots,
+32-bit endpoints, and a 20,000-function chain. These checks establish eligibility,
+not physical conversion, automatic selector writes, fade behavior, or engine
+integration. See the [GDTF mode dependency guidance](https://gdtf-share.com/help/users/gdtf_howto/handle_mode_dependencies/index.html).
 
 `function_acceptance` checks selected Sharpy, MAC Aura and Hydrabeam defaults and
 physical endpoints against authored XML. Descending ranges must remain descending.

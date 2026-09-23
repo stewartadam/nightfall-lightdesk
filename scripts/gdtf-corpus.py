@@ -191,7 +191,7 @@ def run_probe(executable, archive, report, timeout, expected_modes):
                 terminal_error = terminal_error or "Probe emitted an incomplete JSON record"
     if not stages:
         terminal_error = terminal_error or "Probe emitted no stage results"
-    for stage in ("resolution", "wire", "functions", "bindings", "conversion"):
+    for stage in ("resolution", "wire", "functions", "bindings", "activation", "conversion"):
         reported_modes = [s.get("mode") for s in stages if s.get("stage") == stage]
         if reported_modes != expected_modes:
             terminal_error = terminal_error or f"Probe did not report every expected mode in order for {stage}"
@@ -370,7 +370,7 @@ def main():
                 Path(result["nightfall"]["report"]), cases)
             result["function_acceptance"] = check_function_expectations(
                 Path(result["nightfall"]["report"]), cases)
-    scope = ("archive identity, XML inventory, Rust resolution/wire/functions/bindings/conversion, and selected targets"
+    scope = ("archive identity, XML inventory, Rust resolution/wire/functions/bindings/activation/conversion, and selected targets"
              if args.probe else "archive identity and XML inventory only")
     report = {"schema_version": 1, "scope": scope,
               "provision_errors": errors, "fixtures": results}
