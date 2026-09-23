@@ -23,6 +23,10 @@ export type GuideContent =
 export type GuidePrerequisite = Extract<GuideContent, { type: "prerequisite" }>;
 
 export interface GuideStep {
+  persistenceUnavailable?: Pick<
+    GuideStep,
+    "title" | "content" | "target" | "observe"
+  >;
   id: string;
   title: string;
   content: GuideContent[];
@@ -302,6 +306,25 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "save-showfile",
+        persistenceUnavailable: {
+          title: "Demo edits are temporary",
+          target: '[aria-label="Menu"]',
+          observe: undefined,
+          content: [
+            {
+              type: "text",
+              text: "This browser demo keeps your edits only for the current session. Automatic draft recovery and Save Showfile are unavailable here.",
+            },
+            {
+              type: "text",
+              text: "In the installed app, changes are saved automatically to a draft. Menu → Save Showfile updates the saved version of your whole show.",
+            },
+            {
+              type: "action",
+              body: "Continue to explore the keyboard shortcut reference. You don’t need to save anything in this demo.",
+            },
+          ],
+        },
         observe: { type: "save-showfile" },
         title: "Keep a saved version of your show",
         target:

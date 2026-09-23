@@ -134,7 +134,12 @@ export default function WelcomeGuide() {
     lessons().find((entry) => entry.id === lessonId()),
   );
   /** Resolves the current instruction, leaving completion outside the action steps. */
-  const step = createMemo(() => lesson()?.steps[index()]);
+  const step = createMemo(() => {
+    const instruction = lesson()?.steps[index()];
+    return instruction && capabilities()?.persistence === "Unavailable"
+      ? { ...instruction, ...instruction.persistenceUnavailable }
+      : instruction;
+  });
   const [visitedPanels, setVisitedPanels] = createSignal(new Set<string>());
   let visitedStep = "";
   /** Remembers prerequisite panels visited during this step, even when they share a tab group. */
