@@ -82,8 +82,13 @@ addresses rather than a single contiguous base address. The production universe
 writer preserves sparse/reversed byte order and rejects invalid destinations
 before modifying either console or transport buffers. Manual DMX assertions and
 release use those same addresses, excluding gaps. Existing bindings explicitly
-expand contiguous parameter widths. This does not yet connect compiled GDTF
-breaks to patch bindings, change transport input decoding, or replace floating
+expand contiguous parameter widths. Transport input targets likewise carry
+ordered source-relative byte offsets. Accepted-frame routing validates the whole
+mapping before decoding; invalid targets do not claim precedence over a later
+valid binding. Input contribution traces validate the same mapping and report
+its most significant address. Synthetic plugin tests exercise all four widths,
+reversed significance, gaps, boundaries and invalid-binding precedence. This does
+not yet connect compiled GDTF breaks to patch bindings or replace floating
 parameter values with an exact raw 32-bit runtime representation.
 
 The `compiled_channels` stage builds one owned channel program using the wire,

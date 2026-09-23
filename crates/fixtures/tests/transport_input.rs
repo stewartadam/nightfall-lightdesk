@@ -58,6 +58,112 @@ fn make_frame(universe: u16, channels: &[(u16, u8)]) -> AcceptedDmxFrame {
     }
 }
 
+/// Sparse targets decode authored significance at every width through the accepted-frame plugin.
+#[test]
+fn accepted_input_decodes_sparse_significant_bytes() {
+    for (resolution, offsets, raw, maximum) in [
+        (DmxValueResolution::Coarse, vec![3], 0xab_u32, 255_u32),
+        (DmxValueResolution::Fine, vec![3, 0], 0xabcd, 65535),
+        (
+            DmxValueResolution::UltraFine,
+            vec![3, 0, 2],
+            0xabcdef,
+            16777215,
+        ),
+        (
+            DmxValueResolution::Uber,
+            vec![3, 0, 2, 1],
+            0xabcdef01,
+            u32::MAX,
+        ),
+    ] {
+        let mut app = App::new();
+        app.add_plugins(TransportInputPlugin);
+        let mut parameter = make_coarse_parameter();
+        parameter.metadata.resolution = resolution;
+        let entity = app.world_mut().spawn(parameter).id();
+        let input_layer = spawn_transport_input_layer(&mut app);
+        app.world_mut()
+            .resource_mut::<ResolvedInputBindings>()
+            .bindings = vec![ResolvedInputBinding {
+            source: ResolvedInputSource::Transport {
+                transport: BindingTransport::ArtNet,
+                universe: 7,
+                address: 100,
+            },
+            priority: 0,
+            destination: ResolvedInputDestination::Fixture {
+                targets: vec![ResolvedInputTarget { entity, offsets }],
+            },
+        }];
+        app.world_mut().write_message(make_frame(
+            7,
+            &[(100, 0xcd), (101, 0x01), (102, 0xef), (103, 0xab)],
+        ));
+        app.update();
+        let layer = app.world().get::<Layer>(input_layer).unwrap();
+        assert_eq!(layer.absolute.len(), 1);
+        let ParameterValue::AbsolutePercent { value } = layer.absolute.values().next().unwrap().0
+        else {
+            panic!("expected absolute input percentage");
+        };
+        let expected = ParameterValue::AbsolutePercent {
+            value: (raw as f32 / maximum as f32).into(),
+        };
+        assert_eq!(ParameterValue::AbsolutePercent { value }, expected);
+    }
+}
+
+/// A malformed higher-priority mapping cannot assert a fabricated value or suppress a later valid target.
+#[test]
+fn invalid_input_mapping_does_not_claim_target_precedence() {
+    for (base, offsets) in [
+        (100, vec![]),
+        (100, vec![0]),
+        (100, vec![0, 1, 2]),
+        (100, vec![0, 0]),
+        (100, vec![0, 513]),
+        (0, vec![3, 0]),
+        (512, vec![0, 1]),
+        (u16::MAX, vec![1, 0]),
+    ] {
+        let mut app = App::new();
+        app.add_plugins(TransportInputPlugin);
+        let mut parameter = make_coarse_parameter();
+        parameter.metadata.resolution = DmxValueResolution::Fine;
+        let entity = app.world_mut().spawn(parameter).id();
+        let input_layer = spawn_transport_input_layer(&mut app);
+        app.world_mut()
+            .resource_mut::<ResolvedInputBindings>()
+            .bindings = [(base, offsets), (100, vec![3, 0])]
+            .into_iter()
+            .enumerate()
+            .map(|(priority, (address, offsets))| ResolvedInputBinding {
+                source: ResolvedInputSource::Transport {
+                    transport: BindingTransport::ArtNet,
+                    universe: 7,
+                    address,
+                },
+                priority: priority as i32,
+                destination: ResolvedInputDestination::Fixture {
+                    targets: vec![ResolvedInputTarget { entity, offsets }],
+                },
+            })
+            .collect();
+        app.world_mut()
+            .write_message(make_frame(7, &[(100, 0xcd), (103, 0xab)]));
+        app.update();
+        let layer = app.world().get::<Layer>(input_layer).unwrap();
+        assert_eq!(layer.absolute.len(), 1);
+        assert_eq!(
+            layer.absolute.values().next().unwrap().0,
+            ParameterValue::AbsolutePercent {
+                value: (43981.0_f32 / 65535.0).into(),
+            }
+        );
+    }
+}
+
 /// Verifies accepted frames preserve records frames without transport bindings.
 #[test]
 fn accepted_input_records_frames_without_transport_bindings() {
@@ -113,7 +219,7 @@ fn accepted_input_applies_only_bound_channels() {
         destination: ResolvedInputDestination::Fixture {
             targets: vec![ResolvedInputTarget {
                 entity: bound_parameter,
-                offset: 0,
+                offsets: vec![0],
             }],
         },
     }];
@@ -321,7 +427,7 @@ fn routing_preserves_binding_precedence_and_consumes_each_frame_once() {
             destination: ResolvedInputDestination::Fixture {
                 targets: vec![ResolvedInputTarget {
                     entity: parameter,
-                    offset: 0,
+                    offsets: vec![0],
                 }],
             },
         })

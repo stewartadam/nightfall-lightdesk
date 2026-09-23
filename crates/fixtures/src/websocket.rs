@@ -332,6 +332,7 @@ struct OutboundInputContribution {
     pub output_value: ParameterDmxValue,
     pub transport: String,
     pub universe_id: u16,
+    /// Most significant source byte; the full input mapping may contain nonadjacent fine bytes.
     pub source_address: u16,
     pub frame_age_ms: u32,
     pub is_stale: bool,
@@ -739,10 +740,12 @@ fn send_input_contribution_trace(
             let Ok(parameter) = parameter_query.get(target.entity) else {
                 continue;
             };
-            let source_address = address.saturating_add(target.offset);
-            if source_address == 0 {
+            let Some(addresses) =
+                target.addresses(*address, parameter.metadata.resolution.channel_width())
+            else {
                 continue;
-            }
+            };
+            let source_address = addresses[0];
             if !seen.insert((target.entity, *transport, *universe, source_address)) {
                 continue;
             }

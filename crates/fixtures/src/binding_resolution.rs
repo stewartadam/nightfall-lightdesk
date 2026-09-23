@@ -731,7 +731,9 @@ fn resolve_input_targets(
                 for param in params {
                     targets.push(ResolvedInputTarget {
                         entity: param.entity,
-                        offset: fixture_offset,
+                        offsets: (0..param.width)
+                            .map(|byte| fixture_offset.saturating_add(byte))
+                            .collect(),
                     });
                     fixture_offset = fixture_offset.saturating_add(param.width);
                 }
@@ -776,7 +778,9 @@ fn resolve_input_targets(
                 for param in params {
                     targets.push(ResolvedInputTarget {
                         entity: param.entity,
-                        offset: param_offset,
+                        offsets: (0..param.width)
+                            .map(|byte| param_offset.saturating_add(byte))
+                            .collect(),
                     });
                     param_offset = param_offset.saturating_add(param.width);
                 }

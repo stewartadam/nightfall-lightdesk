@@ -1062,7 +1062,7 @@ mod tests {
                 },
                 targets: vec![ResolvedInputTarget {
                     entity: parameter_entity,
-                    offset: 0,
+                    offsets: vec![0],
                 }],
             },
         }];

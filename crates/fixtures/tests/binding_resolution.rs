@@ -825,11 +825,11 @@ fn resolve_input_bindings_clone_resets_offsets() {
             targets: vec![
                 ResolvedInputTarget {
                     entity: param_a,
-                    offset: 0
+                    offsets: vec![0]
                 },
                 ResolvedInputTarget {
                     entity: param_b,
-                    offset: 0
+                    offsets: vec![0]
                 }
             ]
         }
@@ -915,7 +915,7 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
             },
             targets: vec![ResolvedInputTarget {
                 entity: param_a,
-                offset: 0
+                offsets: vec![0]
             }]
         }
     );
@@ -964,7 +964,7 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
             },
             targets: vec![ResolvedInputTarget {
                 entity: param_b,
-                offset: 0
+                offsets: vec![0]
             }]
         }
     );
@@ -1024,6 +1024,7 @@ fn resolve_input_bindings_transport_console_keeps_mapping_without_fixture_target
     );
 }
 
+/// Sequential input bindings allocate every fine byte before the following fixture's coarse byte.
 #[test]
 fn resolve_input_bindings_clone_false_offsets_are_contiguous() {
     let mut app = App::new();
@@ -1040,6 +1041,11 @@ fn resolve_input_bindings_clone_false_offsets_are_contiguous() {
     let uid_b = Uuid::new_v4();
     let param_a = spawn_fixture_with_parameter(app.world_mut(), uid_a, 1, Attribute::Intensity);
     let param_b = spawn_fixture_with_parameter(app.world_mut(), uid_b, 2, Attribute::Intensity);
+    app.world_mut()
+        .get_mut::<Parameter>(param_a)
+        .unwrap()
+        .metadata
+        .resolution = DmxValueResolution::Fine;
 
     {
         let mut input_bindings = app.world_mut().resource_mut::<InputBindings>();
@@ -1070,11 +1076,11 @@ fn resolve_input_bindings_clone_false_offsets_are_contiguous() {
             targets: vec![
                 ResolvedInputTarget {
                     entity: param_a,
-                    offset: 0
+                    offsets: vec![0, 1]
                 },
                 ResolvedInputTarget {
                     entity: param_b,
-                    offset: 1
+                    offsets: vec![2]
                 }
             ]
         }

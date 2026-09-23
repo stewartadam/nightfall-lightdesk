@@ -259,8 +259,28 @@ pub enum ResolvedInputSource {
 pub struct ResolvedInputTarget {
     /// Target entity.
     pub entity: Entity,
-    /// Channel offset into the source address.
-    pub offset: u16,
+    /// Zero-based offsets from the source address, in decreasing byte significance.
+    pub offsets: Vec<u16>,
+}
+
+impl ResolvedInputTarget {
+    /// Resolve every significant byte within one input universe before applying an assertion.
+    pub(crate) fn addresses(&self, base: u16, width: u16) -> Option<[u16; 4]> {
+        if base == 0 || !(1..=4).contains(&width) || self.offsets.len() != usize::from(width) {
+            return None;
+        }
+        let mut addresses = [0; 4];
+        for (index, &offset) in self.offsets.iter().enumerate() {
+            let address = base.checked_add(offset)?;
+            if address > nightfall_dmx::MAX_CHANNELS_PER_UNIVERSE as u16
+                || addresses[..index].contains(&address)
+            {
+                return None;
+            }
+            addresses[index] = address;
+        }
+        Some(addresses)
+    }
 }
 
 /// Resolved console target metadata for input->console mappings.

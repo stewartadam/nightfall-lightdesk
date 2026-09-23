@@ -506,7 +506,7 @@ mod tests {
                 destination: ResolvedInputDestination::Fixture {
                     targets: vec![ResolvedInputTarget {
                         entity: kept_parameter.entity(),
-                        offset: 0,
+                        offsets: vec![0],
                     }],
                 },
             }],

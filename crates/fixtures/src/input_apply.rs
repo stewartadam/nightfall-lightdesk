@@ -223,9 +223,13 @@ fn apply_parameter_targets(
             continue;
         };
 
-        let source_address = source_base_address.saturating_add(target.offset);
-        let dmx_value = dmx_value_from_frame(data, source_address, parameter.metadata.resolution);
-        let parameter_value = dmx_value_to_parameter_value(dmx_value, &parameter.metadata);
+        let width = parameter.metadata.resolution.channel_width();
+        let Some(addresses) = target.addresses(source_base_address, width) else {
+            continue;
+        };
+        let dmx_value = dmx_value_from_frame(data, &addresses[..usize::from(width)]);
+        let parameter_value =
+            dmx_value_to_parameter_value(dmx_value as ParameterDmxValue, &parameter.metadata);
         assertions.push(ParameterAssertion {
             parameter: parameter.instance(),
             value: parameter_value,
@@ -303,37 +307,11 @@ fn apply_console_input_mapping(
     }
 }
 
-/// Reads a DMX value from a frame at the given address using the requested byte resolution.
-///
-/// Address `0` is treated as invalid and returns `0.0`. Missing bytes at frame edges
-/// are treated as `0`.
-fn dmx_value_from_frame(
-    data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
-    address: u16,
-    resolution: DmxValueResolution,
-) -> ParameterDmxValue {
-    if address == 0 {
-        return 0.0;
-    }
-
-    let base_idx = (address - 1) as usize;
-    let read_byte = |idx: usize| -> u32 { data.get(idx).copied().unwrap_or(0) as u32 };
-
-    let combined = match resolution {
-        DmxValueResolution::Coarse => read_byte(base_idx),
-        DmxValueResolution::Fine => (read_byte(base_idx) << 8) | read_byte(base_idx + 1),
-        DmxValueResolution::UltraFine => {
-            (read_byte(base_idx) << 16) | (read_byte(base_idx + 1) << 8) | read_byte(base_idx + 2)
-        }
-        DmxValueResolution::Uber => {
-            (read_byte(base_idx) << 24)
-                | (read_byte(base_idx + 1) << 16)
-                | (read_byte(base_idx + 2) << 8)
-                | read_byte(base_idx + 3)
-        }
-    };
-
-    combined as ParameterDmxValue
+/// Assemble a raw value in declared significance order from prevalidated one-based addresses.
+fn dmx_value_from_frame(data: &[u8; MAX_CHANNELS_PER_UNIVERSE], addresses: &[u16]) -> u32 {
+    addresses.iter().fold(0u32, |value, &address| {
+        (value << 8) | u32::from(data[usize::from(address - 1)])
+    })
 }
 
 /// Converts a raw DMX value into a percent-based absolute parameter value.
