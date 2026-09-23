@@ -90,6 +90,17 @@ its most significant address. Synthetic plugin tests exercise all four widths,
 reversed significance, gaps, boundaries and invalid-binding precedence. This does
 not yet connect compiled GDTF breaks to patch bindings.
 
+The shared `ModeWires::patch` operation resolves every physical break through an
+explicit universe/start-address map. It preserves channel order and virtual
+entries, checks declared footprints, and rejects missing/stale break mappings,
+overlapping bytes and addresses beyond 512 without rolling into another universe.
+Its immutable result supports whole-mode raw input/output; output validates all
+values and required universe buffers before touching any byte. Synthetic
+compiler integration checks both nested tilt joints and referenced RGB pixels
+against complete independently authored universe buffers. The production fixture
+binding producer still needs to consume this patch contract; transport numbering
+and cross-fixture overlap policy belong to that integration.
+
 Logical parameter values and percentages use double precision; byte assembly
 and encoding retain `u32`. A pipeline regression checks 266 raw values, including
 adjacent values above the single-precision integer limit, through transport

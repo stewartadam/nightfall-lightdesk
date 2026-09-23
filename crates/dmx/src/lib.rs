@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 mod attributes;
 mod parameter_value;
+pub mod patch;
 mod percentage;
 mod percentage_serde;
 pub mod wire;

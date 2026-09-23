@@ -11,6 +11,74 @@
 use nightfall_fixture_library::gdtf_channels::{ChannelLimits, CompiledChannels, compile_channels};
 use nightfall_fixture_library::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
 
+/// Resolved references and nested joints encode through explicit patches without flattening offsets.
+#[test]
+fn compiled_channels_patch_to_independent_universes_and_preserve_virtual_values() {
+    use std::collections::BTreeMap;
+
+    use nightfall_dmx::patch::BreakPatch;
+
+    let program = compile(description(), ChannelLimits::default()).unwrap();
+    let patch = program
+        .wires()
+        .patch(&BTreeMap::from([
+            (
+                1,
+                BreakPatch {
+                    universe: 42,
+                    address: 508,
+                },
+            ),
+            (
+                2,
+                BreakPatch {
+                    universe: 0,
+                    address: 200,
+                },
+            ),
+        ]))
+        .unwrap();
+    let raw = [0x1234, 0xabcd, 128, 255, 1, 2, 3, 4, 5, 6];
+    let mut buffers = BTreeMap::from([(42, [0xee; 512]), (0, [0xee; 512])]);
+    patch.write_raw(&raw, &mut buffers).unwrap();
+    let mut expected_joints = [0xee; 512];
+    expected_joints[507..].copy_from_slice(&[0x12, 0xab, 0xee, 0x34, 0xcd]);
+    let mut expected_pixels = [0xee; 512];
+    expected_pixels[208..211].copy_from_slice(&[1, 3, 5]);
+    expected_pixels[218..221].copy_from_slice(&[2, 4, 6]);
+    assert_eq!(
+        buffers,
+        BTreeMap::from([(42, expected_joints), (0, expected_pixels)])
+    );
+    let decoded = patch.read_raw(&buffers).unwrap();
+    assert_eq!(
+        decoded,
+        [
+            Some(0x1234),
+            Some(0xabcd),
+            None,
+            None,
+            Some(1),
+            Some(2),
+            Some(3),
+            Some(4),
+            Some(5),
+            Some(6)
+        ]
+    );
+    let mut received = raw;
+    for (target, decoded) in received.iter_mut().zip(decoded) {
+        if let Some(value) = decoded {
+            *target = value;
+        }
+    }
+    assert_eq!(received, raw);
+    assert_eq!(
+        program.evaluate_physical(&received).unwrap(),
+        program.evaluate_physical(&raw).unwrap()
+    );
+}
+
 /// Consume the source document so every successful caller exercises an owned result.
 fn compile(
     description: gdtf::Description,
