@@ -59,9 +59,11 @@ export const guideCompleted = bestEffortPersistentAtom<string[]>(
   },
 );
 
-/** Opens the guide without changing the show or losing the current lesson. */
+/** Opens the lesson menu while preserving completed lessons and show data. */
 export function openWelcomeGuide(): void {
   guideDismissed.set(true);
+  guideLessonId.set(null);
+  guideStepIndex.set(0);
   guideOpen.set(true);
 }
 
