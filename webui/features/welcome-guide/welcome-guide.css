@@ -135,23 +135,6 @@
     0 0 0 2px #081b17,
     0 0 16px color-mix(in srgb, var(--accent, #50d2b4) 45%, transparent);
 }
-.nf-guide-tooltip[role="tooltip"] {
-  --guide-bounce-y: 6px;
-  background: var(--accent, #50d2b4);
-  color: #081b17;
-  border: 2px solid color-mix(in srgb, var(--accent, #50d2b4) 55%, white);
-  border-radius: 8px;
-  padding: 9px 12px;
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.45;
-  box-shadow:
-    0 4px 16px #0008,
-    0 0 0 3px #081b1740;
-}
-.nf-guide-tooltip[data-placement="top"] {
-  --guide-bounce-y: -6px;
-}
 .nf-guide-command {
   display: block;
   margin-top: 6px;
@@ -162,30 +145,6 @@
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
-}
-.nf-guide-tooltip[data-visible="true"] {
-  animation: nf-guide-tooltip-bounce 650ms ease-in-out 3;
-}
-.nf-guide-tooltip[data-placement="bottom"] [data-slot="pointer"] {
-  border-bottom-color: var(--accent, #50d2b4);
-}
-.nf-guide-tooltip[data-placement="top"] [data-slot="pointer"] {
-  border-top-color: var(--accent, #50d2b4);
-}
-@keyframes nf-guide-tooltip-bounce {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  45% {
-    translate: 0 var(--guide-bounce-y);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .nf-guide-tooltip[data-visible="true"] {
-    animation: none;
-    transition: none;
-  }
 }
 .nf-guide-invitation {
   display: flex;
@@ -218,4 +177,53 @@
   .nf-guide-footer {
     padding: 6px 16px;
   }
+}
+
+/* Active lessons share one movable card; only the lesson library occupies shell space. */
+.nf-welcome-guide.nf-guide-floating {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  max-height: min(620px, calc(100dvh - 24px));
+  z-index: 2147483647;
+  border: 1px solid var(--accent, #50d2b4);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 36px #0008,
+    0 0 0 1px #50d2b420;
+  overflow: hidden;
+  user-select: text;
+}
+.nf-guide-floating .nf-guide-body {
+  padding: 12px 16px;
+}
+.nf-guide-floating .nf-guide-body h2 {
+  font-size: 19px;
+  margin-bottom: 12px;
+}
+.nf-guide-floating .nf-guide-action {
+  padding: 8px 10px;
+  margin: 12px 0;
+}
+.nf-guide-floating .nf-guide-footer {
+  display: none;
+}
+.nf-guide-floating .nf-guide-command {
+  background: #ffffff0d;
+  color: var(--accent, #50d2b4);
+  user-select: text;
+}
+.nf-guide-move {
+  cursor: grab;
+  touch-action: none;
+  padding: 4px;
+}
+.nf-guide-move:active {
+  cursor: grabbing;
+}
+.nf-guide-move:focus-visible {
+  outline: 2px solid var(--accent, #50d2b4);
+  border-radius: 4px;
 }
