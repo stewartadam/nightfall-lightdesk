@@ -23,6 +23,7 @@ export type GuideObservation =
   | { type: "command-palette" }
   | { type: "sample-panels" }
   | { type: "panel"; component: PanelComponentName }
+  | { type: "sequence-editor"; sequenceId: number }
   | {
       type:
         | "timeline-playing"
@@ -43,7 +44,12 @@ export type GuideObservation =
 export interface GuideSnapshot {
   commandPaletteOpen?: boolean;
   panel?: string;
-  openPanels?: { component: string; timelineUid?: string }[];
+  openPanels?: {
+    component: string;
+    timelineUid?: string;
+    sequenceUid?: string;
+    visible?: boolean;
+  }[];
   fixtures: FixtureMap;
   selection: string[];
   programmer: ProgrammerRow[];
@@ -92,6 +98,20 @@ export function guideCompletionToken(
         : "";
     case "panel":
       return state.panel === observation.component ? state.panel : "";
+    case "sequence-editor": {
+      const sequence = Object.values(state.sequences).find(
+        (entry) => entry.identifiers.id === observation.sequenceId,
+      );
+      return sequence &&
+        state.openPanels?.some(
+          (panel) =>
+            panel.component === "SequenceEditor" &&
+            panel.visible &&
+            panel.sequenceUid === sequence.identifiers.uid,
+        )
+        ? "open"
+        : "";
+    }
     case "timeline-playing":
       return timeline && state.timecodes[timeline.timecode_uid]?.[1].is_active
         ? "playing"

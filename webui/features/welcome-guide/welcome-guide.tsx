@@ -28,8 +28,10 @@ import { openOrFocusPanelDefinition } from "../../lib/panel-open-command";
 import { isEmbeddedDemoRuntime } from "../../lib/runtime-config";
 import {
   clips,
+  cues,
   pushToast,
   runtimeCapabilities,
+  sequences,
   timelines,
 } from "../../state/appStores";
 import { normalizeTimelineUid } from "../timeline";
@@ -86,6 +88,8 @@ export default function WelcomeGuide() {
   const capabilities = useStore(runtimeCapabilities);
   const timelineMap = useStore(timelines);
   const clipMap = useStore(clips);
+  const sequenceMap = useStore(sequences);
+  const cueMap = useStore(cues);
   /** Finds the generated sample timeline without relying on its session-specific UID. */
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
@@ -174,11 +178,28 @@ export default function WelcomeGuide() {
   );
   const [card, setCard] = createSignal<HTMLElement>();
   const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
+  /** Resolves authored sequence and cue identities to their current card or Trigger cell. */
+  const targetSelector = createMemo(() => {
+    const target = step()?.targetSequence;
+    if (!target) return step()?.target;
+    const sequence = Object.values(sequenceMap()).find(
+      (entry) => entry.identifiers.id === target.id,
+    );
+    if (!sequence) return undefined;
+    if (target.cueId === undefined)
+      return `[data-crud-select-id="${sequence.identifiers.uid}"]`;
+    const cue = sequence.steps
+      .map((uid) => cueMap()[uid])
+      .find((entry) => entry?.identifiers.id === target.cueId);
+    return cue
+      ? `[data-grid-column-key="trigger"][data-grid-row-key="${cue.identifiers.uid}:cue"]`
+      : undefined;
+  });
   const floating = useFloatingGuide(
     () => (lesson() && opened() ? card() : undefined),
     () => `${lessonId()}:${index()}`,
     anchor,
-    () => step()?.target,
+    targetSelector,
     () => step()?.placement,
   );
   const { draggable } = createDraggable();
@@ -265,6 +286,7 @@ export default function WelcomeGuide() {
     if (
       blocked() &&
       target?.type !== "panel" &&
+      target?.type !== "sequence-editor" &&
       target?.type !== "sample-panels"
     )
       return undefined;
@@ -404,7 +426,7 @@ export default function WelcomeGuide() {
                       </For>
                       <GuideTarget
                         stepId={instruction().id}
-                        selector={instruction().target}
+                        selector={targetSelector()}
                         highlight={!blocked()}
                         focusTarget={!blocked() && instruction().focusTarget}
                         onBounds={setAnchor}

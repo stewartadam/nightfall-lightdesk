@@ -65,11 +65,14 @@ export function useGuideProgress(
         api?.panels.map((entry) => ({
           component: entry.api.component,
           timelineUid: entry.params?.initialTimelineUid,
+          sequenceUid: entry.params?.initialSequenceUid,
+          visible: entry.api.isVisible && !entry.group.api.isCollapsed(),
         })) ?? [],
       );
     updateOpenPanels();
     const added = api?.onDidAddPanel(updateOpenPanels);
     const removed = api?.onDidRemovePanel(updateOpenPanels);
+    const layout = api?.onDidLayoutChange(updateOpenPanels);
     setPanel(api?.activePanel?.api.component);
     const subscription = api?.onDidActivePanelChange(() =>
       setPanel(api.activePanel?.api.component),
@@ -78,6 +81,7 @@ export function useGuideProgress(
       subscription?.dispose();
       added?.dispose();
       removed?.dispose();
+      layout?.dispose();
     });
   });
 
@@ -102,7 +106,10 @@ export function useGuideProgress(
         timelines: timelineMap(),
         timecodes: clocks(),
       });
-    let previous = target.type === "sample-panels" ? "" : untrack(token);
+    let previous =
+      target.type === "sample-panels" || target.type === "sequence-editor"
+        ? ""
+        : untrack(token);
     let pending: ReturnType<typeof setTimeout> | undefined;
     /** Advances once per step after a new matching state is published. */
     createEffect(() => {
