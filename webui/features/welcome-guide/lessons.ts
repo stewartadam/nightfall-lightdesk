@@ -17,6 +17,9 @@ export interface GuideStep {
   panels?: PanelComponentName[];
   target?: string;
   hint?: string;
+  command?: string;
+  paletteHint?: string;
+  focusTarget?: boolean;
   more?: string;
   observe?: GuideObservation;
 }
@@ -51,7 +54,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         action:
           "Press Play timeline on Lo-fi and watch the pixel strips in the Visualizer.",
         target: '[aria-label="Play timeline"]',
-        hint: "Start Lo-fi.",
+        hint: "Start the timeline",
         observe: { type: "timeline-playing" },
       },
       {
@@ -61,7 +64,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         action:
           "Watch for a few seconds, then press Stop timeline before programming your own look.",
         target: '[aria-label="Stop timeline"]',
-        hint: "Stop Lo-fi when you’re ready.",
+        hint: "Stop the timeline",
         observe: { type: "timeline-stopped" },
       },
       {
@@ -71,7 +74,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         action: "Click Search, type Open Fixtures, and press Enter.",
         target:
           '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
-        hint: "Search for Open Fixtures.",
+        hint: "Use the Command Palette to open panels",
+        paletteHint: "Open the fixtures panel",
         observe: { type: "panel", component: "FixtureGrid" },
         more: "Drag panel tabs to arrange the workspace. Open Properties from the same palette to inspect a selected object.",
       },
@@ -83,7 +87,9 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           "Enter fix 310>313 and press Enter. The four pixel strips become selected; the other fixtures do not.",
         panels: ["FixtureGrid", "Visualizer"],
         target: "#header-cmdline",
-        hint: "Type fix 310>313 and press Enter.",
+        hint: "Type this command, then press Enter:",
+        command: "fix 310>313",
+        focusTarget: true,
         observe: { type: "selection" },
       },
       {
@@ -94,7 +100,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           "Enter @ 100 to bring the four selected pixel strips to full intensity.",
         panels: ["ProgrammerGrid"],
         target: "#header-cmdline",
-        hint: "Type @ 100 and press Enter.",
+        hint: "Type this command, then press Enter:",
+        command: "@ 100",
         observe: { type: "intensity" },
       },
       {
@@ -104,7 +111,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         action:
           "Enter fix 310>313 red @ 100 green @ 0 blue @ 0. Watch the four selected pixel strips turn red.",
         target: "#header-cmdline",
-        hint: "Set red to 100, green and blue to 0.",
+        hint: "Type this command, then press Enter:",
+        command: "fix 310>313 red @ 100 green @ 0 blue @ 0",
         observe: { type: "color", color: "Red" },
       },
       {
@@ -125,7 +133,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         action:
           "Enter fix 310>313 red @ 0 green @ 0 blue @ 100. Watch the same four pixel strips turn blue.",
         target: "#header-cmdline",
-        hint: "Set blue to 100, red and green to 0.",
+        hint: "Type this command, then press Enter:",
+        command: "fix 310>313 red @ 0 green @ 0 blue @ 100",
         observe: { type: "color", color: "Blue" },
       },
       {
@@ -200,7 +209,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         action:
           "Enter clip 1 stop, or right-click RGB cycle (full) and choose Stop Clip.",
         target: "#header-cmdline",
-        hint: "Type clip 1 stop.",
+        hint: "Type this command, then press Enter:",
+        command: "clip 1 stop",
         observe: { type: "clip-stopped", clipId: 1 },
       },
     ],
@@ -245,7 +255,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           "Enter fix 310, then inspect pixel strip 310 in Programmer and the Visualizer.",
         panels: ["ProgrammerGrid", "Visualizer"],
         target: "#header-cmdline",
-        hint: "Type fix 310 and inspect pixel strip 310.",
+        hint: "Select pixel strip 310:",
+        command: "fix 310",
       },
     ],
   },
@@ -298,7 +309,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           "Stop Lo-fi and any running clips, clear the Programmer, then enter clip 6 start and watch the Visualizer.",
         panels: ["Visualizer"],
         target: "#header-cmdline",
-        hint: "Type clip 6 start.",
+        hint: "Type this command, then press Enter:",
+        command: "clip 6 start",
         observe: { type: "clip-playing", clipId: 6 },
       },
       {
@@ -327,7 +339,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         action:
           "Enter clip 6 stop. If you also started an editor preview, stop that preview too.",
         target: "#header-cmdline",
-        hint: "Type clip 6 stop.",
+        hint: "Type this command, then press Enter:",
+        command: "clip 6 stop",
         observe: { type: "clip-stopped", clipId: 6 },
       },
     ],
@@ -427,7 +440,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         action: "Press Play timeline and watch the Visualizer.",
         panels: ["Visualizer"],
         target: '[aria-label="Play timeline"]',
-        hint: "Play the edited Lo-fi.",
+        hint: "Start the timeline",
         observe: { type: "timeline-playing" },
       },
       {
@@ -438,7 +451,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           "Press Stop timeline. Check Status Display and stop any clips you started manually.",
         panels: ["StatusDisplay"],
         target: '[aria-label="Stop timeline"]',
-        hint: "Stop Lo-fi.",
+        hint: "Stop the timeline",
         observe: { type: "timeline-stopped" },
       },
     ],

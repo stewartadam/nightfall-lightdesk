@@ -14,18 +14,27 @@ interface GuideTargetProps {
   stepId: string;
   selector?: string;
   hint?: string;
+  command?: string;
+  paletteHint?: string;
+  focusTarget?: boolean;
 }
 
-/** Highlights a visible control without intercepting clicks or moving keyboard focus. */
+/** Highlights a visible control and optionally focuses it once when its lesson step begins. */
 export function GuideTarget(props: GuideTargetProps) {
   const [bounds, setBounds] = createSignal<DOMRect | null>(null);
+  const [inPalette, setInPalette] = createSignal(false);
 
   /** Re-resolves lazy panels and tracks scrolling, resizing, and dock rearrangement. */
   createEffect(() => {
     const selector = props.selector;
+    const stepId = props.stepId;
+    const focusTarget = props.focusTarget;
+    void stepId;
     setBounds(null);
     if (!selector) return;
     let previous = "";
+    let focused = false;
+    let focusFrame: number | undefined;
     /** Ignores hidden, clipped, disabled, or modal-obscured controls. */
     const update = () => {
       const modal = [
@@ -68,6 +77,15 @@ export function GuideTarget(props: GuideTargetProps) {
         },
       );
       const rect = target?.getBoundingClientRect() ?? null;
+      setInPalette(
+        Boolean(target?.closest('[data-dialog-kind="command-palette"]')),
+      );
+      if (target && focusTarget && !focused) {
+        focused = true;
+        focusFrame = requestAnimationFrame(() => {
+          if (target.isConnected) target.focus({ preventScroll: true });
+        });
+      }
       const key = rect
         ? `${rect.x},${rect.y},${rect.width},${rect.height}`
         : "none";
@@ -78,7 +96,10 @@ export function GuideTarget(props: GuideTargetProps) {
     };
     update();
     const timer = window.setInterval(update, 250);
-    onCleanup(() => window.clearInterval(timer));
+    onCleanup(() => {
+      window.clearInterval(timer);
+      if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+    });
   });
 
   return (
@@ -103,8 +124,13 @@ export function GuideTarget(props: GuideTargetProps) {
               <Tooltip
                 surfaceClass="nf-guide-tooltip"
                 content={() => (
-                  <span class="block max-w-60 whitespace-normal">
-                    {props.hint}
+                  <span class="block max-w-72 whitespace-normal">
+                    {inPalette()
+                      ? (props.paletteHint ?? props.hint)
+                      : props.hint}
+                    <Show when={props.command}>
+                      <code class="nf-guide-command">{props.command}</code>
+                    </Show>
                   </span>
                 )}
                 anchorRect={() => rect()}

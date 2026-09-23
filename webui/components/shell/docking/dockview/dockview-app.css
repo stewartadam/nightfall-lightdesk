@@ -6,6 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+/* Keep detached panel hit testing inside the visible central grid. */
+.nf-grid-panel-clip {
+  clip-path: var(--nf-grid-panel-clip);
+}
+
 .dv-tab.dv-active-tab .dv-default-tab .dv-default-tab-content span {
   font-weight: 600;
 }

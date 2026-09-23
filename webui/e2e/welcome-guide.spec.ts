@@ -166,6 +166,51 @@ test("guide resizes the whole app and leaves right-hand panels clickable", async
   await expect.poll(async () => (await app.boundingBox())!.width).toBe(700);
 });
 
+/** Clipped grid focus wrappers must not steal clicks from the right edge tabs. */
+test("guide leaves Status Display and Fixtures edge tabs reachable", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  for (const width of [1440, 1100, 1000]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const name of ["Status Display", "Fixtures"]) {
+      const tab = page.getByRole("tab", { name, exact: true });
+      await expect(tab).toBeVisible();
+      await expect
+        .poll(() =>
+          tab.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              rect.x + rect.width / 2,
+              rect.y + rect.height / 2,
+            );
+            return hit !== null && element.contains(hit);
+          }),
+        )
+        .toBe(true);
+      await tab.click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => (window as any).appStores.dockApi.get().activePanel?.title,
+          ),
+        )
+        .toBe(name);
+      if (name === "Fixtures") {
+        const fixtures = page.locator('[data-panel-kind="fixtures"]');
+        await fixtures.getByRole("button").first().click({ trial: true });
+        await expect(
+          fixtures.getByText("RGBPixelTape 120ch RGB", { exact: true }).first(),
+        ).toBeVisible();
+      }
+    }
+  }
+  await page.screenshot({ path: testInfo.outputPath("guide-edge-tabs.png") });
+  await page.getByRole("button", { name: "Exit welcome guide" }).click();
+  await page.getByRole("tab", { name: "Status Display", exact: true }).click();
+});
+
 /** Gives each guide step a brief cue, then settles; reduced-motion users get the same static emphasis. */
 test("guide hints bounce briefly and respect reduced motion", async ({
   page,
@@ -176,6 +221,9 @@ test("guide hints bounce briefly and respect reduced motion", async ({
   const guide = page.getByTestId("welcome-guide");
   await guide.getByRole("button", { name: /START HERE/ }).click();
   await reachStep(page, "Select lights by number");
+  await expect(
+    page.getByRole("textbox", { name: "Command input", exact: true }),
+  ).toBeFocused();
   const hint = page.locator('[role="tooltip"].nf-guide-tooltip');
   await expect(hint).toBeVisible();
   await expect
@@ -205,7 +253,7 @@ test("guide hints bounce briefly and respect reduced motion", async ({
   });
   await command.fill("fix 310>313");
   await command.press("Enter");
-  await expect(hint).toContainText("Type @ 100");
+  await expect(hint.locator("code")).toHaveText("@ 100");
   await expect
     .poll(() =>
       hint.evaluate((element) =>
@@ -226,7 +274,9 @@ test("guide hints bounce briefly and respect reduced motion", async ({
   await expect(hint).toBeVisible();
   await command.fill("@ 100");
   await command.press("Enter");
-  await expect(hint).toContainText("Set red to 100");
+  await expect(hint.locator("code")).toHaveText(
+    "fix 310>313 red @ 100 green @ 0 blue @ 0",
+  );
   await expect(hint).toHaveCSS("animation-name", "none");
   await guide.getByRole("button", { name: "All lessons" }).hover();
   const regular = page
@@ -282,10 +332,16 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await expect(
     guide.getByRole("heading", { name: "Find your way around" }),
   ).toBeVisible();
+  await expect(page.locator(".nf-guide-tooltip")).toHaveText(
+    "Use the Command Palette to open panels",
+  );
   await page
     .getByRole("button", { name: "Open command palette", exact: true })
     .click();
   await expectGuideOutsideBackdrop(page);
+  await expect(page.locator(".nf-guide-tooltip")).toHaveText(
+    "Open the fixtures panel",
+  );
   await page.screenshot({
     path: testInfo.outputPath("guide-palette-desktop.png"),
   });
@@ -296,9 +352,7 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await expect(
     guide.getByRole("heading", { name: "Select lights by number" }),
   ).toBeVisible();
-  const hint = page
-    .getByRole("tooltip")
-    .filter({ hasText: "Type fix 310>313" });
+  const hint = page.getByRole("tooltip").filter({ hasText: "fix 310>313" });
   await expect(hint).toBeVisible();
   await page.setViewportSize({ width: 700, height: 900 });
   await page
