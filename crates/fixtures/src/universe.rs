@@ -411,70 +411,35 @@ fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
     (normalized * dmx_max as ParameterDmxValue).round() as u32
 }
 
+/// Write a validated sparse parameter mapping to both console and transport buffers.
 fn write_parameter_to_console_universe(
     universes: &mut ConsoleDmxUniverses,
-    transport: Option<&OutputTransport>,
-    universe_id: u16,
-    address: u16,
+    destination: &OutputDestination,
     parameter: &Parameter,
-    origin: ConsoleChannelOrigin,
 ) {
-    let dmx_value = parameter_to_dmx_value(parameter);
-
-    if parameter.metadata.resolution >= DmxValueResolution::Coarse {
-        let coarse = match parameter.metadata.resolution {
-            DmxValueResolution::Coarse => dmx_value as ChannelDmxValue,
-            DmxValueResolution::Fine => (dmx_value >> 8) as ChannelDmxValue,
-            DmxValueResolution::UltraFine => (dmx_value >> 16) as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 24) as ChannelDmxValue,
-        };
-        universes.set_value(universe_id, address, coarse, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address, coarse, origin);
-        }
+    let width = parameter.metadata.resolution.channel_width();
+    if !destination.has_valid_addresses(width) {
+        return;
     }
-
-    if parameter.metadata.resolution >= DmxValueResolution::Fine {
-        let fine = match parameter.metadata.resolution {
-            DmxValueResolution::Fine => dmx_value as ChannelDmxValue,
-            DmxValueResolution::UltraFine => (dmx_value >> 8) as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 16) as ChannelDmxValue,
-            _ => 0,
-        };
-        universes.set_value(universe_id, address + 1, fine, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address + 1, fine, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::UltraFine {
-        let ultra = match parameter.metadata.resolution {
-            DmxValueResolution::UltraFine => dmx_value as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 8) as ChannelDmxValue,
-            _ => 0,
-        };
-        universes.set_value(universe_id, address + 2, ultra, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address + 2, ultra, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::Uber {
+    let bytes = parameter_to_dmx_value(parameter).to_be_bytes();
+    for (&address, &value) in destination
+        .addresses
+        .iter()
+        .zip(&bytes[4 - usize::from(width)..])
+    {
         universes.set_value(
-            universe_id,
-            address + 3,
-            dmx_value as ChannelDmxValue,
-            origin,
+            destination.universe,
+            address,
+            value,
+            ConsoleChannelOrigin::OutputBinding,
         );
-        if let Some(transport) = transport {
-            universes.set_output_value(
-                transport.clone(),
-                universe_id,
-                address + 3,
-                dmx_value as ChannelDmxValue,
-                origin,
-            );
-        }
+        universes.set_output_value(
+            destination.transport.clone(),
+            destination.universe,
+            address,
+            value,
+            ConsoleChannelOrigin::OutputBinding,
+        );
     }
 }
 
@@ -487,24 +452,8 @@ pub fn dmx_universes(
         let Some(destinations) = destinations else {
             continue;
         };
-
         for destination in &destinations.destinations {
-            if destination.address == 0 {
-                tracing::warn!(
-                    attribute = ?parameter.metadata.attribute,
-                    universe = destination.universe,
-                    "Parameter has output address 0"
-                );
-            }
-
-            write_parameter_to_console_universe(
-                &mut universes,
-                Some(&destination.transport),
-                destination.universe,
-                destination.address,
-                &parameter,
-                ConsoleChannelOrigin::OutputBinding,
-            );
+            write_parameter_to_console_universe(&mut universes, destination, &parameter);
         }
     }
 }
@@ -558,6 +507,106 @@ mod tests {
     use bevy_app::{App, Update};
 
     use super::*;
+
+    /// Exercise the actual output system with reversed sparse bytes and preserve unrelated channel ownership.
+    #[test]
+    fn output_system_writes_sparse_significant_addresses() {
+        let mut app = App::new();
+        app.init_resource::<ConsoleDmxUniverses>();
+        let transport = OutputTransport::Disabled;
+        {
+            let mut universes = app.world_mut().resource_mut::<ConsoleDmxUniverses>();
+            for address in 1..=5 {
+                universes.set_value(7, address, 0xee, ConsoleChannelOrigin::ManualCommand);
+                universes.set_output_value(
+                    transport.clone(),
+                    7,
+                    address,
+                    0xee,
+                    ConsoleChannelOrigin::ManualCommand,
+                );
+            }
+        }
+        app.world_mut().spawn((
+            Parameter {
+                metadata: ParameterMetadata {
+                    resolution: DmxValueResolution::Fine,
+                    max: 65535.0,
+                    ..Default::default()
+                },
+                values: ParameterValues {
+                    current_value: 0xabcd as f32,
+                    ..Default::default()
+                },
+            },
+            ResolvedOutputDestinations {
+                destinations: vec![OutputDestination {
+                    transport: transport.clone(),
+                    universe: 7,
+                    addresses: vec![4, 1],
+                }],
+            },
+        ));
+        app.add_systems(Update, dmx_universes);
+        app.update();
+        let universes = app.world().resource::<ConsoleDmxUniverses>();
+        assert_eq!(
+            &universes.get_universe(7)[..5],
+            &[0xcd, 0xee, 0xee, 0xab, 0xee]
+        );
+        assert_eq!(
+            &universes.get_output_universe(&transport, 7)[..5],
+            &[0xcd, 0xee, 0xee, 0xab, 0xee]
+        );
+        assert_eq!(
+            universes.get_origin(7, 2),
+            Some(ConsoleChannelOrigin::ManualCommand)
+        );
+        assert_eq!(
+            universes.get_origin(7, 4),
+            Some(ConsoleChannelOrigin::OutputBinding)
+        );
+    }
+
+    /// Reject the entire destination before touching console values, transport bytes or ownership metadata.
+    #[test]
+    fn invalid_output_addresses_do_not_partially_write() {
+        let parameter = Parameter {
+            metadata: ParameterMetadata {
+                resolution: DmxValueResolution::Fine,
+                max: 65535.0,
+                ..Default::default()
+            },
+            values: ParameterValues {
+                current_value: 65535.0,
+                ..Default::default()
+            },
+        };
+        for addresses in [
+            vec![],
+            vec![1],
+            vec![1, 2, 3],
+            vec![1, 0],
+            vec![1, 513],
+            vec![1, 1],
+            vec![1, u16::MAX],
+        ] {
+            let mut universes = ConsoleDmxUniverses::default();
+            universes.set_value(7, 1, 42, ConsoleChannelOrigin::ManualCommand);
+            let destination = OutputDestination {
+                transport: OutputTransport::Disabled,
+                universe: 7,
+                addresses,
+            };
+            write_parameter_to_console_universe(&mut universes, &destination, &parameter);
+            assert_eq!(universes.get_value(7, 1), Some(42));
+            assert_eq!(
+                universes.get_origin(7, 1),
+                Some(ConsoleChannelOrigin::ManualCommand)
+            );
+            assert!(!universes.has_output_universe(&OutputTransport::Disabled, 7));
+        }
+    }
 
     #[test]
     fn update_transport_map_includes_input_transport_targets() {

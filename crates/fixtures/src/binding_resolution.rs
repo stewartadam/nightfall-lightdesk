@@ -910,7 +910,9 @@ pub fn resolve_output_bindings(
                             .push(OutputDestination {
                                 transport: output_transport.clone(),
                                 universe: target_universe,
-                                address: dest_address,
+                                addresses: (0..param.width)
+                                    .map(|byte| dest_address.saturating_add(byte))
+                                    .collect(),
                             });
                         fixture_offset = fixture_offset.saturating_add(param.width);
                     }
@@ -1004,7 +1006,9 @@ pub fn resolve_output_bindings(
                                 .push(OutputDestination {
                                     transport: output_transport.clone(),
                                     universe: target_universe_value,
-                                    address: dest_address,
+                                    addresses: (0..param.width)
+                                        .map(|byte| dest_address.saturating_add(byte))
+                                        .collect(),
                                 });
                             param_offset = param_offset.saturating_add(param.width);
                         }

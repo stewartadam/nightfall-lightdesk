@@ -77,6 +77,15 @@ Rust/JSON round-trip coverage preserves null virtual channels and numeric break
 keys. Explicit TypeScript annotations retain those null entries and describe
 footprints as a JSON object instead of exposing a Rust collection name.
 
+The fixture runtime's resolved output destinations now carry ordered byte
+addresses rather than a single contiguous base address. The production universe
+writer preserves sparse/reversed byte order and rejects invalid destinations
+before modifying either console or transport buffers. Manual DMX assertions and
+release use those same addresses, excluding gaps. Existing bindings explicitly
+expand contiguous parameter widths. This does not yet connect compiled GDTF
+breaks to patch bindings, change transport input decoding, or replace floating
+parameter values with an exact raw 32-bit runtime representation.
+
 The `compiled_channels` stage builds one owned channel program using the wire,
 function, selector, physical and relation passes, then evaluates every active
 function at the initial raw snapshot. It retains channel/geometry identities,

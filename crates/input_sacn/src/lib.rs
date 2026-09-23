@@ -444,7 +444,7 @@ mod tests {
                             mode: SacnDelivery::Multicast,
                         },
                         universe: 2,
-                        address: 1,
+                        addresses: vec![1],
                     }],
                 },
             ))

@@ -325,6 +325,7 @@ fn spawn_moving_spot_probe_fixture(world: &mut World, uid: Uuid) -> MovingSpotPr
     probe
 }
 
+/// Inspect the most significant byte address of the first resolved output destination.
 fn first_output_address(world: &World, entity: Entity) -> u16 {
     world
         .get::<ResolvedOutputDestinations>(entity)
@@ -332,7 +333,7 @@ fn first_output_address(world: &World, entity: Entity) -> u16 {
         .destinations
         .first()
         .expect("expected at least one output destination")
-        .address
+        .addresses[0]
 }
 
 #[test]
@@ -393,6 +394,7 @@ fn derive_console_addresses_respects_priority_over_insertion_order() {
     );
 }
 
+/// Ordered bindings expand every significant byte of a fine parameter at each destination.
 #[test]
 fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
     let mut app = App::new();
@@ -405,6 +407,11 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
 
     let uid = Uuid::new_v4();
     let parameter_entity = spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Red);
+    app.world_mut()
+        .get_mut::<Parameter>(parameter_entity)
+        .unwrap()
+        .metadata
+        .resolution = DmxValueResolution::Fine;
 
     {
         let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
@@ -455,14 +462,14 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
                     mode: SacnDelivery::Multicast
                 },
                 universe: 1,
-                address: 10,
+                addresses: vec![10, 11],
             },
             OutputDestination {
                 transport: OutputTransport::Sacn {
                     mode: SacnDelivery::Multicast
                 },
                 universe: 1,
-                address: 50,
+                addresses: vec![50, 51],
             },
         ]
     );
@@ -643,7 +650,7 @@ fn resolve_output_bindings_supports_floating_fixtures() {
                 mode: ArtNetDelivery::Broadcast
             },
             universe: 5,
-            address: 7,
+            addresses: vec![7],
         }]
     );
 }
@@ -1126,7 +1133,7 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
                 mode: SacnDelivery::Multicast
             },
             universe: 1,
-            address: 10,
+            addresses: vec![10],
         }]
     );
     assert_eq!(
@@ -1136,7 +1143,7 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
                 mode: SacnDelivery::Multicast
             },
             universe: 1,
-            address: 10,
+            addresses: vec![10],
         }]
     );
 }
@@ -1206,7 +1213,7 @@ fn resolve_output_bindings_resolves_named_usb_targets() {
                 device: "usb-serial-1".to_string(),
             },
             universe: 1,
-            address: 10,
+            addresses: vec![10],
         }]
     );
 }

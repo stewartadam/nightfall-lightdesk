@@ -1488,7 +1488,7 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
                 destinations: vec![OutputDestination {
                     transport: OutputTransport::Disabled,
                     universe: 5,
-                    address: 13,
+                    addresses: vec![13],
                 }],
             },
         ))

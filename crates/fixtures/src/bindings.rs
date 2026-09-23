@@ -335,8 +335,20 @@ pub struct OutputDestination {
     pub transport: OutputTransport,
     /// Output universe.
     pub universe: u16,
-    /// Output address.
-    pub address: u16,
+    /// One-based addresses in decreasing byte significance; gaps and reversed order are retained.
+    pub addresses: Vec<u16>,
+}
+
+impl OutputDestination {
+    /// Check a complete parameter mapping before reading or writing any byte.
+    pub(crate) fn has_valid_addresses(&self, width: u16) -> bool {
+        (1..=4).contains(&width)
+            && self.addresses.len() == usize::from(width)
+            && self.addresses.iter().enumerate().all(|(index, address)| {
+                (1..=nightfall_dmx::MAX_CHANNELS_PER_UNIVERSE as u16).contains(address)
+                    && !self.addresses[..index].contains(address)
+            })
+    }
 }
 
 /// Component storing resolved output destinations for a fixture or parameter.

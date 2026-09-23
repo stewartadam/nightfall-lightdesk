@@ -14,9 +14,7 @@ use moonshine_kind::prelude::*;
 use nightfall::command_types::DmxChannelRef;
 use nightfall::prelude::{ObjectRef, ObjectType, Priority};
 use nightfall_compositor::types::{Layer, ObjectRefMarker, ParameterMap, ParameterRef};
-use nightfall_dmx::prelude::{
-    ChannelDmxValue, DmxValueResolution, ParameterDmxValue, ParameterValue,
-};
+use nightfall_dmx::prelude::{DmxValueResolution, ParameterDmxValue, ParameterValue};
 use nightfall_engine::LayerGeneration;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandResponder, EngineActionEnvelope,
@@ -310,6 +308,7 @@ pub fn update_manual_assertion_layer(
     }
 }
 
+/// Assert the complete parameter value decoded from the selected destination's significant bytes.
 fn set_manual_assertion_from_channel(
     channel: &DmxChannelRef,
     universes: &ConsoleDmxUniverses,
@@ -317,13 +316,11 @@ fn set_manual_assertion_from_channel(
     layer: &mut Layer,
 ) {
     for (parameter, destinations) in destinations_query.iter() {
-        let Some((universe, address)) = matching_destination(channel, &parameter, destinations)
-        else {
+        let Some(destination) = matching_destination(channel, &parameter, destinations) else {
             continue;
         };
 
-        let dmx_value =
-            dmx_value_from_universe(universes, universe, address, &parameter.metadata.resolution);
+        let dmx_value = dmx_value_from_universe(universes, destination);
         let value = dmx_value_to_parameter_value(dmx_value, &parameter.metadata);
         layer.absolute.insert(
             parameter.instance(),
@@ -346,52 +343,32 @@ fn remove_manual_assertion_for_channel(
     }
 }
 
-fn matching_destination(
+/// Match only bytes actually owned by a valid resolved mapping, excluding gaps.
+fn matching_destination<'a>(
     channel: &DmxChannelRef,
     parameter: &InstanceRef<Parameter>,
-    destinations: Option<&ResolvedOutputDestinations>,
-) -> Option<(u16, u16)> {
-    let destinations = destinations?;
-    let channel_width = parameter.metadata.resolution.channel_width();
-
-    destinations.destinations.iter().find_map(|destination| {
-        if destination.universe != channel.universe {
-            return None;
-        }
-        if channel.address < destination.address
-            || channel.address >= destination.address + channel_width
-        {
-            return None;
-        }
-        Some((destination.universe, destination.address))
+    destinations: Option<&'a ResolvedOutputDestinations>,
+) -> Option<&'a crate::bindings::OutputDestination> {
+    destinations?.destinations.iter().find(|destination| {
+        destination.universe == channel.universe
+            && destination.has_valid_addresses(parameter.metadata.resolution.channel_width())
+            && destination.addresses.contains(&channel.address)
     })
 }
 
+/// Assemble significant bytes from an already validated destination; absent universes read as zero.
 fn dmx_value_from_universe(
     universes: &ConsoleDmxUniverses,
-    universe_id: u16,
-    address: u16,
-    resolution: &DmxValueResolution,
+    destination: &crate::bindings::OutputDestination,
 ) -> u32 {
-    let read = |offset: u16| -> ChannelDmxValue {
-        universes
-            .get_value(universe_id, address.saturating_add(offset))
-            .unwrap_or(0)
-    };
-
-    match resolution {
-        DmxValueResolution::Coarse => read(0) as u32,
-        DmxValueResolution::Fine => ((read(0) as u32) << 8) | read(1) as u32,
-        DmxValueResolution::UltraFine => {
-            ((read(0) as u32) << 16) | ((read(1) as u32) << 8) | read(2) as u32
-        }
-        DmxValueResolution::Uber => {
-            ((read(0) as u32) << 24)
-                | ((read(1) as u32) << 16)
-                | ((read(2) as u32) << 8)
-                | read(3) as u32
-        }
-    }
+    destination.addresses.iter().fold(0u32, |value, &address| {
+        (value << 8)
+            | u32::from(
+                universes
+                    .get_value(destination.universe, address)
+                    .unwrap_or(0),
+            )
+    })
 }
 
 fn dmx_value_to_parameter_value(
@@ -418,6 +395,63 @@ mod tests {
 
     use super::*;
     use crate::prelude::{ResolvedInputBinding, ResolvedInputTarget};
+
+    /// Manual assertions and release target either significant byte, never an unowned gap.
+    #[test]
+    fn manual_dmx_commands_follow_sparse_output_addresses() {
+        let mut world = World::new();
+        world.spawn((
+            Parameter {
+                metadata: crate::prelude::ParameterMetadata {
+                    resolution: DmxValueResolution::Fine,
+                    max: 65535.0,
+                    ..Default::default()
+                },
+                values: Default::default(),
+            },
+            ResolvedOutputDestinations {
+                destinations: vec![crate::bindings::OutputDestination {
+                    transport: nightfall_io::OutputTransport::Disabled,
+                    universe: 7,
+                    addresses: vec![4, 1],
+                }],
+            },
+        ));
+        let mut state = bevy_ecs::system::SystemState::<
+            Query<(InstanceRef<Parameter>, Option<&ResolvedOutputDestinations>)>,
+        >::new(&mut world);
+        let query = state.get(&world).unwrap();
+        let mut universes = ConsoleDmxUniverses::default();
+        for (address, value) in [(4, 0xab), (1, 0xcd), (2, 0xee)] {
+            universes.set_value(
+                7,
+                address,
+                value,
+                crate::prelude::ConsoleChannelOrigin::ManualCommand,
+            );
+        }
+        let mut layer = Layer::new("test".into(), MANUAL_ASSERTION_LAYER_PRIORITY);
+        let gap = DmxChannelRef {
+            universe: 7,
+            address: 2,
+        };
+        set_manual_assertion_from_channel(&gap, &universes, &query, &mut layer);
+        assert!(layer.absolute.is_empty());
+        for address in [4, 1] {
+            let channel = DmxChannelRef {
+                universe: 7,
+                address,
+            };
+            set_manual_assertion_from_channel(&channel, &universes, &query, &mut layer);
+            assert_eq!(layer.absolute.len(), 1);
+            let (value, _) = layer.absolute.values().next().unwrap();
+            assert_eq!(*value, ParameterValue::Absolute { value: 43981.0 });
+            remove_manual_assertion_for_channel(&gap, &query, &mut layer);
+            assert_eq!(layer.absolute.len(), 1);
+            remove_manual_assertion_for_channel(&channel, &query, &mut layer);
+            assert!(layer.absolute.is_empty());
+        }
+    }
 
     /// Verifies manual DMX channel assertions decode signed pan/tilt around the midpoint.
     #[test]
