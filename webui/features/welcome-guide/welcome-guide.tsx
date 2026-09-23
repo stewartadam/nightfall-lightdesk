@@ -8,11 +8,9 @@
 
 import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
-import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommand } from "../../components/providers/command-registry";
-import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
 import {
   type PanelComponentName,
@@ -175,20 +173,18 @@ export default function WelcomeGuide() {
         aria-label="Welcome guide"
         data-testid="welcome-guide"
       >
+        <Show when={lesson() && floating.pointer()}>
+          {(pointer) => (
+            <span
+              aria-hidden="true"
+              class="nf-guide-pointer"
+              data-side={pointer().side}
+              style={pointer().style}
+            />
+          )}
+        </Show>
         <header class="nf-guide-header">
           <div class="nf-guide-title">
-            <Show when={lesson()}>
-              <Tooltip content={() => "All lessons"} position="bottom">
-                <Button
-                  size="icon"
-                  variant="subtle"
-                  aria-label="All lessons"
-                  onClick={() => guideLessonId.set(null)}
-                >
-                  <ArrowLeftIcon class="size-4" aria-hidden />
-                </Button>
-              </Tooltip>
-            </Show>
             <Show when={lesson()} fallback={<span>LEARN NIGHTFALL</span>}>
               <button
                 type="button"
@@ -203,15 +199,6 @@ export default function WelcomeGuide() {
             </Show>
           </div>
           <div class="nf-guide-header-actions">
-            <Show when={lesson()}>
-              <Button
-                size="compact"
-                disabled={index() === 0}
-                onClick={() => moveTo(index() - 1)}
-              >
-                Back
-              </Button>
-            </Show>
             <Button
               size="compact"
               onClick={closeWelcomeGuide}
@@ -342,6 +329,13 @@ export default function WelcomeGuide() {
                         </p>
                       </Show>
                       <div class="nf-guide-navigation">
+                        <Button
+                          size="compact"
+                          disabled={index() === 0}
+                          onClick={() => moveTo(index() - 1)}
+                        >
+                          Back
+                        </Button>
                         <span
                           class="nf-guide-step-count"
                           role="status"
@@ -382,6 +376,9 @@ export default function WelcomeGuide() {
                     </p>
                   </Show>
                   <div class="nf-guide-navigation">
+                    <Button size="compact" onClick={() => moveTo(index() - 1)}>
+                      Back
+                    </Button>
                     <Button variant="primary" onClick={finish}>
                       Finish lesson
                     </Button>

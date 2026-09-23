@@ -326,18 +326,10 @@ test("floating lessons provide context, selectable commands and manual placement
   await command.press("Enter");
   await expect(hint.locator("code")).toHaveText("red @ 100 green @ 0 blue @ 0");
   await expect(hint).toHaveCSS("animation-name", "none");
-  await guide.getByRole("button", { name: "All lessons" }).hover();
-  const regular = page
-    .getByRole("tooltip")
-    .filter({ hasText: /^All lessons$/ });
-  await expect(regular).toBeVisible();
-  expect(
-    await regular.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    ),
-  ).not.toBe(
-    await hint.evaluate((element) => getComputedStyle(element).backgroundColor),
+  await expect(guide.getByRole("button", { name: "All lessons" })).toHaveCount(
+    0,
   );
+  await expect(guide.locator(".nf-guide-pointer")).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("guide-reduced-motion.png"),
   });
@@ -378,7 +370,9 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
     "2/16",
   );
   await expect(
-    guide.locator("header").getByRole("button", { name: "Back", exact: true }),
+    guide
+      .locator(".nf-guide-navigation")
+      .getByRole("button", { name: "Back", exact: true }),
   ).toBeVisible();
   await page
     .getByRole("tab", { name: "Timeline 1: Lo-fi", exact: true })
@@ -413,7 +407,8 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   await page.screenshot({
     path: testInfo.outputPath("guide-timeline-clearance.png"),
   });
-  await guide.getByRole("button", { name: "All lessons" }).click();
+  await reachStep(page, "Ready to explore");
+  await guide.getByRole("button", { name: "Finish lesson" }).click();
   await guide.getByRole("button", { name: /START HERE/ }).click();
   await expect(
     guide.getByRole("heading", { name: "Start the sample show" }),
@@ -431,7 +426,7 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await expect(guide).toContainText("Lo-fi");
   await expect(
     guide.locator("header").getByRole("button", { name: "All lessons" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
     0,
   );
@@ -727,7 +722,8 @@ test("lesson library starts sample lessons immediately and preserves completion"
   await page.getByRole("button", { name: "Add effect", exact: true }).click();
   await page.getByRole("button", { name: "Step FX", exact: true }).click();
   await expect(page.getByRole("tab", { name: /Step FX/ })).toBeVisible();
-  await guide.getByRole("button", { name: "All lessons" }).click();
+  await reachStep(page, "Ready to explore");
+  await guide.getByRole("button", { name: "Finish lesson" }).click();
   await guide.getByRole("button", { name: /Patching fixtures/ }).click();
   await expect(guide).toContainText("pixel strip 310");
   await page.setViewportSize({ width: 700, height: 900 });
@@ -742,7 +738,8 @@ test("lesson library starts sample lessons immediately and preserves completion"
   await page.screenshot({
     path: testInfo.outputPath("welcome-guide-narrow.png"),
   });
-  await guide.getByRole("button", { name: "All lessons" }).click();
+  await reachStep(page, "Ready to explore");
+  await guide.getByRole("button", { name: "Finish lesson" }).click();
   await page.getByRole("button", { name: "Exit welcome guide" }).click();
   await page
     .getByRole("button", { name: "Open Welcome Guide", exact: true })
