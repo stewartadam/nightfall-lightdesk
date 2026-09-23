@@ -9,6 +9,7 @@
 import {
   type Accessor,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   untrack,
@@ -22,6 +23,36 @@ export function useFloatingGuide(
   selector: Accessor<string | undefined>,
 ) {
   const [position, setPosition] = createSignal({ x: 12, y: 80 });
+  const [size, setSize] = createSignal({ width: 360, height: 400 });
+  /** Aims a tip from the nearest card edge toward the actual action, including after dragging. */
+  const pointer = createMemo(() => {
+    const target = anchor();
+    if (!target) return undefined;
+    const { x, y } = position();
+    const { width, height } = size();
+    const cx = target.x + target.width / 2 - x;
+    const cy = target.y + target.height / 2 - y;
+    if (cx >= 0 && cx <= width && cy >= 0 && cy <= height) return undefined;
+    const horizontal =
+      Math.abs((cx - width / 2) / width) > Math.abs((cy - height / 2) / height);
+    const side = horizontal
+      ? cx < width / 2
+        ? "left"
+        : "right"
+      : cy < height / 2
+        ? "top"
+        : "bottom";
+    const offset = Math.max(
+      20,
+      Math.min(horizontal ? cy : cx, (horizontal ? height : width) - 20),
+    );
+    return {
+      side,
+      style: horizontal
+        ? { top: `${offset}px`, [side]: "-7px" }
+        : { left: `${offset}px`, [side]: "-7px" },
+    };
+  });
   let manual = false;
   /** Finds an open dialog's content so the card avoids its controls as well as the step target. */
   const dialogBounds = () => {
@@ -56,6 +87,7 @@ export function useFloatingGuide(
   const place = () => {
     const card = element();
     if (!card) return;
+    setSize({ width: card.offsetWidth, height: card.offsetHeight });
     if (manual) {
       setPosition(clamp(untrack(position)));
       return;
@@ -180,5 +212,5 @@ export function useFloatingGuide(
       y: position().y + direction[1] * delta,
     });
   };
-  return { position, move, onKeyDown };
+  return { position, pointer, move, onKeyDown };
 }
