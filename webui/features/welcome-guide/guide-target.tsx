@@ -8,21 +8,17 @@
 
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import Tooltip from "../../components/ui/tooltip";
 
 interface GuideTargetProps {
   stepId: string;
   selector?: string;
-  hint?: string;
-  command?: string;
-  paletteHint?: string;
   focusTarget?: boolean;
+  onBounds?: (bounds: DOMRect | null) => void;
 }
 
 /** Highlights a visible control and optionally focuses it once when its lesson step begins. */
 export function GuideTarget(props: GuideTargetProps) {
   const [bounds, setBounds] = createSignal<DOMRect | null>(null);
-  const [inPalette, setInPalette] = createSignal(false);
 
   /** Re-resolves lazy panels and tracks scrolling, resizing, and dock rearrangement. */
   createEffect(() => {
@@ -31,6 +27,7 @@ export function GuideTarget(props: GuideTargetProps) {
     const focusTarget = props.focusTarget;
     void stepId;
     setBounds(null);
+    props.onBounds?.(null);
     if (!selector) return;
     let previous = "";
     let focused = false;
@@ -70,16 +67,16 @@ export function GuideTarget(props: GuideTargetProps) {
             0,
             Math.min(window.innerHeight - 1, rect.top + rect.height / 2),
           );
-          const hit = document.elementFromPoint(x, y);
+          const hit = document
+            .elementsFromPoint(x, y)
+            .find((candidate) => !candidate.closest(".nf-guide-floating"));
           return (
-            hit !== null && (element.contains(hit) || hit.contains(element))
+            hit !== undefined &&
+            (element.contains(hit) || hit.contains(element))
           );
         },
       );
       const rect = target?.getBoundingClientRect() ?? null;
-      setInPalette(
-        Boolean(target?.closest('[data-dialog-kind="command-palette"]')),
-      );
       if (target && focusTarget && !focused) {
         focused = true;
         focusFrame = requestAnimationFrame(() => {
@@ -92,6 +89,7 @@ export function GuideTarget(props: GuideTargetProps) {
       if (key !== previous) {
         previous = key;
         setBounds(rect);
+        props.onBounds?.(rect);
       }
     };
     update();
@@ -120,30 +118,6 @@ export function GuideTarget(props: GuideTargetProps) {
                 height: `${rect().height + 8}px`,
               }}
             />
-            <Show when={props.hint}>
-              <Tooltip
-                selectable
-                surfaceClass="nf-guide-tooltip"
-                content={() => (
-                  <span class="block max-w-72 whitespace-normal">
-                    {inPalette()
-                      ? (props.paletteHint ?? props.hint)
-                      : props.hint}
-                    <Show when={props.command}>
-                      <code class="nf-guide-command">{props.command}</code>
-                    </Show>
-                  </span>
-                )}
-                anchorRect={() => rect()}
-                animationKey={() => props.stepId}
-                forceVisible={() => true}
-                position={
-                  rect().bottom + 90 > window.innerHeight ? "top" : "bottom"
-                }
-              >
-                {null}
-              </Tooltip>
-            </Show>
           </div>
         )}
       </Show>
