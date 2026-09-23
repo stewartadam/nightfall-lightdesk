@@ -85,8 +85,17 @@ and auxiliary unit declarations. Function links must resolve exactly; missing
 or duplicate names, duplicate auxiliary types and nonfinite auxiliary ranges are
 diagnosed, with explicit table-size budgets. Synthetic tests check that declared
 units survive even when they differ from what a name might suggest.
-This is the channel portion of the planned definition; subchannel mappings,
-attribute grouping/color and optical metadata, geometry/resources, revision persistence and engine adoption
+The owned physical mappings also expand inherited auxiliary ranges and bind
+function-specific `SubChannelSet` overrides, retaining their names and units.
+Auxiliary evaluation uses the parent function's raw interval and its own optional
+profile from the shared profile library; it does not reuse the main physical
+value or restart at a channel-set boundary. Duplicate overrides, unresolved links,
+nonfinite ranges and excessive expanded mappings fail compilation. The corpus
+has 98 `SubPhysicalUnit` declarations but no `SubChannelSet` overrides, so explicit
+overrides and curves are verified with synthetic numerical tests. These values
+are available to consumers but are not yet used for rendering strobe/gobo behavior.
+This is the channel portion of the planned definition; attribute grouping/color
+and optical metadata, geometry/resources, revision persistence and engine adoption
 are still required. Serialization here is diagnostic output, not a finalized
 showfile or worker contract.
 

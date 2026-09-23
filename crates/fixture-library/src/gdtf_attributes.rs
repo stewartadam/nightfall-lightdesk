@@ -148,6 +148,27 @@ pub fn compile_attributes(
 }
 
 impl AttributeLibrary {
+    /// Resolve an auxiliary unit using the exact attribute name and declared type name.
+    pub fn resolve_subunit(&self, link: &Node) -> Result<(usize, usize), ResolveError> {
+        let target = match link.as_ref() {
+            [attribute, kind] => self.indices.get(attribute.as_ref()).and_then(|&index| {
+                self.attributes[index]
+                    .subphysical_units
+                    .iter()
+                    .position(|unit| unit.kind.as_str() == kind.as_ref())
+                    .map(|unit| (index, unit))
+            }),
+            _ => None,
+        };
+        target.ok_or_else(|| {
+            error(
+                "invalid_subphysical_link",
+                &link.to_string(),
+                "Subphysical link must name a declared attribute and auxiliary type",
+            )
+        })
+    }
+
     /// Inspect declarations by their stable index within this compiled definition.
     pub fn attributes(&self) -> &[CompiledAttribute] {
         &self.attributes

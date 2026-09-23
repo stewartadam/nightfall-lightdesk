@@ -8,8 +8,12 @@
 
 //! Physical conversion for functions and channel-set overrides; activation remains separate.
 
+use std::collections::HashSet;
+
+use gdtf::attribute::{PhysicalUnit, SubPhysicalUnitType};
 use serde::Serialize;
 
+use crate::gdtf_attributes::AttributeLibrary;
 use crate::gdtf_functions::ChannelFunctions;
 use crate::gdtf_profiles::ProfileLibrary;
 use crate::gdtf_resolver::ResolveError;
@@ -25,6 +29,30 @@ struct Mapping {
     physical_to: f64,
     profile: Option<usize>,
     sets: FunctionSets,
+    auxiliary: Vec<AuxiliaryMapping>,
+}
+
+/// One resolved auxiliary quantity belonging to a function, using the parent's raw interval.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuxiliaryMapping {
+    /// Attribute table index of the linked declaration.
+    pub attribute: usize,
+    /// Auxiliary declaration index within the attribute.
+    pub subunit: usize,
+    /// Authored purpose, independent of operator labels.
+    pub kind: SubPhysicalUnitType,
+    /// Unit of the evaluated physical value.
+    pub unit: PhysicalUnit,
+    /// Optional function-specific label; absent for inherited defaults.
+    pub name: Option<String>,
+    /// Whether a SubChannelSet explicitly overrides the declaration's default range.
+    pub explicit: bool,
+    /// Effective starting value.
+    pub physical_from: f64,
+    /// Effective ending value.
+    pub physical_to: f64,
+    profile: Option<usize>,
 }
 
 /// Owned mappings in normalized channel/function order sharing one profile library.
@@ -142,6 +170,7 @@ pub fn compile_physical(
                 physical_to: to,
                 profile,
                 sets,
+                auxiliary: Vec::new(),
             });
         }
         result.push(mappings);
@@ -153,6 +182,187 @@ pub fn compile_physical(
 }
 
 impl PhysicalMappings {
+    /// Finish construction by binding auxiliary defaults and function-specific overrides to shared profiles.
+    pub(crate) fn with_subchannels(
+        mut self,
+        channels: &[ChannelFunctions<'_>],
+        attributes: &AttributeLibrary,
+        limit: usize,
+    ) -> Result<Self, ResolveError> {
+        let mut count = 0usize;
+        for (channel, mappings) in channels.iter().zip(&mut self.channels) {
+            for (function, mapping) in channel.functions.iter().zip(mappings) {
+                let attribute =
+                    attributes
+                        .resolve(&function.source.attribute)
+                        .map_err(|mut error| {
+                            error.message = format!("{}: {}", error.message, error.path);
+                            error.path = function.id.clone();
+                            error
+                        })?;
+                let declared = &attributes.attributes()[attribute];
+                count = count
+                    .checked_add(declared.subphysical_units.len())
+                    .filter(|count| *count <= limit)
+                    .ok_or_else(|| {
+                        error(
+                            "subchannel_limit",
+                            &mapping.id,
+                            "Expanded auxiliary mappings exceed the compilation budget",
+                        )
+                    })?;
+                mapping.auxiliary = declared
+                    .subphysical_units
+                    .iter()
+                    .enumerate()
+                    .map(|(subunit, unit)| AuxiliaryMapping {
+                        attribute,
+                        subunit,
+                        kind: unit.kind,
+                        unit: unit.unit,
+                        name: None,
+                        explicit: false,
+                        physical_from: unit.physical_from,
+                        physical_to: unit.physical_to,
+                        profile: None,
+                    })
+                    .collect();
+                let mut seen = HashSet::new();
+                for source in &function.source.sub_channel_sets {
+                    let target = attributes.resolve_subunit(&source.sub_physical_unit)?;
+                    if !seen.insert(target) {
+                        return Err(error(
+                            "duplicate_subchannel",
+                            &mapping.id,
+                            "Several subchannel sets override the same auxiliary quantity",
+                        ));
+                    }
+                    if !source.physical_from.is_finite()
+                        || !source.physical_to.is_finite()
+                        || !(source.physical_to - source.physical_from).is_finite()
+                    {
+                        return Err(error(
+                            "invalid_subchannel_range",
+                            &mapping.id,
+                            "Subchannel endpoints and span must be finite",
+                        ));
+                    }
+                    let unit = &attributes.attributes()[target.0].subphysical_units[target.1];
+                    let replacement = AuxiliaryMapping {
+                        attribute: target.0,
+                        subunit: target.1,
+                        kind: unit.kind,
+                        unit: unit.unit,
+                        name: source.name.as_ref().map(ToString::to_string),
+                        explicit: true,
+                        physical_from: source.physical_from,
+                        physical_to: source.physical_to,
+                        profile: source
+                            .dmx_profile
+                            .as_ref()
+                            .map(|link| self.profiles.resolve(link))
+                            .transpose()?,
+                    };
+                    if let Some(existing) = mapping
+                        .auxiliary
+                        .iter_mut()
+                        .find(|entry| (entry.attribute, entry.subunit) == target)
+                    {
+                        *existing = replacement;
+                    } else {
+                        count = count
+                            .checked_add(1)
+                            .filter(|count| *count <= limit)
+                            .ok_or_else(|| {
+                                error(
+                                    "subchannel_limit",
+                                    &mapping.id,
+                                    "Expanded auxiliary mappings exceed the compilation budget",
+                                )
+                            })?;
+                        mapping.auxiliary.push(replacement);
+                    }
+                }
+            }
+        }
+        Ok(self)
+    }
+
+    /// Inspect auxiliary purposes, labels, units and effective ranges for one compiled function.
+    pub fn auxiliary(
+        &self,
+        channel: usize,
+        function: usize,
+    ) -> Result<&[AuxiliaryMapping], ResolveError> {
+        self.channels
+            .get(channel)
+            .and_then(|channel| channel.get(function))
+            .map(|mapping| mapping.auxiliary.as_slice())
+            .ok_or_else(|| {
+                error(
+                    "invalid_physical_function",
+                    "auxiliary",
+                    "Compiled function is missing",
+                )
+            })
+    }
+
+    /// Evaluate a default or explicit auxiliary range over the parent function's raw interval.
+    /// A subchannel profile replaces linear interpolation independently of the main function's profile.
+    pub fn evaluate_auxiliary(
+        &self,
+        channel: usize,
+        function: usize,
+        auxiliary: usize,
+        raw: u32,
+    ) -> Result<f64, ResolveError> {
+        let mapping = self
+            .channels
+            .get(channel)
+            .and_then(|channel| channel.get(function))
+            .ok_or_else(|| {
+                error(
+                    "invalid_physical_function",
+                    "auxiliary",
+                    "Compiled function is missing",
+                )
+            })?;
+        let target = mapping.auxiliary.get(auxiliary).ok_or_else(|| {
+            error(
+                "invalid_auxiliary_index",
+                &mapping.id,
+                "Auxiliary mapping is missing",
+            )
+        })?;
+        if raw < mapping.raw_from || raw > mapping.raw_to {
+            return Err(error(
+                "raw_outside_function",
+                &mapping.id,
+                "Raw value lies outside the function interval",
+            ));
+        }
+        let fraction = if let Some(profile) = target.profile {
+            self.profiles
+                .get(profile)
+                .expect("compiled profile index")
+                .evaluate_raw(raw, mapping.raw_from, mapping.raw_to)?
+                / 100.0
+        } else if mapping.raw_from == mapping.raw_to {
+            0.0
+        } else {
+            f64::from(raw - mapping.raw_from) / f64::from(mapping.raw_to - mapping.raw_from)
+        };
+        let value = target.physical_from + fraction * (target.physical_to - target.physical_from);
+        if !value.is_finite() {
+            return Err(error(
+                "physical_output_overflow",
+                &mapping.id,
+                "Auxiliary mapping produced a nonfinite result",
+            ));
+        }
+        Ok(value)
+    }
+
     /// Encode within an explicitly selected set; constant sets deterministically use their first raw value.
     pub fn encode_set_linear(
         &self,

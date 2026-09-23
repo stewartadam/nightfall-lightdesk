@@ -29,6 +29,8 @@ pub struct ChannelLimits {
     pub attributes: usize,
     /// Maximum declared auxiliary physical units across all attributes.
     pub subunits: usize,
+    /// Maximum expanded auxiliary mappings across all instantiated functions.
+    pub subchannels: usize,
     /// Maximum total instantiated functions, checked before normalization.
     pub functions: usize,
     /// Maximum total instantiated channel sets.
@@ -45,6 +47,7 @@ impl Default for ChannelLimits {
         Self {
             attributes: 100_000,
             subunits: 100_000,
+            subchannels: 1_000_000,
             functions: 1_000_000,
             sets: 1_000_000,
             profile_points: 100_000,
@@ -113,6 +116,8 @@ pub struct ActivePhysicalValue {
     pub function: usize,
     /// Value in the authored attribute's physical unit.
     pub value: f64,
+    /// Auxiliary values aligned with the function's physical auxiliary mapping list.
+    pub auxiliary: Vec<f64>,
 }
 
 /// Compile all channel passes from one mode, rejecting failures before publishing any result.
@@ -145,7 +150,8 @@ pub fn compile_channels(
         compile_profiles(profiles, limits.profile_points)?,
         limits.functions,
         limits.sets,
-    )?;
+    )?
+    .with_subchannels(&functions, &attributes, limits.subchannels)?;
     let relations = plan_relations(
         &functions,
         resolve_relations(mode, &functions, limits.relations)?,
@@ -246,6 +252,16 @@ impl CompiledChannels {
                         Ok(ActivePhysicalValue {
                             function,
                             value: self.physical.evaluate(channel, function, raw[channel])?,
+                            auxiliary: (0..self.physical.auxiliary(channel, function)?.len())
+                                .map(|auxiliary| {
+                                    self.physical.evaluate_auxiliary(
+                                        channel,
+                                        function,
+                                        auxiliary,
+                                        raw[channel],
+                                    )
+                                })
+                                .collect::<Result<_, _>>()?,
                         })
                     })
                     .collect()
