@@ -19,6 +19,7 @@ export function useFloatingGuide(
   element: Accessor<HTMLElement | undefined>,
   step: Accessor<string>,
   anchor: Accessor<DOMRect | null>,
+  selector: Accessor<string | undefined>,
 ) {
   const [position, setPosition] = createSignal({ x: 12, y: 80 });
   let manual = false;
@@ -59,22 +60,50 @@ export function useFloatingGuide(
       setPosition(clamp(untrack(position)));
       return;
     }
-    const target = dialogBounds() ?? anchor();
+    const visualizer = document
+      .querySelector('[aria-label="3D visualizer viewport"]')
+      ?.getBoundingClientRect();
+    const target = dialogBounds() ?? anchor() ?? visualizer;
     const width = card.offsetWidth;
     const height = card.offsetHeight;
     if (!target) {
       setPosition(clamp({ x: window.innerWidth - width - 12, y: 80 }));
       return;
     }
-    const candidates = [
-      { x: target.right + 16, y: target.top },
-      { x: target.left - width - 16, y: target.top },
-      { x: target.left, y: target.bottom + 16 },
-      { x: target.left, y: target.top - height - 16 },
-    ].map(clamp);
-    const visualizer = document
-      .querySelector('[aria-label="3D visualizer viewport"]')
+    const targetElement = selector()
+      ? [...document.querySelectorAll<HTMLElement>(selector()!)].find(
+          (entry) => {
+            const rect = entry.getBoundingClientRect();
+            return (
+              rect.width > 0 &&
+              rect.height > 0 &&
+              Math.abs(rect.x - (anchor()?.x ?? -1)) < 1 &&
+              Math.abs(rect.y - (anchor()?.y ?? -1)) < 1
+            );
+          },
+        )
+      : undefined;
+    const panel = targetElement
+      ?.closest("[data-panel-id]")
       ?.getBoundingClientRect();
+    /** Offers placements outside both the action and the panel whose content explains the lesson. */
+    const beside = (rect: DOMRect) => [
+      { x: rect.right + 16, y: rect.top },
+      { x: rect.left - width - 16, y: rect.top },
+      { x: rect.left, y: rect.bottom + 16 },
+      { x: rect.left, y: rect.top - height - 16 },
+    ];
+    const candidates = [
+      ...beside(target),
+      ...(panel ? beside(panel) : []),
+      { x: 12, y: 80 },
+      { x: window.innerWidth - width - 12, y: 80 },
+      { x: 12, y: window.innerHeight - height - 12 },
+      {
+        x: window.innerWidth - width - 12,
+        y: window.innerHeight - height - 12,
+      },
+    ].map(clamp);
     /** Measures the covered area of a rectangle for a candidate position. */
     const overlap = (point: { x: number; y: number }, rect: DOMRect) =>
       Math.max(
@@ -85,10 +114,12 @@ export function useFloatingGuide(
         0,
         Math.min(point.y + height, rect.bottom) - Math.max(point.y, rect.top),
       );
-    /** Prioritizes target clearance over visualizer clearance. */
+    /** Preserves the action first, then the teaching panel and Visualizer, with proximity as a tie-breaker. */
     const score = (point: { x: number; y: number }) =>
       overlap(point, target) * 10000 +
-      (visualizer ? overlap(point, visualizer) : 0);
+      (panel ? overlap(point, panel) * 2 : 0) +
+      (visualizer ? overlap(point, visualizer) : 0) +
+      Math.hypot(point.x - target.x, point.y - target.y) * 0.001;
     candidates.sort((a, b) => score(a) - score(b));
     setPosition(candidates[0]);
   };
