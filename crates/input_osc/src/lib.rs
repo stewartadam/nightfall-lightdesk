@@ -224,7 +224,11 @@ fn handle_osc_events(
                 continue;
             }
             if route == ControllerInputRoute::SuppressTriggers
-                && !matches!(mapping.input, command::OscBindingInput::Continuous { .. })
+                && !matches!(
+                    mapping.input,
+                    command::OscBindingInput::Continuous { .. }
+                        | command::OscBindingInput::LegacyContinuous
+                )
             {
                 continue;
             }
@@ -235,6 +239,18 @@ fn handle_osc_events(
                 .and_then(command::OscType::control_value);
             let old = previous.get(arg_index).copied().flatten();
             let input = match mapping.input {
+                command::OscBindingInput::LegacyContinuous => {
+                    let Some(argument) = osc_event.args.get(arg_index) else {
+                        continue;
+                    };
+                    if argument.control_value().is_none() {
+                        continue;
+                    }
+                    let Some(percent) = argument.as_hardware_fader_percent() else {
+                        continue;
+                    };
+                    ActionInput::Scalar(percent / 100.0)
+                }
                 command::OscBindingInput::Pulse => ActionInput::Trigger,
                 command::OscBindingInput::Press
                     if value.is_some_and(|value| value != 0.0) && old != Some(true) =>
@@ -534,7 +550,11 @@ mod tests {
         let mappings = app.world().resource::<OscMappings>().mappings().to_vec();
         app.init_resource::<ActionRegistry>();
         for mapping in mappings {
-            let kind = if matches!(mapping.input, command::OscBindingInput::Continuous { .. }) {
+            let kind = if matches!(
+                mapping.input,
+                command::OscBindingInput::Continuous { .. }
+                    | command::OscBindingInput::LegacyContinuous
+            ) {
                 ActionInputKind::Scalar
             } else {
                 ActionInputKind::Trigger
@@ -853,6 +873,31 @@ mod tests {
                 ActionInput::Scalar(1.0 / 127.0),
                 ActionInput::Scalar(1.0 / 127.0),
                 ActionInput::Scalar(1.0),
+                ActionInput::Scalar(1.0)
+            ]
+        );
+    }
+
+    /// Migrated faders retain schema-17 value-type scaling and reject non-finite input.
+    #[test]
+    fn migrated_scalar_mapping_preserves_legacy_units() {
+        assert_eq!(
+            dispatch_inputs(
+                command::OscBindingInput::LegacyContinuous,
+                vec![
+                    OscType::Float(0.5),
+                    OscType::Int(50),
+                    OscType::Int(1),
+                    OscType::Float(50.0),
+                    OscType::Bool(true),
+                    OscType::Float(f32::NAN),
+                ]
+            ),
+            vec![
+                ActionInput::Scalar(0.5),
+                ActionInput::Scalar(0.5),
+                ActionInput::Scalar(0.01),
+                ActionInput::Scalar(0.5),
                 ActionInput::Scalar(1.0)
             ]
         );

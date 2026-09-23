@@ -446,13 +446,15 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                     ...value.mapping,
                     action,
                     input: scalar
-                      ? value.mapping.input.type === "Continuous"
+                      ? value.mapping.input.type === "Continuous" ||
+                        value.mapping.input.type === "LegacyContinuous"
                         ? value.mapping.input
                         : {
                             type: "Continuous",
                             data: { minimum: 0, maximum: 1 },
                           }
-                      : value.mapping.input.type === "Continuous"
+                      : value.mapping.input.type === "Continuous" ||
+                          value.mapping.input.type === "LegacyContinuous"
                         ? { type: "Press" }
                         : value.mapping.input,
                   },

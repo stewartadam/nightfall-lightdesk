@@ -32,7 +32,17 @@ export function OscInputOptions(props: {
   }
   return (
     <div class="space-y-2">
-      <Show when={props.mapping.input.type !== "Continuous"}>
+      <Show when={props.mapping.input.type === "LegacyContinuous"}>
+        <p class="text-xs">
+          Automatic range: unit-interval floats, otherwise percentages.
+        </p>
+      </Show>
+      <Show
+        when={
+          props.mapping.input.type !== "Continuous" &&
+          props.mapping.input.type !== "LegacyContinuous"
+        }
+      >
         <label class="block text-xs">
           Activation
           <NativeSelect

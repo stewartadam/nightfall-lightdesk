@@ -695,6 +695,72 @@ test("OSC editor configures a second argument and custom fader range", async ({
   }
 });
 
+/** Editing a migrated fader keeps its historical conversion and persistent identity. */
+test("OSC editor preserves migrated automatic ranges", async ({
+  page,
+}, testInfo) => {
+  await openMappingShow(page);
+  const setup = await page.evaluate(async () => {
+    const stores = (window as any).appStores;
+    const mapping = {
+      id: crypto.randomUUID().replaceAll("-", ""),
+      source: null,
+      address: "/legacy/fader",
+      arg_index: 0,
+      arg_value: null,
+      input: { type: "LegacyContinuous" },
+      action: { id: "control.set-external", arguments: { control_index: 1 } },
+    };
+    const result = await stores.sendAndAwait({
+      module: "OscCommand",
+      command: { type: "StoreMapping", data: { expected: null, mapping } },
+    });
+    const api = stores.dockApi.get();
+    api.addPanel({
+      id: "legacy-editor",
+      component: "OscInput",
+      title: "OSC legacy editor",
+      params: {},
+    });
+    for (const panel of [...api.panels])
+      if (panel.id !== "legacy-editor") panel.api.close();
+    return { id: mapping.id, result };
+  });
+  expect(setup.result.outcome.type).toBe("Succeeded");
+  await page
+    .getByRole("gridcell", { name: "/legacy/fader", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Edit action", exact: true }).click();
+  const editor = page.getByRole("region", {
+    name: "OSC mapping action editor",
+  });
+  await expect(
+    editor.getByText("Automatic range:", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    editor.getByRole("combobox", { name: "OSC activation" }),
+  ).toHaveCount(0);
+  await editor
+    .getByRole("spinbutton", { name: "OSC value argument" })
+    .fill("1");
+  await page.screenshot({
+    path: testInfo.outputPath("osc-legacy-range.png"),
+    fullPage: true,
+  });
+  await editor.getByRole("button", { name: "Save mapping" }).click();
+  await expect(editor).not.toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate((id) => {
+        const mapping = (window as any).appStores.oscMappings
+          .get()
+          .find((item: any) => item.id === id);
+        return { input: mapping?.input, index: mapping?.arg_index };
+      }, setup.id),
+    )
+    .toEqual({ input: { type: "LegacyContinuous" }, index: 1 });
+});
+
 /** Sends two distinguishable float arguments so tests prove which argument drives the action. */
 async function sendOscPair(port: number, first: number, second: number) {
   const packet = Buffer.alloc(24);

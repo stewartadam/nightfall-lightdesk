@@ -180,6 +180,8 @@ pub enum OscBindingInput {
     Release,
     /// Trigger once per message, for addresses that carry discrete pulses.
     Pulse,
+    /// Preserve schema-17 float-unit-interval and integer-percentage conversion.
+    LegacyContinuous,
     /// Convert an explicitly configured range into normalized domain input.
     Continuous {
         /// Source value corresponding to the destination minimum.

@@ -15,6 +15,7 @@
 
 mod apply;
 mod contributors;
+mod migration;
 mod selection_refs;
 mod snapshot;
 mod world;
@@ -24,7 +25,7 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 17;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 18;
 pub use selection_refs::stabilize_showfile_group_refs;
 pub use snapshot::{
     BindingsSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
@@ -32,7 +33,7 @@ pub use snapshot::{
 };
 pub use world::{ShowfileSaveState, snapshot_from_save_state, snapshot_from_world};
 
-/// Parse a current-version showfile without transforming its persisted data.
+/// Migrates supported historical schemas in memory before decoding the current snapshot.
 pub fn parse_showfile_snapshot_json(json: &str, source: &str) -> Result<ShowfileSnapshot, String> {
     #[derive(serde::Deserialize)]
     struct VersionedShowfile {
@@ -42,6 +43,14 @@ pub fn parse_showfile_snapshot_json(json: &str, source: &str) -> Result<Showfile
     let header: VersionedShowfile =
         serde_json::from_str(json).map_err(|error| showfile_parse_error(source, &error))?;
     let version = header.metadata.showfile_version;
+    if version == 17 {
+        let mut document: serde_json::Value =
+            serde_json::from_str(json).map_err(|error| showfile_parse_error(source, &error))?;
+        migration::migrate_v17(&mut document)
+            .map_err(|error| format!("failed to migrate showfile {source}: {error}"))?;
+        return serde_json::from_value(document)
+            .map_err(|error| showfile_parse_error(source, &error));
+    }
     if version != CURRENT_SHOWFILE_VERSION {
         return Err(format!(
             "unsupported showfile version {version} in {source}; this nightfall build requires version {CURRENT_SHOWFILE_VERSION}"
@@ -117,10 +126,10 @@ mod tests {
         );
     }
 
-    /// Reject every retired schema and future schemas before deserializing their data.
+    /// Reject unsupported historical and future schemas before decoding their contents.
     #[test]
     fn unsupported_showfile_versions_are_rejected() {
-        for version in (0..CURRENT_SHOWFILE_VERSION).chain([CURRENT_SHOWFILE_VERSION + 1]) {
+        for version in (0..17).chain([CURRENT_SHOWFILE_VERSION + 1]) {
             let json = serde_json::json!({"metadata": {"showfileVersion": version}}).to_string();
             let error = parse_showfile_snapshot_json(&json, "unsupported").unwrap_err();
             assert!(

@@ -129,6 +129,7 @@ impl OscMappings {
                 ));
             }
             let kind = match mapping.input {
+                OscBindingInput::LegacyContinuous => ActionInputKind::Scalar,
                 OscBindingInput::Continuous { minimum, maximum } => {
                     if !minimum.is_finite()
                         || !maximum.is_finite()
