@@ -22,7 +22,7 @@ use nightfall_fixture_library::gdtf_bindings::bind_selectors;
 use nightfall_fixture_library::gdtf_functions::resolve_functions;
 use nightfall_fixture_library::gdtf_physical::compile_physical;
 use nightfall_fixture_library::gdtf_profiles::compile_profiles;
-use nightfall_fixture_library::gdtf_relations::resolve_relations;
+use nightfall_fixture_library::gdtf_relations::{plan_relations, resolve_relations};
 use nightfall_fixture_library::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
 use nightfall_fixture_library::gdtf_sets::resolve_sets;
 use nightfall_fixture_library::gdtf_wire::resolve_wires;
@@ -114,10 +114,13 @@ fn main() {
                         "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "channels": functions}),
                         );
                         let started = Instant::now();
-                        match resolve_relations(&resolved, &functions, 1_000_000) {
-                            Ok(relations) => emit(
+                        match resolve_relations(&resolved, &functions, 1_000_000)
+                            .and_then(|relations| plan_relations(&functions, relations))
+                        {
+                            Ok(plan) => emit(
                                 json!({"stage": "relations", "status": "passed", "mode": mode,
-                                "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "relations": relations}),
+                                "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "relations": plan.relations(),
+                                "channel_order": plan.channel_order()}),
                             ),
                             Err(error) => {
                                 failed = true;

@@ -85,9 +85,22 @@ The `relations` stage binds each declared follower function instance to its loca
 or shared master using those same reference scopes. Multiply and Override remain
 distinct, as do physical and virtual channels. Repeated identical edges and
 ambiguous links are diagnosed, and expansion has an explicit relation budget.
-Synthetic tests check local pixels, shared controls and invalid links. This stage
-does not yet evaluate relations, validate dependency cycles, or decide which
-virtual operations are baked into DMX versus simulated alongside physical masters.
+Dependency planning validates indices and computes a deterministic master-first
+order without recursion. Channel dependency cycles fail explicitly, including
+cycles that would require conditional analysis to establish a safe order.
+
+The normalized relation evaluator takes original semantic fractions and active
+function indices. It produces two independent snapshots: virtual-master effects
+for output conversion, and all declared effects for visualization. Neither pass
+uses the other pass's results. Synthetic tests cover chains, independent pixels,
+inactive functions, physical/virtual masters, sole Override, and competing
+overrides. Multiple active follower functions on a shared channel are diagnosed
+instead of silently merged. All 7,072 bound corpus relations are Multiply with
+virtual masters (136 target virtual followers); physical masters and Override
+therefore rely on synthetic coverage. Corpus reports check dependency planning,
+not semantic snapshot evaluation. Conversion between raw/function physical values
+and the evaluator's semantic fractions, output quantization, and engine integration
+are still required.
 
 The `sets` stage normalizes channel-set boundaries at the channel's full raw
 precision and rejects non-increasing or out-of-function ranges. It retains
