@@ -245,12 +245,12 @@
   gap: 6px;
 }
 .nf-guide-current-lesson {
-  display: block;
+  display: inline;
   text-align: left;
   font-size: 11px;
   letter-spacing: normal;
   color: #b8becb;
-  margin-top: 2px;
+  text-transform: capitalize;
 }
 .nf-guide-header-progress {
   position: absolute;
