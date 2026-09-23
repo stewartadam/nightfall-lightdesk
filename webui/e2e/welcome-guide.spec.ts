@@ -319,6 +319,39 @@ test("floating lessons provide context, selectable commands and manual placement
   await command.fill("fix 310>313");
   await command.press("Enter");
   await expect(hint.locator("code")).toHaveText("@ 100");
+  const introduction = guide.getByText(
+    "The Programmer holds live lighting instructions.",
+    { exact: true },
+  );
+  const prerequisite = guide.getByRole("button", {
+    name: "Open Programmer",
+    exact: true,
+  });
+  const explanation = guide.getByText(
+    "The @ command sets the selected strips’ intensity.",
+    { exact: false },
+  );
+  const action = guide.locator(".nf-guide-action");
+  expect((await prerequisite.boundingBox())!.y).toBeGreaterThan(
+    (await introduction.boundingBox())!.y,
+  );
+  expect((await explanation.boundingBox())!.y).toBeGreaterThan(
+    (await prerequisite.boundingBox())!.y,
+  );
+  expect((await action.boundingBox())!.y).toBeGreaterThan(
+    (await explanation.boundingBox())!.y,
+  );
+  await expect(action).not.toContainText("full brightness");
+  await expect(guide).toHaveCSS(
+    "border-top-color",
+    await page
+      .locator(".dv-groupview.dv-active-group")
+      .first()
+      .evaluate((element) => getComputedStyle(element).borderTopColor),
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("guide-action-hierarchy.png"),
+  });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(hint).toHaveCSS("animation-name", "none");
   await expect(hint).toBeVisible();

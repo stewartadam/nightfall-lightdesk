@@ -294,24 +294,6 @@ export default function WelcomeGuide() {
                   {(instruction) => (
                     <>
                       <p>{instruction().body}</p>
-                      <div class="nf-guide-action">
-                        <strong>{instruction().hint ?? "Try it"}</strong>
-                        <p>{instruction().action}</p>
-                        <Show when={instruction().command}>
-                          <div class="nf-guide-command">
-                            <code>{instruction().command}</code>
-                            <Button
-                              size="icon"
-                              variant="subtle"
-                              aria-label="Copy command"
-                              title="Copy command"
-                              onClick={copyCommand}
-                            >
-                              <CopyIcon class="size-4" aria-hidden />
-                            </Button>
-                          </div>
-                        </Show>
-                      </div>
                       <Show
                         when={
                           instruction().sampleTimeline ||
@@ -341,6 +323,27 @@ export default function WelcomeGuide() {
                           </For>
                         </div>
                       </Show>
+                      <Show when={instruction().context}>
+                        <p>{instruction().context}</p>
+                      </Show>
+                      <div class="nf-guide-action">
+                        <strong>{instruction().hint ?? "Try it"}</strong>
+                        <p>{instruction().action}</p>
+                        <Show when={instruction().command}>
+                          <div class="nf-guide-command">
+                            <code>{instruction().command}</code>
+                            <Button
+                              size="icon"
+                              variant="subtle"
+                              aria-label="Copy command"
+                              title="Copy command"
+                              onClick={copyCommand}
+                            >
+                              <CopyIcon class="size-4" aria-hidden />
+                            </Button>
+                          </div>
+                        </Show>
+                      </div>
                       <Show when={instruction().more}>
                         <details>
                           <summary>Learn more</summary>
