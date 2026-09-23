@@ -37,14 +37,18 @@ useful and whether the omission is justified; the check validates structure.
 
 The **Release notes** job in `release-notes.yml` validates the current description
 on PR creation, reopening, new commits, description edits, and readiness changes.
-It runs the parser from the base commit with read-only permissions and writes a
-preview to the Actions job summary. It does not execute code from the PR branch.
+It runs the parser from the PR merge commit with read-only permissions and writes
+a preview to the Actions job summary. This also validates PRs that introduce or
+modify the parser. The `pull_request` workflow receives no repository secrets and
+does not persist checkout credentials. Changes to the parser and workflow need
+review, like changes to other CI checks.
 
 After this workflow and its script reach both PR base branches (`develop` and
 `main`), add **Release notes** (GitHub Actions) to the **Protected branches**
 ruleset's required status checks, retaining the existing checks. Do not require it
-before those base branches contain the script: the initial rollout PR cannot use
-a validator that has not landed yet. Confirm a new PR fails with an empty entry,
+before rollout to those branches: unrelated PRs opened against an older base may
+not contain the workflow or validator. The introducing PR can validate itself
+using its merge commit. Confirm a new PR fails with an empty entry,
 passes after adding prose, fails if the prose is removed, and passes with an
 explicit omission reason. This repository change alone does not update GitHub's
 ruleset settings.
