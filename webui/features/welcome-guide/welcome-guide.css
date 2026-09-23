@@ -134,11 +134,27 @@
 }
 .nf-guide-highlight {
   position: fixed;
+}
+.nf-guide-highlight::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   border: 3px solid var(--accent, #50d2b4);
   border-radius: 6px;
   box-shadow:
     0 0 0 2px #081b17,
     0 0 16px color-mix(in srgb, var(--accent, #50d2b4) 45%, transparent);
+  animation: nf-guide-target-pulse 2s ease-in-out infinite;
+}
+@keyframes nf-guide-target-pulse {
+  50% {
+    inset: -3px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nf-guide-highlight::after {
+    animation: none;
+  }
 }
 .nf-guide-command {
   display: flex;

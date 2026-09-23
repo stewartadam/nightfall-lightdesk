@@ -37,6 +37,7 @@ export type GuideObservation =
   | { type: "cue"; sequenceId: number; id: number }
   | { type: "cue-manual"; sequenceId: number; id: number }
   | { type: "clip-sequence"; clipId: number; sequenceId: number }
+  | { type: "clip-created"; clipId: number }
   | { type: "assigned"; clipId: number; control: number }
   | { type: "clip-playing" | "clip-stopped"; clipId: number }
   | { type: "cue-playing"; clipId: number; position: number };
@@ -183,6 +184,12 @@ export function guideCompletionToken(
         ? JSON.stringify(cue.instructions)
         : "";
     }
+    case "clip-created":
+      return Object.values(state.clips).some(
+        ([clip]) => clip.identifiers.id === observation.clipId,
+      )
+        ? "created"
+        : "";
     case "clip-sequence": {
       const sequence = Object.values(state.sequences).find(
         (entry) => entry.identifiers.id === observation.sequenceId,
