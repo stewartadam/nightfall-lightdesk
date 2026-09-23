@@ -343,14 +343,14 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
     .click();
   await expectGuideOutsideBackdrop(page);
   await expect(page.locator(".nf-guide-tooltip")).toHaveText(
-    "Open the fixtures panel",
+    "Open the Programmer panel",
   );
   await page.screenshot({
     path: testInfo.outputPath("guide-palette-desktop.png"),
   });
   await page
     .getByPlaceholder("Type a command or search...")
-    .fill("Open Fixtures");
+    .fill("Open Programmer");
   await page.keyboard.press("Enter");
   await expect(
     guide.getByRole("heading", { name: "Select lights by number" }),

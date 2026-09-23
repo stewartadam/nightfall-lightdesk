@@ -70,13 +70,13 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "navigate",
         title: "Find your way around",
-        body: "The Command Palette opens panels. Properties follows the active panel and selected object.",
-        action: "Click Search, type Open Fixtures, and press Enter.",
+        body: "The Command Palette opens panels. The Programmer shows your selected fixtures and their live values.",
+        action: "Click Search, type Open Programmer, and press Enter.",
         target:
           '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
         hint: "Use the Command Palette to open panels",
-        paletteHint: "Open the fixtures panel",
-        observe: { type: "panel", component: "FixtureGrid" },
+        paletteHint: "Open the Programmer panel",
+        observe: { type: "panel", component: "ProgrammerGrid" },
         more: "Drag panel tabs to arrange the workspace. Open Properties from the same palette to inspect a selected object.",
       },
       {
@@ -84,8 +84,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Select lights by number",
         body: "The sample’s pixel strips include fixtures 310–313. The > operator selects an inclusive range.",
         action:
-          "Enter fix 310>313 and press Enter. The four pixel strips become selected; the other fixtures do not.",
-        panels: ["FixtureGrid", "Visualizer"],
+          "Enter fix 310>313 and press Enter. Look for the four selected pixel strips in the Programmer.",
+        panels: ["ProgrammerGrid", "Visualizer"],
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
         command: "fix 310>313",
@@ -97,7 +97,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Bring up the lights",
         body: "The Programmer holds live lighting instructions.",
         action:
-          "Enter @ 100 to bring the four selected pixel strips to full intensity.",
+          "Enter @ 100 to bring the four selected pixel strips to full intensity. Check their intensity values in the Programmer and watch the Visualizer.",
         panels: ["ProgrammerGrid"],
         target: "#header-cmdline",
         hint: "Type this command, then press Enter:",
