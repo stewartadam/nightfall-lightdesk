@@ -113,17 +113,37 @@ class CorpusTests(unittest.TestCase):
         """Earlier passes cannot conceal missing binding or activation evidence."""
         def incomplete_run(*args, **kwargs):
             """Simulate successful earlier stages without instance binding evidence."""
-            for stage in ("parse", "resolution", "wire", "functions", "sets", "physical", "relations", "bindings", "activation", "compiled_channels", "compiled_mode", "conversion"):
+            for stage in ("parse", "resolution", "wire", "functions", "sets", "physical", "relations", "bindings", "activation", "compiled_channels", "compiled_mode", "definition", "conversion"):
                 if stage == missing:
                     continue
                 kwargs["stdout"].write(json.dumps({"stage": stage, "status": "passed", "mode": "Mode"}) + "\n")
             return subprocess.CompletedProcess(args, 0, stderr="")
 
-        for missing in ("sets", "physical", "relations", "bindings", "activation", "compiled_channels", "compiled_mode"):
+        for missing in ("sets", "physical", "relations", "bindings", "activation", "compiled_channels", "compiled_mode", "definition"):
             with self.subTest(missing=missing), patch.object(CORPUS.subprocess, "run", side_effect=incomplete_run):
                 result = CORPUS.run_probe(Path("probe"), self.path, self.root / "probe.jsonl", 1, ["Mode"])
             self.assertEqual(result["status"], "failed")
             self.assertIn(missing, result["error"])
+
+    def test_compiled_definition_identity_matches_the_pinned_input(self):
+        """Successful compilation must identify the exact archive, mode and valid contract revisions."""
+        valid = {"archiveSha256": self.entry["sha256"], "mode": "Mode",
+                 "compilerVersion": 1, "schemaVersion": 1}
+
+        def run(*args, **kwargs):
+            """Emit a complete probe with the current candidate definition key."""
+            for stage in ("parse", "resolution", "wire", "functions", "sets", "physical", "relations", "bindings", "activation", "compiled_channels", "compiled_mode", "definition", "conversion"):
+                kwargs["stdout"].write(json.dumps({"stage": stage, "status": "passed", "mode": "Mode", "key": identity}) + "\n")
+            return subprocess.CompletedProcess(args, 0, stderr="")
+
+        for index, identity in enumerate([valid, {}, None, "invalid", {**valid, "archiveSha256": "0" * 64},
+                         {**valid, "mode": "Mode "}, {**valid, "compilerVersion": 0},
+                         {**valid, "schemaVersion": True}]):
+            with self.subTest(identity=identity), patch.object(CORPUS.subprocess, "run", side_effect=run):
+                result = CORPUS.run_probe(Path("probe"), self.path, self.root / "probe.jsonl", 1, ["Mode"])
+            self.assertEqual(result["status"], "passed" if index == 0 else "failed")
+            if index != 0:
+                self.assertIn("identity", result["error"])
 
     def test_geometry_counts_do_not_hide_missing_joint_bindings(self):
         """Matching emitter counts cannot pass when a named moving part has no axis binding."""

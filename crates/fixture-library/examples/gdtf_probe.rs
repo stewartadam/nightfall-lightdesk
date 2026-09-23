@@ -18,6 +18,7 @@ use std::time::Instant;
 use nightfall_fixture_library::GdtfMetadata;
 use nightfall_fixture_library::converters::gdtf::convert_gdtf_to_fixture;
 use nightfall_fixture_library::gdtf_activation::compile_activation;
+use nightfall_fixture_library::gdtf_archive::{ArchiveLimits, ArchiveSnapshot};
 use nightfall_fixture_library::gdtf_bindings::bind_selectors;
 use nightfall_fixture_library::gdtf_channels::{ChannelLimits, compile_channels};
 use nightfall_fixture_library::gdtf_compiler::{CompileLimits, compile_mode};
@@ -65,7 +66,32 @@ fn main() {
         .map_or_else(|| metadata.modes.clone(), |mode| vec![mode.clone()]);
     let mut failed = false;
     let resolver_source = metadata.reparse();
+    let snapshot_source =
+        ArchiveSnapshot::read(Path::new(&args[0]), ArchiveLimits::default().archive_bytes)
+            .and_then(|snapshot| snapshot.parse(ArchiveLimits::default()));
     for mode in modes {
+        let started = Instant::now();
+        let definition = snapshot_source
+            .as_ref()
+            .map_err(Clone::clone)
+            .and_then(|source| source.compile(&mode, CompileLimits::default()));
+        match definition {
+            Ok(definition) => emit(json!({
+                "stage": "definition", "status": "passed", "mode": mode,
+                "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                "key": definition.key(),
+                "geometry_count": definition.mode().geometry().nodes().len(),
+                "channel_count": definition.mode().channels().channels().len(),
+            })),
+            Err(error) => {
+                failed = true;
+                emit(
+                    json!({"stage": "definition", "status": "failed", "mode": mode,
+                    "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                    "error": error.to_string(), "diagnostic": error}),
+                );
+            }
+        }
         let started = Instant::now();
         let resolved = resolver_source
             .as_ref()

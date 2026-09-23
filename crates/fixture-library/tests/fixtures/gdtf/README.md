@@ -112,6 +112,21 @@ disposal, nested joints, reference model overrides, separate beams and asymmetri
 rest matrices. Archive identity/versioning, resolved resources, worker/showfile
 contracts and engine/renderer adoption still surround this owned mode contract.
 
+The `definition` stage loads a bounded immutable archive snapshot, hashes all
+its bytes with SHA-256, parses its bounded XML once with the existing GDTF parser,
+and compiles modes against those same bytes. Definition keys include the hash,
+exact mode, compiler version and schema version; the corpus runner independently
+checks each successful key against the input hash/mode and valid version fields.
+Tests replace a library file after snapshot capture, change only a resource,
+distinguish modes with significant whitespace, and exercise byte/entry/XML
+limits. Compiled definitions retain shared source bytes for later asset loading.
+This is not yet the library manager's production path, persisted show format,
+resource service or bounded compiled cache. ZIP size/count checks currently cover
+the entries exposed by the dependency's index: identical raw ZIP filenames are
+collapsed upstream and cannot yet be rejected (`nightfall-lightdesk-oaa.2.4`).
+Full XML-depth/parser-work bounds also remain necessary; a byte cap alone does
+not prove a parse-time bound.
+
 The `functions` stage normalizes integer defaults/highlight and inclusive raw
 ranges through 32 bits. Mutually exclusive logical channels and ModeMaster
 conditions retain separate ranges. Selector source links and their ranges are

@@ -172,6 +172,8 @@ def run_probe(executable, archive, report, timeout, expected_modes):
     report.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     terminal_error = None
+    identity_error = None
+    expected_sha = fingerprint(archive)
     with report.open("w") as output:
         try:
             process = subprocess.run([str(executable), str(archive)], stdout=output,
@@ -185,18 +187,27 @@ def run_probe(executable, archive, report, timeout, expected_modes):
         for line in stream:
             try:
                 record = json.loads(line)
+                if record.get("stage") == "definition" and record.get("status") == "passed":
+                    identity = record.get("key", {})
+                    if (not isinstance(identity, dict)
+                            or identity.get("archiveSha256") != expected_sha
+                            or identity.get("mode") != record.get("mode")
+                            or any(type(identity.get(version)) is not int or identity[version] < 1
+                                   for version in ("compilerVersion", "schemaVersion"))):
+                        identity_error = "Compiled definition identity does not match archive, mode or valid versions"
                 stages.append({key: record[key] for key in
                                ("stage", "status", "mode", "error", "diagnostic", "duration_ms") if key in record})
             except json.JSONDecodeError:
                 terminal_error = terminal_error or "Probe emitted an incomplete JSON record"
     if not stages:
         terminal_error = terminal_error or "Probe emitted no stage results"
-    for stage in ("resolution", "wire", "functions", "sets", "physical", "relations", "bindings", "activation", "compiled_channels", "compiled_mode", "conversion"):
+    for stage in ("resolution", "wire", "functions", "sets", "physical", "relations", "bindings", "activation", "compiled_channels", "compiled_mode", "definition", "conversion"):
         reported_modes = [s.get("mode") for s in stages if s.get("stage") == stage]
         if reported_modes != expected_modes:
             terminal_error = terminal_error or f"Probe did not report every expected mode in order for {stage}"
     if not any(s.get("stage") == "parse" and s.get("status") == "passed" for s in stages):
         terminal_error = terminal_error or "Probe did not report successful parsing"
+    terminal_error = terminal_error or identity_error
     return {"status": "failed" if terminal_error or any(s.get("status") != "passed" for s in stages) else "passed",
             "duration_ms": round((time.monotonic() - started) * 1000, 2),
             "report": str(report), "stages": stages, "error": terminal_error}
@@ -370,7 +381,7 @@ def main():
                 Path(result["nightfall"]["report"]), cases)
             result["function_acceptance"] = check_function_expectations(
                 Path(result["nightfall"]["report"]), cases)
-    scope = ("archive identity, XML inventory, Rust resolution/wire/functions/sets/physical/relations/bindings/activation/compiled_channels/compiled_mode/conversion, and selected targets"
+    scope = ("archive identity, XML inventory, Rust resolution/wire/functions/sets/physical/relations/bindings/activation/compiled_channels/compiled_mode/definition/conversion, and selected targets"
              if args.probe else "archive identity and XML inventory only")
     report = {"schema_version": 1, "scope": scope,
               "provision_errors": errors, "fixtures": results}
