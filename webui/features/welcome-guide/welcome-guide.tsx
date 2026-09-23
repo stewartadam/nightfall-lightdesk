@@ -336,11 +336,11 @@ export default function WelcomeGuide() {
                         stepId={instruction().id}
                         selector={clipHighlightSelector()}
                       />
-                      <p class="nf-guide-note">
-                        {instruction().observe
-                          ? "Advances automatically when you complete the action."
-                          : "Take time to explore, then continue when you’re ready."}
-                      </p>
+                      <Show when={!instruction().observe}>
+                        <p class="nf-guide-note">
+                          Take time to explore, then continue when you’re ready.
+                        </p>
+                      </Show>
                       <div class="nf-guide-navigation">
                         <span
                           class="nf-guide-step-count"
