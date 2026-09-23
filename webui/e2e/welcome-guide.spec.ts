@@ -405,6 +405,21 @@ for (const platform of ["MacIntel", "Win32"]) {
     await expect(
       page.locator('[data-dialog-kind="command-palette"]'),
     ).toBeVisible();
+    await expect(
+      guide.getByRole("heading", { name: "Open the Programmer", exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("guide-programmer-step.png"),
+    });
+    const paletteInput = page.locator(
+      '[data-dialog-kind="command-palette"] input',
+    );
+    await paletteInput.fill("Open Programmer");
+    await expect(
+      guide.getByRole("heading", { name: "Open the Programmer", exact: true }),
+    ).toBeVisible();
+    await paletteInput.press("Enter");
+    await expect(guide.locator("code")).toHaveText("fix 310>313");
   });
 }
 

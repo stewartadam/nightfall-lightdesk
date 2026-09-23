@@ -15,6 +15,7 @@ import {
   onCleanup,
   untrack,
 } from "solid-js";
+import { useCommandPalette } from "../../components/providers/command-registry";
 import {
   activeInstances,
   clips,
@@ -39,6 +40,7 @@ export function useGuideProgress(
   dockApi: Accessor<DockviewApi | undefined>,
   advance: () => void,
 ): void {
+  const { isOpen: commandPaletteOpen } = useCommandPalette();
   const fixtureMap = useStore(fixtures);
   const selection = useStore(programmerSelection);
   const programmer = useStore(programmerState);
@@ -86,6 +88,7 @@ export function useGuideProgress(
     /** Reads a pure completion token from the current acknowledged application snapshot. */
     const token = () =>
       guideCompletionToken(target, {
+        commandPaletteOpen: commandPaletteOpen(),
         panel: panel(),
         openPanels: openPanels(),
         fixtures: fixtureMap(),
