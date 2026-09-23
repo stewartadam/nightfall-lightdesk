@@ -129,9 +129,15 @@ limits, corruption, fallback, replacement and headers. A browser test exercises
 the production mesh loader with two owned synthetic GLB responses, checks request
 counts and decoded dimensions, and renders both revisions for inspection. This
 does not establish native archive-to-stage parity or resolve WebGPU rendering
-issues. Retaining old archives across library revisions and save/reload,
-external GLB reference restrictions, and renderer resource ownership remain
-part of resource/renderer integration.
+issues. Cached archive and bundled models share geometry with explicit ownership
+references and clone mutable materials per instance. Removing an instance releases
+its materials without disposing geometry still used by another instance or the
+cache. Late loads release their instance resources instead of attaching to removed
+fixtures. Node tests check final-owner disposal and repeated removal; the browser
+test checks independent materials and removal during a shared pending request.
+Retaining old archives across library revisions and save/reload, external GLB
+reference restrictions, bounded mesh caches, and lifecycle memory/GPU budgets
+remain part of resource/renderer integration.
 
 Logical parameter values and percentages use double precision; byte assembly
 and encoding retain `u32`. A pipeline regression checks 266 raw values, including

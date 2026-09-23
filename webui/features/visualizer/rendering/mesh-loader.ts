@@ -23,6 +23,7 @@ import {
 import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
 import type { GdtfGeometrySource } from "../../../types/index";
+import { cloneFixtureMesh } from "./mesh-ownership";
 import { meshResourceKey, meshResourcePath } from "./mesh-resource";
 
 const log = getLogger(import.meta.url);
@@ -101,7 +102,7 @@ export async function loadMesh(
   if (meshCache.has(cacheKey)) {
     try {
       const cached = await meshCache.get(cacheKey);
-      return cached?.clone() ?? null;
+      return cached ? cloneFixtureMesh(cached) : null;
     } catch {
       // Cache entry failed, will retry below
       meshCache.delete(cacheKey);
@@ -147,7 +148,7 @@ export async function loadMesh(
 
   try {
     const loaded = await loadPromise;
-    return loaded.clone();
+    return cloneFixtureMesh(loaded);
   } catch {
     meshCache.delete(cacheKey);
     return null;

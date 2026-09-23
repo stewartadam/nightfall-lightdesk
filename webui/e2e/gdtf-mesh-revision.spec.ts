@@ -83,6 +83,8 @@ test("GDTF mesh cache separates source revisions", async ({
       const loaderPath = "/features/visualizer/rendering/mesh-loader.ts";
       const previewPath = "/e2e/fixtures/gdtf-mesh-preview.ts";
       const { loadMesh } = await import(loaderPath);
+      const ownershipPath = "/features/visualizer/rendering/mesh-ownership.ts";
+      const { disposeFixtureMesh } = await import(ownershipPath);
       const { renderMeshRevisionPreview } = await import(previewPath);
       const source = {
         path: "/fixtures/灯 modèle.gdtf",
@@ -100,12 +102,27 @@ test("GDTF mesh cache separates source revisions", async ({
       );
       if (!original || !copy || !updated)
         throw new Error("Expected all revision meshes to load");
+      const originalMaterial = original.children[0].material;
+      const copiedMaterial = copy.children[0].material;
+      copiedMaterial.opacity = 0.25;
+      let geometryDisposals = 0;
+      original.children[0].geometry.addEventListener("dispose", () => {
+        geometryDisposals++;
+      });
+      disposeFixtureMesh(copy);
       const { firstWidth, secondWidth, renderer } = renderMeshRevisionPreview(
         original,
         updated,
       );
       (window as any).__meshRevisionRenderer = renderer;
-      return { firstWidth, secondWidth, separateInstances: original !== copy };
+      return {
+        firstWidth,
+        secondWidth,
+        separateInstances: original !== copy,
+        separateMaterials: originalMaterial !== copiedMaterial,
+        originalOpacity: originalMaterial.opacity,
+        geometryDisposals,
+      };
     },
     { firstRevision, secondRevision },
   );
@@ -113,6 +130,9 @@ test("GDTF mesh cache separates source revisions", async ({
     firstWidth: 0.75,
     secondWidth: 2,
     separateInstances: true,
+    separateMaterials: true,
+    originalOpacity: 1,
+    geometryDisposals: 0,
   });
   expect(requests).toHaveLength(2);
   expect(
@@ -120,4 +140,93 @@ test("GDTF mesh cache separates source revisions", async ({
   ).toBe("/fixtures/灯 modèle.gdtf");
   await page.screenshot({ path: testInfo.outputPath("mesh-revisions.png") });
   await page.evaluate(() => (window as any).__meshRevisionRenderer.dispose());
+});
+
+/** Removing an instance while a shared mesh request is pending must not attach its late result or break the surviving copy. */
+test("removed fixture ignores a late shared mesh load", async ({ page }) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/mesh-lifecycle-check", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><html><body></body></html>",
+    }),
+  );
+  await page.route("**/api/mesh/**", async (route) => {
+    await pending;
+    await route.fulfill({
+      contentType: "model/gltf-binary",
+      body: triangleGlb(2),
+    });
+  });
+  await page.goto("/mesh-lifecycle-check");
+  await page.evaluate(async () => {
+    const builderPath = "/features/visualizer/rendering/geometry-builder.ts";
+    const { buildGeometryTree, disposeFixtureInstance } = await import(
+      builderPath
+    );
+    const source = {
+      path: "/fixtures/lifecycle.gdtf",
+      archiveSha256: "c".repeat(64),
+      mode: "Basic",
+    };
+    const geometry = {
+      gdtf: source,
+      roots: [0],
+      nodes: [
+        {
+          name: "Body",
+          geometryType: "generic",
+          parentIndex: -1,
+          children: [],
+          transform: {
+            elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+          },
+          model: {
+            name: "body",
+            primitiveType: "cube",
+            width: 1,
+            height: 1,
+            length: 1,
+            meshFile: "body",
+          },
+        },
+      ],
+    };
+    const removed = buildGeometryTree("removed", geometry);
+    const survivor = buildGeometryTree("survivor", geometry);
+    disposeFixtureInstance(removed);
+    (window as any).__meshLifecycle = {
+      removed,
+      survivor,
+      source,
+      disposeFixtureInstance,
+    };
+  });
+  release();
+  const result = await page.evaluate(async () => {
+    const { removed, survivor, source, disposeFixtureInstance } = (
+      window as any
+    ).__meshLifecycle;
+    const loaderPath = "/features/visualizer/rendering/mesh-loader.ts";
+    const ownershipPath = "/features/visualizer/rendering/mesh-ownership.ts";
+    const { loadMesh } = await import(loaderPath);
+    const { disposeFixtureMesh } = await import(ownershipPath);
+    const extra = await loadMesh(source, "body");
+    const result = {
+      removedHasMesh: !!removed.group.getObjectByName("Body_mesh"),
+      survivorHasMesh: !!survivor.group.getObjectByName("Body_mesh"),
+      cacheStillUsable: !!extra,
+    };
+    if (extra) disposeFixtureMesh(extra);
+    disposeFixtureInstance(survivor);
+    return result;
+  });
+  expect(result).toEqual({
+    removedHasMesh: false,
+    survivorHasMesh: true,
+    cacheStillUsable: true,
+  });
 });

@@ -41,6 +41,7 @@ import {
 } from "../../../types";
 import type { EmitterData, FixtureInstance } from "../model/types";
 import { loadMesh } from "./mesh-loader";
+import { cloneFixtureMesh, disposeFixtureMesh } from "./mesh-ownership";
 
 const log = getLogger(import.meta.url);
 
@@ -66,6 +67,7 @@ const gltfLoader = new GLTFLoader();
 
 /** Cache for loaded asset models: primitiveType -> Promise<Group> */
 const assetModelCache = new Map<string, Promise<Group>>();
+const disposedInstances = new WeakSet<Group>();
 
 /**
  * Loads and clones the GLB model for a primitive fixture type, returning null when no asset exists.
@@ -80,7 +82,7 @@ async function loadAssetModel(
   if (assetModelCache.has(primitiveType)) {
     try {
       const cached = await assetModelCache.get(primitiveType);
-      return cached?.clone() ?? null;
+      return cached ? cloneFixtureMesh(cached) : null;
     } catch {
       assetModelCache.delete(primitiveType);
     }
@@ -125,7 +127,7 @@ async function loadAssetModel(
 
   try {
     const loaded = await loadPromise;
-    return loaded.clone();
+    return cloneFixtureMesh(loaded);
   } catch {
     assetModelCache.delete(primitiveType);
     return null;
@@ -381,6 +383,10 @@ export function buildGeometryTree(
         // Load mesh from GDTF archive
         loadMesh(geometry.gdtf, meshFileName).then((meshGroup) => {
           if (meshGroup) {
+            if (disposedInstances.has(group)) {
+              disposeFixtureMesh(meshGroup);
+              return;
+            }
             replacePrimitiveWithMesh(obj, node.name, meshGroup);
           }
         });
@@ -388,6 +394,10 @@ export function buildGeometryTree(
         // Load bundled asset model for this primitive type
         loadAssetModel(primitiveType).then((meshGroup) => {
           if (meshGroup) {
+            if (disposedInstances.has(group)) {
+              disposeFixtureMesh(meshGroup);
+              return;
+            }
             // Scale the asset model to match GDTF model dimensions
             // Asset models are normalized, we need to scale them to match
             // the GDTF-specified dimensions
@@ -498,18 +508,9 @@ export function updateEmitterColors(
  * Dispose the all resources in a fixture instance.
  */
 export function disposeFixtureInstance(instance: FixtureInstance): void {
-  instance.group.traverse((child) => {
-    if (child instanceof Mesh) {
-      child.geometry?.dispose();
-      if (Array.isArray(child.material)) {
-        for (const mat of child.material) {
-          mat.dispose();
-        }
-      } else if (child.material) {
-        (child.material as MeshStandardMaterial).dispose();
-      }
-    }
-  });
+  if (disposedInstances.has(instance.group)) return;
+  disposedInstances.add(instance.group);
+  disposeFixtureMesh(instance.group);
 }
 
 /** Default pan/tilt range in degrees for GDTF fixtures without specified ranges */
