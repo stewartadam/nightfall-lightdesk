@@ -135,6 +135,35 @@ class CorpusTests(unittest.TestCase):
                 "bound_beam_count": 0, "joints": {}, "issue": "test"}
         self.assertEqual(CORPUS.check_geometry_expectations(report, [case])[0]["status"], "failed")
 
+    def test_resolution_checks_joint_targets_in_addition_to_counts(self):
+        """Two joints with the same attribute must bind their respective geometry instances."""
+        report = self.root / "resolved.jsonl"
+        record = {"stage": "resolution", "status": "passed", "mode": "Mode",
+                  "root_count": 1, "beam_count": 0,
+                  "resolved": {"geometries": [{"name": "Arm"}, {"name": "Head"}],
+                               "joints": [{"geometry": 0, "axis": "tilt"},
+                                          {"geometry": 1, "axis": "tilt"}]}}
+        case = {"mode": "Mode", "root_count": 1, "beam_count": 0,
+                "joints": {"Arm": "tilt", "Head": "tilt"}, "issue": "test"}
+        report.write_text(json.dumps(record) + "\n")
+        self.assertEqual(CORPUS.check_resolution_expectations(report, [case])[0]["status"], "passed")
+        record["resolved"]["joints"][1]["geometry"] = 0
+        report.write_text(json.dumps(record) + "\n")
+        self.assertEqual(CORPUS.check_resolution_expectations(report, [case])[0]["status"], "failed")
+
+    def test_conversion_only_probe_cannot_skip_resolution(self):
+        """An older or incomplete probe cannot silently omit the required compiler stage."""
+        def conversion_only(*args, **kwargs):
+            """Emit successful legacy stages with no resolver result."""
+            kwargs["stdout"].write('{"stage":"parse","status":"passed"}\n'
+                                   '{"stage":"conversion","status":"passed","mode":"Mode"}\n')
+            return subprocess.CompletedProcess(args, 0, stderr="")
+
+        with patch.object(CORPUS.subprocess, "run", side_effect=conversion_only):
+            result = CORPUS.run_probe(Path("probe"), self.path, self.root / "probe.jsonl", 1, ["Mode"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("resolution", result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

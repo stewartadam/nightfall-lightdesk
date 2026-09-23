@@ -37,7 +37,8 @@ python3 scripts/gdtf-corpus.py --probe /path/to/debug/examples/gdtf_probe
 ```
 
 Each archive's actual parse/conversion results are flushed to a separate JSONL
-file under the report directory's `probes/`. Timeouts and process failures retain
+file under `<report-stem>/probes/` beside the report. Reports with different names
+therefore retain separate probe artifacts. Timeouts and process failures retain
 completed results and fail the run. `--probe-timeout` bounds each archive, while
 `--fixture sharpy --fixture hydrabeam` can select a smaller investigation. Probe
 output normalizes generated fixture UUIDs and removes local archive paths. A
@@ -50,6 +51,20 @@ issue. These targets intentionally expose current importer gaps; they are not
 snapshots of its existing output. A passing structural case does not establish
 correct movement, color, or DMX bytes. The JSON report keeps inventory, conversion,
 and geometry acceptance results separate.
+
+The probe also runs the pure mode resolver as a separate `resolution` stage.
+`resolution_acceptance` checks the same selected roots, emitter counts, and joint
+targets against its expanded hierarchy. These results are separate from the
+production converter's `geometry_acceptance`: resolver success does not imply
+that production rendering or DMX output uses the resolved definition yet.
+The resolver retains channel functions and reference scopes for subsequent wire
+compilation; it does not yet calculate output addresses or effective light.
+
+The initial resolver sweep identified three unreachable channel links in the
+pinned sources (tracked by `nightfall-lightdesk-oaa.2.1`): Titan Tube's
+`16: Effect Mode RGB` and `49: RGB*RGBS`, and primary Pixel Line IP's `39 Channel`.
+Each targets geometry outside its selected mode hierarchy. These are explicit
+failures; the resolver does not silently substitute another mode's geometry.
 
 The manifest's provenance records the downloaded collection, not a verified
 manufacturer endorsement or permission to redistribute it. Matching manuals,

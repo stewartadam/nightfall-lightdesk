@@ -17,6 +17,7 @@ use std::time::Instant;
 
 use nightfall_fixture_library::GdtfMetadata;
 use nightfall_fixture_library::converters::gdtf::convert_gdtf_to_fixture;
+use nightfall_fixture_library::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
 use serde_json::json;
 
 /// Flush a completed stage so a timeout does not erase earlier measurements.
@@ -53,7 +54,46 @@ fn main() {
         .get(1)
         .map_or_else(|| metadata.modes.clone(), |mode| vec![mode.clone()]);
     let mut failed = false;
+    let resolver_source = metadata.reparse();
     for mode in modes {
+        let started = Instant::now();
+        let resolved = resolver_source
+            .as_ref()
+            .map_err(|error| ResolveError {
+                code: "source_parse",
+                path: mode.clone(),
+                message: error.to_string(),
+            })
+            .and_then(|archive| {
+                let fixture =
+                    archive
+                        .description
+                        .fixture_types
+                        .first()
+                        .ok_or_else(|| ResolveError {
+                            code: "missing_fixture",
+                            path: mode.clone(),
+                            message: "Missing fixture type".into(),
+                        })?;
+                resolve_mode(fixture, &mode, ResolveLimits::default())
+            });
+        match resolved {
+            Ok(resolved) => emit(json!({
+                "stage": "resolution", "status": "passed", "mode": mode,
+                "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                "root_count": resolved.geometries.iter().filter(|g| g.parent.is_none()).count(),
+                "beam_count": resolved.geometries.iter().filter(|g| matches!(g.source, gdtf::geometry::Geometry::Beam(_))).count(),
+                "resolved": resolved,
+            })),
+            Err(error) => {
+                failed = true;
+                emit(
+                    json!({"stage": "resolution", "status": "failed", "mode": mode,
+                    "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                    "error": error.to_string(), "diagnostic": error}),
+                );
+            }
+        }
         let started = Instant::now();
         match convert_gdtf_to_fixture(&metadata, &mode, 1) {
             Ok((mut fixture, geometry)) => {

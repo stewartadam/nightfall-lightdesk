@@ -185,14 +185,15 @@ def run_probe(executable, archive, report, timeout, expected_modes):
         try:
             record = json.loads(line)
             stages.append({key: record[key] for key in
-                           ("stage", "status", "mode", "error", "duration_ms") if key in record})
+                           ("stage", "status", "mode", "error", "diagnostic", "duration_ms") if key in record})
         except json.JSONDecodeError:
             terminal_error = terminal_error or "Probe emitted an incomplete JSON record"
     if not stages:
         terminal_error = terminal_error or "Probe emitted no stage results"
-    converted_modes = [s.get("mode") for s in stages if s.get("stage") == "conversion"]
-    if converted_modes != expected_modes:
-        terminal_error = terminal_error or "Probe did not report every expected mode in order"
+    for stage in ("resolution", "conversion"):
+        reported_modes = [s.get("mode") for s in stages if s.get("stage") == stage]
+        if reported_modes != expected_modes:
+            terminal_error = terminal_error or f"Probe did not report every expected mode in order for {stage}"
     if not any(s.get("stage") == "parse" and s.get("status") == "passed" for s in stages):
         terminal_error = terminal_error or "Probe did not report successful parsing"
     return {"status": "failed" if terminal_error or any(s.get("status") != "passed" for s in stages) else "passed",
@@ -200,16 +201,45 @@ def run_probe(executable, archive, report, timeout, expected_modes):
             "report": str(report), "stages": stages, "error": terminal_error}
 
 
-def check_geometry_expectations(report, cases):
-    """Compare independent initial-mode targets to probe output without blessing known gaps."""
+def read_stage_records(report, stage):
+    """Read completed records for one stage, leaving missing records detectable by callers."""
     records = {}
     for line in report.read_text().splitlines():
         try:
             record = json.loads(line)
-            if record.get("stage") == "conversion":
+            if record.get("stage") == stage:
                 records[record.get("mode")] = record
         except json.JSONDecodeError:
             continue
+    return records
+
+
+def check_resolution_expectations(report, cases):
+    """Check selected-root expansion and explicit joint links separately from production output."""
+    records = read_stage_records(report, "resolution")
+    results = []
+    for case in cases:
+        record = records.get(case["mode"], {})
+        checks = [{"capability": "resolution_available", "expected": True,
+                   "actual": record.get("status") == "passed",
+                   "status": "passed" if record.get("status") == "passed" else "failed"}]
+        for key in ("root_count", "beam_count"):
+            checks.append({"capability": key, "expected": case[key], "actual": record.get(key),
+                           "status": "passed" if record.get(key) == case[key] else "failed"})
+        resolved = record.get("resolved", {})
+        for name, axis in case["joints"].items():
+            matches = [i for i, node in enumerate(resolved.get("geometries", [])) if node["name"] == name]
+            axes = [j["axis"] for j in resolved.get("joints", []) if j["geometry"] in matches]
+            checks.append({"capability": f"joint:{name}", "expected": [axis], "actual": axes,
+                           "status": "passed" if len(matches) == 1 and axes == [axis] else "failed"})
+        results.append({"mode": case["mode"], "issue": case["issue"], "checks": checks,
+                        "status": "passed" if all(c["status"] == "passed" for c in checks) else "failed"})
+    return results
+
+
+def check_geometry_expectations(report, cases):
+    """Compare independent initial-mode targets to probe output without blessing known gaps."""
+    records = read_stage_records(report, "conversion")
     results = []
     for case in cases:
         record = records.get(case["mode"], {})
@@ -270,12 +300,14 @@ def main():
                 continue
             result["nightfall"] = run_probe(
                 args.probe.resolve(), args.asset_dir / f"{result['sha256']}.gdtf",
-                args.report.parent / "probes" / f"{result['id']}.jsonl", args.probe_timeout,
+                args.report.parent / args.report.stem / "probes" / f"{result['id']}.jsonl", args.probe_timeout,
                 [mode["name"] for mode in result["inventory"]["modes"]])
             cases = [case for case in expectations if case["id"] == result["id"]]
             result["geometry_acceptance"] = check_geometry_expectations(
                 Path(result["nightfall"]["report"]), cases)
-    scope = ("archive identity, XML inventory, Rust conversion, and selected geometry targets"
+            result["resolution_acceptance"] = check_resolution_expectations(
+                Path(result["nightfall"]["report"]), cases)
+    scope = ("archive identity, XML inventory, Rust resolution/conversion, and selected geometry targets"
              if args.probe else "archive identity and XML inventory only")
     report = {"schema_version": 1, "scope": scope,
               "provision_errors": errors, "fixtures": results}
@@ -290,9 +322,13 @@ def main():
         for case in result.get("geometry_acceptance", []):
             if case["status"] != "passed":
                 print(f"{result['id']}: geometry targets unmet in {case['mode']} ({case['issue']})", file=sys.stderr)
+        for stage in result.get("nightfall", {}).get("stages", []):
+            if stage["status"] != "passed":
+                print(f"{result['id']}: {stage['stage']} failed in {stage.get('mode')}: {stage.get('error')}", file=sys.stderr)
     return int(bool(errors) or passed != len(results)
                or any(r.get("nightfall", {}).get("status") == "failed" for r in results)
-               or any(c["status"] != "passed" for r in results for c in r.get("geometry_acceptance", [])))
+               or any(c["status"] != "passed" for r in results
+                      for kind in ("geometry_acceptance", "resolution_acceptance") for c in r.get(kind, [])))
 
 
 if __name__ == "__main__":

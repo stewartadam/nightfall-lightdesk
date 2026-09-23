@@ -18,9 +18,9 @@
     <Geometries>
       <Geometry Name="Base" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}">
         <Axis Name="Arm" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}">
-          <Axis Name="Head" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,1,1}">
+          <Axis Name="Head" Position="{1,0,0,0}{0,1,0,0}{0,0,1,1}{0,0,0,1}">
             <GeometryReference Name="Pixel 1" Geometry="Pixel" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}"><Break DMXBreak="2" DMXOffset="10"/></GeometryReference>
-            <GeometryReference Name="Pixel 2" Geometry="Pixel" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{1,0,0,1}"><Break DMXBreak="2" DMXOffset="20"/></GeometryReference>
+            <GeometryReference Name="Pixel 2" Geometry="Pixel" Position="{1,0,0,1}{0,1,0,0}{0,0,1,0}{0,0,0,1}"><Break DMXBreak="2" DMXOffset="20"/></GeometryReference>
           </Axis>
         </Axis>
       </Geometry>
