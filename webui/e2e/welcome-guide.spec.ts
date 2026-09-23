@@ -373,6 +373,46 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   await expect(
     guide.getByRole("heading", { name: "Start the sample show" }),
   ).toBeVisible();
+  await expect(guide.getByRole("button", { name: "Skip step" })).toHaveCount(0);
+  await expect(guide.getByRole("status", { name: "Current step" })).toHaveText(
+    "2/16",
+  );
+  await expect(
+    guide.locator("header").getByRole("button", { name: "Back", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("tab", { name: "Timeline 1: Lo-fi", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Play timeline", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(async () => {
+      const card = (await guide.boundingBox())!;
+      return page
+        .getByRole("button", { name: "Play timeline", exact: true })
+        .evaluate((button, bounds) => {
+          const panel = button
+            .closest("[data-panel-id]")!
+            .getBoundingClientRect();
+          return (
+            Math.max(
+              0,
+              Math.min(bounds.x + bounds.width, panel.right) -
+                Math.max(bounds.x, panel.left),
+            ) *
+            Math.max(
+              0,
+              Math.min(bounds.y + bounds.height, panel.bottom) -
+                Math.max(bounds.y, panel.top),
+            )
+          );
+        }, card);
+    })
+    .toBe(0);
+  await page.screenshot({
+    path: testInfo.outputPath("guide-timeline-clearance.png"),
+  });
   await guide.getByRole("button", { name: "All lessons" }).click();
   await guide.getByRole("button", { name: /START HERE/ }).click();
   await expect(
@@ -671,7 +711,7 @@ test("lesson library starts sample lessons immediately and preserves completion"
     guide.getByRole("button", { name: "Back", exact: true }),
   ).toBeDisabled();
   for (let index = 0; index < 3; index += 1)
-    await guide.getByRole("button", { name: "Skip step" }).click();
+    await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await guide.getByRole("button", { name: "Finish lesson" }).click();
   await expect(
     guide.getByRole("button", { name: /Transports and output/ }),
