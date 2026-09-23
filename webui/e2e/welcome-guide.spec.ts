@@ -742,7 +742,40 @@ test("welcome basics toggles a clip and opens properties", async ({
   await expect(
     guide.getByRole("heading", { name: "Choose your accent color" }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+  const appearanceTab = page.getByRole("tab", {
+    name: "Appearance",
+    exact: true,
+  });
+  await expect
+    .poll(async () => {
+      const tab = (await appearanceTab.boundingBox())!;
+      const ring = await page.locator(".nf-guide-highlight").boundingBox();
+      return ring
+        ? Math.abs(ring.x - tab.x + 4) + Math.abs(ring.y - tab.y + 4)
+        : Infinity;
+    })
+    .toBeLessThan(2);
+  const highlightLayer = await page
+    .getByTestId("guide-target")
+    .evaluate((element) => Number(getComputedStyle(element).zIndex));
+  const settingsLayer = await page
+    .getByRole("dialog", { name: "Settings", exact: true })
+    .evaluate((element) => Number(getComputedStyle(element).zIndex));
+  expect(highlightLayer).toBeGreaterThan(settingsLayer);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect
+    .poll(() =>
+      page
+        .locator(".nf-guide-highlight")
+        .evaluate(
+          (element) => getComputedStyle(element, "::after").animationName,
+        ),
+    )
+    .toBe("nf-guide-target-pulse");
+  await page.screenshot({
+    path: testInfo.outputPath("welcome-appearance-tab.png"),
+  });
+  await appearanceTab.click();
   await page
     .getByRole("button", { name: "Violet accent", exact: true })
     .click();
