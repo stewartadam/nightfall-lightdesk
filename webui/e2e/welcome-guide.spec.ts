@@ -376,6 +376,41 @@ test("floating lessons provide context, selectable commands and manual placement
   });
 });
 
+/** Keeps sample fixture identities and swatches readable in the Programmer's compact dock. */
+test("programmer columns fit selected sample fixtures", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  await page
+    .getByRole("button", { name: "Open command palette", exact: true })
+    .click();
+  const search = page.locator('[data-dialog-kind="command-palette"] input');
+  await search.fill("Open Programmer");
+  await search.press("Enter");
+  const command = page.getByRole("textbox", {
+    name: "Command input",
+    exact: true,
+  });
+  await command.fill("fix 310>313");
+  await command.press("Enter");
+  const panel = page.locator('[data-panel-kind="programmer"]:visible');
+  await expect(panel).toBeVisible();
+  for (const [id, width] of [
+    ["id", 85],
+    ["name", 240],
+    ["color", 54],
+  ] as const) {
+    const header = panel.locator(
+      `[data-grid-header-id="tanstack-header-${id}"]`,
+    );
+    await expect(header).toBeVisible();
+    expect((await header.boundingBox())!.width).toBeGreaterThanOrEqual(width);
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("programmer-column-widths.png"),
+  });
+});
+
 for (const platform of ["MacIntel", "Win32"]) {
   /** Shows the platform modifier as shared keycaps and verifies the advertised binding opens the palette. */
   test(`guide palette shortcut matches ${platform}`, async ({
