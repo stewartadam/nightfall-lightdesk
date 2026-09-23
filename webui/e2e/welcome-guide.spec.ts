@@ -792,7 +792,9 @@ test("welcome basics toggles a clip and opens properties", async ({
   await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: /Save Showfile/ }).click();
-  await guide.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Discover keyboard shortcuts" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: /Keyboard Shortcuts/ }).click();
   await expect(
