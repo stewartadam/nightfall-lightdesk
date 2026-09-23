@@ -1,0 +1,3739 @@
+{
+  "schema_version": 1,
+  "inventory_basis": "Archive XML inventory, not Nightfall correctness expectations",
+  "fixtures": [
+    {
+      "id": "sharpy",
+      "filename": "Clay_Paky@Sharpy@ClayPaky_Official_File_Fw_Ver_2_25_006.gdtf",
+      "sha256": "af21741b90ab3002c9ae5c62b066c445433c8710d82814163447cf7a410f2571",
+      "size_bytes": 918844,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Clay Paky",
+        "name": "Sharpy",
+        "modes": [
+          {
+            "name": "Standard",
+            "geometry": "Base",
+            "channel_definitions": 14
+          },
+          {
+            "name": "Vector",
+            "geometry": "Base",
+            "channel_definitions": 18
+          }
+        ],
+        "root_geometries": ["Base"],
+        "reference_definitions": 0,
+        "beam_definitions": 1,
+        "axis_definitions": 2
+      }
+    },
+    {
+      "id": "mac-viper",
+      "filename": "Martin_Professional@MAC_Viper_Profile@20230516NoMeas.gdtf",
+      "sha256": "9f7c036352996edf74d0a39163bda46f4d268359b620af571211142f3f56cf9d",
+      "size_bytes": 1172241,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Martin Professional",
+        "name": "MAC Viper Profile",
+        "modes": [
+          {
+            "name": "Basic",
+            "geometry": "Base",
+            "channel_definitions": 22
+          },
+          {
+            "name": "Extended",
+            "geometry": "Base",
+            "channel_definitions": 27
+          }
+        ],
+        "root_geometries": ["Base"],
+        "reference_definitions": 0,
+        "beam_definitions": 1,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "mac-aura",
+      "filename": "Martin_Professional@MAC_Aura@20230201NoMeas.gdtf",
+      "sha256": "bfb11885b4b986a5131effb4e9c58d42aa987f236e2554341b24e7b1d9c1e804",
+      "size_bytes": 1021619,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Martin Professional",
+        "name": "MAC Aura",
+        "modes": [
+          {
+            "name": "Standard",
+            "geometry": "Base",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Extended",
+            "geometry": "Base",
+            "channel_definitions": 23
+          }
+        ],
+        "root_geometries": ["Base"],
+        "reference_definitions": 0,
+        "beam_definitions": 20,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "spiider",
+      "filename": "Robe_Lighting@Robin_Spiider@2025-12-03__Reupload_to_share.gdtf",
+      "sha256": "b4fc4af229ec80d124e02aac051ac76f8ea74bbc7cac3cbda1c5a9994743242f",
+      "size_bytes": 1968113,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Robe Lighting",
+        "name": "Robin Spiider",
+        "modes": [
+          {
+            "name": "Mode 10 - Pattern full RGBW",
+            "geometry": "Base",
+            "channel_definitions": 53
+          },
+          {
+            "name": "Mode 9 - Pattern full RGB",
+            "geometry": "Base",
+            "channel_definitions": 50
+          },
+          {
+            "name": "Mode 8 - Pixel RGBW ",
+            "geometry": "Base",
+            "channel_definitions": 40
+          },
+          {
+            "name": "Mode 7 - Pixel RGB",
+            "geometry": "Base",
+            "channel_definitions": 37
+          },
+          {
+            "name": "Mode 6 - Pattern",
+            "geometry": "Base",
+            "channel_definitions": 38
+          },
+          {
+            "name": "Mode 5 - Wash",
+            "geometry": "Base",
+            "channel_definitions": 25
+          },
+          {
+            "name": "Mode 1 - Zones",
+            "geometry": "Base",
+            "channel_definitions": 36
+          },
+          {
+            "name": "Mode 2 - Basic",
+            "geometry": "Base",
+            "channel_definitions": 25
+          },
+          {
+            "name": "Mode 3 - Advanced",
+            "geometry": "Base",
+            "channel_definitions": 25
+          },
+          {
+            "name": "Mode 4 - Full RGBW",
+            "geometry": "Base",
+            "channel_definitions": 37
+          }
+        ],
+        "root_geometries": ["Base", "Lens1", "Flower", "Lens2", "Lens3"],
+        "reference_definitions": 20,
+        "beam_definitions": 4,
+        "axis_definitions": 2
+      }
+    },
+    {
+      "id": "titan-tube",
+      "filename": "Astera_LED_Technology@FP1_Titan_Tube@tested_by_Astera__V3.gdtf",
+      "sha256": "fefb874a1f3ee47e02cd006b804f8a21cf544d5b9cc24504a263aa1c0ce2ebc7",
+      "size_bytes": 1683303,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Astera LED Technology",
+        "name": "FP1 Titan Tube",
+        "modes": [
+          {
+            "name": "1: RGB",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 4
+          },
+          {
+            "name": "2: RGBW ",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 5
+          },
+          {
+            "name": "3: RGBAW",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "4: DIM RGB",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 4
+          },
+          {
+            "name": "5: DIM RGBW",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 5
+          },
+          {
+            "name": "6: DIM RGBAW",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "7: RGB CCT DIM IND",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "8: RGBS",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 5
+          },
+          {
+            "name": "9: RGBWS",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "10: RGBAWS",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 7
+          },
+          {
+            "name": "11: DIM RGBS",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 5
+          },
+          {
+            "name": "12: DIM RGBWS ",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "13: DIM RGBAWS",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 7
+          },
+          {
+            "name": "14: RGB CCT DIM IND S",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 7
+          },
+          {
+            "name": "15: Effect Mode Fix",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 13
+          },
+          {
+            "name": "16: Effect Mode RGB",
+            "geometry": "Base 4 LED 3",
+            "channel_definitions": 12
+          },
+          {
+            "name": "17: RGB*RGB*",
+            "geometry": "Base 4 LED  4",
+            "channel_definitions": 4
+          },
+          {
+            "name": "18: RGB RGB",
+            "geometry": "Base 4 LED 3",
+            "channel_definitions": 4
+          },
+          {
+            "name": "19: RGBW RGBW",
+            "geometry": "Base 4 LED  4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "20: RGBAW RGBAW",
+            "geometry": "Base 4 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "21: DIM RGB DIM RGB ",
+            "geometry": "Base 4 LED  4",
+            "channel_definitions": 4
+          },
+          {
+            "name": "22: DIM RGBW DIM RGBW",
+            "geometry": "Base 4 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "23: DIM RGBAW DIM RGBAW ",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "24: RGB CCT DIM IND ",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "25: RGB*RGBS",
+            "geometry": "Base 4 LED  4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "26: RGB RGB S",
+            "geometry": "Base 4 LED 3",
+            "channel_definitions": 5
+          },
+          {
+            "name": "27: RGBW RGBW S",
+            "geometry": "Base 4 LED  4",
+            "channel_definitions": 6
+          },
+          {
+            "name": "28: RGBAW RGBAW S",
+            "geometry": "Base 4 LED 5",
+            "channel_definitions": 7
+          },
+          {
+            "name": "29: DIM RGB DIM RGB S",
+            "geometry": "Base 4 LED  4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "30: DIM RGBW DIM RGBW S",
+            "geometry": "Base 4 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "31 DIM RGBAW RGBAW S",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "32: RGB CCT DIM IND S",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "33: RGBS RGBS",
+            "geometry": "Base 4 LED  4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "34: RGB RGB SS ",
+            "geometry": "Base 4 LED SS ",
+            "channel_definitions": 20
+          },
+          {
+            "name": "35: RGBWS RGBWS ",
+            "geometry": "Base 4 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "36: RGBAWS RGBAWS",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "37: DIM RGBS DIM RGBS",
+            "geometry": "Base 4 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "38: DIM RGBWS DIM RGBWS",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "39: DIM RGBAWS DIM RGBAWS",
+            "geometry": "Base 4 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "40: RGB CCT DIM IND S",
+            "geometry": "Base 4 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "41: RGB*RGB*",
+            "geometry": "Base 16 LED 4",
+            "channel_definitions": 4
+          },
+          {
+            "name": "42: RGB RGB",
+            "geometry": "Base16 LED 3",
+            "channel_definitions": 4
+          },
+          {
+            "name": "43: RGBW RGBW",
+            "geometry": "Base 16 LED 4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "44: RGBAW RGBAW",
+            "geometry": "Base 16 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "45: DIM RGB DIM RGB",
+            "geometry": "Base 16 LED 4",
+            "channel_definitions": 4
+          },
+          {
+            "name": "46: DIM RGBW DIM RGBW",
+            "geometry": "Base 16 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "47: DIM RGBAW DIM RGBAW",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "48: RGB CCT DIM IND",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "49: RGB*RGBS",
+            "geometry": "Base 16 LED 4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "50: RGB*RGB S",
+            "geometry": "Base16 LED 3",
+            "channel_definitions": 5
+          },
+          {
+            "name": "51: RGBW RGBW S",
+            "geometry": "Base 16 LED 4",
+            "channel_definitions": 6
+          },
+          {
+            "name": "52: RGBAW RGBAW S",
+            "geometry": "Base 16 LED 5",
+            "channel_definitions": 7
+          },
+          {
+            "name": "53: DIM RGB DIM RGB S",
+            "geometry": "Base 16 LED 4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "54: DIM RGBW DIM RGBW S",
+            "geometry": "Base 16 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "55: DIM RGBAW RGBAW S",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "56: RGB CCT DIM IND S",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "57: RGBS RGBS",
+            "geometry": "Base 16 LED 4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "58: RGB RGB SS",
+            "geometry": "Base 16 LED SS",
+            "channel_definitions": 80
+          },
+          {
+            "name": "59: RGBWS RGBWS",
+            "geometry": "Base 16 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "60: RGBAWS RGBAWS",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "61: DIM RGBS DIM RGBS",
+            "geometry": "Base 16 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "62: DIM RGBWS DIM RGBWS",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "63: DIM RGBAWS DIM RGBAWS",
+            "geometry": "Base 16 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "64: RGB CCT DIM IND S",
+            "geometry": "Base 16 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "65: RGB*RGB*",
+            "geometry": "Base 8 LED 4",
+            "channel_definitions": 4
+          },
+          {
+            "name": "66: RGB RGB",
+            "geometry": "Base 8 LED 3",
+            "channel_definitions": 4
+          },
+          {
+            "name": "67: RGBW RGBW",
+            "geometry": "Base 8 LED 4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "68: RGBAW RGBAW",
+            "geometry": "Base 8 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "69: DIM RGB DIM RGB",
+            "geometry": "Base 8 LED 4",
+            "channel_definitions": 4
+          },
+          {
+            "name": "70: DIM RGBW DIM RGBW",
+            "geometry": "Base 8 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "71: DIM RGBAW DIM RGBAW",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "72: RGB CCT DIM IND",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "73: RGB*RGBS",
+            "geometry": "Base 8 LED 4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "74: RGB RGB S",
+            "geometry": "Base 8 LED 3",
+            "channel_definitions": 5
+          },
+          {
+            "name": "75: RGBW RGBW S",
+            "geometry": "Base 8 LED 4",
+            "channel_definitions": 6
+          },
+          {
+            "name": "76: RGBAW RGBAW S",
+            "geometry": "Base 8 LED 5",
+            "channel_definitions": 7
+          },
+          {
+            "name": "77: DIM RGB DIM RGB S",
+            "geometry": "Base 8 LED 4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "78: DIM RGBW DIM RGBW S",
+            "geometry": "Base 8 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "79: DIM RGBAW RGBAW S",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "80: RGB CCT DIM IND S",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "81: RGBS RGBS",
+            "geometry": "Base 8 LED 4",
+            "channel_definitions": 5
+          },
+          {
+            "name": "82: RGB RGB SS ",
+            "geometry": "Base 8 LED SS",
+            "channel_definitions": 40
+          },
+          {
+            "name": "83: RGBWS RGBWS ",
+            "geometry": "Base 8 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "84: RGBAWS RGBAWS",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 7
+          },
+          {
+            "name": "85: DIM RGBS DIM RGBS",
+            "geometry": "Base 8 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "86: DIM RGBWS DIM RGBWS",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "87: DIM RGBAWS RGBAWS",
+            "geometry": "Base 8 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "88: RGB CCT DIM IND S",
+            "geometry": "Base 8 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "89: D CCT GM CRO RGB",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 7
+          },
+          {
+            "name": "90: D CCT GM HUE SAT",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 5
+          },
+          {
+            "name": "91: D16 CCT GM C RGB",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 7
+          },
+          {
+            "name": "92: D16 CCT GM H SAT",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 5
+          },
+          {
+            "name": "93: D16 X Y",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 3
+          },
+          {
+            "name": "94: D CCT GM CRO RGB S",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 8
+          },
+          {
+            "name": "95: D CCT GM HUE SAT S",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "96: D16 CCT GM H SAT S",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "97: D16 X Y S",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 4
+          },
+          {
+            "name": "98: D CCT GM CRO RGB",
+            "geometry": "Base 4 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "99: D CCT GM HUE SAT",
+            "geometry": "Base 4 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "100: D16 CCT GM C RGB",
+            "geometry": "Base 4 LED 8",
+            "channel_definitions": 7
+          },
+          {
+            "name": "101: D16 CCT GM H SAT",
+            "geometry": "Base 4 LED 7",
+            "channel_definitions": 5
+          },
+          {
+            "name": "102: D16 X Y",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 3
+          },
+          {
+            "name": "103: D CCT GM CRO RGB S",
+            "geometry": "Base 4 LED 7",
+            "channel_definitions": 8
+          },
+          {
+            "name": "104: D CCT GM HUE SAT S",
+            "geometry": "Base 4 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "105: D16 CCT GM H SAT S",
+            "geometry": "Base 4 LED 7",
+            "channel_definitions": 6
+          },
+          {
+            "name": "106: D16 X Y S",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 4
+          },
+          {
+            "name": "107: D CCT GM CRO RGB S ",
+            "geometry": "Base 4 LED 8",
+            "channel_definitions": 8
+          },
+          {
+            "name": "108: D CCT GM HUE SAT S",
+            "geometry": "Base 4 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "109: D16 CCT GM H SAT S",
+            "geometry": "Base 4 LED 8",
+            "channel_definitions": 6
+          },
+          {
+            "name": "110: D16 X Y S",
+            "geometry": "Base 4 LED 7",
+            "channel_definitions": 4
+          },
+          {
+            "name": "111: D CCT GM CRO RGB",
+            "geometry": "Base 16 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "112: D CCT GM HUE SAT",
+            "geometry": "Base 16 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "113: D16 CCT GM C RGB",
+            "geometry": "Base 16 LED 8",
+            "channel_definitions": 7
+          },
+          {
+            "name": "114: D16 CCT GM H SAT",
+            "geometry": "Base 16 LED 7",
+            "channel_definitions": 5
+          },
+          {
+            "name": "115: D16 X Y",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 3
+          },
+          {
+            "name": "116: D CCT GM CRO RGB S",
+            "geometry": "Base 16 LED 7",
+            "channel_definitions": 8
+          },
+          {
+            "name": "117: D CCT GM HUE SAT S",
+            "geometry": "Base 16 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "118: D16 CCT GM H SAT S",
+            "geometry": "Base 16 LED 7",
+            "channel_definitions": 6
+          },
+          {
+            "name": "119: D16 X Y S",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 4
+          },
+          {
+            "name": "120: D CCT GM CRO RGB S",
+            "geometry": "Base 16 LED 8",
+            "channel_definitions": 8
+          },
+          {
+            "name": "121: D CCT GM HUE SAT S ",
+            "geometry": "Base 16 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "122: D16 CCT GM H SAT S ",
+            "geometry": "Base 16 LED 8",
+            "channel_definitions": 6
+          },
+          {
+            "name": "123: D16 X Y S",
+            "geometry": "Base 16 LED 7",
+            "channel_definitions": 4
+          },
+          {
+            "name": "124: D CCT GM CRO RGB",
+            "geometry": "Base 8 LED 7",
+            "channel_definitions": 7
+          },
+          {
+            "name": "125: D CCT GM HUE SAT",
+            "geometry": "Base 8 LED 5",
+            "channel_definitions": 5
+          },
+          {
+            "name": "126: D16 CCT GM C RGB",
+            "geometry": "Base 8 LED 8",
+            "channel_definitions": 7
+          },
+          {
+            "name": "127: D16 CCT GM H SAT",
+            "geometry": "Base 8 LED 7",
+            "channel_definitions": 5
+          },
+          {
+            "name": "128: D16 X Y",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 3
+          },
+          {
+            "name": "129: D CCT GM CRO RGB S",
+            "geometry": "Base 8 LED 7",
+            "channel_definitions": 8
+          },
+          {
+            "name": "130: D CCT GM HUE SAT S",
+            "geometry": "Base 8 LED 5",
+            "channel_definitions": 6
+          },
+          {
+            "name": "131: D16 CCT GM H SAT S",
+            "geometry": "Base 8 LED 7",
+            "channel_definitions": 6
+          },
+          {
+            "name": "132: D16 X Y S",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 4
+          },
+          {
+            "name": "133: D CCT GM CRO RGB S",
+            "geometry": "Base 8 LED 8",
+            "channel_definitions": 8
+          },
+          {
+            "name": "134: D CCT GM HUE SAT S",
+            "geometry": "Base 8 LED 6",
+            "channel_definitions": 6
+          },
+          {
+            "name": "135: D16 CCT GM H SAT S",
+            "geometry": "Base 8 LED 8",
+            "channel_definitions": 6
+          },
+          {
+            "name": "136: D16 X Y S",
+            "geometry": "Base 8 LED 7",
+            "channel_definitions": 4
+          },
+          {
+            "name": "137: D16 CCT GM C RGB S",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 8
+          },
+          {
+            "name": "138: D16 CCT GM C RGB S",
+            "geometry": "Base 4 LED 8",
+            "channel_definitions": 8
+          },
+          {
+            "name": "139: D16 CCT GM C RGB S",
+            "geometry": "Base 4 LED 9",
+            "channel_definitions": 8
+          },
+          {
+            "name": "140: D16 CCT GM C RGB S",
+            "geometry": "Base 16 LED 8",
+            "channel_definitions": 8
+          },
+          {
+            "name": "141: D16 CCT GM C RGB S ",
+            "geometry": "Base 16 LED 9",
+            "channel_definitions": 8
+          },
+          {
+            "name": "142: D16 CCT GM C RGB S",
+            "geometry": "Base 8 LED 8",
+            "channel_definitions": 8
+          },
+          {
+            "name": "143: D16 CCT GM C RGB S",
+            "geometry": "Base 8 LED 9",
+            "channel_definitions": 8
+          },
+          {
+            "name": "168: D CCT GM C CRO XY",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "169: D16 CCT GM C CRO XY ",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "170: D CCT GM C CRO XY S",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 7
+          },
+          {
+            "name": "171: D16 CCT GM C CRO XY S",
+            "geometry": "Base 1 LED 1",
+            "channel_definitions": 7
+          },
+          {
+            "name": "178: D CCT GM C CRO XY",
+            "geometry": "Base 4 LED 8",
+            "channel_definitions": 6
+          },
+          {
+            "name": "179: D16 CCT GM C CRO XY",
+            "geometry": "Base 4 LED 9",
+            "channel_definitions": 6
+          },
+          {
+            "name": "180: D CCT GM C CRO XY S",
+            "geometry": "Base 4 LED 8",
+            "channel_definitions": 7
+          },
+          {
+            "name": "181: D16 CCT GM C CRO XY S",
+            "geometry": "Base 4 LED 9",
+            "channel_definitions": 7
+          },
+          {
+            "name": "182: D CCT GM C CRO XY S",
+            "geometry": "Base 4 LED 9",
+            "channel_definitions": 7
+          },
+          {
+            "name": "183: D16 CCT GM C CRO XY S",
+            "geometry": "Base 4 LED 10",
+            "channel_definitions": 7
+          },
+          {
+            "name": "184: D CCT GM C CRO XY",
+            "geometry": "Base 8 LED 8",
+            "channel_definitions": 6
+          },
+          {
+            "name": "185: D16 CCT GM C CRO XY",
+            "geometry": "Base 8 LED 9",
+            "channel_definitions": 6
+          },
+          {
+            "name": "186: D CCT GM C CRO XY S",
+            "geometry": "Base 8 LED 8",
+            "channel_definitions": 7
+          },
+          {
+            "name": "187: D16 CCT GM C CRO XY S",
+            "geometry": "Base 8 LED 9",
+            "channel_definitions": 7
+          },
+          {
+            "name": "188: D CCT GM C CRO XY S",
+            "geometry": "Base 8 LED 9",
+            "channel_definitions": 7
+          },
+          {
+            "name": "189: D16 CCT GM C CRO XY S",
+            "geometry": "Base 8 LED 10",
+            "channel_definitions": 7
+          },
+          {
+            "name": "190: D CCT GM C CRO XY",
+            "geometry": "Base 16 LED 8",
+            "channel_definitions": 6
+          },
+          {
+            "name": "191: D16 CCT GM C CRO XY",
+            "geometry": "Base 16 LED 9",
+            "channel_definitions": 6
+          },
+          {
+            "name": "192: D CCT GM C CRO XY S",
+            "geometry": "Base 16 LED 8",
+            "channel_definitions": 7
+          },
+          {
+            "name": "193: D16 CCT GM C CRO XY S",
+            "geometry": "Base 16 LED 9",
+            "channel_definitions": 7
+          },
+          {
+            "name": "194: D CCT GM C CRO XY S",
+            "geometry": "Base 16 LED 9",
+            "channel_definitions": 7
+          },
+          {
+            "name": "195: D16 CCT GM C CRO XY S",
+            "geometry": "Base 16 LED 10",
+            "channel_definitions": 7
+          }
+        ],
+        "root_geometries": [
+          "Base 4 LED 7",
+          "Base 16 LED 7",
+          "Base 8 LED 7",
+          "Base 4 LED 8",
+          "Base 16 LED 8",
+          "Base 8 LED 8",
+          "Base 4 LED 9",
+          "Base 4 LED 10",
+          "Base 16 LED 10",
+          "Base 8 LED 10",
+          "Base 16 LED 9",
+          "Base 8 LED 9",
+          "Base 4 LED 6",
+          "Base 16 LED 6",
+          "Base 8 LED 6",
+          "Base 4 LED 5",
+          "Base 16 LED 5",
+          "Base 8 LED 5",
+          "Base 4 LED 3",
+          "Base16 LED 3",
+          "Base 8 LED 3",
+          "Base 4 LED  4",
+          "Base 16 LED 4",
+          "Base 8 LED 4",
+          "Base 1 LED 1",
+          "Base 4 LED SS ",
+          "Base 16 LED SS",
+          "Base 8 LED SS",
+          "8/3 Pixel Beam",
+          "16/3 Pixel Beam",
+          "4/3 Pixel Beam",
+          "8/4 Pixel Beam",
+          "16/4 Pixel Beam",
+          "4/4 Pixel Beam",
+          "8/5 Pixel Beam",
+          "16/5 Pixel Beam",
+          "4/5 Pixel Beam",
+          "8/6 Pixel Beam",
+          "16/6 Pixel Beam",
+          "4/6 Pixel Beam",
+          "8/7 Pixel Beam",
+          "16/7 Pixel Beam",
+          "4/7 Pixel Beam",
+          "8/8 Pixel Beam",
+          "16/8 Pixel Beam",
+          "4/8 Pixel Beam",
+          "8/9 Pixel Beam",
+          "16/9 Pixel Beam",
+          "4/9 Pixel Beam",
+          "8/10 Pixel Beam",
+          "16/10 Pixel Beam",
+          "4/10 Pixel Beam"
+        ],
+        "reference_definitions": 224,
+        "beam_definitions": 53,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "x4-bar",
+      "filename": "GLP@impression_X4_Bar_20@Final._Based_of_X4_Bar_10.gdtf",
+      "sha256": "cf870515b5d8b79a2181013d7b63db2717c1da0483bd133a9e3e29293bb0934c",
+      "size_bytes": 7659450,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "GLP",
+        "name": "impression X4 Bar 20",
+        "modes": [
+          {
+            "name": "Norm",
+            "geometry": "Norm Base",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Comp",
+            "geometry": "Comp Base",
+            "channel_definitions": 16
+          },
+          {
+            "name": "High Resolution",
+            "geometry": "Hires Base",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Single Pixel Mode",
+            "geometry": "SPix Base",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Single Pixel High Resolution",
+            "geometry": "SPixH Base",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Dual Pixel Mode",
+            "geometry": "DPix Base",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Dual Pixel High Resolution",
+            "geometry": "DPixH Base",
+            "channel_definitions": 12
+          }
+        ],
+        "root_geometries": [
+          "SPixH Base",
+          "DPixH Base",
+          "SPix Base",
+          "DPix Base",
+          "Hires Base",
+          "Norm Base",
+          "Comp Base",
+          "Beam"
+        ],
+        "reference_definitions": 66,
+        "beam_definitions": 2,
+        "axis_definitions": 14
+      }
+    },
+    {
+      "id": "magicpanel",
+      "filename": "Ayrton@MagicPanel_FX@V2.62_Corrected_PanTilt_Rotate.gdtf",
+      "sha256": "7bc1c5c3680a6cb34e90c3ed6b2f63f29ddb4705f6acc6a5ac8bebefcefc87ea",
+      "size_bytes": 775955,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Ayrton",
+        "name": "MagicPanel FX",
+        "modes": [
+          {
+            "name": "Extended",
+            "geometry": "Base",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Standard",
+            "geometry": "Base",
+            "channel_definitions": 19
+          },
+          {
+            "name": "Basic",
+            "geometry": "Base",
+            "channel_definitions": 19
+          }
+        ],
+        "root_geometries": ["Base", "LED"],
+        "reference_definitions": 25,
+        "beam_definitions": 1,
+        "axis_definitions": 2
+      }
+    },
+    {
+      "id": "lustr",
+      "filename": "ETC@S4_Series_3_Lustr_X8_26Deg@v1.3.0.gdtf",
+      "sha256": "3adf595ab70215965061612f78c97b956d6cb6bc7961c1055966383285b83871",
+      "size_bytes": 1307979,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "ETC",
+        "name": "S4 Series 3 Lustr X8 26Deg",
+        "modes": [
+          {
+            "name": "Direct",
+            "geometry": "Yoke",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Expanded",
+            "geometry": "Yoke",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Studio",
+            "geometry": "Yoke",
+            "channel_definitions": 7
+          },
+          {
+            "name": "3ch RGB",
+            "geometry": "Yoke",
+            "channel_definitions": 4
+          },
+          {
+            "name": "1ch",
+            "geometry": "Yoke",
+            "channel_definitions": 1
+          },
+          {
+            "name": "HSIC",
+            "geometry": "Yoke",
+            "channel_definitions": 7
+          }
+        ],
+        "root_geometries": ["Yoke"],
+        "reference_definitions": 0,
+        "beam_definitions": 1,
+        "axis_definitions": 1
+      }
+    },
+    {
+      "id": "skypanel",
+      "filename": "ARRI@SkyPanel_S60C@DMX_v4.4_13_Jan_2021.gdtf",
+      "sha256": "62758fcd81be9ed5c325a019e85c3f3419191d2c8c8c95a32ae2bc4e4c833b2f",
+      "size_bytes": 1470963,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.1",
+        "manufacturer": "ARRI",
+        "name": "SkyPanel S60C",
+        "modes": [
+          {
+            "name": "Mode 1  CCT+RGBW 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Mode 1  CCT+RGBW ECC 8Bit ",
+            "geometry": "Body",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Mode 2 - CCT 8Bit ",
+            "geometry": "Body",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Mode 2 - CCT ECC 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 15
+          },
+          {
+            "name": "Mode 3 - CCT+HSI 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Mode 3 - CCT+HSI ECC 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 18
+          },
+          {
+            "name": "Mode 4 - RGBW 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Mode 4 - RGBW ECC 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 17
+          },
+          {
+            "name": "Mode 5- HSI 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Mode 5- HSI ECC 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 15
+          },
+          {
+            "name": "Mode 6  - CCT+RGBW 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Mode 6  - CCT+RGBW ECC 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Mode 7 - CCT 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Mode 7 - CCT ECC 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 15
+          },
+          {
+            "name": "Mode 8 - CCT+HSI 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Mode 8 - CCT+HSI ECC 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 18
+          },
+          {
+            "name": "Mode 9 - RGBW 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Mode 9 - RGBW ECC 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 17
+          },
+          {
+            "name": "Mode 10 - HSI 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Mode 10 - HSI ECC 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 15
+          },
+          {
+            "name": "Mode 16 - Gels 8Bit",
+            "geometry": "Body Mode 16",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Mode 16 - Gels ECC 8Bit",
+            "geometry": "Body Mode 16",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Mode 17 - Gels 16Bit",
+            "geometry": "Body Mode 17",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Mode 17 - Gels ECC 16Bit",
+            "geometry": "Body Mode 17",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Mode 18 - XY 8Bit",
+            "geometry": "Body Mode 18",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Mode 18 - XY ECC 8Bit",
+            "geometry": "Body Mode 18",
+            "channel_definitions": 17
+          },
+          {
+            "name": "Mode 19 - XY 16Bit",
+            "geometry": "Body Mode 19",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Mode 19 - XY ECC 16Bit",
+            "geometry": "Body Mode 19",
+            "channel_definitions": 17
+          },
+          {
+            "name": "Mode 20 - Source Match 8Bit",
+            "geometry": "Body Mode 20",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Mode 20 - Source Match ECC 8Bit",
+            "geometry": "Body Mode 20",
+            "channel_definitions": 16
+          },
+          {
+            "name": "Mode 21 - Source Match 16Bit",
+            "geometry": "Body Mode 21",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Mode 21 - Source Match ECC 16Bit",
+            "geometry": "Body Mode 21",
+            "channel_definitions": 16
+          },
+          {
+            "name": "Mode 22 - Effects 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Mode 22 - Effects ECC 8Bit",
+            "geometry": "Body",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Mode 23 - Effects 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Mode 23 - Effects ECC 16Bit",
+            "geometry": "Body",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Mode 24 -  LE CCT+RGBW 8Bit",
+            "geometry": "Body LE Mode 24",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Mode 25 - LE CCT+RGBW 16Bit",
+            "geometry": "Body LE Mode 25",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Mode 26 -  LE HSI 8Bit",
+            "geometry": "Body LE Mode 26",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Mode 27-  LE HSI 16Bit",
+            "geometry": "Body LE Mode 27",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Mode 28 - LE XY 8Bit",
+            "geometry": "Body LE Mode 28",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Mode 29 - LE XY 16Bit",
+            "geometry": "Body LE Mode 29",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Mode 30 - Ultimate 8Bit",
+            "geometry": "Body Mode 30",
+            "channel_definitions": 15
+          },
+          {
+            "name": "Mode 30 - Ultimate ECC 8Bit",
+            "geometry": "Body Mode 30",
+            "channel_definitions": 23
+          }
+        ],
+        "root_geometries": [
+          "Body",
+          "Body Mode 16",
+          "Body Mode 17",
+          "Body Mode 18",
+          "Body Mode 19",
+          "Body Mode 20",
+          "Body Mode 21",
+          "Body LE Mode 24",
+          "Body LE Mode 25",
+          "Body LE Mode 26",
+          "Body LE Mode 27",
+          "Body LE Mode 28",
+          "Body LE Mode 29",
+          "Body Mode 30",
+          "Instance",
+          "Light Engine "
+        ],
+        "reference_definitions": 26,
+        "beam_definitions": 3,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "jdc1",
+      "filename": "GLP@JDC1_(Vis_Only)@Version_1.0.gdtf",
+      "sha256": "b5b172fe44e7c0150c9f69c2f22894661a910648b6170e85112e8656e128ffc3",
+      "size_bytes": 1075225,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "GLP",
+        "name": "JDC1 (Vis Only)",
+        "modes": [
+          {
+            "name": "Mode 1 (Compressed)",
+            "geometry": "BASE",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Mode 2 (Normal)",
+            "geometry": "BASE",
+            "channel_definitions": 16
+          },
+          {
+            "name": "Mode 3 (SPix)",
+            "geometry": "BASE",
+            "channel_definitions": 61
+          },
+          {
+            "name": "Mode 4 (SPix Pro)",
+            "geometry": "BASE",
+            "channel_definitions": 59
+          },
+          {
+            "name": "Mode 5 (1Pix Pro)",
+            "geometry": "BASE",
+            "channel_definitions": 15
+          },
+          {
+            "name": "Mode 6 (Easy)",
+            "geometry": "BASE",
+            "channel_definitions": 9
+          }
+        ],
+        "root_geometries": ["SINGLE PLATE", "SINGLE BEAM", "BASE"],
+        "reference_definitions": 24,
+        "beam_definitions": 26,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "rainbow",
+      "filename": "Quasar_Science@Rainbow_R2_8ft@1.0.2_-_Initial_Public_release.gdtf",
+      "sha256": "78289419722fe456643e0c460b762fab8e78483d14c78170267a04bde2f319f9",
+      "size_bytes": 2404541,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Quasar Science",
+        "name": "Rainbow R2 8ft",
+        "modes": [
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 48",
+            "geometry": "Body-5ch-48pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 24",
+            "geometry": "Body-5ch-24pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 16",
+            "geometry": "Body-5ch-16pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 12",
+            "geometry": "Body-5ch-12pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 8",
+            "geometry": "Body-5ch-8pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 6",
+            "geometry": "Body-5ch-6pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 4",
+            "geometry": "Body-5ch-4pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 3",
+            "geometry": "Body-5ch-3pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 2",
+            "geometry": "Body-5ch-2pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 1: HSIC 8 Bit - Pixel 1",
+            "geometry": "Body-5ch-1pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 48",
+            "geometry": "Body-8ch-48pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 24",
+            "geometry": "Body-8ch-24pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 16",
+            "geometry": "Body-8ch-16pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 12",
+            "geometry": "Body-8ch-12pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 8",
+            "geometry": "Body-8ch-8pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 6",
+            "geometry": "Body-8ch-6pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 4",
+            "geometry": "Body-8ch-4pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 3",
+            "geometry": "Body-8ch-3pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 2",
+            "geometry": "Body-8ch-2pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 2: HSIC 16 Bit - Pixel 1",
+            "geometry": "Body-8ch-1pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 48",
+            "geometry": "Body-3ch-48pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 24",
+            "geometry": "Body-3ch-24pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 16",
+            "geometry": "Body-3ch-16pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 12",
+            "geometry": "Body-3ch-12pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 8",
+            "geometry": "Body-3ch-8pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 6",
+            "geometry": "Body-3ch-6pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 4",
+            "geometry": "Body-3ch-4pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 3",
+            "geometry": "Body-3ch-3pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 2",
+            "geometry": "Body-3ch-2pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 3: HSI 8 Bit - Pixel 1",
+            "geometry": "Body-3ch-1pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 48",
+            "geometry": "Body-3ch-48pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 24",
+            "geometry": "Body-3ch-24pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 16",
+            "geometry": "Body-3ch-16pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 12",
+            "geometry": "Body-3ch-12pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 8",
+            "geometry": "Body-3ch-8pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 6",
+            "geometry": "Body-3ch-6pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 4",
+            "geometry": "Body-3ch-4pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 3",
+            "geometry": "Body-3ch-3pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 2",
+            "geometry": "Body-3ch-2pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 4: Crossfade w/ Green 8 Bit - Pixel 1",
+            "geometry": "Body-3ch-1pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 48",
+            "geometry": "Body-2ch-48pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 24",
+            "geometry": "Body-2ch-24pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 16",
+            "geometry": "Body-2ch-16pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 12",
+            "geometry": "Body-2ch-12pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 8",
+            "geometry": "Body-2ch-8pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 6",
+            "geometry": "Body-2ch-6pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 4",
+            "geometry": "Body-2ch-4pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 3",
+            "geometry": "Body-2ch-3pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 2",
+            "geometry": "Body-2ch-2pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 5: Crossfade 8 Bit - Pixel 1",
+            "geometry": "Body-2ch-1pix",
+            "channel_definitions": 2
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 48",
+            "geometry": "Body-7ch-48pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 24",
+            "geometry": "Body-7ch-24pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 16",
+            "geometry": "Body-7ch-16pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 12",
+            "geometry": "Body-7ch-12pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 8",
+            "geometry": "Body-7ch-8pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 6",
+            "geometry": "Body-7ch-6pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 4",
+            "geometry": "Body-7ch-4pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 3",
+            "geometry": "Body-7ch-3pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 2",
+            "geometry": "Body-7ch-2pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 6: CCT/RGB 8 Bit - Pixel 1",
+            "geometry": "Body-7ch-1pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 48",
+            "geometry": "Body-9ch-48pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 24",
+            "geometry": "Body-9ch-24pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 16",
+            "geometry": "Body-9ch-16pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 12",
+            "geometry": "Body-9ch-12pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 8",
+            "geometry": "Body-9ch-8pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 6",
+            "geometry": "Body-9ch-6pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 4",
+            "geometry": "Body-9ch-4pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 3",
+            "geometry": "Body-9ch-3pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 2",
+            "geometry": "Body-9ch-2pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 7: CCT/RGB 16 Bit - Pixel 1",
+            "geometry": "Body-9ch-1pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 48",
+            "geometry": "Body-3ch-48pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 24",
+            "geometry": "Body-3ch-24pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 16",
+            "geometry": "Body-3ch-16pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 12",
+            "geometry": "Body-3ch-12pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 8",
+            "geometry": "Body-3ch-8pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 6",
+            "geometry": "Body-3ch-6pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 4",
+            "geometry": "Body-3ch-4pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 3",
+            "geometry": "Body-3ch-3pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 2",
+            "geometry": "Body-3ch-2pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 8: RGB 8 Bit - Pixel 1",
+            "geometry": "Body-3ch-1pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 48",
+            "geometry": "Body-5ch-48pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 24",
+            "geometry": "Body-5ch-24pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 16",
+            "geometry": "Body-5ch-16pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 12",
+            "geometry": "Body-5ch-12pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 8",
+            "geometry": "Body-5ch-8pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 6",
+            "geometry": "Body-5ch-6pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 4",
+            "geometry": "Body-5ch-4pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 3",
+            "geometry": "Body-5ch-3pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 2",
+            "geometry": "Body-5ch-2pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 9: HSIC + FX 8 Bit - Pixel 1",
+            "geometry": "Body-5ch-1pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 48",
+            "geometry": "Body-8ch-48pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 24",
+            "geometry": "Body-8ch-24pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 16",
+            "geometry": "Body-8ch-16pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 12",
+            "geometry": "Body-8ch-12pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 8",
+            "geometry": "Body-8ch-8pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 6",
+            "geometry": "Body-8ch-6pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 4",
+            "geometry": "Body-8ch-4pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 3",
+            "geometry": "Body-8ch-3pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 2",
+            "geometry": "Body-8ch-2pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 10: HSIC + FX 16 Bit - Pixel 1",
+            "geometry": "Body-8ch-1pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 48",
+            "geometry": "Body-7ch-48pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 24",
+            "geometry": "Body-7ch-24pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 16",
+            "geometry": "Body-7ch-16pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 12",
+            "geometry": "Body-7ch-12pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 8",
+            "geometry": "Body-7ch-8pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 6",
+            "geometry": "Body-7ch-6pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 4",
+            "geometry": "Body-7ch-4pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 3",
+            "geometry": "Body-7ch-3pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 2",
+            "geometry": "Body-7ch-2pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 11: CCT/RGB + FX 8 Bit - Pixel 1",
+            "geometry": "Body-7ch-1pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 48",
+            "geometry": "Body-9ch-48pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 24",
+            "geometry": "Body-9ch-24pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 16",
+            "geometry": "Body-9ch-16pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 12",
+            "geometry": "Body-9ch-12pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 8",
+            "geometry": "Body-9ch-8pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 6",
+            "geometry": "Body-9ch-6pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 4",
+            "geometry": "Body-9ch-4pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 3",
+            "geometry": "Body-9ch-3pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 2",
+            "geometry": "Body-9ch-2pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 12: CCT/RGB + FX 16 Bit - Pixel 1",
+            "geometry": "Body-9ch-1pix",
+            "channel_definitions": 10
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 48",
+            "geometry": "Body-5ch-48pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 24",
+            "geometry": "Body-5ch-24pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 16",
+            "geometry": "Body-5ch-16pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 12",
+            "geometry": "Body-5ch-12pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 8",
+            "geometry": "Body-5ch-8pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 6",
+            "geometry": "Body-5ch-6pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 4",
+            "geometry": "Body-5ch-4pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 3",
+            "geometry": "Body-5ch-3pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 2",
+            "geometry": "Body-5ch-2pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 13: RGBTD 8 Bit - Pixel 1",
+            "geometry": "Body-5ch-1pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 48",
+            "geometry": "Body-10ch-48pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 24",
+            "geometry": "Body-10ch-24pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 16",
+            "geometry": "Body-10ch-16pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 12",
+            "geometry": "Body-10ch-12pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 8",
+            "geometry": "Body-10ch-8pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 6",
+            "geometry": "Body-10ch-6pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 4",
+            "geometry": "Body-10ch-4pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 3",
+            "geometry": "Body-10ch-3pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 2",
+            "geometry": "Body-10ch-2pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 14: RGBTD 16 Bit - Pixel 1",
+            "geometry": "Body-10ch-1pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 48",
+            "geometry": "Body-6ch-48pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 24",
+            "geometry": "Body-6ch-24pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 16",
+            "geometry": "Body-6ch-16pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 12",
+            "geometry": "Body-6ch-12pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 8",
+            "geometry": "Body-6ch-8pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 6",
+            "geometry": "Body-6ch-6pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 4",
+            "geometry": "Body-6ch-4pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 3",
+            "geometry": "Body-6ch-3pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 2",
+            "geometry": "Body-6ch-2pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 15: RGB 16 Bit - Pixel 1",
+            "geometry": "Body-6ch-1pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 48",
+            "geometry": "Body-3ch-48pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 24",
+            "geometry": "Body-3ch-24pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 16",
+            "geometry": "Body-3ch-16pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 12",
+            "geometry": "Body-3ch-12pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 8",
+            "geometry": "Body-3ch-8pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 6",
+            "geometry": "Body-3ch-6pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 4",
+            "geometry": "Body-3ch-4pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 3",
+            "geometry": "Body-3ch-3pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 2",
+            "geometry": "Body-3ch-2pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 19: XY 8 Bit - Pixel 1",
+            "geometry": "Body-3ch-1pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 48",
+            "geometry": "Body-6ch-48pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 24",
+            "geometry": "Body-6ch-24pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 16",
+            "geometry": "Body-6ch-16pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 12",
+            "geometry": "Body-6ch-12pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 8",
+            "geometry": "Body-6ch-8pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 6",
+            "geometry": "Body-6ch-6pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 4",
+            "geometry": "Body-6ch-4pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 3",
+            "geometry": "Body-6ch-3pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 2",
+            "geometry": "Body-6ch-2pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 20: XY 16 Bit - Pixel 1",
+            "geometry": "Body-6ch-1pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 48",
+            "geometry": "Body-3ch-48pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 24",
+            "geometry": "Body-3ch-24pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 16",
+            "geometry": "Body-3ch-16pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 12",
+            "geometry": "Body-3ch-12pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 8",
+            "geometry": "Body-3ch-8pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 6",
+            "geometry": "Body-3ch-6pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 4",
+            "geometry": "Body-3ch-4pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 3",
+            "geometry": "Body-3ch-3pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 2",
+            "geometry": "Body-3ch-2pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 21: XY + Spectrum 8 Bit - Pixel 1",
+            "geometry": "Body-3ch-1pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 48",
+            "geometry": "Body-6ch-48pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 24",
+            "geometry": "Body-6ch-24pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 16",
+            "geometry": "Body-6ch-16pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 12",
+            "geometry": "Body-6ch-12pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 8",
+            "geometry": "Body-6ch-8pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 6",
+            "geometry": "Body-6ch-6pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 4",
+            "geometry": "Body-6ch-4pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 3",
+            "geometry": "Body-6ch-3pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 2",
+            "geometry": "Body-6ch-2pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 22: XY + Spectrum 16 Bit - Pixel 1",
+            "geometry": "Body-6ch-1pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 48",
+            "geometry": "Body-5ch-48pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 24",
+            "geometry": "Body-5ch-24pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 16",
+            "geometry": "Body-5ch-16pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 12",
+            "geometry": "Body-5ch-12pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 8",
+            "geometry": "Body-5ch-8pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 6",
+            "geometry": "Body-5ch-6pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 4",
+            "geometry": "Body-5ch-4pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 3",
+            "geometry": "Body-5ch-3pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 2",
+            "geometry": "Body-5ch-2pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 31: HSIC + Output 8 Bit - Pixel 1",
+            "geometry": "Body-5ch-1pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 48",
+            "geometry": "Body-8ch-48pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 24",
+            "geometry": "Body-8ch-24pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output16 Bit - Pixel 16",
+            "geometry": "Body-8ch-16pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 12",
+            "geometry": "Body-8ch-12pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 8",
+            "geometry": "Body-8ch-8pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 6",
+            "geometry": "Body-8ch-6pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 4",
+            "geometry": "Body-8ch-4pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 3",
+            "geometry": "Body-8ch-3pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 2",
+            "geometry": "Body-8ch-2pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 32: HSIC + Output 16 Bit - Pixel 1",
+            "geometry": "Body-8ch-1pix",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 48",
+            "geometry": "Body-3ch-48pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 24",
+            "geometry": "Body-3ch-24pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 16",
+            "geometry": "Body-3ch-16pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 12",
+            "geometry": "Body-3ch-12pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 8",
+            "geometry": "Body-3ch-8pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 6",
+            "geometry": "Body-3ch-6pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 4",
+            "geometry": "Body-3ch-4pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 3",
+            "geometry": "Body-3ch-3pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 2",
+            "geometry": "Body-3ch-2pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 33: HSI + Output 8 Bit - Pixel 1",
+            "geometry": "Body-3ch-1pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 48",
+            "geometry": "Body-3ch-48pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 24",
+            "geometry": "Body-3ch-24pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 16",
+            "geometry": "Body-3ch-16pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 12",
+            "geometry": "Body-3ch-12pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 8",
+            "geometry": "Body-3ch-8pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 6",
+            "geometry": "Body-3ch-6pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 4",
+            "geometry": "Body-3ch-4pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 3",
+            "geometry": "Body-3ch-3pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 2",
+            "geometry": "Body-3ch-2pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 34: Crossfade w/ Green + Output 8 Bit - Pixel 1",
+            "geometry": "Body-3ch-1pix",
+            "channel_definitions": 4
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 48",
+            "geometry": "Body-2ch-48pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 24",
+            "geometry": "Body-2ch-24pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 16",
+            "geometry": "Body-2ch-16pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 12",
+            "geometry": "Body-2ch-12pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 8",
+            "geometry": "Body-2ch-8pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 6",
+            "geometry": "Body-2ch-6pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 4",
+            "geometry": "Body-2ch-4pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 3",
+            "geometry": "Body-2ch-3pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 2",
+            "geometry": "Body-2ch-2pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 35: Crossfade + Output 8 Bit - Pixel 1",
+            "geometry": "Body-2ch-1pix",
+            "channel_definitions": 3
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 48",
+            "geometry": "Body-7ch-48pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 24",
+            "geometry": "Body-7ch-24pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 16",
+            "geometry": "Body-7ch-16pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 12",
+            "geometry": "Body-7ch-12pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 8",
+            "geometry": "Body-7ch-8pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 6",
+            "geometry": "Body-7ch-6pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 4",
+            "geometry": "Body-7ch-4pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 3",
+            "geometry": "Body-7ch-3pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 2",
+            "geometry": "Body-7ch-2pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 36: CCT/RGB + Output 8 Bit - Pixel 1",
+            "geometry": "Body-7ch-1pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 48",
+            "geometry": "Body-9ch-48pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 24",
+            "geometry": "Body-9ch-24pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 16",
+            "geometry": "Body-9ch-16pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 12",
+            "geometry": "Body-9ch-12pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 8",
+            "geometry": "Body-9ch-8pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 6",
+            "geometry": "Body-9ch-6pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 4",
+            "geometry": "Body-9ch-4pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 3",
+            "geometry": "Body-9ch-3pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 2",
+            "geometry": "Body-9ch-2pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 37: CCT/RGB + Output 16 Bit - Pixel 1",
+            "geometry": "Body-9ch-1pix",
+            "channel_definitions": 8
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 48",
+            "geometry": "Body-3ch-48pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 24",
+            "geometry": "Body-3ch-24pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 16",
+            "geometry": "Body-3ch-16pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 12",
+            "geometry": "Body-3ch-12pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 8",
+            "geometry": "Body-3ch-8pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 6",
+            "geometry": "Body-3ch-6pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 4",
+            "geometry": "Body-3ch-4pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 3",
+            "geometry": "Body-3ch-3pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 2",
+            "geometry": "Body-3ch-2pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 38: RGB + Output 8 Bit - Pixel 1",
+            "geometry": "Body-3ch-1pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 48",
+            "geometry": "Body-5ch-48pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 24",
+            "geometry": "Body-5ch-24pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 16",
+            "geometry": "Body-5ch-16pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 12",
+            "geometry": "Body-5ch-12pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 8",
+            "geometry": "Body-5ch-8pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 6",
+            "geometry": "Body-5ch-6pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 4",
+            "geometry": "Body-5ch-4pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 3",
+            "geometry": "Body-5ch-3pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 2",
+            "geometry": "Body-5ch-2pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 39: HSIC + FX + Output 8 Bit - Pixel 1",
+            "geometry": "Body-5ch-1pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 48",
+            "geometry": "Body-8ch-48pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 24",
+            "geometry": "Body-8ch-24pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 16",
+            "geometry": "Body-8ch-16pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 12",
+            "geometry": "Body-8ch-12pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 8",
+            "geometry": "Body-8ch-8pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 6",
+            "geometry": "Body-8ch-6pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 4",
+            "geometry": "Body-8ch-4pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 3",
+            "geometry": "Body-8ch-3pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 2",
+            "geometry": "Body-8ch-2pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 40: HSIC + FX + Output 16 Bit - Pixel 1",
+            "geometry": "Body-8ch-1pix",
+            "channel_definitions": 9
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 48",
+            "geometry": "Body-7ch-48pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 24",
+            "geometry": "Body-7ch-24pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 16",
+            "geometry": "Body-7ch-16pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 12",
+            "geometry": "Body-7ch-12pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 8",
+            "geometry": "Body-7ch-8pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 6",
+            "geometry": "Body-7ch-6pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 4",
+            "geometry": "Body-7ch-4pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 3",
+            "geometry": "Body-7ch-3pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 2",
+            "geometry": "Body-7ch-2pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 41: CCT/RGB + FX + Output 8 Bit - Pixel 1",
+            "geometry": "Body-7ch-1pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 48",
+            "geometry": "Body-9ch-48pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 24",
+            "geometry": "Body-9ch-24pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 16",
+            "geometry": "Body-9ch-16pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 12",
+            "geometry": "Body-9ch-12pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 8",
+            "geometry": "Body-9ch-8pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 6",
+            "geometry": "Body-9ch-6pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 4",
+            "geometry": "Body-9ch-4pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 3",
+            "geometry": "Body-9ch-3pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 2",
+            "geometry": "Body-9ch-2pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 42: CCT/RGB + FX + Output 16 Bit - Pixel 1",
+            "geometry": "Body-9ch-1pix",
+            "channel_definitions": 11
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 48",
+            "geometry": "Body-5ch-48pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 24",
+            "geometry": "Body-5ch-24pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 16",
+            "geometry": "Body-5ch-16pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 12",
+            "geometry": "Body-5ch-12pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 8",
+            "geometry": "Body-5ch-8pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 6",
+            "geometry": "Body-5ch-6pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 4",
+            "geometry": "Body-5ch-4pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 3",
+            "geometry": "Body-5ch-3pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 2",
+            "geometry": "Body-5ch-2pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 43: RGBTD + Output 8 Bit - Pixel 1",
+            "geometry": "Body-5ch-1pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 48",
+            "geometry": "Body-10ch-48pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 24",
+            "geometry": "Body-10ch-24pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 16",
+            "geometry": "Body-10ch-16pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 12",
+            "geometry": "Body-10ch-12pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 8",
+            "geometry": "Body-10ch-8pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 6",
+            "geometry": "Body-10ch-6pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 4",
+            "geometry": "Body-10ch-4pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 3",
+            "geometry": "Body-10ch-3pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 2",
+            "geometry": "Body-10ch-2pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 44: RGBTD + Output 16 Bit - Pixel 1",
+            "geometry": "Body-10ch-1pix",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 48",
+            "geometry": "Body-6ch-48pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 24",
+            "geometry": "Body-6ch-24pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 16",
+            "geometry": "Body-6ch-16pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 12",
+            "geometry": "Body-6ch-12pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 8",
+            "geometry": "Body-6ch-8pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 6",
+            "geometry": "Body-6ch-6pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 4",
+            "geometry": "Body-6ch-4pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 3",
+            "geometry": "Body-6ch-3pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 2",
+            "geometry": "Body-6ch-2pix",
+            "channel_definitions": 5
+          },
+          {
+            "name": "Profile 45: RGB + Output 16 Bit - Pixel 1",
+            "geometry": "Body-6ch-1pix",
+            "channel_definitions": 5
+          }
+        ],
+        "root_geometries": [
+          "Body-2ch-48pix",
+          "Body-3ch-48pix",
+          "Body-5ch-48pix",
+          "Body-6ch-48pix",
+          "Body-7ch-48pix",
+          "Body-8ch-48pix",
+          "Body-9ch-48pix",
+          "Body-10ch-48pix",
+          "Body-2ch-24pix",
+          "Body-3ch-24pix",
+          "Body-5ch-24pix",
+          "Body-6ch-24pix",
+          "Body-7ch-24pix",
+          "Body-8ch-24pix",
+          "Body-9ch-24pix",
+          "Body-10ch-24pix",
+          "Body-2ch-16pix",
+          "Body-3ch-16pix",
+          "Body-5ch-16pix",
+          "Body-6ch-16pix",
+          "Body-7ch-16pix",
+          "Body-8ch-16pix",
+          "Body-9ch-16pix",
+          "Body-10ch-16pix",
+          "Body-2ch-12pix",
+          "Body-3ch-12pix",
+          "Body-5ch-12pix",
+          "Body-6ch-12pix",
+          "Body-7ch-12pix",
+          "Body-8ch-12pix",
+          "Body-9ch-12pix",
+          "Body-10ch-12pix",
+          "Body-2ch-8pix",
+          "Body-3ch-8pix",
+          "Body-5ch-8pix",
+          "Body-6ch-8pix",
+          "Body-7ch-8pix",
+          "Body-8ch-8pix",
+          "Body-9ch-8pix",
+          "Body-10ch-8pix",
+          "Body-2ch-6pix",
+          "Body-3ch-6pix",
+          "Body-5ch-6pix",
+          "Body-6ch-6pix",
+          "Body-7ch-6pix",
+          "Body-8ch-6pix",
+          "Body-9ch-6pix",
+          "Body-10ch-6pix",
+          "Body-2ch-4pix",
+          "Body-3ch-4pix",
+          "Body-5ch-4pix",
+          "Body-6ch-4pix",
+          "Body-7ch-4pix",
+          "Body-8ch-4pix",
+          "Body-9ch-4pix",
+          "Body-10ch-4pix",
+          "Body-2ch-3pix",
+          "Body-3ch-3pix",
+          "Body-5ch-3pix",
+          "Body-6ch-3pix",
+          "Body-7ch-3pix",
+          "Body-8ch-3pix",
+          "Body-9ch-3pix",
+          "Body-10ch-3pix",
+          "Body-2ch-2pix",
+          "Body-3ch-2pix",
+          "Body-5ch-2pix",
+          "Body-6ch-2pix",
+          "Body-7ch-2pix",
+          "Body-8ch-2pix",
+          "Body-9ch-2pix",
+          "Body-10ch-2pix",
+          "Body-2ch-1pix",
+          "Body-3ch-1pix",
+          "Body-5ch-1pix",
+          "Body-6ch-1pix",
+          "Body-7ch-1pix",
+          "Body-8ch-1pix",
+          "Body-9ch-1pix",
+          "Body-10ch-1pix",
+          "Lens_1x",
+          "Lens_2x",
+          "Lens_3x",
+          "Lens_4x",
+          "Lens_6x",
+          "Lens_8x",
+          "Lens_12x",
+          "Lens_16x",
+          "Lens_24x",
+          "lens_48x"
+        ],
+        "reference_definitions": 992,
+        "beam_definitions": 10,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "snow-machine",
+      "filename": "Antari@S-500_Snow_Machine@Version_1.gdtf",
+      "sha256": "ffd7c5832ca127606aa4211ab679464e9f3aee006e25253aade4bfc5412e124f",
+      "size_bytes": 339134,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Antari",
+        "name": "S-500 Snow Machine",
+        "modes": [
+          {
+            "name": "2-channel",
+            "geometry": "Flightcase",
+            "channel_definitions": 2
+          }
+        ],
+        "root_geometries": ["Flightcase"],
+        "reference_definitions": 0,
+        "beam_definitions": 0,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "pixel-line",
+      "filename": "ACME@Pixel_Line_IP@Release-05.gdtf",
+      "sha256": "e7884adff27453451af9de7f2e353dba7a21520c815fd99efe2153db0dd56383",
+      "size_bytes": 446558,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "ACME",
+        "name": "Pixel Line IP",
+        "modes": [
+          {
+            "name": "117 Channel",
+            "geometry": "112/117ch Body",
+            "channel_definitions": 12
+          },
+          {
+            "name": "112 Channel",
+            "geometry": "112/117ch Body",
+            "channel_definitions": 8
+          },
+          {
+            "name": "70 Channel",
+            "geometry": " 65/68/70ch Body",
+            "channel_definitions": 13
+          },
+          {
+            "name": "68 Channel",
+            "geometry": " 65/68/70ch Body",
+            "channel_definitions": 11
+          },
+          {
+            "name": "65 Channel",
+            "geometry": " 65/68/70ch Body",
+            "channel_definitions": 9
+          },
+          {
+            "name": "39 Channel",
+            "geometry": "39ch Body",
+            "channel_definitions": 15
+          },
+          {
+            "name": "33 Channel",
+            "geometry": "33ch Body",
+            "channel_definitions": 9
+          },
+          {
+            "name": "21 Channel",
+            "geometry": "7/15/21ch Body",
+            "channel_definitions": 22
+          },
+          {
+            "name": "17 Channel",
+            "geometry": "17ch Body",
+            "channel_definitions": 9
+          },
+          {
+            "name": "15 Channel",
+            "geometry": "7/15/21ch Body",
+            "channel_definitions": 17
+          },
+          {
+            "name": "7 Channel",
+            "geometry": "7/15/21ch Body",
+            "channel_definitions": 9
+          }
+        ],
+        "root_geometries": [
+          "112/117ch Body",
+          " 65/68/70ch Body",
+          "33ch Body",
+          "39ch Body",
+          "17ch Body",
+          "7/15/21ch Body",
+          "2x16px Plate Reference Geometry",
+          "1x16px Tube Reference Geometry",
+          "1x16px Plate Reference Geometry",
+          "1x8 Plate Reference Geometry",
+          "1x8 Tube Reference Geometry",
+          "2x4px Plate Reference Geometry",
+          "1x4px Tube Reference Geometry",
+          "1x4px Plate Reference Geometry",
+          "1x1px Plate Reference Geometry",
+          "1x1px Beam Reference Geometry"
+        ],
+        "reference_definitions": 118,
+        "beam_definitions": 10,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "pixel-line-alternate",
+      "filename": "ACME@PIXEL_LINE_IP_(STROBE_3_IP)@Rev_01.gdtf",
+      "sha256": "1be3b6ff8ca37232f4a810809f3e9611f59c6622ede42a5dd2f8d4eb6409f3af",
+      "size_bytes": 663991,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "ACME",
+        "name": "PIXEL LINE IP (STROBE 3 IP)",
+        "modes": [
+          {
+            "name": "Mode 1 7DMX",
+            "geometry": "Body 1",
+            "channel_definitions": 6
+          },
+          {
+            "name": "Mode 2 15DMX",
+            "geometry": "Body 1",
+            "channel_definitions": 12
+          },
+          {
+            "name": "Mode 3 21DMX",
+            "geometry": "Body 1",
+            "channel_definitions": 18
+          },
+          {
+            "name": "Mode 4 39DMX",
+            "geometry": "Body 2",
+            "channel_definitions": 49
+          },
+          {
+            "name": "Mode 5 112DMX",
+            "geometry": "Body",
+            "channel_definitions": 160
+          },
+          {
+            "name": "Mode 6 16DMX",
+            "geometry": "Body 3",
+            "channel_definitions": 24
+          },
+          {
+            "name": "Mode 7 33DMX",
+            "geometry": "Body 4",
+            "channel_definitions": 49
+          },
+          {
+            "name": "Mode 8 65DMX",
+            "geometry": "Body 5",
+            "channel_definitions": 97
+          },
+          {
+            "name": "Mode 9 68DMX",
+            "geometry": "Body 6",
+            "channel_definitions": 100
+          },
+          {
+            "name": "Mode 10 117DMX",
+            "geometry": "Body",
+            "channel_definitions": 165
+          }
+        ],
+        "root_geometries": [
+          "Body",
+          "Body 1",
+          "Body 2",
+          "Body 3",
+          "Body 4",
+          "Body 5",
+          "Body 6"
+        ],
+        "reference_definitions": 0,
+        "beam_definitions": 219,
+        "axis_definitions": 0
+      }
+    },
+    {
+      "id": "hydrabeam",
+      "filename": "Cameo@Hydrabeam_400@1.0.0.3.gdtf",
+      "sha256": "b08592d3fd45d629f8dde0322725d9f3afc4271c9fd585e96d8bd580d1035374",
+      "size_bytes": 551920,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Cameo",
+        "name": "HYDRABEAM 400",
+        "modes": [
+          {
+            "name": "19 CH",
+            "geometry": "Base",
+            "channel_definitions": 19
+          }
+        ],
+        "root_geometries": ["Base"],
+        "reference_definitions": 0,
+        "beam_definitions": 4,
+        "axis_definitions": 8
+      }
+    },
+    {
+      "id": "volero",
+      "filename": "Clay_Paky@Volero_Wave@Claypaky_Official_File_Fw_V.2.0.005.gdtf",
+      "sha256": "6c49c21cd3cfdff9e036e3df193a881ce659235c22eab6f999c4b63ffb16335f",
+      "size_bytes": 541174,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Clay Paky",
+        "name": "Volero Wave",
+        "modes": [
+          {
+            "name": "Standard",
+            "geometry": "Base",
+            "channel_definitions": 19
+          },
+          {
+            "name": "Advanced",
+            "geometry": "Base",
+            "channel_definitions": 36
+          },
+          {
+            "name": "Shape",
+            "geometry": "Base",
+            "channel_definitions": 33
+          },
+          {
+            "name": "RGB",
+            "geometry": "Base",
+            "channel_definitions": 32
+          },
+          {
+            "name": "RGBW",
+            "geometry": "Base",
+            "channel_definitions": 40
+          }
+        ],
+        "root_geometries": ["Base", "LED Head"],
+        "reference_definitions": 8,
+        "beam_definitions": 1,
+        "axis_definitions": 8
+      }
+    },
+    {
+      "id": "pxl-curve",
+      "filename": "Chauvet_Professional@COLORado_PXL_Curve_12@White_Calib_Off_Fix.gdtf",
+      "sha256": "305b7e2ce13e5049ef2a4407bee81f3081f6accc2a50af9fe6ae4295b2dfc687",
+      "size_bytes": 1723697,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Chauvet Professional",
+        "name": "COLORado PXL Curve 12",
+        "modes": [
+          {
+            "name": "Single Mode: 20Ch Mode",
+            "geometry": "Body",
+            "channel_definitions": 19
+          },
+          {
+            "name": "Single Mode: 53Ch Mode",
+            "geometry": "Body",
+            "channel_definitions": 41
+          },
+          {
+            "name": "Single Mode: 101Ch Mode",
+            "geometry": "Body",
+            "channel_definitions": 101
+          },
+          {
+            "name": "Single Mode: 155Ch Mode",
+            "geometry": "Body",
+            "channel_definitions": 101
+          },
+          {
+            "name": "Single Mode: 169Ch Mode",
+            "geometry": "Body",
+            "channel_definitions": 96
+          },
+          {
+            "name": "Single Mode: 179Ch Mode",
+            "geometry": "Body",
+            "channel_definitions": 101
+          },
+          {
+            "name": "Single Mode: 181Ch Mode",
+            "geometry": "Body",
+            "channel_definitions": 97
+          },
+          {
+            "name": "Dual Mode-Movement: 8Ch",
+            "geometry": "Body",
+            "channel_definitions": 7
+          },
+          {
+            "name": "Dual Mode Movement: 41Ch",
+            "geometry": "Body",
+            "channel_definitions": 29
+          },
+          {
+            "name": "Dual Mode Movement: 53Ch ",
+            "geometry": "Body",
+            "channel_definitions": 41
+          },
+          {
+            "name": "Dual Mode Movement: 59Ch ",
+            "geometry": "Body",
+            "channel_definitions": 41
+          },
+          {
+            "name": "Dual-Mode LED 36Ch",
+            "geometry": "Body",
+            "channel_definitions": 48
+          },
+          {
+            "name": "Dual-Mode LED 48Ch",
+            "geometry": "Body",
+            "channel_definitions": 60
+          },
+          {
+            "name": "Dual Mode LED 96Ch",
+            "geometry": "Body",
+            "channel_definitions": 60
+          }
+        ],
+        "root_geometries": ["Beam", "Body"],
+        "reference_definitions": 12,
+        "beam_definitions": 1,
+        "axis_definitions": 13
+      }
+    },
+    {
+      "id": "magicblade",
+      "filename": "Ayrton@MagicBlade_FX@V2.6_Corrected_PT_Rotate.gdtf",
+      "sha256": "94e33f42cfbcbf6b67e95724ff2c57f4cbf518f04b57fab5a64e9226530d7214",
+      "size_bytes": 650619,
+      "provenance": {
+        "collection": "GDTF_fixtures_12_30_2025_11",
+        "distribution": "private-provisioning; redistribution not established"
+      },
+      "inventory": {
+        "data_version": "1.2",
+        "manufacturer": "Ayrton",
+        "name": "MagicBlade FX",
+        "modes": [
+          {
+            "name": "Extended",
+            "geometry": "Base",
+            "channel_definitions": 20
+          },
+          {
+            "name": "Standard",
+            "geometry": "Base",
+            "channel_definitions": 19
+          },
+          {
+            "name": "Basic",
+            "geometry": "Base",
+            "channel_definitions": 18
+          }
+        ],
+        "root_geometries": ["Base", "LED"],
+        "reference_definitions": 7,
+        "beam_definitions": 1,
+        "axis_definitions": 2
+      }
+    }
+  ]
+}

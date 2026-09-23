@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GDTF DataVersion="1.2">
+  <FixtureType Name="Nested test" ShortName="Nested" LongName="Nested joint and reference test" Manufacturer="Nightfall" Description="Synthetic compiler acceptance input" FixtureTypeID="7cd9224b-361a-4320-8df7-789bcd8dc018">
+    <AttributeDefinitions>
+      <FeatureGroups>
+        <FeatureGroup Name="Position" Pretty="Position"><Feature Name="PanTilt"/></FeatureGroup>
+        <FeatureGroup Name="Dimmer" Pretty="Dimmer"><Feature Name="Dimmer"/></FeatureGroup>
+        <FeatureGroup Name="Color" Pretty="Color"><Feature Name="RGB"/></FeatureGroup>
+      </FeatureGroups>
+      <Attributes>
+        <Attribute Name="Tilt" Pretty="Tilt" Feature="Position.PanTilt" PhysicalUnit="Angle"/>
+        <Attribute Name="Dimmer" Pretty="Dimmer" Feature="Dimmer.Dimmer" PhysicalUnit="Percent"/>
+        <Attribute Name="ColorAdd_R" Pretty="Red" Feature="Color.RGB" PhysicalUnit="Percent"/>
+        <Attribute Name="ColorAdd_G" Pretty="Green" Feature="Color.RGB" PhysicalUnit="Percent"/>
+        <Attribute Name="ColorAdd_B" Pretty="Blue" Feature="Color.RGB" PhysicalUnit="Percent"/>
+      </Attributes>
+    </AttributeDefinitions>
+    <Geometries>
+      <Geometry Name="Base" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}">
+        <Axis Name="Arm" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}">
+          <Axis Name="Head" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,1,1}">
+            <GeometryReference Name="Pixel 1" Geometry="Pixel" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}"><Break DMXBreak="2" DMXOffset="10"/></GeometryReference>
+            <GeometryReference Name="Pixel 2" Geometry="Pixel" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{1,0,0,1}"><Break DMXBreak="2" DMXOffset="20"/></GeometryReference>
+          </Axis>
+        </Axis>
+      </Geometry>
+      <Geometry Name="Pixel" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}"/>
+      <Geometry Name="Unused" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}"/>
+    </Geometries>
+    <DMXModes>
+      <DMXMode Name="Nested sparse" Description="Two tilts with sparse fine bytes and referenced RGB" Geometry="Base">
+        <DMXChannels>
+        <DMXChannel DMXBreak="1" Offset="1,4" Highlight="None" Geometry="Arm"><LogicalChannel Attribute="Tilt"><ChannelFunction Name="Tilt" Attribute="Tilt" DMXFrom="0/1" Default="0/1" PhysicalFrom="0" PhysicalTo="180"/></LogicalChannel></DMXChannel>
+        <DMXChannel DMXBreak="1" Offset="2,5" Highlight="None" Geometry="Head"><LogicalChannel Attribute="Tilt"><ChannelFunction Name="Tilt" Attribute="Tilt" DMXFrom="0/1" Default="0/1" PhysicalFrom="0" PhysicalTo="180"/></LogicalChannel></DMXChannel>
+        <DMXChannel DMXBreak="Overwrite" Offset="None" Highlight="None" Geometry="Pixel"><LogicalChannel Attribute="Dimmer"><ChannelFunction Name="Dimmer" Attribute="Dimmer" DMXFrom="0/1" Default="0/1" PhysicalFrom="0" PhysicalTo="1"/></LogicalChannel></DMXChannel>
+        <DMXChannel DMXBreak="Overwrite" Offset="1" Highlight="None" Geometry="Pixel"><LogicalChannel Attribute="ColorAdd_R"><ChannelFunction Name="ColorAdd_R" Attribute="ColorAdd_R" DMXFrom="0/1" Default="0/1" PhysicalFrom="0" PhysicalTo="1"/></LogicalChannel></DMXChannel>
+        <DMXChannel DMXBreak="Overwrite" Offset="2" Highlight="None" Geometry="Pixel"><LogicalChannel Attribute="ColorAdd_G"><ChannelFunction Name="ColorAdd_G" Attribute="ColorAdd_G" DMXFrom="0/1" Default="0/1" PhysicalFrom="0" PhysicalTo="1"/></LogicalChannel></DMXChannel>
+        <DMXChannel DMXBreak="Overwrite" Offset="3" Highlight="None" Geometry="Pixel"><LogicalChannel Attribute="ColorAdd_B"><ChannelFunction Name="ColorAdd_B" Attribute="ColorAdd_B" DMXFrom="0/1" Default="0/1" PhysicalFrom="0" PhysicalTo="1"/></LogicalChannel></DMXChannel>
+        </DMXChannels>
+      </DMXMode>
+    </DMXModes>
+  </FixtureType>
+</GDTF>

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "basis": "Manually checked selected-mode geometry and channel links in the pinned description.xml files. These are structural targets, not proof of DMX or rendered behavior.",
+  "cases": [
+    {
+      "id": "sharpy",
+      "mode": "Standard",
+      "evidence": "Base contains Yoke/Body/Beam; channels 10,11 target Pan on Yoke and 12,13 target Tilt on Body.",
+      "root_count": 1,
+      "beam_count": 1,
+      "bound_beam_count": 1,
+      "joints": { "Yoke": "pan", "Body": "tilt" },
+      "issue": "nightfall-lightdesk-oaa.2"
+    },
+    {
+      "id": "mac-aura",
+      "mode": "Extended",
+      "evidence": "Base contains 19 Wash BeamLED nodes and AuraPlate with BeamType None. Pan targets Yoke and Tilt targets Head, both authored as generic Geometry rather than Axis.",
+      "root_count": 1,
+      "beam_count": 20,
+      "bound_beam_count": 20,
+      "joints": { "Yoke": "pan", "Head": "tilt" },
+      "issue": "nightfall-lightdesk-oaa.2"
+    },
+    {
+      "id": "magicpanel",
+      "mode": "Extended",
+      "evidence": "Base has 25 LED references under Head, with break offsets 19,23,...115. Each instantiates one LED beam with RGBW at relative addresses 1..4. LED is a template, not a second stage root.",
+      "root_count": 1,
+      "beam_count": 25,
+      "bound_beam_count": 25,
+      "joints": { "Yoke": "pan", "Head": "tilt" },
+      "issue": "nightfall-lightdesk-oaa.2"
+    },
+    {
+      "id": "titan-tube",
+      "mode": "42: RGB RGB",
+      "evidence": "Base16 LED 3 contains 16 references to 16/3 Pixel Beam with offsets 1,4,...46. RGB uses relative channels 1..3; Dimmer has no physical offset.",
+      "root_count": 1,
+      "beam_count": 16,
+      "bound_beam_count": 16,
+      "joints": {},
+      "issue": "nightfall-lightdesk-oaa.2"
+    },
+    {
+      "id": "pixel-line",
+      "mode": "117 Channel",
+      "evidence": "112/117ch Body has 16 tube and 32 plate references; both templates are single Beam nodes. Plate RGB begins at 6,7,8 with reference offsets 1,4,...94; tube dimmer begins at 102 with offsets 1..16.",
+      "root_count": 1,
+      "beam_count": 48,
+      "bound_beam_count": 48,
+      "joints": {},
+      "issue": "nightfall-lightdesk-oaa.2"
+    },
+    {
+      "id": "hydrabeam",
+      "mode": "19 CH",
+      "evidence": "Base has four separate Yoke/Head/Beam chains. Pan/Tilt pairs are at 7/8,10/11,13/14,16/17. Master RGBW on Base must later be combined with each beam's local dimmer.",
+      "root_count": 1,
+      "beam_count": 4,
+      "bound_beam_count": 4,
+      "joints": {
+        "Head 1 (Yoke)": "pan",
+        "Head 1": "tilt",
+        "Head 2 (Yoke)": "pan",
+        "Head 2": "tilt",
+        "Head 3 (Yoke)": "pan",
+        "Head 3": "tilt",
+        "Head 4 (Yoke)": "pan",
+        "Head 4": "tilt"
+      },
+      "issue": "nightfall-lightdesk-oaa.4"
+    }
+  ]
+}
