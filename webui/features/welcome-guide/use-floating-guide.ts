@@ -21,6 +21,7 @@ export function useFloatingGuide(
   step: Accessor<string>,
   anchor: Accessor<DOMRect | null>,
   selector: Accessor<string | undefined>,
+  preference: Accessor<"above" | undefined>,
 ) {
   const [position, setPosition] = createSignal({ x: 12, y: 80 });
   const [size, setSize] = createSignal({ width: 360, height: 400 });
@@ -173,6 +174,32 @@ export function useFloatingGuide(
         Math.min(point.y + height, rect.bottom) - Math.max(point.y, rect.top),
       );
     const geometry = `${target.x},${target.y},${target.width},${target.height},${width},${height}`;
+    // Honor teaching-specific placement before falling back to general overlap scoring.
+    const preferred = dialog
+      ? beside(dialog).slice(0, 2).map(clamp)
+      : preference() === "above"
+        ? [
+            {
+              x: target.x + target.width / 2 - width / 2,
+              y: (panel?.top ?? target.top) - height - 16,
+            },
+          ]
+        : [];
+    const preferredPosition = preferred.find((point) => {
+      const bounded = clamp(point);
+      return (
+        point.x === bounded.x &&
+        point.y === bounded.y &&
+        overlap(point, target) === 0 &&
+        (!dialog || overlap(point, dialog) === 0) &&
+        (!panel || overlap(point, panel) === 0)
+      );
+    });
+    if (preferredPosition) {
+      placedGeometry = geometry;
+      setPosition(preferredPosition);
+      return;
+    }
     /** Measures the empty gap between the card and the relevant surface, independent of their sizes. */
     const gap = (point: { x: number; y: number }, rect: DOMRect) =>
       Math.hypot(

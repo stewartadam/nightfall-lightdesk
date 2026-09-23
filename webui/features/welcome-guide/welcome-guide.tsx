@@ -177,6 +177,7 @@ export default function WelcomeGuide() {
     () => `${lessonId()}:${index()}`,
     anchor,
     () => (blocked() ? undefined : step()?.target),
+    () => step()?.placement,
   );
   const { draggable } = createDraggable();
   void draggable;

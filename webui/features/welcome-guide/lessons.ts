@@ -28,6 +28,7 @@ export interface GuideStep {
   content: GuideContent[];
   highlightClipId?: number;
   target?: string;
+  placement?: "above";
   focusTarget?: boolean;
   observe?: GuideObservation;
 }
@@ -89,6 +90,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "watch",
         title: "Stop playback",
+        placement: "above",
         target: '[aria-label="Stop timeline"]',
         observe: {
           type: "timeline-stopped",
@@ -191,8 +193,12 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             type: "action",
             title: "Type this command, then press Enter:",
-            body: "Check the values in the Programmer after entering the command.",
+            body: "",
             command: "@ 100",
+          },
+          {
+            type: "text",
+            text: "These fixture values will be held in the Programmer until cleared.",
           },
         ],
       },
