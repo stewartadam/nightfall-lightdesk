@@ -122,6 +122,7 @@ export function GuideTarget(props: GuideTargetProps) {
             />
             <Show when={props.hint}>
               <Tooltip
+                selectable
                 surfaceClass="nf-guide-tooltip"
                 content={() => (
                   <span class="block max-w-72 whitespace-normal">
