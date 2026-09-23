@@ -232,7 +232,7 @@ a:focus-visible {
 .dockview-theme-nightfall-graphite .dv-tab:hover .dv-default-tab-action {
   opacity: 1;
 }
-.dockview-theme-nightfall-graphite .dv-sash:not(.dv-disabled)::after {
+.dockview-theme-nightfall-graphite .dv-sash::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -253,12 +253,15 @@ a:focus-visible {
 .dockview-theme-nightfall-graphite
   .dv-vertical
   > .dv-sash-container
-  > .dv-sash:not(.dv-disabled)::after {
+  > .dv-sash::after {
   background-repeat: repeat-x;
   width: 28px;
   height: 8px;
 }
-.dockview-theme-nightfall-graphite .dv-sash:hover::after {
+.dockview-theme-nightfall-graphite .dv-sash.dv-disabled::after {
+  opacity: 0.45;
+}
+.dockview-theme-nightfall-graphite .dv-sash:not(.dv-disabled):hover::after {
   --splitter-grip-color: var(--accent);
 }
 .nf-dock-panel-root {
