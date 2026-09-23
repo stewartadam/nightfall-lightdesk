@@ -102,8 +102,16 @@ at five independent sample points. Profiles retain discontinuities and
 non-monotonic output, select the new polynomial exactly at a breakpoint, and
 return zero before the first point. Invalid links, duplicate names/points,
 nonfinite values, overflow and point budgets are diagnosed. Raw interval tests
-retain distinct 32-bit values. This evaluator does not yet connect curves to
-function Min/Max or sub-channel units, invert them, or apply them in the engine.
+retain distinct 32-bit values.
+
+The `physical` stage compiles parent-function mappings and evaluates both raw
+endpoints of every function. Linear mappings preserve descending ranges and
+quantize inverse requests to the nearest raw integer through 32 bits. Profiles
+scale percentage output into function Min/Max (defaulting to PhysicalFrom/To).
+Constant linear ranges report an ambiguous inverse, and profiles report an
+unavailable inverse rather than guessing. Synthetic physical tests cover those
+cases independently. This stage does not select active functions, apply channel
+set overrides or relations, map sub-channel units, or run in the engine yet.
 
 The `activation` stage compiles a bounded dependency order and evaluates each
 mode's raw defaults. Function links require the target function to be active;

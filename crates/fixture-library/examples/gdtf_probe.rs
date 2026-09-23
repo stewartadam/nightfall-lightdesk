@@ -20,6 +20,8 @@ use nightfall_fixture_library::converters::gdtf::convert_gdtf_to_fixture;
 use nightfall_fixture_library::gdtf_activation::compile_activation;
 use nightfall_fixture_library::gdtf_bindings::bind_selectors;
 use nightfall_fixture_library::gdtf_functions::resolve_functions;
+use nightfall_fixture_library::gdtf_physical::compile_physical;
+use nightfall_fixture_library::gdtf_profiles::compile_profiles;
 use nightfall_fixture_library::gdtf_resolver::{ResolveError, ResolveLimits, resolve_mode};
 use nightfall_fixture_library::gdtf_sets::resolve_sets;
 use nightfall_fixture_library::gdtf_wire::resolve_wires;
@@ -81,9 +83,10 @@ fn main() {
                             message: "Missing fixture type".into(),
                         })?;
                 resolve_mode(fixture, &mode, ResolveLimits::default())
+                    .map(|resolved| (resolved, &fixture.physical_descriptions.dmx_profiles))
             });
         match resolved {
-            Ok(resolved) => {
+            Ok((resolved, profile_sources)) => {
                 emit(json!({
                 "stage": "resolution", "status": "passed", "mode": mode,
                 "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
@@ -109,6 +112,50 @@ fn main() {
                             json!({"stage": "functions", "status": "passed", "mode": mode,
                         "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "channels": functions}),
                         );
+                        let started = Instant::now();
+                        let physical = compile_profiles(profile_sources, 100_000)
+                            .and_then(|profiles| compile_physical(&functions, profiles, 1_000_000))
+                            .and_then(|physical| {
+                                functions
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(channel, source)| {
+                                        source
+                                            .functions
+                                            .iter()
+                                            .enumerate()
+                                            .map(|(function, source)| {
+                                                Ok((
+                                                    physical.evaluate_function(
+                                                        channel,
+                                                        function,
+                                                        source.raw_from,
+                                                    )?,
+                                                    physical.evaluate_function(
+                                                        channel,
+                                                        function,
+                                                        source.raw_to,
+                                                    )?,
+                                                ))
+                                            })
+                                            .collect::<Result<Vec<_>, ResolveError>>()
+                                    })
+                                    .collect::<Result<Vec<_>, ResolveError>>()
+                            });
+                        match physical {
+                            Ok(endpoints) => emit(
+                                json!({"stage": "physical", "status": "passed", "mode": mode,
+                                "duration_ms": started.elapsed().as_secs_f64() * 1000.0, "endpoints": endpoints}),
+                            ),
+                            Err(error) => {
+                                failed = true;
+                                emit(
+                                    json!({"stage": "physical", "status": "failed", "mode": mode,
+                                    "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+                                    "error": error.to_string(), "diagnostic": error}),
+                                );
+                            }
+                        }
                         let started = Instant::now();
                         match resolve_sets(&functions, 1_000_000) {
                             Ok(sets) => {
@@ -177,6 +224,10 @@ fn main() {
                         emit(json!({"stage": "sets", "status": "failed", "mode": mode,
                             "error": "Function normalization failed; channel sets unavailable"}));
                         emit(
+                            json!({"stage": "physical", "status": "failed", "mode": mode,
+                            "error": "Function normalization failed; physical mapping unavailable"}),
+                        );
+                        emit(
                             json!({"stage": "activation", "status": "failed", "mode": mode,
                             "error": "Function normalization failed; activation unavailable"}),
                         );
@@ -202,6 +253,10 @@ fn main() {
                 );
                 emit(json!({"stage": "sets", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; channel sets unavailable"}));
+                emit(
+                    json!({"stage": "physical", "status": "failed", "mode": mode,
+                    "error": "Geometry resolution failed; physical mapping unavailable"}),
+                );
                 emit(
                     json!({"stage": "activation", "status": "failed", "mode": mode,
                     "error": "Geometry resolution failed; activation unavailable"}),
