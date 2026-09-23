@@ -376,6 +376,35 @@ test("floating lessons provide context, selectable commands and manual placement
   });
 });
 
+/** Advances after storing cue 1.1 with an arbitrary label. */
+test("guide accepts stored cue identity without its suggested label", async ({
+  page,
+}) => {
+  await openSample(page);
+  const command = page.getByRole("textbox", {
+    name: "Command input",
+    exact: true,
+  });
+  await command.fill("fix 310>313 @ 100 red @ 100 green @ 0 blue @ 0");
+  await command.press("Enter");
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await reachStep(page, "Store the red cue");
+  await guide
+    .getByRole("button", { name: "Open Programmer", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Store cue", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Store Cue" });
+  await dialog.getByLabel("Sequence ID", { exact: true }).fill("1");
+  await dialog.getByLabel("Cue ID", { exact: true }).fill("1");
+  await dialog.getByLabel("Label", { exact: true }).fill("My red look");
+  await dialog.getByRole("button", { name: "Store Cue", exact: true }).click();
+  await expect(guide.locator("code")).toHaveText(
+    "red @ 0 green @ 0 blue @ 100",
+  );
+});
+
 /** Shows prerequisite shortcuts again when their panels become hidden, collapsed, or closed. */
 test("guide shortcuts follow panel visibility", async ({ page }, testInfo) => {
   await openSample(page);
