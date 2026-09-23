@@ -74,7 +74,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "navigate",
         title: "Find your way around",
         body: "The Command Palette opens panels. The Programmer shows your selected fixtures and their live values.",
-        action: "Click Search, type Open Programmer, and press Enter.",
+        action:
+          "Click the button or press {command-palette-shortcut} to open it.",
         target:
           '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
         hint: "Use the Command Palette to open panels",
