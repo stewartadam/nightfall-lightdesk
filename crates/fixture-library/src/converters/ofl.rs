@@ -480,6 +480,7 @@ fn extract_physical_properties(
     let beam_type = infer_beam_type_from_categories(ofl.categories());
 
     Some(FixturePhysical {
+        zoom_range: None,
         beam_angle,
         field_angle,
         lumens,

@@ -190,11 +190,25 @@ pub struct OpticalPrismFacet {
     pub color_cie: [f32; 3],
 }
 
+/// Full beam angles at the endpoints of a fixture's normalized zoom control.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct BeamZoomRange {
+    /// Full beam angle at the narrow end of the zoom travel, in degrees.
+    pub narrow: f32,
+    /// Full beam angle at the wide end of the zoom travel, in degrees.
+    pub wide: f32,
+}
+
 /// Physical fixture characteristics from GDTF/OFL profiles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(rename_all = "camelCase")]
 pub struct FixturePhysical {
+    /// Optional zoom travel, independent of the beam and field intensity contours.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zoom_range: Option<BeamZoomRange>,
     /// Inner beam angle in degrees (GDTF: BeamAngle, OFL: degreesMinMax[0])
     pub beam_angle: f32,
     /// Outer beam angle in degrees (GDTF: FieldAngle, OFL: degreesMinMax[1])
@@ -212,6 +226,7 @@ pub struct FixturePhysical {
 impl Default for FixturePhysical {
     fn default() -> Self {
         Self {
+            zoom_range: None,
             beam_angle: 15.0,
             field_angle: 15.0,
             lumens: None,

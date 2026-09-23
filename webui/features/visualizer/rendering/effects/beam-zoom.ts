@@ -16,9 +16,12 @@ export function beamConeAngleDegrees(
   beamAngleDegrees: number,
   fieldAngleDegrees: number,
   zoom: number,
+  range?: { narrow: number; wide: number },
 ): number {
-  const focusedAngleDegrees = Math.min(beamAngleDegrees, fieldAngleDegrees);
-  const unfocusedAngleDegrees = Math.max(beamAngleDegrees, fieldAngleDegrees);
+  const focusedAngleDegrees =
+    range?.narrow ?? Math.min(beamAngleDegrees, fieldAngleDegrees);
+  const unfocusedAngleDegrees =
+    range?.wide ?? Math.max(beamAngleDegrees, fieldAngleDegrees);
   const normalizedZoom = Math.max(0, Math.min(1, zoom));
 
   return (

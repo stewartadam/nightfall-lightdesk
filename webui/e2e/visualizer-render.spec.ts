@@ -921,7 +921,9 @@ test("generic wash beam low-quality setting omits light effects", async ({
 });
 
 /** Verifies the owned Generic wash beam narrows its beam at full zoom. */
-test("generic wash beam zoom 100 renders a focused beam", async ({ page }) => {
+test("generic wash beam zoom 100 renders a focused beam", async ({
+  page,
+}, testInfo) => {
   await page.goto(
     "/?startup:draftRecovery=false&visualizer:offscreenCanvas=false",
   );
@@ -929,10 +931,13 @@ test("generic wash beam zoom 100 renders a focused beam", async ({ page }) => {
   await largestVisibleCanvasBox(page);
   await expectVisualizerFpsLabel(page);
   await waitForMainThreadVisualizerApi(page);
-  const fixtureUid = await installRotatingWashBeamFixture(page);
+  const fixtureUid = await installOwnedBackendFixture(page, OWNED_WASH_BEAM);
   await waitForFixtureStoreHydration(page);
 
-  await writeRotatingWashBeamImmediateOutput(page, fixtureUid, 0);
+  await submitCommand(
+    page,
+    `fix ${OWNED_WASH_BEAM.id} int @ 100 red @ 100 zoom @ 0 tilt @ 0`,
+  );
   await expect
     .poll(
       async () =>
@@ -944,7 +949,7 @@ test("generic wash beam zoom 100 renders a focused beam", async ({ page }) => {
     fixtureUid,
   );
 
-  await writeRotatingWashBeamImmediateOutput(page, fixtureUid, 255);
+  await submitCommand(page, `fix ${OWNED_WASH_BEAM.id} zoom @ 100`);
   await expect
     .poll(async () => {
       const radius = await rotatingWashBeamFirstBeamRadius(page, fixtureUid);
@@ -957,6 +962,38 @@ test("generic wash beam zoom 100 renders a focused beam", async ({ page }) => {
     throw new Error("expected Generic wash beam radius to be available");
   }
   expect(focusedRadius).toBeLessThan(unfocusedRadius);
+  expect(focusedRadius).toBeLessThan(0.4);
+  await expect
+    .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
+    .toMatchObject({ opticalBeamCount: 12, atmosphericBeamCount: 12 });
+  const focusedImage = await page.screenshot({
+    path: testInfo.outputPath("focused-wash.png"),
+    clip: await largestVisibleCanvasBox(page),
+  });
+  const pixels = decodePng(focusedImage);
+  for (const fraction of [0.2, 0.3, 0.4]) {
+    expect(
+      pngRedDominantStats(focusedImage, {
+        x: 0,
+        y: Math.floor(pixels.height * fraction),
+        width: pixels.width,
+        height: 4,
+      }).count,
+      "The narrow beam must stay continuous above its emitting face",
+    ).toBeGreaterThan(40);
+  }
+  expect(
+    await page.evaluate((uid) => {
+      const root = (window as any).visualizerApi
+        .getScene()
+        .getObjectByName(`Fixture_${uid}`);
+      const counts: number[] = [];
+      root.traverse((object: any) => {
+        if (object.userData.visualizerCellBatch) counts.push(object.count);
+      });
+      return counts;
+    }, fixtureUid),
+  ).toEqual([12, 24]);
 });
 
 /** Verifies the owned Generic moving spot orients its yoke arms at zero pan. */
@@ -1637,59 +1674,6 @@ async function holdRotatingWashBeamImmediateOutput(
     };
     writeOutput();
   }, fixtureUid);
-}
-
-/** Writes immediate output for the Generic wash beam fixture with a specific zoom channel value. */
-async function writeRotatingWashBeamImmediateOutput(
-  page: Page,
-  fixtureUid: string,
-  zoom: number,
-): Promise<void> {
-  await page.evaluate(
-    async ({ uid, zoom }) => {
-      const { setParametersImmediate } = await import("/state/appStores.ts");
-      const control = {
-        Tilt: 127,
-        Zoom: zoom,
-        Intensity: 255,
-        "Tilt Speed": 255,
-      };
-      const beam = {
-        Red: 255,
-        Green: 96,
-        Blue: 32,
-        White: 0,
-        Intensity: 255,
-      };
-      const strip = {
-        Red: 0,
-        Green: 0,
-        Blue: 0,
-        White: 0,
-        Yellow: 0,
-      };
-      const output = [
-        control,
-        ...Array.from({ length: 12 }, () => beam),
-        ...Array.from({ length: 24 }, () => strip),
-      ];
-      let framesRemaining = 60;
-      const writeOutput = () => {
-        const stores = (window as any).appStores;
-        setParametersImmediate(
-          new Map<string, Record<string, number>[]>(
-            stores.getParametersImmediate(),
-          ).set(uid, output),
-        );
-        framesRemaining -= 1;
-        if (framesRemaining > 0) {
-          requestAnimationFrame(writeOutput);
-        }
-      };
-      writeOutput();
-    },
-    { uid: fixtureUid, zoom },
-  );
 }
 
 /**

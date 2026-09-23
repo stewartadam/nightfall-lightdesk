@@ -242,6 +242,24 @@ fn rotating_wash_beam_profile_matches_194_channel_footprint_and_element_order() 
 }
 
 /// Verifies persisted wash-beam emitters gain one virtual intensity without duplicate insertion.
+/// Built-in wash profiles keep zoom travel separate from the beam's photometric contours.
+#[test]
+fn wash_beam_optics_define_a_narrow_zoom_and_restore_missing_metadata() {
+    let mut fixture =
+        moving_heads::create_rotating_wash_beam_194(1, "Generic", "12-segment Rotating Wash Beam");
+    let expected = fixture.physical.clone().unwrap();
+    assert_eq!(expected.beam_angle, 1.0);
+    assert_eq!(expected.field_angle, 1.2);
+    let zoom = expected.zoom_range.as_ref().unwrap();
+    assert_eq!((zoom.narrow, zoom.wide), (1.0, 34.0));
+    fixture.physical = None;
+    normalize_fixture_profile(&mut fixture);
+    assert_eq!(fixture.physical, Some(expected));
+    fixture.physical.as_mut().unwrap().beam_angle = 2.0;
+    normalize_fixture_profile(&mut fixture);
+    assert_eq!(fixture.physical.unwrap().beam_angle, 2.0);
+}
+
 #[test]
 fn wash_beam_normalization_restores_missing_virtual_intensity_once() {
     let mut fixture =

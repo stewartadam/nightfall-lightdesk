@@ -21,7 +21,7 @@ import {
   type BufferGeometry,
   type Color,
   Group,
-  InstancedMesh,
+  type InstancedMesh,
   type Material,
   MathUtils,
   Mesh,
@@ -31,6 +31,7 @@ import {
 import type { FixtureElement } from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 import { EMITTER_RADIANCE } from "../emitter-radiance";
+import { createEmitterBatches, updateEmitterBatches } from "./emitter-batches";
 
 /** Strobe panel dimensions (meters) */
 const STROBE_PANEL_WIDTH = 0.515;
@@ -148,50 +149,6 @@ function resolveStrobePanelElementMapping(
         STROBE_PIXEL_ROWS * STROBE_PIXEL_COLUMNS + DEFAULT_STROBE_SEGMENT_COUNT
       ],
   };
-}
-
-/** Batches equal-sized cells sharing a rigid parent while retaining individual selection proxies. */
-function createEmitterBatches(
-  parent: Group,
-  sets: Mesh[][],
-): StrobePanelData["emitterBatches"] {
-  return sets
-    .filter((sources) => sources.length > 0)
-    .map((sources) => {
-      const material = new MeshBasicMaterial({
-        color: 0xffffff,
-        vertexColors: true,
-      });
-      const mesh = new InstancedMesh(
-        sources[0].geometry,
-        material,
-        sources.length,
-      );
-      mesh.name = `${sources[0].name}Instances`;
-      mesh.userData.visualizerCellBatch = true;
-      for (let i = 0; i < sources.length; i++) {
-        const source = sources[i];
-        source.updateMatrix();
-        mesh.setMatrixAt(i, source.matrix);
-        mesh.setColorAt(i, (source.material as MeshBasicMaterial).color);
-        source.userData.visualizerOutlineOnly = true;
-        source.visible = false;
-      }
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.instanceColor!.needsUpdate = true;
-      parent.add(mesh);
-      return { mesh, sources };
-    });
-}
-
-/** Copies independently resolved cell colors to the two shared GPU color buffers. */
-function updateEmitterBatches(data: StrobePanelData): void {
-  for (const { mesh, sources } of data.emitterBatches) {
-    for (let i = 0; i < sources.length; i++) {
-      mesh.setColorAt(i, (sources[i].material as MeshBasicMaterial).color);
-    }
-    mesh.instanceColor!.needsUpdate = true;
-  }
 }
 
 function createStrobeArm(side: "left" | "right"): Mesh {

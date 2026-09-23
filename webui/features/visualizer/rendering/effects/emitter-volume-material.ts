@@ -11,10 +11,12 @@ import {
   attribute,
   cameraPosition,
   cameraViewMatrix,
+  Discard,
   dot,
   exp,
   Fn,
   float,
+  If,
   Loop,
   max,
   min,
@@ -22,6 +24,7 @@ import {
   normalize,
   positionWorld,
   pow,
+  screenUV,
   select,
   sign,
   smoothstep,
@@ -134,7 +137,12 @@ export function createEmitterVolumeMaterial(
     if (options.viewDepth) {
       const viewRayZ = cameraViewMatrix.mul(vec4(ray, 0)).z;
       leave.assign(
-        min(leave, float(options.viewDepth).div(min(viewRayZ, -1e-6))),
+        min(
+          leave,
+          float(options.viewDepth)
+            .context({ getUV: () => screenUV })
+            .div(min(viewRayZ, -1e-6)),
+        ),
       );
     }
     // Clip the ray to the expanding aperture before sampling, avoiding long empty box intervals.
@@ -158,7 +166,11 @@ export function createEmitterVolumeMaterial(
         );
       }
     }
-    const stepLength = max(leave.sub(enter), 0).div(12);
+    // Bounding boxes overlap much more than the actual light volumes, especially for linear arrays.
+    If(leave.lessThanEqual(enter), () => {
+      Discard();
+    });
+    const stepLength = leave.sub(enter).div(12);
     const integral = vec3(0).toVar();
     Loop(12, ({ i }) => {
       const t = enter.add(float(i).add(0.5).mul(stepLength));

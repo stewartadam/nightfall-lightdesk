@@ -50,6 +50,11 @@ import {
 } from "../effects/beam-material";
 import { beamConeAngleDegrees } from "../effects/beam-zoom";
 import { DEFAULT_STAGE_FLOOR_TOP_Y } from "../scene-environment";
+import {
+  createEmitterBatches,
+  type EmitterBatch,
+  updateEmitterBatches,
+} from "./emitter-batches";
 
 const BEAM_COUNT = 12;
 const STRIP_PIXEL_COUNT = 12;
@@ -144,6 +149,7 @@ export interface RotatingWashBeamData {
   tiltGroup: Group;
   beamEmitters: WashBeamEmitterData[];
   stripPixelMeshes: Mesh[];
+  emitterBatches: EmitterBatch[];
   controlElementLabel?: string;
   beamElementLabels: string[];
   stripElementLabels: string[];
@@ -356,6 +362,13 @@ export function buildRotatingWashBeamFixture(
     }
   }
 
+  const emitterBatches = createEmitterBatches(tiltGroup, [
+    beamEmitters.map((beam) => beam.lensMesh),
+    stripPixelMeshes,
+  ]);
+  emitterBatches.forEach(({ mesh }, index) => {
+    mesh.name = `WashEmitterInstances_${index}`;
+  });
   return {
     uid: fixtureUid,
     group,
@@ -370,6 +383,7 @@ export function buildRotatingWashBeamFixture(
       tiltGroup,
       beamEmitters,
       stripPixelMeshes,
+      emitterBatches,
       controlElementLabel,
       beamElementLabels,
       stripElementLabels,
@@ -447,6 +461,7 @@ export function updateRotatingWashBeamColors(
     );
     updateFlatEmitter(mesh, color, 1);
   }
+  updateEmitterBatches(data);
 }
 
 /**
@@ -455,6 +470,8 @@ export function updateRotatingWashBeamColors(
 export function disposeRotatingWashBeam(
   instance: FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData },
 ): void {
+  for (const { mesh } of instance.rotatingWashBeamData.emitterBatches)
+    mesh.dispose();
   const disposedBeamMaterials = new Set<BeamMaterial>();
   for (const beam of instance.rotatingWashBeamData.beamEmitters) {
     if (disposedBeamMaterials.has(beam.beamMaterial)) continue;
@@ -643,6 +660,7 @@ function updateBeamEmitter(
     beam.optical.optics!.physical.beamAngle,
     beam.optical.optics!.physical.fieldAngle,
     zoom,
+    beam.optical.optics!.physical.zoomRange,
   );
   const halfAngleRad = MathUtils.degToRad(coneAngleDeg / 2);
   const color = BEAM_COLOR.setRGB(
@@ -658,6 +676,16 @@ function updateBeamEmitter(
   opticalColor.intensity = intensity;
   opticalColor.zoomDegrees = coneAngleDeg;
   opticalColor.frost = frost;
+
+  if (
+    instance.rotatingWashBeamData.sharedAtmosphere &&
+    instance.rotatingWashBeamData.sharedSurfaceLighting
+  ) {
+    beam.beamMesh.visible = false;
+    beam.spotLight.visible = false;
+    beam.floorSpotMesh.visible = false;
+    return;
+  }
 
   beam.beamNode.updateMatrixWorld(true);
   beam.beamNode.getWorldPosition(BEAM_ORIGIN);

@@ -415,6 +415,7 @@ pub(super) fn convert_beam_optics(beam_geometry: &gdtf::geometry::BeamGeometry) 
         throw_ratio: beam_geometry.throw_ratio as f32,
         rectangle_ratio: beam_geometry.rectangle_ratio as f32,
         physical: FixturePhysical {
+            zoom_range: None,
             beam_angle: beam_geometry.beam_angle as f32,
             field_angle: beam_geometry.field_angle as f32,
             lumens: if beam_geometry.luminous_flux > 0.0 {

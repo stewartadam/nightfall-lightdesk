@@ -524,6 +524,7 @@ export function updateMovingHeadColors(
     data.beamAngleDeg,
     data.fieldAngleDeg,
     zoom,
+    instance.emitters.get("MainEmitter")?.optics?.physical.zoomRange,
   );
   const halfAngleRad = MathUtils.degToRad(coneAngleDeg / 2);
 

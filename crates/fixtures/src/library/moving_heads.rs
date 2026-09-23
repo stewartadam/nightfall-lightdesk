@@ -20,6 +20,9 @@ pub(super) fn normalize_fixture_profile(fixture: &mut Fixture) {
     if fixture.layout != Some(FixtureLayout::RotatingWashBeam) {
         return;
     }
+    if fixture.physical.is_none() {
+        fixture.physical = Some(rotating_wash_physical());
+    }
 
     let vdim_parameter = parameter(
         Attribute::VirtualIntensity,
@@ -217,10 +220,25 @@ pub(super) fn create_rotating_wash_beam_194(id: u32, make: &str, model: &str) ->
         model: model.to_owned(),
         mode: String::new(),
         elements,
-        physical: None,
+        physical: Some(rotating_wash_physical()),
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::RotatingWashBeam),
         library_asset_etag: None,
+    }
+}
+
+/// Defines the built-in linear wash's narrow parallel apertures and independent zoom travel.
+fn rotating_wash_physical() -> crate::physical::FixturePhysical {
+    crate::physical::FixturePhysical {
+        beam_angle: 1.0,
+        field_angle: 1.2,
+        zoom_range: Some(crate::physical::BeamZoomRange {
+            narrow: 1.0,
+            wide: 34.0,
+        }),
+        lumens: Some(12000.0),
+        color_temperature: None,
+        beam_type: crate::physical::BeamType::Wash,
     }
 }
 
@@ -340,6 +358,7 @@ pub(super) fn create_moving_spot_16ch(id: u32, make: &str, model: &str) -> Fixtu
     ];
 
     let physical = FixturePhysical {
+        zoom_range: None,
         beam_angle: 8.0,
         field_angle: 15.0,
         lumens: Some(8000.0),
@@ -489,6 +508,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
     ];
 
     let physical = FixturePhysical {
+        zoom_range: None,
         beam_angle: 8.0,
         field_angle: 40.0,
         lumens: Some(20000.0),
