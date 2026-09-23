@@ -20,6 +20,7 @@ import type {
 import type { ControlSnapshot } from "../../types";
 
 export type GuideObservation =
+  | { type: "sample-panels" }
   | { type: "panel"; component: PanelComponentName }
   | {
       type:
@@ -38,6 +39,7 @@ export type GuideObservation =
 
 export interface GuideSnapshot {
   panel?: string;
+  openPanels?: { component: string; timelineUid?: string }[];
   fixtures: FixtureMap;
   selection: string[];
   programmer: ProgrammerRow[];
@@ -75,6 +77,16 @@ export function guideCompletionToken(
       return row !== undefined && match(row);
     });
   switch (observation.type) {
+    case "sample-panels":
+      return timeline &&
+        state.openPanels?.some((panel) => panel.component === "Visualizer") &&
+        state.openPanels.some(
+          (panel) =>
+            panel.component === "Timeline" &&
+            panel.timelineUid === timeline.identifiers.uid,
+        )
+        ? "ready"
+        : "";
     case "panel":
       return state.panel === observation.component ? state.panel : "";
     case "timeline-playing":

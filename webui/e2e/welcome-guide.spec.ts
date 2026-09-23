@@ -298,6 +298,43 @@ test("guide hints bounce briefly and respect reduced motion", async ({
   });
 });
 
+/** Requires both sample panels and skips setup when those panels are already open. */
+test("sample setup waits for both panels and recognizes an existing workspace", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    api.removePanel(api.getPanel("panel-Visualizer"));
+  });
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await guide
+    .getByRole("button", { name: "Open Timeline 1: Lo-Fi", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Play timeline", exact: true }),
+  ).toBeVisible();
+  await expect(
+    guide.getByRole("heading", { name: "Open the sample timeline" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("guide-open-sample-timeline.png"),
+  });
+  await guide
+    .getByRole("button", { name: "Open 3D Visualizer", exact: true })
+    .click();
+  await expect(
+    guide.getByRole("heading", { name: "Start the sample show" }),
+  ).toBeVisible();
+  await guide.getByRole("button", { name: "All lessons" }).click();
+  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Start the sample show" }),
+  ).toBeVisible();
+});
+
 /** Drives sample playback and navigation through automatic steps while preserving modal usability. */
 test("sample timeline actions advance and pop-outs leave the guide undimmed", async ({
   page,
@@ -317,9 +354,8 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
     guide.getByRole("button", { name: "Back", exact: true }),
   ).toBeDisabled();
   await guide
-    .getByRole("button", { name: "Open Timelines", exact: true })
+    .getByRole("button", { name: "Open Timeline 1: Lo-Fi", exact: true })
     .click();
-  await page.getByRole("button", { name: /Timeline 1: Lo-fi/ }).click();
   await expect(
     guide.getByRole("heading", { name: "Start the sample show" }),
   ).toBeVisible();
