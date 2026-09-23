@@ -173,15 +173,22 @@ export function useFloatingGuide(
         Math.min(point.y + height, rect.bottom) - Math.max(point.y, rect.top),
       );
     const geometry = `${target.x},${target.y},${target.width},${target.height},${width},${height}`;
+    /** Measures the empty gap between the card and the relevant surface, independent of their sizes. */
+    const gap = (point: { x: number; y: number }, rect: DOMRect) =>
+      Math.hypot(
+        Math.max(rect.left - point.x - width, point.x - rect.right, 0),
+        Math.max(rect.top - point.y - height, point.y - rect.bottom, 0),
+      );
     const current = untrack(position);
     const bounded = clamp(current);
-    // Changes to result lists do not invalidate an otherwise usable placement.
+    // Small result-list changes preserve placement; a large empty gap requires reattachment.
     if (
       geometry === placedGeometry &&
       current.x === bounded.x &&
       current.y === bounded.y &&
       overlap(current, target) === 0 &&
-      (!dialog || overlap(current, dialog) === 0)
+      (!dialog ||
+        (overlap(current, dialog) === 0 && gap(current, dialog) <= 64))
     )
       return;
     placedGeometry = geometry;
@@ -224,7 +231,8 @@ export function useFloatingGuide(
       (dialog ? overlap(point, dialog) * 10000 : 0) +
       (panel ? overlap(point, panel) * 2 : 0) +
       (visualizer && (panel || !anchor()) ? overlap(point, visualizer) : 0) +
-      centering(point) +
+      gap(point, dialog ?? target) * 2 +
+      centering(point) * 0.25 +
       alignment(point) * 0.1 +
       Math.hypot(point.x - target.x, point.y - target.y) * 0.001;
     candidates.sort((a, b) => score(a) - score(b));
