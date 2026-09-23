@@ -481,7 +481,10 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
       <SearchPickerSurface
         ref={containerRef}
         class="max-w-2xl"
-        style={{ "max-height": "calc(100dvh - 96px)" }}
+        style={{
+          "max-height":
+            "calc(100dvh - var(--guide-overlay-bottom, 0px) - 96px)",
+        }}
       >
         <SearchPickerInput
           ref={inputRef}

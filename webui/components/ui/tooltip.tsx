@@ -274,12 +274,13 @@ export default function Tooltip(props: TooltipProps) {
       }
       clearExitTimer();
       setMounted(true);
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
+      let frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
           setRenderedVisible(true);
           updateTooltipPosition();
-        }),
-      );
+        });
+      });
+      onCleanup(() => cancelAnimationFrame(frame));
       return;
     }
 
@@ -299,14 +300,18 @@ export default function Tooltip(props: TooltipProps) {
 
     const handleViewportChange = () => updateTooltipPosition();
     const content = props.content();
+    const anchor = props.anchorRect?.();
+    const placement = props.position;
     void content;
-    resetTooltipPosition();
-    requestAnimationFrame(updateTooltipPosition);
+    void anchor;
+    void placement;
+    const frame = requestAnimationFrame(updateTooltipPosition);
 
     window.addEventListener("scroll", handleViewportChange, true);
     window.addEventListener("resize", handleViewportChange);
 
     onCleanup(() => {
+      cancelAnimationFrame(frame);
       window.removeEventListener("scroll", handleViewportChange, true);
       window.removeEventListener("resize", handleViewportChange);
     });

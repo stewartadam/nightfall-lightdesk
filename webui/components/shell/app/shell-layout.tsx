@@ -9,9 +9,7 @@
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { ShowfileDialogs } from "../../../features/showfile";
-import WelcomeGuide, {
-  GuideInvitation,
-} from "../../../features/welcome-guide/welcome-guide";
+import { GuideInvitation, WelcomeGuide } from "../../../features/welcome-guide";
 import ConnectionOverlay from "../../overlays/connection";
 import ShellOverlayHosts from "../../overlays/shell-hosts";
 import TauriMenuBridge from "../bridges/tauri-menu";
