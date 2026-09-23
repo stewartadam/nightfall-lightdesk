@@ -405,6 +405,66 @@ test("guide accepts stored cue identity without its suggested label", async ({
   );
 });
 
+/** Gates later text and actions until every prerequisite is usable, preserving authored order. */
+test("guide content waits for prerequisites and renders text after actions", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  await page.evaluate(async () => {
+    const path = "/features/welcome-guide/lessons.ts";
+    const { GUIDE_LESSONS } = await import(path);
+    const intensity = GUIDE_LESSONS[0].steps.find(
+      (step: any) => step.id === "intensity",
+    );
+    intensity.content.push({
+      type: "text",
+      text: "Text after the action callout.",
+    });
+    const api = (window as any).appStores.dockApi.get();
+    api.removePanel(api.getPanel("panel-Visualizer"));
+  });
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /START HERE/ }).click();
+  await reachStep(page, "Bring up the lights");
+  await expect(guide).toContainText(
+    "The Programmer holds live lighting instructions.",
+  );
+  await expect(guide.locator(".nf-guide-action")).toHaveCount(0);
+  await expect(guide).not.toContainText("The @ command");
+  await expect(guide).not.toContainText("Text after the action callout.");
+  await expect(page.getByTestId("guide-target")).toHaveCount(0);
+  await guide
+    .getByRole("button", { name: "Open Programmer", exact: true })
+    .click();
+  await expect(guide.locator(".nf-guide-action")).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("guide-prerequisite-pending.png"),
+  });
+  await guide
+    .getByRole("button", { name: "Open 3D Visualizer", exact: true })
+    .click();
+  await expect(guide.locator("code")).toHaveText("@ 100");
+  const after = guide.getByText("Text after the action callout.", {
+    exact: true,
+  });
+  await expect(after).toBeVisible();
+  const action = (await guide.locator(".nf-guide-action").boundingBox())!;
+  expect((await after.boundingBox())!.y).toBeGreaterThanOrEqual(
+    action.y + action.height,
+  );
+  await guide
+    .getByRole("button", { name: "Copy command", exact: true })
+    .click();
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("@ 100");
+  await page.screenshot({
+    path: testInfo.outputPath("guide-prerequisite-ready.png"),
+  });
+});
+
 /** Shows prerequisite shortcuts again when their panels become hidden, collapsed, or closed. */
 test("guide shortcuts follow panel visibility", async ({ page }, testInfo) => {
   await openSample(page);
@@ -559,6 +619,9 @@ test("hot reload keeps the active lesson and step", async ({
   const stepLabel = await guide
     .getByRole("status", { name: "Current step" })
     .innerText();
+  await guide
+    .getByRole("button", { name: "Open Programmer", exact: true })
+    .click();
   const timestamp = Date.now();
   const progress = await page.evaluate(async (stamp) => {
     const state = await import(`/features/welcome-guide/state.ts?t=${stamp}`);
@@ -1078,6 +1141,8 @@ test("lesson library starts sample lessons immediately and preserves completion"
   await reachStep(page, "Ready to explore");
   await guide.getByRole("button", { name: "Finish lesson" }).click();
   await guide.getByRole("button", { name: /Patching fixtures/ }).click();
+  await expect(guide.locator(".nf-guide-action")).toHaveCount(0);
+  await guide.getByRole("button", { name: "Open Patch", exact: true }).click();
   await expect(guide).toContainText("pixel strip 310");
   await page.setViewportSize({ width: 700, height: 900 });
   await expect(guide).toBeVisible();

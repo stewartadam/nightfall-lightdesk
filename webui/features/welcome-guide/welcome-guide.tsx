@@ -8,7 +8,6 @@
 
 import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
-import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import {
   createEffect,
   createMemo,
@@ -17,12 +16,8 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-import { ShortcutKeys } from "../../components/overlays/keyboard-shortcuts";
 import { useAppShell } from "../../components/providers/app-shell";
-import {
-  OPEN_COMMAND_PALETTE_SHORTCUT,
-  useCommand,
-} from "../../components/providers/command-registry";
+import { useCommand } from "../../components/providers/command-registry";
 import { Button } from "../../components/ui/visual-language/button";
 import { getLogger } from "../../lib/logger";
 import {
@@ -37,9 +32,11 @@ import {
   runtimeCapabilities,
   timelines,
 } from "../../state/appStores";
-import { normalizeTimelineUid } from "../timeline/model/timeline-list-model";
+import { normalizeTimelineUid } from "../timeline";
+import { visibleGuideContent } from "./content";
+import { GuideContentItem } from "./guide-content";
 import { GuideTarget } from "./guide-target";
-import { GUIDE_LESSONS } from "./lessons";
+import { GUIDE_LESSONS, type GuidePrerequisite } from "./lessons";
 import {
   closeWelcomeGuide,
   guideCompleted,
@@ -132,22 +129,46 @@ export default function WelcomeGuide() {
   );
   /** Resolves the current instruction, leaving completion outside the action steps. */
   const step = createMemo(() => lesson()?.steps[index()]);
-  /** Offers shortcuts only for prerequisite panels that are not currently usable. */
-  const panelsToOpen = createMemo(
-    () =>
-      step()?.panels?.filter(
-        (name) => !visiblePanels().some((panel) => panel.component === name),
-      ) ?? [],
+  const [visitedPanels, setVisitedPanels] = createSignal(new Set<string>());
+  let visitedStep = "";
+  /** Remembers prerequisite panels visited during this step, even when they share a tab group. */
+  createEffect(() => {
+    const key = `${lessonId()}:${step()?.id}`;
+    const visible = visiblePanels();
+    const keys = visible.flatMap((panel) => [
+      panel.component,
+      ...(panel.timelineUid ? [`timeline:${panel.timelineUid}`] : []),
+    ]);
+    const reset = key !== visitedStep;
+    visitedStep = key;
+    setVisitedPanels(
+      (previous) => new Set([...(reset ? [] : previous), ...keys]),
+    );
+  });
+  /** Checks whether a prerequisite panel is visible and expanded. */
+  const panelVisible = (name: PanelComponentName) =>
+    visiblePanels().some((panel) => panel.component === name);
+  /** Distinguishes the sample timeline from other open timeline editors. */
+  const timelineVisible = () =>
+    visiblePanels().some(
+      (panel) =>
+        panel.component === "Timeline" &&
+        panel.timelineUid === sampleTimeline()?.identifiers.uid,
+    );
+  /** Requires every panel in a prerequisite block before revealing subsequent content. */
+  const prerequisiteReady = (item: GuidePrerequisite) =>
+    (!item.sampleTimeline ||
+      visitedPanels().has(`timeline:${sampleTimeline()?.identifiers.uid}`)) &&
+    (item.panels ?? []).every((name) => visitedPanels().has(name));
+  /** Stops the rendered sequence at the first unmet prerequisite. */
+  const content = createMemo(() =>
+    visibleGuideContent(step()?.content ?? [], prerequisiteReady),
   );
-  /** Hides the sample shortcut only when timeline one itself is visible. */
-  const timelineToOpen = createMemo(
-    () =>
-      step()?.sampleTimeline &&
-      !visiblePanels().some(
-        (panel) =>
-          panel.component === "Timeline" &&
-          panel.timelineUid === sampleTimeline()?.identifiers.uid,
-      ),
+  /** Suspends hidden action targets until all prerequisites for the step are met. */
+  const blocked = createMemo(() =>
+    content().some(
+      (item) => item.type === "prerequisite" && !prerequisiteReady(item),
+    ),
   );
   const [card, setCard] = createSignal<HTMLElement>();
   const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
@@ -155,14 +176,12 @@ export default function WelcomeGuide() {
     () => (lesson() && opened() ? card() : undefined),
     () => `${lessonId()}:${index()}`,
     anchor,
-    () => step()?.target,
+    () => (blocked() ? undefined : step()?.target),
   );
   const { draggable } = createDraggable();
   void draggable;
   /** Copies the current lesson command exactly, without submitting it to the app. */
-  const copyCommand = async () => {
-    const command = step()?.command;
-    if (!command) return;
+  const copyCommand = async (command: string) => {
     if (!navigator.clipboard?.writeText) {
       pushToast("error", "Clipboard access unavailable");
       return;
@@ -236,10 +255,20 @@ export default function WelcomeGuide() {
     guideLessonId.set(null);
   };
 
-  useGuideProgress(
-    () => (opened() ? step()?.observe : undefined),
-    dockviewApi,
-    () => guideStepIndex.set(guideStepIndex.get() + 1),
+  /** Keeps prerequisite-opening observations active while suppressing actions not yet revealed. */
+  const observation = createMemo(() => {
+    const target = step()?.observe;
+    if (!opened()) return undefined;
+    if (
+      blocked() &&
+      target?.type !== "panel" &&
+      target?.type !== "sample-panels"
+    )
+      return undefined;
+    return target;
+  });
+  useGuideProgress(observation, dockviewApi, () =>
+    guideStepIndex.set(guideStepIndex.get() + 1),
   );
 
   return (
@@ -354,90 +383,35 @@ export default function WelcomeGuide() {
                 <Show when={step()}>
                   {(instruction) => (
                     <>
-                      <p>{instruction().body}</p>
-                      <Show when={timelineToOpen() || panelsToOpen().length}>
-                        <div class="nf-guide-shortcuts">
-                          <Show when={timelineToOpen()}>
-                            <Button
-                              size="compact"
-                              onClick={openSampleTimeline}
-                              disabled={!dockviewApi() || !sampleTimeline()}
-                            >
-                              Open Timeline 1: Lo-Fi
-                            </Button>
-                          </Show>
-                          <For each={panelsToOpen()}>
-                            {(name) => (
-                              <Button
-                                size="compact"
-                                onClick={() => openPanel(name)}
-                                disabled={!dockviewApi()}
-                              >
-                                Open {panelDefinitionByName(name).title}
-                              </Button>
+                      <For each={content()}>
+                        {(item) => (
+                          <GuideContentItem
+                            item={item}
+                            panelVisible={panelVisible}
+                            timelineVisible={timelineVisible}
+                            canOpenPanels={Boolean(dockviewApi())}
+                            canOpenTimeline={Boolean(
+                              dockviewApi() && sampleTimeline(),
                             )}
-                          </For>
-                        </div>
-                      </Show>
-                      <Show when={instruction().context}>
-                        <p>{instruction().context}</p>
-                      </Show>
-                      <div class="nf-guide-action">
-                        <Show when={instruction().hint}>
-                          <strong>{instruction().hint}</strong>
-                        </Show>
-                        <p>
-                          <For
-                            each={instruction().action.split(
-                              "{command-palette-shortcut}",
-                            )}
-                          >
-                            {(text, index) => (
-                              <>
-                                <Show when={index() > 0}>
-                                  <span class="nf-guide-inline-shortcut">
-                                    <ShortcutKeys
-                                      shortcut={OPEN_COMMAND_PALETTE_SHORTCUT}
-                                    />
-                                  </span>
-                                </Show>
-                                {text}
-                              </>
-                            )}
-                          </For>
-                        </p>
-                        <Show when={instruction().command}>
-                          <div class="nf-guide-command">
-                            <code>{instruction().command}</code>
-                            <Button
-                              size="icon"
-                              variant="subtle"
-                              aria-label="Copy command"
-                              title="Copy command"
-                              onClick={copyCommand}
-                            >
-                              <CopyIcon class="size-4" aria-hidden />
-                            </Button>
-                          </div>
-                        </Show>
-                      </div>
-                      <Show when={instruction().more}>
-                        <details>
-                          <summary>Learn more</summary>
-                          <p>{instruction().more}</p>
-                        </details>
-                      </Show>
+                            openPanel={openPanel}
+                            openTimeline={openSampleTimeline}
+                            copyCommand={copyCommand}
+                          />
+                        )}
+                      </For>
                       <GuideTarget
                         stepId={instruction().id}
-                        selector={instruction().target}
+                        selector={blocked() ? undefined : instruction().target}
                         focusTarget={instruction().focusTarget}
                         onBounds={setAnchor}
                       />
                       <GuideTarget
                         stepId={instruction().id}
-                        selector={clipHighlightSelector()}
+                        selector={
+                          blocked() ? undefined : clipHighlightSelector()
+                        }
                       />
-                      <Show when={!instruction().observe}>
+                      <Show when={!blocked() && !instruction().observe}>
                         <p class="nf-guide-note">
                           Take time to explore, then continue when you’re ready.
                         </p>
