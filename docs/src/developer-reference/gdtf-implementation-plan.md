@@ -155,6 +155,66 @@ same resolved behavior for preview/stage and main-thread/worker renderers. Link
 definition and parameter messages to coherent revisions. Keep browser-demo/shared
 serialization coverage without introducing native filesystem dependencies.
 
+## What operators would see
+
+The current Console and top-toolbar command input use numbered fixture and
+element addresses. For example, `fixture 12.2` selects element 2 of fixture 12;
+it does not select a geometry named "2". Geometry names such as Yoke and Head
+currently help the importer/renderer identify parts, but are not fixture-element
+selectors in the command language. Group labels are a separate existing feature.
+
+The proposal changes the internal connection between controls and physical parts.
+Operators should not have to type internal geometry IDs, archive paths, or hashes.
+Keep the existing dotted address syntax. Named part selectors and deeper paths
+such as `12.2.1` are not required by this plan and would be separate language work.
+
+| Concept | Example | Proposed operator behavior |
+| --- | --- | --- |
+| Whole fixture | `fixture 12` | Select the whole patched fixture; attribute commands resolve its applicable controls. Define shared-master behavior explicitly rather than issuing the same value blindly to every parameter. |
+| Selectable element | `fixture 12.2` | Select the control group listed as element 2 in Patch/Fixtures. It might be a head, pixel, or shared control group, depending on the mode. |
+| Display label | `12.2 — Head 2` | Show both address and a useful part label. Changing display text must not change the selected control or stored programming. This label is illustrative, not a claim that every fixture's second element is its second head. |
+| Physical part | Housing, yoke, lens, or nested joint | Render it in the correct place. Do not add a CLI element solely because the model has another mesh. |
+| Internal identity | A particular referenced head or pixel instance | Use it to connect controls to the right part. Keep it out of normal command entry. |
+
+A head with one pan and one tilt can expose those attributes together in a useful
+operator control group even though they move different geometry nodes. Two
+independently controlled tilt joints need distinct selectable controls, for
+example elements labeled "Arm tilt" and "Head tilt". They must not collapse into
+one ambiguous Tilt parameter. Final grouping and numbering are checked against
+each profile in phases 1–2; the number of axes does not prescribe CLI hierarchy.
+
+For imported profiles, the proposed whole-fixture intensity policy is to use a
+declared shared master when available, and otherwise the applicable local dimmers.
+Do not set a master and all its dependent pixel dimmers to 50% merely because the
+operator entered one whole-fixture intensity command: that can produce 25% light.
+Explicit element commands still address their local controls, subject to physical
+masters. Verify this policy against existing logical-intensity resolution and
+built-in/OFL behavior before extending it; it is not a description of a completed
+command change. For whole-fixture position commands, address each applicable joint
+once; targeting a single element limits movement to its bound controls. Report
+unavailable or ambiguous attributes instead of selecting the first matching part.
+
+Fixing import can expose pixels or joints that were previously missing, so newly
+patched fixtures may have different element lists from today's importer. Freeze
+the control list and numbering for a patched definition. Reloading, rescanning,
+or renaming display labels must not make `12.2` mean a different part. Changing the
+mode or replacing a profile revision must show the changed control list and any
+affected groups, cues, FX, and bindings. If old programming cannot be mapped
+reliably, require explicit repatching rather than guessing. Undo must restore the
+old definition and its programming together.
+
+Selection order also controls FX and fanned values. Define and display pixel/head
+order from the mode's control mapping, not mesh traversal or alphabetical names
+that put "Pixel 10" before "Pixel 2". Shared control elements should be clearly
+distinguished from pixels so operators can select the intended set in Selection
+Inspector. Do not silently change a saved group's order when geometry changes.
+
+Operator acceptance tests must submit the same commands through Console and the
+toolbar, verify labeled element targeting in the UI, and check the resulting
+engine values, DMX bytes, and movement. Cover whole-fixture versus element
+intensity, separate/nested joints, pixel chase order, save/reload, display-label
+changes, and undo after an explicit profile replacement.
+
 ## Delivery phases
 
 Each phase is a work package to split into focused commits during implementation.
@@ -210,20 +270,35 @@ sweeps nightly/on demand, separate from fast PR gates. Produce HTML/JSON reports
 keyed by archive hash, compiler version, mode, stage, and capability rather than
 one misleading overall compatibility percentage.
 
-## Decisions and knock-on risks
+## What could go wrong, and how we prevent it
 
-| Risk/decision | Proposed approach | Resolution gate |
+These are design risks, not claims that every example has been reproduced. A
+visible fixture, successful import, or passing screenshot does not by itself
+prove the controls and output are correct.
+
+| Risk | Concrete consequence | Prevention and proof |
 | --- | --- | --- |
-| Parser omissions versus invalid authoring | Minimize reproductions and classify before dependency changes; retain archive/mode/node diagnostics. | Phases 0–1. |
-| Identical make/model across revisions | Content identity, explicit revision selection, pinned patched definitions. | Phase 1 contract; phase 6 save/load/UI. |
-| Authoritative expected behavior | Matching manuals and checked XML; Vis Only archives are not authoritative physical profiles. Equal channel counts do not establish equivalent modes. | Phase 0 oracle records, extended per capability. |
-| Color accuracy | Prefer supplied colorimetry, reuse conversion libraries, document RGB approximation/gamut limits; no spectral renderer initially. | Phase 4 reference colors. |
-| Vendor macros/complex optics | Preserve DMX controls and explicitly classify approximate/unsupported visualization with follow-up issues. | Phase 5 acceptance. |
-| Ambiguous functions or relation cycles | Diagnose/reject unsupported interpretations; separate geometry parenting from control relationships. | Phases 1–2 negative tests. |
-| Motion versus fades | Explicit physical interpretation and smoothing policy with deterministic time. | Phase 3 numerical tests. |
-| Resource ownership/invalidation | Content/version keys, immutable sharing, per-instance state, disposal and late-load guards. | Phases 3/6 lifecycle and phase 7 soak. |
-| Changed schema/programmed indices | Explicit rejection/repatching, atomic replacement and undo; no silent retargeting. | Phase 6. |
-| Test asset availability | Record provenance/redistribution terms; provision private CI assets if public redistribution is unavailable; hash-check and fail missing required assets. | Phase 0. |
+| We mistake a damaged download for a Nightfall bug. | A broken ZIP fails before any fixture data can be read, and we spend time changing the renderer. A valid file rejected by the parser is a different problem. | Identify the failing stage and retain the file/mode/error. Check archive integrity, then reduce valid-file failures to small examples before changing parser dependencies. Phases 0–1. |
+| Two files describe the same product differently. | The two Pixel Line IP archives can have different modes and geometry. Loading one could unexpectedly replace the other. | Distinguish exact file contents and revisions internally, show useful revision information when choosing profiles, and keep each patched fixture tied to its chosen definition. Phases 1 and 6. |
+| We use the wrong reference for a test. | We compare a file to a manual for another firmware version, or treat a Vis Only profile as a correct physical DMX chart. The test then rewards the wrong behavior. | Record matching manuals and checked XML with each expectation. Compare revisions only after checking their meaning; matching channel counts are insufficient. Phase 0 and each later capability. |
+| The picture is correct but the hardware bytes are wrong. | The screen shows Pixel 2 in red while a misplaced offset controls another pixel or a fine movement channel. | Preserve actual byte addresses and breaks; test independent expected output buffers and input decoding, including gaps, fine bytes, and virtual controls. Phase 2. |
+| A control changes meaning depending on another control. | One channel range might select a fixed gobo while another rotates it. Treating it as one linear slider produces the wrong effect or output. | Interpret the file's function ranges and selectors. Test boundary values and selector changes during fades; report combinations we cannot interpret. Phases 1–2 and 5. |
+| Shared and local controls are applied twice. | Setting both a master dimmer and pixel dimmer to 50% produces 25% light; treating unrelated shutters as one fixture-wide shutter can blank the wrong emitters. | Keep physical master controls and virtual calculations distinct. Test whole-fixture and individual-element commands against both emitted bytes and effective light values. Phases 2 and 4. |
+| A command or stored cue starts targeting a different part. | Adding a previously missing control shifts the element list, so `fixture 12.2` or an old cue acts on a different head. | Freeze numbering within a patched definition. Show the consequences of explicit mode/revision replacement; reject or require repatching when mapping old programming is uncertain. Restore the full old state on undo. Phases 1 and 6. |
+| Pixel/head order changes the look of an effect. | A left-to-right chase becomes scrambled because elements were reordered by geometry traversal or text sorting. | Define deterministic control order, display it in Selection Inspector, and verify a simple chase and saved group across reload/replacement. Phases 1 and 6. |
+| Movement looks right in one pose but fails elsewhere. | A head turns around the wrong pivot, siblings move together, or a nested tilt fails when the fixture is hung upside down. | Test independent joints, combined axes, rest transforms, beam directions, and whole-fixture mounting numerically as well as visually. Phase 3. |
+| The visualizer adds an unintended movement delay. | The engine creates a two-second fade, then renderer smoothing makes the head lag behind it. Results may also vary with frame rate. | Define where physical smoothing belongs and use a test-controlled clock. Check movement at known times, including continuous-rotation start/stop and reversal. Phase 3. |
+| Screen color cannot exactly match the physical light. | Amber, deep red, or white emitters and real beam output cannot always be represented exactly on an RGB display. | Use supplied color measurements where possible, reuse color conversions, and state which visuals are approximations. Check reference colors without promising photometric accuracy. Phase 4. |
+| A fixture runs effects we do not simulate. | A built-in pattern or complex prism effect works on the real fixture but is absent or approximate on screen. | Keep the controls and correct DMX output, identify the unsupported visual feature, and track it explicitly. Do not report full visual support. Phase 5. |
+| Cached or shared models outlive the right fixture. | A revised file still shows its old mesh; deleting one fixture breaks another; a late download restores a part that was removed. | Cache by exact content/version, separate shared resources from per-fixture state, and ignore stale load results. Repeatedly load, replace, duplicate, and remove fixtures. Phases 3, 6, and 7. |
+| Large or malformed files make the application unresponsive. | Hundreds of modes, repeated geometry, or circular references consume excessive memory or stall patching. | Bound parse/expansion work, detect cycles, cache reusable results, and keep expensive loading away from time-sensitive updates. Measure large and repeated-fixture cases. Phases 1, 3, and 7. |
+| Missing assets silently weaken tests or saved shows. | CI passes because it skipped unavailable fixtures, or a reopened show uses another library file with the same name. | Pin and verify required test inputs; fail missing-input jobs. Preserve exact show resources where possible and show a clear missing-resource state without silently changing the definition. Phases 0 and 6. |
+| Visual tests fail for the wrong reason. | A browser/GPU change alters pixels slightly, or the test captures a temporary fallback model before the real mesh arrives. | Pin the rendering environment, await resources and frames, compare with stated tolerances, and combine images with structural assertions. Never approve a new baseline merely to make CI green. Phases 0–7. |
+
+The archive bundle also needs a reproducible distribution method. Record source
+and redistribution terms in phase 0; use provisioned private CI assets if public
+redistribution is unavailable. Required tests must still verify exact file hashes
+and fail when inputs are absent.
 
 ## References
 
