@@ -22,6 +22,8 @@ import type { ControlSnapshot } from "../../types";
 export type GuideObservation =
   | { type: "command-palette" }
   | { type: "settings" }
+  | { type: "accent-settings-closed" | "shortcuts-closed" }
+  | { type: "panel-hidden"; component: PanelComponentName }
   | { type: "sample-panels" }
   | { type: "panel"; component: PanelComponentName }
   | { type: "sequence-editor"; sequenceId: number }
@@ -46,6 +48,8 @@ export type GuideObservation =
 export interface GuideSnapshot {
   commandPaletteOpen?: boolean;
   settingsOpen?: boolean;
+  shortcutsOpen?: boolean;
+  accentPicked?: boolean;
   panel?: string;
   openPanels?: {
     component: string;
@@ -91,6 +95,16 @@ export function guideCompletionToken(
       return state.commandPaletteOpen ? "open" : "";
     case "settings":
       return state.settingsOpen ? "open" : "";
+    case "accent-settings-closed":
+      return state.accentPicked && !state.settingsOpen ? "closed" : "";
+    case "shortcuts-closed":
+      return state.shortcutsOpen ? "" : "closed";
+    case "panel-hidden":
+      return state.openPanels?.some(
+        (panel) => panel.component === observation.component && panel.visible,
+      )
+        ? ""
+        : "hidden";
     case "sample-panels":
       return timeline &&
         state.openPanels?.some((panel) => panel.component === "Visualizer") &&
