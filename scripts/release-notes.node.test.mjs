@@ -71,11 +71,16 @@ test("rejects missing, duplicate, empty and malformed declarations", () => {
 /** Provides isolated real Git ancestry without inheriting the user's signing settings or hooks. */
 function repositoryFixture(t) {
   const cwd = process.cwd();
+  const gitEnvironment = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key.startsWith("GIT_")),
+  );
+  for (const key of Object.keys(gitEnvironment)) delete process.env[key];
   const directory = mkdtempSync(join(tmpdir(), "nightfall-release-notes-"));
   process.chdir(directory);
   t.after(() => {
     process.chdir(cwd);
     rmSync(directory, { recursive: true, force: true });
+    Object.assign(process.env, gitEnvironment);
   });
   /** Runs fixture Git commands without invoking any project tooling. */
   const git = (...args) =>
@@ -108,6 +113,24 @@ function repositoryFixture(t) {
   git("tag", "v0.1.0");
   return { git, commit, base };
 }
+
+/** Hook-provided Git paths cannot redirect either fixture writes or collector reads outside the temporary repository. */
+test("isolates Git fixtures from the invoking hook environment", (t) => {
+  const previous = process.env.GIT_DIR;
+  process.env.GIT_DIR = "/nonexistent/nightfall-hook-git-dir";
+  const { git, commit } = repositoryFixture(t);
+  t.after(() => {
+    if (previous === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = previous;
+  });
+  assert.equal(process.env.GIT_DIR, undefined);
+  const sha = commit("feature");
+  const report = collectReleaseNotes("owner/repo", "v0.1.0", "HEAD", () => [
+    pull(1, sha, "Notes: Fixed cue playback."),
+  ]);
+  assert.equal(report.notes.length, 1);
+  assert.equal(git("rev-parse", "--show-toplevel"), process.cwd());
+});
 
 /** Supplies the subset of GitHub PR metadata needed for release membership and prose. */
 function pull(number, sha, body, overrides = {}) {
