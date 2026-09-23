@@ -149,7 +149,7 @@ test("collects all-parent ancestry and deduplicates PR associations", (t) => {
   const responses = new Map([
     [feature, [featurePR, promotion, future, old]],
     [skip, [skipPR]],
-    [direct, []],
+    [direct, [promotion]],
     [target, [promotion]],
   ]);
   const report = collectReleaseNotes(

@@ -140,6 +140,15 @@ export function previousRelease(repository, target, list = githubList) {
   return candidates[0].tag;
 }
 
+/** Identifies branch promotions whose notes cannot stand in for the individual changes they carry. */
+function isPromotion(pr, repository) {
+  return (
+    pr.base.ref === "main" &&
+    pr.head.ref === "develop" &&
+    pr.head.repo?.full_name === repository
+  );
+}
+
 /** Collects original merged PRs from all parents of the release range, deduplicating promotion associations. */
 export function collectReleaseNotes(repository, from, to, list = githubList) {
   const base = commitId(from);
@@ -165,7 +174,8 @@ export function collectReleaseNotes(repository, from, to, list = githubList) {
       (pr) =>
         pr.merged_at &&
         pr.base.repo.full_name === repository &&
-        included.has(pr.merge_commit_sha),
+        included.has(pr.merge_commit_sha) &&
+        (!isPromotion(pr, repository) || pr.merge_commit_sha === sha),
     );
     if (!associated.length)
       unmatched.push({ sha, subject: git(["show", "-s", "--format=%s", sha]) });
@@ -174,12 +184,7 @@ export function collectReleaseNotes(repository, from, to, list = githubList) {
   const notes = [];
   const omitted = [];
   for (const pr of [...pulls.values()].sort((a, b) => a.number - b.number)) {
-    if (
-      pr.base.ref === "main" &&
-      pr.head.ref === "develop" &&
-      pr.head.repo?.full_name === repository &&
-      !isAncestor(pr.head.sha, target)
-    )
+    if (isPromotion(pr, repository) && !isAncestor(pr.head.sha, target))
       throw new Error(
         `PR #${pr.number} squashed or rebased develop into main. Preserve promotion ancestry with a merge so original release notes can be collected.`,
       );
