@@ -946,6 +946,50 @@ test("clip lesson permits drag assignment, Go and fader playback", async ({
   await expect(
     guide.getByRole("heading", { name: "Start RGB cycle (full)" }),
   ).toBeVisible();
+  const goTarget = page.locator('[data-control-go-index="6"]');
+  const scrollChange = await goTarget.evaluate((element) => {
+    let scroller = element.parentElement;
+    while (
+      scroller &&
+      !(
+        scroller.scrollWidth > scroller.clientWidth &&
+        /auto|scroll/.test(getComputedStyle(scroller).overflowX)
+      )
+    ) {
+      scroller = scroller.parentElement;
+    }
+    if (!scroller) throw new Error("Expected horizontally scrolling controls");
+    const previous = scroller.scrollLeft;
+    const max = scroller.scrollWidth - scroller.clientWidth;
+    scroller.scrollLeft =
+      previous < max - 20
+        ? Math.min(max, previous + 40)
+        : Math.max(0, previous - 40);
+    return Math.abs(scroller.scrollLeft - previous);
+  });
+  expect(scrollChange).toBeGreaterThan(0);
+  await expect
+    .poll(async () => {
+      const target = (await goTarget.boundingBox())!;
+      const highlight = await page.locator(".nf-guide-highlight").boundingBox();
+      return highlight ? Math.abs(highlight.x - (target.x - 4)) : 999;
+    })
+    .toBeLessThan(1);
+  await expect
+    .poll(async () => {
+      const target = (await goTarget.boundingBox())!;
+      const card = (await guide.boundingBox())!;
+      return Math.max(
+        card.y - target.y - target.height,
+        target.y - card.y - card.height,
+        0,
+      );
+    })
+    .toBeLessThanOrEqual(20);
+  await expect(guide.locator(".nf-guide-pointer")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("guide-scrolled-controls.png"),
+  });
   await page.locator('[data-control-go-index="6"]').click();
   await expect
     .poll(() =>
