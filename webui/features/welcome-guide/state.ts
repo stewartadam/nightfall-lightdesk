@@ -8,7 +8,7 @@
 
 // SPDX-License-Identifier: MPL-2.0
 
-import { atom } from "nanostores";
+import { atom, type WritableAtom } from "nanostores";
 import { bestEffortPersistentAtom } from "../../lib/best-effort-persistent-atom";
 import { GUIDE_LESSONS } from "./lessons";
 
@@ -18,9 +18,26 @@ export const guideDismissed = bestEffortPersistentAtom<boolean>(
   false,
   { encode: JSON.stringify, decode: (value) => value === "true" },
 );
-export const guideOpen = atom(false);
-export const guideLessonId = atom<string | null>(null);
-export const guideStepIndex = atom(0);
+type GuideSession = {
+  open: WritableAtom<boolean>;
+  lessonId: WritableAtom<string | null>;
+  stepIndex: WritableAtom<number>;
+};
+
+const hotData = import.meta.hot?.data as
+  | { guideSession?: GuideSession }
+  | undefined;
+const session = hotData?.guideSession ?? {
+  open: atom(false),
+  lessonId: atom<string | null>(null),
+  stepIndex: atom(0),
+};
+// Preserve store identity when lesson edits re-evaluate this module and its importers.
+if (hotData) hotData.guideSession = session;
+
+export const guideOpen = session.open;
+export const guideLessonId = session.lessonId;
+export const guideStepIndex = session.stepIndex;
 export const guideCompleted = bestEffortPersistentAtom<string[]>(
   "nightfall.guide.v1.completed",
   [],
