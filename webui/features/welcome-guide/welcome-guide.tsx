@@ -87,6 +87,7 @@ export default function WelcomeGuide() {
     () => (lesson() && opened() ? card() : undefined),
     () => `${lessonId()}:${index()}`,
     anchor,
+    () => step()?.target,
   );
   const { draggable } = createDraggable();
   void draggable;
@@ -197,16 +198,44 @@ export default function WelcomeGuide() {
                 onKeyDown={floating.onKeyDown}
               >
                 ⠿ LEARN NIGHTFALL
+                <span class="nf-guide-current-lesson">{lesson()?.title}</span>
               </button>
             </Show>
           </div>
-          <Button
-            size="compact"
-            onClick={closeWelcomeGuide}
-            aria-label="Exit welcome guide"
-          >
-            Exit
-          </Button>
+          <div class="nf-guide-header-actions">
+            <Show when={lesson()}>
+              <Button
+                size="compact"
+                disabled={index() === 0}
+                onClick={() => moveTo(index() - 1)}
+              >
+                Back
+              </Button>
+            </Show>
+            <Button
+              size="compact"
+              onClick={closeWelcomeGuide}
+              aria-label="Exit welcome guide"
+            >
+              Exit
+            </Button>
+          </div>
+          <Show when={lesson()}>
+            <div
+              class="nf-guide-header-progress"
+              role="progressbar"
+              aria-label="Lesson progress"
+              aria-valuemin={0}
+              aria-valuemax={lesson()!.steps.length}
+              aria-valuenow={Math.min(index(), lesson()!.steps.length)}
+            >
+              <span
+                style={{
+                  width: `${Math.min(index() / lesson()!.steps.length, 1) * 100}%`,
+                }}
+              />
+            </div>
+          </Show>
         </header>
         <div class="nf-guide-body">
           <Show
@@ -246,17 +275,6 @@ export default function WelcomeGuide() {
           >
             {(current) => (
               <>
-                <p class="nf-guide-eyebrow">
-                  {current().title} ·{" "}
-                  {`${Math.min(index() + 1, current().steps.length)} / ${current().steps.length}`}
-                </p>
-                <Show when={index() >= 0 && index() < current().steps.length}>
-                  <progress
-                    aria-label="Lesson progress"
-                    value={index()}
-                    max={current().steps.length}
-                  />
-                </Show>
                 <h2 ref={heading} tabIndex={-1} aria-live="polite">
                   {step()?.title ?? "Ready to explore"}
                 </h2>
@@ -324,19 +342,13 @@ export default function WelcomeGuide() {
                           : "Take time to explore, then continue when you’re ready."}
                       </p>
                       <div class="nf-guide-navigation">
-                        <Button
-                          size="compact"
-                          disabled={index() === 0}
-                          onClick={() => moveTo(index() - 1)}
+                        <span
+                          class="nf-guide-step-count"
+                          role="status"
+                          aria-label="Current step"
                         >
-                          Back
-                        </Button>
-                        <Button
-                          size="compact"
-                          onClick={() => moveTo(index() + 1)}
-                        >
-                          Skip step
-                        </Button>
+                          {`${Math.min(index() + 1, current().steps.length)}/${current().steps.length}`}
+                        </span>
                         <Button
                           size="compact"
                           variant="primary"
@@ -370,9 +382,6 @@ export default function WelcomeGuide() {
                     </p>
                   </Show>
                   <div class="nf-guide-navigation">
-                    <Button size="compact" onClick={() => moveTo(index() - 1)}>
-                      Back
-                    </Button>
                     <Button variant="primary" onClick={finish}>
                       Finish lesson
                     </Button>

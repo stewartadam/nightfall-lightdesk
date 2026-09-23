@@ -25,6 +25,7 @@
   flex-shrink: 0;
 }
 .nf-guide-header {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -197,15 +198,56 @@
   user-select: text;
 }
 .nf-guide-floating .nf-guide-body {
-  padding: 12px 16px;
+  padding: 10px 14px;
 }
 .nf-guide-floating .nf-guide-body h2 {
-  font-size: 19px;
-  margin-bottom: 12px;
+  font-size: 18px;
+  margin: 0 0 8px;
 }
 .nf-guide-floating .nf-guide-action {
   padding: 8px 10px;
-  margin: 12px 0;
+  margin: 8px 0;
+}
+.nf-guide-floating .nf-guide-header {
+  padding: 8px 10px;
+}
+.nf-guide-floating .nf-guide-body p {
+  margin: 6px 0 10px;
+}
+.nf-guide-floating .nf-guide-shortcuts,
+.nf-guide-floating .nf-guide-navigation {
+  margin: 10px 0 0;
+  align-items: center;
+}
+.nf-guide-header-actions {
+  display: flex;
+  gap: 6px;
+}
+.nf-guide-current-lesson {
+  display: block;
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: normal;
+  color: #b8becb;
+  margin-top: 2px;
+}
+.nf-guide-header-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: #343740;
+}
+.nf-guide-header-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent, #50d2b4);
+}
+.nf-guide-step-count {
+  color: #b8becb;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .nf-guide-floating .nf-guide-footer {
   display: none;
