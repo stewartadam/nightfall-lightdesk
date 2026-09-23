@@ -9,8 +9,88 @@
       "root_count": 1,
       "beam_count": 1,
       "bound_beam_count": 1,
-      "joints": { "Yoke": "pan", "Body": "tilt" },
-      "issue": "nightfall-lightdesk-oaa.2"
+      "joints": {
+        "Yoke": "pan",
+        "Body": "tilt"
+      },
+      "issue": "nightfall-lightdesk-oaa.2",
+      "wire": {
+        "footprints": {
+          "1": 16
+        },
+        "groups": [
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [1]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [2]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [3]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [4]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [5]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [6]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [7]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [8]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [9]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [10, 11]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [12, 13]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [14]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [15]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [16]
+          }
+        ]
+      }
     },
     {
       "id": "mac-aura",
@@ -19,8 +99,133 @@
       "root_count": 1,
       "beam_count": 20,
       "bound_beam_count": 20,
-      "joints": { "Yoke": "pan", "Head": "tilt" },
-      "issue": "nightfall-lightdesk-oaa.2"
+      "joints": {
+        "Yoke": "pan",
+        "Head": "tilt"
+      },
+      "issue": "nightfall-lightdesk-oaa.2",
+      "wire": {
+        "footprints": {
+          "1": 25
+        },
+        "groups": [
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [1]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [2]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [3]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [4, 5]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [6, 7]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [8]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [9]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [10]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [11]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [12]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [13]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [14]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [15]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [16]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [17]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [18]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [19]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [20]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [21]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [22]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [23]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [24]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [25]
+          }
+        ]
+      }
     },
     {
       "id": "magicpanel",
@@ -29,8 +234,121 @@
       "root_count": 1,
       "beam_count": 25,
       "bound_beam_count": 25,
-      "joints": { "Yoke": "pan", "Head": "tilt" },
-      "issue": "nightfall-lightdesk-oaa.2"
+      "joints": {
+        "Yoke": "pan",
+        "Head": "tilt"
+      },
+      "issue": "nightfall-lightdesk-oaa.2",
+      "wire": {
+        "footprints": {
+          "1": 118
+        },
+        "groups": [
+          {
+            "count": 25,
+            "offsets": null
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [1, 2]
+          },
+          {
+            "count": 25,
+            "dmx_break": 1,
+            "offsets": [19],
+            "stride": 4
+          },
+          {
+            "count": 25,
+            "dmx_break": 1,
+            "offsets": [20],
+            "stride": 4
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [3, 4]
+          },
+          {
+            "count": 25,
+            "dmx_break": 1,
+            "offsets": [21],
+            "stride": 4
+          },
+          {
+            "count": 25,
+            "dmx_break": 1,
+            "offsets": [22],
+            "stride": 4
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [5]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [6]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [7]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [8]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [9]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [10]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [11]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [12]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [13]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [14]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [15]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [16, 17]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [18]
+          }
+        ]
+      }
     },
     {
       "id": "titan-tube",
@@ -40,7 +358,36 @@
       "beam_count": 16,
       "bound_beam_count": 16,
       "joints": {},
-      "issue": "nightfall-lightdesk-oaa.2"
+      "issue": "nightfall-lightdesk-oaa.2",
+      "wire": {
+        "footprints": {
+          "1": 48
+        },
+        "groups": [
+          {
+            "count": 16,
+            "offsets": null
+          },
+          {
+            "count": 16,
+            "dmx_break": 1,
+            "offsets": [1],
+            "stride": 3
+          },
+          {
+            "count": 16,
+            "dmx_break": 1,
+            "offsets": [2],
+            "stride": 3
+          },
+          {
+            "count": 16,
+            "dmx_break": 1,
+            "offsets": [3],
+            "stride": 3
+          }
+        ]
+      }
     },
     {
       "id": "pixel-line",
@@ -50,7 +397,75 @@
       "beam_count": 48,
       "bound_beam_count": 48,
       "joints": {},
-      "issue": "nightfall-lightdesk-oaa.2"
+      "issue": "nightfall-lightdesk-oaa.2",
+      "wire": {
+        "footprints": {
+          "1": 117
+        },
+        "groups": [
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [1]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [2]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [3]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [4]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [5]
+          },
+          {
+            "count": 32,
+            "dmx_break": 1,
+            "offsets": [6],
+            "stride": 3
+          },
+          {
+            "count": 32,
+            "dmx_break": 1,
+            "offsets": [7],
+            "stride": 3
+          },
+          {
+            "count": 32,
+            "dmx_break": 1,
+            "offsets": [8],
+            "stride": 3
+          },
+          {
+            "count": 32,
+            "offsets": null
+          },
+          {
+            "count": 16,
+            "dmx_break": 1,
+            "offsets": [102],
+            "stride": 1
+          },
+          {
+            "count": 1,
+            "offsets": null
+          },
+          {
+            "count": 1,
+            "offsets": null
+          }
+        ]
+      }
     },
     {
       "id": "hydrabeam",
@@ -69,7 +484,110 @@
         "Head 4 (Yoke)": "pan",
         "Head 4": "tilt"
       },
-      "issue": "nightfall-lightdesk-oaa.4"
+      "issue": "nightfall-lightdesk-oaa.4",
+      "wire": {
+        "footprints": {
+          "1": 19
+        },
+        "groups": [
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [1]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [2]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [3]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [4]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [5]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [6]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [7]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [8]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [9]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [10]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [11]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [12]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [13]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [14]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [15]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [16]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [17]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [18]
+          },
+          {
+            "count": 1,
+            "dmx_break": 1,
+            "offsets": [19]
+          }
+        ]
+      }
     }
-  ]
+  ],
+  "wire_basis": "Independently checked selected-mode XML offsets and reference increments. Groups follow authored channel order; count/stride describe repeated instances. This checks compiler wire locations, not engine output or vendor firmware."
 }

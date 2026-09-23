@@ -57,8 +57,19 @@ The probe also runs the pure mode resolver as a separate `resolution` stage.
 targets against its expanded hierarchy. These results are separate from the
 production converter's `geometry_acceptance`: resolver success does not imply
 that production rendering or DMX output uses the resolved definition yet.
-The resolver retains channel functions and reference scopes for subsequent wire
-compilation; it does not yet calculate output addresses or effective light.
+The resolver retains channel functions and reference scopes for later passes.
+The separate `wire` stage calculates exact one-based slots within independently
+patched breaks, preserving byte significance, gaps, virtual channels, and nested
+reference offsets. `wire_acceptance` compares every channel in the initial six
+modes against the independently checked count/stride tables in `expectations.json`.
+Shared logical functions occupy their physical channel only once. Fixed breaks
+use their first matching reference entry; Overwrite uses the final entry, which
+may target that same break at a different offset (covered by Spiider and synthetic
+tests). These checks do not prove engine encoding/decoding or effective light.
+
+The pinned parser mishandles dotted `Universe.Address` reference offsets; this is
+tracked as `nightfall-lightdesk-oaa.2.2` and must be fixed before claiming complete
+address compatibility. All 18 curated archives use decimal reference offsets.
 
 The initial resolver sweep identified three unreachable channel links in the
 pinned sources (tracked by `nightfall-lightdesk-oaa.2.1`): Titan Tube's

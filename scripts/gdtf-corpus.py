@@ -190,7 +190,7 @@ def run_probe(executable, archive, report, timeout, expected_modes):
             terminal_error = terminal_error or "Probe emitted an incomplete JSON record"
     if not stages:
         terminal_error = terminal_error or "Probe emitted no stage results"
-    for stage in ("resolution", "conversion"):
+    for stage in ("resolution", "wire", "conversion"):
         reported_modes = [s.get("mode") for s in stages if s.get("stage") == stage]
         if reported_modes != expected_modes:
             terminal_error = terminal_error or f"Probe did not report every expected mode in order for {stage}"
@@ -232,6 +232,33 @@ def check_resolution_expectations(report, cases):
             axes = [j["axis"] for j in resolved.get("joints", []) if j["geometry"] in matches]
             checks.append({"capability": f"joint:{name}", "expected": [axis], "actual": axes,
                            "status": "passed" if len(matches) == 1 and axes == [axis] else "failed"})
+        results.append({"mode": case["mode"], "issue": case["issue"], "checks": checks,
+                        "status": "passed" if all(c["status"] == "passed" for c in checks) else "failed"})
+    return results
+
+
+def check_wire_expectations(report, cases):
+    """Compare every selected channel slot against independently authored count/stride tables."""
+    records = read_stage_records(report, "wire")
+    results = []
+    for case in cases:
+        if "wire" not in case:
+            continue
+        record = records.get(case["mode"], {})
+        expected = []
+        for group in case["wire"]["groups"]:
+            for instance in range(group["count"]):
+                expected.append(None if group["offsets"] is None else {
+                    "dmxBreak": group["dmx_break"],
+                    "offsets": [offset + instance * group.get("stride", 0) for offset in group["offsets"]],
+                })
+        actual = record.get("wires", {})
+        checks = [{"capability": "wire_available", "expected": True,
+                   "actual": record.get("status") == "passed",
+                   "status": "passed" if record.get("status") == "passed" else "failed"}]
+        for key, target in (("channels", expected), ("footprints", case["wire"]["footprints"])):
+            checks.append({"capability": key, "expected": target, "actual": actual.get(key),
+                           "status": "passed" if actual.get(key) == target else "failed"})
         results.append({"mode": case["mode"], "issue": case["issue"], "checks": checks,
                         "status": "passed" if all(c["status"] == "passed" for c in checks) else "failed"})
     return results
@@ -307,7 +334,9 @@ def main():
                 Path(result["nightfall"]["report"]), cases)
             result["resolution_acceptance"] = check_resolution_expectations(
                 Path(result["nightfall"]["report"]), cases)
-    scope = ("archive identity, XML inventory, Rust resolution/conversion, and selected geometry targets"
+            result["wire_acceptance"] = check_wire_expectations(
+                Path(result["nightfall"]["report"]), cases)
+    scope = ("archive identity, XML inventory, Rust resolution/wire/conversion, and selected targets"
              if args.probe else "archive identity and XML inventory only")
     report = {"schema_version": 1, "scope": scope,
               "provision_errors": errors, "fixtures": results}
@@ -319,16 +348,18 @@ def main():
     for result in results:
         if result["status"] != "passed":
             print(f"{result['id']}: {result['stage']}: {result['error']}", file=sys.stderr)
-        for case in result.get("geometry_acceptance", []):
-            if case["status"] != "passed":
-                print(f"{result['id']}: geometry targets unmet in {case['mode']} ({case['issue']})", file=sys.stderr)
+        for kind in ("geometry_acceptance", "resolution_acceptance", "wire_acceptance"):
+            for case in result.get(kind, []):
+                if case["status"] != "passed":
+                    print(f"{result['id']}: {kind} targets unmet in {case['mode']} ({case['issue']})", file=sys.stderr)
         for stage in result.get("nightfall", {}).get("stages", []):
             if stage["status"] != "passed":
                 print(f"{result['id']}: {stage['stage']} failed in {stage.get('mode')}: {stage.get('error')}", file=sys.stderr)
     return int(bool(errors) or passed != len(results)
                or any(r.get("nightfall", {}).get("status") == "failed" for r in results)
                or any(c["status"] != "passed" for r in results
-                      for kind in ("geometry_acceptance", "resolution_acceptance") for c in r.get(kind, [])))
+                      for kind in ("geometry_acceptance", "resolution_acceptance", "wire_acceptance")
+                      for c in r.get(kind, [])))
 
 
 if __name__ == "__main__":

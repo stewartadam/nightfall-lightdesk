@@ -164,6 +164,26 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn("resolution", result["error"])
 
+    def test_wire_check_detects_byte_order_and_virtual_slot_errors(self):
+        """A matching footprint cannot hide swapped fine bytes or an allocated virtual control."""
+        report = self.root / "wire.jsonl"
+        case = {"mode": "Mode", "issue": "test", "wire": {
+            "footprints": {"2": 10}, "groups": [
+                {"count": 2, "dmx_break": 2, "offsets": [1, 7], "stride": 3},
+                {"count": 1, "offsets": None}]}}
+        record = {"stage": "wire", "status": "passed", "mode": "Mode", "wires": {
+            "footprints": {"2": 10}, "channels": [
+                {"dmxBreak": 2, "offsets": [1, 7]}, {"dmxBreak": 2, "offsets": [4, 10]}, None]}}
+        report.write_text(json.dumps(record) + "\n")
+        self.assertEqual(CORPUS.check_wire_expectations(report, [case])[0]["status"], "passed")
+        record["wires"]["channels"][0]["offsets"] = [7, 1]
+        report.write_text(json.dumps(record) + "\n")
+        self.assertEqual(CORPUS.check_wire_expectations(report, [case])[0]["status"], "failed")
+        record["wires"]["channels"][0]["offsets"] = [1, 7]
+        record["wires"]["channels"][2] = {"dmxBreak": 2, "offsets": [2]}
+        report.write_text(json.dumps(record) + "\n")
+        self.assertEqual(CORPUS.check_wire_expectations(report, [case])[0]["status"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()
