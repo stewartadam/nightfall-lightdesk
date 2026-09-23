@@ -7,6 +7,7 @@
  */
 
 use std::collections::HashMap;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use bevy_app::prelude::*;
@@ -26,7 +27,6 @@ const AUDIO_DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Default)]
 struct AudioOutputMonitorState {
     initialized: bool,
-    last_poll_at: Option<Instant>,
     last_default_device: Option<String>,
     last_routed_device: Option<String>,
     last_selected_device: Option<String>,
@@ -38,6 +38,63 @@ struct AudioOutputDeviceSnapshot {
     devices: HashMap<String, String>,
     default_device_id: Option<String>,
     default_device_name: String,
+}
+
+/// Owns at most one discovery worker and the latest completed device snapshot.
+#[derive(Resource, Debug, Default)]
+struct AudioOutputDiscovery {
+    pending: Option<JoinHandle<AudioOutputDeviceSnapshot>>,
+    last_poll_at: Option<Instant>,
+    snapshot: Option<AudioOutputDeviceSnapshot>,
+}
+
+impl AudioOutputDiscovery {
+    /// Starts one OS query without waiting for device enumeration or stream configuration.
+    fn start(
+        &mut self,
+        now: Instant,
+        capture: impl FnOnce() -> AudioOutputDeviceSnapshot + Send + 'static,
+    ) {
+        if self.pending.is_some() {
+            return;
+        }
+        self.last_poll_at = Some(now);
+        match std::thread::Builder::new()
+            .name("audio-device-discovery".to_string())
+            .spawn(capture)
+        {
+            Ok(worker) => self.pending = Some(worker),
+            Err(error) => tracing::warn!(%error, "Could not start audio device discovery"),
+        }
+    }
+
+    /// Consumes only finished workers, retaining the cache on failure and retrying at poll cadence.
+    fn poll(&mut self, now: Instant) -> bool {
+        let mut updated = false;
+        if self.pending.as_ref().is_some_and(JoinHandle::is_finished) {
+            // A finished worker cannot hold up the engine while joining.
+            match self
+                .pending
+                .take()
+                .expect("finished discovery worker")
+                .join()
+            {
+                Ok(snapshot) => {
+                    self.snapshot = Some(snapshot);
+                    updated = true;
+                }
+                Err(_) => tracing::warn!("Audio device discovery worker panicked"),
+            }
+        }
+        if self.pending.is_none()
+            && self
+                .last_poll_at
+                .is_none_or(|last| now.duration_since(last) >= AUDIO_DEVICE_POLL_INTERVAL)
+        {
+            self.start(now, AudioOutputDeviceSnapshot::capture);
+        }
+        updated
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +131,7 @@ impl Plugin for DeskAudioPlugin {
             "DeskAudioPlugin requires AudioPlugin (provides AudioController)"
         );
 
+        app.init_resource::<AudioOutputDiscovery>();
         app.add_systems(
             Update,
             monitor_audio_output_changes
@@ -226,33 +284,27 @@ fn write_audio_output_toast(
     });
 }
 
-/// Polls OS audio outputs and re-routes playback when selections or defaults change.
+/// Consumes background device discovery and queues routing changes without waiting on OS audio APIs.
 fn monitor_audio_output_changes(
     settings: Res<DeskSettings>,
     mut available_audio_devices: ResMut<AvailableAudioDevices>,
     mut audio_controller: ResMut<AudioController>,
     mut ui_notifications: MessageWriter<UiNotification>,
     mut state: Local<AudioOutputMonitorState>,
+    mut discovery: ResMut<AudioOutputDiscovery>,
 ) {
-    let now = Instant::now();
+    let snapshot_updated = discovery.poll(Instant::now());
     let selected_device_changed = state.last_selected_device != settings.audio_device;
-    let poll_due = state
-        .last_poll_at
-        .is_none_or(|last_poll_at| now.duration_since(last_poll_at) >= AUDIO_DEVICE_POLL_INTERVAL);
 
-    if state.initialized && !selected_device_changed && !poll_due {
+    if state.initialized && !selected_device_changed && !snapshot_updated {
         return;
     }
-
-    state.last_poll_at = Some(now);
+    let Some(snapshot) = discovery.snapshot.clone() else {
+        return;
+    };
 
     let previous_devices = available_audio_devices.0.clone();
-    let plan = plan_audio_output_monitor_changes(
-        &settings,
-        &previous_devices,
-        AudioOutputDeviceSnapshot::capture(),
-        &state,
-    );
+    let plan = plan_audio_output_monitor_changes(&settings, &previous_devices, snapshot, &state);
 
     if plan.devices_changed {
         let (added, removed) = changed_audio_device_names(&previous_devices, &plan.devices);
@@ -292,6 +344,157 @@ pub mod prelude {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Counts engine updates independently of discovery progress.
+    fn count_updates(mut updates: ResMut<UpdateCount>) {
+        updates.0 += 1;
+    }
+
+    #[derive(Resource, Default)]
+    struct UpdateCount(usize);
+
+    /// Proves a blocked OS query neither blocks Update nor allows overlapping polls.
+    #[test]
+    fn slow_discovery_does_not_stall_engine_updates() {
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let engine_thread = std::thread::current().id();
+        let mut discovery = AudioOutputDiscovery::default();
+        discovery.start(Instant::now(), move || {
+            assert_ne!(std::thread::current().id(), engine_thread);
+            started_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            snapshot(&[("usb", "USB DAC")], Some("usb"), "USB DAC")
+        });
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // Make another periodic poll due while the first query remains blocked.
+        discovery.last_poll_at = Some(Instant::now() - AUDIO_DEVICE_POLL_INTERVAL);
+        discovery.start(Instant::now(), || panic!("overlapping discovery"));
+
+        let mut app = App::new();
+        app.insert_resource(discovery)
+            .init_resource::<DeskSettings>()
+            .init_resource::<AvailableAudioDevices>()
+            .init_resource::<UpdateCount>()
+            .insert_resource(AudioController::new(Default::default()))
+            .add_message::<UiNotification>()
+            .add_systems(Update, (monitor_audio_output_changes, count_updates));
+        let started = Instant::now();
+        for _ in 0..100 {
+            app.update();
+        }
+        assert!(started.elapsed() < Duration::from_millis(500));
+        assert_eq!(app.world().resource::<UpdateCount>().0, 100);
+        assert!(app.world().resource::<AvailableAudioDevices>().0.is_empty());
+        assert!(
+            !app.world()
+                .resource::<AudioOutputDiscovery>()
+                .pending
+                .as_ref()
+                .unwrap()
+                .is_finished()
+        );
+
+        // Avoid starting a real OS query when consuming the synthetic result.
+        app.world_mut()
+            .resource_mut::<AudioOutputDiscovery>()
+            .last_poll_at = Some(Instant::now());
+        app.world_mut().resource_mut::<DeskSettings>().audio_device = Some("usb".to_string());
+        release_tx.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !app
+            .world()
+            .resource::<AudioOutputDiscovery>()
+            .pending
+            .as_ref()
+            .unwrap()
+            .is_finished()
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        app.update();
+        assert_eq!(
+            app.world().resource::<AvailableAudioDevices>().0,
+            devices(&[("usb", "USB DAC")])
+        );
+        assert!(
+            app.world()
+                .resource::<AudioOutputDiscovery>()
+                .pending
+                .is_none()
+        );
+        app.update();
+        assert_eq!(app.world().resource::<UpdateCount>().0, 102);
+    }
+
+    /// Setting edits use the cached snapshot immediately, including fallback notifications.
+    #[test]
+    fn selection_changes_use_cached_devices_between_polls() {
+        let mut app = App::new();
+        app.insert_resource(AudioOutputDiscovery {
+            snapshot: Some(snapshot(&[("usb", "USB DAC")], Some("usb"), "USB DAC")),
+            last_poll_at: Some(Instant::now()),
+            ..Default::default()
+        })
+        .init_resource::<DeskSettings>()
+        .init_resource::<AvailableAudioDevices>()
+        .insert_resource(AudioController::new(Default::default()))
+        .add_message::<UiNotification>()
+        .add_systems(Update, monitor_audio_output_changes);
+        app.update();
+        let mut cursor = app
+            .world()
+            .resource::<Messages<UiNotification>>()
+            .get_cursor();
+        app.world_mut().resource_mut::<DeskSettings>().audio_device = Some("missing".to_string());
+        app.update();
+        let notifications = app.world().resource::<Messages<UiNotification>>();
+        assert!(cursor.read(notifications).any(|notification| matches!(notification,
+            UiNotification::ShowToast { level: ToastLevel::Warning, message } if message.contains("unavailable")
+        )));
+        app.world_mut().resource_mut::<DeskSettings>().audio_device = Some("usb".to_string());
+        app.update();
+        let notifications = app.world().resource::<Messages<UiNotification>>();
+        assert!(cursor.read(notifications).any(|notification| matches!(notification,
+            UiNotification::ShowToast { level: ToastLevel::Info, message } if message.contains("available again")
+        )));
+        assert!(
+            app.world()
+                .resource::<AudioOutputDiscovery>()
+                .pending
+                .is_none()
+        );
+    }
+
+    /// A failed worker leaves the last device list usable and permits a later retry.
+    #[test]
+    fn discovery_recovers_after_worker_panic() {
+        let cached = snapshot(&[("usb", "USB DAC")], Some("usb"), "USB DAC");
+        let mut discovery = AudioOutputDiscovery {
+            snapshot: Some(cached.clone()),
+            ..Default::default()
+        };
+        discovery.start(Instant::now(), || panic!("simulated discovery failure"));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !discovery.pending.as_ref().unwrap().is_finished() {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(!discovery.poll(Instant::now()));
+        assert_eq!(discovery.snapshot, Some(cached));
+        assert!(discovery.pending.is_none());
+        discovery.start(Instant::now(), || snapshot(&[], None, "system default"));
+        while !discovery.pending.as_ref().unwrap().is_finished() {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(discovery.poll(Instant::now()));
+        assert_eq!(
+            discovery.snapshot,
+            Some(snapshot(&[], None, "system default"))
+        );
+    }
 
     /// Builds an audio device map for monitor planner tests.
     fn devices(entries: &[(&str, &str)]) -> HashMap<String, String> {
