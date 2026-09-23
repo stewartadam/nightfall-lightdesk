@@ -71,7 +71,7 @@ async function openSample(page: Page, offscreenCanvas = true) {
 }
 
 /** Moves through guide instructions without pretending skipped actions succeeded. */
-async function reachStep(page: Page, title: string) {
+async function reachStep(page: Page, title: string | RegExp) {
   const guide = page.getByTestId("welcome-guide");
   for (let index = 0; index < 20; index += 1) {
     if (
@@ -849,6 +849,79 @@ test("welcome saving explains unavailable persistence", async ({
   await expect(
     guide.getByRole("heading", { name: "Discover keyboard shortcuts" }),
   ).toBeVisible();
+});
+
+/** Confirms duplicate clip creation preserves identity and cancellation leaves its source intact. */
+test("clip overwrite confirms and advances the guide", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  const input = page.locator("#header-cmdline");
+  await input.fill("store clip 50");
+  await input.press("Enter");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (Object.values((window as any).appStores.clips.get()) as any[]).some(
+          ([clip]) => clip.identifiers.id === 50,
+        ),
+      ),
+    )
+    .toBe(true);
+  await input.fill("set clip 50 target=sequence 1");
+  await input.press("Enter");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (Object.values((window as any).appStores.clips.get()) as any[]).find(
+            ([clip]) => clip.identifiers.id === 50,
+          )?.[0].source?.type,
+      ),
+    )
+    .toBe("Sequence");
+  const original = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.clips.get()) as any[]).find(
+        ([clip]) => clip.identifiers.id === 50,
+      )[0],
+  );
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await reachStep(page, /Create.*clip/);
+  await guide.getByRole("button", { name: "Open Clips", exact: true }).click();
+  await page.getByRole("button", { name: "Add clip", exact: true }).click();
+  const create = page.getByRole("dialog", { name: "Create clip" });
+  await create.getByLabel("Label", { exact: true }).fill("Replacement");
+  await create.getByLabel("ID", { exact: true }).fill("50");
+  await create.getByRole("button", { name: "Create", exact: true }).click();
+  const confirm = page.getByRole("dialog", { name: "Overwrite clip?" });
+  await expect(confirm).toBeVisible();
+  await expect(confirm.locator(":scope > div")).toHaveCSS("opacity", "1");
+  await page.screenshot({
+    path: testInfo.outputPath("clip-overwrite-confirmation.png"),
+  });
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(create.getByLabel("ID", { exact: true })).toHaveValue("50");
+  expect(
+    await page.evaluate(
+      (uid) => (window as any).appStores.clips.get()[uid][0],
+      original.identifiers.uid,
+    ),
+  ).toEqual(original);
+  await create.getByRole("button", { name: "Create", exact: true }).click();
+  await confirm.getByRole("button", { name: "Overwrite", exact: true }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Choose your clip’s sequence" }),
+  ).toBeVisible();
+  const updated = await page.evaluate(
+    (uid) => (window as any).appStores.clips.get()[uid][0],
+    original.identifiers.uid,
+  );
+  expect(updated.identifiers.uid).toBe(original.identifiers.uid);
+  expect(updated.identifiers.label).toBe("Replacement");
+  expect(updated.source == null).toBe(true);
 });
 
 for (const platform of ["MacIntel", "Win32"]) {
