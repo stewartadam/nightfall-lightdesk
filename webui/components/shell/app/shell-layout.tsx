@@ -9,6 +9,9 @@
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { ShowfileDialogs } from "../../../features/showfile";
+import WelcomeGuide, {
+  GuideInvitation,
+} from "../../../features/welcome-guide/welcome-guide";
 import ConnectionOverlay from "../../overlays/connection";
 import ShellOverlayHosts from "../../overlays/shell-hosts";
 import TauriMenuBridge from "../bridges/tauri-menu";
@@ -42,8 +45,12 @@ function ShellRuntime() {
 function ShellContent() {
   return (
     <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <div class="min-h-0 w-full flex-1 overflow-hidden">
-        <DockviewApp />
+      <GuideInvitation />
+      <div class="nf-guide-workspace flex min-h-0 w-full flex-1 overflow-hidden">
+        <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <DockviewApp />
+        </div>
+        <WelcomeGuide />
       </div>
       <StatusBar />
     </div>

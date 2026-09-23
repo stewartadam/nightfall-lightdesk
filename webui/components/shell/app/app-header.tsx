@@ -9,6 +9,7 @@
 import { FileIcon } from "@squidlab/phosphor-solid/file";
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { useShowfileObjectPalette } from "../../../features/showfile";
+import { openWelcomeGuide } from "../../../features/welcome-guide/state";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import { useCommandPalette } from "../../providers/command-registry";
 import { ToolbarSeparator } from "../../ui/panel-toolbar";
@@ -69,6 +70,13 @@ export default function AppHeader() {
               </Button>
             </Tooltip>
             <HeaderNotificationHistory />
+            <Button
+              size="compact"
+              onClick={openWelcomeGuide}
+              aria-label="Open Welcome Guide"
+            >
+              Guide
+            </Button>
           </div>
         </div>
       </nav>
