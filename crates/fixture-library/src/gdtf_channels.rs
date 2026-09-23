@@ -8,8 +8,11 @@
 
 //! Owned channel semantics compiled together from one resolved mode.
 
+use std::sync::Arc;
+
 use gdtf::attribute::AttributeDefinitions;
 use gdtf::physical_descriptions::DmxProfile;
+use nightfall_dmx::state::{RawChannelLayout, RawChannelSpec, RawChannelState};
 use nightfall_dmx::wire::ModeWires;
 use serde::Serialize;
 
@@ -108,6 +111,9 @@ pub struct CompiledChannels {
     activation: ActivationProgram,
     physical: PhysicalMappings,
     relations: RelationPlan,
+    /// Derived immutable runtime rules; metadata is already serialized in channels and wires.
+    #[serde(skip)]
+    runtime: Arc<RawChannelLayout>,
 }
 
 /// One active function's physical value before any relation or visual interpretation.
@@ -191,7 +197,28 @@ pub fn compile_channels(
                     .collect::<Result<_, ResolveError>>()?,
             })
         })
-        .collect::<Result<_, ResolveError>>()?;
+        .collect::<Result<Vec<_>, ResolveError>>()?;
+    let runtime = RawChannelLayout::new(
+        channels
+            .iter()
+            .zip(&wires.channels)
+            .map(|(channel, wire)| RawChannelSpec {
+                bytes: channel.bytes,
+                default: channel.default,
+                highlight: channel.highlight,
+                physical: wire.is_some(),
+            })
+            .collect(),
+    )
+    .map_err(|error| ResolveError {
+        code: error.code,
+        path: error
+            .channel
+            .and_then(|index| channels.get(index))
+            .map(|channel| channel.id.clone())
+            .unwrap_or_else(|| "channels".into()),
+        message: error.message,
+    })?;
     Ok(CompiledChannels {
         attributes,
         channels,
@@ -199,6 +226,7 @@ pub fn compile_channels(
         activation,
         physical,
         relations,
+        runtime: Arc::new(runtime),
     })
 }
 
@@ -230,10 +258,16 @@ impl CompiledChannels {
 
     /// Create an initial integer snapshot including virtual controls.
     pub fn defaults(&self) -> Vec<u32> {
-        self.channels
+        self.runtime
+            .channels()
             .iter()
             .map(|channel| channel.default)
             .collect()
+    }
+
+    /// Create a fixture-local raw state sharing this compiled mode's immutable default/highlight rules.
+    pub fn new_state(&self) -> RawChannelState {
+        self.runtime.new_state()
     }
 
     /// Evaluate every eligible function without silently selecting one overlapping logical channel.

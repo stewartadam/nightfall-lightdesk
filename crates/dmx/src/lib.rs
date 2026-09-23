@@ -16,6 +16,7 @@ mod parameter_value;
 pub mod patch;
 mod percentage;
 mod percentage_serde;
+pub mod state;
 pub mod wire;
 
 pub use percentage::Percentage;

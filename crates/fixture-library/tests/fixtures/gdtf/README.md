@@ -101,6 +101,17 @@ against complete independently authored universe buffers. The production fixture
 binding producer still needs to consume this patch contract; transport numbering
 and cross-fixture overlap policy belong to that integration.
 
+Compiled channels also construct shared, validated raw-state rules from their
+normalized defaults, optional highlight values, precision and physical/virtual
+status. Each instance owns its integer values and shares only the immutable
+rules. Batched updates and decoded input validate before mutation; missing input
+preserves existing values, and wire input cannot target a virtual channel.
+Highlight produces a temporary snapshot without overwriting programming. An
+explicit reset restores defaults; this is not compositor release behavior.
+Compiler integration tests exercise this state with the patched nested fixture.
+Compositor ownership, function/relation evaluation and production instance
+creation still need to adopt these shared contracts together.
+
 Logical parameter values and percentages use double precision; byte assembly
 and encoding retain `u32`. A pipeline regression checks 266 raw values, including
 adjacent values above the single-precision integer limit, through transport

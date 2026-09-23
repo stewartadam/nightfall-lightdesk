@@ -66,17 +66,34 @@ fn compiled_channels_patch_to_independent_universes_and_preserve_virtual_values(
             Some(6)
         ]
     );
-    let mut received = raw;
-    for (target, decoded) in received.iter_mut().zip(decoded) {
-        if let Some(value) = decoded {
-            *target = value;
-        }
-    }
-    assert_eq!(received, raw);
+    let mut received = program.new_state();
+    received.set_many(&[(2, 128), (3, 255)]).unwrap();
+    received.apply_input(&decoded).unwrap();
+    assert_eq!(received.values(), raw);
     assert_eq!(
-        program.evaluate_physical(&received).unwrap(),
+        program.evaluate_physical(received.values()).unwrap(),
         program.evaluate_physical(&raw).unwrap()
     );
+}
+
+/// Compiled highlight values are temporary and source-free instances share only immutable rules.
+#[test]
+fn compiled_highlight_does_not_overwrite_programmed_values() {
+    let mut source = description();
+    source.fixture_types[0].dmx_modes[0].dmx_channels[0].highlight =
+        Some(serde_json::from_value(serde_json::json!("65535/2")).unwrap());
+    let program = compile(source, ChannelLimits::default()).unwrap();
+    let mut first = program.new_state();
+    let second = program.new_state();
+    assert!(std::sync::Arc::ptr_eq(first.layout(), second.layout()));
+    first.set_many(&[(0, 1234), (1, 4567)]).unwrap();
+    let highlighted = first.snapshot(true);
+    assert_eq!(&highlighted[..2], [65535, 4567]);
+    assert_eq!(&first.values()[..2], [1234, 4567]);
+    assert_eq!(second.values(), program.defaults());
+    drop(program);
+    first.reset();
+    assert_eq!(first.values(), second.values());
 }
 
 /// Consume the source document so every successful caller exercises an owned result.
