@@ -135,7 +135,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         panels: ["ProgrammerGrid"],
         target: '[aria-label="Store cue"]',
         hint: "Store Guide Red as cue 1.1.",
-        observe: { type: "cue", id: 1, label: "Guide Red" },
+        observe: { type: "cue", sequenceId: 1, id: 1 },
       },
       {
         id: "blue",
@@ -157,7 +157,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         panels: ["ProgrammerGrid"],
         target: '[aria-label="Store cue"]',
         hint: "Store Guide Blue as cue 1.2.",
-        observe: { type: "cue", id: 2, label: "Guide Blue" },
+        observe: { type: "cue", sequenceId: 1, id: 2 },
       },
       {
         id: "clear",

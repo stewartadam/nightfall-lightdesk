@@ -84,19 +84,30 @@ test("guide ignores unrelated fixture selection and partial intensity edits", ()
   assert.equal(guideCompletionToken({ type: "intensity" }, state), "");
 });
 
-/** Only storage into the sample sequence with the requested label completes its cue step. */
-test("guide ignores unrelated cue edits", () => {
+/** Only stored instructions for the requested sequence and cue matter, regardless of label. */
+test("guide observes cue identity and instructions independently of labels", () => {
   const state = sampleState();
   const sequence = Object.values(state.sequences)[0];
   const cue = state.cues[sequence.steps[0]];
-  const observation = { type: "cue", id: 1, label: "Guide Red" } as const;
+  const observation = { type: "cue", sequenceId: 1, id: 1 } as const;
+  const initial = guideCompletionToken(observation, state);
+  assert.notEqual(initial, "");
   state.cues.unrelated = {
     ...cue,
     identifiers: { ...cue.identifiers, uid: "unrelated", label: "Guide Red" },
   };
-  assert.equal(guideCompletionToken(observation, state), "");
+  assert.equal(guideCompletionToken(observation, state), initial);
   cue.identifiers.label = "Guide Red";
-  assert.notEqual(guideCompletionToken(observation, state), "");
+  assert.equal(guideCompletionToken(observation, state), initial);
+  assert.equal(
+    guideCompletionToken({ ...observation, sequenceId: 2 }, state),
+    "",
+  );
+  assert.equal(guideCompletionToken({ ...observation, id: 2 }, state), "");
+  cue.instructions = [...cue.instructions, ...cue.instructions];
+  assert.notEqual(guideCompletionToken(observation, state), initial);
+  cue.instructions = [];
+  assert.equal(guideCompletionToken(observation, state), "");
 });
 
 /** A paused clock away from the start does not count as the requested timeline stop. */
