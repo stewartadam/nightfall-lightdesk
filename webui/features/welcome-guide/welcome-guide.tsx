@@ -36,7 +36,8 @@ import { normalizeTimelineUid } from "../timeline";
 import { visibleGuideContent } from "./content";
 import { GuideContentItem } from "./guide-content";
 import { GuideTarget } from "./guide-target";
-import { GUIDE_LESSONS, type GuidePrerequisite } from "./lessons";
+import { guideLessons } from "./lesson-store";
+import type { GuidePrerequisite } from "./lessons";
 import {
   closeWelcomeGuide,
   guideCompleted,
@@ -77,6 +78,7 @@ export function GuideInvitation() {
 
 /** Hosts the lesson library and floating instructions; all engine actions remain user initiated. */
 export default function WelcomeGuide() {
+  const lessons = useStore(guideLessons);
   const opened = useStore(guideOpen);
   const lessonId = useStore(guideLessonId);
   const index = useStore(guideStepIndex);
@@ -125,7 +127,7 @@ export default function WelcomeGuide() {
   let heading: HTMLHeadingElement | undefined;
   /** Resolves lesson data without retaining stale content when returning to the library. */
   const lesson = createMemo(() =>
-    GUIDE_LESSONS.find((entry) => entry.id === lessonId()),
+    lessons().find((entry) => entry.id === lessonId()),
   );
   /** Resolves the current instruction, leaving completion outside the action steps. */
   const step = createMemo(() => lesson()?.steps[index()]);
@@ -350,7 +352,7 @@ export default function WelcomeGuide() {
                   Start with the essentials, then choose what to learn next. You
                   can leave at any time and return using Guide.
                 </p>
-                <For each={GUIDE_LESSONS}>
+                <For each={lessons()}>
                   {(entry) => (
                     <button
                       class="nf-guide-lesson"
