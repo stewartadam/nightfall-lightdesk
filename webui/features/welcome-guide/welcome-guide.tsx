@@ -10,8 +10,12 @@ import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { ShortcutKeys } from "../../components/overlays/keyboard-shortcuts";
 import { useAppShell } from "../../components/providers/app-shell";
-import { useCommand } from "../../components/providers/command-registry";
+import {
+  OPEN_COMMAND_PALETTE_SHORTCUT,
+  useCommand,
+} from "../../components/providers/command-registry";
 import { Button } from "../../components/ui/visual-language/button";
 import { getLogger } from "../../lib/logger";
 import {
@@ -327,8 +331,29 @@ export default function WelcomeGuide() {
                         <p>{instruction().context}</p>
                       </Show>
                       <div class="nf-guide-action">
-                        <strong>{instruction().hint ?? "Try it"}</strong>
-                        <p>{instruction().action}</p>
+                        <Show when={instruction().hint}>
+                          <strong>{instruction().hint}</strong>
+                        </Show>
+                        <p>
+                          <For
+                            each={instruction().action.split(
+                              "{command-palette-shortcut}",
+                            )}
+                          >
+                            {(text, index) => (
+                              <>
+                                <Show when={index() > 0}>
+                                  <span class="nf-guide-inline-shortcut">
+                                    <ShortcutKeys
+                                      shortcut={OPEN_COMMAND_PALETTE_SHORTCUT}
+                                    />
+                                  </span>
+                                </Show>
+                                {text}
+                              </>
+                            )}
+                          </For>
+                        </p>
                         <Show when={instruction().command}>
                           <div class="nf-guide-command">
                             <code>{instruction().command}</code>

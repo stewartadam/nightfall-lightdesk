@@ -74,6 +74,10 @@
 .nf-guide-action p {
   margin: 6px 0 0;
 }
+.nf-guide-inline-shortcut {
+  display: inline-flex;
+  vertical-align: middle;
+}
 .nf-guide-shortcuts,
 .nf-guide-navigation {
   display: flex;

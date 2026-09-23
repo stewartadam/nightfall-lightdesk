@@ -376,6 +376,38 @@ test("floating lessons provide context, selectable commands and manual placement
   });
 });
 
+for (const platform of ["MacIntel", "Win32"]) {
+  /** Shows the platform modifier as shared keycaps and verifies the advertised binding opens the palette. */
+  test(`guide palette shortcut matches ${platform}`, async ({
+    page,
+  }, testInfo) => {
+    await page.addInitScript((value) => {
+      Object.defineProperty(navigator, "platform", { get: () => value });
+    }, platform);
+    await openSample(page);
+    await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+    const guide = page.getByTestId("welcome-guide");
+    await guide.getByRole("button", { name: /START HERE/ }).click();
+    await reachStep(page, "Find your way around");
+    const keys = guide.locator(".nf-guide-inline-shortcut kbd");
+    await expect(keys).toHaveCount(3);
+    await expect(keys.nth(0)).toHaveAttribute(
+      "title",
+      platform === "MacIntel" ? "Command" : "Ctrl",
+    );
+    await expect(keys.nth(1)).toHaveAttribute("title", "Shift");
+    await expect(keys.nth(2)).toHaveText("p");
+    await expect(guide).not.toContainText("Ctrl/Cmd");
+    await page.screenshot({ path: testInfo.outputPath("guide-shortcut.png") });
+    await page.keyboard.press(
+      platform === "MacIntel" ? "Meta+Shift+p" : "Control+Shift+p",
+    );
+    await expect(
+      page.locator('[data-dialog-kind="command-palette"]'),
+    ).toBeVisible();
+  });
+}
+
 /** Retains session stores through dependency reloads and renders edited copy on component refresh. */
 test("hot reload keeps the active lesson and step", async ({
   page,

@@ -47,3 +47,5 @@ export function getCommandShortcutKeys(command: CommandAction): string[] {
 }
 
 export const DEFAULT_CATEGORY = "General";
+
+export const OPEN_COMMAND_PALETTE_SHORTCUT = "$mod+Shift+p";
