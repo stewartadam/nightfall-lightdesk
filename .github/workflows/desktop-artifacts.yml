@@ -174,17 +174,40 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 14
-      - name: Upload target notices
+      - name: Upload target notice inventory
         uses: actions/upload-artifact@v7
         with:
-          path: desktop-artifacts/*-THIRD-PARTY-NOTICES.txt
+          name: desktop-notices-${{ matrix.target }}-${{ github.sha }}
+          path: desktop-artifacts/notices-*.json
+          if-no-files-found: error
+          retention-days: 14
+
+  notices:
+    name: Combine desktop release notices
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-notices-*-${{ github.sha }}
+          path: desktop-notices
+          merge-multiple: true
+      - run: node scripts/desktop-artifacts.mjs combine-notices
+      - uses: actions/upload-artifact@v7
+        with:
+          path: release-notices/THIRD-PARTY-NOTICES-v*.txt
           archive: false
           if-no-files-found: error
           retention-days: 14
 
   publish:
     name: Publish version-tag release
-    needs: [prepare, build]
+    needs: [prepare, build, notices]
     if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -203,6 +226,10 @@ jobs:
           pattern: nightfall-v${{ needs.prepare.outputs.version }}-*
           path: release-assets
           merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: THIRD-PARTY-NOTICES-v${{ needs.prepare.outputs.version }}.txt
+          path: release-assets
       - name: Publish only after every installer has uploaded
         working-directory: release-assets
         shell: bash
