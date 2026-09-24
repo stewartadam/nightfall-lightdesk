@@ -88,7 +88,7 @@ function movingHead(headRestTiltDeg = 0): FixtureGeometry {
     [node("Base", GeometryType.Generic), -1],
     [
       node("Yoke", GeometryType.Axis, {
-        axis: AxisType.Pan,
+        axes: [AxisType.Pan],
         controlledElement: "Head",
         transform: transform([0, 0, -0.1]),
       }),
@@ -96,7 +96,7 @@ function movingHead(headRestTiltDeg = 0): FixtureGeometry {
     ],
     [
       node("Head", GeometryType.Axis, {
-        axis: AxisType.Tilt,
+        axes: [AxisType.Tilt],
         controlledElement: "Head",
         transform: transform([0, 0, -0.2], headRestTiltDeg),
       }),
@@ -117,7 +117,7 @@ function twoHeads(): FixtureGeometry {
   const head = (index: number, x: number): Array<[GeometryNode, number]> => [
     [
       node(`Head ${index}`, GeometryType.Axis, {
-        axis: AxisType.Tilt,
+        axes: [AxisType.Tilt],
         controlledElement: `Head ${index}`,
         transform: transform([x, 0, -0.1]),
       }),
@@ -295,15 +295,15 @@ test("fixture instances do not share joint state", () => {
 test("joint speed limiting follows the injected clock", () => {
   const instance = buildGeometryTree("fixture", movingHead());
   const joints = instance.joints ?? [];
-  const tiltJoint = joints.find((joint) => joint.axis === AxisType.Tilt);
+  const tiltJoint = joints.find((joint) => joint.axes.includes(AxisType.Tilt));
   assert.ok(tiltJoint);
 
   const target = new Map([["Head", { tilt: tilt(90) }]]);
   updateGdtfJoints(joints, new Map([["Head", { tilt: 0 }]]), 1000, 180);
   updateGdtfJoints(joints, target, 1250, 180);
-  assert.ok(Math.abs(MathUtils.radToDeg(tiltJoint.currentRad) - 45) < 1e-6);
+  assert.ok(Math.abs(MathUtils.radToDeg(tiltJoint.currentRad[0]) - 45) < 1e-6);
   updateGdtfJoints(joints, target, 2000, 180);
-  assert.ok(Math.abs(MathUtils.radToDeg(tiltJoint.currentRad) - 90) < 1e-6);
+  assert.ok(Math.abs(MathUtils.radToDeg(tiltJoint.currentRad[0]) - 90) < 1e-6);
 });
 
 /** Verifies glTF meshes are converted from Y-up metres to the Z-up millimetre tree and lose stray cameras. */
@@ -327,4 +327,25 @@ test("glTF meshes are normalized into GDTF space", () => {
     if ((object as PerspectiveCamera).isCamera) cameras += 1;
   });
   assert.equal(cameras, 0);
+});
+
+/** Verifies a single node carrying pan and tilt applies pan first, then tilt in the panned frame. */
+test("one node can carry both pan and tilt", () => {
+  const geometry = tree([
+    [node("Base", GeometryType.Generic), -1],
+    [
+      node("Head", GeometryType.Axis, {
+        axes: [AxisType.Pan, AxisType.Tilt],
+        transform: transform([0, 0, -0.2]),
+      }),
+      0,
+    ],
+    [node("Beam", GeometryType.Beam, { controlledElement: "Head" }), 1],
+  ]);
+  const instance = pose(geometry, { Head: { pan: pan(90), tilt: tilt(90) } });
+  assertVector(
+    beamDirection(instance, "Beam"),
+    [-1, 0, 0],
+    "combined pan and tilt",
+  );
 });
