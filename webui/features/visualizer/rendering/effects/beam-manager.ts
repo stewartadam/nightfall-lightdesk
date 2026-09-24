@@ -150,11 +150,11 @@ export class BeamManager {
    * Shapes a beam with a gobo image, or opens it when `goboUrl` is undefined.
    *
    * Images load once per URL (in the main thread or a worker) and are shared
-   * between beams; until an image is ready the beam renders open.
+   * between beams; until an image is ready the beam renders open. The image
+   * is also projected by the beam's spot light onto the floor and scenery;
+   * this works without shadow maps, which the visualizer leaves disabled.
    */
   private applyGobo(beam: BeamInstance, goboUrl: string | undefined): void {
-    if (isLowQualityBeamMaterial(beam.material)) return;
-    const material = beam.material;
     const loaded = goboUrl ? this.goboTextures.get(goboUrl) : undefined;
     if (goboUrl && loaded === undefined) {
       this.goboTextures.set(goboUrl, null);
@@ -163,6 +163,9 @@ export class BeamManager {
         () => log.warn(`Failed to load gobo image ${goboUrl}`),
       );
     }
+    beam.spotLight.map = loaded ?? null;
+    if (isLowQualityBeamMaterial(beam.material)) return;
+    const material = beam.material;
     if (loaded) {
       for (const node of material.goboTextureNodes) node.value = loaded;
       material.goboActiveUniform.value = 1;
