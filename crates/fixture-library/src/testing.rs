@@ -441,6 +441,7 @@ pub struct GdtfBuilder {
     geometries: Vec<GeometrySpec>,
     modes: Vec<ModeSpec>,
     extra_files: Vec<(String, Vec<u8>)>,
+    emitters: Vec<(String, [f64; 3])>,
 }
 
 impl GdtfBuilder {
@@ -455,6 +456,7 @@ impl GdtfBuilder {
             geometries: Vec::new(),
             modes: Vec::new(),
             extra_files: Vec::new(),
+            emitters: Vec::new(),
         }
     }
 
@@ -492,6 +494,12 @@ impl GdtfBuilder {
         self
     }
 
+    /// Adds an emitter with a CIE `x, y, Y` color.
+    pub fn emitter(mut self, name: &str, color: [f64; 3]) -> Self {
+        self.emitters.push((name.to_string(), color));
+        self
+    }
+
     /// Adds an arbitrary archive entry, e.g. a mesh or wheel image.
     pub fn file(mut self, path: &str, bytes: &[u8]) -> Self {
         self.extra_files.push((path.to_string(), bytes.to_vec()));
@@ -511,7 +519,15 @@ impl GdtfBuilder {
         );
         self.write_attribute_definitions(&mut xml);
         self.write_wheels(&mut xml);
-        xml.push_str("<PhysicalDescriptions/>\n<Models>\n");
+        xml.push_str("<PhysicalDescriptions>\n<Emitters>\n");
+        for (name, [x, y, luminance]) in &self.emitters {
+            let _ = writeln!(
+                xml,
+                "<Emitter Name=\"{}\" Color=\"{x},{y},{luminance}\" DominantWaveLength=\"0\"/>",
+                escape(name)
+            );
+        }
+        xml.push_str("</Emitters>\n</PhysicalDescriptions>\n<Models>\n");
         for model in &self.models {
             let _ = writeln!(
                 xml,

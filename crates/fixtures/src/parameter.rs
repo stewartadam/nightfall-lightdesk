@@ -45,6 +45,19 @@ pub enum DmxSlots {
     Virtual,
 }
 
+/// A CIE 1931 color: chromaticity `x`, `y` and relative luminance `Y` (0-100).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct CieColor {
+    /// Chromaticity x.
+    pub x: f32,
+    /// Chromaticity y.
+    pub y: f32,
+    /// Relative luminance, 100 for a white reference.
+    #[serde(rename = "Y")]
+    pub luminance: f32,
+}
+
 /// A named DMX sub-range within a parameter function, e.g. one gobo or color slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -58,6 +71,9 @@ pub struct ParameterFunctionSet {
     /// 1-based slot of the function's wheel selected by this set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wheel_slot: Option<u32>,
+    /// Filter color of the selected wheel slot, when it colors the beam.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<CieColor>,
 }
 
 /// A DMX range of a parameter with one meaning, e.g. a GDTF channel function.
@@ -82,6 +98,9 @@ pub struct ParameterFunction {
     /// Wheel the range indexes into, when it selects wheel slots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wheel: Option<String>,
+    /// Measured color of the emitter this range drives, for additive color mixing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emitter_color: Option<CieColor>,
     /// Named sub-ranges in ascending DMX order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sets: Vec<ParameterFunctionSet>,
@@ -705,6 +724,7 @@ mod tests {
             physical_from: 0.0,
             physical_to: 1.0,
             wheel: None,
+            emitter_color: None,
             sets: Vec::new(),
         };
         let metadata = ParameterMetadata {
