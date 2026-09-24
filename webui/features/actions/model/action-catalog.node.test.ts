@@ -11,6 +11,7 @@ import test from "node:test";
 import type * as types from "../../../types";
 import {
   type ActionTargetNames,
+  actionReferencesEqual,
   actionsAccepting,
   buildActionReference,
   formatActionReference,
@@ -107,5 +108,28 @@ test("required arguments gate reference construction", () => {
   assert.deepEqual(
     buildActionReference(descriptor, { clip: "abc", stale: 1 }),
     { id: "clip.go", arguments: { clip: "abc" } },
+  );
+});
+
+test("actionReferencesEqual ignores UID hyphenation and key order", () => {
+  assert.equal(
+    actionReferencesEqual(
+      {
+        id: "clip.go",
+        arguments: { clip: "0000000A-0000-0000-0000-000000000001", x: 1 },
+      },
+      {
+        id: "clip.go",
+        arguments: { x: 1, clip: "0000000a000000000000000000000001" },
+      },
+    ),
+    true,
+  );
+  assert.equal(
+    actionReferencesEqual(
+      { id: "clip.go", arguments: { clip: "a" } },
+      { id: "clip.stop", arguments: { clip: "a" } },
+    ),
+    false,
   );
 });

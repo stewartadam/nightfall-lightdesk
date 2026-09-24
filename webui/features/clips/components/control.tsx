@@ -12,6 +12,7 @@ import { Button } from "../../../components/ui/visual-language/button";
 import { shouldShowDisparateControlValues } from "../../../lib/control-display";
 import { getLogger } from "../../../lib/logger";
 import { type Clip, type Master, MasterKind } from "../../../types";
+import { Mappable, type MappableChoice } from "../../io";
 
 export interface ControlProps {
   /** Control index (1-based for display) */
@@ -49,6 +50,38 @@ export function Control(props: ControlProps): JSX.Element {
   /** Returns whether the backend and control positions differ visibly. */
   const showDisparateValues = () =>
     shouldShowDisparateControlValues(props.hardwareValue, props.consoleValue);
+
+  /** Returns the actions this fader can be mapped to: its slot, or the assigned master. */
+  const faderChoices = (): MappableChoice[] => {
+    const choices: MappableChoice[] = [
+      {
+        label: `Fader slot ${props.index}`,
+        action: {
+          id: "control.level",
+          arguments: { control_index: props.index },
+        },
+      },
+    ];
+    const master = props.assignedMaster;
+    if (master) {
+      choices.push({
+        label: `Assigned master: ${master.identifiers.label}`,
+        action: {
+          id: "master.level",
+          arguments: { master: master.identifiers.uid },
+        },
+      });
+    }
+    return choices;
+  };
+
+  /** Returns the Go action bound when this control's Go button is mapped. */
+  const goChoices = (): MappableChoice[] => [
+    {
+      label: `Go control ${props.index}`,
+      action: { id: "control.go", arguments: { control_index: props.index } },
+    },
+  ];
 
   /** Returns whether the Go button has an assigned action. */
   const canGo = () =>
@@ -126,7 +159,11 @@ export function Control(props: ControlProps): JSX.Element {
       onDrop={handleDrop}
     >
       {/* Vertical slider */}
-      <div class="flex min-h-0 flex-1 w-full justify-center pb-2 pt-1">
+      <Mappable
+        class="flex min-h-0 flex-1 w-full justify-center pb-2 pt-1"
+        label={`control ${props.index} fader`}
+        choices={faderChoices}
+      >
         <Show
           when={props.assignedClip || props.assignedMaster}
           fallback={
@@ -159,7 +196,7 @@ export function Control(props: ControlProps): JSX.Element {
             disabled={false}
           />
         </Show>
-      </div>
+      </Mappable>
 
       {/* Current value display */}
       <div
@@ -206,29 +243,35 @@ export function Control(props: ControlProps): JSX.Element {
           </div>
         </Show>
       </div>
-      <Button
-        size="compact"
-        type="button"
-        data-control-go-index={props.index}
-        aria-label={`Go control ${props.index}`}
+      <Mappable
         class="w-full shrink-0"
-        disabled={!canGo()}
-        onClick={props.onGo}
-        title={
-          !props.assignedClip
-            ? props.assignedMaster?.mode?.type === "Toggle"
-              ? "Toggle this master"
-              : "Assign a clip to enable Go"
-            : !props.assignedClip.source
-              ? "Assign a source to enable Go"
-              : props.assignedClip.source?.type === "Sequence" &&
-                  props.isClipActive
-                ? "Advance this sequence clip"
-                : "Start this clip"
-        }
+        label={`control ${props.index} Go`}
+        choices={goChoices}
       >
-        Go
-      </Button>
+        <Button
+          size="compact"
+          type="button"
+          data-control-go-index={props.index}
+          aria-label={`Go control ${props.index}`}
+          class="w-full shrink-0"
+          disabled={!canGo()}
+          onClick={props.onGo}
+          title={
+            !props.assignedClip
+              ? props.assignedMaster?.mode?.type === "Toggle"
+                ? "Toggle this master"
+                : "Assign a clip to enable Go"
+              : !props.assignedClip.source
+                ? "Assign a source to enable Go"
+                : props.assignedClip.source?.type === "Sequence" &&
+                    props.isClipActive
+                  ? "Advance this sequence clip"
+                  : "Start this clip"
+          }
+        >
+          Go
+        </Button>
+      </Mappable>
       {/* Control number */}
       <div class="shrink-0 text-xs text-neutral-500 font-medium">
         {props.index}
