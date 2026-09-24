@@ -613,7 +613,7 @@ function projectsGobo(page: Page, uid: string): Promise<boolean> {
       .getObjectByName(`Fixture_${uid}`);
     let projecting = false;
     root.traverse((object: any) => {
-      if (object.isSpotLight && object.map) projecting = true;
+      if (object.isSpotLight && object.userData.projectsGobo) projecting = true;
     });
     return projecting;
   }, uid);

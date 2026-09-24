@@ -197,4 +197,26 @@ test("shutter functions strobe only in strobe ranges", () => {
   assert.ok(strobeAt(50) > 0);
   near(strobeAt(125), 0.5, "mid strobe rate");
   near(strobeAt(200), 1, "fastest strobe rate");
+
+  resetDmxPool();
+  const descending: FixtureElement = {
+    label: "Head",
+    parameters: [
+      parameter({ type: "Intensity" }),
+      parameter({ type: "StrobeShutter" }, [
+        fn("Shutter1Strobe", {
+          dmx_from: 0,
+          dmx_to: 255,
+          physical_from: 20,
+          physical_to: 1,
+        }),
+      ]),
+    ],
+  };
+  near(
+    extractVisualizerDmx({ Intensity: 255, StrobeShutter: 0 }, descending)
+      .strobeShutter,
+    1,
+    "fast-to-slow range starts fastest",
+  );
 });
