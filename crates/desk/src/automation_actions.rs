@@ -17,7 +17,7 @@ use nightfall_actions::{
     InvocationError, submit_command,
 };
 use nightfall_clips::{
-    CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipTarget,
+    CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments,
 };
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
@@ -233,12 +233,12 @@ fn register_clip_action(
 ) {
     app.register_command_action::<ClipActionArguments, ClipCommand, _>(
         ActionDescriptor::new(action_id, label, "Clips").with_parameter(ActionParameter::required(
-            "target",
+            "clip",
             "Clip",
             ActionParameterKind::Clip,
         )),
         move |world, arguments| {
-            let id = resolve_clip_id(world, arguments.target)?;
+            let id = resolve_clip_id(world, arguments.clip)?;
             Ok(command(IdExpr::Single(id)))
         },
     )
@@ -246,38 +246,32 @@ fn register_clip_action(
         action_id,
         TimelinePlaybackActionPlan::CAPABILITY,
         move |arguments| {
-            let ClipTarget::Uid(owner_uid) = arguments.target else {
-                return Err(InvocationError::new(
-                    "timeline.stable_target_required",
-                    "Deterministic timeline planning requires a clip UID",
-                ));
-            };
             Ok(TimelinePlaybackActionPlan {
-                owner_uid,
+                owner_uid: arguments.clip,
                 kind: timeline_kind,
             })
         },
     );
 }
 
-/// Resolves a persisted clip target to the numeric ID used by runtime commands.
-fn resolve_clip_id(world: &World, target: ClipTarget) -> Result<u32, InvocationError> {
-    match target {
-        ClipTarget::Id(id) => Ok(id),
-        ClipTarget::Uid(uid) => world
-            .get_resource::<DataProvider<Clip>>()
-            .ok_or_else(|| {
-                InvocationError::new("clip.registry_unavailable", "Clip storage is unavailable")
-            })?
-            .get(uid)
-            .map(|clip| clip.identifiers.id)
-            .map_err(|_| {
-                InvocationError::new(
-                    "clip.not_found",
-                    format!("Clip with UID {uid} does not exist"),
-                )
-            }),
-    }
+/// Resolves a persisted clip UID to the numeric ID used by runtime commands.
+///
+/// Clips are stored as entities, so the lookup scans clip components.
+fn resolve_clip_id(world: &World, uid: Uuid) -> Result<u32, InvocationError> {
+    world
+        .try_query::<&Clip>()
+        .and_then(|mut clips| {
+            clips
+                .iter(world)
+                .find(|clip| clip.identifiers.uid == uid)
+                .map(|clip| clip.identifiers.id)
+        })
+        .ok_or_else(|| {
+            InvocationError::new(
+                "clip.not_found",
+                format!("Clip with UID {uid} does not exist"),
+            )
+        })
 }
 
 /// Submits a tracked desk eval command and announces the command text to the invoking surface.
@@ -316,7 +310,6 @@ mod tests {
         app.add_message::<ControlUpdate>();
         app.add_message::<MasterUpdate>();
         app.init_resource::<DataProvider<Master>>();
-        app.init_resource::<DataProvider<Clip>>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<PendingCommandBuffer>();
         register_desk_actions(&mut app);
@@ -343,8 +336,17 @@ mod tests {
     #[test]
     fn clip_action_submits_tracked_clip_command() {
         let mut app = desk_action_app();
+        let uid = Uuid::from_u128(7);
+        app.world_mut().spawn(Clip {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 7,
+                uid,
+                label: "Clip 7".to_string(),
+            },
+            ..Default::default()
+        });
         app.world_mut().write_message(ActionInvocation::trigger(
-            go_clip_action(ClipTarget::Id(7)),
+            go_clip_action(uid),
             ActionSurface::Midi,
         ));
 
@@ -365,22 +367,17 @@ mod tests {
         ));
     }
 
-    /// Verifies clip actions expose deterministic timeline plans for stable targets only.
+    /// Verifies clip actions expose deterministic timeline plans keyed by the clip UID.
     #[test]
-    fn clip_action_plans_timeline_playback_for_uid_targets() {
+    fn clip_action_plans_timeline_playback() {
         let app = desk_action_app();
         let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
         let uid = Uuid::new_v4();
 
         let plan = registry
-            .resolve_capability::<TimelinePlaybackActionPlan>(&start_clip_action(ClipTarget::Uid(
-                uid,
-            )))
-            .expect("uid targets should plan")
+            .resolve_capability::<TimelinePlaybackActionPlan>(&start_clip_action(uid))
+            .expect("clip arguments should plan")
             .expect("clip actions should expose timeline planning");
-        let numeric = registry.resolve_capability::<TimelinePlaybackActionPlan>(
-            &start_clip_action(ClipTarget::Id(3)),
-        );
 
         assert_eq!(
             plan,
@@ -389,7 +386,6 @@ mod tests {
                 kind: TimelinePlaybackActionKind::Start,
             }
         );
-        assert!(numeric.is_err());
     }
 
     /// Verifies normalized action input is converted to the desk control percentage scale.

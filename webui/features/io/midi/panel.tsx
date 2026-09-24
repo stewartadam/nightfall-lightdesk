@@ -42,16 +42,28 @@ import { engineRuntime } from "../../../lib/engine-runtime";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
+  actionCatalog,
   midiDevices,
   midiLastEvent,
   midiMappings,
 } from "../../../state/appStores";
-import type { MidiMapping } from "../../../types";
 import {
-  cloneMidiAction,
-  formatMidiAction,
-  parseMidiAction,
-} from "./model/action-format";
+  ActionInputKind,
+  type ActionReference,
+  type MidiMapping,
+} from "../../../types";
+import {
+  ActionPicker,
+  formatActionReference,
+  useActionTargetNames,
+} from "../../actions";
+
+/** Input kinds a MIDI message can drive: notes as buttons, controllers as faders. */
+const MIDI_INPUT_KINDS = [
+  ActionInputKind.Trigger,
+  ActionInputKind.Momentary,
+  ActionInputKind.Absolute,
+];
 
 export interface MidiInputPanelProps extends BasePanelComponentProps {}
 
@@ -93,7 +105,7 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
     title: "Action",
     id: "action",
     width: 200,
-    filter: { value: (row) => formatMidiAction(row.mapping.action) },
+    filter: { value: (row) => row.mapping.action.id },
     ...columnVisibilityMeta("Binding", "Action"),
   },
 ];
@@ -105,14 +117,24 @@ function cloneMapping(m: MidiMapping): MidiMapping {
     channel: m.channel,
     note: m.note,
     velocity: m.velocity,
-    action: cloneMidiAction(m.action),
+    action: cloneAction(m.action),
   };
+}
+
+/** Deep clones an action reference into a plain object that can be posted to the worker. */
+function cloneAction(action: ActionReference): ActionReference {
+  return JSON.parse(JSON.stringify(action)) as ActionReference;
 }
 
 export default function MidiInputPanel(props: MidiInputPanelProps) {
   const $midiDevices = useStore(midiDevices);
   const $midiMappings = useStore(midiMappings);
   const $midiLastEvent = useStore(midiLastEvent);
+  const $actionCatalog = useStore(actionCatalog);
+  const targetNames = useActionTargetNames();
+  const [lastEventAction, setLastEventAction] = createSignal<
+    ActionReference | undefined
+  >();
   const panelId = props.id;
 
   // Row selection state using shared helpers
@@ -189,12 +211,17 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
               data: rowData.velocity === null ? "" : String(rowData.velocity),
             };
           case "action": {
-            const actionStr = formatMidiAction(rowData.action);
+            const actionStr = formatActionReference(
+              rowData.action,
+              $actionCatalog(),
+              targetNames,
+            );
             return {
               kind: GridCellKind.Text,
               data: actionStr,
               displayData: actionStr,
-              allowOverlay: true,
+              allowOverlay: false,
+              readonly: true,
             };
           }
           default:
@@ -266,30 +293,12 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
             val === "" || val === "any" ? undefined : Number(val);
           break;
         }
-        case "action": {
-          if (newValue.kind !== GridCellKind.Text) continue;
-          const parsed = parseMidiAction(String(value ?? ""));
-          if (parsed) {
-            rowData.action = parsed;
-          }
-          break;
-        }
       }
 
       currentMappings[originalIndex] = cloneMapping(rowData);
     }
 
-    // Optimistically update the store immediately for instant UI feedback
-    setStoreAction(midiMappings, "Update MIDI Mappings", currentMappings);
-
-    // Send update to backend
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+    storeMappings(currentMappings);
   };
 
   /** Delete selected mappings */
@@ -322,21 +331,9 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     });
   };
 
-  /** Apply last event to a new mapping row */
-  const applyLastEvent = () => {
-    const event = $midiLastEvent();
-    if (!event) return;
-
-    // Deep clone existing mappings to ensure plain objects for postMessage
-    const currentMappings = $midiMappings().map(cloneMapping);
-    currentMappings.push({
-      device_name: event.device,
-      channel: event.channel,
-      note: event.note,
-      velocity: event.velocity,
-      action: parseMidiAction("StartClip(1)")!,
-    });
-
+  /** Optimistically stores a replacement mapping list and sends it to the backend. */
+  const storeMappings = (currentMappings: MidiMapping[]) => {
+    setStoreAction(midiMappings, "Update MIDI Mappings", currentMappings);
     engineRuntime.sendCommand({
       module: "MidiCommand",
       command: {
@@ -344,6 +341,41 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
         data: currentMappings,
       },
     });
+  };
+
+  /** Binds the last received MIDI message to the action chosen beside it. */
+  const applyLastEvent = () => {
+    const event = $midiLastEvent();
+    const action = lastEventAction();
+    if (!event || !action) return;
+
+    const currentMappings = $midiMappings().map(cloneMapping);
+    currentMappings.push({
+      device_name: event.device,
+      channel: event.channel,
+      note: event.note,
+      velocity: undefined,
+      action: cloneAction(action),
+    });
+    storeMappings(currentMappings);
+  };
+
+  /** Returns the single selected mapping row, when exactly one is selected. */
+  const selectedMapping = createMemo(() => {
+    const rows = selectedRows();
+    if (rows.length !== 1) return undefined;
+    return displayRows()[rows[0]];
+  });
+
+  /** Replaces the action of the selected mapping row. */
+  const updateSelectedAction = (action: ActionReference) => {
+    const row = selectedMapping();
+    if (!row) return;
+    const currentMappings = $midiMappings().map(cloneMapping);
+    const mapping = currentMappings[row.index];
+    if (!mapping) return;
+    currentMappings[row.index] = { ...mapping, action: cloneAction(action) };
+    storeMappings(currentMappings);
   };
 
   return (
@@ -373,7 +405,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
         {/* Last Event Quick-Add */}
         <Show when={$midiLastEvent()}>
           <div class="mt-3 p-2 bg-gray-800 rounded border border-gray-600">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="text-xs text-gray-400">
                 Last Input:{" "}
                 <span class="font-mono text-green-400">
@@ -382,9 +414,21 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                   {$midiLastEvent()?.note} Vel:{$midiLastEvent()?.velocity}
                 </span>
               </div>
-              <Button size="compact" variant="primary" onClick={applyLastEvent}>
-                Add Mapping
-              </Button>
+              <div class="flex flex-wrap items-center gap-2">
+                <ActionPicker
+                  label="Action for last input"
+                  inputKinds={MIDI_INPUT_KINDS}
+                  onChange={setLastEventAction}
+                />
+                <Button
+                  size="compact"
+                  variant="primary"
+                  disabled={!lastEventAction()}
+                  onClick={applyLastEvent}
+                >
+                  Add Mapping
+                </Button>
+              </div>
             </div>
           </div>
         </Show>
@@ -399,8 +443,8 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-300">MIDI Mappings</h3>
               <p class="truncate text-xs text-gray-500">
-                Edit cells to configure. Action format: StartClip(1),
-                StopClip(2), etc.
+                Edit cells to configure the source. Select one mapping to change
+                its action.
               </p>
             </div>
           }
@@ -432,6 +476,20 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           }
         />
 
+        <Show when={selectedMapping()}>
+          {(row) => (
+            <div class="flex items-center gap-2 border-b border-gray-700 px-3 py-2">
+              <span class="text-xs text-gray-400">Selected action</span>
+              <ActionPicker
+                label="Selected mapping action"
+                value={row().mapping.action}
+                inputKinds={MIDI_INPUT_KINDS}
+                onChange={updateSelectedAction}
+              />
+            </div>
+          )}
+        </Show>
+
         <div class="flex-1 min-h-0">
           <DataGrid
             rows={displayRows().length}
@@ -453,8 +511,8 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
         {/* Empty state */}
         <Show when={mappingRows().length === 0}>
           <div class="p-4 text-center text-gray-500 text-sm">
-            No mappings configured. Press a MIDI button and click "Add Mapping"
-            to create one.
+            No mappings configured. Press a MIDI button, choose an action, and
+            click "Add Mapping" to create one.
           </div>
         </Show>
       </div>
