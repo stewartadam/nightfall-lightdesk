@@ -30,7 +30,7 @@ import {
   panelOpenPlacementFromModifiers,
   panelOpenPlacementLabel,
 } from "../../../lib/panel-open-command";
-import type { CommandAction } from "../../providers/command-registry";
+import type { UiAction } from "../../providers/command-registry";
 import { DialogBackdrop } from "../../ui/dialog";
 import { MenuHeading } from "../../ui/menu";
 import {
@@ -46,7 +46,7 @@ import {
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
-  commands: CommandAction[];
+  commands: UiAction[];
   selectedCommandId?: string;
   onSelectedCommandIdChange: (id: string) => void;
 }
@@ -55,9 +55,7 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
   const [search, setSearch] = createSignal("");
   const [lastSelectionQuery, setLastSelectionQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
-  const [filteredCommands, setFilteredCommands] = createSignal<CommandAction[]>(
-    [],
-  );
+  const [filteredCommands, setFilteredCommands] = createSignal<UiAction[]>([]);
   const [canScrollDown, setCanScrollDown] = createSignal(false);
   const [canScrollUp, setCanScrollUp] = createSignal(false);
   const [modifierState, setModifierState] =
@@ -74,7 +72,7 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
 
   /** Selects a command by visible index and records its id for later list updates. */
   const selectCommandAtIndex = (
-    commands: readonly CommandAction[],
+    commands: readonly UiAction[],
     index: number,
   ) => {
     const command = commands[index];
@@ -308,12 +306,11 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
       : false;
 
   /** Helper to check if a command is selected by stable id. */
-  const isSelected = (command: CommandAction) =>
+  const isSelected = (command: UiAction) =>
     command.id === props.selectedCommandId;
 
   /** Returns whether a command opens a dockable panel. */
-  const isPanelCommand = (command: CommandAction) =>
-    command.category === "Panels";
+  const isPanelCommand = (command: UiAction) => command.category === "Panels";
 
   /** The active panel-placement badge shown while modifier keys are held. */
   const placementBadgeLabel = createMemo(() =>
@@ -337,7 +334,7 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
 
   /** Create a map of command to its global index */
   const commandToGlobalIndex = createMemo(() => {
-    const map = new Map<CommandAction, number>();
+    const map = new Map<UiAction, number>();
     const cmds = flattenedCommands();
     for (const cmd of cmds) {
       map.set(cmd, cmds.indexOf(cmd));

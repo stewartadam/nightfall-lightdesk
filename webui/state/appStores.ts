@@ -413,6 +413,10 @@ export const engineMetrics = atom<EngineMetrics | null>(null);
 
 // Bindable action catalog published by backend domains
 export const actionCatalog = atom<types.ActionCatalogEntry[]>([]);
+/** Latest client-hosted action invocation forwarded from a MIDI or OSC mapping. */
+export const clientActionInvocation = atom<types.ClientActionInvocation | null>(
+  null,
+);
 
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);

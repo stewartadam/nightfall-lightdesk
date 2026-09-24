@@ -12,6 +12,7 @@
 //! ingress commands and continuous actions lower to untracked update messages, so an action
 //! never introduces a second execution path next to commands, updates, and engine operations.
 
+mod command;
 mod descriptor;
 mod invocation;
 mod lowering;
@@ -25,19 +26,23 @@ use bevy_ecs::{
     schedule::IntoScheduleConfigs,
     system::SystemState,
 };
+pub use command::ActionCommand;
 pub use descriptor::{
     ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionParameter,
     ActionParameterKind, ActionSurface,
 };
 pub use invocation::{
-    ActionInput, ActionInvocation, ActionReference, ExternalCommandInvocation, InvocationDispatch,
-    InvocationError, InvocationId, InvocationOutcome, InvocationResult,
+    ActionInput, ActionInvocation, ActionReference, ClientActionInvocation,
+    ExternalCommandInvocation, InvocationDispatch, InvocationError, InvocationId,
+    InvocationOutcome, InvocationResult,
 };
 pub use lowering::{ActionAppExt, submit_command};
 use nightfall_engine::prelude::{
-    ClientOutput, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
+    ClientOutput, CommandDeserializerRegistry, CommandIngressRouter, EventHandling, InputHandling,
+    PendingCommandExpansion, ResyncHandling, ResyncRequested, register_command_deserializer,
+    register_ingress_command,
 };
-pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX};
+pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
 pub use source::{SourceEdgeStates, SourceSignal};
 
 /// Plugin that installs the generic registered-action invocation stage.
@@ -54,6 +59,7 @@ impl Plugin for ActionsPlugin {
         app.add_message::<ActionInvocation>();
         app.add_message::<InvocationResult>();
         app.add_message::<ExternalCommandInvocation>();
+        app.add_message::<ClientActionInvocation>();
         app.add_message::<ResyncRequested>();
         app.configure_sets(
             Update,
@@ -69,9 +75,27 @@ impl Plugin for ActionsPlugin {
             Update,
             (
                 websocket::send_action_catalog_on_change.in_set(ClientOutput),
+                websocket::send_client_action_invocations.in_set(ClientOutput),
                 websocket::handle_resync_state.in_set(ResyncHandling),
             ),
         );
+        // Client invoke commands need the engine's command routing, which focused test apps
+        // without the engine and client bridge plugins do not have.
+        if app.world().contains_resource::<CommandIngressRouter>()
+            && app
+                .world()
+                .contains_resource::<CommandDeserializerRegistry>()
+        {
+            register_ingress_command::<ActionCommand>(app);
+            register_command_deserializer::<ActionCommand>(
+                app,
+                command::deserialize_action_command,
+            );
+            app.add_systems(
+                Update,
+                command::handle_action_commands.in_set(EventHandling),
+            );
+        }
     }
 }
 
@@ -394,6 +418,33 @@ mod tests {
             InvocationOutcome::Failed(InvocationError { ref code, .. })
                 if code == "action.not_registered"
         ));
+    }
+
+    /// Verifies client-hosted actions are forwarded to clients once per press.
+    #[test]
+    fn client_actions_forward_presses_to_clients() {
+        let mut app = action_app();
+        let action = ActionReference::new("ui.panel-Masters", json!({}));
+
+        let pressed = invoke(
+            &mut app,
+            ActionInvocation::new(action.clone(), ActionSurface::Midi, ActionInput::Press),
+        );
+        let released = invoke(
+            &mut app,
+            ActionInvocation::new(action, ActionSurface::Midi, ActionInput::Release),
+        );
+
+        assert_eq!(pressed, InvocationOutcome::Accepted);
+        assert_eq!(released, InvocationOutcome::Ignored);
+        let forwarded = app
+            .world_mut()
+            .resource_mut::<Messages<ClientActionInvocation>>()
+            .drain()
+            .collect::<Vec<_>>();
+        assert_eq!(forwarded.len(), 1);
+        assert_eq!(forwarded[0].action.id.as_str(), "ui.panel-Masters");
+        assert_eq!(forwarded[0].input, ActionInput::Trigger);
     }
 
     /// Verifies two domains cannot silently replace one another's stable action ID.

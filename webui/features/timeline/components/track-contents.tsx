@@ -9,7 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import { useCommand } from "../../../components/providers/command-registry";
+import { useUiAction } from "../../../components/providers/command-registry";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
@@ -508,7 +508,7 @@ const TrackContents = (props: TrackListProps) => {
     componentId: props.componentId,
   });
 
-  useCommand({
+  useUiAction({
     id: `timeline.insert-action.${props.componentId || "global"}`,
     name: "Insert Timeline Action",
     description: "Insert a timeline action at cursor or playhead",

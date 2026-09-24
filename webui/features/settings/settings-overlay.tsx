@@ -62,6 +62,7 @@ import {
   TimelinePlacementPreference,
 } from "../../types";
 import { createBeatModelDownload } from "../beat-detection";
+import { KeybindingsSettings } from "../keybindings";
 import {
   type QualityPreset,
   setVisualizerQuality,
@@ -94,7 +95,8 @@ type SettingsTab =
   | "appearance"
   | "editors"
   | "network"
-  | "visualizer";
+  | "visualizer"
+  | "keyboard";
 
 const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "general", label: "General" },
@@ -102,6 +104,7 @@ const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "editors", label: "Editors" },
   { key: "network", label: "Network" },
   { key: "visualizer", label: "Visualizer" },
+  { key: "keyboard", label: "Keyboard" },
 ];
 
 /** Returns the human-readable interface name, falling back to the system name. */
@@ -383,6 +386,9 @@ export function SettingsOverlay() {
           >
             <Show when={activeTab() === "appearance"}>
               <AppearanceSettings />
+            </Show>
+            <Show when={activeTab() === "keyboard"}>
+              <KeybindingsSettings />
             </Show>
             <Show when={activeTab() === "general"}>
               <section>

@@ -7,6 +7,7 @@
  */
 
 import { MappingModeBanner, MappingModeController } from "../../../features/io";
+import { KeybindingController } from "../../../features/keybindings";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { ShowfileDialogs } from "../../../features/showfile";
@@ -30,6 +31,7 @@ function ShellRuntime() {
       <FeedbackCommands />
       <LayoutCommands />
       <MappingModeController />
+      <KeybindingController />
       <TauriMenuBridge />
       <ConnectionOverlay />
       <ShellOverlayHosts />

@@ -66,10 +66,18 @@ plugin order does not matter. There is no crate that enumerates every action.
 ### UI actions
 
 The Web UI has its own action registry for browser-local behavior such as opening
-the command palette or switching panels. UI actions share the action ID namespace
-(`ui.*` is reserved for them) and the binding model, but run in the browser.
-Hardware mappings to `ui.*` actions are forwarded to connected clients that opt
-in.
+panels or the settings dialog. UI actions share the action ID namespace (`ui.*` is
+reserved for them) and the binding model, but run in the browser:
+
+- Pickers list backend catalog actions and this client's UI actions together, so
+  MIDI, OSC, and keyboard bindings can target either.
+- The backend accepts `ui.*` bindings without a registration. When a MIDI or OSC
+  mapping fires one, it broadcasts a `ClientActionInvocation`; each client runs it
+  only if its "Run UI actions triggered by MIDI and OSC mappings" setting is on.
+- User keybindings are stored per browser. A keybinding to a backend action sends an
+  `ActionCommand::Invoke` with the keyboard surface.
+- In controller mapping mode, choosing a command palette entry binds the armed
+  control to that entry instead of running it.
 
 ## Choosing a layer
 

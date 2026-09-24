@@ -22,7 +22,7 @@ import {
 import { isTauriRuntime } from "../../../../lib/tauri";
 import { runtimeCapabilities } from "../../../../state/appStores";
 import { useAppShell } from "../../../providers/app-shell";
-import { useCommand } from "../../../providers/command-registry";
+import { useUiAction } from "../../../providers/command-registry";
 
 interface DockviewCommandsProps {
   onResetLayout?: () => void;
@@ -40,7 +40,7 @@ export function DockviewCommands(props: DockviewCommandsProps) {
         !capabilities()?.experimental_flows
       )
         continue;
-      useCommand({
+      useUiAction({
         id: definition.panelId,
         name: `Open ${definition.title}`,
         description: `Open a new ${definition.title} panel`,
@@ -58,7 +58,7 @@ export function DockviewCommands(props: DockviewCommandsProps) {
     }
   });
 
-  useCommand({
+  useUiAction({
     id: "reset-layout",
     name: "Reset Layout",
     description: "Reset the dockview layout to default",
@@ -71,7 +71,7 @@ export function DockviewCommands(props: DockviewCommandsProps) {
     },
   });
 
-  useCommand({
+  useUiAction({
     id: "focus-previous-panel",
     name: "Focus Previous Panel",
     description: "Move focus to the previous Dockview panel",
@@ -83,7 +83,7 @@ export function DockviewCommands(props: DockviewCommandsProps) {
     },
   });
 
-  useCommand({
+  useUiAction({
     id: "focus-next-panel",
     name: "Focus Next Panel",
     description: "Move focus to the next Dockview panel",
@@ -95,7 +95,7 @@ export function DockviewCommands(props: DockviewCommandsProps) {
     },
   });
 
-  useCommand({
+  useUiAction({
     id: "close-panel",
     name: "Close Panel",
     description: "Close the currently focused panel",

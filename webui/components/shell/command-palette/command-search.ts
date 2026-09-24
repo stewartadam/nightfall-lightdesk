@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { CommandAction } from "../../providers/command-registry";
+import type { UiAction } from "../../providers/command-registry";
 
 export interface CommandPaletteCommandGroup {
   category: string;
-  commands: CommandAction[];
+  commands: UiAction[];
 }
 
 const FIELD_WEIGHT = {
@@ -35,7 +35,7 @@ interface CommandMatchScore {
 }
 
 /** Returns the category label used for palette grouping. */
-function commandCategory(command: CommandAction): string {
+function commandCategory(command: UiAction): string {
   return command.category || "General";
 }
 
@@ -95,7 +95,7 @@ function scoreField(
 
 /** Returns the best search score for a command, or undefined when it does not match. */
 function scoreCommand(
-  command: CommandAction,
+  command: UiAction,
   query: string,
   index: number,
 ): CommandMatchScore | undefined {
@@ -111,9 +111,9 @@ function scoreCommand(
 
 /** Filters and ranks command palette commands by match quality for the query. */
 export function rankCommandPaletteCommands(
-  commands: readonly CommandAction[],
+  commands: readonly UiAction[],
   query: string,
-): CommandAction[] {
+): UiAction[] {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return [...commands];
 
@@ -123,7 +123,7 @@ export function rankCommandPaletteCommands(
       match: scoreCommand(command, normalizedQuery, index),
     }))
     .filter(
-      (entry): entry is { command: CommandAction; match: CommandMatchScore } =>
+      (entry): entry is { command: UiAction; match: CommandMatchScore } =>
         entry.match !== undefined,
     )
     .sort(
@@ -136,7 +136,7 @@ export function rankCommandPaletteCommands(
 
 /** Groups commands for palette rendering without losing ranked order when requested. */
 export function groupCommandPaletteCommands(
-  commands: readonly CommandAction[],
+  commands: readonly UiAction[],
   preserveCommandOrder: boolean,
 ): CommandPaletteCommandGroup[] {
   if (preserveCommandOrder) {
@@ -156,7 +156,7 @@ export function groupCommandPaletteCommands(
   }
 
   const groups: CommandPaletteCommandGroup[] = [];
-  const commandsByCategory = new Map<string, CommandAction[]>();
+  const commandsByCategory = new Map<string, UiAction[]>();
 
   for (const command of commands) {
     const category = commandCategory(command);

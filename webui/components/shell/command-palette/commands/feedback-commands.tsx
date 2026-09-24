@@ -11,28 +11,28 @@ import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { onMount } from "solid-js";
 import { openFeedbackPage } from "../../../../lib/feedback";
 import { useAppShell } from "../../../providers/app-shell";
-import { useCommand } from "../../../providers/command-registry";
+import { useUiAction } from "../../../providers/command-registry";
 
 /** Makes project feedback and local diagnostics discoverable through shell search. */
 export default function FeedbackCommands() {
   const { openDiagnostics } = useAppShell();
   /** Registers feedback actions for this mounted application shell. */
   onMount(() => {
-    useCommand({
+    useUiAction({
       id: "app.feedback",
       name: "Give Feedback",
       description: "Share an idea or feedback on GitHub",
       icon: QuestionIcon,
       execute: () => openFeedbackPage("feedback"),
     });
-    useCommand({
+    useUiAction({
       id: "app.report-bug",
       name: "Report a Bug",
       description: "Describe a problem on GitHub",
       icon: QuestionIcon,
       execute: () => openFeedbackPage("bug"),
     });
-    useCommand({
+    useUiAction({
       id: "app.diagnostics",
       name: "Collect Diagnostics",
       description: "Preview, copy, or download a local diagnostic report",

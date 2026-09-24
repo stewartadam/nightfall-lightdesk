@@ -10,13 +10,13 @@ import { BookmarkIcon } from "@squidlab/phosphor-solid/bookmark";
 import { LayoutIcon } from "@squidlab/phosphor-solid/layout";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { useAppShell } from "../../providers/app-shell";
-import { useCommand } from "../command-palette";
+import { useUiAction } from "../command-palette";
 
 /** Registers commands owned by Dockview layout management and shortcut discovery. */
 export default function LayoutCommands() {
   const { showLayoutManager, showShortcutsPopup } = useAppShell();
 
-  useCommand({
+  useUiAction({
     id: "show-keyboard-shortcuts",
     name: "Show Keyboard Shortcuts",
     description: "Show all available keyboard shortcuts",
@@ -25,7 +25,7 @@ export default function LayoutCommands() {
     icon: QuestionIcon,
     execute: showShortcutsPopup,
   });
-  useCommand({
+  useUiAction({
     id: "manage-layouts",
     name: "Manage Layouts",
     description: "Create, save, rename, show, hide, and delete panel layouts",
@@ -33,7 +33,7 @@ export default function LayoutCommands() {
     category: "Layout",
     execute: showLayoutManager,
   });
-  useCommand({
+  useUiAction({
     id: "store-current-layout",
     name: "Store Current Layout",
     description:
