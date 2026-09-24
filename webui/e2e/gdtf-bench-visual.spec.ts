@@ -429,3 +429,52 @@ for (const fixture of STATIC_BENCH) {
     await submitCommand(page, "clear");
   });
 }
+
+/** Verifies selecting a Sharpy color wheel slot tints its emitter with the slot's color. */
+test("Sharpy color wheel slot tints the emitter", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  const uid = await installBenchFixture(page, backendSlot.dataDir, SHARPY, 1);
+  const choice = await page.evaluate((uid) => {
+    const fixture = (window as any).appStores.fixtures.get()[uid] as Fixture;
+    for (const element of fixture.elements) {
+      for (const parameter of element.parameters) {
+        if (parameter.attribute.type !== "Custom") continue;
+        for (const fn of parameter.functions ?? []) {
+          const slot = fn.sets?.find(
+            (set) => set.color && Math.abs(set.color.x - 0.3127) > 0.05,
+          );
+          if (!slot) continue;
+          const midpoint = (slot.dmx_from + slot.dmx_to) / 2;
+          return {
+            attribute: parameter.attribute.data.label,
+            percent: (midpoint / 255) * 100,
+            slot: slot.name,
+          };
+        }
+      }
+    }
+    return null;
+  }, uid);
+  expect(choice).not.toBeNull();
+  testInfo.annotations.push({ type: "slot", description: choice?.slot });
+
+  await submitCommand(
+    page,
+    `fix 1 int @ 100 "${choice?.attribute}" @ ${choice?.percent.toFixed(2)}`,
+  );
+  await expect
+    .poll(() =>
+      page.evaluate((uid) => {
+        const root = (window as any).visualizerApi
+          .getScene()
+          .getObjectByName(`Fixture_${uid}`);
+        const emitter = root.getObjectByName("Beam_emitter");
+        const { r, g, b } = emitter.material.color;
+        return Math.max(r, g, b) - Math.min(r, g, b) > 0.3;
+      }, uid),
+    )
+    .toBe(true);
+  await attachCanvas(page, "sharpy-color-wheel", testInfo);
+});
