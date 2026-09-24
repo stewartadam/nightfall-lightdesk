@@ -375,6 +375,7 @@ impl ModeSpec {
 pub struct GdtfBuilder {
     manufacturer: String,
     name: String,
+    long_name: Option<String>,
     models: Vec<ModelSpec>,
     geometries: Vec<GeometrySpec>,
     modes: Vec<ModeSpec>,
@@ -387,11 +388,18 @@ impl GdtfBuilder {
         Self {
             manufacturer: manufacturer.to_string(),
             name: name.to_string(),
+            long_name: None,
             models: Vec::new(),
             geometries: Vec::new(),
             modes: Vec::new(),
             extra_files: Vec::new(),
         }
+    }
+
+    /// Overrides the `LongName` attribute, which otherwise repeats the name.
+    pub fn long_name(mut self, long_name: &str) -> Self {
+        self.long_name = Some(long_name.to_string());
+        self
     }
 
     /// Adds a model definition.
@@ -428,8 +436,9 @@ impl GdtfBuilder {
         xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<GDTF DataVersion=\"1.2\">\n");
         let _ = writeln!(
             xml,
-            "<FixtureType Name=\"{name}\" ShortName=\"{name}\" LongName=\"{name}\" Manufacturer=\"{make}\" Description=\"Synthetic test fixture\" FixtureTypeID=\"00000000-0000-0000-0000-000000000001\" RefFT=\"\" Thumbnail=\"\">",
+            "<FixtureType Name=\"{name}\" ShortName=\"{name}\" LongName=\"{long_name}\" Manufacturer=\"{make}\" Description=\"Synthetic test fixture\" FixtureTypeID=\"00000000-0000-0000-0000-000000000001\" RefFT=\"\" Thumbnail=\"\">",
             name = escape(&self.name),
+            long_name = escape(self.long_name.as_deref().unwrap_or(&self.name)),
             make = escape(&self.manufacturer),
         );
         self.write_attribute_definitions(&mut xml);

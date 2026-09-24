@@ -63,7 +63,16 @@ impl GdtfMetadata {
 fn extract_fixture_info(gdtf: &gdtf::GdtfFile) -> (String, String) {
     if let Some(fixture_type) = gdtf.description.fixture_types.first() {
         let manufacturer = fixture_type.manufacturer.clone();
-        let model = fixture_type.long_name.clone();
+        // Some archives leave LongName empty; the required Name identifies the type.
+        let model = if fixture_type.long_name.trim().is_empty() {
+            fixture_type
+                .name
+                .as_ref()
+                .map(|name| name.to_string())
+                .unwrap_or_default()
+        } else {
+            fixture_type.long_name.clone()
+        };
         return (manufacturer, model);
     }
 
@@ -82,4 +91,21 @@ fn extract_mode_names(gdtf: &gdtf::GdtfFile) -> Vec<String> {
     }
 
     vec![]
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{GdtfBuilder, GeometrySpec, ModeSpec};
+
+    /// Verifies an empty `LongName` falls back to the fixture type's `Name`.
+    #[test]
+    fn empty_long_name_falls_back_to_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Pixel Line")
+            .long_name("")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .write_metadata(dir.path());
+        assert_eq!(metadata.model, "Pixel Line");
+    }
 }
