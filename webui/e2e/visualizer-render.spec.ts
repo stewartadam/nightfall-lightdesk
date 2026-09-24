@@ -886,6 +886,107 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
     });
 });
 
+/** Compares the actual spot and wash rendering paths together under the Low preset. */
+test("low quality spot and wash comparison", async ({ page }, testInfo) => {
+  await page.goto(
+    "/?visualizer:offscreenCanvas=false&visualizer:beamQuality=low",
+  );
+  await waitForVisualizerReady(page);
+  await waitForMainThreadVisualizerApi(page);
+  const wash = await installRotatingWashBeamFixture(page);
+  const spot = await installMovingSpotFixture(page);
+  await page.evaluate(
+    ({ wash, spot }) => {
+      const stores = (window as any).appStores;
+      const fixtures = stores.fixtures.get();
+      stores.fixtures.set({
+        ...fixtures,
+        [wash]: {
+          ...fixtures[wash],
+          physical: {
+            beamType: "Wash",
+            beamAngle: 1,
+            fieldAngle: 1.2,
+            lumens: 12000,
+            zoomRange: { narrow: 1, wide: 34 },
+          },
+          placement: {
+            position: { x: -2, y: 1, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+          },
+        },
+        [spot]: {
+          ...fixtures[spot],
+          physical: {
+            beamType: "Spot",
+            beamAngle: 8,
+            fieldAngle: 15,
+            lumens: 8000,
+          },
+          placement: {
+            position: { x: 2, y: 1, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+          },
+        },
+      });
+      (window as any).visualizerApi.setCameraState({
+        position: { x: 9, y: 5, z: 14 },
+        target: { x: 0, y: -5, z: 0 },
+      });
+      (window as any).visualizerApi
+        .getScene()
+        .getObjectByName("StageFloor").visible = false;
+    },
+    { wash, spot },
+  );
+  await waitForFixtureStoreHydration(page);
+  await holdRotatingWashBeamImmediateOutput(page, wash);
+  await holdFixtureImmediateOutput(page, spot, {
+    Intensity: 255,
+    Tilt: 127,
+    Zoom: 127,
+    "Color Wheel": 0,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const scene = (window as any).visualizerApi.getScene();
+        const { getOpticalRenderContext } = await import(
+          "/features/visualizer/rendering/effects/optical-render-context.ts"
+        );
+        const context = getOpticalRenderContext(scene)!;
+        return {
+          quality: context.quality,
+          count: (context.scene.getObjectByName("EmitterBeams") as any)?.count,
+        };
+      }),
+    )
+    .toEqual({ quality: "low", count: 13 });
+  await page.screenshot({
+    path: testInfo.outputPath("low-spot-wash.png"),
+    clip: await largestVisibleCanvasBox(page),
+  });
+  await holdRotatingWashBeamImmediateOutput(page, wash, 1);
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { getOpticalRenderContext } = await import(
+          "/features/visualizer/rendering/effects/optical-render-context.ts"
+        );
+        return (
+          getOpticalRenderContext(
+            (window as any).visualizerApi.getScene(),
+          )!.scene.getObjectByName("EmitterBeams") as any
+        ).count;
+      }),
+    )
+    .toBe(2);
+  await page.screenshot({
+    path: testInfo.outputPath("low-single-wash-emitter.png"),
+    clip: await largestVisibleCanvasBox(page),
+  });
+});
+
 /** Verifies low quality uses batched geometry beams without atmospheric integration. */
 test("generic wash beam low-quality setting uses geometry beams", async ({
   page,
@@ -1658,49 +1759,55 @@ async function installRotatingWashBeamFixture(page: Page): Promise<string> {
 async function holdRotatingWashBeamImmediateOutput(
   page: Page,
   fixtureUid: string,
+  activeBeamCount = 12,
 ): Promise<void> {
-  await page.evaluate(async (uid) => {
-    const { setParametersImmediate } = await import("/state/appStores.ts");
-    const control = {
-      Tilt: 127,
-      Zoom: 127,
-      Intensity: 255,
-      "Tilt Speed": 255,
-    };
-    const beam = {
-      Red: 255,
-      Green: 96,
-      Blue: 32,
-      White: 0,
-      Intensity: 255,
-    };
-    const strip = {
-      Red: 0,
-      Green: 0,
-      Blue: 0,
-      White: 0,
-      Yellow: 0,
-    };
-    const output = [
-      control,
-      ...Array.from({ length: 12 }, () => beam),
-      ...Array.from({ length: 24 }, () => strip),
-    ];
-    let framesRemaining = 120;
-    const writeOutput = () => {
-      const stores = (window as any).appStores;
-      setParametersImmediate(
-        new Map<string, Record<string, number>[]>(
-          stores.getParametersImmediate(),
-        ).set(uid, output),
-      );
-      framesRemaining -= 1;
-      if (framesRemaining > 0) {
-        requestAnimationFrame(writeOutput);
-      }
-    };
-    writeOutput();
-  }, fixtureUid);
+  await page.evaluate(
+    async ({ uid, activeBeamCount }) => {
+      const { setParametersImmediate } = await import("/state/appStores.ts");
+      const control = {
+        Tilt: 127,
+        Zoom: 127,
+        Intensity: 255,
+        "Tilt Speed": 255,
+      };
+      const beam = {
+        Red: 255,
+        Green: 96,
+        Blue: 32,
+        White: 0,
+        Intensity: 255,
+      };
+      const strip = {
+        Red: 0,
+        Green: 0,
+        Blue: 0,
+        White: 0,
+        Yellow: 0,
+      };
+      const output = [
+        control,
+        ...Array.from({ length: 12 }, (_, index) =>
+          index < activeBeamCount ? beam : { ...beam, Intensity: 0 },
+        ),
+        ...Array.from({ length: 24 }, () => strip),
+      ];
+      let framesRemaining = 120;
+      const writeOutput = () => {
+        const stores = (window as any).appStores;
+        setParametersImmediate(
+          new Map<string, Record<string, number>[]>(
+            stores.getParametersImmediate(),
+          ).set(uid, output),
+        );
+        framesRemaining -= 1;
+        if (framesRemaining > 0) {
+          requestAnimationFrame(writeOutput);
+        }
+      };
+      writeOutput();
+    },
+    { uid: fixtureUid, activeBeamCount },
+  );
 }
 
 /**

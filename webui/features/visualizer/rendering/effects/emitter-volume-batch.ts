@@ -28,14 +28,17 @@ import {
   AdditiveBlending,
   BoxGeometry,
   ConeGeometry,
+  CustomBlending,
   DoubleSide,
   DynamicDrawUsage,
   InstancedInterleavedBuffer,
   InstancedMesh,
   InterleavedBufferAttribute,
   Matrix4,
+  MaxEquation,
   MeshBasicNodeMaterial,
   type Object3D,
+  OneFactor,
   Quaternion,
   type Scene,
   Vector3,
@@ -61,6 +64,7 @@ const ATTRIBUTE_SIZES = {
   volumeForward: 3,
   volumeOptics: 4,
   volumeRadiance: 3,
+  volumeDrive: 3,
   volumeSecondary: 4,
   volumeShape: 3,
   volumePattern: 4,
@@ -131,11 +135,18 @@ export class EmitterVolumeBatch {
         depthWrite: false,
         blending: AdditiveBlending,
       });
-      material.colorNode = attribute<"vec3">("volumeRadiance", "vec3").mul(
-        0.12,
-      );
-      material.opacityNode = uv().y.mul(0.3);
+      // Low is a schematic union: overlapping apertures must not accumulate into haze.
+      material.blending = CustomBlending;
+      material.blendEquation = MaxEquation;
+      material.blendSrc = OneFactor;
+      material.blendDst = OneFactor;
+      material.colorNode = attribute<"vec3">("volumeDrive", "vec3").mul(0.18);
+      material.opacityNode = float(1);
       if (context?.quality === "medium") {
+        material.blending = AdditiveBlending;
+        material.colorNode = attribute<"vec3">("volumeRadiance", "vec3").mul(
+          0.12,
+        );
         // Shaded cone surfaces approximate scattering without ray marching or a fog pass.
         const axial = float(1).sub(uv().y);
         const distance = axial.mul(attribute<"vec3">("volumeShape", "vec3").y);
@@ -370,6 +381,12 @@ export class EmitterVolumeBatch {
       color.red * intensity * (facet?.red ?? 1),
       color.green * intensity * (facet?.green ?? 1),
       color.blue * intensity * (facet?.blue ?? 1),
+    );
+    this.attributes.volumeDrive.setXYZ(
+      slot,
+      color.red * color.intensity,
+      color.green * color.intensity,
+      color.blue * color.intensity,
     );
     this.attributes.volumeSecondary.setXYZW(
       slot,

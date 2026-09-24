@@ -1,5 +1,5 @@
 diff --git a/node_modules/three/build/three.webgpu.js b/node_modules/three/build/three.webgpu.js
-index 2e49079..23776a3 100644
+index 2e49079..87db217 100644
 --- a/node_modules/three/build/three.webgpu.js
 +++ b/node_modules/three/build/three.webgpu.js
 @@ -24270,7 +24270,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
@@ -12,7 +12,17 @@ index 2e49079..23776a3 100644
  
  } );
  
-@@ -83362,6 +83363,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -67349,7 +67350,8 @@ class WebGLState {
+ 		equationToGL = {
+ 			[ AddEquation ]: gl.FUNC_ADD,
+ 			[ SubtractEquation ]: gl.FUNC_SUBTRACT,
+-			[ ReverseSubtractEquation ]: gl.FUNC_REVERSE_SUBTRACT
++			[ ReverseSubtractEquation ]: gl.FUNC_REVERSE_SUBTRACT,
++			[ MaxEquation ]: gl.MAX
+ 		};
+ 
+ 		factorToGL = {
+@@ -83362,6 +83364,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  	 */
  	async _resolveQueries() {
  
@@ -22,7 +32,7 @@ index 2e49079..23776a3 100644
  		if ( this.isDisposed ) {
  
  			return this.lastValue;
-@@ -83430,6 +83434,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -83430,6 +83435,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  			const times = new BigUint64Array( this.resultBuffer.getMappedRange( 0, bytesUsed ) );
  			const framesDuration = {};
@@ -32,7 +42,7 @@ index 2e49079..23776a3 100644
  
  			const frames = [];
  
-@@ -83448,6 +83455,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -83448,6 +83456,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  				const startTime = times[ baseOffset ];
  				const endTime = times[ baseOffset + 1 ];
@@ -43,7 +53,7 @@ index 2e49079..23776a3 100644
  				const duration = Number( endTime - startTime ) / 1e6;
  
  				this.timestamps.set( uid, duration );
-@@ -83462,6 +83473,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -83462,6 +83474,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  			this.resultBuffer.unmap();
  			this.lastValue = totalDuration;
  			this.frames = frames;
@@ -52,7 +62,7 @@ index 2e49079..23776a3 100644
  
  			return totalDuration;
  
-@@ -85966,6 +85979,9 @@ class WebGPUBackend extends Backend {
+@@ -85966,6 +85980,9 @@ class WebGPUBackend extends Backend {
  	 */
  	initTimestampQuery( type, uid, descriptor ) {
  
@@ -63,7 +73,7 @@ index 2e49079..23776a3 100644
  
  		if ( ! this.timestampQueryPool[ type ] ) {
 diff --git a/node_modules/three/build/three.webgpu.nodes.js b/node_modules/three/build/three.webgpu.nodes.js
-index f707acc..7c793eb 100644
+index f707acc..0847a4d 100644
 --- a/node_modules/three/build/three.webgpu.nodes.js
 +++ b/node_modules/three/build/three.webgpu.nodes.js
 @@ -24270,7 +24270,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
@@ -76,7 +86,17 @@ index f707acc..7c793eb 100644
  
  } );
  
-@@ -83362,6 +83363,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -67349,7 +67350,8 @@ class WebGLState {
+ 		equationToGL = {
+ 			[ AddEquation ]: gl.FUNC_ADD,
+ 			[ SubtractEquation ]: gl.FUNC_SUBTRACT,
+-			[ ReverseSubtractEquation ]: gl.FUNC_REVERSE_SUBTRACT
++			[ ReverseSubtractEquation ]: gl.FUNC_REVERSE_SUBTRACT,
++			[ MaxEquation ]: gl.MAX
+ 		};
+ 
+ 		factorToGL = {
+@@ -83362,6 +83364,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  	 */
  	async _resolveQueries() {
  
@@ -86,7 +106,7 @@ index f707acc..7c793eb 100644
  		if ( this.isDisposed ) {
  
  			return this.lastValue;
-@@ -83430,6 +83434,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -83430,6 +83435,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  			const times = new BigUint64Array( this.resultBuffer.getMappedRange( 0, bytesUsed ) );
  			const framesDuration = {};
@@ -96,7 +116,7 @@ index f707acc..7c793eb 100644
  
  			const frames = [];
  
-@@ -83448,6 +83455,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -83448,6 +83456,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  				const startTime = times[ baseOffset ];
  				const endTime = times[ baseOffset + 1 ];
@@ -107,7 +127,7 @@ index f707acc..7c793eb 100644
  				const duration = Number( endTime - startTime ) / 1e6;
  
  				this.timestamps.set( uid, duration );
-@@ -83462,6 +83473,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -83462,6 +83474,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  			this.resultBuffer.unmap();
  			this.lastValue = totalDuration;
  			this.frames = frames;
@@ -116,7 +136,7 @@ index f707acc..7c793eb 100644
  
  			return totalDuration;
  
-@@ -85966,6 +85979,9 @@ class WebGPUBackend extends Backend {
+@@ -85966,6 +85980,9 @@ class WebGPUBackend extends Backend {
  	 */
  	initTimestampQuery( type, uid, descriptor ) {
  
@@ -140,6 +160,28 @@ index 464dc5b..7ff0c76 100644
  
  } );
  
+diff --git a/node_modules/three/src/renderers/webgl-fallback/utils/WebGLState.js b/node_modules/three/src/renderers/webgl-fallback/utils/WebGLState.js
+index adf1eae..553408b 100644
+--- a/node_modules/three/src/renderers/webgl-fallback/utils/WebGLState.js
++++ b/node_modules/three/src/renderers/webgl-fallback/utils/WebGLState.js
+@@ -1,6 +1,6 @@
+ import {
+ 	CullFaceNone, CullFaceBack, CullFaceFront, DoubleSide, BackSide,
+-	NormalBlending, NoBlending, CustomBlending, AddEquation,
++	NormalBlending, NoBlending, CustomBlending, AddEquation, MaxEquation,
+ 	AdditiveBlending, SubtractiveBlending, MultiplyBlending, SubtractEquation, ReverseSubtractEquation,
+ 	ZeroFactor, OneFactor, SrcColorFactor, SrcAlphaFactor, SrcAlphaSaturateFactor, DstColorFactor, DstAlphaFactor,
+ 	OneMinusSrcColorFactor, OneMinusSrcAlphaFactor, OneMinusDstColorFactor, OneMinusDstAlphaFactor,
+@@ -106,7 +106,8 @@ class WebGLState {
+ 		equationToGL = {
+ 			[ AddEquation ]: gl.FUNC_ADD,
+ 			[ SubtractEquation ]: gl.FUNC_SUBTRACT,
+-			[ ReverseSubtractEquation ]: gl.FUNC_REVERSE_SUBTRACT
++			[ ReverseSubtractEquation ]: gl.FUNC_REVERSE_SUBTRACT,
++			[ MaxEquation ]: gl.MAX
+ 		};
+ 
+ 		factorToGL = {
 diff --git a/node_modules/three/src/renderers/webgpu/WebGPUBackend.js b/node_modules/three/src/renderers/webgpu/WebGPUBackend.js
 index 06e2036..09e175b 100644
 --- a/node_modules/three/src/renderers/webgpu/WebGPUBackend.js

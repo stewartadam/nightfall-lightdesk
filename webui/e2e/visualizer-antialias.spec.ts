@@ -11,7 +11,7 @@ import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
 for (const quality of ["low", "medium"] as const) {
   for (const forceWebGL of [false, true]) {
-    /** Separate geometry beam passes must remain occluded by the main scene in both backends. */
+    /** Checks preset-specific overlap blending and opaque occlusion in both backends. */
     test(`${quality} geometry beams respect opaque depth on ${forceWebGL ? "WebGL" : "WebGPU"}`, async ({
       page,
     }) => {
@@ -58,7 +58,7 @@ for (const quality of ["low", "medium"] as const) {
               distributionPower: 4,
               lumens: 1000,
             },
-            { red: 1, green: 0, blue: 0, intensity: 10 },
+            { red: 1, green: 0, blue: 0, intensity: 0.5 },
           );
           /** Reads the complete beam image after its GPU commands have been submitted. */
           const capture = async () => {
@@ -83,6 +83,21 @@ for (const quality of ["low", "medium"] as const) {
             return red;
           };
           const lit = await capture();
+          batch.update(
+            "overlapping-beam",
+            new T.Object3D(),
+            {
+              shape: "round",
+              radius: 0.02,
+              slopeX: 0.08,
+              slopeY: 0.08,
+              halfPowerRatio: 0.5,
+              distributionPower: 4,
+              lumens: 1000,
+            },
+            { red: 1, green: 0, blue: 0, intensity: 0.5 },
+          );
+          const overlapping = await capture();
           const wall = new T.Mesh(
             new T.PlaneGeometry(2, 2),
             new T.MeshBasicMaterial({ color: 0 }),
@@ -95,11 +110,16 @@ for (const quality of ["low", "medium"] as const) {
           wall.geometry.dispose();
           wall.material.dispose();
           renderer.dispose();
-          return { lit, hidden };
+          return { lit, overlapping, hidden };
         },
         { quality, forceWebGL },
       );
       expect(result.lit).toBeGreaterThan(1000);
+      if (quality === "low") {
+        expect(result.overlapping).toBe(result.lit);
+      } else {
+        expect(result.overlapping).toBeGreaterThan(result.lit * 1.1);
+      }
       expect(result.hidden).toBeLessThan(result.lit * 0.01);
       expect(errors).toEqual([]);
     });
