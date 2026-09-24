@@ -126,8 +126,9 @@ pub mod prelude {
     pub use crate::variables::GlobalVariables;
     pub use crate::{
         AppState, ClientFeedback, ClientOutput, ClockUpdate, CommandFeedbackEgress, Compositing,
-        DeskEventSet, DmxOutput, EventHandling, InputHandling, LayerGeneration, ResyncHandling,
-        StartupFrameCounter, VdimProcessing,
+        DeskEventSet, DmxOutput, EventHandling, InputHandling, LayerGeneration,
+        PendingCommandExpansion, PendingCommandProcessing, ResyncHandling, StartupFrameCounter,
+        VdimProcessing,
     };
     pub use crate::{EngineCommand, ResyncRequested, register_engine_operation};
 }
@@ -149,7 +150,9 @@ impl Plugin for EnginePlugin {
             Update,
             (
                 InputHandling,
-                EventHandling.after(InputHandling),
+                PendingCommandExpansion.after(InputHandling),
+                PendingCommandProcessing.after(PendingCommandExpansion),
+                EventHandling.after(PendingCommandProcessing),
                 ResyncHandling.after(EventHandling),
             ),
         );
@@ -212,7 +215,22 @@ impl Plugin for EnginePlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InputHandling;
 
-/// System set for turning ingested events into engine actions.
+/// System set for systems that rewrite queued commands before undo capture and dispatch.
+///
+/// Expanders replace wrapper commands in the pending buffer with the concrete commands they
+/// stand for, such as desk eval text or context-dependent transport commands, so the
+/// concrete commands are captured and dispatched in the same frame.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PendingCommandExpansion;
+
+/// System set that drains queued ingress commands and engine operations for undo capture.
+///
+/// Runs after [`InputHandling`] and before [`EventHandling`]; producers that queue commands
+/// outside input handling order themselves before this set to dispatch in the same frame.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PendingCommandProcessing;
+
+/// System set for turning ingested events into engine operations.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventHandling;
 

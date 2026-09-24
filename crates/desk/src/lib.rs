@@ -49,8 +49,7 @@ pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::automation_actions::{
         CONTROL_SET_ACTION_ID, ControlActionArguments, DESK_EVAL_ACTION_ID,
-        DeskEvalActionArguments, clip_target_for_action, desk_eval_action,
-        desk_eval_command_for_action, set_control_action,
+        DeskEvalActionArguments, desk_eval_action, set_control_action,
     };
     pub use crate::controls::{
         ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
@@ -200,15 +199,13 @@ impl Plugin for DeskPlugin {
         // PendingCommandBuffer before undo processing
         app.add_systems(
             Update,
-            systems::scheduled_commands::process_scheduled_commands
-                .after(InputHandling)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+            systems::scheduled_commands::process_scheduled_commands.in_set(PendingCommandExpansion),
         );
         app.add_systems(
             Update,
             systems::event_handlers::desk_events::expand_pending_eval_commands
                 .after(systems::scheduled_commands::process_scheduled_commands)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+                .in_set(PendingCommandExpansion),
         );
 
         // Maintain InstanceIndex on spawn/despawn, and sync clip active state
