@@ -61,6 +61,41 @@ const OWNED_FIXTURE_PROFILE = {
             merge_type: MergeStrategy.LTP,
             use_grandmaster: false,
           },
+          {
+            resolution: DmxValueResolution.Coarse,
+            attribute: { type: "Gobo" },
+            value_polarity: ParameterValuePolarity.Unsigned,
+            min: 0,
+            max: 255,
+            offset: { type: "Absolute", data: { value: 0 } },
+            is_inverted: false,
+            is_snap: true,
+            merge_type: MergeStrategy.LTP,
+            use_grandmaster: false,
+            functions: [
+              {
+                name: "Gobo Select",
+                attribute: "Gobo1",
+                dmx_from: 0,
+                dmx_to: 127,
+                physical_from: 0,
+                physical_to: 1,
+                wheel: "Gobo Wheel",
+                sets: [
+                  { name: "Open", dmx_from: 0, dmx_to: 9, wheel_slot: 1 },
+                  { name: "Stars", dmx_from: 10, dmx_to: 127, wheel_slot: 2 },
+                ],
+              },
+              {
+                name: "Gobo Spin",
+                attribute: "Gobo1PosRotate",
+                dmx_from: 128,
+                dmx_to: 255,
+                physical_from: -100,
+                physical_to: 100,
+              },
+            ],
+          },
         ],
       },
       {
@@ -287,7 +322,7 @@ test("fixture library properties inspect selected mode parameters", async ({
 
   await expect(page.getByText("Mode Parameters")).toBeVisible();
   await expect(page.getByText("Extended").last()).toBeVisible();
-  await expect(page.getByText("4 ch")).toBeVisible();
+  await expect(page.getByText("5 ch", { exact: true })).toBeVisible();
   await expect(page.getByText("Head #1")).toBeVisible();
   await expect(page.getByText("Cell #2")).toBeVisible();
   await expect(page.getByRole("cell", { name: "Pan" })).toBeVisible();
@@ -297,7 +332,16 @@ test("fixture library properties inspect selected mode parameters", async ({
   ).toBeVisible();
   await expect(page.getByText("Offset -12")).toBeVisible();
   await expect(page.getByText("Inverted")).toBeVisible();
-  await expect(page.getByText("Snap", { exact: true })).toBeVisible();
+  await expect(page.getByText("Snap", { exact: true }).first()).toBeVisible();
+  const functions = page.getByRole("list", { name: "DMX functions" });
+  await expect(functions).toContainText(
+    "0-127 Gobo Select: Open 0-9, Stars 10-127",
+  );
+  await expect(functions).toContainText("128-255 Gobo Spin");
+  await functions.scrollIntoViewIfNeeded();
+  await functions
+    .locator("xpath=ancestor::tr")
+    .screenshot({ path: test.info().outputPath("gobo-functions.png") });
 
   await modeSelect.scrollIntoViewIfNeeded();
   await page.screenshot({

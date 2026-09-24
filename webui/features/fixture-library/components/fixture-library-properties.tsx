@@ -452,6 +452,49 @@ export default function FixtureLibraryProperties(
                                                   </span>
                                                 </Show>
                                               </div>
+                                              <Show
+                                                when={
+                                                  (row.parameter.functions
+                                                    ?.length ?? 0) > 1 ||
+                                                  (row.parameter.functions?.[0]
+                                                    ?.sets?.length ?? 0) > 0
+                                                }
+                                              >
+                                                <ul
+                                                  class="mt-1 space-y-0.5 text-neutral-400"
+                                                  aria-label="DMX functions"
+                                                >
+                                                  <For
+                                                    each={
+                                                      row.parameter.functions
+                                                    }
+                                                  >
+                                                    {(fn) => (
+                                                      <li>
+                                                        <span class="text-neutral-200">
+                                                          {fn.dmx_from}-
+                                                          {fn.dmx_to}
+                                                        </span>{" "}
+                                                        {fn.name}
+                                                        <Show
+                                                          when={
+                                                            (fn.sets?.length ??
+                                                              0) > 0
+                                                          }
+                                                        >
+                                                          {": "}
+                                                          {fn.sets
+                                                            ?.map(
+                                                              (set) =>
+                                                                `${set.name} ${set.dmx_from}-${set.dmx_to}`,
+                                                            )
+                                                            .join(", ")}
+                                                        </Show>
+                                                      </li>
+                                                    )}
+                                                  </For>
+                                                </ul>
+                                              </Show>
                                             </td>
                                           </tr>
                                         )}

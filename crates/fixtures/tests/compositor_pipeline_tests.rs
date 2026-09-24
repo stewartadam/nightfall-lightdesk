@@ -27,6 +27,9 @@ fn create_test_parameter(
         .spawn(Parameter {
             metadata: ParameterMetadata {
                 dmx_slots: Default::default(),
+                functions: Vec::new(),
+                default_dmx: None,
+                highlight_dmx: None,
                 resolution: DmxValueResolution::Coarse,
                 native_unit: attribute.native_unit(),
                 value_polarity: attribute.value_polarity(),

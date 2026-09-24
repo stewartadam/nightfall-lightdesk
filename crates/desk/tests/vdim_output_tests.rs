@@ -21,6 +21,9 @@ use uuid::Uuid;
 fn param(attribute: Attribute, merge_type: MergeStrategy) -> ParameterMetadata {
     ParameterMetadata {
         dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
         attribute,
