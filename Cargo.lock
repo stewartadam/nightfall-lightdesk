@@ -5767,6 +5767,7 @@ dependencies = [
  "bevy_ecs",
  "moonshine-kind",
  "nightfall",
+ "nightfall-actions",
  "nightfall-cmd-parse",
  "nightfall-compositor",
  "nightfall-cues",

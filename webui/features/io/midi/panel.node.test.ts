@@ -12,7 +12,7 @@ import { formatMidiAction, parseMidiAction } from "./model/action-format";
 
 test("parseAction supports SetControl mappings", () => {
   assert.deepEqual(parseMidiAction("SetControl(4)"), {
-    id: "control.set-external",
+    id: "control.level",
     arguments: { control_index: 4 },
   });
 });
@@ -20,7 +20,7 @@ test("parseAction supports SetControl mappings", () => {
 test("formatAction renders SetControl mappings", () => {
   assert.equal(
     formatMidiAction({
-      id: "control.set-external",
+      id: "control.level",
       arguments: { control_index: 7 },
     }),
     "SetControl(7)",

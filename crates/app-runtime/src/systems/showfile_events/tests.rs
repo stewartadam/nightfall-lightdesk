@@ -2372,7 +2372,7 @@ fn seed_world(world: &mut World) {
             channel: 176,
             note: 36,
             velocity: None,
-            action: set_control_action(1),
+            action: control_level_action(1),
         }]);
     #[cfg(feature = "osc")]
     world
@@ -2382,7 +2382,7 @@ fn seed_world(world: &mut World) {
             address: "/grid/fader".to_string(),
             arg_index: Some(1),
             arg_value: Some("0.5".to_string()),
-            action: set_control_action(2),
+            action: control_level_action(2),
         }]);
 
     {
@@ -2986,7 +2986,7 @@ fn roundtrip_preserves_midi_mappings() {
     assert_eq!(mapping.channel, 176);
     assert_eq!(mapping.note, 36);
     assert_eq!(mapping.velocity, None);
-    assert_eq!(mapping.action, set_control_action(1));
+    assert_eq!(mapping.action, control_level_action(1));
 }
 
 /// Verifies OSC input mappings survive showfile save/load snapshot application.
@@ -3008,7 +3008,7 @@ fn roundtrip_preserves_osc_mappings() {
     assert_eq!(mapping.address, "/grid/fader");
     assert_eq!(mapping.arg_index, Some(1));
     assert_eq!(mapping.arg_value.as_deref(), Some("0.5"));
-    assert_eq!(mapping.action, set_control_action(2));
+    assert_eq!(mapping.action, control_level_action(2));
 }
 
 #[test]

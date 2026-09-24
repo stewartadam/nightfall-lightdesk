@@ -291,6 +291,8 @@ pub enum DeskEventSet {
     BlueprintActions,
     /// Applies instance playback commands.
     InstancePlayback,
+    /// Replaces queued desk eval commands with the concrete commands they evaluate to.
+    EvalExpansion,
 }
 
 /// Registers one user-facing command for semantic envelope dispatch.

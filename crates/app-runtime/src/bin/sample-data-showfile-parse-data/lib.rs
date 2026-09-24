@@ -322,7 +322,7 @@ fn add_input_mappings(world: &mut World) {
             channel: 176,
             note: 36,
             velocity: None,
-            action: set_control_action(1),
+            action: control_level_action(1),
         }]);
 
     #[cfg(feature = "osc")]
@@ -333,7 +333,7 @@ fn add_input_mappings(world: &mut World) {
             address: "/parser/fader".to_owned(),
             arg_index: Some(0),
             arg_value: Some("0.5".to_owned()),
-            action: set_control_action(2),
+            action: control_level_action(2),
         }]);
 }
 

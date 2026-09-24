@@ -238,6 +238,9 @@ impl Undoable for TimelineCommand {
             // but the timeline state (position, triggers fired, etc.) is transient
             TimelineCommand::StartTimeline(_)
             | TimelineCommand::StopTimeline(_)
+            | TimelineCommand::PlayTimeline(_)
+            | TimelineCommand::PauseTimeline(_)
+            | TimelineCommand::TogglePlayback(_)
             | TimelineCommand::SetTimelineRecording { .. }
             | TimelineCommand::RequestBeatgridDetection { .. }
             | TimelineCommand::ApplyBeatgridProposal { .. }
@@ -342,6 +345,9 @@ impl Undoable for TimelineCommand {
                 format!("Rename Timeline {} → {}", id, new_id)
             }
             TimelineCommand::StartTimeline(id) => format!("Start Timeline {}", id),
+            TimelineCommand::PlayTimeline(id) => format!("Play Timeline {}", id),
+            TimelineCommand::PauseTimeline(id) => format!("Pause Timeline {}", id),
+            TimelineCommand::TogglePlayback(id) => format!("Toggle Timeline {} Playback", id),
             TimelineCommand::StopTimeline(id) => format!("Stop Timeline {}", id),
             TimelineCommand::RequestBeatgridDetection { timeline_id } => {
                 format!("Request Beatgrid Detection {}", timeline_id)

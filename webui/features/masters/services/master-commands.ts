@@ -15,6 +15,11 @@ export function newMasterUid(): string {
   return uuidv4().replace(/-/g, "");
 }
 
+/** Streams one untracked master update, used for continuous slider drags. */
+export function sendMasterUpdate(update: types.MasterUpdate): void {
+  engineRuntime.sendUpdate("MasterUpdate", update, false);
+}
+
 /** Sends one master command through the websocket command bus. */
 export function sendMasterCommand(command: types.MasterCommand): void {
   engineRuntime.sendCommand({ module: "MasterCommand", command });
