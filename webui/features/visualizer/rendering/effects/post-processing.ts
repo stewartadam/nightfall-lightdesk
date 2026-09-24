@@ -144,18 +144,15 @@ export function createPostProcessing(
     },
   );
   const quality = options?.quality ?? "high";
-  const surfaceLighting =
-    quality === "low"
-      ? undefined
-      : new OpticalSurfaceLighting(quality === "high");
+  const surfaceLighting = new OpticalSurfaceLighting(quality === "high");
   if (surfaceLighting) renderer.lighting = surfaceLighting;
   const config = {
     ...defaultPostProcessingConfig,
     ...options?.configOverrides,
   };
 
-  // Keep native pixel detail; single-sample offscreen targets avoid the bandwidth cost of MSAA.
-  const scenePass = pass(scene, camera, { samples: 0 });
+  // Preserve subpixel emitter coverage while keeping the atmospheric integration single-sampled.
+  const scenePass = pass(scene, camera, { samples: 4 });
   scenePass.getTexture("output").name = "scene";
   const scenePassColor = scenePass.getTextureNode("output");
   const opticalContext = createOpticalRenderContext(
@@ -170,10 +167,7 @@ export function createPostProcessing(
     samples: 0,
   }).setResolutionScale(0.5);
   volumePass.getTexture("output").name = "atmosphere";
-  const litColor =
-    quality === "high"
-      ? scenePassColor.add(volumePass.getTextureNode("output"))
-      : scenePassColor;
+  const litColor = scenePassColor.add(volumePass.getTextureNode("output"));
 
   // Create bloom pass
   const bloomPass = bloom(
@@ -350,8 +344,9 @@ export function renderWithPostProcessing(
 ): void {
   const started = performance.now();
   const scale = state.atmosphereBudget.update(gpu, started);
-  if (state.volumePass.getResolutionScale() !== scale)
-    state.volumePass.setResolutionScale(scale);
+  const beamScale = state.quality === "high" ? scale : 0.5;
+  if (state.volumePass.getResolutionScale() !== beamScale)
+    state.volumePass.setResolutionScale(beamScale);
   // Preserve native-resolution geometry; only the soft effects trade pixels for GPU headroom.
   if (state.bloomPass.getResolutionScale() !== scale)
     state.bloomPass.setResolutionScale(scale);

@@ -90,7 +90,7 @@ export class BeamManager {
 
   constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
     this.beamQuality = beamQuality;
-    if (beamQuality !== "low") this.volumeBatch = new EmitterVolumeBatch(scene);
+    this.volumeBatch = new EmitterVolumeBatch(scene);
   }
 
   /** Resolves a source image once during fixture setup, including non-ASCII archive paths. */

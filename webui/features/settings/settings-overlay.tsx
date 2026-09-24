@@ -66,11 +66,11 @@ import {
   setVisualizerQuality,
   type VisualizerCameraRotationMode,
   visualizerCameraRotationMode,
+  visualizerDarkness,
   visualizerHighlightSelection,
   visualizerQuality,
   visualizerShowOrbitTargetIndicator,
 } from "../visualizer";
-
 import { AppearanceSettings } from "./appearance-settings";
 
 const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS = 2000;
@@ -164,6 +164,7 @@ export function SettingsOverlay() {
   const rotationMode = useStore(visualizerCameraRotationMode);
   const showOrbitTargetIndicator = useStore(visualizerShowOrbitTargetIndicator);
   const quality = useStore(visualizerQuality);
+  const darkness = useStore(visualizerDarkness);
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
   const tabId = createUniqueId();
   /** Refreshes backend-provided device choices whenever settings becomes visible. */
@@ -735,10 +736,35 @@ export function SettingsOverlay() {
                     </NativeSelect>
                     <p class="mt-1 text-xs text-gray-500">
                       {quality() === "low"
-                        ? "Fixture colors and scene geometry only."
+                        ? "Simple geometry beams for maximum performance."
                         : quality() === "medium"
-                          ? "Surface lighting and simple beams, without fog or glow."
+                          ? "Smoothly shaded beams and surface lighting, without fog or glow."
                           : "Atmospheric beams, fog, glow, and optical effects."}
+                    </p>
+                  </label>
+                  <label class="block">
+                    <span class="text-sm text-gray-400">
+                      Darkness ({darkness()}%)
+                    </span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={darkness()}
+                      class="mt-2 w-full"
+                      aria-label="Darkness"
+                      onInput={(e) =>
+                        setStoreAction(
+                          visualizerDarkness,
+                          "Set Visualizer Darkness",
+                          Number(e.currentTarget.value),
+                        )
+                      }
+                    />
+                    <p class="mt-1 text-xs text-gray-500">
+                      Lower for a visible rig; higher for a dark stage. Fixture
+                      brightness is unchanged.
                     </p>
                   </label>
                   <label class="block">

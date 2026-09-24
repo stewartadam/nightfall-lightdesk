@@ -39,6 +39,7 @@ interface UseVisualizerRendererSyncOptions {
   showEmitters: () => boolean;
   showGrid: () => boolean;
   showOrbitTargetIndicator: () => boolean;
+  darkness: () => number;
   showLabels: () => boolean;
   toolMode: () => VisualizerInteractionMode;
   rotationMode: () => VisualizerCameraRotationMode;
@@ -277,6 +278,12 @@ export function useVisualizerRendererSync(
     if (!workspaceActive()) return;
     const r = options.renderer();
     r?.setOrbitTargetIndicatorEnabled(options.showOrbitTargetIndicator());
+  });
+
+  /** Applies darkness live after renderer initialization or workspace reactivation. */
+  createEffect(() => {
+    if (!workspaceActive()) return;
+    options.renderer()?.setDarkness(options.darkness());
   });
 
   createEffect(() => {

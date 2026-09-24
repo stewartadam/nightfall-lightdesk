@@ -64,6 +64,7 @@ import {
 import {
   createSceneEnvironment,
   type SceneEnvironment,
+  setSceneDarkness,
   updateFloorTransparency,
   updateOrbitTargetIndicator,
 } from "../scene-environment";
@@ -312,6 +313,11 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
 
   setGridEnabled(enabled: boolean): void {
     this.workerApi.setGridEnabled(enabled);
+  }
+
+  /** Forwards ambient visibility changes to the rendering worker. */
+  setDarkness(darkness: number): void {
+    this.workerApi.setDarkness(darkness);
   }
 
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {
@@ -841,6 +847,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     this.environment.axesHelper.visible = enabled;
   }
 
+  /** Updates ambient lighting and background without rebuilding the renderer. */
+  setDarkness(darkness: number): void {
+    if (this.scene && this.environment)
+      setSceneDarkness(this.scene, this.environment, darkness);
+  }
+
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {
     this.orbitTargetIndicatorEnabled = enabled;
     if (!this.environment) return;
@@ -1082,6 +1094,8 @@ const workerApi = {
     renderer.setEmitterDebugEnabled(enabled),
   toggleBeams: () => renderer.toggleBeams(),
   setGridEnabled: (enabled: boolean) => renderer.setGridEnabled(enabled),
+  /** Applies the main thread's persisted environment preference. */
+  setDarkness: (darkness: number) => renderer.setDarkness(darkness),
   setOrbitTargetIndicatorEnabled: (enabled: boolean) =>
     renderer.setOrbitTargetIndicatorEnabled(enabled),
   setSnapPointsEnabled: (enabled: boolean) =>

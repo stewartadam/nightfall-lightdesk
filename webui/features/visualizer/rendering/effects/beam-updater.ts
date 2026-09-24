@@ -73,7 +73,6 @@ export class BeamUpdater {
    */
   syncWithFixtures(fixtures: Map<string, ExtendedFixtureInstance>): void {
     this.beamManager.syncWithFixtures(fixtures);
-    if (this.beamManager.beamQuality === "low") return;
     const live = new Set<EmitterData>();
     for (const [uid, fixture] of fixtures)
       for (const [name, emitter] of fixture.emitters) {
@@ -108,7 +107,7 @@ export class BeamUpdater {
     instance: ExtendedFixtureInstance,
     elementColors: Map<string, BeamColorData>,
   ): void {
-    if (!this.enabled || this.beamManager.beamQuality === "low") return;
+    if (!this.enabled) return;
     if (
       (instance.movingHeadData && !instance.movingHeadData.sharedAtmosphere) ||
       (instance.rotatingWashBeamData &&

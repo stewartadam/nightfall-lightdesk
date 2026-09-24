@@ -16,6 +16,7 @@ export { default as VisualizerPanel } from "./panels/visualizer-panel";
 export type { VisualizerCameraRotationMode } from "./rendering/renderers/renderer-api";
 export {
   visualizerCameraRotationMode,
+  visualizerDarkness,
   visualizerHighlightSelection,
   visualizerShowOrbitTargetIndicator,
 } from "./state/settings";

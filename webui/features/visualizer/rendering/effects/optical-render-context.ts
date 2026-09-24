@@ -36,7 +36,7 @@ export function createOpticalRenderContext(
   atmosphere.background = new Color(0);
   const context = {
     quality,
-    scene: quality === "medium" ? scene : atmosphere,
+    scene: atmosphere,
     viewDepth,
     surfaceScene: surfaceLighting ? scene : undefined,
     goboAtlas,

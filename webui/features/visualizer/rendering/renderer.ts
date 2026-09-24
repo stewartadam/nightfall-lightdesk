@@ -105,7 +105,8 @@ export interface RendererConfig {
 export function createRenderer(config: RendererConfig): WebGPURenderer {
   const renderer = new WebGPURenderer({
     canvas: config.canvas as HTMLCanvasElement, // Cast for Three.js types
-    antialias: true,
+    // The scene pass owns multisampling; fullscreen composition and outline filters do not need it.
+    antialias: false,
     alpha: true,
   });
   renderer.setPixelRatio(Math.min(config.devicePixelRatio ?? 2, 2));

@@ -490,14 +490,14 @@ for (const worker of [false, true]) {
               const context = getOpticalRenderContext(scene);
               return {
                 quality: context?.quality,
-                cones: !!scene.getObjectByName("EmitterBeams"),
+                cones: !!context?.scene.getObjectByName("EmitterBeams"),
                 volumes: !!context?.scene.getObjectByName("EmitterVolumes"),
               };
             }),
           )
           .toEqual({
             quality: preset,
-            cones: preset === "medium",
+            cones: preset !== "high",
             volumes: preset === "high",
           });
       }
@@ -519,6 +519,33 @@ for (const worker of [false, true]) {
     const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
     await dialog.getByRole("tab", { name: "Visualizer", exact: true }).click();
     await expect(dialog.getByLabel(/Quality preset/)).toHaveValue("high");
+    await dialog
+      .getByRole("slider", { name: "Darkness", exact: true })
+      .fill("0");
+    await page.keyboard.press("Escape");
+    const bright = await page.screenshot({
+      path: testInfo.outputPath("darkness-0.png"),
+      clip: await largestVisibleCanvasBox(page),
+    });
+    await page.keyboard.press("ControlOrMeta+,");
+    await dialog
+      .getByRole("slider", { name: "Darkness", exact: true })
+      .fill("100");
+    await page.keyboard.press("Escape");
+    const dark = await page.screenshot({
+      path: testInfo.outputPath("darkness-100.png"),
+      clip: await largestVisibleCanvasBox(page),
+    });
+    expect(decodePng(bright).data[0]).toBeGreaterThan(
+      decodePng(dark).data[0] + 10,
+    );
+    await page.reload();
+    await waitForVisualizerReady(page);
+    await page.keyboard.press("ControlOrMeta+,");
+    await dialog.getByRole("tab", { name: "Visualizer", exact: true }).click();
+    await expect(
+      dialog.getByRole("slider", { name: "Darkness", exact: true }),
+    ).toHaveValue("100");
     expect(pageErrors).toEqual([]);
   });
 }
@@ -859,8 +886,8 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
     });
 });
 
-/** Verifies low quality retains visible fixtures without light projections or beams. */
-test("generic wash beam low-quality setting omits light effects", async ({
+/** Verifies low quality uses batched geometry beams without atmospheric integration. */
+test("generic wash beam low-quality setting uses geometry beams", async ({
   page,
 }) => {
   await page.goto("/");
@@ -908,7 +935,7 @@ test("generic wash beam low-quality setting omits light effects", async ({
   await expect
     .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
     .toEqual({
-      opticalBeamCount: 0,
+      opticalBeamCount: 12,
       atmosphericBeamCount: 0,
       atmosphericDraws: 0,
       visibleBeamCount: 0,

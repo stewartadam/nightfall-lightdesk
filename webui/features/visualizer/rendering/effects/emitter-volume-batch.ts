@@ -6,11 +6,29 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { attribute, uv } from "three/tsl";
+import {
+  abs,
+  attribute,
+  cameraPosition,
+  Discard,
+  dot,
+  Fn,
+  float,
+  If,
+  normalize,
+  normalWorld,
+  positionView,
+  positionWorld,
+  pow,
+  screenUV,
+  smoothstep,
+  uv,
+} from "three/tsl";
 import {
   AdditiveBlending,
   BoxGeometry,
   ConeGeometry,
+  DoubleSide,
   DynamicDrawUsage,
   InstancedInterleavedBuffer,
   InstancedMesh,
@@ -61,6 +79,7 @@ export class EmitterVolumeBatch {
   private readonly surfaceLights = new Map<string, OpticalSurfaceLight>();
   private readonly material;
   private readonly volume;
+  private readonly coneSegments: number;
   readonly goboAtlas: GoboAtlas;
   private readonly ownsGoboAtlas: boolean;
   private mesh!: InstancedMesh;
@@ -88,13 +107,14 @@ export class EmitterVolumeBatch {
   /** Allocates one scene-local batch; capacity grows only when fixture topology changes. */
   constructor(scene: Scene) {
     const context = getOpticalRenderContext(scene);
+    this.coneSegments = context?.quality === "medium" ? 48 : 12;
     this.goboAtlas = context?.goboAtlas ?? new GoboAtlas();
     this.ownsGoboAtlas = !context?.goboAtlas;
     this.surfaceScene = context?.surfaceScene;
     this.shadows = context?.shadows;
     this.target = context?.scene ?? scene;
     this.volume =
-      context?.quality === "medium"
+      context && context.quality !== "high"
         ? undefined
         : createEmitterVolumeMaterial({
             instanced: true,
@@ -115,6 +135,35 @@ export class EmitterVolumeBatch {
         0.12,
       );
       material.opacityNode = uv().y.mul(0.3);
+      if (context?.quality === "medium") {
+        // Shaded cone surfaces approximate scattering without ray marching or a fog pass.
+        const axial = float(1).sub(uv().y);
+        const distance = axial.mul(attribute<"vec3">("volumeShape", "vec3").y);
+        const facing = abs(
+          dot(normalize(cameraPosition.sub(positionWorld)), normalWorld),
+        );
+        const attenuation = pow(float(5).div(distance.add(5)), 2);
+        material.opacityNode = pow(uv().y, 1.5)
+          .mul(smoothstep(0, 0.9, facing))
+          .mul(attenuation)
+          .mul(0.6);
+        material.side = DoubleSide;
+        // Additive front/back faces can share one draw without transparency sorting.
+        material.forceSinglePass = true;
+      }
+      if (context) {
+        const opacity = material.opacityNode;
+        /** Clips cheap beams against the multisampled rig without multisampling beam overdraw. */
+        material.opacityNode = Fn(() => {
+          const opaqueDepth = float(context.viewDepth).context({
+            getUV: () => screenUV,
+          });
+          If(positionView.z.lessThan(opaqueDepth), () => {
+            Discard();
+          });
+          return opacity;
+        })();
+      }
       this.material = material;
     }
     this.resize(256);
@@ -473,7 +522,9 @@ export class EmitterVolumeBatch {
     const previous = this.mesh;
     const geometry = this.volume
       ? new BoxGeometry(1, 1, 1)
-      : new ConeGeometry(0.25, 1, 12, 1, true).rotateX(Math.PI / 2);
+      : new ConeGeometry(0.25, 1, this.coneSegments, 1, true).rotateX(
+          Math.PI / 2,
+        );
     const attributes = {} as Record<AttributeName, InterleavedBufferAttribute>;
     const records = new InstancedInterleavedBuffer(
       new Float32Array(capacity * RECORD_SIZE),

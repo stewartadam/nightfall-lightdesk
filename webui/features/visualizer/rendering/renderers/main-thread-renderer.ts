@@ -44,6 +44,7 @@ import {
   stopRenderLoop,
   zoomCameraToGroups,
 } from "../renderer";
+import { setSceneDarkness } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
@@ -328,6 +329,16 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     // Keep both helpers in sync with the toolbar's single grid toggle.
     this.rendererState.environment.grid.visible = enabled;
     this.rendererState.environment.axesHelper.visible = enabled;
+  }
+
+  /** Updates ambient lighting and background without rebuilding the renderer. */
+  setDarkness(darkness: number): void {
+    if (this.rendererState)
+      setSceneDarkness(
+        this.rendererState.scene,
+        this.rendererState.environment,
+        darkness,
+      );
   }
 
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {

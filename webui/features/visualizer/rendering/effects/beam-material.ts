@@ -193,7 +193,7 @@ export function isLowQualityBeamMaterial(
 export function createBeamMaterial(
   quality: VisualizerBeamQuality = "high",
 ): BeamMaterial {
-  if (quality !== "high") {
+  if (quality === "low") {
     return createLowQualityBeamMaterial();
   }
 
@@ -535,7 +535,7 @@ export function updateBeamMaterial(
 export function createBeamGeometry(
   quality: VisualizerBeamQuality = "high",
 ): ConeGeometry {
-  const radialSegments = quality === "high" ? 64 : 12;
+  const radialSegments = quality === "low" ? 12 : 64;
   return new ConeGeometry(1.0, 1.0, radialSegments, 1, true);
 }
 

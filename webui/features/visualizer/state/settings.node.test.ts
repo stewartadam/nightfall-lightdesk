@@ -42,6 +42,7 @@ test("visualizer settings hydrate valid persisted values and default invalid fie
       cameraRotationMode: "center-locked",
       highlightSelection: false,
       qualityPreset: "ultra",
+      darkness: 500,
       showOrbitTargetIndicator: true,
       snapPointsEnabled: true,
     }),
@@ -52,6 +53,7 @@ test("visualizer settings hydrate valid persisted values and default invalid fie
   assert.equal(settings.visualizerCameraRotationMode.get(), "center-locked");
   assert.equal(settings.visualizerHighlightSelection.get(), false);
   assert.equal(settings.visualizerQualityPreset.get(), "medium");
+  assert.equal(settings.visualizerDarkness.get(), 100);
   assert.equal(settings.visualizerShowOrbitTargetIndicator.get(), true);
   assert.equal(settings.visualizerSnapPointsEnabled.get(), true);
 });
@@ -60,11 +62,13 @@ test("visualizer setting atoms persist updates into the legacy storage key", asy
   const settings = await importVisualizerSettings();
 
   settings.visualizerQualityPreset.set("high");
+  settings.visualizerDarkness.set(25);
   settings.visualizerSnapPointsEnabled.set(true);
 
   const stored = JSON.parse(getTestStorage()[STORAGE_KEY]);
 
   assert.equal(stored.qualityPreset, "high");
+  assert.equal(stored.darkness, 25);
   assert.equal(stored.snapPointsEnabled, true);
   assert.equal(stored.highlightSelection, true);
 });

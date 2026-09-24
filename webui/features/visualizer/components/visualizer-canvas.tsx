@@ -88,6 +88,7 @@ import { useVisualizerRendererLifecycle } from "../services/use-visualizer-rende
 import { useVisualizerRendererSync } from "../services/use-visualizer-renderer-sync";
 import {
   visualizerCameraRotationMode,
+  visualizerDarkness,
   visualizerHighlightSelection,
   visualizerShowOrbitTargetIndicator,
 } from "../state/settings";
@@ -132,6 +133,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   const { openWizard: openObjectWizard } = useObjectPatchWizard();
   const $highlightSelection = useStore(visualizerHighlightSelection);
   const $rotationMode = useStore(visualizerCameraRotationMode);
+  const $darkness = useStore(visualizerDarkness);
   const $showOrbitTargetIndicator = useStore(
     visualizerShowOrbitTargetIndicator,
   );
@@ -1001,6 +1003,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     showEmitters: context.showEmitters,
     showGrid: context.showGrid,
     showOrbitTargetIndicator: $showOrbitTargetIndicator,
+    darkness: $darkness,
     showLabels: context.showLabels,
     toolMode: context.toolMode,
     rotationMode: $rotationMode,

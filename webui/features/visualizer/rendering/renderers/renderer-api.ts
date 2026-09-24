@@ -216,6 +216,8 @@ export interface IVisualizerRenderer {
    * Enable or disable ground-reference helpers (grid + axes).
    */
   setGridEnabled(enabled: boolean): void;
+  /** Changes ambient rig visibility without changing fixture output. */
+  setDarkness(darkness: number): void;
 
   /**
    * Enable or disable visualization of the current orbit target.
