@@ -31,7 +31,7 @@ pub mod prelude {
     pub use crate::TimecodePlugin;
     pub use crate::components::TimecodeGenerator;
     pub use crate::timecode::{Timecode, TimecodeRate, TimecodeSource, TimecodeState};
-    pub use crate::{TimecodeAction, TimecodeCommand, TimecodeEvent};
+    pub use crate::{TimecodeCommand, TimecodeEvent, TimecodeOperation};
 }
 
 /// Plugin for adding timecode functionality to the app
@@ -40,7 +40,7 @@ impl Plugin for TimecodePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering TimecodePlugin");
         register_ingress_command::<TimecodeCommand>(app);
-        app.add_message::<EngineActionEnvelope<TimecodeAction>>();
+        app.add_message::<EngineOperationEnvelope<TimecodeOperation>>();
         app.add_message::<TimecodeEvent>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimecodeAstConverter,
@@ -123,7 +123,7 @@ impl IngressCommand for TimecodeCommand {}
 
 /// Concrete runtime operations owned by the timecode domain.
 #[derive(Debug, Clone, EnginePayload)]
-pub enum TimecodeAction {
+pub enum TimecodeOperation {
     /// Starts or resumes a timecode generator.
     Start(u32),
     /// Pauses a timecode generator without resetting its position.
@@ -139,7 +139,7 @@ pub enum TimecodeAction {
     },
 }
 
-impl EngineAction for TimecodeAction {}
+impl EngineOperation for TimecodeOperation {}
 
 /// Facts published after the timecode domain applies runtime or CRUD work.
 #[derive(Debug, Clone, Message)]

@@ -62,7 +62,7 @@ pub mod prelude {
         TimelineSeekBehavior, TimelineSelection, TimelineState, TimelineStopBehavior,
         TimelineTriggerMode, Track,
     };
-    pub use crate::{TimelineAction, TimelineCommand};
+    pub use crate::{TimelineCommand, TimelineOperation};
 }
 
 /// Resource controlling process-wide timeline audio output.
@@ -125,7 +125,7 @@ impl Plugin for TimelinePlugin {
         #[cfg(not(feature = "http"))]
         let _ = self.http_enabled;
         register_ingress_command::<TimelineCommand>(app);
-        register_engine_action::<TimelineAction>(app);
+        register_engine_operation::<TimelineOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimelineAstConverter,
         >();
@@ -158,7 +158,7 @@ impl Plugin for TimelinePlugin {
             .register::<TimelineCommand>();
         app.world_mut()
             .resource_mut::<UndoRegistry>()
-            .register_action::<TimelineAction>();
+            .register_operation::<TimelineOperation>();
         #[cfg(feature = "http")]
         if self.http_enabled {
             app.world_mut()
@@ -398,7 +398,7 @@ impl IngressCommand for TimelineCommand {}
 
 /// Concrete internal runtime control for materialized timelines.
 #[derive(Debug, Clone, EnginePayload)]
-pub enum TimelineAction {
+pub enum TimelineOperation {
     /// Activate a materialized timeline by numeric identifier.
     Start(u32),
     /// Deactivate a materialized timeline by numeric identifier.
@@ -414,4 +414,4 @@ pub enum TimelineAction {
     },
 }
 
-impl EngineAction for TimelineAction {}
+impl EngineOperation for TimelineOperation {}

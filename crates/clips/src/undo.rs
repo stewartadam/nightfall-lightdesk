@@ -7,8 +7,8 @@
  */
 
 use bevy_ecs::prelude::World;
-use nightfall::engine::{EngineAction, EngineIngressMeta, EnginePayload};
-use nightfall_undo::prelude::{UndoContext, UndoableOperation};
+use nightfall::engine::{EngineIngressMeta, EngineOperation, EnginePayload};
+use nightfall_undo::prelude::{UndoContext, Undoable};
 use serde::{Deserialize, Serialize};
 
 use crate::{Clip, ClipCommand, Source};
@@ -32,11 +32,11 @@ impl EngineIngressMeta for RestoreClipSource {
     const COMMAND_MODULE: &'static str = "RestoreClipSource";
 }
 
-impl EngineAction for RestoreClipSource {}
+impl EngineOperation for RestoreClipSource {}
 
-impl UndoableOperation for RestoreClipSource {
+impl Undoable for RestoreClipSource {
     /// Captures the current source so restoring a source can itself be undone.
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let clip = find_clip_by_id(ctx.world, self.0.clip_id)?;
         Some(Box::new(RestoreClipSource(ClipSourceSnapshot {
             clip_id: self.0.clip_id,
@@ -50,9 +50,9 @@ impl UndoableOperation for RestoreClipSource {
     }
 }
 
-impl UndoableOperation for ClipCommand {
+impl Undoable for ClipCommand {
     /// Captures the inverse clip operation from the current ECS state.
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         match self {
             ClipCommand::StoreClip(clip) => {
                 if let Some(existing) = find_clip_by_uid(ctx.world, clip.identifiers.uid) {
@@ -64,7 +64,7 @@ impl UndoableOperation for ClipCommand {
                 }
             }
             ClipCommand::DeleteClip(id) => find_clip_by_id(ctx.world, *id)
-                .map(|clip| Box::new(ClipCommand::StoreClip(clip)) as Box<dyn UndoableOperation>),
+                .map(|clip| Box::new(ClipCommand::StoreClip(clip)) as Box<dyn Undoable>),
             ClipCommand::RenameClip { id, new_id } => Some(Box::new(ClipCommand::RenameClip {
                 id: *new_id,
                 new_id: *id,
@@ -94,7 +94,7 @@ impl UndoableOperation for ClipCommand {
                     Box::new(ClipCommand::UpdateClipOptions {
                         clip_id: *clip_id,
                         options: clip.options.clone(),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 }),
         }
     }
@@ -144,12 +144,12 @@ impl UndoableOperation for ClipCommand {
 }
 
 /// Builds an inverse source-restoration action for the requested clip.
-fn restore_source_inverse(world: &World, clip_id: u32) -> Option<Box<dyn UndoableOperation>> {
+fn restore_source_inverse(world: &World, clip_id: u32) -> Option<Box<dyn Undoable>> {
     find_clip_by_id(world, clip_id).map(|clip| {
         Box::new(RestoreClipSource(ClipSourceSnapshot {
             clip_id,
             source: clip.source.clone(),
-        })) as Box<dyn UndoableOperation>
+        })) as Box<dyn Undoable>
     })
 }
 

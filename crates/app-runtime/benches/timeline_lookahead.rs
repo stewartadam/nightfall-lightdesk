@@ -25,7 +25,7 @@ use nightfall_config::{RuntimeConfig, TransportConfig};
 use nightfall_cues::prelude::{BoundCueInstruction, Cue, CueInstruction, Sequence};
 use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
-use nightfall_engine::prelude::{DataProvider, EngineActionEnvelope};
+use nightfall_engine::prelude::{DataProvider, EngineOperationEnvelope};
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
@@ -33,8 +33,8 @@ use nightfall_fixtures::prelude::{
 use nightfall_framepace::{FramepaceSettings, Limiter};
 use nightfall_timecode::prelude::{Timecode, TimecodeGenerator, TimecodeRate, TimecodeSource};
 use nightfall_timeline::prelude::{
-    Action, ActionKind, MaterializedTimeline, Timeline, TimelineAction,
-    TimelineLookaheadActionStatuses, TimelineLookaheadMode, Track,
+    Action, ActionKind, MaterializedTimeline, Timeline, TimelineLookaheadActionStatuses,
+    TimelineLookaheadMode, TimelineOperation, Track,
 };
 use uuid::Uuid;
 
@@ -347,7 +347,7 @@ fn start_timeline(app: &mut App, actions: Vec<Action>, mode: TimelineLookaheadMo
         .expect("benchmark timeline should be stored");
     app.world_mut().spawn(MaterializedTimeline::new(timeline));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(TimelineAction::Start(
+        .write_message(EngineOperationEnvelope::detached(TimelineOperation::Start(
             TIMELINE_ID,
         )));
 }

@@ -36,12 +36,12 @@ impl IngressCommand for GroupCommand {}
 
 /// Runtime actions for group operations derived from user command plans.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub enum GroupAction {
+pub enum GroupOperation {
     /// Store or update a group payload prepared by planner/runtime handlers.
     StoreGroup(Group),
 }
 
-impl EngineAction for GroupAction {}
+impl EngineOperation for GroupOperation {}
 
 impl crate::object_crud::ObjectCrud for Group {
     type Command = GroupCommand;

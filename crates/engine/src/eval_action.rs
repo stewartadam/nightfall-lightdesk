@@ -14,6 +14,6 @@ use crate::prelude::*;
 ///
 /// Timeline playback and automation emit this action; the desk registers and handles it.
 #[derive(Debug, Clone, EnginePayload)]
-pub struct EvalAction(pub String);
+pub struct EvalOperation(pub String);
 
-impl EngineAction for EvalAction {}
+impl EngineOperation for EvalOperation {}

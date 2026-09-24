@@ -253,8 +253,8 @@ pub fn process_actions_system(
     parameter_query: Query<InstanceRef<Parameter>>,
     mut materialized_cues: Query<&mut MaterializedCue>,
     mut commands: Commands,
-    mut ev_desk: MessageWriter<EngineActionEnvelope<EvalAction>>,
-    mut ev_clip: MessageWriter<EngineActionEnvelope<ClipAction>>,
+    mut ev_desk: MessageWriter<EngineOperationEnvelope<EvalOperation>>,
+    mut ev_clip: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     mut action_invocations: Option<MessageWriter<ActionInvocation>>,
     action_registry: Option<Res<ActionRegistry>>,
     mut timeline_command_origins: ResMut<TimelineCommandOrigins>,
@@ -509,7 +509,7 @@ pub fn process_actions_system(
                     write_timeline_clip_action(
                         &mut ev_clip,
                         &mut timeline_command_origins,
-                        ClipAction::StartAtTiming {
+                        ClipOperation::StartAtTiming {
                             clip_id: IdExpr::Single(id),
                             timing,
                             instance_options: timeline_instance_options,
@@ -554,11 +554,11 @@ pub fn process_actions_system(
                                 &selection_resolver,
                             )
                         })
-                        .map(|timing| ClipAction::StopAtTiming {
+                        .map(|timing| ClipOperation::StopAtTiming {
                             clip_id: IdExpr::Single(id),
                             timing,
                         })
-                        .unwrap_or(ClipAction::Stop(IdExpr::Single(id)));
+                        .unwrap_or(ClipOperation::Stop(IdExpr::Single(id)));
                     write_timeline_clip_action(
                         &mut ev_clip,
                         &mut timeline_command_origins,
@@ -606,7 +606,7 @@ pub fn process_actions_system(
                                 PlannedPlaybackInterventionKind::SequenceGo,
                             )
                         })
-                        .map(|render_target| ClipAction::RenderAt {
+                        .map(|render_target| ClipOperation::RenderAt {
                             clip_id: IdExpr::Single(id),
                             position: render_target.position,
                             timing: render_target.timing,
@@ -615,7 +615,7 @@ pub fn process_actions_system(
                     write_timeline_clip_action(
                         &mut ev_clip,
                         &mut timeline_command_origins,
-                        render_command.unwrap_or(ClipAction::Go(IdExpr::Single(id))),
+                        render_command.unwrap_or(ClipOperation::Go(IdExpr::Single(id))),
                     );
                     track_timeline_clip_navigation_entity(
                         &existing_spawned_entities,
@@ -663,7 +663,7 @@ pub fn process_actions_system(
                                 PlannedPlaybackInterventionKind::SequenceBack,
                             )
                         })
-                        .map(|render_target| ClipAction::RenderAt {
+                        .map(|render_target| ClipOperation::RenderAt {
                             clip_id: IdExpr::Single(id),
                             position: render_target.position,
                             timing: render_target.timing,
@@ -672,7 +672,7 @@ pub fn process_actions_system(
                     write_timeline_clip_action(
                         &mut ev_clip,
                         &mut timeline_command_origins,
-                        render_command.unwrap_or(ClipAction::Back(IdExpr::Single(id))),
+                        render_command.unwrap_or(ClipOperation::Back(IdExpr::Single(id))),
                     );
                     track_timeline_clip_navigation_entity(
                         &existing_spawned_entities,
@@ -694,7 +694,7 @@ pub fn process_actions_system(
                     write_timeline_clip_action(
                         &mut ev_clip,
                         &mut timeline_command_origins,
-                        ClipAction::SetRate {
+                        ClipOperation::SetRate {
                             clip_id: IdExpr::Single(id),
                             rate: *rate,
                         },
@@ -745,7 +745,7 @@ pub fn process_actions_system(
                                 PlannedPlaybackInterventionKind::SequenceGotoCue(*cue_index),
                             )
                         })
-                        .map(|render_target| ClipAction::RenderAt {
+                        .map(|render_target| ClipOperation::RenderAt {
                             clip_id: IdExpr::Single(id),
                             position: render_target.position,
                             timing: render_target.timing,
@@ -755,7 +755,7 @@ pub fn process_actions_system(
                     write_timeline_clip_action(
                         &mut ev_clip,
                         &mut timeline_command_origins,
-                        render_command.unwrap_or(ClipAction::Goto {
+                        render_command.unwrap_or(ClipOperation::Goto {
                             clip_id: IdExpr::Single(id),
                             position: *cue_index,
                             timing: None,

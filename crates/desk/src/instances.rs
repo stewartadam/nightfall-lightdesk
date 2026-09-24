@@ -10,7 +10,8 @@ use bevy_ecs::prelude::*;
 use nightfall_clips::{ClipReleaseAfterInstance, InstanceIndex};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
-    InstanceClock, InstanceClockSource, InstanceControls, InstanceId, PlaybackAction, PlaybackScope,
+    InstanceClock, InstanceClockSource, InstanceControls, InstanceId, PlaybackOperation,
+    PlaybackScope,
 };
 use web_time::Instant;
 
@@ -59,7 +60,7 @@ pub fn sync_active_state_on_instance_despawn(
     materialized_clips: Query<(Entity, &MaterializedClip)>,
     added_materialized_clips: Query<(), Added<MaterializedClip>>,
     release_watchers: Query<(Entity, &ClipReleaseAfterInstance)>,
-    mut action_writer: MessageWriter<EngineActionEnvelope<PlaybackAction>>,
+    mut action_writer: MessageWriter<EngineOperationEnvelope<PlaybackOperation>>,
 ) {
     for (materialized_clip_entity, materialized_clip) in materialized_clips.iter() {
         if added_materialized_clips.contains(materialized_clip_entity) {
@@ -89,8 +90,8 @@ pub fn sync_active_state_on_instance_despawn(
             .iter()
             .any(|clip| clip.identifiers.id == watcher.clip_id)
         {
-            action_writer.write(EngineActionEnvelope::detached(
-                PlaybackAction::ReleaseParameters {
+            action_writer.write(EngineOperationEnvelope::detached(
+                PlaybackOperation::ReleaseParameters {
                     scope: PlaybackScope::All,
                 },
             ));
@@ -135,7 +136,7 @@ mod tests {
     #[test]
     fn sync_active_state_emits_release_after_auto_release_playback_despawns() {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+        app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
         app.insert_resource(InstanceIndex::default());
         app.add_systems(Update, sync_active_state_on_instance_despawn);
 
@@ -168,14 +169,14 @@ mod tests {
 
         let action_events: Vec<_> = app
             .world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<PlaybackAction>>>()
+            .resource_mut::<Messages<EngineOperationEnvelope<PlaybackOperation>>>()
             .drain()
             .collect();
         assert!(
             action_events.iter().any(|event| {
                 matches!(
-                    &event.action,
-                    PlaybackAction::ReleaseParameters {
+                    &event.operation,
+                    PlaybackOperation::ReleaseParameters {
                         scope: PlaybackScope::All
                     }
                 )
@@ -188,7 +189,7 @@ mod tests {
     #[test]
     fn sync_active_state_does_not_emit_release_without_auto_release_marker() {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+        app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
         app.insert_resource(InstanceIndex::default());
         app.add_systems(Update, sync_active_state_on_instance_despawn);
 
@@ -214,7 +215,7 @@ mod tests {
 
         let action_events: Vec<_> = app
             .world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<PlaybackAction>>>()
+            .resource_mut::<Messages<EngineOperationEnvelope<PlaybackOperation>>>()
             .drain()
             .collect();
         assert!(
@@ -227,7 +228,7 @@ mod tests {
     #[test]
     fn sync_active_state_preserves_new_materialized_clip_before_indexing() {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+        app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
         app.insert_resource(InstanceIndex::default());
         app.add_systems(Update, sync_active_state_on_instance_despawn);
 

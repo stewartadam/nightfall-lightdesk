@@ -41,12 +41,12 @@ fn parse_debug_panic_worker_command(input: &str) -> Option<&str> {
 pub fn handle_eval(
     mut scheduled: ResMut<DelayedCommandQueue>,
     mut events: MessageReader<CommandEnvelope<DeskCommand>>,
-    mut actions: MessageReader<EngineActionEnvelope<EvalAction>>,
+    mut actions: MessageReader<EngineOperationEnvelope<EvalOperation>>,
     mut responder: CommandResponder,
 ) {
     let mut evals = events.read().cloned().collect::<Vec<_>>();
     evals.extend(actions.read().map(|event| {
-        let EvalAction(command) = &event.action;
+        let EvalOperation(command) = &event.operation;
         CommandEnvelope::with_context(
             event.operation_id.0.into(),
             event
@@ -268,7 +268,7 @@ mod tests {
     fn eval_app() -> App {
         let mut app = App::new();
         app.add_message::<CommandEnvelope<DeskCommand>>();
-        app.add_message::<EngineActionEnvelope<EvalAction>>();
+        app.add_message::<EngineOperationEnvelope<EvalOperation>>();
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();

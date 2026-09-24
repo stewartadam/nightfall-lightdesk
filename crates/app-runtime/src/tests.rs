@@ -43,8 +43,8 @@ use nightfall_engine::prelude::{
     AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNoticeReply,
     CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
     DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
-    EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, Render, RenderPass,
-    ReplyTarget,
+    EngineClientMessage, EngineOperationEnvelope, EventHandling, FinishedCommand, Render,
+    RenderPass, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
@@ -59,7 +59,7 @@ use nightfall_timecode::prelude::{
     Timecode, TimecodeCommand, TimecodeGenerator, TimecodeRate, TimecodeSource,
 };
 use nightfall_timeline::prelude::{
-    Action, ActionKind, MaterializedTimeline, Timeline, TimelineAction, Track,
+    Action, ActionKind, MaterializedTimeline, Timeline, TimelineOperation, Track,
 };
 use uuid::Uuid;
 
@@ -313,7 +313,7 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
         .expect("test timeline should be stored");
     app.world_mut().spawn(MaterializedTimeline::new(timeline));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(TimelineAction::Start(
+        .write_message(EngineOperationEnvelope::detached(TimelineOperation::Start(
             timeline_id,
         )));
     app.update();

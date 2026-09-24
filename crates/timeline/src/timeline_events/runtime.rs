@@ -12,14 +12,15 @@ use super::*;
 pub fn handle_timeline_events(
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
     mut event_reader: MessageReader<CommandEnvelope<TimelineCommand>>,
-    mut action_reader: MessageReader<EngineActionEnvelope<TimelineAction>>,
+    mut action_reader: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
     mut responder: CommandResponder,
 ) {
     for event in event_reader.read() {
         match &event.command {
             TimelineCommand::StartTimeline(id) => {
                 tracing::debug!("Starting timeline with ID {}", id);
-                let found = apply_timeline_action(&TimelineAction::Start(*id), &mut timeline_query);
+                let found =
+                    apply_timeline_action(&TimelineOperation::Start(*id), &mut timeline_query);
                 finish_timeline_runtime_command(
                     &mut responder,
                     event.command_id,
@@ -30,7 +31,8 @@ pub fn handle_timeline_events(
 
             TimelineCommand::StopTimeline(id) => {
                 tracing::debug!("Stopping timeline with ID {}", id);
-                let found = apply_timeline_action(&TimelineAction::Stop(*id), &mut timeline_query);
+                let found =
+                    apply_timeline_action(&TimelineOperation::Stop(*id), &mut timeline_query);
                 finish_timeline_runtime_command(
                     &mut responder,
                     event.command_id,
@@ -44,10 +46,10 @@ pub fn handle_timeline_events(
     }
 
     for event in action_reader.read() {
-        if !apply_timeline_action(&event.action, &mut timeline_query) {
+        if !apply_timeline_action(&event.operation, &mut timeline_query) {
             tracing::warn!(
                 operation_id = %event.operation_id,
-                action = ?event.action,
+                action = ?event.operation,
                 "timeline_action_target_not_found"
             );
         }
@@ -56,13 +58,13 @@ pub fn handle_timeline_events(
 
 /// Applies one concrete timeline runtime action and returns whether its target existed.
 fn apply_timeline_action(
-    action: &TimelineAction,
+    action: &TimelineOperation,
     timeline_query: &mut Query<(Entity, &mut MaterializedTimeline)>,
 ) -> bool {
     let (timeline_id, activate) = match action {
-        TimelineAction::Start(id) => (*id, true),
-        TimelineAction::Stop(id) => (*id, false),
-        TimelineAction::InsertRecordedActions { .. } => return true,
+        TimelineOperation::Start(id) => (*id, true),
+        TimelineOperation::Stop(id) => (*id, false),
+        TimelineOperation::InsertRecordedActions { .. } => return true,
     };
     let mut found = false;
     for (_, mut timeline) in timeline_query

@@ -12,7 +12,7 @@ use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::{CommandId, UndoId};
 use web_time::Instant;
 
-use crate::traits::UndoableOperation;
+use crate::traits::Undoable;
 
 /// Configuration for undo manager behavior.
 #[derive(Clone, Debug)]
@@ -31,7 +31,7 @@ impl Default for UndoConfig {
 #[derive(Clone)]
 pub struct UndoEntry {
     /// The inverse command that undoes the original operation.
-    pub command: Box<dyn UndoableOperation>,
+    pub command: Box<dyn Undoable>,
     /// Human-readable description for UI display.
     pub description: String,
     /// User command that caused the operation, when one exists.
@@ -280,14 +280,14 @@ mod tests {
 
     use super::*;
     use crate::context::UndoContext;
-    use crate::traits::UndoableOperation;
+    use crate::traits::Undoable;
 
     /// Test command used to verify undo-manager behavior without app dependencies.
     #[derive(Debug, Clone, EnginePayload)]
     struct TestUndoCommand;
 
-    impl UndoableOperation for TestUndoCommand {
-        fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    impl Undoable for TestUndoCommand {
+        fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
             None
         }
 

@@ -27,10 +27,10 @@ const retiredRules = [
 const engineDomainOwnershipRules = [
   ["engine-owned UserCommand", /\bUserCommand\b/g],
   ["engine-owned ActionPlanner", /\bActionPlanner\b/g],
-  ["engine-owned ProgrammerAction", /\bProgrammerAction\b/g],
-  ["engine-owned PlaybackAction", /\bPlaybackAction\b/g],
-  ["engine-owned DmxAction", /\bDmxAction\b/g],
-  ["engine-owned CueLifecycleAction", /\bCueLifecycleAction\b/g],
+  ["engine-owned ProgrammerOperation", /\bProgrammerOperation\b/g],
+  ["engine-owned PlaybackOperation", /\bPlaybackOperation\b/g],
+  ["engine-owned DmxOperation", /\bDmxOperation\b/g],
+  ["engine-owned CueLifecycleOperation", /\bCueLifecycleOperation\b/g],
 ];
 const timelineDomainCouplingRules = [
   ["timeline-owned desk action ID", /\bCLIP_(?:START|STOP|GO)_ACTION_ID\b/g],

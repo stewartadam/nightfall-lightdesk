@@ -42,30 +42,30 @@ impl PayloadEnvelope {
     }
 }
 
-/// Type-erased concrete engine action used only while crossing queue boundaries.
-pub type DynEngineAction = Box<dyn EngineAction>;
+/// Type-erased concrete engine operation used only while crossing queue boundaries.
+pub type DynEngineOperation = Box<dyn EngineOperation>;
 
 /// Type-erased action envelope awaiting dispatch to its concrete typed message.
 #[derive(Debug)]
-pub struct DynEngineActionEnvelope {
+pub struct DynEngineOperationEnvelope {
     /// Identity of this internal action execution.
     pub operation_id: OperationId,
     /// User command that caused this action, when one exists.
     pub command_id: Option<CommandId>,
     /// Undo group inherited from the originating command, when applicable.
     pub undo_id: Option<UndoId>,
-    /// Concrete domain action erased for queue storage.
-    pub action: DynEngineAction,
+    /// Concrete domain operation erased for queue storage.
+    pub operation: DynEngineOperation,
 }
 
-impl DynEngineActionEnvelope {
+impl DynEngineOperationEnvelope {
     /// Creates a queued action inheriting user-command and undo context.
-    pub fn for_command(command_id: CommandId, undo_id: UndoId, action: DynEngineAction) -> Self {
+    pub fn for_command(command_id: CommandId, undo_id: UndoId, action: DynEngineOperation) -> Self {
         Self {
             operation_id: OperationId::new(),
             command_id: Some(command_id),
             undo_id: Some(undo_id),
-            action,
+            operation: action,
         }
     }
 
@@ -74,23 +74,23 @@ impl DynEngineActionEnvelope {
         operation_id: OperationId,
         command_id: Option<CommandId>,
         undo_id: Option<UndoId>,
-        action: DynEngineAction,
+        action: DynEngineOperation,
     ) -> Self {
         Self {
             operation_id,
             command_id,
             undo_id,
-            action,
+            operation: action,
         }
     }
 
     /// Creates a queued action with no user-command or undo lifecycle.
-    pub fn detached(action: DynEngineAction) -> Self {
+    pub fn detached(action: DynEngineOperation) -> Self {
         Self {
             operation_id: OperationId::new(),
             command_id: None,
             undo_id: None,
-            action,
+            operation: action,
         }
     }
 }
@@ -121,23 +121,23 @@ impl PendingCommandBuffer {
     }
 }
 
-/// Buffer for pending runtime actions awaiting action-stage processing.
+/// Buffer for pending runtime actions awaiting operation-stage processing.
 ///
 /// Action payloads planned from command intent are moved here so undo capture
 /// can run at the action boundary before runtime systems execute them.
 #[derive(Resource, Default)]
-pub struct PendingEngineActionBuffer {
-    actions: Vec<DynEngineActionEnvelope>,
+pub struct PendingEngineOperationBuffer {
+    actions: Vec<DynEngineOperationEnvelope>,
 }
 
-impl PendingEngineActionBuffer {
+impl PendingEngineOperationBuffer {
     /// Add an action to the pending action buffer.
-    pub fn push(&mut self, action: DynEngineActionEnvelope) {
+    pub fn push(&mut self, action: DynEngineOperationEnvelope) {
         self.actions.push(action);
     }
 
     /// Take all pending actions, leaving the buffer empty.
-    pub fn drain(&mut self) -> Vec<DynEngineActionEnvelope> {
+    pub fn drain(&mut self) -> Vec<DynEngineOperationEnvelope> {
         std::mem::take(&mut self.actions)
     }
 

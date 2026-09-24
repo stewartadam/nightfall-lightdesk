@@ -152,7 +152,7 @@ mod tests {
     fn websocket_delete_captures_undo() {
         let mut world = World::new();
         world.init_resource::<PendingCommandBuffer>();
-        world.init_resource::<PendingEngineActionBuffer>();
+        world.init_resource::<PendingEngineOperationBuffer>();
         world.init_resource::<UndoManager>();
         world.init_resource::<UndoRegistry>();
         world.init_resource::<CommandTracker>();

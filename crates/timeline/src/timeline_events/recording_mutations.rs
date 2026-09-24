@@ -321,7 +321,7 @@ pub(super) fn handle_command(
 /// Apply one internally generated recorded-action action to persisted timeline state.
 pub(super) fn handle_action(
     context: &mut TimelineMutationContext<'_, '_>,
-    event: &EngineActionEnvelope<TimelineAction>,
+    event: &EngineOperationEnvelope<TimelineOperation>,
 ) {
     let TimelineMutationContext {
         timelines,
@@ -330,11 +330,11 @@ pub(super) fn handle_action(
         action_events,
         ..
     } = context;
-    let TimelineAction::InsertRecordedActions {
+    let TimelineOperation::InsertRecordedActions {
         timeline_id,
         track_id,
         actions,
-    } = &event.action
+    } = &event.operation
     else {
         return;
     };

@@ -25,8 +25,8 @@ pub(crate) fn restore_request(definition: &StoredFxModule) -> StoredFxModuleRequ
     }
 }
 
-impl UndoableOperation for FxModuleCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for FxModuleCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let modules = ctx.world.resource::<DataProvider<StoredFxModule>>();
 
         match self {
@@ -36,12 +36,12 @@ impl UndoableOperation for FxModuleCommand {
                 .or_else(|| modules.get(request.identifiers.uid).ok())
                 .map(|definition| {
                     Box::new(FxModuleCommand::StoreFxModule(restore_request(&definition)))
-                        as Box<dyn UndoableOperation>
+                        as Box<dyn Undoable>
                 })
                 .or_else(|| {
                     request.selection.as_ref().map(|_| {
                         Box::new(FxModuleCommand::DeleteFxModule(request.identifiers.id))
-                            as Box<dyn UndoableOperation>
+                            as Box<dyn Undoable>
                     })
                 }),
             FxModuleCommand::MoveFxModule { id, new_id }
@@ -65,7 +65,7 @@ impl UndoableOperation for FxModuleCommand {
             }
             FxModuleCommand::DeleteFxModule(id) => modules.from_id(*id).ok().map(|definition| {
                 Box::new(FxModuleCommand::RestoreDeletedFxModule(definition.clone()))
-                    as Box<dyn UndoableOperation>
+                    as Box<dyn Undoable>
             }),
             FxModuleCommand::RestoreDeletedFxModule(definition)
                 if modules.from_id(definition.identifiers.id).is_err()

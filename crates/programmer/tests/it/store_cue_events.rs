@@ -15,14 +15,14 @@ use nightfall::prelude::*;
 use nightfall_cues::cue::FixtureAttributeTransition;
 use nightfall_cues::data_provider_ext::CueDataProviderExt;
 use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueAction, CueInstruction, CuePart, CuePartStoreTarget,
+    BoundCueInstruction, Cue, CueInstruction, CueOperation, CuePart, CuePartStoreTarget,
     CueStoreError, CueStoreOperation, CueStoreSuccess, CueStoreTarget, Sequence,
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome, CommandReply,
-    CommandResult, CommandTracker, DataProvider, EngineActionEnvelope, FinishedCommand,
-    OperationResult, PendingEngineActionBuffer, ReplyTarget,
+    CommandResult, CommandTracker, DataProvider, EngineOperationEnvelope, FinishedCommand,
+    OperationResult, PendingEngineOperationBuffer, ReplyTarget,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_programmer::events::{
@@ -305,12 +305,12 @@ fn setup_app() -> App {
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
     app.add_message::<CommandNoticeReply>();
-    app.add_message::<EngineActionEnvelope<CueStoreOperation>>();
+    app.add_message::<EngineOperationEnvelope<CueStoreOperation>>();
     app.add_message::<OperationResult<CueStoreSuccess, CueStoreError>>();
     app.init_resource::<CommandTracker>();
     app.init_resource::<StoreCueWorkflows>();
     app.insert_resource(Programmer::default());
-    app.insert_resource(PendingEngineActionBuffer::default());
+    app.insert_resource(PendingEngineOperationBuffer::default());
     app.insert_resource(DataProvider::<Cue>::default());
     app.insert_resource(DataProvider::<Sequence>::default());
     app.insert_resource(FixtureDataProviderExt::default());
@@ -334,7 +334,7 @@ fn insert_sequence(app: &mut App, sequence_id: u32, cues: &[Cue]) {
 }
 
 /// Emits a programmer command and returns queued cue actions.
-fn run_store_command(app: &mut App, command: ProgrammerCommand) -> Vec<CueAction> {
+fn run_store_command(app: &mut App, command: ProgrammerCommand) -> Vec<CueOperation> {
     app.world_mut().write_message(CommandEnvelope::new(
         command,
         CommandOrigin::Cli,
@@ -342,14 +342,14 @@ fn run_store_command(app: &mut App, command: ProgrammerCommand) -> Vec<CueAction
     ));
     app.update();
     app.world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain()
         .into_iter()
         .filter_map(|envelope| {
             envelope
-                .action
+                .operation
                 .as_any()
-                .downcast_ref::<CueAction>()
+                .downcast_ref::<CueOperation>()
                 .cloned()
         })
         .collect::<Vec<_>>()
@@ -365,31 +365,31 @@ fn run_tracked_store_command(app: &mut App, command: ProgrammerCommand) -> Vec<C
     app.world_mut().write_message(envelope);
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<CueStoreOperation>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<CueStoreOperation>>>()
         .drain()
-        .map(|envelope| envelope.action)
+        .map(|envelope| envelope.operation)
         .collect()
 }
 
 /// Applies queued cue actions to in-memory providers so later commands can observe them.
-fn apply_cue_actions(app: &mut App, actions: &[CueAction]) {
+fn apply_cue_actions(app: &mut App, actions: &[CueOperation]) {
     for action in actions {
         match action {
-            CueAction::StoreCue(cue) => {
+            CueOperation::StoreCue(cue) => {
                 let mut provider = app.world_mut().resource_mut::<DataProvider<Cue>>();
                 let _ = provider.remove(&cue.identifiers.uid);
                 provider
                     .add(cue.as_ref().clone())
                     .expect("cue should store");
             }
-            CueAction::StoreSequence(sequence) => {
+            CueOperation::StoreSequence(sequence) => {
                 let mut provider = app.world_mut().resource_mut::<DataProvider<Sequence>>();
                 let _ = provider.remove(&sequence.identifiers.uid);
                 provider
                     .add(sequence.as_ref().clone())
                     .expect("sequence should store");
             }
-            CueAction::StoreCueInSequence {
+            CueOperation::StoreCueInSequence {
                 sequence_id,
                 cue_id,
                 part_id,
@@ -497,7 +497,7 @@ fn apply_cue_actions(app: &mut App, actions: &[CueAction]) {
                 let _ = provider.remove(&sequence.identifiers.uid);
                 provider.add(sequence).expect("sequence should store");
             }
-            CueAction::RestoreCueStoreState {
+            CueOperation::RestoreCueStoreState {
                 sequence_id,
                 cue_uid,
                 previous_cue,
@@ -576,12 +576,12 @@ fn run_and_apply_store_command(app: &mut App, command: ProgrammerCommand) -> Cue
 }
 
 /// Extracts the stored cue action from queued cue actions.
-fn stored_cue(actions: &[CueAction]) -> Cue {
+fn stored_cue(actions: &[CueOperation]) -> Cue {
     *actions
         .iter()
         .find_map(|action| match action {
-            CueAction::StoreCue(cue) => Some(cue.clone()),
-            CueAction::StoreCueInSequence {
+            CueOperation::StoreCue(cue) => Some(cue.clone()),
+            CueOperation::StoreCueInSequence {
                 cue_id,
                 part_id,
                 part,
@@ -657,7 +657,7 @@ fn store_cue_next_allocates_lowest_available_cue_id() {
     assert!(
         matches!(
             actions.as_slice(),
-            [CueAction::StoreCueInSequence {
+            [CueOperation::StoreCueInSequence {
                 sequence_id: 5,
                 cue_id: CueStoreTarget::Next,
                 ..
@@ -699,7 +699,7 @@ fn store_cue_zero_updates_sequence_setup_cue() {
     );
 
     assert!(
-        matches!(actions.as_slice(), [CueAction::StoreSequence(_)]),
+        matches!(actions.as_slice(), [CueOperation::StoreSequence(_)]),
         "setup cue storage should only persist the owning sequence"
     );
 
@@ -1564,7 +1564,7 @@ fn store_cue_part_next_allocates_lowest_available_part_id() {
     assert!(
         matches!(
             actions.as_slice(),
-            [CueAction::StoreCueInSequence {
+            [CueOperation::StoreCueInSequence {
                 sequence_id: 5,
                 cue_id: CueStoreTarget::Exact(2),
                 part_id: CuePartStoreTarget::Next,
@@ -2323,7 +2323,7 @@ fn tracked_store_cue_finishes_only_after_operation_result() {
     );
     let operation = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<CueStoreOperation>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<CueStoreOperation>>>()
         .drain()
         .next()
         .expect("tracked store should emit one typed cues operation");
@@ -2387,7 +2387,7 @@ fn tracked_store_cue_maps_operation_failure_to_command_failure() {
     app.update();
     let operation_id = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<CueStoreOperation>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<CueStoreOperation>>>()
         .drain()
         .next()
         .unwrap()
