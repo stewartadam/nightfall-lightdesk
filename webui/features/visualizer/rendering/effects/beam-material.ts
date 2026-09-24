@@ -13,7 +13,15 @@
  * Ported from vis1's beam-material.ts with minimal modifications.
  */
 
-import { AdditiveBlending, ConeGeometry, DoubleSide, Vector3 } from "three";
+import {
+  AdditiveBlending,
+  ConeGeometry,
+  DataTexture,
+  DoubleSide,
+  RGBAFormat,
+  type Texture,
+  Vector3,
+} from "three";
 import {
   abs,
   atan,
@@ -21,6 +29,7 @@ import {
   cameraNear,
   cameraPosition,
   clamp,
+  cos,
   dot,
   Fn,
   float,
@@ -33,7 +42,9 @@ import {
   normalize,
   positionWorld,
   pow,
+  sin,
   smoothstep,
+  texture,
   uniform,
   uv,
   vec2,
@@ -46,6 +57,22 @@ import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 // Default values for beam parameters
 export const MIN_CONE_ANGLE_DEGREES = 4;
 export const MAX_CONE_ANGLE_DEGREES = 70;
+
+/**
+ * Radii, in gobo image UV units, of the rings sampled around the cone. Their
+ * average lets both small central openings (beam reducers) and outer patterns
+ * shape the beam.
+ */
+const GOBO_SAMPLE_RADII = [0.12, 0.24, 0.36];
+
+/** Opaque-white 1x1 texture used until a gobo image loads. */
+const GOBO_PLACEHOLDER = new DataTexture(
+  new Uint8Array([255, 255, 255, 255]),
+  1,
+  1,
+  RGBAFormat,
+);
+GOBO_PLACEHOLDER.needsUpdate = true;
 const DEFAULT_FALLOFF_RATE = 1.5;
 const DEFAULT_MIN_ALPHA = 0.01;
 const DEFAULT_SCATTERING_G = 0.7;
@@ -168,6 +195,10 @@ export interface BeamMaterialWithUniforms extends MeshBasicNodeMaterial {
   noiseAmountUniform: BeamUniform<number>;
   clipYUniform: BeamUniform<number>;
   beamLengthUniform: BeamUniform<number>;
+  /** Gobo image samplers around the cone; swap their `value` to change gobo. */
+  goboTextureNodes: Array<{ value: Texture }>;
+  /** 1 when a gobo shapes the beam, 0 for an open beam. */
+  goboActiveUniform: BeamUniform<number>;
 }
 
 export interface LowQualityBeamMaterial extends MeshBasicNodeMaterial {
@@ -233,6 +264,25 @@ export function createBeamMaterial(
   const noiseAmountUniform = uniform(params.noiseAmount);
   const clipYUniform = uniform(params.clipY);
   const beamLengthUniform = uniform(params.beamLength);
+  const goboActiveUniform = uniform(0);
+
+  // Gobo: sample the image around rings at the cone's angular position so
+  // opaque parts of the gobo carve the beam into shafts. Built outside the
+  // shader function so the material can swap the texture later.
+  const goboAngle = uv().x.mul(2.0 * Math.PI);
+  const goboTextureNodes = GOBO_SAMPLE_RADII.map((radius) =>
+    texture(
+      GOBO_PLACEHOLDER,
+      vec2(
+        cos(goboAngle).mul(radius).add(0.5),
+        sin(goboAngle).mul(radius).add(0.5),
+      ),
+    ),
+  );
+  const goboTransmission = goboTextureNodes
+    .map((node) => node.x.mul(node.w))
+    .reduce((sum, sample) => sum.add(sample))
+    .div(GOBO_SAMPLE_RADII.length);
 
   // Calculate super-Gaussian radial falloff for chromatic aberration.
   const calculateRadialFalloff = Fn(
@@ -361,7 +411,10 @@ export function createBeamMaterial(
       prismActiveUniform.mul(prismChromaticUniform.mul(10.0)).min(1.0),
     );
 
+    const goboFactor = mix(float(1.0), goboTransmission, goboActiveUniform);
+
     const baseAlpha = axialFade
+      .mul(goboFactor)
       .mul(prismEdgeSoftness)
       .mul(distanceAttenuation)
       .mul(normalizedPhase)
@@ -433,6 +486,8 @@ export function createBeamMaterial(
   material.noiseAmountUniform = noiseAmountUniform;
   material.clipYUniform = clipYUniform;
   material.beamLengthUniform = beamLengthUniform;
+  material.goboTextureNodes = goboTextureNodes;
+  material.goboActiveUniform = goboActiveUniform;
 
   return material;
 }

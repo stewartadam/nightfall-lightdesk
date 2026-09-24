@@ -20,7 +20,11 @@ import {
   type ParameterMetadata,
   ParameterValuePolarity,
 } from "../../../types";
-import { extractVisualizerDmx, resetDmxPool } from "./visualizer-dmx";
+import {
+  elementGoboMedia,
+  extractVisualizerDmx,
+  resetDmxPool,
+} from "./visualizer-dmx";
 
 /** Builds 8-bit parameter metadata with optional profile functions. */
 function parameter(
@@ -138,4 +142,34 @@ test("color wheel slots filter a white lamp", () => {
   near(red.red, 1, "red slot red");
   near(red.green, 0, "red slot green");
   near(red.blue, 0, "red slot blue");
+});
+
+/** Verifies the active gobo slot is reported as a 1-based index into the element's gobo images. */
+test("gobo wheel slots report their image index", () => {
+  resetDmxPool();
+  const element: FixtureElement = {
+    label: "Head",
+    parameters: [
+      parameter({ type: "Intensity" }),
+      parameter({ type: "Gobo" }, [
+        fn("Gobo1", {
+          wheel: "Gobo Wheel",
+          sets: [
+            { name: "Open", dmx_from: 0, dmx_to: 9 },
+            { name: "Stars", dmx_from: 10, dmx_to: 19, media: "stars" },
+            { name: "Dots", dmx_from: 20, dmx_to: 255, media: "dots" },
+          ],
+        }),
+      ]),
+    ],
+  };
+  assert.deepEqual(elementGoboMedia(element), ["stars", "dots"]);
+  assert.equal(
+    extractVisualizerDmx({ Intensity: 255, Gobo: 0 }, element).gobo,
+    0,
+  );
+  assert.equal(
+    extractVisualizerDmx({ Intensity: 255, Gobo: 25 }, element).gobo,
+    2,
+  );
 });
