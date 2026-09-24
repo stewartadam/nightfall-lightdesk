@@ -13,11 +13,8 @@ use std::collections::HashSet;
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::FixtureRef;
-use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, Parameter, ParameterMetadata, ParameterValues,
-};
+use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, Parameter, ParameterValues};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -424,19 +421,6 @@ fn fixture_store_error(id: u32, error: String) -> CommandError {
     )
 }
 
-/// Derives initial runtime values for parameters spawned from fixture metadata.
-fn initial_parameter_values(parameter_metadata: &ParameterMetadata) -> ParameterValues {
-    if parameter_metadata.attribute == Attribute::VirtualIntensity {
-        ParameterValues {
-            default_value: parameter_metadata.max,
-            current_value: parameter_metadata.max,
-            highlight_value: parameter_metadata.max,
-        }
-    } else {
-        ParameterValues::default()
-    }
-}
-
 /// Spawns and indexes the runtime parameter entities for one stored fixture.
 fn add_fixture_parameters(
     commands: &mut Commands,
@@ -453,7 +437,7 @@ fn add_fixture_parameters(
             let parameter = commands
                 .spawn_instance(Parameter {
                     metadata: metadata.clone(),
-                    values: initial_parameter_values(metadata),
+                    values: ParameterValues::from_metadata(metadata),
                 })
                 .instance();
             fixtures.add_parameter(fixture_ref.clone(), metadata.attribute.clone(), parameter);
@@ -749,33 +733,5 @@ mod tests {
             messages[0].command,
             FixtureLibraryCommand::RefreshLibrary
         ));
-    }
-
-    /// Verifies virtual intensity parameters start at full metadata scale.
-    #[test]
-    fn initial_parameter_values_sets_virtual_intensity_to_full() {
-        let metadata = ParameterMetadata {
-            attribute: Attribute::VirtualIntensity,
-            max: 512.0,
-            ..Default::default()
-        };
-        let values = initial_parameter_values(&metadata);
-        assert_eq!(values.default_value, 512.0);
-        assert_eq!(values.current_value, 512.0);
-        assert_eq!(values.highlight_value, 512.0);
-    }
-
-    /// Verifies ordinary parameters keep the standard runtime defaults.
-    #[test]
-    fn initial_parameter_values_keeps_non_virtual_defaults() {
-        let metadata = ParameterMetadata {
-            attribute: Attribute::White,
-            max: 512.0,
-            ..Default::default()
-        };
-        let values = initial_parameter_values(&metadata);
-        assert_eq!(values.default_value, 0.0);
-        assert_eq!(values.current_value, 0.0);
-        assert_eq!(values.highlight_value, 255.0);
     }
 }

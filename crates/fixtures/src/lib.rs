@@ -84,7 +84,8 @@ pub mod prelude {
     };
     pub use crate::input_apply::{ParameterAssertion, ParameterAssertionSource};
     pub use crate::parameter::{
-        DmxSlots, MergeStrategy, Parameter, ParameterMetadata, ParameterValues,
+        DmxSlots, MergeStrategy, Parameter, ParameterFunction, ParameterFunctionSet,
+        ParameterMetadata, ParameterValues,
     };
     pub use crate::physical::{BeamType, FixturePhysical};
     pub use crate::placement::FixturePlacement;
