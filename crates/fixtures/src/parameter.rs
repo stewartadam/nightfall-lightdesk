@@ -45,6 +45,48 @@ pub enum DmxSlots {
     Virtual,
 }
 
+/// A named DMX sub-range within a parameter function, e.g. one gobo or color slot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ParameterFunctionSet {
+    /// Display name, e.g. "Open" or "Gobo 3".
+    pub name: String,
+    /// First DMX value of the set, at the parameter's resolution.
+    pub dmx_from: u32,
+    /// Last DMX value of the set, inclusive.
+    pub dmx_to: u32,
+    /// 1-based slot of the function's wheel selected by this set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wheel_slot: Option<u32>,
+}
+
+/// A DMX range of a parameter with one meaning, e.g. a GDTF channel function.
+///
+/// A single DMX channel can select a gobo in one range and rotate it in
+/// another; each range keeps its own attribute and physical scale.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ParameterFunction {
+    /// Function name.
+    pub name: String,
+    /// Profile attribute name the range controls, e.g. "Gobo1" or "Gobo1PosRotate".
+    pub attribute: String,
+    /// First DMX value of the range, at the parameter's resolution.
+    pub dmx_from: u32,
+    /// Last DMX value of the range, inclusive.
+    pub dmx_to: u32,
+    /// Physical value at `dmx_from`.
+    pub physical_from: f32,
+    /// Physical value at `dmx_to`.
+    pub physical_to: f32,
+    /// Wheel the range indexes into, when it selects wheel slots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wheel: Option<String>,
+    /// Named sub-ranges in ascending DMX order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sets: Vec<ParameterFunctionSet>,
+}
+
 /// Metadata for a parameter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -52,6 +94,16 @@ pub struct ParameterMetadata {
     /// Where this parameter's bytes are placed in the fixture footprint.
     #[serde(default)]
     pub dmx_slots: DmxSlots,
+    /// DMX ranges with distinct meanings, in ascending DMX order. Empty means
+    /// the whole range is one linear function.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub functions: Vec<ParameterFunction>,
+    /// DMX value the fixture rests at when nothing controls it, at the parameter's resolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_dmx: Option<u32>,
+    /// DMX value to output while the element is highlighted, at the parameter's resolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight_dmx: Option<u32>,
     /// The DMX channel width of this logical parameter
     pub resolution: DmxValueResolution,
     /// Which attribute this parameter controls
@@ -89,6 +141,9 @@ impl Default for ParameterMetadata {
     fn default() -> Self {
         Self {
             dmx_slots: DmxSlots::Sequential,
+            functions: Vec::new(),
+            default_dmx: None,
+            highlight_dmx: None,
             resolution: DmxValueResolution::Coarse,
             attribute: Attribute::Intensity,
             native_unit: ParameterUnit::Percent,
@@ -116,6 +171,28 @@ impl ParameterMetadata {
             DmxSlots::Sequential => true,
             DmxSlots::Explicit { dmx_break, .. } => *dmx_break == 1,
             DmxSlots::Virtual => false,
+        }
+    }
+
+    /// Returns the function whose DMX range contains `dmx`.
+    pub fn function_at(&self, dmx: u32) -> Option<&ParameterFunction> {
+        self.functions
+            .iter()
+            .find(|function| (function.dmx_from..=function.dmx_to).contains(&dmx))
+    }
+
+    /// Converts a DMX integer at this parameter's resolution to the logical
+    /// value that outputs it, inverting the output mapping (range and inversion).
+    pub fn logical_value_from_dmx(&self, dmx: u32) -> ParameterDmxValue {
+        let max_dmx = crate::wire_layout::dmx_max(self.resolution) as ParameterDmxValue;
+        let normalized = (dmx as ParameterDmxValue / max_dmx).clamp(0.0, 1.0);
+        let min = self.logical_min();
+        let max = self.logical_max();
+        let value = min + normalized * (max - min);
+        if self.is_inverted {
+            min + max - value
+        } else {
+            value
         }
     }
 
@@ -204,6 +281,32 @@ pub struct ParameterValues {
     pub highlight_value: ParameterDmxValue,
     /// The current value of the parameter is the value that will be sent to the fixture.
     pub current_value: ParameterDmxValue,
+}
+
+impl ParameterValues {
+    /// Derives initial runtime values for a parameter spawned from profile metadata.
+    ///
+    /// Profile defaults and highlight values are used when declared. Otherwise
+    /// virtual intensity starts at full so it does not black out its element,
+    /// and other parameters start at zero with a full-scale highlight.
+    pub fn from_metadata(metadata: &ParameterMetadata) -> Self {
+        let fallback = Self::default();
+        let default_value = match metadata.default_dmx {
+            Some(dmx) => metadata.logical_value_from_dmx(dmx),
+            None if metadata.attribute == Attribute::VirtualIntensity => metadata.max,
+            None => fallback.default_value,
+        };
+        let highlight_value = match metadata.highlight_dmx {
+            Some(dmx) => metadata.logical_value_from_dmx(dmx),
+            None if metadata.attribute == Attribute::VirtualIntensity => metadata.max,
+            None => fallback.highlight_value,
+        };
+        Self {
+            default_value,
+            highlight_value,
+            current_value: default_value,
+        }
+    }
 }
 
 /// Legacy patch payload for UI compatibility, mapping a parameter to a DMX universe and address.
@@ -507,5 +610,95 @@ mod tests {
             metadata.parameter_value_as_absolute(&percent),
             ParameterValue::Absolute { value: 135.0 }
         );
+    }
+
+    /// Verifies the DMX-to-logical inverse reproduces the same DMX on output, including inversion.
+    #[test]
+    fn logical_value_from_dmx_round_trips_through_output() {
+        for (is_inverted, min, max) in [
+            (false, -125.0, 125.0),
+            (true, -270.0, 270.0),
+            (false, 0.0, 65_535.0),
+        ] {
+            let metadata = ParameterMetadata {
+                attribute: Attribute::Tilt,
+                value_polarity: ParameterValuePolarity::Signed,
+                resolution: DmxValueResolution::Fine,
+                min,
+                max,
+                is_inverted,
+                merge_type: MergeStrategy::LTP,
+                ..Default::default()
+            };
+            for dmx in [0u32, 1, 12_345, 32_768, 65_535] {
+                let parameter = Parameter {
+                    values: ParameterValues {
+                        current_value: metadata.logical_value_from_dmx(dmx),
+                        ..Default::default()
+                    },
+                    metadata: metadata.clone(),
+                };
+                assert_eq!(
+                    crate::universe::parameter_to_dmx_value(&parameter),
+                    dmx,
+                    "inverted={is_inverted} range={min}..{max}"
+                );
+            }
+        }
+    }
+
+    /// Verifies profile defaults and highlights seed runtime values, with legacy fallbacks otherwise.
+    #[test]
+    fn values_from_metadata_use_profile_defaults() {
+        let tilt = ParameterMetadata {
+            attribute: Attribute::Tilt,
+            value_polarity: ParameterValuePolarity::Signed,
+            resolution: DmxValueResolution::Fine,
+            min: -125.0,
+            max: 125.0,
+            default_dmx: Some(32_768),
+            highlight_dmx: Some(65_535),
+            ..Default::default()
+        };
+        let values = ParameterValues::from_metadata(&tilt);
+        assert!(values.default_value.abs() < 0.01);
+        assert_eq!(values.current_value, values.default_value);
+        assert_eq!(values.highlight_value, 125.0);
+
+        let virtual_intensity = ParameterMetadata {
+            attribute: Attribute::VirtualIntensity,
+            ..Default::default()
+        };
+        assert_eq!(
+            ParameterValues::from_metadata(&virtual_intensity).current_value,
+            255.0
+        );
+        let plain = ParameterValues::from_metadata(&ParameterMetadata::default());
+        assert_eq!((plain.default_value, plain.highlight_value), (0.0, 255.0));
+    }
+
+    /// Verifies function lookup finds the range containing a DMX value.
+    #[test]
+    fn function_at_finds_containing_range() {
+        let function = |name: &str, dmx_from, dmx_to| ParameterFunction {
+            name: name.to_string(),
+            attribute: name.to_string(),
+            dmx_from,
+            dmx_to,
+            physical_from: 0.0,
+            physical_to: 1.0,
+            wheel: None,
+            sets: Vec::new(),
+        };
+        let metadata = ParameterMetadata {
+            functions: vec![
+                function("Gobo1", 0, 127),
+                function("Gobo1PosRotate", 128, 255),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(metadata.function_at(10).unwrap().name, "Gobo1");
+        assert_eq!(metadata.function_at(200).unwrap().name, "Gobo1PosRotate");
+        assert!(ParameterMetadata::default().function_at(10).is_none());
     }
 }

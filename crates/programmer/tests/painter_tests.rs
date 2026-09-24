@@ -97,6 +97,9 @@ fn test_fixture_ref(fixture_id: u32) -> FixtureRef {
 fn red_parameter_metadata() -> ParameterMetadata {
     ParameterMetadata {
         dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Red,
         native_unit: Attribute::Red.native_unit(),

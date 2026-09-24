@@ -17,12 +17,9 @@ use std::collections::HashSet;
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::FixtureRef;
-use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::CommandError;
 
-use crate::prelude::{
-    Fixture, FixtureDataProviderExt, Parameter, ParameterMetadata, ParameterValues,
-};
+use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter, ParameterValues};
 
 /// Resolved fixture template and the library asset version it was built from.
 pub struct LibraryFixtureTemplate {
@@ -175,22 +172,6 @@ fn fixture_store_error(id: u32, error: String) -> CommandError {
     )
 }
 
-/// Derives initial runtime values for parameters spawned from fixture metadata.
-///
-/// Virtual intensity starts at full scale so colour-only fixtures emit light as soon
-/// as a colour is applied; every other attribute keeps the standard defaults.
-pub fn initial_parameter_values(parameter_metadata: &ParameterMetadata) -> ParameterValues {
-    if parameter_metadata.attribute == Attribute::VirtualIntensity {
-        ParameterValues {
-            default_value: parameter_metadata.max,
-            current_value: parameter_metadata.max,
-            highlight_value: parameter_metadata.max,
-        }
-    } else {
-        ParameterValues::default()
-    }
-}
-
 /// Spawns and indexes the runtime parameter entities for one stored fixture.
 pub fn add_fixture_parameters(
     commands: &mut Commands,
@@ -207,7 +188,7 @@ pub fn add_fixture_parameters(
             let parameter = commands
                 .spawn_instance(Parameter {
                     metadata: metadata.clone(),
-                    values: initial_parameter_values(metadata),
+                    values: ParameterValues::from_metadata(metadata),
                 })
                 .instance();
             fixtures.add_parameter(fixture_ref.clone(), metadata.attribute.clone(), parameter);

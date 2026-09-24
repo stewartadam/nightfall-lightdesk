@@ -21,11 +21,9 @@ use super::catalog::{
     BUILTIN_SOURCE_FORMAT, builtin_fixture_profiles, find_builtin_fixture_profile,
 };
 use super::commands::{FixtureLibraryCommand, deserialize_fixture_library_command};
-use super::instantiate::{
-    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixture, initial_parameter_values,
-};
+use super::instantiate::{LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixture};
 use super::{create_fixture_from_library, moving_heads, normalize_fixture_profile, strobes};
-use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter, ParameterMetadata};
+use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter};
 
 /// Calculates the non-virtual DMX footprint of a built-in fixture profile.
 fn footprint(fixture: &Fixture) -> u16 {
@@ -507,34 +505,6 @@ fn create_library_fixture_rejects_used_id() {
         .expect_err("duplicate ID should be rejected");
     assert_eq!(error.code, "fixture_library.fixture_id_in_use");
     assert_eq!(fixtures.inner.iter().count(), 1);
-}
-
-/// Verifies virtual intensity parameters start at full metadata scale.
-#[test]
-fn initial_parameter_values_sets_virtual_intensity_to_full() {
-    let metadata = ParameterMetadata {
-        attribute: Attribute::VirtualIntensity,
-        max: 512.0,
-        ..Default::default()
-    };
-    let values = initial_parameter_values(&metadata);
-    assert_eq!(values.default_value, 512.0);
-    assert_eq!(values.current_value, 512.0);
-    assert_eq!(values.highlight_value, 512.0);
-}
-
-/// Verifies ordinary parameters keep the standard runtime defaults.
-#[test]
-fn initial_parameter_values_keeps_non_virtual_defaults() {
-    let metadata = ParameterMetadata {
-        attribute: Attribute::White,
-        max: 512.0,
-        ..Default::default()
-    };
-    let values = initial_parameter_values(&metadata);
-    assert_eq!(values.default_value, 0.0);
-    assert_eq!(values.current_value, 0.0);
-    assert_eq!(values.highlight_value, 255.0);
 }
 
 /// Verifies semantic deserialization preserves command and undo identities.
