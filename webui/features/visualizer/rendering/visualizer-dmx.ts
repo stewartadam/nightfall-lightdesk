@@ -235,12 +235,14 @@ const MIN_PROFILE_STROBE_RATE = 1e-3;
  * GDTF separates plain `ShutterN` functions (open/closed) from strobe
  * variants such as `ShutterNStrobe`, `...Pulse` and `...Random`. Only the
  * latter strobe, at a rate given by the position within the function's
- * DMX range; plain shutter functions return 0 so the beam stays steady.
+ * DMX range, reversed when the physical frequency descends across it;
+ * plain shutter functions return 0 so the beam stays steady.
  */
 function profileStrobeRate(fn: ParameterFunction, dmx: number): number {
   if (!/strobe|pulse|random/i.test(fn.attribute)) return 0;
   const span = fn.dmx_to - fn.dmx_from;
-  const position = span > 0 ? (dmx - fn.dmx_from) / span : 1;
+  let position = span > 0 ? (dmx - fn.dmx_from) / span : 1;
+  if (fn.physical_from > fn.physical_to) position = 1 - position;
   return Math.max(MIN_PROFILE_STROBE_RATE, Math.min(1, position));
 }
 
