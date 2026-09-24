@@ -227,10 +227,11 @@ fn check_bindings(fixture: &Fixture, geometry: &FixtureGeometry) -> Vec<Invarian
         }
     }
 
+    // A joint is driven by the element named after its own node.
     let joints: HashSet<(&str, AxisType)> = geometry
         .nodes
         .iter()
-        .filter_map(|node| Some((node.controlled_element.as_deref()?, node.axis?)))
+        .flat_map(|node| node.axes.iter().map(|axis| (node.name.as_str(), *axis)))
         .collect();
     for element in &fixture.elements {
         if !node_names.contains(element.label.as_str()) {
@@ -302,27 +303,24 @@ mod tests {
         assert_eq!(check_invariants(&fixture, geometry.as_ref()), vec![]);
     }
 
-    /// Verifies references whose break offsets collide are reported as slot overlaps.
+    /// Verifies two parameters writing the same slot are reported as an overlap.
     #[test]
-    fn colliding_reference_offsets_are_detected() {
-        let builder = GdtfBuilder::new("Test", "Colliding")
-            .geometry(
-                GeometrySpec::generic("Body")
-                    .child(GeometrySpec::reference("Pixel 1", "Pixel", &[(1, 1)]))
-                    .child(GeometrySpec::reference("Pixel 2", "Pixel", &[(1, 2)])),
-            )
-            .geometry(GeometrySpec::beam("Pixel"))
-            .mode(
-                ModeSpec::new("Mode", "Body")
-                    .channel(ChannelSpec::new("Pixel", "ColorAdd_R", &[1]))
-                    .channel(ChannelSpec::new("Pixel", "ColorAdd_G", &[2])),
-            );
-        let (fixture, geometry) = convert(&builder);
+    fn slot_overlaps_are_detected() {
+        let (mut fixture, geometry) = convert(&valid_fixture());
+        let ring_2 = fixture
+            .elements
+            .iter()
+            .position(|element| element.label == "Ring 2")
+            .unwrap();
+        fixture.elements[ring_2].parameters[0].dmx_slots = DmxSlots::Explicit {
+            dmx_break: 1,
+            offsets: vec![5],
+        };
         assert_eq!(
             check_invariants(&fixture, geometry.as_ref()),
             vec![InvariantViolation::SlotOverlap {
-                slot: 2,
-                elements: ("Pixel 1".to_string(), "Pixel 2".to_string()),
+                slot: 5,
+                elements: ("Ring 1".to_string(), "Ring 2".to_string()),
             }]
         );
     }
@@ -347,22 +345,39 @@ mod tests {
         assert!(violations.contains(&InvariantViolation::BrokenLink { node: 3 }));
     }
 
-    /// Verifies a geometry carrying both pan and tilt reports the axis it cannot represent.
+    /// Verifies a geometry carrying both pan and tilt binds both axes, pan first.
     #[test]
-    fn pan_and_tilt_on_one_node_leaves_tilt_unbound() {
+    fn pan_and_tilt_on_one_node_bind_both_axes() {
         let builder = GdtfBuilder::new("Test", "Shared")
             .geometry(GeometrySpec::generic("Base").child(GeometrySpec::axis("Joint")))
             .mode(
                 ModeSpec::new("Mode", "Base")
-                    .channel(ChannelSpec::new("Joint", "Pan", &[1]))
-                    .channel(ChannelSpec::new("Joint", "Tilt", &[2])),
+                    .channel(ChannelSpec::new("Joint", "Tilt", &[2]))
+                    .channel(ChannelSpec::new("Joint", "Pan", &[1])),
             );
         let (fixture, geometry) = convert(&builder);
+        assert_eq!(check_invariants(&fixture, geometry.as_ref()), vec![]);
         assert_eq!(
-            check_invariants(&fixture, geometry.as_ref()),
+            geometry.unwrap().nodes[1].axes,
+            vec![AxisType::Pan, AxisType::Tilt]
+        );
+    }
+
+    /// Verifies a joint without its pan channel's element is reported.
+    #[test]
+    fn position_without_joint_is_detected() {
+        let (fixture, geometry) = convert(&valid_fixture());
+        let mut geometry = geometry.unwrap();
+        for node in &mut geometry.nodes {
+            if node.name == "Yoke" {
+                node.axes.clear();
+            }
+        }
+        assert_eq!(
+            check_invariants(&fixture, Some(&geometry)),
             vec![InvariantViolation::PositionWithoutJoint {
-                element: "Joint".to_string(),
-                axis: AxisType::Tilt,
+                element: "Yoke".to_string(),
+                axis: AxisType::Pan,
             }]
         );
     }

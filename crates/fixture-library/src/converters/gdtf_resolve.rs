@@ -61,6 +61,25 @@ pub enum GdtfDiagnostic {
         /// Break number the channel uses.
         dmx_break: i32,
     },
+    /// Two geometries in one tree share a name; later ones were renamed and do not bind channels.
+    DuplicateGeometryName {
+        /// Repeated geometry name.
+        name: String,
+    },
+    /// A channel's slots cannot be represented (more than four bytes or outside one universe); it was dropped.
+    UnrepresentableChannel {
+        /// Instance the channel names.
+        instance: String,
+        /// Resolved 1-based slots.
+        offsets: Vec<i64>,
+    },
+    /// A channel reuses slots of an earlier channel; it was kept as a virtual (non-output) parameter.
+    SharedSlots {
+        /// Instance of the later channel.
+        instance: String,
+        /// Shared 1-based slots.
+        offsets: Vec<u16>,
+    },
 }
 
 /// Break offsets supplied by one geometry reference.
@@ -93,6 +112,8 @@ pub struct GeometryInstance<'a> {
     pub children: Vec<usize>,
     /// Innermost reference scope this instance belongs to.
     scope: Option<usize>,
+    /// Whether an earlier instance already had this name; duplicates bind no channels.
+    duplicate: bool,
 }
 
 impl GeometryInstance<'_> {
@@ -165,6 +186,9 @@ impl<'a> ResolvedMode<'a> {
             0,
             &mut active_templates,
         );
+        if resolved.instances.is_empty() {
+            return None;
+        }
         resolved.resolve_channels(mode);
         Some(resolved)
     }
@@ -205,10 +229,23 @@ impl<'a> ResolvedMode<'a> {
             .name()
             .map(|name| name.to_string())
             .unwrap_or_default();
-        let name = name_override.unwrap_or_else(|| match scope {
+        let mut name = name_override.unwrap_or_else(|| match scope {
             Some(scope) => format!("{}/{geometry_name}", self.scopes[scope].name),
             None => geometry_name,
         });
+        let duplicate = self.instances.iter().any(|instance| instance.name == name);
+        if duplicate {
+            let diagnostic = GdtfDiagnostic::DuplicateGeometryName { name: name.clone() };
+            if !self.diagnostics.contains(&diagnostic) {
+                self.diagnostics.push(diagnostic);
+            }
+            let base = name.clone();
+            let mut suffix = 2;
+            while self.instances.iter().any(|instance| instance.name == name) {
+                name = format!("{base} #{suffix}");
+                suffix += 1;
+            }
+        }
         let model = placement
             .model_name()
             .or_else(|| geometry.model_name())
@@ -223,6 +260,7 @@ impl<'a> ResolvedMode<'a> {
             parent,
             children: Vec::new(),
             scope,
+            duplicate,
         });
         if let Some(parent) = parent {
             self.instances[parent].children.push(index);
@@ -313,6 +351,9 @@ impl<'a> ResolvedMode<'a> {
     fn resolve_channels(&mut self, mode: &'a DmxMode) {
         let mut by_geometry: HashMap<String, Vec<usize>> = HashMap::new();
         for (index, instance) in self.instances.iter().enumerate() {
+            if instance.duplicate {
+                continue;
+            }
             by_geometry
                 .entry(instance.geometry_name().to_string())
                 .or_default()
