@@ -560,7 +560,7 @@ fn go_clip_with_missing_sequence_target_queues_action_before_completion() {
     assert_eq!(queued.len(), 1);
     assert!(matches!(
         queued[0]
-            .action
+            .operation
             .as_any()
             .downcast_ref::<SequencePlaybackOperation>(),
         Some(SequencePlaybackOperation::Go { instance_id: queued_instance_id })
@@ -613,7 +613,7 @@ fn back_clip_with_missing_sequence_target_queues_action_before_completion() {
     assert_eq!(queued.len(), 1);
     assert!(matches!(
         queued[0]
-            .action
+            .operation
             .as_any()
             .downcast_ref::<SequencePlaybackOperation>(),
         Some(SequencePlaybackOperation::Back { instance_id: queued_instance_id })

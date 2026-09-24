@@ -176,7 +176,7 @@ pub fn handle_restore_sequence_position(
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
 
         let Some(entity) = instance_index.get(&snapshot.instance_id) else {
             tracing::warn!(

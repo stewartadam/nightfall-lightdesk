@@ -334,7 +334,7 @@ pub(super) fn handle_action(
         timeline_id,
         track_id,
         actions,
-    } = &event.action
+    } = &event.operation
     else {
         return;
     };

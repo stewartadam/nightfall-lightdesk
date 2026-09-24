@@ -469,7 +469,7 @@ pub fn handle_clip_commands(
     mut events: MessageReader<EngineOperationEnvelope<FxModulePlaybackOperation>>,
 ) {
     for event in events.read() {
-        match &event.action {
+        match &event.operation {
             FxModulePlaybackOperation::Start {
                 fx_module_uid,
                 context,

@@ -19,7 +19,7 @@ pub fn handle_remove_instruction_events(
     mut responder: CommandResponder,
 ) {
     for event in events_reader.read() {
-        let uuid = event.action.uuid;
+        let uuid = event.operation.uuid;
         tracing::debug!("Removing programmer instruction by UUID: {}", uuid);
 
         // Try to remove from live instructions first, then blind

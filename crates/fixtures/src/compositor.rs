@@ -279,14 +279,14 @@ pub fn update_manual_assertion_layer(
     }
 
     for event in clear_events.read() {
-        for channel in event.action.0.channels.expand() {
+        for channel in event.operation.0.channels.expand() {
             remove_manual_assertion_for_channel(&channel, &destinations_query, &mut layer);
         }
     }
 
     for event in playback_actions.read() {
         if matches!(
-            &event.action,
+            &event.operation,
             PlaybackOperation::ReleaseParameters {
                 scope: PlaybackScope::All
             }
@@ -297,7 +297,7 @@ pub fn update_manual_assertion_layer(
     }
 
     for event in dmx_actions.read() {
-        let DmxOperation::ReleaseChannels { channels } = &event.action;
+        let DmxOperation::ReleaseChannels { channels } = &event.operation;
         for channel in channels.expand() {
             remove_manual_assertion_for_channel(&channel, &destinations_query, &mut layer);
         }

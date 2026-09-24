@@ -489,7 +489,7 @@ pub fn record_timeline_actions_system(
             continue;
         }
         recorded_actions.extend(recorded_actions_from_clip_action(
-            &event.action,
+            &event.operation,
             &clip_snapshot,
         ));
     }
@@ -560,7 +560,7 @@ pub fn finish_timeline_recording_sessions_system(
     }
 
     for event in timeline_actions.read() {
-        if let TimelineOperation::Stop(timeline_id) = event.action {
+        if let TimelineOperation::Stop(timeline_id) = event.operation {
             finish_timeline_ids.insert(timeline_id);
             disable_timeline_ids.insert(timeline_id);
         }
@@ -714,7 +714,7 @@ mod tests {
                 "recording persistence should remain independently undoable"
             );
             *action
-                .action
+                .operation
                 .into_any()
                 .downcast::<TimelineOperation>()
                 .expect("recording persistence should be a timeline action")

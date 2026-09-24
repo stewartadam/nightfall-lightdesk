@@ -36,7 +36,7 @@ pub fn action_events(
     mut results: MessageWriter<OperationResult<(), CommandError>>,
 ) {
     for event in actions_reader.read() {
-        let result = match &event.action {
+        let result = match &event.operation {
             GroupOperation::StoreGroup(group) => {
                 let group = {
                     let resolver = group_storage.p0();

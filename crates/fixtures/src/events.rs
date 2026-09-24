@@ -59,7 +59,7 @@ pub fn handle_restore_fixture_snapshot(
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         let fixture = snapshot.fixture.clone();
         let fixture_uid = fixture.identifiers.uid;
         tracing::debug!(
@@ -142,7 +142,7 @@ pub fn handle_restore_binding_snapshot(
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         tracing::debug!(
             "Restoring binding snapshot for fixture {}",
             snapshot.fixture_id
@@ -191,7 +191,7 @@ pub fn handle_restore_patch_bindings_snapshot(
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         tracing::debug!("Restoring patch bindings snapshot");
 
         input_bindings.bindings = snapshot.input_bindings.clone();
@@ -209,7 +209,7 @@ pub fn handle_restore_offset_snapshot(
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         tracing::debug!(
             fixture_id = snapshot.fixture_id,
             attribute = ?snapshot.attribute,
@@ -300,7 +300,7 @@ pub fn handle_clear_dmx_channels(
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         let expanded_channels = snapshot.channels.expand();
 
         tracing::debug!(
@@ -325,7 +325,7 @@ pub fn handle_restore_color_path_defaults_snapshot(
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        data_provider.replace_color_path_defaults(event.action.0.defaults.clone());
+        data_provider.replace_color_path_defaults(event.operation.0.defaults.clone());
         succeed_action(&mut responder, event.command_id);
     }
 }

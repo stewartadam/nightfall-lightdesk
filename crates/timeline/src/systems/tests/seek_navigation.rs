@@ -98,7 +98,7 @@ fn seek_tracks_clip_autostarted_by_jump_to_cue_after_cleanup() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
@@ -221,7 +221,7 @@ fn seek_replay_direct_materializes_jump_to_cue_autostart() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -355,7 +355,7 @@ fn seek_replay_direct_materializes_go_autostart() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -478,7 +478,7 @@ fn seek_replay_ignores_desk_eval_go_autostart_by_default() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -489,7 +489,7 @@ fn seek_replay_ignores_desk_eval_go_autostart_by_default() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         desk_events.is_empty(),
@@ -774,7 +774,7 @@ fn seek_replay_ignores_desk_eval_clip_go_by_default() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         desk_events.is_empty(),
@@ -785,7 +785,7 @@ fn seek_replay_ignores_desk_eval_clip_go_by_default() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -871,7 +871,7 @@ fn seek_replay_dispatches_desk_eval_clip_back_when_configured() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(desk_events.len(), 1);
     assert!(matches!(
@@ -883,7 +883,7 @@ fn seek_replay_dispatches_desk_eval_clip_back_when_configured() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1078,7 +1078,7 @@ fn seek_replay_direct_materializes_sequence_without_desk_eval_go() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         desk_events.is_empty(),
@@ -1088,7 +1088,7 @@ fn seek_replay_direct_materializes_sequence_without_desk_eval_go() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1238,7 +1238,7 @@ fn seek_replay_direct_materializes_sequence_with_unrelated_clip_cleanup() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
@@ -1406,7 +1406,7 @@ fn seek_replay_direct_materializes_sequence_with_same_clip_cleanup() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1501,7 +1501,7 @@ fn seek_replay_skips_opaque_desk_eval_commands() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         desk_events.is_empty(),
@@ -1512,7 +1512,7 @@ fn seek_replay_skips_opaque_desk_eval_commands() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1585,7 +1585,7 @@ fn seek_replay_skips_started_clip_with_missing_sequence_data() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1700,7 +1700,7 @@ fn seek_replay_materializes_autonomous_sequence_progression() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1855,7 +1855,7 @@ fn seek_replay_applies_autonomous_progression_before_planned_intervention() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1986,7 +1986,7 @@ fn seek_replay_materializes_stopped_sequence_release_directly() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -2119,7 +2119,7 @@ fn seek_replay_skips_timed_stop_with_missing_sequence_data() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -2225,7 +2225,7 @@ fn seek_replay_skips_advanced_sequence_with_missing_cue_data() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -2236,7 +2236,7 @@ fn seek_replay_skips_advanced_sequence_with_missing_cue_data() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         desk_events.is_empty(),
@@ -2345,7 +2345,7 @@ fn seek_replay_skips_back_sequence_with_missing_cue_data() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -2356,7 +2356,7 @@ fn seek_replay_skips_back_sequence_with_missing_cue_data() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         desk_events.is_empty(),

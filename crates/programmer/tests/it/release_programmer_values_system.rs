@@ -756,7 +756,7 @@ fn test_release_programmer_values_emits_release_selection_for_full_release() {
     assert!(
         action_events.iter().any(|event| {
             matches!(
-                &event.action,
+                &event.operation,
                 PlaybackOperation::ReleaseParameters { scope: PlaybackScope::Selection(SelectionExpr::Resolved(fixtures)) }
                     if fixtures.len() == 1 && fixtures[0] == fixture
             )
@@ -1207,7 +1207,7 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
     assert!(
         action_events.iter().any(|event| {
             matches!(
-                &event.action,
+                &event.operation,
                 PlaybackOperation::ReleaseParameters {
                     scope: PlaybackScope::Selection(SelectionExpr::Fixture(UnresolvedFixtureRef {
                         fixture_id,
@@ -1223,7 +1223,7 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
         .iter()
         .find_map(|event| {
             matches!(
-                &event.action,
+                &event.operation,
                 PlaybackOperation::ReleaseParameters {
                     scope: PlaybackScope::Selection(_)
                 }
@@ -1356,7 +1356,7 @@ fn stale_multi_action_plan_is_rejected_before_any_sibling_mutates() {
         .drain();
     for envelope in planned {
         let action = *envelope
-            .action
+            .operation
             .into_any()
             .downcast::<ProgrammerOperation>()
             .expect("planner should emit programmer actions");

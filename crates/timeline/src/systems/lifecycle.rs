@@ -213,7 +213,7 @@ fn stopped_timeline_ids_from_actions(
 ) -> HashSet<u32> {
     actions
         .read()
-        .filter_map(|event| match event.action {
+        .filter_map(|event| match event.operation {
             TimelineOperation::Stop(id) => Some(id),
             TimelineOperation::Start(_) | TimelineOperation::InsertRecordedActions { .. } => None,
         })

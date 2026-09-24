@@ -57,10 +57,10 @@ pub fn handle_actions(
     mut timecode_events: MessageWriter<TimecodeEvent>,
 ) {
     for envelope in actions.read() {
-        if apply_runtime_action(&mut timecode_gen_query, &envelope.action) {
-            timecode_events.write(runtime_event(&envelope.action));
+        if apply_runtime_action(&mut timecode_gen_query, &envelope.operation) {
+            timecode_events.write(runtime_event(&envelope.operation));
         } else {
-            tracing::warn!(action = ?envelope.action, "timecode_action_target_not_found");
+            tracing::warn!(action = ?envelope.operation, "timecode_action_target_not_found");
         }
     }
 }

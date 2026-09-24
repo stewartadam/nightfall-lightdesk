@@ -154,9 +154,9 @@ impl UndoRegistry {
         envelope: &DynEngineOperationEnvelope,
         ctx: &UndoContext,
     ) -> Option<UndoEntry> {
-        let type_id = envelope.action.as_any().type_id();
+        let type_id = envelope.operation.as_any().type_id();
         let generator = self.generators.get(&type_id)?;
-        generator(envelope.action.as_ref(), envelope.command_id, ctx)
+        generator(envelope.operation.as_ref(), envelope.command_id, ctx)
     }
 
     /// Rebuilds a stored inverse using the command or action route registered for its type.
@@ -372,7 +372,10 @@ mod tests {
         assert_eq!(envelope.command_id, Some(command_id));
         assert_eq!(envelope.undo_id, Some(undo_id));
         assert_eq!(
-            envelope.action.as_any().downcast_ref::<TestUndoOperation>(),
+            envelope
+                .operation
+                .as_any()
+                .downcast_ref::<TestUndoOperation>(),
             Some(&TestUndoOperation(7))
         );
     }

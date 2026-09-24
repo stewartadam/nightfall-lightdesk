@@ -31,7 +31,7 @@ pub fn handle_events(
     mut dmx_universes: Option<ResMut<ConsoleDmxUniverses>>,
 ) {
     for event in events.read() {
-        let PlaybackOperation::ReleaseParameters { scope } = &event.action;
+        let PlaybackOperation::ReleaseParameters { scope } = &event.operation;
         if let PlaybackScope::Selection(selection_expression) = scope {
             let selection = selection_resolver
                 .resolve_expr(selection_expression)
@@ -94,7 +94,7 @@ pub fn handle_playback_commands(
 
     for event in release_actions.read() {
         if let Err(error) = apply_playback_release(
-            &event.action,
+            &event.operation,
             &mut commands,
             &instance_index,
             &instance_query,

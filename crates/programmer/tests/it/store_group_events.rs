@@ -133,7 +133,7 @@ fn run_store_group_command(app: &mut App, group_id: u32) -> GroupOperation {
     app.world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<GroupOperation>>>()
         .drain()
-        .map(|envelope| envelope.action)
+        .map(|envelope| envelope.operation)
         .next()
         .expect("store group action should be queued")
 }

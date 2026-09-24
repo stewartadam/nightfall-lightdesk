@@ -446,8 +446,8 @@ mod tests {
             assert_eq!(action.command_id, Some(command_id));
             assert_eq!(action.undo_id, Some(undo_id));
         }
-        assert_eq!(actions[0].action, ReplayOperation(8));
-        assert_eq!(actions[1].action, ReplayOperation(7));
+        assert_eq!(actions[0].operation, ReplayOperation(8));
+        assert_eq!(actions[1].operation, ReplayOperation(7));
 
         let mut tracker = world.resource_mut::<CommandTracker>();
         assert!(tracker.record_success(command_id, None).unwrap().is_none());

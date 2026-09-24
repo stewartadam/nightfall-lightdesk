@@ -456,7 +456,7 @@ pub fn handle_restore_clip_source(
     let mut restorations: Vec<(Entity, Option<Source>, Option<CommandId>)> = Vec::new();
 
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         tracing::debug!("Restoring clip {} source", snapshot.clip_id);
 
         if let Ok((entity, _)) = exec_params.p0().by_id(snapshot.clip_id) {
@@ -550,14 +550,14 @@ pub fn handle_clip_rate_commands(
     let start_batches = event_batch
         .iter()
         .flat_map(|event| {
-            clip_start_ids(&event.action)
+            clip_start_ids(&event.operation)
                 .into_iter()
                 .map(|id| (event.undo_id, id))
         })
         .collect::<HashSet<_>>();
 
     for event in event_batch {
-        let ClipOperation::SetRate { clip_id, rate } = &event.action else {
+        let ClipOperation::SetRate { clip_id, rate } = &event.operation else {
             continue;
         };
 
@@ -632,12 +632,12 @@ pub fn route_clip_playback_actions(
     >,
 ) {
     for event in clip_events.read() {
-        match &event.action {
+        match &event.operation {
             ClipOperation::Start(id_expr)
             | ClipOperation::StartAtTiming {
                 clip_id: id_expr, ..
             } => {
-                let (timing, instance_options) = match &event.action {
+                let (timing, instance_options) = match &event.operation {
                     ClipOperation::StartAtTiming {
                         timing,
                         instance_options,
@@ -707,7 +707,7 @@ pub fn route_clip_playback_actions(
             | ClipOperation::StopAtTiming {
                 clip_id: id_expr, ..
             } => {
-                let timing = match &event.action {
+                let timing = match &event.operation {
                     ClipOperation::StopAtTiming { timing, .. } => Some(*timing),
                     _ => None,
                 };
@@ -1332,7 +1332,7 @@ mod tests {
         assert_eq!(actions[0].command_id, Some(command_id));
         assert_eq!(actions[0].undo_id, Some(undo_id));
         assert!(matches!(
-            actions[0].action,
+            actions[0].operation,
             ClipOperation::Go(IdExpr::Single(7))
         ));
     }
@@ -1364,7 +1364,7 @@ mod tests {
         assert_eq!(actions[0].command_id, Some(command_id));
         assert_eq!(actions[0].undo_id, Some(undo_id));
         assert!(matches!(
-            actions[0].action,
+            actions[0].operation,
             ClipOperation::Start(IdExpr::Single(9))
         ));
     }
@@ -1771,6 +1771,6 @@ mod tests {
         assert_eq!(action.command_id, Some(command_id));
         assert_eq!(action.undo_id, Some(UndoId::from(undo_id)));
         assert_ne!(action.operation_id, event.operation_id);
-        assert_eq!(action.action, "start playback");
+        assert_eq!(action.operation, "start playback");
     }
 }

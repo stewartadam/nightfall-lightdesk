@@ -134,7 +134,7 @@ fn seek_coalesces_multiple_timecode_events_per_frame() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
 
     assert_eq!(
@@ -245,7 +245,7 @@ fn seek_coalesces_distinct_timecodes_in_last_event_order() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
 
     assert_eq!(
@@ -346,7 +346,7 @@ fn seek_coalesces_each_timeline_for_shared_timecode() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
 
     assert_eq!(

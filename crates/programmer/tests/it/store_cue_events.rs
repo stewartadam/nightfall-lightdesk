@@ -347,7 +347,7 @@ fn run_store_command(app: &mut App, command: ProgrammerCommand) -> Vec<CueOperat
         .into_iter()
         .filter_map(|envelope| {
             envelope
-                .action
+                .operation
                 .as_any()
                 .downcast_ref::<CueOperation>()
                 .cloned()
@@ -367,7 +367,7 @@ fn run_tracked_store_command(app: &mut App, command: ProgrammerCommand) -> Vec<C
     app.world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<CueStoreOperation>>>()
         .drain()
-        .map(|envelope| envelope.action)
+        .map(|envelope| envelope.operation)
         .collect()
 }
 

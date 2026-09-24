@@ -116,7 +116,7 @@ fn record_timeline_actions(
 ) {
     observed
         .0
-        .extend(events.read().map(|event| event.action.clone()));
+        .extend(events.read().map(|event| event.operation.clone()));
 }
 
 /// Verifies persisted beatgrid tempos keep useful detector precision.
@@ -773,7 +773,7 @@ fn delete_timeline_stops_owned_clip_instances() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect::<Vec<_>>();
     assert!(matches!(
         events.as_slice(),

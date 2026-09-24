@@ -217,7 +217,7 @@ pub fn handle_sequence_playback_actions(
             .command_id
             .map(uuid::Uuid::from)
             .unwrap_or_else(|| event.operation_id.into());
-        match &event.action {
+        match &event.operation {
             SequencePlaybackOperation::Go { instance_id } => {
                 let Some(entity) = instance_index.get(instance_id) else {
                     tracing::error!(

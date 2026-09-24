@@ -253,18 +253,18 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
             .undo_id
             .map(uuid::Uuid::from)
             .unwrap_or(correlation_id);
-        match &event.action {
+        match &event.operation {
             ClipOperation::Start(id_expr)
             | ClipOperation::StartAtTiming {
                 clip_id: id_expr, ..
             } => {
-                let start_timing = match &event.action {
+                let start_timing = match &event.operation {
                     ClipOperation::StartAtTiming { timing, .. } => {
                         Some(sequence_start_timing_from_timeline(*timing))
                     }
                     _ => None,
                 };
-                let start_lookahead_enabled = match &event.action {
+                let start_lookahead_enabled = match &event.operation {
                     ClipOperation::StartAtTiming {
                         instance_options, ..
                     } => instance_options.and_then(|options| options.lookahead_enabled),
@@ -437,7 +437,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
             | ClipOperation::StopAtTiming {
                 clip_id: id_expr, ..
             } => {
-                let stop_timing = match &event.action {
+                let stop_timing = match &event.operation {
                     ClipOperation::StopAtTiming { timing, .. } => Some(*timing),
                     _ => None,
                 };
@@ -489,7 +489,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                             .into_iter()
                             .filter(|pending_cmd| {
                                 let should_cancel = pending_cmd
-                                    .action
+                                    .operation
                                     .as_any()
                                     .downcast_ref::<SequencePlaybackOperation>()
                                     .is_some_and(|sequence_cmd| match sequence_cmd {
@@ -1369,7 +1369,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
     }
 
     for event in cue_lifecycle.actions.read() {
-        let CueLifecycleOperation::ReleaseCueInstances { uids } = &event.action;
+        let CueLifecycleOperation::ReleaseCueInstances { uids } = &event.operation;
         release_cue_instances(uids, &materialized_cues_for_release, &mut commands);
         cue_lifecycle
             .results

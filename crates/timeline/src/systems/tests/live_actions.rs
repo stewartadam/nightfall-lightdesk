@@ -199,7 +199,7 @@ fn process_actions_resumes_after_running_seek_target() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(
         clip_events.len(),
@@ -301,7 +301,7 @@ fn process_actions_replays_mutation_after_move_playhead_only_seek_frame() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(
         clip_events.len(),
@@ -387,7 +387,7 @@ fn process_actions_dispatches_registered_clip_action() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches_timed_start(
@@ -899,7 +899,7 @@ fn process_actions_sends_timed_start_clip_from_timeline_position() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches_timed_start(
@@ -1001,7 +1001,7 @@ fn process_actions_stops_clip_when_started_action_is_deleted() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
@@ -1107,7 +1107,7 @@ fn process_actions_applies_inserted_elapsed_stop_action() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
@@ -1216,7 +1216,7 @@ fn process_actions_restores_start_when_elapsed_stop_action_is_deleted() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches_timed_start(
@@ -1302,7 +1302,7 @@ fn process_actions_leaves_lookahead_unset_when_timeline_setting_is_unset() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
@@ -1416,7 +1416,7 @@ fn process_actions_tracks_last_processed_per_timeline() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 2);
     assert!(clip_events.iter().any(|event| matches_timed_start(
@@ -1506,7 +1506,7 @@ fn process_actions_keeps_started_clip_active_after_action_duration() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches_timed_start(
@@ -1609,7 +1609,7 @@ fn process_actions_ignores_start_clip_duration_resize() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1727,7 +1727,7 @@ fn process_actions_ignores_inserted_elapsed_muted_action() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1838,7 +1838,7 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(
         clip_events.len(),
@@ -2124,7 +2124,7 @@ fn process_actions_preserves_active_start_after_future_only_edit() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -2241,7 +2241,7 @@ fn process_actions_ignores_inserted_stop_before_active_start() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -2350,7 +2350,7 @@ fn process_actions_ignores_deleted_stop_before_active_start() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -2459,7 +2459,7 @@ fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -2568,7 +2568,7 @@ fn process_actions_replays_inserted_rate_before_active_start() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.iter().any(|event| matches!(
@@ -2674,7 +2674,7 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.iter().all(|event| !matches_timed_start(
@@ -2783,7 +2783,7 @@ fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.iter().any(|event| matches_timed_start(
@@ -2894,7 +2894,7 @@ fn process_actions_replays_start_after_elapsed_stop_moves_before_it() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.iter().any(|event| matches_timed_start(
@@ -3007,7 +3007,7 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(desk_events.len(), 1);
     assert!(matches!(
@@ -3109,7 +3109,7 @@ fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.iter().any(|event| matches_timed_start(
@@ -3302,7 +3302,7 @@ fn process_actions_skips_inserted_desk_eval_when_seek_policy_ignores_it() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         desk_events.is_empty(),
@@ -3582,7 +3582,7 @@ fn process_actions_sends_untimed_stop_without_tracked_origin() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
@@ -3648,7 +3648,7 @@ fn process_actions_dispatches_desk_eval_actions() {
         .collect();
     assert_eq!(desk_events.len(), 1);
     assert!(matches!(
-        &desk_events[0].action,
+        &desk_events[0].operation,
         DeskOperation::Eval(actual) if actual == &command
     ));
     assert!(
@@ -3827,7 +3827,7 @@ fn process_actions_tracks_sequence_navigation_clip_actions() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 2);
     assert!(matches!(
@@ -3983,7 +3983,7 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 3);
     assert!(matches_timed_start(
@@ -4025,7 +4025,7 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         desk_events.is_empty(),
@@ -5177,7 +5177,7 @@ fn process_actions_tracks_clip_autostarted_by_jump_to_cue() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
@@ -5277,7 +5277,7 @@ fn process_actions_tracks_running_clip_for_jump_to_cue() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
@@ -5415,7 +5415,7 @@ fn process_actions_preserves_started_clip_origin_for_jump_to_cue() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert_eq!(clip_events.len(), 2);
     assert!(matches_timed_start(

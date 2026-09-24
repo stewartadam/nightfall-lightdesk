@@ -176,7 +176,7 @@ pub fn handle_group_events(
                 operation_id,
                 command_id: Some(command_id),
                 undo_id: Some(event.undo_id),
-                action: GroupOperation::StoreGroup(group),
+                operation: GroupOperation::StoreGroup(group),
             });
         }
     }

@@ -146,7 +146,7 @@ pub fn handle_events(
     let mut detaching_instances = HashSet::new();
 
     for event in events.read() {
-        match &event.action {
+        match &event.operation {
             FxPlaybackOperation::Stop {
                 clip_id,
                 attached_instances,
@@ -468,7 +468,7 @@ pub fn handle_step_fx_playback_commands(
     active_fx_query: Query<(Entity, &InstanceId, Option<&InstanceMetadata>), With<ActiveStepFx>>,
 ) {
     for event in instance_events.read() {
-        match &event.action {
+        match &event.operation {
             PlaybackReleaseOperation::One(target_instance_id) => {
                 for (entity, instance_id, _) in active_fx_query.iter() {
                     if instance_id == target_instance_id {

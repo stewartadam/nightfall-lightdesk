@@ -532,7 +532,7 @@ pub fn handle_programmer_events(
             let command_id = event.command_id?;
             (pending_plans.commands.contains_key(&command_id)
                 && programmer_action_requires_selection_flatten_confirmation(
-                    &event.action,
+                    &event.operation,
                     &programmer,
                     &selection_resolver,
                     &spatial_selection_resolver,
@@ -586,7 +586,7 @@ pub fn handle_programmer_events(
             .unwrap_or_else(|| event.operation_id.into());
         let undo_id: uuid::Uuid = event.undo_id.map(Into::into).unwrap_or(correlation_id);
         let respond_on_completion = event.command_id.is_some();
-        match &event.action {
+        match &event.operation {
             ProgrammerOperation::ClearSelection => {
                 clear_selection_events.push((correlation_id, respond_on_completion));
             }

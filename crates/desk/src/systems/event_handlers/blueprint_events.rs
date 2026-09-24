@@ -50,7 +50,7 @@ pub fn action_events(
     mut definition_changes: MessageWriter<BlueprintDefinitionChange>,
 ) {
     for event in actions_reader.read() {
-        let result = match &event.action {
+        let result = match &event.operation {
             BlueprintOperation::StoreBlueprint(blueprint) => {
                 let inverse = blueprint_data_provider
                     .from_id(blueprint.identifiers.id)

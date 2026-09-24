@@ -403,7 +403,7 @@ mod tests {
         assert!(matches!(
             actions.as_slice(),
             [EngineOperationEnvelope {
-                action: ClipOperation::Start(IdExpr::Single(7)),
+                operation: ClipOperation::Start(IdExpr::Single(7)),
                 ..
             }]
         ));

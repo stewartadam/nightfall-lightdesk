@@ -54,8 +54,8 @@ pub struct DynEngineOperationEnvelope {
     pub command_id: Option<CommandId>,
     /// Undo group inherited from the originating command, when applicable.
     pub undo_id: Option<UndoId>,
-    /// Concrete domain action erased for queue storage.
-    pub action: DynEngineOperation,
+    /// Concrete domain operation erased for queue storage.
+    pub operation: DynEngineOperation,
 }
 
 impl DynEngineOperationEnvelope {
@@ -65,7 +65,7 @@ impl DynEngineOperationEnvelope {
             operation_id: OperationId::new(),
             command_id: Some(command_id),
             undo_id: Some(undo_id),
-            action,
+            operation: action,
         }
     }
 
@@ -80,7 +80,7 @@ impl DynEngineOperationEnvelope {
             operation_id,
             command_id,
             undo_id,
-            action,
+            operation: action,
         }
     }
 
@@ -90,7 +90,7 @@ impl DynEngineOperationEnvelope {
             operation_id: OperationId::new(),
             command_id: None,
             undo_id: None,
-            action,
+            operation: action,
         }
     }
 }

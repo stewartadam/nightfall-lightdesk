@@ -211,7 +211,7 @@ pub fn cue_store_operations(
     selection_resolver: SpatialSelectionResolver,
 ) {
     for operation in operations.read() {
-        let result = match &operation.action {
+        let result = match &operation.operation {
             CueStoreOperation::StoreSequence {
                 sequence,
                 undo_label,
@@ -274,7 +274,7 @@ pub fn cue_action_events(
             .undo_id
             .map(uuid::Uuid::from)
             .unwrap_or(correlation_id);
-        match &event.action {
+        match &event.operation {
             CueOperation::StoreCue(cue) => {
                 if store_cue_definition(
                     cue,

@@ -469,7 +469,7 @@ pub fn handle_blueprint_events(
                     operation_id,
                     command_id: Some(command_id),
                     undo_id: Some(event.undo_id),
-                    action: BlueprintOperation::StoreBlueprint(blueprint),
+                    operation: BlueprintOperation::StoreBlueprint(blueprint),
                 });
             }
 

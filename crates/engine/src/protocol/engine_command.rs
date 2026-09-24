@@ -207,7 +207,7 @@ pub struct EngineOperationEnvelope<T> {
     /// Undo group that owns mutations produced by this action, when applicable.
     pub undo_id: Option<UndoId>,
     /// Domain-owned concrete operation payload.
-    pub action: T,
+    pub operation: T,
 }
 
 impl<T> EngineOperationEnvelope<T> {
@@ -217,7 +217,7 @@ impl<T> EngineOperationEnvelope<T> {
             operation_id: OperationId::new(),
             command_id: None,
             undo_id: None,
-            action,
+            operation: action,
         }
     }
 
@@ -232,7 +232,7 @@ impl<T> EngineOperationEnvelope<T> {
             operation_id,
             command_id,
             undo_id,
-            action,
+            operation: action,
         }
     }
 
@@ -247,7 +247,7 @@ impl<T> EngineOperationEnvelope<T> {
             operation_id: OperationId::new(),
             command_id: Some(command_id),
             undo_id: Some(undo_id),
-            action,
+            operation: action,
         }
     }
 }

@@ -102,7 +102,7 @@ fn live_repeated_sequence_go_reaches_each_manual_cue() {
                 .world_mut()
                 .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
                 .drain()
-                .map(|event| match event.action {
+                .map(|event| match event.operation {
                     ClipOperation::StartAtTiming { .. } => 1,
                     ClipOperation::RenderAt { position, .. } => position,
                     other => panic!("unexpected playback action: {other:?}"),

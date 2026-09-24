@@ -84,7 +84,7 @@ fn write_operation_with_context(
         operation_id,
         command_id: Some(command_id),
         undo_id: Some(undo_id),
-        action,
+        operation: action,
     });
     (operation_id, command_id, undo_id)
 }

@@ -247,7 +247,7 @@ mod tests {
         assert!(
             action_events.iter().any(|event| {
                 matches!(
-                    &event.action,
+                    &event.operation,
                     PlaybackOperation::ReleaseParameters {
                         scope: PlaybackScope::All
                     }

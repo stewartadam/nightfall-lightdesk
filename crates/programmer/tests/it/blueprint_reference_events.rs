@@ -474,7 +474,7 @@ fn blueprint_capture_expands_overlapping_fixture_and_element_selections() {
     let [action] = actions.as_slice() else {
         panic!("capture should enqueue exactly one Blueprint action");
     };
-    let BlueprintOperation::StoreBlueprint(stored) = &action.action;
+    let BlueprintOperation::StoreBlueprint(stored) = &action.operation;
     assert_eq!(
         stored.values.get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
@@ -685,7 +685,7 @@ fn blueprint_capture_retains_fanned_intent() {
     let [action] = actions.as_slice() else {
         panic!("fanned capture should enqueue one Blueprint action");
     };
-    let BlueprintOperation::StoreBlueprint(stored) = &action.action;
+    let BlueprintOperation::StoreBlueprint(stored) = &action.operation;
     assert_eq!(stored.values.get(&Attribute::Red), Some(&fan));
 }
 
@@ -732,7 +732,7 @@ fn blueprint_capture_flattens_referenced_programmer_values() {
     let [action] = actions.as_slice() else {
         panic!("referenced capture should enqueue one Blueprint action");
     };
-    let BlueprintOperation::StoreBlueprint(stored) = &action.action;
+    let BlueprintOperation::StoreBlueprint(stored) = &action.operation;
     assert_eq!(stored.values, source.values);
     assert_ne!(stored.identifiers.uid, source_uid);
 }

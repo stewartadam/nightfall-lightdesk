@@ -75,7 +75,7 @@ fn seek_replay_skips_source_less_clip_start() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -180,7 +180,7 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -352,7 +352,7 @@ fn seek_replay_direct_materializes_classic_fx_with_same_clip_cleanup() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -502,7 +502,7 @@ fn seek_replay_direct_materializes_step_fx_clip() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -675,7 +675,7 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -726,7 +726,7 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         matches!(
@@ -983,7 +983,7 @@ fn seek_replay_direct_materializes_flow_clip() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1105,7 +1105,7 @@ fn seek_replay_skips_source_less_clip_after_action_duration_without_stop() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),
@@ -1203,7 +1203,7 @@ fn seek_replay_skips_stopped_fx_clip_after_zero_release() {
         .world_mut()
         .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect();
     assert!(
         clip_events.is_empty(),

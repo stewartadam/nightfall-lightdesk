@@ -251,7 +251,7 @@ pub fn forward_programmer_commands(
 
     for event in action_events.read() {
         if matches!(
-            event.action,
+            event.operation,
             ProgrammerOperation::ClearSelection
                 | ProgrammerOperation::ClearValues { .. }
                 | ProgrammerOperation::ReleaseValues { .. }

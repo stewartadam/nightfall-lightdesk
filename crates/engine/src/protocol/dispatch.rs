@@ -134,7 +134,7 @@ fn handle_action_typed<A: EngineOperation + Clone + 'static>(
     world: &mut World,
     envelope: &DynEngineOperationEnvelope,
 ) {
-    let Some(action) = envelope.action.as_any().downcast_ref::<A>() else {
+    let Some(action) = envelope.operation.as_any().downcast_ref::<A>() else {
         return;
     };
     let Some(mut messages) = world.get_resource_mut::<Messages<EngineOperationEnvelope<A>>>()
@@ -159,7 +159,7 @@ fn handle_action_typed<A: EngineOperation + Clone + 'static>(
         operation_id: envelope.operation_id,
         command_id: envelope.command_id,
         undo_id: envelope.undo_id,
-        action: action.clone(),
+        operation: action.clone(),
     });
 }
 
@@ -186,7 +186,7 @@ impl EngineOperationRouter {
 
     /// Dispatches one erased action through its registered concrete handler.
     pub fn dispatch(&self, world: &mut World, envelope: &DynEngineOperationEnvelope) {
-        let action_type_id = envelope.action.as_any().type_id();
+        let action_type_id = envelope.operation.as_any().type_id();
         let _span = tracing::debug_span!(
             "engine_operation_dispatch",
             operation_id = %envelope.operation_id,
@@ -330,7 +330,7 @@ mod tests {
             .expect("registered action should dispatch");
         assert_eq!(dispatched.command_id, Some(command_id));
         assert_eq!(dispatched.undo_id, Some(undo_id));
-        assert_eq!(dispatched.action, TestAction(7));
+        assert_eq!(dispatched.operation, TestAction(7));
     }
 
     /// Verifies registered erased ingress is restored to a semantic command envelope.

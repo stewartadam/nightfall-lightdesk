@@ -66,24 +66,25 @@ pub fn handle_undo_events(
         programmer.blind_instructions.clear();
 
         // Restore live instructions
-        for (uuid, instruction) in &event.action.live_instructions {
+        for (uuid, instruction) in &event.operation.live_instructions {
             programmer
                 .live_instructions
                 .insert(*uuid, instruction.clone());
         }
 
         // Restore blind instructions
-        for (uuid, instruction) in &event.action.blind_instructions {
+        for (uuid, instruction) in &event.operation.blind_instructions {
             programmer
                 .blind_instructions
                 .insert(*uuid, instruction.clone());
         }
 
         // Restore mode directly (no UI update needed for mode)
-        programmer.mode = event.action.mode;
-        programmer.set_active_spatial_selection(event.action.active_selection.clone());
-        programmer.recalled_cue_timing_defaults = event.action.recalled_cue_timing_defaults.clone();
-        programmer.transition_anchor_aliases = event.action.transition_anchor_aliases.clone();
+        programmer.mode = event.operation.mode;
+        programmer.set_active_spatial_selection(event.operation.active_selection.clone());
+        programmer.recalled_cue_timing_defaults =
+            event.operation.recalled_cue_timing_defaults.clone();
+        programmer.transition_anchor_aliases = event.operation.transition_anchor_aliases.clone();
         if !release_pending
             && let Some(command_id) = event.command_id
             && let Err(error) = responder.succeed(command_id)

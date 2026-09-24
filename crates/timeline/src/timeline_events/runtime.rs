@@ -46,10 +46,10 @@ pub fn handle_timeline_events(
     }
 
     for event in action_reader.read() {
-        if !apply_timeline_action(&event.action, &mut timeline_query) {
+        if !apply_timeline_action(&event.operation, &mut timeline_query) {
             tracing::warn!(
                 operation_id = %event.operation_id,
-                action = ?event.action,
+                action = ?event.operation,
                 "timeline_action_target_not_found"
             );
         }

@@ -46,7 +46,7 @@ pub fn handle_eval(
 ) {
     let mut evals = events.read().cloned().collect::<Vec<_>>();
     evals.extend(actions.read().map(|event| {
-        let DeskOperation::Eval(command) = &event.action;
+        let DeskOperation::Eval(command) = &event.operation;
         CommandEnvelope::with_context(
             event.operation_id.0.into(),
             event

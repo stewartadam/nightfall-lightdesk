@@ -447,7 +447,7 @@ pub fn handle_events(
     };
 
     for event in playback_actions.read() {
-        match &event.action {
+        match &event.operation {
             FlowPlaybackOperation::Start { flow_uid, context } => {
                 let context = *context;
                 let Ok(flow) = flow_data_provider.get(*flow_uid).map(|flow| flow.clone()) else {
@@ -598,7 +598,7 @@ pub fn handle_playback_commands(
     mut layers: Query<&mut Layer>,
 ) {
     for event in instance_events.read() {
-        match &event.action {
+        match &event.operation {
             PlaybackReleaseOperation::One(target_instance_id) => {
                 for (entity, mut instance, instance_id, _, clock) in instances.iter_mut() {
                     if instance_id == target_instance_id {

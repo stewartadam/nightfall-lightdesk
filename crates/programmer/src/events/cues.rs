@@ -298,7 +298,7 @@ pub fn handle_cue_events(
                             operation_id,
                             command_id: Some(command_id),
                             undo_id: Some(undo_id),
-                            action: CueStoreOperation::StoreSequence {
+                            operation: CueStoreOperation::StoreSequence {
                                 sequence: Box::new(sequence),
                                 undo_label: event
                                     .command
@@ -424,7 +424,7 @@ pub fn handle_cue_events(
                         operation_id,
                         command_id: Some(command_id),
                         undo_id: Some(undo_id),
-                        action: CueStoreOperation::StoreCueInSequence {
+                        operation: CueStoreOperation::StoreCueInSequence {
                             sequence_id: *sequence_id,
                             cue_id: cue_target,
                             part_id: part_target,

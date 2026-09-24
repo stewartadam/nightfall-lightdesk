@@ -255,7 +255,7 @@ fn rejects_multi_action_plan_atomically_when_one_action_requires_confirmation() 
     assert!(approved_actions.iter().all(|envelope| {
         matches!(
             envelope
-                .action
+                .operation
                 .as_any()
                 .downcast_ref::<ProgrammerOperation>(),
             Some(ProgrammerOperation::ClearSelection)
@@ -398,7 +398,7 @@ fn plans_pending_user_command_into_actions() {
         );
         assert_eq!(action_envelope.undo_id, Some(UndoId::from(undo_id)));
         let action = action_envelope
-            .action
+            .operation
             .as_any()
             .downcast_ref::<ProgrammerOperation>()
             .expect("expected programmer action after planning");
@@ -503,7 +503,7 @@ fn plans_second_clear_against_updated_selection_context() {
     assert!(pending.is_empty());
 
     let first = planned[0]
-        .action
+        .operation
         .as_any()
         .downcast_ref::<ProgrammerOperation>()
         .expect("expected first planned programmer action");
@@ -514,7 +514,7 @@ fn plans_second_clear_against_updated_selection_context() {
     );
 
     let second = planned[1]
-        .action
+        .operation
         .as_any()
         .downcast_ref::<ProgrammerOperation>()
         .expect("expected second planned programmer action");
@@ -576,7 +576,7 @@ fn plans_clear_after_pending_selection_command_using_projected_context() {
         .drain();
     assert_eq!(actions.len(), 1);
     let clear_action = actions[0]
-        .action
+        .operation
         .as_any()
         .downcast_ref::<ProgrammerOperation>()
         .expect("clear should be planned into a programmer action");
