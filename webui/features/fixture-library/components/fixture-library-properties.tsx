@@ -193,7 +193,12 @@ export default function FixtureLibraryProperties(
       () => [selectedFixture(), selectedMode()] as const,
       ([fixture, mode]) => {
         if (!fixture) return;
-        fetchFixtureProfile(fixture.make, fixture.model, mode);
+        fetchFixtureProfile(
+          fixture.make,
+          fixture.model,
+          mode,
+          fixture.asset_etag,
+        );
       },
     ),
   );

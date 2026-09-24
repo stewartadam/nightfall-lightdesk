@@ -16,7 +16,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::library::catalog::{
-    builtin_fixture_profiles, find_builtin_fixture_profile,
+    BuiltinFixtureProfile, builtin_fixture_profiles, find_builtin_fixture_profile,
 };
 use nightfall_fixtures::library::commands::{
     FixtureLibraryCommand, FixtureLibraryCommandResult, FixtureLibraryCommandSuccess,
@@ -71,18 +71,24 @@ pub fn handle_builtin_fixture_library_commands(
                 publish_available_fixtures(&broadcaster, &response);
                 Ok(FixtureLibraryCommandSuccess::AvailableFixtures(response))
             }
-            FixtureLibraryCommand::GetFixtureProfile { make, model, mode } => {
-                builtin_fixture_profile(make, model, mode.as_deref()).map(|response| {
+            FixtureLibraryCommand::GetFixtureProfile {
+                make,
+                model,
+                mode,
+                asset_etag,
+            } => builtin_fixture_profile(make, model, asset_etag.as_deref(), mode.as_deref()).map(
+                |response| {
                     publish_fixture_profile(&broadcaster, &response);
                     FixtureLibraryCommandSuccess::FixtureProfile(Box::new(response))
-                })
-            }
+                },
+            ),
             FixtureLibraryCommand::RefreshLibrary => Ok(FixtureLibraryCommandSuccess::Applied),
             FixtureLibraryCommand::CreateFixtureFromLibrary {
                 id,
                 make,
                 model,
                 mode,
+                asset_etag,
                 label,
                 update_existing_ids,
                 update_existing_only,
@@ -94,7 +100,7 @@ pub fn handle_builtin_fixture_library_commands(
                     update_existing_only: *update_existing_only,
                 };
                 create_library_fixture(&mut commands, &mut fixtures, request, || {
-                    builtin_template(make, model, mode, *id)
+                    builtin_template(make, model, asset_etag.as_deref(), mode, *id)
                 })
                 .map(|()| FixtureLibraryCommandSuccess::Applied)
             }
@@ -112,10 +118,10 @@ pub fn handle_builtin_fixture_library_commands(
 fn builtin_fixture_profile(
     make: &str,
     model: &str,
+    revision: Option<&str>,
     mode: Option<&str>,
 ) -> Result<GetFixtureProfileResponse, CommandError> {
-    let profile = find_builtin_fixture_profile(make, model)
-        .ok_or_else(|| fixture_profile_not_found(make, model))?;
+    let profile = find_builtin_revision(make, model, revision)?;
     let requested_mode = mode.unwrap_or(profile.mode);
     let fixture = profile.create_fixture(0, requested_mode).ok_or_else(|| {
         CommandError::new(
@@ -141,11 +147,11 @@ fn builtin_fixture_profile(
 fn builtin_template(
     make: &str,
     model: &str,
+    revision: Option<&str>,
     mode: &str,
     id: u32,
 ) -> Result<LibraryFixtureTemplate, CommandError> {
-    let profile = find_builtin_fixture_profile(make, model)
-        .ok_or_else(|| fixture_profile_not_found(make, model))?;
+    let profile = find_builtin_revision(make, model, revision)?;
     let fixture = profile.create_fixture(id, mode).ok_or_else(|| {
         CommandError::new(
             "fixture_library.create_failed",
@@ -159,6 +165,20 @@ fn builtin_template(
         fixture,
         asset_etag: profile.asset_etag.to_string(),
     })
+}
+
+/// Finds a built-in profile, matching the requested library revision when one is given.
+///
+/// Each built-in has a single revision, so naming any other revision reports
+/// `fixture_library.not_found` just as the native library does for a missing revision.
+fn find_builtin_revision(
+    make: &str,
+    model: &str,
+    revision: Option<&str>,
+) -> Result<&'static BuiltinFixtureProfile, CommandError> {
+    find_builtin_fixture_profile(make, model)
+        .filter(|profile| revision.is_none_or(|revision| revision == profile.asset_etag))
+        .ok_or_else(|| fixture_profile_not_found(make, model))
 }
 
 /// Describes a mode the built-in profile does not offer, worded like the native library error.

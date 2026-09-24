@@ -100,18 +100,42 @@ impl Plugin for FixtureLibraryPlugin {
     }
 }
 
-/// Wrapper that implements GeometryProvider using the fixture library.
-struct LibraryGeometryProvider(std::sync::Arc<std::sync::RwLock<FixtureLibraryManager>>);
+/// Geometry cache key: make, model, mode and recorded library revision.
+type GeometryCacheKey = (String, String, String, Option<String>);
+
+/// Wrapper that implements GeometryProvider using a snapshot of the fixture library.
+///
+/// Geometry is cached per fixture definition and mode, so broadcasting many
+/// fixtures of one type parses its archive once. A new provider (and cache)
+/// is created whenever the library changes.
+struct LibraryGeometryProvider {
+    library: std::sync::Arc<std::sync::RwLock<FixtureLibraryManager>>,
+    cache: std::sync::Mutex<
+        std::collections::HashMap<
+            GeometryCacheKey,
+            Option<nightfall_fixtures::prelude::FixtureGeometry>,
+        >,
+    >,
+}
 
 impl nightfall_fixtures::prelude::GeometryProvider for LibraryGeometryProvider {
-    /// Resolves geometry against the current installed and packaged fixture index.
+    /// Resolves geometry for a fixture's own library revision.
     fn get_geometry(
         &self,
-        make: &str,
-        model: &str,
-        mode: &str,
+        fixture: &nightfall_fixtures::prelude::Fixture,
     ) -> Option<nightfall_fixtures::prelude::FixtureGeometry> {
-        self.0.read().ok()?.get_geometry(make, model, mode)
+        let key = (
+            fixture.make.clone(),
+            fixture.model.clone(),
+            fixture.mode.clone(),
+            fixture.library_asset_etag.clone(),
+        );
+        if let Some(cached) = self.cache.lock().ok()?.get(&key) {
+            return cached.clone();
+        }
+        let geometry = self.library.read().ok()?.geometry_for_fixture(fixture);
+        self.cache.lock().ok()?.insert(key, geometry.clone());
+        geometry
     }
 }
 
@@ -123,7 +147,10 @@ fn register_geometry_provider(mut commands: Commands, library: Res<FixtureLibrar
     let library_arc = std::sync::Arc::new(std::sync::RwLock::new(library.clone()));
 
     commands.insert_resource(nightfall_fixtures::prelude::GeometryProviderResource::new(
-        LibraryGeometryProvider(library_arc),
+        LibraryGeometryProvider {
+            library: library_arc,
+            cache: Default::default(),
+        },
     ));
     tracing::debug!(
         "Registered geometry provider from fixture library ({} fixtures)",
