@@ -18,14 +18,18 @@ use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::wire_layout::{dmx_max, split_dmx_value};
 
 use super::gdtf::convert_gdtf_to_fixture;
-use crate::testing::reference::{ReferenceChannel, reference_channels};
+use crate::testing::reference::{ReferenceChannel, reference_mode_channels};
 use crate::testing::{BreakSpec, ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
 
 /// Converts a mode of a synthetic archive and returns the fixture with the reference channels.
 fn convert(builder: &GdtfBuilder, mode: &str) -> (Fixture, Vec<ReferenceChannel>) {
     let dir = tempfile::tempdir().expect("temp dir");
     let metadata = builder.write_metadata(dir.path());
-    let (fixture, _) = convert_gdtf_to_fixture(&metadata, mode, 1).expect("conversion");
+    let (fixture, geometry) = convert_gdtf_to_fixture(&metadata, mode, 1).expect("conversion");
+    assert_eq!(
+        crate::testing::invariants::check_invariants(&fixture, geometry.as_ref()),
+        vec![]
+    );
     let gdtf = builder.parse();
     let fixture_type = &gdtf.description.fixture_types[0];
     let dmx_mode = fixture_type
@@ -33,7 +37,7 @@ fn convert(builder: &GdtfBuilder, mode: &str) -> (Fixture, Vec<ReferenceChannel>
         .iter()
         .find(|candidate| candidate.name.as_ref().map(|name| name.as_ref()) == Some(mode))
         .expect("mode");
-    (fixture, reference_channels(dmx_mode))
+    (fixture, reference_mode_channels(fixture_type, dmx_mode))
 }
 
 /// Minimal deterministic pseudo-random generator so failures are reproducible without extra dependencies.
@@ -248,41 +252,44 @@ fn random_layouts_round_trip_through_reference_decoder() {
     }
 }
 
-/// Verifies channels on `GeometryReference` templates are skipped instead of being placed
-/// at their reference-relative offsets, where they would collide with the fixture's own
-/// break-1 channels.
+/// Verifies referenced pixel channels land on each reference's break offset, including overwrite breaks.
 #[test]
-fn template_geometry_channels_do_not_collide_with_regular_channels() {
-    let builder = GdtfBuilder::new("Test", "Pixel Bar")
+fn referenced_pixels_round_trip_through_reference_decoder() {
+    let builder = GdtfBuilder::new("Test", "Pixels")
         .geometry(
             GeometrySpec::generic("Body")
-                .child(GeometrySpec::reference("Pixel 1", "Pixel", &[(1, 2)]))
-                .child(GeometrySpec::reference("Pixel 2", "Pixel", &[(1, 3)])),
+                .child(GeometrySpec::reference("Pixel 1", "Pixel", &[(1, 3)]))
+                .child(GeometrySpec::reference("Pixel 2", "Pixel", &[(1, 7)]))
+                .child(GeometrySpec::reference("Pixel 3", "Pixel", &[(1, 11)])),
         )
-        .geometry(GeometrySpec::generic("Pixel").child(GeometrySpec::beam("Pixel Beam")))
+        .geometry(GeometrySpec::beam("Pixel"))
         .mode(
-            ModeSpec::new("Bar", "Body")
-                .channel(ChannelSpec::new("Body", "Dimmer", &[1]))
-                .channel(ChannelSpec::new("Pixel", "ColorAdd_R", &[1]))
+            ModeSpec::new("Pixels", "Body")
+                .channel(ChannelSpec::new("Body", "Dimmer", &[1, 2]))
                 .channel(
-                    ChannelSpec::new("Pixel Beam", "ColorAdd_G", &[2])
-                        .on_break(BreakSpec::Overwrite),
-                ),
+                    ChannelSpec::new("Pixel", "ColorAdd_R", &[1]).on_break(BreakSpec::Overwrite),
+                )
+                .channel(
+                    ChannelSpec::new("Pixel", "ColorAdd_G", &[2]).on_break(BreakSpec::Overwrite),
+                )
+                .channel(ChannelSpec::new("Pixel", "ColorAdd_B", &[3]))
+                .channel(ChannelSpec::new("Pixel", "ColorAdd_W", &[4])),
         );
-    let (fixture, _) = convert(&builder, "Bar");
-
-    let parameters: Vec<_> = fixture
+    let (fixture, references) = convert(&builder, "Pixels");
+    let labels: Vec<&str> = fixture
         .elements
         .iter()
-        .flat_map(|element| element.parameters.iter())
+        .map(|element| element.label.as_str())
         .collect();
-    assert_eq!(parameters.len(), 1, "only the Body dimmer is placed");
-    assert_eq!(parameters[0].attribute, Attribute::Intensity);
+    assert_eq!(labels, ["Body", "Pixel 1", "Pixel 2", "Pixel 3"]);
     assert_eq!(
-        parameters[0].dmx_slots,
+        fixture.elements[3].parameters[3].dmx_slots,
         DmxSlots::Explicit {
             dmx_break: 1,
-            offsets: vec![1],
+            offsets: vec![14],
         }
     );
+    for seed in 0..16 {
+        assert_round_trip(&fixture, &references, seed);
+    }
 }
