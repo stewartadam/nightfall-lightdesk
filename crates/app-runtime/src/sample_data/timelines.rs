@@ -66,7 +66,8 @@ pub(super) fn add_tc(world: &mut World) {
             label: "Exec 5 (fx3)".to_owned(),
             action: ActionKind::StartClip(
                 Uuid::from_str("324d1219-7c36-4c7f-a01e-29dbad6c3b3c").unwrap(),
-            ),
+            )
+            .to_reference(),
             position: Duration::from_millis(3600),
             duration: Duration::from_secs(5),
         }],
@@ -100,7 +101,8 @@ pub(super) fn add_tc(world: &mut World) {
                 label: "Start exec 1 (seq)".to_owned(),
                 action: ActionKind::StartClip(
                     Uuid::from_str("cd19c920-ae7c-4d99-8ff4-31fade6dfa69").unwrap(),
-                ),
+                )
+                .to_reference(),
                 position: Duration::from_millis(75),
                 duration: Duration::from_millis(750),
             },
@@ -109,7 +111,8 @@ pub(super) fn add_tc(world: &mut World) {
                 label: "Advance seq 1 cue 2".to_owned(),
                 action: ActionKind::AdvanceSequence(
                     Uuid::from_str("cd19c920-ae7c-4d99-8ff4-31fade6dfa69").unwrap(),
-                ),
+                )
+                .to_reference(),
                 position: Duration::from_millis(1025),
                 duration: Duration::from_millis(750),
             },
@@ -118,7 +121,8 @@ pub(super) fn add_tc(world: &mut World) {
                 label: "Advance seq 1 cue 3".to_owned(),
                 action: ActionKind::AdvanceSequence(
                     Uuid::from_str("cd19c920-ae7c-4d99-8ff4-31fade6dfa69").unwrap(),
-                ),
+                )
+                .to_reference(),
                 position: Duration::from_millis(2025),
                 duration: Duration::from_millis(750),
             },
@@ -127,7 +131,8 @@ pub(super) fn add_tc(world: &mut World) {
                 label: "Advance seq 1 cue 4".to_owned(),
                 action: ActionKind::AdvanceSequence(
                     Uuid::from_str("cd19c920-ae7c-4d99-8ff4-31fade6dfa69").unwrap(),
-                ),
+                )
+                .to_reference(),
                 position: Duration::from_millis(3025),
                 duration: Duration::from_millis(750),
             },
@@ -136,7 +141,8 @@ pub(super) fn add_tc(world: &mut World) {
                 label: "Stop Seq 1".to_owned(),
                 action: ActionKind::StopClip(
                     Uuid::from_str("cd19c920-ae7c-4d99-8ff4-31fade6dfa69").unwrap(),
-                ),
+                )
+                .to_reference(),
                 position: Duration::from_millis(3600),
                 duration: Duration::from_secs(1),
             },
@@ -237,7 +243,8 @@ pub(super) fn add_tc(world: &mut World) {
                         duration: Duration::from_millis(5000),
                         action: ActionKind::StartClip(
                             Uuid::from_str("34a3af80-539c-4ddc-97d3-c2e50606cbe3").unwrap(),
-                        ),
+                        )
+                        .to_reference(),
                     },
                     Action {
                         id: "strobe-2".to_string(),
@@ -246,7 +253,8 @@ pub(super) fn add_tc(world: &mut World) {
                         duration: Duration::from_millis(3000),
                         action: ActionKind::StartClip(
                             Uuid::from_str("34a3af80-539c-4ddc-97d3-c2e50606cbe3").unwrap(),
-                        ),
+                        )
+                        .to_reference(),
                     },
                 ],
                 automation_lanes: vec![
@@ -317,7 +325,8 @@ pub(super) fn add_tc(world: &mut World) {
                     duration: Duration::from_millis(4000),
                     action: ActionKind::StartClip(
                         Uuid::from_str("34a3af80-539c-4ddc-97d3-c2e50606cbe3").unwrap(),
-                    ),
+                    )
+                    .to_reference(),
                 }],
                 automation_lanes: vec![
                     AutomationLane {

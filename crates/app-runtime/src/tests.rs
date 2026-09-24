@@ -257,7 +257,7 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
                 label: "Start Sequence".to_owned(),
                 position: Duration::from_millis(100),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],

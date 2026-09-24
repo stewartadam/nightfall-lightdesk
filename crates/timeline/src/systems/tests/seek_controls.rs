@@ -11,6 +11,7 @@ use super::*;
 #[test]
 fn move_playhead_only_seek_does_not_activate_timeline() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -59,6 +60,7 @@ fn move_playhead_only_seek_does_not_activate_timeline() {
 #[test]
 fn seek_coalesces_multiple_timecode_events_per_frame() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -103,7 +105,7 @@ fn seek_coalesces_multiple_timecode_events_per_frame() {
                 label: "Start exec".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -151,6 +153,7 @@ fn seek_coalesces_multiple_timecode_events_per_frame() {
 #[test]
 fn seek_coalesces_distinct_timecodes_in_last_event_order() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -193,7 +196,7 @@ fn seek_coalesces_distinct_timecodes_in_last_event_order() {
                 label: "Start exec".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -220,7 +223,7 @@ fn seek_coalesces_distinct_timecodes_in_last_event_order() {
                 label: "Stop exec".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StopClip(clip_uid),
+                action: ActionKind::StopClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -258,6 +261,7 @@ fn seek_coalesces_distinct_timecodes_in_last_event_order() {
 #[test]
 fn seek_coalesces_each_timeline_for_shared_timecode() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -300,7 +304,7 @@ fn seek_coalesces_each_timeline_for_shared_timecode() {
                 label: "Stop exec".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StopClip(clip_uid),
+                action: ActionKind::StopClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -325,7 +329,7 @@ fn seek_coalesces_each_timeline_for_shared_timecode() {
                 label: "Start exec".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],

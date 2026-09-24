@@ -118,10 +118,6 @@ pub(super) fn dispatch_timeline_reconstruction_actions(
             );
             continue;
         }
-
-        let action =
-            normalized_registered_action_kind(&action, dispatch.action_registry.as_deref())
-                .unwrap_or(action);
         if let ActionKind::SetClipRate { uid, .. } = action
             && state.direct_materialized_clip_uids.contains(&uid)
         {

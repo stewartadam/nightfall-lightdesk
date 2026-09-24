@@ -15,6 +15,7 @@ use nightfall_actions::{
     InvocationError,
 };
 use nightfall_engine::prelude::*;
+use nightfall_playback_planner::{TimelinePlaybackActionKind, TimelinePlaybackActionPlan};
 use nightfall_timecode::TimecodeCommand;
 use nightfall_timecode::prelude::{Timecode, TimecodeGenerator};
 use serde::{Deserialize, Serialize};
@@ -162,6 +163,7 @@ pub fn timeline_transport_action(action_id: &str, timeline: Uuid) -> ActionRefer
 
 /// Registers the bindable timeline transport actions.
 pub fn register_timeline_actions(app: &mut App) {
+    register_fire_cue_action(app);
     let transports: [(&str, &str, fn(u32) -> TimelineCommand); 3] = [
         (
             TIMELINE_PLAY_ACTION_ID,
@@ -199,4 +201,57 @@ pub fn register_timeline_actions(app: &mut App) {
             },
         );
     }
+}
+
+/// Stable action ID for playing a cue as a transient timeline playback.
+pub const TIMELINE_FIRE_CUE_ACTION_ID: &str = "timeline.fire-cue";
+
+/// Persisted arguments for firing a cue from the timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct TimelineFireCueArguments {
+    /// Persistent UID of the cue to play.
+    #[typeshare(serialized_as = "String")]
+    pub cue: Uuid,
+}
+
+/// Creates a persisted fire-cue action reference.
+pub fn fire_cue_action(cue: Uuid) -> ActionReference {
+    ActionReference::with_arguments(
+        TIMELINE_FIRE_CUE_ACTION_ID,
+        &TimelineFireCueArguments { cue },
+    )
+    .expect("fire cue arguments should serialize")
+}
+
+/// Registers the timeline-owned fire-cue action.
+///
+/// Firing a cue creates a transient playback owned by the timeline action that placed it,
+/// lasting the action's duration, so it only runs from timelines.
+fn register_fire_cue_action(app: &mut App) {
+    app.register_action::<TimelineFireCueArguments, _>(
+        ActionDescriptor::new(TIMELINE_FIRE_CUE_ACTION_ID, "Fire cue", "Timeline")
+            .with_description("Plays a cue as a transient playback for the action's duration")
+            .with_parameter(ActionParameter::required(
+                "cue",
+                "Cue",
+                ActionParameterKind::Cue,
+            )),
+        |_world, _arguments, _invocation| {
+            Err(InvocationError::new(
+                "timeline.fire_cue_timeline_only",
+                "Fire cue only runs from timeline actions",
+            ))
+        },
+    )
+    .register_action_capability::<TimelineFireCueArguments, TimelinePlaybackActionPlan, _>(
+        TIMELINE_FIRE_CUE_ACTION_ID,
+        TimelinePlaybackActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelinePlaybackActionPlan {
+                owner_uid: arguments.cue,
+                kind: TimelinePlaybackActionKind::FireCue,
+            })
+        },
+    );
 }

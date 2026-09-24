@@ -14,6 +14,7 @@ use super::*;
 #[test]
 fn seek_replay_skips_source_less_clip_start() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -55,7 +56,7 @@ fn seek_replay_skips_source_less_clip_start() {
                 label: "Start exec".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::from_secs(5),
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -87,6 +88,7 @@ fn seek_replay_skips_source_less_clip_start() {
 #[test]
 fn seek_replay_direct_materializes_classic_fx_clip() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -146,7 +148,7 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
                     label: "Start FX".to_owned(),
                     position: Duration::from_secs(1),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(clip_uid),
+                    action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
                     id: "fx-rate".to_owned(),
@@ -156,7 +158,8 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
                     action: ActionKind::SetClipRate {
                         uid: clip_uid,
                         rate: 2.0,
-                    },
+                    }
+                    .to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),
@@ -245,6 +248,7 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
 #[test]
 fn seek_replay_direct_materializes_classic_fx_with_same_clip_cleanup() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -318,7 +322,7 @@ fn seek_replay_direct_materializes_classic_fx_with_same_clip_cleanup() {
                 label: "Start FX".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -421,6 +425,7 @@ fn seek_replay_direct_materializes_classic_fx_with_same_clip_cleanup() {
 #[test]
 fn seek_replay_direct_materializes_step_fx_clip() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -479,7 +484,7 @@ fn seek_replay_direct_materializes_step_fx_clip() {
                 label: "Start Step FX".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -570,6 +575,7 @@ fn seek_replay_direct_materializes_step_fx_clip() {
 #[test]
 fn seek_replay_direct_reconciles_fx_module_clip() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -641,7 +647,7 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
                     label: "Start FX Module".to_owned(),
                     position: Duration::from_secs(1),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(clip_uid),
+                    action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
                     id: "fx-module-rate".to_owned(),
@@ -651,7 +657,8 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
                     action: ActionKind::SetClipRate {
                         uid: clip_uid,
                         rate: 2.0,
-                    },
+                    }
+                    .to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),
@@ -741,6 +748,7 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
 #[test]
 fn seek_replay_direct_fx_module_second_seek_keeps_existing_layer() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -811,7 +819,7 @@ fn seek_replay_direct_fx_module_second_seek_keeps_existing_layer() {
                 label: "Start FX Module".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -884,6 +892,7 @@ fn seek_replay_direct_fx_module_second_seek_keeps_existing_layer() {
 #[test]
 fn seek_replay_direct_materializes_flow_clip() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -949,7 +958,7 @@ fn seek_replay_direct_materializes_flow_clip() {
                     label: "Start Flow".to_owned(),
                     position: Duration::from_secs(1),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(clip_uid),
+                    action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
                     id: "flow-rate".to_owned(),
@@ -959,7 +968,8 @@ fn seek_replay_direct_materializes_flow_clip() {
                     action: ActionKind::SetClipRate {
                         uid: clip_uid,
                         rate: 2.0,
-                    },
+                    }
+                    .to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),
@@ -1039,6 +1049,7 @@ fn seek_replay_direct_materializes_flow_clip() {
 #[test]
 fn seek_replay_skips_source_less_clip_after_action_duration_without_stop() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -1082,7 +1093,7 @@ fn seek_replay_skips_source_less_clip_after_action_duration_without_stop() {
                 label: "Sparkles".to_owned(),
                 position: Duration::from_secs(10),
                 duration: Duration::from_secs(5),
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -1126,6 +1137,7 @@ fn seek_replay_skips_source_less_clip_after_action_duration_without_stop() {
 #[test]
 fn seek_replay_skips_stopped_fx_clip_after_zero_release() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<DeskOperation>>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
@@ -1172,14 +1184,14 @@ fn seek_replay_skips_stopped_fx_clip_after_zero_release() {
                     label: "Start FX".to_owned(),
                     position: Duration::from_secs(1),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(clip_uid),
+                    action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
                     id: "fx-stop".to_owned(),
                     label: "Stop FX".to_owned(),
                     position: Duration::from_secs(2),
                     duration: Duration::ZERO,
-                    action: ActionKind::StopClip(clip_uid),
+                    action: ActionKind::StopClip(clip_uid).to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),

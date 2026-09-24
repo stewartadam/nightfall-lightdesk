@@ -10,9 +10,19 @@ use std::time::Duration;
 
 use bevy_ecs::prelude::Resource;
 use nightfall::prelude::*;
-use nightfall_actions::ActionReference;
+use nightfall_actions::{ActionReference, ActionRegistry};
+use nightfall_desk::prelude::{
+    back_clip_action, desk_eval_action, go_clip_action, goto_clip_action, set_clip_rate_action,
+    start_clip_action, stop_clip_action,
+};
+use nightfall_playback_planner::{
+    PlannedPlaybackInterventionKind, TimelineEvalActionPlan, TimelinePlaybackActionKind,
+    TimelinePlaybackActionPlan,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::transport::fire_cue_action;
 
 /// Scroll behavior mode for timeline playback
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -460,50 +470,101 @@ pub struct Action {
     pub position: Duration,
     /// Duration in milliseconds
     pub duration: Duration,
-    /// The action to perform when this action is triggered
-    pub action: ActionKind,
+    /// Bindable action invoked when timecode reaches the action.
+    pub action: ActionReference,
 }
 
-/// The action kind to invoke when a timeline action is triggered.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare::typeshare]
-#[serde(tag = "type", content = "data")]
+impl Action {
+    /// Resolves the timeline meaning of this action through its domain capabilities.
+    pub fn kind(&self, registry: Option<&ActionRegistry>) -> ActionKind {
+        ActionKind::resolve(&self.action, registry)
+    }
+}
+
+/// Timeline meaning of an action, resolved from its reference through domain capabilities.
+///
+/// Persisted timelines store only [`ActionReference`]s. Domains describe how the timeline
+/// plans and replays their actions by registering [`TimelinePlaybackActionPlan`] or
+/// [`TimelineEvalActionPlan`] capabilities; actions without either run live as registered
+/// invocations and are skipped when seeking.
+#[derive(Debug, Clone, PartialEq)]
 pub enum ActionKind {
-    /// Trigger a cue from the cue library implicitly tied to an transient clip that removes itself when done.
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Play a cue as a transient timeline-owned playback lasting the action's duration.
     FireCue(Uuid),
-    /// Start a clip
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Start a clip.
     StartClip(Uuid),
-    /// Stop a clip
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Stop a clip.
     StopClip(Uuid),
-    /// Advance a sequence on a clip
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Advance a sequence on a clip.
     AdvanceSequence(Uuid),
-    /// Go back in a sequence on a clip
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Go back in a sequence on a clip.
     BackSequence(Uuid),
     /// Set the rate multiplier for a clip's active playback.
     SetClipRate {
         /// The unique ID of the clip to control.
-        #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
         uid: Uuid,
         /// Playback clock rate multiplier.
         rate: f32,
     },
-    /// Jump to a specific cue in a sequence on a clip
+    /// Jump to a specific cue in a sequence on a clip.
     JumpToCue {
-        /// The unique ID of the clip to jump to
-        #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+        /// The unique ID of the clip to jump to.
         uid: Uuid,
-        /// The cue index to jump to (starts counting from 1)
+        /// The cue index to jump to (starts counting from 1).
         cue_index: u32,
     },
-    /// Dispatch a desk command string through the shared eval path.
+    /// Evaluate desk command text and track the playbacks it starts.
     DeskEval(String),
-    /// Dispatch a registered action reference.
+    /// Invoke a registered action live, without deterministic seek reconstruction.
     RegisteredAction(ActionReference),
+}
+
+impl ActionKind {
+    /// Resolves a stored action reference to its timeline meaning.
+    ///
+    /// Without a registry, or for actions that expose no timeline capability, the action is
+    /// invoked live as a registered action.
+    pub fn resolve(action: &ActionReference, registry: Option<&ActionRegistry>) -> Self {
+        let Some(registry) = registry else {
+            return Self::RegisteredAction(action.clone());
+        };
+        if let Ok(Some(plan)) = registry.resolve_capability::<TimelinePlaybackActionPlan>(action) {
+            let uid = plan.owner_uid;
+            return match plan.kind {
+                TimelinePlaybackActionKind::Start => Self::StartClip(uid),
+                TimelinePlaybackActionKind::Stop => Self::StopClip(uid),
+                TimelinePlaybackActionKind::FireCue => Self::FireCue(uid),
+                TimelinePlaybackActionKind::SetRate(rate) => Self::SetClipRate { uid, rate },
+                TimelinePlaybackActionKind::Intervene(intervention) => match intervention {
+                    PlannedPlaybackInterventionKind::SequenceGo => Self::AdvanceSequence(uid),
+                    PlannedPlaybackInterventionKind::SequenceBack => Self::BackSequence(uid),
+                    PlannedPlaybackInterventionKind::SequenceGotoCue(cue_index) => {
+                        Self::JumpToCue { uid, cue_index }
+                    }
+                    PlannedPlaybackInterventionKind::Stop => Self::StopClip(uid),
+                },
+            };
+        }
+        if let Ok(Some(eval)) = registry.resolve_capability::<TimelineEvalActionPlan>(action) {
+            return Self::DeskEval(eval.command);
+        }
+        Self::RegisteredAction(action.clone())
+    }
+
+    /// Returns the persisted action reference that resolves to this timeline meaning.
+    pub fn to_reference(&self) -> ActionReference {
+        match self {
+            Self::FireCue(uid) => fire_cue_action(*uid),
+            Self::StartClip(uid) => start_clip_action(*uid),
+            Self::StopClip(uid) => stop_clip_action(*uid),
+            Self::AdvanceSequence(uid) => go_clip_action(*uid),
+            Self::BackSequence(uid) => back_clip_action(*uid),
+            Self::SetClipRate { uid, rate } => set_clip_rate_action(*uid, *rate),
+            Self::JumpToCue { uid, cue_index } => goto_clip_action(*uid, *cue_index),
+            Self::DeskEval(command) => desk_eval_action(command.clone()),
+            Self::RegisteredAction(action) => action.clone(),
+        }
+    }
 }
 
 /// A parameter that can be adjusted over time with a curve of control points

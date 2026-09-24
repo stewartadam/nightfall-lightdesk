@@ -128,8 +128,8 @@ async function openActionPropertiesFixture(
                   position: { secs: 1, nanos: 0 },
                   duration: { secs: 1, nanos: 0 },
                   action: {
-                    type: "SetClipRate",
-                    data: { uid: clipUid, rate: 1.25 },
+                    id: "clip.set-rate",
+                    arguments: { clip: clipUid, rate: 1.25 },
                   },
                 },
                 {
@@ -137,7 +137,10 @@ async function openActionPropertiesFixture(
                   label: "Eval Action",
                   position: { secs: 2, nanos: 0 },
                   duration: { secs: 1, nanos: 0 },
-                  action: { type: "DeskEval", data: "group 1 at 10" },
+                  action: {
+                    id: "desk.eval",
+                    arguments: { command: "group 1 at 10" },
+                  },
                 },
               ],
               automation_lanes: [],
@@ -180,7 +183,9 @@ async function openActionPropertiesFixture(
       title: "Action Properties",
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: api.panels.find(
+          (panel: { title?: string }) => panel.title === "3D Visualizer",
+        )?.id,
         direction: "within",
       },
     });
@@ -292,8 +297,8 @@ test("timeline action properties edit rate and eval actions", async ({
         ),
       )
       .toMatchObject({
-        type: "SetClipRate",
-        data: { rate: 1.75 },
+        id: "clip.set-rate",
+        arguments: { rate: 1.75 },
       });
 
     const evalAction = page.locator(
@@ -315,8 +320,8 @@ test("timeline action properties edit rate and eval actions", async ({
         ),
       )
       .toMatchObject({
-        type: "DeskEval",
-        data: "clip 1 go",
+        id: "desk.eval",
+        arguments: { command: "clip 1 go" },
       });
     await page.setViewportSize({ width: 900, height: 700 });
     const properties = page.locator(

@@ -18,7 +18,8 @@ use nightfall_actions::{
 };
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
-    PlannedPlaybackInterventionKind, TimelinePlaybackActionKind, TimelinePlaybackActionPlan,
+    PlannedPlaybackInterventionKind, TimelineEvalActionPlan, TimelinePlaybackActionKind,
+    TimelinePlaybackActionPlan,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -36,6 +37,15 @@ pub const CLIP_STOP_ACTION_ID: &str = "clip.stop";
 
 /// Stable action ID for advancing a clip.
 pub const CLIP_GO_ACTION_ID: &str = "clip.go";
+
+/// Stable action ID for moving a sequence clip back one cue.
+pub const CLIP_BACK_ACTION_ID: &str = "clip.back";
+
+/// Stable action ID for jumping a sequence clip to a cue.
+pub const CLIP_GOTO_ACTION_ID: &str = "clip.goto";
+
+/// Stable action ID for setting a clip's playback rate.
+pub const CLIP_SET_RATE_ACTION_ID: &str = "clip.set-rate";
 
 /// Stable action ID for driving a control slot's level from external hardware input.
 pub const CONTROL_LEVEL_ACTION_ID: &str = "control.level";
@@ -59,6 +69,28 @@ pub struct ClipActionArguments {
     /// Persistent UID of the addressed clip.
     #[typeshare(serialized_as = "String")]
     pub clip: Uuid,
+}
+
+/// Persisted arguments for jumping a sequence clip to a cue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ClipGotoActionArguments {
+    /// Persistent UID of the addressed clip.
+    #[typeshare(serialized_as = "String")]
+    pub clip: Uuid,
+    /// One-based cue position to jump to.
+    pub cue_index: u32,
+}
+
+/// Persisted arguments for setting a clip's playback rate.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ClipRateActionArguments {
+    /// Persistent UID of the addressed clip.
+    #[typeshare(serialized_as = "String")]
+    pub clip: Uuid,
+    /// Playback clock rate multiplier.
+    pub rate: f32,
 }
 
 /// Persisted arguments for externally-driven control actions.
@@ -99,6 +131,29 @@ pub fn stop_clip_action(clip: Uuid) -> ActionReference {
 /// Creates a persisted go-clip action reference.
 pub fn go_clip_action(clip: Uuid) -> ActionReference {
     clip_action_reference(CLIP_GO_ACTION_ID, clip)
+}
+
+/// Creates a persisted back-clip action reference.
+pub fn back_clip_action(clip: Uuid) -> ActionReference {
+    clip_action_reference(CLIP_BACK_ACTION_ID, clip)
+}
+
+/// Creates a persisted go-to-cue action reference.
+pub fn goto_clip_action(clip: Uuid, cue_index: u32) -> ActionReference {
+    ActionReference::with_arguments(
+        CLIP_GOTO_ACTION_ID,
+        &ClipGotoActionArguments { clip, cue_index },
+    )
+    .expect("clip goto arguments should serialize")
+}
+
+/// Creates a persisted clip-rate action reference.
+pub fn set_clip_rate_action(clip: Uuid, rate: f32) -> ActionReference {
+    ActionReference::with_arguments(
+        CLIP_SET_RATE_ACTION_ID,
+        &ClipRateActionArguments { clip, rate },
+    )
+    .expect("clip rate arguments should serialize")
 }
 
 /// Creates a persisted control level action reference.
@@ -155,6 +210,68 @@ pub fn register_desk_actions(app: &mut App) {
         ClipCommand::GoClip,
         TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceGo),
     );
+    register_clip_action(
+        app,
+        CLIP_BACK_ACTION_ID,
+        "Back clip",
+        ClipCommand::BackClip,
+        TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceBack),
+    );
+    app.register_command_action::<ClipGotoActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_GOTO_ACTION_ID, "Go to cue", "Clips")
+            .with_description("Jumps a sequence clip to a cue position")
+            .with_parameter(clip_parameter())
+            .with_parameter(ActionParameter::required(
+                "cue_index",
+                "Cue",
+                ActionParameterKind::Integer { min: 1, max: None },
+            )),
+        |world, arguments| {
+            Ok(ClipCommand::GotoClip {
+                clip_id: IdExpr::Single(resolve_clip_id(world, arguments.clip)?),
+                position: arguments.cue_index,
+                timing: None,
+            })
+        },
+    )
+    .register_action_capability::<ClipGotoActionArguments, TimelinePlaybackActionPlan, _>(
+        CLIP_GOTO_ACTION_ID,
+        TimelinePlaybackActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelinePlaybackActionPlan {
+                owner_uid: arguments.clip,
+                kind: TimelinePlaybackActionKind::Intervene(
+                    PlannedPlaybackInterventionKind::SequenceGotoCue(arguments.cue_index),
+                ),
+            })
+        },
+    );
+    app.register_command_action::<ClipRateActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_SET_RATE_ACTION_ID, "Set clip rate", "Clips")
+            .with_description("Sets the playback rate multiplier of a running clip")
+            .with_parameter(clip_parameter())
+            .with_parameter(ActionParameter::required(
+                "rate",
+                "Rate",
+                ActionParameterKind::Number { min: 0.0, max: 4.0 },
+            )),
+        |world, arguments| {
+            Ok(ClipCommand::SetRate {
+                clip_id: IdExpr::Single(resolve_clip_id(world, arguments.clip)?),
+                rate: arguments.rate,
+            })
+        },
+    )
+    .register_action_capability::<ClipRateActionArguments, TimelinePlaybackActionPlan, _>(
+        CLIP_SET_RATE_ACTION_ID,
+        TimelinePlaybackActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelinePlaybackActionPlan {
+                owner_uid: arguments.clip,
+                kind: TimelinePlaybackActionKind::SetRate(arguments.rate),
+            })
+        },
+    );
     app.register_update_action::<ControlActionArguments, ControlUpdate, _>(
         ActionDescriptor::new(CONTROL_LEVEL_ACTION_ID, "Control level", "Controls")
             .with_description("Drives a control fader from hardware with soft pickup")
@@ -208,6 +325,15 @@ pub fn register_desk_actions(app: &mut App) {
                 ActionParameterKind::Text,
             )),
         invoke_desk_eval,
+    )
+    .register_action_capability::<DeskEvalActionArguments, TimelineEvalActionPlan, _>(
+        DESK_EVAL_ACTION_ID,
+        TimelineEvalActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelineEvalActionPlan {
+                command: arguments.command,
+            })
+        },
     );
 }
 
@@ -221,6 +347,11 @@ fn control_action_reference(action_id: &str, control_index: u32) -> ActionRefere
 fn master_action_reference(action_id: &str, master: Uuid) -> ActionReference {
     ActionReference::with_arguments(action_id, &MasterActionArguments { master })
         .expect("master action arguments should serialize")
+}
+
+/// Describes the clip argument shared by clip actions.
+fn clip_parameter() -> ActionParameter {
+    ActionParameter::required("clip", "Clip", ActionParameterKind::Clip)
 }
 
 /// Describes the control slot argument shared by control actions.
@@ -268,11 +399,7 @@ fn register_clip_action(
     timeline_kind: TimelinePlaybackActionKind,
 ) {
     app.register_command_action::<ClipActionArguments, ClipCommand, _>(
-        ActionDescriptor::new(action_id, label, "Clips").with_parameter(ActionParameter::required(
-            "clip",
-            "Clip",
-            ActionParameterKind::Clip,
-        )),
+        ActionDescriptor::new(action_id, label, "Clips").with_parameter(clip_parameter()),
         move |world, arguments| {
             let id = resolve_clip_id(world, arguments.clip)?;
             Ok(command(IdExpr::Single(id)))

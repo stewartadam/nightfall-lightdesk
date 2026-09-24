@@ -1521,8 +1521,10 @@
                 "nanos": 900000000
               },
               "action": {
-                "type": "StartClip",
-                "data": "7ee293f49ce745c198aed2f022345001"
+                "id": "clip.start",
+                "arguments": {
+                  "clip": "7ee293f49ce745c198aed2f022345001"
+                }
               }
             },
             {
@@ -1537,8 +1539,10 @@
                 "nanos": 800000000
               },
               "action": {
-                "type": "AdvanceSequence",
-                "data": "7ee293f49ce745c198aed2f022345001"
+                "id": "clip.go",
+                "arguments": {
+                  "clip": "7ee293f49ce745c198aed2f022345001"
+                }
               }
             },
             {
@@ -1553,8 +1557,10 @@
                 "nanos": 200000000
               },
               "action": {
-                "type": "StartClip",
-                "data": "7ee293f49ce745c198aed2f022347001"
+                "id": "clip.start",
+                "arguments": {
+                  "clip": "7ee293f49ce745c198aed2f022347001"
+                }
               }
             }
           ],

@@ -383,9 +383,9 @@ pub enum PlannedPlaybackInterventionKind {
 }
 
 /// Deterministic timeline meaning supplied by a registered domain action.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TimelinePlaybackActionPlan {
-    /// Stable runtime owner addressed by the action.
+    /// Stable owner addressed by the action: a clip UID, or a cue UID for `FireCue`.
     pub owner_uid: Uuid,
     /// Playback change represented by the registered action.
     pub kind: TimelinePlaybackActionKind,
@@ -397,7 +397,7 @@ impl TimelinePlaybackActionPlan {
 }
 
 /// Generic playback operations a registered action can contribute to timeline planning.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TimelinePlaybackActionKind {
     /// Start the owner's configured playback source.
     Start,
@@ -405,6 +405,25 @@ pub enum TimelinePlaybackActionKind {
     Stop,
     /// Apply an intervention to the owner's active playback.
     Intervene(PlannedPlaybackInterventionKind),
+    /// Set the playback clock rate multiplier of the owner's active playback.
+    SetRate(f32),
+    /// Play the owning cue as a transient playback lasting the timeline action's duration.
+    FireCue,
+}
+
+/// Deterministic timeline meaning of an action that evaluates desk command text.
+///
+/// Command text cannot be planned ahead, so the timeline replays it live and tracks the
+/// playbacks it starts instead of reconstructing it during seeks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TimelineEvalActionPlan {
+    /// Desk command text evaluated when the action fires.
+    pub command: String,
+}
+
+impl TimelineEvalActionPlan {
+    /// Capability name published in the action catalog for timeline-evaluated actions.
+    pub const CAPABILITY: &str = "timeline.eval";
 }
 
 /// Planned release interval for a source-local playback.

@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -14,25 +15,18 @@ const SEQUENCE_GOTO_CUE_TWO_UID = "10000000000040008000000000000002";
 const SEQUENCE_GOTO_SEQUENCE_UID = "20000000000040008000000000000001";
 const SEQUENCE_GOTO_CLIP_UID = "30000000000040008000000000000001";
 const CLIP_RATE_UID = "40000000000040008000000000000001";
-const SHOWFILE_NAME_PREFIX = "timeline-insert-action-picker";
 
 /** Opens an isolated showfile and creates one backend-owned timeline fixture. */
-async function openOwnedTimelineApp(page: Page): Promise<string> {
-  const testInfo = test.info();
-  const showfileName = `${SHOWFILE_NAME_PREFIX}-${testInfo.workerIndex}-${testInfo.retry}-${Date.now()}`;
+async function openOwnedTimelineApp(
+  page: Page,
+  backendPort: number,
+): Promise<string> {
+  await prepareFreshBackendShowfile(backendPort);
   await page.addInitScript(() => {
-    window.localStorage.removeItem("nightfall.currentShowfileName");
-    window.localStorage.removeItem("nightfall.e2eAutoOpenStartupShowfile");
+    window.localStorage.clear();
+    window.localStorage.setItem("nightfall.currentShowfileName", "default");
   });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
-  const openDialog = page.getByRole("dialog", { name: "Open Showfile" });
-  await expect(openDialog).toBeVisible();
-  await openDialog.getByRole("button", { name: "New showfile" }).click();
-  const newDialog = page.getByRole("dialog", { name: "New Showfile" });
-  await expect(newDialog).toBeVisible();
-  await newDialog.getByLabel("Show name").fill(showfileName);
-  await newDialog.getByRole("button", { name: "Create Show" }).click();
-  await expect(newDialog).not.toBeVisible({ timeout: 10_000 });
   await waitForDockviewApp(page);
 
   const timelineUid = await page.evaluate(async () => {
@@ -124,7 +118,9 @@ async function openOwnedTimelineApp(page: Page): Promise<string> {
       title: timeline.identifiers.label,
       params: { initialTimelineUid: uid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: api.panels.find(
+          (panel: { title?: string }) => panel.title === "3D Visualizer",
+        )?.id,
         direction: "within",
       },
     });
@@ -295,10 +291,13 @@ async function insertedSequenceGotoAction(page: Page) {
       for (const track of timeline.tracks ?? []) {
         for (const item of track.actions ?? []) {
           if (
-            item.action?.type === "JumpToCue" &&
-            item.action.data?.uid === clipUid
+            item.action?.id === "clip.goto" &&
+            item.action.arguments?.clip === clipUid
           ) {
-            return item.action.data;
+            return {
+              uid: item.action.arguments.clip,
+              cue_index: item.action.arguments.cue_index,
+            };
           }
         }
       }
@@ -316,10 +315,13 @@ async function insertedClipRateAction(page: Page) {
       for (const track of timeline.tracks ?? []) {
         for (const item of track.actions ?? []) {
           if (
-            item.action?.type === "SetClipRate" &&
-            item.action.data?.uid === clipUid
+            item.action?.id === "clip.set-rate" &&
+            item.action.arguments?.clip === clipUid
           ) {
-            return item.action.data;
+            return {
+              uid: item.action.arguments.clip,
+              rate: item.action.arguments.rate,
+            };
           }
         }
       }
@@ -337,8 +339,8 @@ async function hasDeskEvalCommand(page: Page, expectedCommand: string) {
       for (const track of timeline.tracks ?? []) {
         for (const item of track.actions ?? []) {
           if (
-            item.action?.type === "DeskEval" &&
-            item.action.data === command
+            item.action?.id === "desk.eval" &&
+            item.action.arguments?.command === command
           ) {
             return true;
           }
@@ -360,7 +362,8 @@ async function deskEvalCommandTrackIds(page: Page, expectedCommand: string) {
         if (
           track.actions?.some(
             (item: any) =>
-              item.action?.type === "DeskEval" && item.action.data === command,
+              item.action?.id === "desk.eval" &&
+              item.action.arguments?.command === command,
           )
         ) {
           trackIds.push(track.id);
@@ -392,9 +395,10 @@ async function selectedOptionIsVisible(page: Page) {
 
 /** Verifies arrow-key navigation scrolls the insert action target list. */
 test("insert action picker keeps keyboard selection visible", async ({
+  backendSlot,
   page,
 }, testInfo) => {
-  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
   /** Keeps the tested timeline visible when the workspace narrows. */
   await page.evaluate((uid) => {
     const api = (window as any).appStores.dockApi.get();
@@ -458,9 +462,10 @@ test("insert action picker keeps keyboard selection visible", async ({
 
 /** Verifies pointer action selection keeps the target filter ready for typing. */
 test("insert action picker keeps filter focused after pointer selection", async ({
+  backendSlot,
   page,
 }) => {
-  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
   await seedScrollableClipTargets(page);
   const timelineSurface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
@@ -481,9 +486,10 @@ test("insert action picker keeps filter focused after pointer selection", async 
 
 /** Verifies Jump To Cue lets operators choose a concrete sequence cue target. */
 test("insert action picker inserts sequence goto target with cue index", async ({
+  backendSlot,
   page,
 }) => {
-  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
   const timelineSurface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
   );
@@ -511,8 +517,11 @@ test("insert action picker inserts sequence goto target with cue index", async (
 });
 
 /** Verifies Set Clip Rate insertion collects a target and rate multiplier. */
-test("insert action picker inserts clip rate actions", async ({ page }) => {
-  const timelineUid = await openOwnedTimelineApp(page);
+test("insert action picker inserts clip rate actions", async ({
+  backendSlot,
+  page,
+}) => {
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
   const timelineSurface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
   );
@@ -546,10 +555,11 @@ test("insert action picker inserts clip rate actions", async ({ page }) => {
 
 /** Keeps retained timeline portals and keyboard handlers scoped to their active layout. */
 test("suspends timeline popouts across layouts with duplicate panel IDs", async ({
+  backendSlot,
   page,
 }, testInfo) => {
   test.setTimeout(90_000);
-  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
   await page.evaluate(async () => {
     const { createNamedLayout } = await import("/lib/layout-management.ts");
     const layout = await createNamedLayout(
@@ -633,9 +643,10 @@ test("suspends timeline popouts across layouts with duplicate panel IDs", async 
 
 /** Verifies Desk Eval inserts a command-string timeline action without a target list. */
 test("insert action picker inserts desk eval command actions", async ({
+  backendSlot,
   page,
 }) => {
-  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
   const timelineSurface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
   );
@@ -693,9 +704,10 @@ test("insert action picker inserts desk eval command actions", async ({
 
 /** Verifies keyboard insertion targets the selected timeline track. */
 test("keyboard insert action uses the selected track target", async ({
+  backendSlot,
   page,
 }) => {
-  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
   const timelineSurface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
   );
@@ -759,9 +771,10 @@ test("keyboard insert action uses the selected track target", async ({
 
 /** Verifies selected actions take precedence over a previous track target. */
 test("keyboard insert action uses the selected action track first", async ({
+  backendSlot,
   page,
 }) => {
-  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
   const timelineSurface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
   );
@@ -800,7 +813,10 @@ test("keyboard insert action uses the selected action track first", async ({
                 label: "Selected Insert Anchor",
                 position: { secs: 1, nanos: 0 },
                 duration: { secs: 1, nanos: 0 },
-                action: { type: "DeskEval", data: "group 1 at 10" },
+                action: {
+                  id: "desk.eval",
+                  arguments: { command: "group 1 at 10" },
+                },
               },
             ],
             automation_lanes: [],
@@ -851,8 +867,11 @@ test("keyboard insert action uses the selected action track first", async ({
 });
 
 /** Verifies compact footer alignment and zoom/scroll interactions at normal and narrow widths. */
-test("timeline footer uses consistent compact sizing", async ({ page }) => {
-  await openOwnedTimelineApp(page);
+test("timeline footer uses consistent compact sizing", async ({
+  backendSlot,
+  page,
+}) => {
+  await openOwnedTimelineApp(page, backendSlot.backendPort);
   const footer = page.locator('[data-timeline-footer-toolbar="true"]');
   await expect(footer).toBeVisible();
   const zoom = footer.getByRole("textbox", { name: "Timeline zoom" });
@@ -892,4 +911,53 @@ test("timeline footer uses consistent compact sizing", async ({ page }) => {
   await page.screenshot({
     path: test.info().outputPath("timeline-footer-narrow.png"),
   });
+});
+
+/** Verifies catalog actions without a built-in timeline kind insert as action references. */
+test("insert action picker inserts registered catalog actions", async ({
+  backendSlot,
+  page,
+}) => {
+  const timelineUid = await openOwnedTimelineApp(page, backendSlot.backendPort);
+  const timelineSurface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  await expect(timelineSurface).toBeVisible();
+  const lane = timelineSurface
+    .locator('[data-timeline-track-lane="true"]')
+    .first();
+  await expect(lane).toBeVisible();
+  await lane.click({ button: "right", position: { x: 80, y: 18 } });
+  await page
+    .locator('[data-menu-kind="context"]')
+    .getByRole("menuitem", { name: "Insert Action..." })
+    .click();
+  await page.getByPlaceholder("Insert action...").fill("Clear programmer");
+  await expect(
+    page.getByText("live only; not replayed when seeking", { exact: false }),
+  ).toBeVisible();
+  await page.keyboard.press("Enter");
+
+  const configure = page.locator("[data-insert-registered-action]");
+  await expect(configure).toBeVisible();
+  await configure
+    .getByRole("button", { name: "Insert Clear programmer" })
+    .click();
+
+  await expect
+    .poll(() =>
+      page.evaluate((uid) => {
+        const timeline = (window as any).appStores.timelines.get()[uid];
+        return timeline.tracks.flatMap((track: any) =>
+          track.actions.map((action: any) => action.action),
+        );
+      }, timelineUid),
+    )
+    .toContainEqual({ id: "programmer.clear", arguments: {} });
+  await expect(
+    timelineSurface
+      .locator('[data-timeline-action="true"]')
+      .filter({ hasText: "Clear programmer" })
+      .first(),
+  ).toBeVisible();
 });
