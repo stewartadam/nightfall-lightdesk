@@ -74,6 +74,9 @@ pub struct ParameterFunctionSet {
     /// Filter color of the selected wheel slot, when it colors the beam.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<CieColor>,
+    /// Image of the selected wheel slot (e.g. a gobo), as its archive media name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<String>,
 }
 
 /// A DMX range of a parameter with one meaning, e.g. a GDTF channel function.

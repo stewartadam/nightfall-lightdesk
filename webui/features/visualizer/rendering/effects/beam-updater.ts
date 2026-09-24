@@ -14,6 +14,7 @@
 import { BeamType } from "../../../../types";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
+import { gdtfWheelMediaUrl } from "../mesh-loader";
 import type { BeamManager } from "./beam-manager";
 
 /**
@@ -94,9 +95,19 @@ export class BeamUpdater {
           emitter.nodeGroup,
         );
         if (beam) {
+          const goboMedia = beamColor.gobo
+            ? instance.goboMedia?.get(emitter.controlledElement)?.[
+                beamColor.gobo - 1
+              ]
+            : undefined;
+          const gdtfPath = instance.geometry?.gdtfPath;
           this.beamManager.updateBeam(beamId, beamColor, {
             zoom: beamColor.zoom,
             frost: beamColor.frost,
+            goboUrl:
+              goboMedia && gdtfPath
+                ? gdtfWheelMediaUrl(gdtfPath, goboMedia)
+                : undefined,
           });
         }
       } else if (this.beamManager.hasBeam(beamId)) {

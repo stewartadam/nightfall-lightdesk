@@ -478,3 +478,64 @@ test("Sharpy color wheel slot tints the emitter", async ({
     .toBe(true);
   await attachCanvas(page, "sharpy-color-wheel", testInfo);
 });
+
+/** Verifies selecting a Sharpy gobo serves its wheel image and shapes the beam with it. */
+test("Sharpy gobo slot shapes the beam", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  const uid = await installBenchFixture(page, backendSlot.dataDir, SHARPY, 1);
+  const choice = await page.evaluate((uid) => {
+    const fixture = (window as any).appStores.fixtures.get()[uid] as Fixture;
+    for (const element of fixture.elements) {
+      for (const parameter of element.parameters) {
+        const label =
+          parameter.attribute.type === "Custom"
+            ? parameter.attribute.data.label
+            : parameter.attribute.type;
+        for (const fn of parameter.functions ?? []) {
+          // The last image slot is a patterned gobo rather than a beam reducer.
+          const slot = fn.sets?.filter((set) => set.media).at(-1);
+          if (!slot) continue;
+          const range = parameter.max - parameter.min;
+          const midpoint = (slot.dmx_from + slot.dmx_to) / 2;
+          return {
+            attribute: label,
+            percent: (midpoint / 255) * 100,
+            slot: slot.name,
+            media: slot.media,
+            range,
+          };
+        }
+      }
+    }
+    return null;
+  }, uid);
+  expect(choice).not.toBeNull();
+  testInfo.annotations.push({
+    type: "gobo",
+    description: `${choice?.slot} (${choice?.media})`,
+  });
+
+  await submitCommand(
+    page,
+    `fix 1 int @ 100 "${choice?.attribute}" @ ${choice?.percent.toFixed(2)}`,
+  );
+  await expect
+    .poll(() =>
+      page.evaluate((uid) => {
+        const root = (window as any).visualizerApi
+          .getScene()
+          .getObjectByName(`Fixture_${uid}`);
+        let active = 0;
+        root.traverse((object: any) => {
+          if (object.material?.goboActiveUniform) {
+            active = Math.max(active, object.material.goboActiveUniform.value);
+          }
+        });
+        return active;
+      }, uid),
+    )
+    .toBe(1);
+  await attachCanvas(page, "sharpy-gobo", testInfo);
+});
