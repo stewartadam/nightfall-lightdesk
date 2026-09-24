@@ -9,9 +9,10 @@
 //! OSC mapping storage and lookup.
 
 use bevy_ecs::prelude::*;
-use nightfall_actions::ActionReference;
+use nightfall_actions::{ActionInputKind, ActionReference, SourceSignal};
+use uuid::Uuid;
 
-use crate::command::{OscLastEvent, OscMapping};
+use crate::command::{OscLastEvent, OscMapping, OscType};
 
 /// Resource storing configured OSC mappings.
 #[derive(Resource, Default, Debug, Clone)]
@@ -27,7 +28,7 @@ impl OscMappings {
         }
     }
 
-    /// Replace all mappings.
+    /// Replace all mappings, as when loading a showfile.
     pub fn set_mappings(&mut self, mappings: Vec<OscMapping>) {
         self.mappings = mappings.into_iter().map(normalize_mapping).collect();
     }
@@ -37,14 +38,37 @@ impl OscMappings {
         &self.mappings
     }
 
-    /// Delete mapping by index.
-    pub fn delete_mapping(&mut self, index: usize) -> bool {
-        if index < self.mappings.len() {
-            self.mappings.remove(index);
-            true
-        } else {
-            false
+    /// Creates or replaces a mapping and returns the IDs of other mappings it displaced.
+    ///
+    /// Mappings with identical match criteria would compete for the same messages, so any
+    /// other mapping with the same source filter, address, and argument criteria is removed.
+    /// An existing mapping with the same ID keeps its list position.
+    pub fn upsert(&mut self, mapping: OscMapping) -> Vec<Uuid> {
+        let mapping = normalize_mapping(mapping);
+        let displaced = self
+            .mappings
+            .iter()
+            .filter(|existing| existing.id != mapping.id && same_criteria(existing, &mapping))
+            .map(|existing| existing.id)
+            .collect::<Vec<_>>();
+        self.mappings
+            .retain(|existing| !displaced.contains(&existing.id));
+        match self
+            .mappings
+            .iter_mut()
+            .find(|existing| existing.id == mapping.id)
+        {
+            Some(existing) => *existing = mapping,
+            None => self.mappings.push(mapping),
         }
+        displaced
+    }
+
+    /// Deletes a mapping by ID and reports whether it existed.
+    pub fn delete(&mut self, id: Uuid) -> bool {
+        let before = self.mappings.len();
+        self.mappings.retain(|mapping| mapping.id != id);
+        self.mappings.len() != before
     }
 
     /// Return the first matching action for the provided OSC event.
@@ -60,6 +84,45 @@ impl OscMappings {
     }
 }
 
+impl OscMapping {
+    /// Returns the signal a matched message carries for this mapping.
+    ///
+    /// A mapping that matches an exact argument value, or reads no argument, treats each
+    /// message as a stateless pulse. Otherwise the selected argument is read as a button
+    /// (booleans) or a normalized level (numbers).
+    pub fn signal(&self, event: &OscLastEvent) -> SourceSignal {
+        if self.arg_value.is_some() {
+            return SourceSignal::Pulse;
+        }
+        let Some(arg_index) = self.arg_index else {
+            return SourceSignal::Pulse;
+        };
+        match event.args.get(usize::from(arg_index)) {
+            Some(OscType::Bool(pressed)) => SourceSignal::Button(*pressed),
+            Some(arg) => arg
+                .as_hardware_fader_percent()
+                .map_or(SourceSignal::Pulse, |percent| {
+                    SourceSignal::Level(percent / 100.0)
+                }),
+            None => SourceSignal::Pulse,
+        }
+    }
+
+    /// Returns whether messages matched by this mapping can drive an action input kind.
+    pub fn can_drive(&self, kind: ActionInputKind) -> bool {
+        self.arg_value.is_none() && self.arg_index.is_some() || SourceSignal::Pulse.can_drive(kind)
+    }
+}
+
+/// Returns whether two mappings match exactly the same messages.
+fn same_criteria(left: &OscMapping, right: &OscMapping) -> bool {
+    left.source == right.source
+        && left.address == right.address
+        && left.arg_index == right.arg_index
+        && left.arg_value == right.arg_value
+}
+
+/// Returns whether one OSC message matches a mapping's source, address, and argument criteria.
 fn mapping_matches_event(mapping: &OscMapping, event: &OscLastEvent) -> bool {
     let source_filter = mapping
         .source
@@ -90,6 +153,7 @@ fn mapping_matches_event(mapping: &OscMapping, event: &OscLastEvent) -> bool {
         .is_some_and(|value| value == expected_value)
 }
 
+/// Clears blank optional filters so they behave as unset.
 fn normalize_mapping(mut mapping: OscMapping) -> OscMapping {
     if mapping
         .source
@@ -128,6 +192,7 @@ mod tests {
     fn lookup_matches_on_address_and_source() {
         let mut mappings = OscMappings::new();
         mappings.set_mappings(vec![OscMapping {
+            id: Uuid::nil(),
             source: Some("127.0.0.1:9000".to_string()),
             address: "/exec/start".to_string(),
             arg_index: None,
@@ -145,6 +210,7 @@ mod tests {
     fn lookup_matches_arg_value_with_default_index_zero() {
         let mut mappings = OscMappings::new();
         mappings.set_mappings(vec![OscMapping {
+            id: Uuid::nil(),
             source: None,
             address: "/exec/start".to_string(),
             arg_index: None,
@@ -167,6 +233,7 @@ mod tests {
     fn lookup_matches_custom_arg_index() {
         let mut mappings = OscMappings::new();
         mappings.set_mappings(vec![OscMapping {
+            id: Uuid::nil(),
             source: None,
             address: "/exec/start".to_string(),
             arg_index: Some(1),
@@ -190,6 +257,7 @@ mod tests {
     fn lookup_treats_blank_optional_filters_as_unset() {
         let mut mappings = OscMappings::new();
         mappings.set_mappings(vec![OscMapping {
+            id: Uuid::nil(),
             source: Some("".to_string()),
             address: "/exec/start".to_string(),
             arg_index: None,

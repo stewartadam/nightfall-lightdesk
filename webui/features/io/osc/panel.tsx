@@ -38,8 +38,6 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
-import { engineRuntime } from "../../../lib/engine-runtime";
-import { setStoreAction } from "../../../lib/nanostore-action";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   actionCatalog,
@@ -59,6 +57,11 @@ import {
   formatActionReference,
   useActionTargetNames,
 } from "../../actions";
+import {
+  deleteOscMapping,
+  oscMappingFromEvent,
+  upsertOscMapping,
+} from "../model/controller-mappings";
 
 /** Input kinds an OSC message can drive: pulses and booleans as buttons, numbers as faders. */
 const OSC_INPUT_KINDS = [
@@ -163,19 +166,27 @@ function parseArgIndex(value: string): number | undefined | null {
   return parsed;
 }
 
-function cloneMapping(mapping: OscMapping): OscMapping {
-  return {
-    source: mapping.source,
-    address: mapping.address,
-    arg_index: mapping.arg_index,
-    arg_value: mapping.arg_value,
-    action: cloneAction(mapping.action),
-  };
-}
-
-/** Deep clones an action reference into a plain object that can be posted to the worker. */
-function cloneAction(action: ActionReference): ActionReference {
-  return JSON.parse(JSON.stringify(action)) as ActionReference;
+/** Returns a mapping with one text cell edit applied, or undefined for invalid input. */
+function editedMapping(
+  mapping: OscMapping,
+  columnId: string | undefined,
+  value: string,
+): OscMapping | undefined {
+  const trimmed = value.trim();
+  switch (columnId) {
+    case "source":
+      return { ...mapping, source: trimmed === "" ? undefined : trimmed };
+    case "address":
+      return { ...mapping, address: value };
+    case "arg_index": {
+      const parsed = parseArgIndex(value);
+      return parsed === null ? undefined : { ...mapping, arg_index: parsed };
+    }
+    case "arg_value":
+      return { ...mapping, arg_value: trimmed === "" ? undefined : trimmed };
+    default:
+      return undefined;
+  }
 }
 
 export default function OscInputPanel(props: OscInputPanelProps) {
@@ -227,7 +238,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     createKeyedDataGridCellProvider({
       rows: displayRows(),
       columns: displayColumns(),
-      rowKey: (row) => row.index,
+      rowKey: (row) => row.mapping.id,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row, column }): GridCell => {
         const rowData = row.mapping;
@@ -291,10 +302,10 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     }),
   );
 
+  /** Applies one edited text cell to every targeted mapping and upserts each result. */
   const handleCellEdited = (cell: Item, newValue: GridCell) => {
     const [col, row] = cell;
     const colId = displayColumns()[col]?.id;
-    const mappings = $oscMappings();
     const visibleRows = displayRows();
     if (row >= visibleRows.length || newValue.kind !== GridCellKind.Text) {
       return;
@@ -307,49 +318,12 @@ export default function OscInputPanel(props: OscInputPanelProps) {
       visibleRows.length,
     );
     const value = String(newValue.data ?? "");
-
-    const currentMappings = mappings.map(cloneMapping);
     for (const targetRow of rowsToEdit) {
-      const originalIndex = visibleRows[targetRow]?.index;
-      if (originalIndex === undefined) continue;
-      const rowData = { ...currentMappings[originalIndex] };
-      switch (colId) {
-        case "source":
-          rowData.source = value.trim() === "" ? undefined : value.trim();
-          break;
-        case "address":
-          rowData.address = value;
-          break;
-        case "arg_index": {
-          const parsed = parseArgIndex(value);
-          if (parsed === null) {
-            continue;
-          }
-          rowData.arg_index = parsed;
-          break;
-        }
-        case "arg_value": {
-          const trimmed = value.trim();
-          rowData.arg_value = trimmed === "" ? undefined : trimmed;
-          break;
-        }
-      }
-      currentMappings[originalIndex] = cloneMapping(rowData);
+      const mapping = visibleRows[targetRow]?.mapping;
+      if (!mapping) continue;
+      const edited = editedMapping(mapping, colId, value);
+      if (edited) void upsertOscMapping(edited);
     }
-
-    storeMappings(currentMappings);
-  };
-
-  /** Optimistically stores a replacement mapping list and sends it to the backend. */
-  const storeMappings = (currentMappings: OscMapping[]) => {
-    setStoreAction(oscMappings, "Update OSC Mappings", currentMappings);
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
   };
 
   /** Returns the single selected mapping row, when exactly one is selected. */
@@ -359,39 +333,20 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     return displayRows()[rows[0]];
   });
 
-  /** Replaces the action of the selected mapping row. */
+  /** Replaces the action of the selected mapping. */
   const updateSelectedAction = (action: ActionReference) => {
     const row = selectedMapping();
-    if (!row) return;
-    const currentMappings = $oscMappings().map(cloneMapping);
-    const mapping = currentMappings[row.index];
-    if (!mapping) return;
-    currentMappings[row.index] = { ...mapping, action: cloneAction(action) };
-    storeMappings(currentMappings);
+    if (row) void upsertOscMapping({ ...row.mapping, action });
   };
 
+  /** Deletes every selected mapping by ID. */
   const deleteSelected = () => {
-    const indices = selectedRows();
-    if (indices.length === 0) return;
-
     const visibleRows = displayRows();
-    const sortedIndices = indices
-      .map((index) => visibleRows[index]?.index)
-      .filter((index): index is number => index !== undefined)
-      .sort((a, b) => b - a);
-    const currentMappings = $oscMappings().map(cloneMapping);
-    for (const index of sortedIndices) {
-      currentMappings.splice(index, 1);
-    }
+    const ids = selectedRows()
+      .map((index) => visibleRows[index]?.mapping.id)
+      .filter((id): id is string => id !== undefined);
     clearGridSelection();
-
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+    for (const id of ids) void deleteOscMapping(id);
   };
 
   /** Binds the last received OSC address to the action chosen beside it. */
@@ -399,16 +354,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     const event = $oscLastEvent();
     const action = lastEventAction();
     if (!event || !action) return;
-
-    const currentMappings = $oscMappings().map(cloneMapping);
-    currentMappings.push({
-      source: undefined,
-      address: event.address,
-      arg_index: event.args.length > 0 ? 0 : undefined,
-      arg_value: undefined,
-      action: cloneAction(action),
-    });
-    storeMappings(currentMappings);
+    void upsertOscMapping(oscMappingFromEvent(event, action));
   };
 
   return (

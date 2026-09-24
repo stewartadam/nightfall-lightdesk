@@ -14,8 +14,11 @@ use std::collections::{BTreeMap, HashMap};
 use bevy_ecs::prelude::{Resource, World};
 use serde::de::DeserializeOwned;
 
-use crate::descriptor::{ActionCatalogEntry, ActionDescriptor, ActionId};
+use crate::descriptor::{ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind};
 use crate::invocation::{ActionInvocation, ActionReference, InvocationDispatch, InvocationError};
+
+/// ID prefix reserved for actions hosted by connected Web UI clients.
+pub const CLIENT_ACTION_PREFIX: &str = "ui.";
 
 type RegisteredInvoker = Box<
     dyn Fn(&mut World, &ActionInvocation) -> Result<InvocationDispatch, InvocationError>
@@ -213,6 +216,53 @@ impl ActionRegistry {
             ..invocation.clone()
         };
         (registered.invoker)(world, &resolved)
+    }
+
+    /// Validates that a stored binding can invoke its action before it is persisted.
+    ///
+    /// Checks that the action exists, that every required argument is present, and that the
+    /// binding's source can drive the action's input kind. Actions in the reserved `ui.`
+    /// namespace are hosted by connected clients and are accepted without a registration.
+    pub fn validate_binding(
+        &self,
+        action: &ActionReference,
+        can_drive: impl Fn(ActionInputKind) -> bool,
+    ) -> Result<(), InvocationError> {
+        if action.id.as_str().starts_with(CLIENT_ACTION_PREFIX) {
+            return Ok(());
+        }
+        let descriptor = &self.registered(&action.id)?.descriptor;
+        if let Some(missing) = descriptor.parameters.iter().find(|parameter| {
+            parameter.required
+                && action
+                    .arguments
+                    .get(&parameter.name)
+                    .is_none_or(serde_json::Value::is_null)
+        }) {
+            return Err(InvocationError::new(
+                "action.missing_argument",
+                format!(
+                    "Action '{}' requires the '{}' argument",
+                    action.id.as_str(),
+                    missing.label
+                ),
+            ));
+        }
+        if !can_drive(descriptor.input) {
+            return Err(InvocationError::new(
+                "action.input_incompatible",
+                format!(
+                    "This control cannot drive '{}', which needs {:?} input",
+                    descriptor.label, descriptor.input
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Returns the input kind of a registered action, if any.
+    pub fn input_kind(&self, id: &ActionId) -> Option<ActionInputKind> {
+        self.get(id).map(|descriptor| descriptor.input)
     }
 
     /// Looks up a registration or reports a structured missing-action failure.

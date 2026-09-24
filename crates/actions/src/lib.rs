@@ -16,6 +16,7 @@ mod descriptor;
 mod invocation;
 mod lowering;
 mod registry;
+mod source;
 pub mod websocket;
 
 use bevy_app::{App, Plugin, PostUpdate, Update};
@@ -36,7 +37,8 @@ pub use lowering::{ActionAppExt, submit_command};
 use nightfall_engine::prelude::{
     ClientFeedback, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
 };
-pub use registry::ActionRegistry;
+pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX};
+pub use source::{SourceEdgeStates, SourceSignal};
 
 /// Plugin that installs the generic registered-action invocation stage.
 pub struct ActionsPlugin;
@@ -48,6 +50,7 @@ pub struct ActionInvocationHandling;
 impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ActionRegistry>();
+        app.init_resource::<SourceEdgeStates>();
         app.add_message::<ActionInvocation>();
         app.add_message::<InvocationResult>();
         app.add_message::<ExternalCommandInvocation>();
