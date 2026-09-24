@@ -46,7 +46,7 @@ export async function executePatchWizardCommands(
     return { status: "failed" };
   }
 
-  const [make, model] = state.fixtureDefinitionId.split(":");
+  const { make, model, asset_etag: assetEtag } = options.libraryFixtureInfo;
   const isMorphMode = state.morphFixtureIds.length > 0;
   const versionConflictIds = isMorphMode
     ? []
@@ -74,6 +74,7 @@ export async function executePatchWizardCommands(
         undefined,
         state.morphFixtureIds,
         true,
+        assetEtag,
       );
       if (!commandSucceeded(result)) {
         log.error("Failed to morph fixtures:", result.outcome);
@@ -99,6 +100,8 @@ export async function executePatchWizardCommands(
         state.fixtureMode,
         label,
         index === 0 ? updateExistingIds : undefined,
+        false,
+        assetEtag,
       );
       if (commandSucceeded(result)) {
         createdFixtureIds.push(fixtureId);

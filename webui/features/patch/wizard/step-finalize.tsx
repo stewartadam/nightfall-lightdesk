@@ -8,7 +8,10 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, Show } from "solid-js";
-import { computeFixtureChannelCount } from "../../../lib/fixture-service";
+import {
+  computeFixtureChannelCount,
+  libraryDefinitionId,
+} from "../../../lib/fixture-service";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import { LibraryFixturePreview } from "../../fixture-library";
 import { usePatchWizard } from "./wizard-context";
@@ -23,7 +26,7 @@ export function StepFinalize() {
   const selectedFixture = createMemo(() => {
     const defId = state().fixtureDefinitionId;
     if (!defId) return null;
-    return $fixtureLibrary().find((f) => `${f.make}:${f.model}` === defId);
+    return $fixtureLibrary().find((f) => libraryDefinitionId(f) === defId);
   });
 
   const channelCount = createMemo(() => {

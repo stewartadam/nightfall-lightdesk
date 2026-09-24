@@ -150,7 +150,11 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     for (const idx of indices) {
       const fixture = fixtureData[idx];
       if (fixture) {
-        fixturesToDelete.push({ make: fixture.make, model: fixture.model });
+        fixturesToDelete.push({
+          make: fixture.make,
+          model: fixture.model,
+          asset_etag: fixture.asset_etag,
+        });
       }
     }
 
