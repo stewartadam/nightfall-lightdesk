@@ -12,12 +12,13 @@ import EntityEditorModal from "../../../components/widgets/entity-editor-dialog"
 interface ClipEditorPayload {
   id: number;
   label: string;
+  overwriteKey?: string;
 }
 
 interface ClipEditorDialogsProps {
-  overwrite?: { id: number; existingLabel: string };
-  onCancelOverwrite: () => void;
-  onOverwrite: () => void;
+  overwriteConflict: (
+    id: number,
+  ) => { key: string; message: string } | undefined;
   createOpen: boolean;
   createInitialId: number;
   createInitialLabel: string;
@@ -38,18 +39,11 @@ interface ClipEditorDialogsProps {
 export function ClipEditorDialogs(props: ClipEditorDialogsProps) {
   return (
     <>
-      <DeleteConfirmModal
-        isOpen={!!props.overwrite}
-        title="Overwrite clip?"
-        message={`Clip ${props.overwrite?.id}: ${props.overwrite?.existingLabel} already exists. Overwrite it with the new clip? Its source and playback options will be reset; existing references will still point to this clip.`}
-        confirmLabel="Overwrite"
-        onCancel={props.onCancelOverwrite}
-        onConfirm={props.onOverwrite}
-      />
       <EntityEditorModal
         isOpen={props.createOpen}
         title="Create clip"
         submitLabel="Create"
+        overwriteConflict={props.overwriteConflict}
         initialId={props.createInitialId}
         initialLabel={props.createInitialLabel}
         onCancel={props.onCancelCreate}

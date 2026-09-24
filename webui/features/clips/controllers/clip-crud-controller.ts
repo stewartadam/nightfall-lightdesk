@@ -35,12 +35,6 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
   const [isEditModalOpen, setIsEditModalOpen] = createSignal(false);
   const [createInitialId, setCreateInitialId] = createSignal(1);
   const [createInitialLabel, setCreateInitialLabel] = createSignal("");
-  const [pendingOverwrite, setPendingOverwrite] = createSignal<{
-    id: number;
-    label: string;
-    uid: string;
-    existingLabel: string;
-  }>();
   const [editInitialId, setEditInitialId] = createSignal(1);
   const [editInitialLabel, setEditInitialLabel] = createSignal("");
   const [editingClipUid, setEditingClipUid] = createSignal<string | null>(null);
@@ -54,10 +48,7 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
 
   /** Returns whether any modal currently blocks clip list interaction. */
   const isModalOpen = () =>
-    isDeleteModalOpen() ||
-    isCreateModalOpen() ||
-    isEditModalOpen() ||
-    !!pendingOverwrite();
+    isDeleteModalOpen() || isCreateModalOpen() || isEditModalOpen();
 
   /** Finds the lowest positive numeric clip ID not currently in use. */
   const nextClipId = () => {
@@ -99,44 +90,28 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
     setIsCreateModalOpen(false);
   };
 
-  /** Requests confirmation rather than silently rejecting an occupied clip ID. */
-  const submitCreate = (payload: { id: number; label: string }) => {
+  /** Describes the current conflicting owner and the consequences of overwriting it. */
+  const overwriteConflict = (id: number) => {
     const existing = Object.values(options.clips()).find(
-      ([clip]) => clip.identifiers.id === payload.id,
+      ([clip]) => clip.identifiers.id === id,
     )?.[0];
-    if (existing) {
-      setCreateInitialId(payload.id);
-      setCreateInitialLabel(payload.label);
-      setIsCreateModalOpen(false);
-      setPendingOverwrite({
-        ...payload,
-        uid: existing.identifiers.uid,
-        existingLabel: existing.identifiers.label,
-      });
-      return;
-    }
-    createClip(payload);
+    return existing
+      ? {
+          key: existing.identifiers.uid,
+          message: `Clip ${id}: ${existing.identifiers.label} already exists. Hold Alt and click Overwrite to replace it. Its source, priority, and playback options will reset; existing references will still point to this clip.`,
+        }
+      : undefined;
   };
 
-  /** Returns to the creation form without modifying the existing clip. */
-  const cancelOverwrite = () => {
-    setPendingOverwrite(undefined);
-    setIsCreateModalOpen(true);
-  };
-
-  /** Rechecks identity so confirmation never replaces a different, newly assigned clip. */
-  const confirmOverwrite = () => {
-    const pending = pendingOverwrite();
-    if (!pending) return;
-    const existing = Object.values(options.clips()).find(
-      ([clip]) => clip.identifiers.id === pending.id,
-    )?.[0];
-    setPendingOverwrite(undefined);
-    if (existing && existing.identifiers.uid !== pending.uid) {
-      submitCreate(pending);
-      return;
-    }
-    createClip(pending, existing?.identifiers.uid);
+  /** Rechecks the authorized owner before storing a fresh configuration with its identity. */
+  const submitCreate = (payload: {
+    id: number;
+    label: string;
+    overwriteKey?: string;
+  }) => {
+    const owner = overwriteConflict(payload.id);
+    if (owner?.key !== payload.overwriteKey) return;
+    createClip(payload, owner?.key);
   };
 
   /** Opens the edit dialog for the single selected clip. */
@@ -228,9 +203,7 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
   };
 
   return {
-    pendingOverwrite,
-    cancelOverwrite,
-    confirmOverwrite,
+    overwriteConflict,
     createInitialId,
     createInitialLabel,
     editInitialId,
