@@ -25,9 +25,9 @@ use crate::testing::{BreakSpec, ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec
 fn convert(builder: &GdtfBuilder, mode: &str) -> (Fixture, Vec<ReferenceChannel>) {
     let dir = tempfile::tempdir().expect("temp dir");
     let metadata = builder.write_metadata(dir.path());
-    let (fixture, geometry) = convert_gdtf_to_fixture(&metadata, mode, 1).expect("conversion");
+    let (fixture, _) = convert_gdtf_to_fixture(&metadata, mode, 1).expect("conversion");
     assert_eq!(
-        crate::testing::invariants::check_invariants(&fixture, geometry.as_ref()),
+        crate::testing::invariants::check_wire_invariants(&fixture),
         vec![]
     );
     let gdtf = builder.parse();
