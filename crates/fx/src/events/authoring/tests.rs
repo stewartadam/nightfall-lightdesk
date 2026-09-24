@@ -23,7 +23,7 @@ fn step_fx_command_app() -> App {
     app.init_resource::<DataProvider<Blueprint>>();
     app.init_resource::<FixtureDataProviderExt>();
     app.add_message::<CommandEnvelope<StepFxCommand>>();
-    app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackReleaseOperation>>();
     app.add_message::<StepFxCommandResult>();
     app.add_systems(Update, handle_step_fx_commands);
     app

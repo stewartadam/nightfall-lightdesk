@@ -18,7 +18,7 @@ use nightfall_engine::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     InstanceClock, InstanceControls, InstanceDisplayKind, InstanceId, InstanceKind,
-    InstanceMetadata, PlaybackReleaseAction,
+    InstanceMetadata, PlaybackReleaseOperation,
 };
 use uuid::Uuid;
 
@@ -392,7 +392,7 @@ pub fn handle_step_fx_commands(
     step_fx_query: Query<(Entity, &StepFx)>,
     active_fx_query: Query<StepFxAuthoringData>,
     mut events: MessageReader<CommandEnvelope<StepFxCommand>>,
-    mut instance_events: MessageWriter<EngineActionEnvelope<PlaybackReleaseAction>>,
+    mut instance_events: MessageWriter<EngineOperationEnvelope<PlaybackReleaseOperation>>,
     mut results: MessageWriter<StepFxCommandResult>,
     mut commands: Commands,
     selection_resolver: SpatialSelectionResolver,
@@ -661,12 +661,12 @@ fn stop_active_step_fx(
     instance_id: Option<&InstanceId>,
     event: &CommandEnvelope<StepFxCommand>,
     commands: &mut Commands,
-    instance_events: &mut MessageWriter<EngineActionEnvelope<PlaybackReleaseAction>>,
+    instance_events: &mut MessageWriter<EngineOperationEnvelope<PlaybackReleaseOperation>>,
 ) {
     if let Some(instance_id) = instance_id {
-        instance_events.write(EngineActionEnvelope::for_command(
+        instance_events.write(EngineOperationEnvelope::for_command(
             event,
-            PlaybackReleaseAction::One(*instance_id),
+            PlaybackReleaseOperation::One(*instance_id),
         ));
     } else {
         commands

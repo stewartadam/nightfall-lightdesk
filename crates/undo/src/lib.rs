@@ -29,7 +29,7 @@ pub mod prelude {
     pub use crate::context::UndoContext;
     pub use crate::dispatcher::UndoRegistry;
     pub use crate::manager::{UndoConfig, UndoEntry, UndoGroup, UndoManager};
-    pub use crate::traits::UndoableOperation;
+    pub use crate::traits::Undoable;
 }
 
 /// Plugin that enables undo/redo functionality across the console.
@@ -51,7 +51,7 @@ impl Plugin for UndoPlugin {
         // Initialize resources
         app.init_resource::<UndoManager>();
         app.init_resource::<PendingCommandBuffer>();
-        app.init_resource::<PendingEngineActionBuffer>();
+        app.init_resource::<PendingEngineOperationBuffer>();
 
         // Initialize UndoRegistry to capture the undoable command types registered by plugin crates
         app.init_resource::<UndoRegistry>();

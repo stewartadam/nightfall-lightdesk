@@ -53,4 +53,4 @@ pub trait EngineIngressMeta {
 pub trait IngressCommand: EnginePayload {}
 
 /// Marks concrete internal runtime work owned by a domain.
-pub trait EngineAction: EnginePayload {}
+pub trait EngineOperation: EnginePayload {}

@@ -17,7 +17,7 @@ test("semantic command architecture passes", () => {
     {
       path: "crates/example/src/lib.rs",
       source:
-        "MessageReader<CommandEnvelope<FooCommand>> EngineActionEnvelope<FooAction>",
+        "MessageReader<CommandEnvelope<FooCommand>> EngineOperationEnvelope<FooOperation>",
     },
   ]);
 
@@ -53,13 +53,13 @@ test("engine-owned domain actions fail", () => {
   const violations = findRetiredLifecycleUses([
     {
       path: "crates/engine/src/domain_actions.rs",
-      source: "pub enum PlaybackAction { ReleaseAll }",
+      source: "pub enum PlaybackOperation { ReleaseAll }",
     },
   ]);
 
   assert.deepEqual(
     violations.map(({ name }) => name),
-    ["engine-owned PlaybackAction"],
+    ["engine-owned PlaybackOperation"],
   );
 });
 

@@ -21,7 +21,7 @@ pub use actions::{
     CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipTarget,
     go_clip_action, start_clip_action, stop_clip_action,
 };
-pub use command::{ClipAction, ClipCommand, clip_action_from_command};
+pub use command::{ClipCommand, ClipOperation, clip_action_from_command};
 pub use instance_index::{
     ClipReleaseAfterInstance, InstanceIndex, add_instances_to_index, remove_instances_from_index,
 };

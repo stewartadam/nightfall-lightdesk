@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use nightfall::engine::{EngineAction, EngineIngressMeta, EnginePayload, IngressCommand};
+use nightfall::engine::{EngineIngressMeta, EngineOperation, EnginePayload, IngressCommand};
 use nightfall::prelude::IdExpr;
 use nightfall_instances::InstanceOptions;
 use nightfall_playback_planner::PlaybackReconstructionTiming;
@@ -119,7 +119,7 @@ impl IngressCommand for ClipCommand {}
 
 /// Concrete runtime actions applied to clip playback state.
 #[derive(Debug, Clone)]
-pub enum ClipAction {
+pub enum ClipOperation {
     /// Starts a clip and creates or refreshes attached playback.
     Start(IdExpr),
     /// Starts a clip from a reconstruction timing seed.
@@ -173,35 +173,35 @@ pub enum ClipAction {
     },
 }
 
-impl EnginePayload for ClipAction {}
+impl EnginePayload for ClipOperation {}
 
-impl EngineIngressMeta for ClipAction {
-    const COMMAND_MODULE: &'static str = "ClipAction";
+impl EngineIngressMeta for ClipOperation {
+    const COMMAND_MODULE: &'static str = "ClipOperation";
 }
 
-impl EngineAction for ClipAction {}
+impl EngineOperation for ClipOperation {}
 
 /// Converts a user-facing clip command into concrete runtime work when applicable.
-pub fn clip_action_from_command(command: &ClipCommand) -> Option<ClipAction> {
+pub fn clip_action_from_command(command: &ClipCommand) -> Option<ClipOperation> {
     match command {
-        ClipCommand::StartClip(clip_id) => Some(ClipAction::Start(clip_id.clone())),
+        ClipCommand::StartClip(clip_id) => Some(ClipOperation::Start(clip_id.clone())),
         ClipCommand::StartClipAtTiming {
             clip_id,
             timing,
             instance_options,
-        } => Some(ClipAction::StartAtTiming {
+        } => Some(ClipOperation::StartAtTiming {
             clip_id: clip_id.clone(),
             timing: *timing,
             instance_options: *instance_options,
         }),
-        ClipCommand::StopClip(clip_id) => Some(ClipAction::Stop(clip_id.clone())),
-        ClipCommand::StopClipAtTiming { clip_id, timing } => Some(ClipAction::StopAtTiming {
+        ClipCommand::StopClip(clip_id) => Some(ClipOperation::Stop(clip_id.clone())),
+        ClipCommand::StopClipAtTiming { clip_id, timing } => Some(ClipOperation::StopAtTiming {
             clip_id: clip_id.clone(),
             timing: *timing,
         }),
-        ClipCommand::GoClip(clip_id) => Some(ClipAction::Go(clip_id.clone())),
-        ClipCommand::BackClip(clip_id) => Some(ClipAction::Back(clip_id.clone())),
-        ClipCommand::SetRate { clip_id, rate } => Some(ClipAction::SetRate {
+        ClipCommand::GoClip(clip_id) => Some(ClipOperation::Go(clip_id.clone())),
+        ClipCommand::BackClip(clip_id) => Some(ClipOperation::Back(clip_id.clone())),
+        ClipCommand::SetRate { clip_id, rate } => Some(ClipOperation::SetRate {
             clip_id: clip_id.clone(),
             rate: *rate,
         }),
@@ -209,7 +209,7 @@ pub fn clip_action_from_command(command: &ClipCommand) -> Option<ClipAction> {
             clip_id,
             position,
             timing,
-        } => Some(ClipAction::Goto {
+        } => Some(ClipOperation::Goto {
             clip_id: clip_id.clone(),
             position: *position,
             timing: *timing,
@@ -219,7 +219,7 @@ pub fn clip_action_from_command(command: &ClipCommand) -> Option<ClipAction> {
             position,
             timing,
             instance_options,
-        } => Some(ClipAction::RenderAt {
+        } => Some(ClipOperation::RenderAt {
             clip_id: clip_id.clone(),
             position: *position,
             timing: *timing,
@@ -243,6 +243,6 @@ mod tests {
     #[test]
     fn preserves_clip_engine_module_names() {
         assert_eq!(ClipCommand::COMMAND_MODULE, "ClipCommand");
-        assert_eq!(ClipAction::COMMAND_MODULE, "ClipAction");
+        assert_eq!(ClipOperation::COMMAND_MODULE, "ClipOperation");
     }
 }

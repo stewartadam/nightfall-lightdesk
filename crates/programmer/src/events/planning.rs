@@ -88,14 +88,14 @@ pub(super) fn selection_flatten_approval_issue_error() -> CommandError {
 
 /// Returns whether any member of a complete plan requires selection-flatten approval.
 fn plan_requires_selection_flatten_confirmation(
-    planned_actions: &[DynEngineAction],
+    planned_actions: &[DynEngineOperation],
     programmer: &Programmer,
     selection_resolver: &SelectionResolver,
     spatial_selection_resolver: &SpatialSelectionResolver,
     fixture_data: &FixtureDataProviderExt,
 ) -> bool {
     planned_actions.iter().any(|planned| {
-        let Some(action) = planned.as_any().downcast_ref::<ProgrammerAction>() else {
+        let Some(action) = planned.as_any().downcast_ref::<ProgrammerOperation>() else {
             return false;
         };
         programmer_action_requires_selection_flatten_confirmation(
@@ -110,20 +110,20 @@ fn plan_requires_selection_flatten_confirmation(
 
 /// Returns whether one programmer action requires approval against current runtime state.
 pub(super) fn programmer_action_requires_selection_flatten_confirmation(
-    action: &ProgrammerAction,
+    action: &ProgrammerOperation,
     programmer: &Programmer,
     selection_resolver: &SelectionResolver,
     spatial_selection_resolver: &SpatialSelectionResolver,
     fixture_data: &FixtureDataProviderExt,
 ) -> bool {
     let (scope, allow_selection_flatten) = match action {
-        ProgrammerAction::ClearSelection => return false,
-        ProgrammerAction::ClearValues {
+        ProgrammerOperation::ClearSelection => return false,
+        ProgrammerOperation::ClearValues {
             scope,
             allow_selection_flatten,
             ..
         }
-        | ProgrammerAction::ReleaseValues {
+        | ProgrammerOperation::ReleaseValues {
             scope,
             allow_selection_flatten,
             ..
@@ -142,13 +142,13 @@ pub(super) fn programmer_action_requires_selection_flatten_confirmation(
         )
 }
 
-/// Translates pending `UserCommand` intents into domain-owned engine actions.
+/// Translates pending `UserCommand` intents into domain-owned engine operations.
 ///
 /// This runs before undo capture and dispatch, keeping pending buffers focused
 /// on command intent while runtime behavior executes through action payloads.
 pub fn plan_pending_user_commands(
     mut pending_buffer: ResMut<PendingCommandBuffer>,
-    mut pending_actions: ResMut<PendingEngineActionBuffer>,
+    mut pending_actions: ResMut<PendingEngineOperationBuffer>,
     programmer: Res<Programmer>,
     settings: Res<DeskSettings>,
     selection_resolver: SelectionResolver,
@@ -159,10 +159,13 @@ pub fn plan_pending_user_commands(
     mut responder: CommandResponder,
 ) {
     /// Applies the immediate selection effect of one planned action to later planning context.
-    fn update_context_from_action(context: &mut ProgrammerPlanContext, action: &dyn EngineAction) {
+    fn update_context_from_action(
+        context: &mut ProgrammerPlanContext,
+        action: &dyn EngineOperation,
+    ) {
         if matches!(
-            action.as_any().downcast_ref::<ProgrammerAction>(),
-            Some(ProgrammerAction::ClearSelection)
+            action.as_any().downcast_ref::<ProgrammerOperation>(),
+            Some(ProgrammerOperation::ClearSelection)
         ) {
             context.active_selection_is_empty = true;
         }
@@ -302,16 +305,18 @@ pub fn plan_pending_user_commands(
         for action in &planned_actions {
             update_context_from_action(&mut context, action.as_ref());
         }
-        if planned_actions
-            .iter()
-            .any(|action| action.as_any().downcast_ref::<ProgrammerAction>().is_some())
-        {
+        if planned_actions.iter().any(|action| {
+            action
+                .as_any()
+                .downcast_ref::<ProgrammerOperation>()
+                .is_some()
+        }) {
             pending_plans
                 .commands
                 .insert(pending.command_id, user_command);
         }
         for action in planned_actions {
-            pending_actions.push(DynEngineActionEnvelope::for_command(
+            pending_actions.push(DynEngineOperationEnvelope::for_command(
                 pending.command_id,
                 pending.undo_id,
                 action,

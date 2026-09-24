@@ -17,8 +17,8 @@ use nightfall_cues::prelude::{
 };
 use nightfall_cues::websocket::{CueDefinitionChange, SequenceDefinitionChange};
 use nightfall_engine::prelude::{
-    CommandId, CommandOrigin, CommandOutcome, CommandTracker, DataProvider, EngineActionEnvelope,
-    FinishedCommand, OperationId, OperationResult, ReplyTarget, UndoId,
+    CommandId, CommandOrigin, CommandOutcome, CommandTracker, DataProvider,
+    EngineOperationEnvelope, FinishedCommand, OperationId, OperationResult, ReplyTarget, UndoId,
 };
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_undo::prelude::UndoManager;
@@ -34,7 +34,7 @@ fn setup_app() -> App {
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<UndoManager>();
     app.init_resource::<CommandTracker>();
-    app.add_message::<EngineActionEnvelope<CueStoreOperation>>();
+    app.add_message::<EngineOperationEnvelope<CueStoreOperation>>();
     app.add_message::<OperationResult<CueStoreSuccess, CueStoreError>>();
     app.add_message::<FinishedCommand>();
     app.add_message::<CueDefinitionChange>();
@@ -80,11 +80,11 @@ fn write_operation_with_context(
             ReplyTarget::ClientBroadcast,
         )
         .unwrap();
-    app.world_mut().write_message(EngineActionEnvelope {
+    app.world_mut().write_message(EngineOperationEnvelope {
         operation_id,
         command_id: Some(command_id),
         undo_id: Some(undo_id),
-        action,
+        operation: action,
     });
     (operation_id, command_id, undo_id)
 }

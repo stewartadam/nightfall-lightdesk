@@ -73,7 +73,7 @@ pub mod prelude {
 
     pub use crate::EnginePlugin;
     pub use crate::blueprint::{
-        BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
+        BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation, BlueprintReferenceIndex,
     };
     pub use crate::client_bridge::{
         Audience, ClientBridgeHost, ClientBridgePlugin, ClientEventSink, ClientPresenceSender,
@@ -89,7 +89,7 @@ pub mod prelude {
     };
     pub use crate::command_traits::CliCommand;
     pub use crate::data_provider::{DataProvider, DataStoreError};
-    pub use crate::eval_action::EvalAction;
+    pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
     pub use crate::parse_command_string;
     #[cfg(not(target_arch = "wasm32"))]
@@ -101,16 +101,16 @@ pub mod prelude {
         request_process_shutdown, subscribe_process_shutdown,
     };
     pub use crate::protocol::client::EngineClientMessage;
-    pub use crate::protocol::dispatch::{CommandIngressRouter, EngineActionRouter};
+    pub use crate::protocol::dispatch::{CommandIngressRouter, EngineOperationRouter};
     pub use crate::protocol::dispatch_ast::{AstConvert, DispatchError};
     pub use crate::protocol::engine_command::{
-        ClientId, CommandEnvelope, CommandId, CommandOrigin, EngineAction, EngineActionEnvelope,
-        EngineIngressMeta, EnginePayload, EventEnvelope, IngressCommand, NotificationEnvelope,
-        OperationId, OperationResult, ReplyTarget, RequestEnvelope, UndoId,
+        ClientId, CommandEnvelope, CommandId, CommandOrigin, EngineIngressMeta, EngineOperation,
+        EngineOperationEnvelope, EnginePayload, EventEnvelope, IngressCommand,
+        NotificationEnvelope, OperationId, OperationResult, ReplyTarget, RequestEnvelope, UndoId,
     };
     pub use crate::protocol::erased::{
-        DelayedCommandQueue, DynEngineAction, DynEngineActionEnvelope, DynEnginePayload,
-        PayloadEnvelope, PendingCommandBuffer, PendingEngineActionBuffer,
+        DelayedCommandQueue, DynEngineOperation, DynEngineOperationEnvelope, DynEnginePayload,
+        PayloadEnvelope, PendingCommandBuffer, PendingEngineOperationBuffer,
     };
     pub use crate::protocol::results::{
         CommandError, CommandNotice, CommandOutcome, CommandOutput, CommandResult, NoticeLevel,
@@ -129,7 +129,7 @@ pub mod prelude {
         DeskEventSet, DmxOutput, EventHandling, InputHandling, LayerGeneration, ResyncHandling,
         StartupFrameCounter, VdimProcessing,
     };
-    pub use crate::{EngineCommand, ResyncRequested, register_engine_action};
+    pub use crate::{EngineCommand, ResyncRequested, register_engine_operation};
 }
 
 /// Plugin for fixtures
@@ -169,7 +169,7 @@ impl Plugin for EnginePlugin {
         app.init_resource::<UpdateDeserializerRegistry>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<CommandIngressRouter>();
-        app.init_resource::<EngineActionRouter>();
+        app.init_resource::<EngineOperationRouter>();
         app.add_message::<CommandResult>();
         app.add_message::<command_lifecycle::CommandReply>();
         app.add_message::<command_lifecycle::FinishedCommand>();
@@ -284,10 +284,10 @@ pub fn register_ingress_command<T: IngressCommand + Clone>(app: &mut App) {
 }
 
 /// Registers a domain-owned engine action for erased queue and typed message dispatch.
-pub fn register_engine_action<T: EngineAction + Clone>(app: &mut App) {
-    app.add_message::<EngineActionEnvelope<T>>();
+pub fn register_engine_operation<T: EngineOperation + Clone>(app: &mut App) {
+    app.add_message::<EngineOperationEnvelope<T>>();
     app.world_mut()
-        .resource_mut::<EngineActionRouter>()
+        .resource_mut::<EngineOperationRouter>()
         .register::<T>();
 }
 

@@ -17,13 +17,13 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
-    CommandTracker, EngineActionEnvelope, FinishedCommand, ReplyTarget,
+    CommandTracker, EngineOperationEnvelope, FinishedCommand, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
-use nightfall_fixtures::DmxAction;
+use nightfall_fixtures::DmxOperation;
 use nightfall_fixtures::prelude::*;
-use nightfall_instances::PlaybackAction;
-use nightfall_undo::prelude::{UndoContext, UndoableOperation};
+use nightfall_instances::PlaybackOperation;
+use nightfall_undo::prelude::{UndoContext, Undoable};
 
 /// Universe holding the patched test parameter.
 const PATCHED_UNIVERSE: u16 = 5;
@@ -45,8 +45,8 @@ fn setup_app() -> App {
     app.add_message::<FinishedCommand>();
     app.add_message::<CommandNoticeReply>();
     app.add_message::<CommandEnvelope<FixtureCommand>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
-    app.add_message::<EngineActionEnvelope<DmxAction>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
+    app.add_message::<EngineOperationEnvelope<DmxOperation>>();
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(ConsoleDmxUniverses::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
@@ -155,21 +155,21 @@ fn set_channel(app: &mut App, universe: u16, address: u16, value: ChannelDmxValu
 }
 
 /// Dispatches one DMX action as the planner or undo replay would, then runs one frame.
-fn dispatch_dmx_action(app: &mut App, action: DmxAction) {
+fn dispatch_dmx_action(app: &mut App, action: DmxOperation) {
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(action));
+        .write_message(EngineOperationEnvelope::detached(action));
     app.update();
 }
 
 /// Captures the undo inverse of a DMX action against the current world, as the undo dispatcher does.
-fn capture_inverse(app: &App, action: &DmxAction) -> DmxAction {
+fn capture_inverse(app: &App, action: &DmxOperation) -> DmxOperation {
     let ctx = UndoContext { world: app.world() };
     let inverse = action
         .inverse(&ctx)
         .expect("releasing a manual channel should be undoable");
     inverse
         .as_any()
-        .downcast_ref::<DmxAction>()
+        .downcast_ref::<DmxOperation>()
         .expect("DMX release inverse should replay as a DMX action")
         .clone()
 }
@@ -190,7 +190,7 @@ fn release_channel_frees_unpatched_slot_ownership() {
 
     dispatch_dmx_action(
         &mut app,
-        DmxAction::ReleaseChannels {
+        DmxOperation::ReleaseChannels {
             channels: channel(UNPATCHED_UNIVERSE, 1),
         },
     );
@@ -230,7 +230,7 @@ fn release_channel_resumes_patched_fixture_output() {
 
     dispatch_dmx_action(
         &mut app,
-        DmxAction::ReleaseChannels {
+        DmxOperation::ReleaseChannels {
             channels: channel(PATCHED_UNIVERSE, PATCHED_ADDRESS),
         },
     );
@@ -253,7 +253,7 @@ fn undo_release_channel_restores_previous_manual_value() {
     let mut app = setup_app();
     set_channel(&mut app, UNPATCHED_UNIVERSE, 1, 50);
 
-    let release = DmxAction::ReleaseChannels {
+    let release = DmxOperation::ReleaseChannels {
         channels: channel(UNPATCHED_UNIVERSE, 1),
     };
     let undo = capture_inverse(&app, &release);
@@ -275,7 +275,7 @@ fn undo_release_channel_reasserts_manual_value_over_fixture() {
     set_channel(&mut app, PATCHED_UNIVERSE, PATCHED_ADDRESS, 50);
     app.update();
 
-    let release = DmxAction::ReleaseChannels {
+    let release = DmxOperation::ReleaseChannels {
         channels: channel(PATCHED_UNIVERSE, PATCHED_ADDRESS),
     };
     let undo = capture_inverse(&app, &release);
@@ -308,7 +308,7 @@ fn undo_set_channel_frees_slot_that_was_unowned() {
     set_channel(&mut app, UNPATCHED_UNIVERSE, 1, 50);
     let undo = undo
         .as_any()
-        .downcast_ref::<DmxAction>()
+        .downcast_ref::<DmxOperation>()
         .expect("manual DMX write inverse should replay as a DMX action")
         .clone();
     dispatch_dmx_action(&mut app, undo);
@@ -335,7 +335,7 @@ fn undo_set_channel_restores_previous_manual_value() {
     set_channel(&mut app, UNPATCHED_UNIVERSE, 1, 70);
     let undo = undo
         .as_any()
-        .downcast_ref::<DmxAction>()
+        .downcast_ref::<DmxOperation>()
         .expect("manual DMX write inverse should replay as a DMX action")
         .clone();
     dispatch_dmx_action(&mut app, undo);

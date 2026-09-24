@@ -51,7 +51,7 @@ use crate::placement::{PlacementPosition, PlacementRotation};
 
 /// Runtime actions owned by fixture-level DMX processing.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DmxAction {
+pub enum DmxOperation {
     /// Release manual writes on DMX channels, returning each slot to whatever else feeds it.
     ReleaseChannels {
         /// Channels to release.
@@ -73,8 +73,8 @@ pub struct ManualDmxChannelState {
     pub manual_value: Option<ChannelDmxValue>,
 }
 
-impl EnginePayload for DmxAction {}
-impl EngineAction for DmxAction {}
+impl EnginePayload for DmxOperation {}
+impl EngineOperation for DmxOperation {}
 
 /// Prelude for ergonomic imports
 pub mod prelude {
@@ -119,7 +119,7 @@ pub mod prelude {
     };
     pub use crate::wire_layout::{PlacedParameter, WireLayout};
     pub use crate::{
-        BindingEndpoint, DmxAction, FixtureCommand, FixturePlacementPositionUpdate,
+        BindingEndpoint, DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
         FixturePlacementRotationUpdate, FixturePlugin, ManualDmxChannelState,
     };
 }
@@ -131,7 +131,7 @@ impl Plugin for FixturePlugin {
         tracing::debug!("Registering FixturePlugin");
         app.add_plugins(input_apply::TransportInputPlugin);
         register_ingress_command::<FixtureCommand>(app);
-        register_engine_action::<DmxAction>(app);
+        register_engine_operation::<DmxOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FixtureAstConverter>(
         );
         register_command_deserializer::<FixtureCommand>(
@@ -167,20 +167,20 @@ impl Plugin for FixturePlugin {
         {
             let mut registry = app.world_mut().resource_mut::<UndoRegistry>();
             registry.register::<FixtureCommand>();
-            registry.register_action::<undo::RestoreFixtureSnapshot>();
-            registry.register_action::<undo::RestoreBindingSnapshot>();
-            registry.register_action::<undo::RestorePatchBindingsSnapshot>();
-            registry.register_action::<undo::RestoreOffsetSnapshot>();
-            registry.register_action::<undo::RestoreColorPathDefaultsSnapshot>();
-            registry.register_action::<DmxAction>();
+            registry.register_operation::<undo::RestoreFixtureSnapshot>();
+            registry.register_operation::<undo::RestoreBindingSnapshot>();
+            registry.register_operation::<undo::RestorePatchBindingsSnapshot>();
+            registry.register_operation::<undo::RestoreOffsetSnapshot>();
+            registry.register_operation::<undo::RestoreColorPathDefaultsSnapshot>();
+            registry.register_operation::<DmxOperation>();
         }
 
         // Register event dispatchers for undo helper commands
-        register_engine_action::<undo::RestoreFixtureSnapshot>(app);
-        register_engine_action::<undo::RestoreBindingSnapshot>(app);
-        register_engine_action::<undo::RestorePatchBindingsSnapshot>(app);
-        register_engine_action::<undo::RestoreOffsetSnapshot>(app);
-        register_engine_action::<undo::RestoreColorPathDefaultsSnapshot>(app);
+        register_engine_operation::<undo::RestoreFixtureSnapshot>(app);
+        register_engine_operation::<undo::RestoreBindingSnapshot>(app);
+        register_engine_operation::<undo::RestorePatchBindingsSnapshot>(app);
+        register_engine_operation::<undo::RestoreOffsetSnapshot>(app);
+        register_engine_operation::<undo::RestoreColorPathDefaultsSnapshot>(app);
 
         app.add_systems(
             Update,

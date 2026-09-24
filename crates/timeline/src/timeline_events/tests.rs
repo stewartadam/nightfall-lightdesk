@@ -19,13 +19,13 @@ use crate::components::{MaterializedTimeline, SpawnedEntityType};
 use crate::recording::TimelineCommandOrigins;
 
 #[derive(Resource, Default)]
-struct ObservedTimelineActions(Vec<TimelineAction>);
+struct ObservedTimelineActions(Vec<TimelineOperation>);
 
 /// Builds a focused app for testing direct timeline command completion.
 fn timeline_runtime_command_app() -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
-    app.add_message::<EngineActionEnvelope<TimelineAction>>();
+    app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
@@ -111,12 +111,12 @@ fn timecode_command(command: TimecodeCommand) -> TimecodeEvent {
 
 /// Records timeline actions emitted during a test schedule.
 fn record_timeline_actions(
-    mut events: MessageReader<EngineActionEnvelope<TimelineAction>>,
+    mut events: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
     mut observed: ResMut<ObservedTimelineActions>,
 ) {
     observed
         .0
-        .extend(events.read().map(|event| event.action.clone()));
+        .extend(events.read().map(|event| event.operation.clone()));
 }
 
 /// Verifies persisted beatgrid tempos keep useful detector precision.
@@ -542,8 +542,8 @@ fn delete_timecode_stops_associated_timelines() {
     let mut app = App::new();
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
-    app.add_message::<EngineActionEnvelope<TimelineAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
@@ -612,19 +612,19 @@ fn delete_timecode_stops_associated_timelines() {
     assert!(
         observed
             .iter()
-            .any(|action| matches!(action, TimelineAction::Stop(101))),
+            .any(|action| matches!(action, TimelineOperation::Stop(101))),
         "deleting the timecode should issue a stop action for the follow-timecode timeline"
     );
     assert!(
         observed
             .iter()
-            .any(|action| matches!(action, TimelineAction::Stop(102))),
+            .any(|action| matches!(action, TimelineOperation::Stop(102))),
         "deleting the timecode should issue a stop action for the manual timeline using that timecode"
     );
     assert!(
         observed
             .iter()
-            .all(|action| !matches!(action, TimelineAction::Stop(103))),
+            .all(|action| !matches!(action, TimelineOperation::Stop(103))),
         "deleting the timecode should not stop timelines using a different timecode"
     );
 
@@ -665,7 +665,7 @@ fn run_release_timeline_owned_entities(
     mut commands: Commands,
     clip_query: Query<&Clip>,
     mut instance_clocks: Query<(Option<&mut InstanceClock>, Option<&mut InstanceControls>)>,
-    mut ev_clip: MessageWriter<EngineActionEnvelope<ClipAction>>,
+    mut ev_clip: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     mut timeline_command_origins: ResMut<TimelineCommandOrigins>,
     timelines: Query<&MaterializedTimeline>,
 ) {
@@ -684,7 +684,7 @@ fn run_release_timeline_owned_entities(
 /// Creates an app with the resources needed to release timeline-owned entities.
 fn release_test_app() -> App {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.init_resource::<TimelineCommandOrigins>();
     app
 }
@@ -771,13 +771,13 @@ fn delete_timeline_stops_owned_clip_instances() {
 
     let events = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
-        .map(|event| event.action)
+        .map(|event| event.operation)
         .collect::<Vec<_>>();
     assert!(matches!(
         events.as_slice(),
-        [ClipAction::Stop(IdExpr::Single(77))]
+        [ClipOperation::Stop(IdExpr::Single(77))]
     ));
 }
 

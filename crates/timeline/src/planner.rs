@@ -17,7 +17,7 @@ use nightfall_playback_planner::{
     PlannedPlaybackInterventionKind, PlannedPlaybackLifecycle, PlannedPlaybackRateChange,
     PlannedPlaybackSource, PlannedReleaseInterval, PlannedTimelineEvent, PlannedTimelineEventKind,
     PlaybackDurationProfile, PlaybackExtent, TimelinePlan, TimelinePlannerDiagnostic,
-    TimelinePlannerDiagnosticSeverity, TimelinePlaybackActionOperation, TimelinePlaybackActionPlan,
+    TimelinePlannerDiagnosticSeverity, TimelinePlaybackActionKind, TimelinePlaybackActionPlan,
     TimelinePlaybackOwner,
 };
 use uuid::Uuid;
@@ -242,7 +242,7 @@ fn plan_registered_action(
 
     let owner_uid = capability.owner_uid;
     match capability.operation {
-        TimelinePlaybackActionOperation::Start => {
+        TimelinePlaybackActionKind::Start => {
             let Some(source) = resolver.clip_source(owner_uid) else {
                 push_unresolved_source(plan, owner, "registered-action-start");
                 return;
@@ -265,7 +265,7 @@ fn plan_registered_action(
             );
             active_by_owner_uid.insert(owner_uid, interval_index);
         }
-        TimelinePlaybackActionOperation::Stop => {
+        TimelinePlaybackActionKind::Stop => {
             let Some(source) = resolver.clip_source(owner_uid) else {
                 push_unresolved_source(plan, owner, "registered-action-stop");
                 return;
@@ -281,7 +281,7 @@ fn plan_registered_action(
             };
             release_interval_at(plan, interval_index, owner, timeline_position, resolver);
         }
-        TimelinePlaybackActionOperation::Intervene(kind) => push_intervention(
+        TimelinePlaybackActionKind::Intervene(kind) => push_intervention(
             plan,
             active_by_owner_uid,
             owner_uid,
@@ -681,7 +681,7 @@ mod tests {
             |arguments| {
                 Ok(TimelinePlaybackActionPlan {
                     owner_uid: arguments.owner_uid,
-                    operation: TimelinePlaybackActionOperation::Start,
+                    operation: TimelinePlaybackActionKind::Start,
                 })
             },
         );

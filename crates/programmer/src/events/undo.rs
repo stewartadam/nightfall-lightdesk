@@ -12,10 +12,10 @@ use super::*;
 
 /// Handles programmer undo-related events
 pub fn handle_undo_events(
-    mut events_reader: MessageReader<EngineActionEnvelope<crate::undo::RestoreProgrammerState>>,
+    mut events_reader: MessageReader<EngineOperationEnvelope<crate::undo::RestoreProgrammerState>>,
     mut operation_results: MessageReader<OperationResult<(), CommandError>>,
     mut programmer: ResMut<Programmer>,
-    mut cue_lifecycle_actions: MessageWriter<EngineActionEnvelope<CueLifecycleAction>>,
+    mut cue_lifecycle_actions: MessageWriter<EngineOperationEnvelope<CueLifecycleOperation>>,
     mut responder: CommandResponder,
     mut pending_cue_releases: Local<HashMap<OperationId, CommandId>>,
 ) {
@@ -49,11 +49,11 @@ pub fn handle_undo_events(
             .collect::<Vec<_>>();
         let release_pending = !uids.is_empty();
         if release_pending {
-            let envelope = EngineActionEnvelope::with_context(
+            let envelope = EngineOperationEnvelope::with_context(
                 OperationId::new(),
                 event.command_id,
                 event.undo_id,
-                CueLifecycleAction::ReleaseCueInstances { uids },
+                CueLifecycleOperation::ReleaseCueInstances { uids },
             );
             if let Some(command_id) = event.command_id {
                 pending_cue_releases.insert(envelope.operation_id, command_id);
@@ -66,24 +66,25 @@ pub fn handle_undo_events(
         programmer.blind_instructions.clear();
 
         // Restore live instructions
-        for (uuid, instruction) in &event.action.live_instructions {
+        for (uuid, instruction) in &event.operation.live_instructions {
             programmer
                 .live_instructions
                 .insert(*uuid, instruction.clone());
         }
 
         // Restore blind instructions
-        for (uuid, instruction) in &event.action.blind_instructions {
+        for (uuid, instruction) in &event.operation.blind_instructions {
             programmer
                 .blind_instructions
                 .insert(*uuid, instruction.clone());
         }
 
         // Restore mode directly (no UI update needed for mode)
-        programmer.mode = event.action.mode;
-        programmer.set_active_spatial_selection(event.action.active_selection.clone());
-        programmer.recalled_cue_timing_defaults = event.action.recalled_cue_timing_defaults.clone();
-        programmer.transition_anchor_aliases = event.action.transition_anchor_aliases.clone();
+        programmer.mode = event.operation.mode;
+        programmer.set_active_spatial_selection(event.operation.active_selection.clone());
+        programmer.recalled_cue_timing_defaults =
+            event.operation.recalled_cue_timing_defaults.clone();
+        programmer.transition_anchor_aliases = event.operation.transition_anchor_aliases.clone();
         if !release_pending
             && let Some(command_id) = event.command_id
             && let Err(error) = responder.succeed(command_id)

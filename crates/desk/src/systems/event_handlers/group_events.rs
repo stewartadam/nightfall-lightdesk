@@ -12,7 +12,7 @@ use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
-use nightfall_undo::prelude::{UndoEntry, UndoManager, UndoableOperation};
+use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 
 use crate::object_crud::apply_object_crud_command;
 use crate::prelude::*;
@@ -28,16 +28,16 @@ fn stabilized_group(group: &Group, resolver: &SpatialSelectionResolver) -> Group
     group
 }
 
-/// Handles GroupAction runtime operations.
+/// Handles GroupOperation runtime operations.
 pub fn action_events(
-    mut actions_reader: MessageReader<EngineActionEnvelope<GroupAction>>,
+    mut actions_reader: MessageReader<EngineOperationEnvelope<GroupOperation>>,
     mut group_storage: ParamSet<(SpatialSelectionResolver, ResMut<DataProvider<Group>>)>,
     mut undo_manager: ResMut<UndoManager>,
     mut results: MessageWriter<OperationResult<(), CommandError>>,
 ) {
     for event in actions_reader.read() {
-        let result = match &event.action {
-            GroupAction::StoreGroup(group) => {
+        let result = match &event.operation {
+            GroupOperation::StoreGroup(group) => {
                 let group = {
                     let resolver = group_storage.p0();
                     stabilized_group(group, &resolver)
@@ -53,7 +53,7 @@ pub fn action_events(
                         if let Some(undo_id) = event.undo_id {
                             undo_manager.push(
                                 UndoEntry {
-                                    command: Box::new(inverse) as Box<dyn UndoableOperation>,
+                                    command: Box::new(inverse) as Box<dyn Undoable>,
                                     description: format!("Store Group {}", group.identifiers.id),
                                     command_id: event.command_id,
                                 },
