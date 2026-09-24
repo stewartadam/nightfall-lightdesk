@@ -248,7 +248,10 @@ impl FixtureLibraryManager {
         if !matches!(profile.source, FixtureSource::BuiltIn { .. }) {
             fixture.library_asset_etag = Some(profile.revision.clone());
         }
-        Ok((fixture, geometry))
+        Ok((
+            fixture,
+            geometry.map(|geometry| with_revision(geometry, profile)),
+        ))
     }
 
     /// Converts one mode of a profile into a fixture and optional geometry.
@@ -319,7 +322,7 @@ impl FixtureLibraryManager {
                 available = profile.revision,
                 "Using a structurally identical library revision for fixture geometry"
             );
-            geometry
+            geometry.map(|geometry| with_revision(geometry, profile))
         } else {
             tracing::warn!(
                 make,
@@ -337,7 +340,9 @@ impl FixtureLibraryManager {
     fn profile_geometry(profile: &FixtureProfile, mode: &str) -> Option<FixtureGeometry> {
         match &profile.source {
             FixtureSource::Gdtf(metadata) => {
-                crate::converters::gdtf::get_gdtf_geometry(metadata, mode).ok()
+                crate::converters::gdtf::get_gdtf_geometry(metadata, mode)
+                    .ok()
+                    .map(|geometry| with_revision(geometry, profile))
             }
             FixtureSource::Ofl(_) => None, // OFL doesn't have geometry
             FixtureSource::BuiltIn { .. } => None,
@@ -639,4 +644,10 @@ mod revision_tests {
         let remaining = manager.find_fixture("Rev Test", "Fixture").unwrap();
         assert_ne!(remaining.revision, default);
     }
+}
+
+/// Tags geometry with the profile revision it was built from, versioning its resource URLs.
+fn with_revision(mut geometry: FixtureGeometry, profile: &FixtureProfile) -> FixtureGeometry {
+    geometry.gdtf_revision = Some(profile.revision.clone());
+    geometry
 }

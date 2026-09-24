@@ -106,7 +106,11 @@ export class BeamUpdater {
             frost: beamColor.frost,
             goboUrl:
               goboMedia && gdtfPath
-                ? gdtfWheelMediaUrl(gdtfPath, goboMedia)
+                ? gdtfWheelMediaUrl(
+                    gdtfPath,
+                    goboMedia,
+                    instance.geometry?.gdtfRevision,
+                  )
                 : undefined,
           });
         }
