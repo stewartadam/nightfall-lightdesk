@@ -23,3 +23,7 @@ export {
   useActionTargetNames,
   useActionTargetOptions,
 } from "./model/action-target-names";
+export {
+  uiActionCatalogEntries,
+  useBindableActionCatalog,
+} from "./model/ui-action-catalog";

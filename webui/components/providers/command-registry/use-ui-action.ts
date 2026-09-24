@@ -10,7 +10,7 @@ import { createEffect, onCleanup, untrack } from "solid-js";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
-import { type CommandAction, getCommandShortcutKeys } from "./command-types";
+import { getCommandShortcutKeys, type UiAction } from "./command-types";
 import { useCommandPalette } from "./context";
 
 const log = getLogger(import.meta.url);
@@ -18,15 +18,15 @@ const log = getLogger(import.meta.url);
 /**
  * Registers a palette command and its optional global shortcut for this component.
  */
-export function useCommand(command: CommandAction) {
+export function useUiAction(command: UiAction) {
   const workspaceActive = useWorkspaceActivity();
   log.trace("mounting");
-  const { registerCommand } = useCommandPalette();
+  const { registerAction } = useCommandPalette();
 
   // Keep palette registration scoped to this component's reactive lifetime.
   createEffect(() => {
     if (!workspaceActive()) return;
-    const unregister = untrack(() => registerCommand(command));
+    const unregister = untrack(() => registerAction(command));
 
     const shortcutKeys = getCommandShortcutKeys(command);
 

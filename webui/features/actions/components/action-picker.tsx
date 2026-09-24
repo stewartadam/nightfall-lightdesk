@@ -16,6 +16,7 @@ import {
   on,
   Show,
 } from "solid-js";
+import { $uiActions as uiActionsStore } from "../../../components/providers/command-registry";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { actionCatalog } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -30,6 +31,7 @@ import {
   type ActionTargetOption,
   useActionTargetOptions,
 } from "../model/action-target-names";
+import { uiActionCatalogEntries } from "../model/ui-action-catalog";
 
 export interface ActionPickerProps {
   /** Currently bound action, used to seed the picker. */
@@ -45,6 +47,8 @@ export interface ActionPickerProps {
   onIncomplete?: () => void;
   /** Accessible label for the action selector. */
   label?: string;
+  /** Also offers client-hosted `ui.*` actions registered in this client. */
+  includeUiActions?: boolean;
 }
 
 /**
@@ -53,7 +57,14 @@ export interface ActionPickerProps {
  * Emits only complete references, so callers can persist every change directly.
  */
 export function ActionPicker(props: ActionPickerProps): JSX.Element {
-  const $catalog = useStore(actionCatalog);
+  const $backendCatalog = useStore(actionCatalog);
+  const $uiActions = useStore(uiActionsStore);
+  /** Returns the backend catalog, plus this client's UI actions when requested. */
+  const $catalog = createMemo(() =>
+    props.includeUiActions
+      ? [...$backendCatalog(), ...uiActionCatalogEntries($uiActions())]
+      : $backendCatalog(),
+  );
   const targets = useActionTargetOptions();
   const [actionId, setActionId] = createSignal(props.value?.id ?? "");
   const [draft, setDraft] = createSignal<Record<string, unknown>>({

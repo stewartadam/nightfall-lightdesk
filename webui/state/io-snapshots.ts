@@ -14,6 +14,7 @@ import { setStoreAction } from "../lib/nanostore-action";
 import type * as types from "../types";
 import {
   actionCatalog,
+  clientActionInvocation,
   midiDevices,
   midiLastEvent,
   midiMappings,
@@ -124,6 +125,17 @@ export function applyMidiLastEventSnapshot(
   event: types.MidiLastEvent | null,
 ): void {
   setStoreAction(midiLastEvent, "Receive MidiLastEvent", event);
+}
+
+/** Publishes one forwarded client action invocation to local listeners. */
+export function applyClientActionInvocation(
+  invocation: types.ClientActionInvocation,
+): void {
+  setStoreAction(
+    clientActionInvocation,
+    "Receive ClientActionInvocation",
+    invocation,
+  );
 }
 
 /** Applies the backend action catalog used by mapping and binding pickers. */

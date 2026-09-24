@@ -9,14 +9,14 @@
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { onMount } from "solid-js";
 import { useAppShell } from "../../../providers/app-shell";
-import { useCommand } from "../../../providers/command-registry";
+import { useUiAction } from "../../../providers/command-registry";
 
 /** Makes showfile export discoverable through the command palette in desktop and browser runtimes. */
 export default function ExportShowfileCommand() {
   const { showShowfileExportModal } = useAppShell();
   /** Registers the shared export dialog as a searchable command. */
   onMount(() => {
-    useCommand({
+    useUiAction({
       id: "showfile.export",
       name: "Export Showfile",
       description: "Export a copy of the current show with selected references",

@@ -12,4 +12,5 @@ export {
   MappingModeController,
   MappingModeToggle,
 } from "./components/mapping-mode-controller";
+export { bindArmedSource } from "./model/mapping-bind";
 export { $mappingMode } from "./model/mapping-mode";

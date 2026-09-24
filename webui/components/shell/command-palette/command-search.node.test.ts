@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CommandAction } from "../../providers/command-registry";
+import type { UiAction } from "../../providers/command-registry";
 import {
   groupCommandPaletteCommands,
   rankCommandPaletteCommands,
@@ -20,7 +20,7 @@ function command(
   name: string,
   description?: string,
   category = "Panels",
-): CommandAction {
+): UiAction {
   return {
     id,
     name,
@@ -31,10 +31,7 @@ function command(
 }
 
 /** Returns command ids after ranking the supplied commands by query. */
-function rankedIds(
-  commands: readonly CommandAction[],
-  query: string,
-): string[] {
+function rankedIds(commands: readonly UiAction[], query: string): string[] {
   return rankCommandPaletteCommands(commands, query).map(({ id }) => id);
 }
 
