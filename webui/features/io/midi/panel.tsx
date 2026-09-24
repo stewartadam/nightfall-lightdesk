@@ -38,8 +38,6 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
-import { engineRuntime } from "../../../lib/engine-runtime";
-import { setStoreAction } from "../../../lib/nanostore-action";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   actionCatalog,
@@ -57,8 +55,17 @@ import {
   formatActionReference,
   useActionTargetNames,
 } from "../../actions";
+import {
+  deleteMidiMapping,
+  midiMappingFromEvent,
+  midiSourceLabel,
+  midiSourceNumber,
+  upsertMidiMapping,
+  withMidiChannel,
+  withMidiNumber,
+} from "../model/controller-mappings";
 
-/** Input kinds a MIDI message can drive: notes as buttons, controllers as faders. */
+/** Input kinds a MIDI control can drive: notes as buttons, controllers as faders or buttons. */
 const MIDI_INPUT_KINDS = [
   ActionInputKind.Trigger,
   ActionInputKind.Momentary,
@@ -81,51 +88,42 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
     ...alwaysVisibleColumnMeta("Identity", "Device"),
   },
   {
+    title: "Control",
+    id: "control",
+    width: 130,
+    filter: { value: (row) => midiSourceLabel(row.mapping.source) },
+    ...columnVisibilityMeta("Binding", "Control"),
+  },
+  {
     title: "Channel",
     id: "channel",
     width: 80,
-    filter: { kind: "number", value: (row) => row.mapping.channel },
+    filter: {
+      kind: "number",
+      value: (row) => row.mapping.source.data.channel + 1,
+    },
     ...columnVisibilityMeta("Binding", "Channel"),
   },
   {
-    title: "Note",
-    id: "note",
+    title: "Number",
+    id: "number",
     width: 80,
-    filter: { kind: "number", value: (row) => row.mapping.note },
-    ...columnVisibilityMeta("Binding", "Note"),
-  },
-  {
-    title: "Velocity",
-    id: "velocity",
-    width: 80,
-    filter: { kind: "number", value: (row) => row.mapping.velocity },
-    ...columnVisibilityMeta("Binding", "Velocity"),
+    filter: {
+      kind: "number",
+      value: (row) => midiSourceNumber(row.mapping.source),
+    },
+    ...columnVisibilityMeta("Binding", "Number"),
   },
   {
     title: "Action",
     id: "action",
-    width: 200,
+    width: 240,
     filter: { value: (row) => row.mapping.action.id },
     ...columnVisibilityMeta("Binding", "Action"),
   },
 ];
 
-/** Deep clone a mapping to ensure it's a plain object that can be sent via postMessage */
-function cloneMapping(m: MidiMapping): MidiMapping {
-  return {
-    device_name: m.device_name,
-    channel: m.channel,
-    note: m.note,
-    velocity: m.velocity,
-    action: cloneAction(m.action),
-  };
-}
-
-/** Deep clones an action reference into a plain object that can be posted to the worker. */
-function cloneAction(action: ActionReference): ActionReference {
-  return JSON.parse(JSON.stringify(action)) as ActionReference;
-}
-
+/** Renders MIDI devices, the last received message, and editable controller mappings. */
 export default function MidiInputPanel(props: MidiInputPanelProps) {
   const $midiDevices = useStore(midiDevices);
   const $midiMappings = useStore(midiMappings);
@@ -137,7 +135,6 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   >();
   const panelId = props.id;
 
-  // Row selection state using shared helpers
   const [selection, setSelection] = createSignal<GridSelection>(
     emptyGridSelection(),
   );
@@ -156,6 +153,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   const selectedRows = (): number[] =>
     getEditTargetRowIndices(selection(), displayRows().length);
 
+  /** Clears both the tracked row selection and the grid's visible selection. */
   const clearGridSelection = () => {
     clearSelection();
     setGridSelection(emptyGridSelection());
@@ -175,51 +173,63 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     createKeyedDataGridCellProvider({
       rows: displayRows(),
       columns: displayColumns(),
-      rowKey: (row) => row.index,
+      rowKey: (row) => row.mapping.id,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row, column }): GridCell => {
-        const rowData = row.mapping;
-        const colId = column.id;
-        switch (colId) {
+        const mapping = row.mapping;
+        switch (column.id) {
           case "device_name":
             return {
               kind: GridCellKind.Text,
               allowOverlay: true,
-              displayData: rowData.device_name,
-              data: rowData.device_name,
+              displayData: mapping.device_name,
+              data: mapping.device_name,
             };
+          case "control": {
+            const label = midiSourceLabel(mapping.source);
+            return {
+              kind: GridCellKind.Text,
+              allowOverlay: false,
+              readonly: true,
+              displayData: label,
+              data: label,
+            };
+          }
           case "channel":
             return {
               kind: GridCellKind.Number,
-              data: rowData.channel,
-              displayData: String(rowData.channel),
+              data: mapping.source.data.channel + 1,
+              displayData: String(mapping.source.data.channel + 1),
               allowOverlay: true,
             };
-          case "note":
+          case "number": {
+            const value = midiSourceNumber(mapping.source);
+            if (value === undefined) {
+              return {
+                kind: GridCellKind.Text,
+                data: "",
+                displayData: "",
+                allowOverlay: false,
+                readonly: true,
+              };
+            }
             return {
               kind: GridCellKind.Number,
-              data: rowData.note,
-              displayData: String(rowData.note),
+              data: value,
+              displayData: String(value),
               allowOverlay: true,
             };
-          case "velocity":
-            return {
-              kind: GridCellKind.Text,
-              allowOverlay: true,
-              displayData:
-                rowData.velocity === null ? "any" : String(rowData.velocity),
-              data: rowData.velocity === null ? "" : String(rowData.velocity),
-            };
+          }
           case "action": {
-            const actionStr = formatActionReference(
-              rowData.action,
+            const label = formatActionReference(
+              mapping.action,
               $actionCatalog(),
               targetNames,
             );
             return {
               kind: GridCellKind.Text,
-              data: actionStr,
-              displayData: actionStr,
+              data: label,
+              displayData: label,
               allowOverlay: false,
               readonly: true,
             };
@@ -234,130 +244,44 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     }),
   );
 
-  /** Handle cell edits */
+  /** Applies one edited cell to every targeted mapping and upserts each result. */
   const handleCellEdited = (cell: Item, newValue: GridCell) => {
     const [col, row] = cell;
     const colId = displayColumns()[col]?.id;
-    const mappings = $midiMappings();
     const visibleRows = displayRows();
-
     if (row >= visibleRows.length) return;
 
-    // Determine which rows to edit based on selection
     const rowsToEdit = getRowsToEdit(
       gridSelection(),
       col,
       row,
       visibleRows.length,
     );
-
-    /** Extract value based on cell kind */
-    const getValue = (): string | number | undefined => {
-      if (newValue.kind === GridCellKind.Text) {
-        return newValue.data;
-      }
-      if (newValue.kind === GridCellKind.Number) {
-        return newValue.data;
-      }
-      return undefined;
-    };
-
-    const value = getValue();
-
-    // Build updated mappings array (deep clone to ensure plain objects for postMessage)
-    const currentMappings = mappings.map(cloneMapping);
-
-    // Apply edit to all target rows
     for (const targetRow of rowsToEdit) {
-      const originalIndex = visibleRows[targetRow]?.index;
-      if (originalIndex === undefined) continue;
-      const rowData = { ...currentMappings[originalIndex] };
-
-      switch (colId) {
-        case "device_name":
-          if (newValue.kind !== GridCellKind.Text) continue;
-          rowData.device_name = String(value ?? "");
-          break;
-        case "channel":
-          if (newValue.kind !== GridCellKind.Number) continue;
-          rowData.channel = Number(value ?? 144);
-          break;
-        case "note":
-          if (newValue.kind !== GridCellKind.Number) continue;
-          rowData.note = Number(value ?? 0);
-          break;
-        case "velocity": {
-          if (newValue.kind !== GridCellKind.Text) continue;
-          const val = String(value ?? "").trim();
-          rowData.velocity =
-            val === "" || val === "any" ? undefined : Number(val);
-          break;
-        }
-      }
-
-      currentMappings[originalIndex] = cloneMapping(rowData);
+      const mapping = visibleRows[targetRow]?.mapping;
+      if (!mapping) continue;
+      const edited = editedMapping(mapping, colId, newValue);
+      if (edited) void upsertMidiMapping(edited);
     }
-
-    storeMappings(currentMappings);
   };
 
-  /** Delete selected mappings */
+  /** Deletes every selected mapping by ID. */
   const deleteSelected = () => {
-    const indices = selectedRows();
-    if (indices.length === 0) return;
-
-    // Sort indices in descending order so we delete from the end first
     const visibleRows = displayRows();
-    const sortedIndices = indices
-      .map((index) => visibleRows[index]?.index)
-      .filter((index): index is number => index !== undefined)
-      .sort((a, b) => b - a);
-
-    // Build new mappings array without the selected rows
-    const currentMappings = $midiMappings().map(cloneMapping);
-    for (const idx of sortedIndices) {
-      currentMappings.splice(idx, 1);
-    }
-
+    const ids = selectedRows()
+      .map((index) => visibleRows[index]?.mapping.id)
+      .filter((id): id is string => id !== undefined);
     clearGridSelection();
-
-    // Send update to backend
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+    for (const id of ids) void deleteMidiMapping(id);
   };
 
-  /** Optimistically stores a replacement mapping list and sends it to the backend. */
-  const storeMappings = (currentMappings: MidiMapping[]) => {
-    setStoreAction(midiMappings, "Update MIDI Mappings", currentMappings);
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
-  };
-
-  /** Binds the last received MIDI message to the action chosen beside it. */
+  /** Binds the control that sent the last MIDI message to the chosen action. */
   const applyLastEvent = () => {
     const event = $midiLastEvent();
     const action = lastEventAction();
     if (!event || !action) return;
-
-    const currentMappings = $midiMappings().map(cloneMapping);
-    currentMappings.push({
-      device_name: event.device,
-      channel: event.channel,
-      note: event.note,
-      velocity: undefined,
-      action: cloneAction(action),
-    });
-    storeMappings(currentMappings);
+    const mapping = midiMappingFromEvent(event, action);
+    if (mapping) void upsertMidiMapping(mapping);
   };
 
   /** Returns the single selected mapping row, when exactly one is selected. */
@@ -367,20 +291,14 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     return displayRows()[rows[0]];
   });
 
-  /** Replaces the action of the selected mapping row. */
+  /** Replaces the action of the selected mapping. */
   const updateSelectedAction = (action: ActionReference) => {
     const row = selectedMapping();
-    if (!row) return;
-    const currentMappings = $midiMappings().map(cloneMapping);
-    const mapping = currentMappings[row.index];
-    if (!mapping) return;
-    currentMappings[row.index] = { ...mapping, action: cloneAction(action) };
-    storeMappings(currentMappings);
+    if (row) void upsertMidiMapping({ ...row.mapping, action });
   };
 
   return (
     <div class="flex flex-col h-full">
-      {/* Device List Section */}
       <div class="p-3 border-b border-gray-700">
         <h3 class="text-sm font-medium text-gray-300 mb-2">
           Connected MIDI Devices
@@ -402,39 +320,43 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           </div>
         </Show>
 
-        {/* Last Event Quick-Add */}
         <Show when={$midiLastEvent()}>
-          <div class="mt-3 p-2 bg-gray-800 rounded border border-gray-600">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="text-xs text-gray-400">
-                Last Input:{" "}
-                <span class="font-mono text-green-400">
-                  {$midiLastEvent()?.device} Ch:{$midiLastEvent()?.channel}{" "}
-                  Note:
-                  {$midiLastEvent()?.note} Vel:{$midiLastEvent()?.velocity}
-                </span>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <ActionPicker
-                  label="Action for last input"
-                  inputKinds={MIDI_INPUT_KINDS}
-                  onChange={setLastEventAction}
-                />
-                <Button
-                  size="compact"
-                  variant="primary"
-                  disabled={!lastEventAction()}
-                  onClick={applyLastEvent}
-                >
-                  Add Mapping
-                </Button>
+          {(event) => (
+            <div class="mt-3 p-2 bg-gray-800 rounded border border-gray-600">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="text-xs text-gray-400">
+                  Last Input:{" "}
+                  <span class="font-mono text-green-400">
+                    {event().device}{" "}
+                    {event().source
+                      ? midiSourceLabel(event().source!)
+                      : `Status ${event().channel}`}{" "}
+                    Value {event().velocity}
+                  </span>
+                </div>
+                <Show when={event().source}>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <ActionPicker
+                      label="Action for last input"
+                      inputKinds={MIDI_INPUT_KINDS}
+                      onChange={setLastEventAction}
+                    />
+                    <Button
+                      size="compact"
+                      variant="primary"
+                      disabled={!lastEventAction()}
+                      onClick={applyLastEvent}
+                    >
+                      Add Mapping
+                    </Button>
+                  </div>
+                </Show>
               </div>
             </div>
-          </div>
+          )}
         </Show>
       </div>
 
-      {/* Mappings Section */}
       <div class="flex-1 flex flex-col min-h-0">
         <PanelToolbar
           leftClass="min-w-0 flex-1"
@@ -443,7 +365,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-300">MIDI Mappings</h3>
               <p class="truncate text-xs text-gray-500">
-                Edit cells to configure the source. Select one mapping to change
+                Edit cells to change the control. Select one mapping to change
                 its action.
               </p>
             </div>
@@ -508,14 +430,48 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           />
         </div>
 
-        {/* Empty state */}
         <Show when={mappingRows().length === 0}>
           <div class="p-4 text-center text-gray-500 text-sm">
-            No mappings configured. Press a MIDI button, choose an action, and
+            No mappings configured. Press a MIDI control, choose an action, and
             click "Add Mapping" to create one.
           </div>
         </Show>
       </div>
     </div>
   );
+}
+
+/** Returns a mapping with one grid cell edit applied, or undefined for invalid input. */
+function editedMapping(
+  mapping: MidiMapping,
+  columnId: string | undefined,
+  value: GridCell,
+): MidiMapping | undefined {
+  switch (columnId) {
+    case "device_name":
+      return value.kind === GridCellKind.Text
+        ? { ...mapping, device_name: String(value.data ?? "") }
+        : undefined;
+    case "channel": {
+      if (value.kind !== GridCellKind.Number) return undefined;
+      const channel = Number(value.data);
+      if (!Number.isInteger(channel) || channel < 1 || channel > 16) {
+        return undefined;
+      }
+      return {
+        ...mapping,
+        source: withMidiChannel(mapping.source, channel - 1),
+      };
+    }
+    case "number": {
+      if (value.kind !== GridCellKind.Number) return undefined;
+      const number = Number(value.data);
+      if (!Number.isInteger(number) || number < 0 || number > 127) {
+        return undefined;
+      }
+      return { ...mapping, source: withMidiNumber(mapping.source, number) };
+    }
+    default:
+      return undefined;
+  }
 }

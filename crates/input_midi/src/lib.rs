@@ -17,7 +17,10 @@ use std::time::{Duration, Instant};
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use nightfall_actions::{ActionInput, ActionInvocation, ActionSurface, ActionsPlugin};
+use nightfall_actions::{
+    ActionInput, ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, SourceEdgeStates,
+    SourceSignal,
+};
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -26,7 +29,7 @@ pub mod mapping;
 mod service;
 mod websocket;
 
-use command::{MidiCommand, MidiLastEvent};
+use command::{MidiCommand, MidiLastEvent, MidiSource};
 use mapping::MidiMappings;
 use service::MidiInputEvent;
 
@@ -36,7 +39,7 @@ const MIDI_DEVICE_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::InputMidiPlugin;
-    pub use crate::command::{MidiCommand, MidiLastEvent, MidiMapping};
+    pub use crate::command::{MidiCommand, MidiLastEvent, MidiMapping, MidiSource};
     pub use crate::mapping::MidiMappings;
     pub use crate::websocket::MidiDevice;
 }
@@ -113,9 +116,16 @@ struct MidiEventReceiver(UnboundedReceiver<RawMidiEvent>);
 #[derive(Resource, Default)]
 pub struct LastMidiEvent(pub Option<MidiLastEvent>);
 
-/// Runtime MIDI observation consumed by mapping dispatch without a user-command identity.
+/// Classified MIDI control activity consumed by mapping dispatch.
 #[derive(Clone, Debug, Message)]
-struct MidiInput(MidiLastEvent);
+struct MidiInput {
+    /// Device that sent the message.
+    device: String,
+    /// Control that sent the message.
+    source: MidiSource,
+    /// Button edge or level carried by the message.
+    signal: SourceSignal,
+}
 
 /// System that polls the MIDI event channel and writes events to the ECS event stream
 fn midi_event_system(
@@ -132,17 +142,26 @@ fn midi_event_system(
             raw_event.velocity
         );
 
+        let classified =
+            MidiSource::classify(raw_event.channel, raw_event.note, raw_event.velocity);
         let midi_last_event = MidiLastEvent {
             device: raw_event.device,
             channel: raw_event.channel,
             note: raw_event.note,
             velocity: raw_event.velocity,
+            source: classified.map(|(source, _)| source),
         };
 
         // Update the last event resource for UI display
         last_event.0 = Some(midi_last_event.clone());
 
-        event_writer.write(MidiInput(midi_last_event));
+        if let Some((source, signal)) = classified {
+            event_writer.write(MidiInput {
+                device: midi_last_event.device,
+                source,
+                signal,
+            });
+        }
     }
 }
 
@@ -167,65 +186,76 @@ fn refresh_midi_devices(
     }
 }
 
-/// System that processes MIDI events and dispatches actions based on mappings
+/// System that invokes the action bound to each MIDI control that sends a message.
+///
+/// The control's raw signal is adapted to the bound action's input kind, so a note can fire
+/// a trigger and a level-reporting controller button fires once per press.
 fn handle_midi_events(
     mut events: MessageReader<MidiInput>,
     mappings: Res<MidiMappings>,
+    registry: Res<ActionRegistry>,
+    mut edges: ResMut<SourceEdgeStates>,
     mut invocations: MessageWriter<ActionInvocation>,
 ) {
     for event in events.read() {
-        let midi_event = &event.0;
-        if let Some(action) = mappings.lookup(
-            &midi_event.device,
-            midi_event.channel,
-            midi_event.note,
-            midi_event.velocity,
-        ) {
-            tracing::debug!(?midi_event, ?action, "MIDI mapping matched");
-
-            invocations.write(ActionInvocation::new(
-                action.clone(),
-                ActionSurface::Midi,
-                midi_action_input(midi_event.channel, midi_event.velocity),
-            ));
+        let Some(mapping) = mappings.lookup(&event.device, event.source) else {
+            continue;
+        };
+        tracing::debug!(?event, action = ?mapping.action, "MIDI mapping matched");
+        // Unknown actions still dispatch so the registry reports them as unregistered.
+        let input = match registry.input_kind(&mapping.action.id) {
+            Some(kind) => edges.adapt(mapping.id, kind, event.signal),
+            None => Some(ActionInput::Trigger),
+        };
+        if let Some(input) = input {
+            invocations.write(
+                ActionInvocation::new(mapping.action.clone(), ActionSurface::Midi, input)
+                    .with_source(format!("MIDI {}", event.device)),
+            );
         }
     }
 }
 
-/// Converts one MIDI message to action input: notes become button edges, others scalars.
-///
-/// Note On with non-zero velocity presses, while Note Off and zero-velocity Note On release.
-fn midi_action_input(status: u8, value: u8) -> ActionInput {
-    match status & 0xF0 {
-        0x90 if value > 0 => ActionInput::Press,
-        0x80 | 0x90 => ActionInput::Release,
-        _ => ActionInput::Scalar(f32::from(value) / 127.0),
-    }
-}
-
-/// System that handles MIDI CRUD commands (StoreMappings, DeleteMapping)
+/// System that applies MIDI mapping edits and reports their terminal outcomes.
 fn handle_midi_crud(
     mut events: MessageReader<CommandEnvelope<MidiCommand>>,
     mut mappings: ResMut<MidiMappings>,
+    registry: Res<ActionRegistry>,
+    mut edges: ResMut<SourceEdgeStates>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
         let result = match &event.command {
-            MidiCommand::StoreMappings(new_mappings) => {
-                tracing::info!("Storing {} MIDI mappings", new_mappings.len());
-                mappings.set_mappings(new_mappings.clone());
-                responder.succeed(event.command_id)
+            MidiCommand::UpsertMapping(mapping) => {
+                // Every MIDI control can drive every input kind through signal adaptation.
+                match registry.validate_binding(&mapping.action, |_| true) {
+                    Ok(()) => {
+                        edges.forget(mapping.id);
+                        let displaced = mappings.upsert(mapping.clone());
+                        for id in &displaced {
+                            edges.forget(*id);
+                        }
+                        responder.succeed_with_output(
+                            event.command_id,
+                            &serde_json::json!({ "replaced": displaced }),
+                        )
+                    }
+                    Err(error) => responder.fail(
+                        event.command_id,
+                        CommandError::new(error.code, error.message),
+                    ),
+                }
             }
-            MidiCommand::DeleteMapping(index) => {
-                if mappings.delete_mapping(*index as usize) {
-                    tracing::info!("Deleted MIDI mapping at index {}", index);
+            MidiCommand::DeleteMapping(id) => {
+                if mappings.delete(*id) {
+                    edges.forget(*id);
                     responder.succeed(event.command_id)
                 } else {
                     responder.fail(
                         event.command_id,
                         CommandError::new(
                             "midi.mapping_not_found",
-                            format!("MIDI mapping index {index} does not exist"),
+                            format!("MIDI mapping {id} does not exist"),
                         ),
                     )
                 }
@@ -242,12 +272,23 @@ mod tests {
     use bevy_ecs::message::Messages;
 
     use super::*;
+    use crate::command::MidiMapping;
 
     /// Creates a focused app containing semantic MIDI mapping CRUD.
     fn midi_command_app() -> App {
         let mut app = App::new();
         app.init_resource::<MidiMappings>();
+        app.init_resource::<SourceEdgeStates>();
         app.init_resource::<CommandTracker>();
+        app.init_resource::<ActionRegistry>();
+        app.world_mut()
+            .resource_mut::<ActionRegistry>()
+            .register::<serde::de::IgnoredAny, _>(
+                nightfall_actions::ActionDescriptor::new("test.trigger", "Test", "Tests"),
+                |_world, _arguments, _invocation| {
+                    Ok(nightfall_actions::InvocationDispatch::succeeded())
+                },
+            );
         app.add_message::<CommandEnvelope<MidiCommand>>();
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
@@ -286,40 +327,155 @@ mod tests {
         assert_eq!(action.arguments, arguments);
     }
 
-    /// Verifies control change values normalize across the full MIDI byte range.
+    /// Verifies control changes classify as normalized levels on their channel.
     #[test]
-    fn midi_control_change_maps_to_normalized_scalar() {
-        assert_eq!(midi_action_input(0xB0, 0), ActionInput::Scalar(0.0));
-        assert_eq!(midi_action_input(0xB0, 127), ActionInput::Scalar(1.0));
-        let ActionInput::Scalar(midpoint) = midi_action_input(0xB3, 64) else {
-            panic!("control change should produce a scalar");
+    fn control_change_classifies_as_level() {
+        let (source, signal) = MidiSource::classify(0xB3, 7, 127).expect("CC should classify");
+
+        assert_eq!(
+            source,
+            MidiSource::ControlChange {
+                channel: 3,
+                controller: 7
+            }
+        );
+        assert_eq!(signal, SourceSignal::Level(1.0));
+    }
+
+    /// Verifies note on and off classify as button edges on the same control.
+    #[test]
+    fn notes_classify_as_button_edges() {
+        let note = MidiSource::Note {
+            channel: 5,
+            note: 60,
         };
-        assert!((midpoint - 0.503_937).abs() < 0.001);
+        assert_eq!(
+            MidiSource::classify(0x95, 60, 100),
+            Some((note, SourceSignal::Button(true)))
+        );
+        assert_eq!(
+            MidiSource::classify(0x95, 60, 0),
+            Some((note, SourceSignal::Button(false)))
+        );
+        assert_eq!(
+            MidiSource::classify(0x85, 60, 64),
+            Some((note, SourceSignal::Button(false)))
+        );
+        assert_eq!(MidiSource::classify(0xF8, 0, 0), None);
     }
 
-    /// Verifies note messages become press and release edges on any channel.
+    /// Verifies pitch bend combines both data bytes into one 14-bit level.
     #[test]
-    fn midi_notes_map_to_button_edges() {
-        assert_eq!(midi_action_input(0x90, 100), ActionInput::Press);
-        assert_eq!(midi_action_input(0x95, 0), ActionInput::Release);
-        assert_eq!(midi_action_input(0x80, 64), ActionInput::Release);
+    fn pitch_bend_classifies_as_fourteen_bit_level() {
+        assert_eq!(
+            MidiSource::classify(0xE0, 0x7F, 0x7F),
+            Some((
+                MidiSource::PitchBend { channel: 0 },
+                SourceSignal::Level(1.0)
+            ))
+        );
     }
 
-    /// Verifies replacing MIDI mappings returns success after resource mutation.
+    /// Builds a note mapping bound to the test trigger action.
+    fn note_mapping(id: u128, note: u8) -> MidiMapping {
+        MidiMapping {
+            id: uuid::Uuid::from_u128(id),
+            device_name: "Pad".to_string(),
+            source: MidiSource::Note { channel: 0, note },
+            action: nightfall_actions::ActionReference::new("test.trigger", serde_json::json!({})),
+        }
+    }
+
+    /// Verifies upserting a mapping on a bound control replaces it and reports the displaced ID.
     #[test]
-    fn store_mappings_mutates_before_success() {
+    fn upsert_replaces_mapping_on_same_control() {
         let mut app = midi_command_app();
-        submit_command(&mut app, MidiCommand::StoreMappings(Vec::new()));
+        submit_command(&mut app, MidiCommand::UpsertMapping(note_mapping(1, 60)));
         app.update();
+        take_result(&mut app);
+
+        submit_command(&mut app, MidiCommand::UpsertMapping(note_mapping(2, 60)));
+        app.update();
+
+        let mappings = app.world().resource::<MidiMappings>().mappings();
+        assert_eq!(mappings.len(), 1);
+        assert_eq!(mappings[0].id, uuid::Uuid::from_u128(2));
+        let CommandOutcome::Succeeded { output } = take_result(&mut app).outcome else {
+            panic!("upsert should succeed");
+        };
+        assert_eq!(
+            output.map(|output| output.value),
+            Some(serde_json::json!({ "replaced": [uuid::Uuid::from_u128(1)] }))
+        );
+    }
+
+    /// Verifies bindings to unknown actions are rejected before they are stored.
+    #[test]
+    fn upsert_rejects_unregistered_action() {
+        let mut app = midi_command_app();
+        let mut mapping = note_mapping(1, 60);
+        mapping.action =
+            nightfall_actions::ActionReference::new("test.missing", serde_json::json!({}));
+
+        submit_command(&mut app, MidiCommand::UpsertMapping(mapping));
+        app.update();
+
         assert!(app.world().resource::<MidiMappings>().mappings().is_empty());
-        assert_eq!(take_result(&mut app).outcome, CommandOutcome::succeeded());
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. }) if code == "action.not_registered"
+        ));
+    }
+
+    /// Verifies a level-reporting controller fires a trigger action once per press.
+    #[test]
+    fn controller_button_fires_trigger_once_per_press() {
+        let mut app = midi_command_app();
+        app.add_message::<MidiInput>();
+        app.add_message::<ActionInvocation>();
+        app.add_systems(Update, handle_midi_events);
+        let mapping = MidiMapping {
+            source: MidiSource::ControlChange {
+                channel: 0,
+                controller: 20,
+            },
+            ..note_mapping(1, 0)
+        };
+        app.world_mut()
+            .resource_mut::<MidiMappings>()
+            .upsert(mapping.clone());
+
+        for value in [127, 127, 0, 127] {
+            let (source, signal) =
+                MidiSource::classify(0xB0, 20, value).expect("CC should classify");
+            app.world_mut().write_message(MidiInput {
+                device: "Pad".to_string(),
+                source,
+                signal,
+            });
+        }
+        app.update();
+
+        let inputs = app
+            .world_mut()
+            .resource_mut::<Messages<ActionInvocation>>()
+            .drain()
+            .map(|invocation| invocation.input)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            inputs,
+            vec![ActionInput::Press, ActionInput::Release, ActionInput::Press]
+        );
     }
 
     /// Verifies deleting an unknown MIDI mapping returns a stable failure.
     #[test]
     fn delete_unknown_mapping_returns_failure() {
         let mut app = midi_command_app();
-        submit_command(&mut app, MidiCommand::DeleteMapping(4));
+        submit_command(
+            &mut app,
+            MidiCommand::DeleteMapping(uuid::Uuid::from_u128(4)),
+        );
         app.update();
         assert!(matches!(
             take_result(&mut app).outcome,

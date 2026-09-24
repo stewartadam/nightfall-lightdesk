@@ -153,9 +153,9 @@ async function seedOscLastEvent(page: Page) {
 }
 
 /**
- * Returns the latest StoreMappings command captured from the OSC panel.
+ * Returns the latest UpsertMapping command captured from the OSC panel.
  */
-async function latestStoreMappingsCommand(page: Page) {
+async function latestUpsertMappingCommand(page: Page) {
   return page.evaluate(() => {
     const messages = ((window as any).__oscFlowSentMessages ?? []) as Array<{
       module?: string;
@@ -165,7 +165,7 @@ async function latestStoreMappingsCommand(page: Page) {
       .filter(
         (message) =>
           message.module === "OscCommand" &&
-          message.command?.type === "StoreMappings",
+          message.command?.type === "UpsertMapping",
       )
       .at(-1)?.command;
   });
@@ -228,37 +228,33 @@ test("OSC event can create a mapping and render dispatched command source", asyn
   await page.getByRole("button", { name: "Add Mapping" }).click();
 
   await expect
-    .poll(() => latestStoreMappingsCommand(page))
+    .poll(() => latestUpsertMappingCommand(page))
     .toMatchObject({
-      type: "StoreMappings",
-      data: [
-        {
-          address: "/e2e/osc/go",
-          arg_index: 0,
-          action: { id: "programmer.clear", arguments: {} },
-        },
-      ],
-    });
-
-  const storeMappingsCommand = await latestStoreMappingsCommand(page);
-  expect(storeMappingsCommand).toMatchObject({
-    type: "StoreMappings",
-    data: [
-      {
+      type: "UpsertMapping",
+      data: {
         address: "/e2e/osc/go",
         arg_index: 0,
         action: { id: "programmer.clear", arguments: {} },
       },
-    ],
+    });
+
+  const upsertMappingCommand = await latestUpsertMappingCommand(page);
+  expect(upsertMappingCommand).toMatchObject({
+    type: "UpsertMapping",
+    data: {
+      address: "/e2e/osc/go",
+      arg_index: 0,
+      action: { id: "programmer.clear", arguments: {} },
+    },
   });
 
   await page.evaluate((command) => {
     if (!command) {
-      throw new Error("expected StoreMappings command");
+      throw new Error("expected UpsertMapping command");
     }
     const stores = (window as any).appStores;
-    stores.oscMappings.set(command.data);
-  }, storeMappingsCommand);
+    stores.oscMappings.set([command.data]);
+  }, upsertMappingCommand);
   await expect(
     page
       .getByText("Clear programmer", { exact: true })

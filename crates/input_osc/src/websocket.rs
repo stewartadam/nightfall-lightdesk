@@ -164,7 +164,7 @@ mod tests {
             &mut world,
             serde_json::json!({
                 "type": "DeleteMapping",
-                "data": 4
+                "data": "00000000000000000000000000000004"
             }),
             command_id,
             undo_id,
@@ -178,6 +178,8 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].command_id, command_id);
         assert_eq!(messages[0].undo_id, undo_id);
-        assert!(matches!(messages[0].command, OscCommand::DeleteMapping(4)));
+        assert!(
+            matches!(messages[0].command, OscCommand::DeleteMapping(id) if id == uuid::Uuid::from_u128(4))
+        );
     }
 }

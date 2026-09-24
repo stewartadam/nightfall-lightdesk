@@ -153,6 +153,9 @@ impl OscType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct OscMapping {
+    /// Stable identity used to edit, replace, and delete the mapping.
+    #[typeshare(serialized_as = "String")]
+    pub id: Uuid,
     /// Optional source address filter (`ip:port`).
     pub source: Option<String>,
     /// OSC address pattern to match (exact string match).
@@ -208,10 +211,10 @@ pub struct OscExternalEval {
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
 pub enum OscCommand {
-    /// Replace all mappings.
-    StoreMappings(Vec<OscMapping>),
-    /// Delete mapping by index.
-    DeleteMapping(u32),
+    /// Create or replace a mapping; other mappings with the same match criteria are removed.
+    UpsertMapping(OscMapping),
+    /// Delete a mapping by its stable ID.
+    DeleteMapping(#[typeshare(serialized_as = "String")] Uuid),
 }
 
 impl IngressCommand for OscCommand {}
