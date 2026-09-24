@@ -18,7 +18,7 @@ mod source_reference;
 mod undo;
 
 pub use actions::{
-    CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipTarget,
+    CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments,
     go_clip_action, start_clip_action, stop_clip_action,
 };
 pub use command::{ClipCommand, ClipOperation, clip_action_from_command};
