@@ -4988,9 +4988,11 @@ version = "0.1.0-alpha.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "nightfall-engine",
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
+ "tracing",
  "typeshare",
  "uuid",
 ]

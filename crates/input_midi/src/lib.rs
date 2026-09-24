@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use nightfall_actions::{ActionInvocation, ActionSurface, ActionsPlugin};
+use nightfall_actions::{ActionInput, ActionInvocation, ActionSurface, ActionsPlugin};
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -182,18 +182,24 @@ fn handle_midi_events(
         ) {
             tracing::debug!(?midi_event, ?action, "MIDI mapping matched");
 
-            invocations.write(ActionInvocation::scalar(
+            invocations.write(ActionInvocation::new(
                 action.clone(),
                 ActionSurface::Midi,
-                normalized_midi_value(midi_event.velocity),
+                midi_action_input(midi_event.channel, midi_event.velocity),
             ));
         }
     }
 }
 
-/// Converts a MIDI byte to the normalized scalar used by registered invokers.
-fn normalized_midi_value(value: u8) -> f32 {
-    f32::from(value) / 127.0
+/// Converts one MIDI message to action input: notes become button edges, others scalars.
+///
+/// Note On with non-zero velocity presses, while Note Off and zero-velocity Note On release.
+fn midi_action_input(status: u8, value: u8) -> ActionInput {
+    match status & 0xF0 {
+        0x90 if value > 0 => ActionInput::Press,
+        0x80 | 0x90 => ActionInput::Release,
+        _ => ActionInput::Scalar(f32::from(value) / 127.0),
+    }
 }
 
 /// System that handles MIDI CRUD commands (StoreMappings, DeleteMapping)
@@ -279,23 +285,23 @@ mod tests {
         assert_eq!(action.arguments, arguments);
     }
 
-    /// Verifies the minimum MIDI value maps to the minimum normalized scalar.
+    /// Verifies control change values normalize across the full MIDI byte range.
     #[test]
-    fn midi_zero_maps_to_zero_percent() {
-        assert_eq!(normalized_midi_value(0), 0.0);
+    fn midi_control_change_maps_to_normalized_scalar() {
+        assert_eq!(midi_action_input(0xB0, 0), ActionInput::Scalar(0.0));
+        assert_eq!(midi_action_input(0xB0, 127), ActionInput::Scalar(1.0));
+        let ActionInput::Scalar(midpoint) = midi_action_input(0xB3, 64) else {
+            panic!("control change should produce a scalar");
+        };
+        assert!((midpoint - 0.503_937).abs() < 0.001);
     }
 
-    /// Verifies the maximum MIDI value maps to the maximum normalized scalar.
+    /// Verifies note messages become press and release edges on any channel.
     #[test]
-    fn midi_max_maps_to_full_percent() {
-        assert_eq!(normalized_midi_value(127), 1.0);
-    }
-
-    /// Verifies the MIDI midpoint preserves byte-range normalization.
-    #[test]
-    fn midi_midpoint_maps_to_expected_percent() {
-        let scaled = normalized_midi_value(64);
-        assert!((scaled - 0.503_937).abs() < 0.001);
+    fn midi_notes_map_to_button_edges() {
+        assert_eq!(midi_action_input(0x90, 100), ActionInput::Press);
+        assert_eq!(midi_action_input(0x95, 0), ActionInput::Release);
+        assert_eq!(midi_action_input(0x80, 64), ActionInput::Release);
     }
 
     /// Verifies replacing MIDI mappings returns success after resource mutation.

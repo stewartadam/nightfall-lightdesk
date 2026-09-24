@@ -225,7 +225,7 @@ fn plan_registered_action(
     };
 
     let owner_uid = capability.owner_uid;
-    match capability.operation {
+    match capability.kind {
         TimelinePlaybackActionKind::Start => {
             let Some(source) = resolver.clip_source(owner_uid) else {
                 push_unresolved_source(plan, owner, "registered-action-start");
@@ -585,7 +585,7 @@ fn push_noop(
 mod tests {
     use std::collections::HashMap;
 
-    use nightfall_actions::{ActionDescriptor, ActionId, ActionSurface, InvocationDispatch};
+    use nightfall_actions::{ActionDescriptor, InvocationDispatch};
     use serde::Deserialize;
     use serde_json::json;
 
@@ -643,20 +643,20 @@ mod tests {
         };
         let mut registry = ActionRegistry::default();
         registry.register::<TestTimelineArguments, _>(
-            ActionDescriptor {
-                id: ActionId::new("test-domain.timeline-start"),
-                label: "Test-domain timeline start".to_owned(),
-                allowed_surfaces: vec![ActionSurface::Timeline],
-                argument_schema: json!({ "type": "object" }),
-            },
+            ActionDescriptor::new(
+                "test-domain.timeline-start",
+                "Test-domain timeline start",
+                "Tests",
+            ),
             |_world, _arguments, _invocation| Ok(InvocationDispatch::Accepted),
         );
         registry.register_capability::<TestTimelineArguments, TimelinePlaybackActionPlan, _>(
             "test-domain.timeline-start",
+            TimelinePlaybackActionPlan::CAPABILITY,
             |arguments| {
                 Ok(TimelinePlaybackActionPlan {
                     owner_uid: arguments.owner_uid,
-                    operation: TimelinePlaybackActionKind::Start,
+                    kind: TimelinePlaybackActionKind::Start,
                 })
             },
         );

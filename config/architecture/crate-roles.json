@@ -4,7 +4,6 @@
     "foundation": [
       "open-fixture-library",
       "nightfall",
-      "nightfall-actions",
       "nightfall-cmd-parse",
       "nightfall-config",
       "nightfall-coremidi-hotplug",
@@ -20,6 +19,7 @@
       "nightfall-workspace-hack"
     ],
     "infrastructure": [
+      "nightfall-actions",
       "nightfall-compositor",
       "nightfall-engine",
       "nightfall-clips",

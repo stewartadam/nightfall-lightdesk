@@ -138,6 +138,13 @@ pub enum CommandOrigin {
     Cli,
     /// A command submitted by another named remote-control transport.
     Remote(String),
+    /// A command submitted by a bindable action invoked from an automation surface.
+    Automation {
+        /// User-facing name of the invoking surface, such as MIDI or Timeline.
+        surface: String,
+        /// Optional detail identifying the specific source, such as a device or mapping.
+        source: Option<String>,
+    },
 }
 
 /// Identifies where a command's result should be delivered.

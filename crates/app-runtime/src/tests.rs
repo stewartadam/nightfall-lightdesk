@@ -1724,3 +1724,73 @@ fn sample_audio_resources_can_change_without_recompilation() {
     nightfall::clear_active_show_data_dir();
     nightfall::set_nightfall_data_dir(None);
 }
+
+/// Invokes one action in a sample world and returns the terminal result of its submitted command.
+fn run_sample_action(invocation: nightfall_actions::ActionInvocation) -> Option<CommandOutcome> {
+    use nightfall_actions::{InvocationOutcome, InvocationResult};
+
+    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    app.world_mut().write_message(invocation);
+
+    let mut submitted = None;
+    let mut outcome = None;
+    for _ in 0..5 {
+        app.update();
+        if submitted.is_none() {
+            submitted = app
+                .world_mut()
+                .resource_mut::<Messages<InvocationResult>>()
+                .drain()
+                .find_map(|result| match result.outcome {
+                    InvocationOutcome::Submitted { command_id } => Some(command_id),
+                    _ => None,
+                });
+        }
+        if let Some(command_id) = submitted {
+            outcome = app
+                .world_mut()
+                .resource_mut::<Messages<CommandResult>>()
+                .drain()
+                .find(|result| result.command_id == command_id)
+                .map(|result| result.outcome);
+        }
+        if outcome.is_some() {
+            break;
+        }
+    }
+
+    assert!(submitted.is_some(), "action should submit a command");
+    outcome
+}
+
+/// Verifies a hardware-triggered clip action runs through tracked command dispatch end to end.
+#[tokio::test]
+async fn automation_clip_action_completes_tracked_command() {
+    use nightfall_actions::{ActionInvocation, ActionSurface};
+    use nightfall_desk::prelude::{ClipTarget, start_clip_action};
+
+    let outcome = run_sample_action(
+        ActionInvocation::trigger(start_clip_action(ClipTarget::Id(1)), ActionSurface::Midi)
+            .with_source("MIDI test device"),
+    );
+
+    assert_eq!(outcome, Some(CommandOutcome::succeeded()));
+}
+
+/// Verifies an OSC-triggered eval action expands and completes in the pending command stage.
+#[tokio::test]
+async fn automation_eval_action_expands_and_completes() {
+    use nightfall_actions::{ActionInvocation, ActionSurface};
+    use nightfall_desk::prelude::desk_eval_action;
+
+    let outcome = run_sample_action(ActionInvocation::trigger(
+        desk_eval_action("clip 1 start"),
+        ActionSurface::Osc,
+    ));
+
+    assert_eq!(outcome, Some(CommandOutcome::succeeded()));
+}

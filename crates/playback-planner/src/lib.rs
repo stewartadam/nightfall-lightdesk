@@ -387,8 +387,13 @@ pub enum PlannedPlaybackInterventionKind {
 pub struct TimelinePlaybackActionPlan {
     /// Stable runtime owner addressed by the action.
     pub owner_uid: Uuid,
-    /// Planner operation represented by the registered action.
-    pub operation: TimelinePlaybackActionKind,
+    /// Playback change represented by the registered action.
+    pub kind: TimelinePlaybackActionKind,
+}
+
+impl TimelinePlaybackActionPlan {
+    /// Capability name published in the action catalog for timeline-plannable actions.
+    pub const CAPABILITY: &str = "timeline.plan";
 }
 
 /// Generic playback operations a registered action can contribute to timeline planning.

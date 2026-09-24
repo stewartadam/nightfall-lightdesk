@@ -49,9 +49,8 @@ pub mod prelude {
     pub use crate::automation_actions::{
         CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, CONTROL_SET_ACTION_ID,
         ClipActionArguments, ClipTarget, ControlActionArguments, DESK_EVAL_ACTION_ID,
-        DeskEvalActionArguments, clip_target_for_action, desk_eval_action,
-        desk_eval_command_for_action, go_clip_action, set_control_action, start_clip_action,
-        stop_clip_action,
+        DeskEvalActionArguments, desk_eval_action, go_clip_action, set_control_action,
+        start_clip_action, stop_clip_action,
     };
     pub use crate::blueprint_command::{
         BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation, BlueprintReferenceIndex,
@@ -203,15 +202,13 @@ impl Plugin for DeskPlugin {
         // PendingCommandBuffer before undo processing
         app.add_systems(
             Update,
-            systems::scheduled_commands::process_scheduled_commands
-                .after(InputHandling)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+            systems::scheduled_commands::process_scheduled_commands.in_set(PendingCommandExpansion),
         );
         app.add_systems(
             Update,
             systems::event_handlers::desk_events::expand_pending_eval_commands
                 .after(systems::scheduled_commands::process_scheduled_commands)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+                .in_set(PendingCommandExpansion),
         );
 
         // Maintain InstanceIndex on spawn/despawn, and sync clip active state

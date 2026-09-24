@@ -105,7 +105,7 @@ impl Plugin for ProgrammerPlugin {
                 .after(
                     nightfall_desk::systems::event_handlers::desk_events::expand_pending_eval_commands,
                 )
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+                .in_set(PendingCommandExpansion),
         );
 
         app.add_systems(
