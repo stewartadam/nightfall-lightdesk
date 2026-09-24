@@ -290,7 +290,7 @@ pub struct ProgrammerBlueprintState<'w> {
     /// Supplies active instructions and receives recalled blueprint contents.
     programmer: ResMut<'w, Programmer>,
     /// Dispatches blueprint store actions to the owning domain.
-    actions: MessageWriter<'w, EngineActionEnvelope<BlueprintAction>>,
+    actions: MessageWriter<'w, EngineOperationEnvelope<BlueprintOperation>>,
     /// Tracks object store actions until their terminal operation results arrive.
     workflows: ResMut<'w, StoreObjectWorkflows>,
     /// Provides existing blueprint definitions for update and recall.
@@ -465,11 +465,11 @@ pub fn handle_blueprint_events(
                 let operation_id = OperationId::new();
                 let command_id = event.command_id;
                 workflows.commands.insert(operation_id, command_id);
-                actions.write(EngineActionEnvelope {
+                actions.write(EngineOperationEnvelope {
                     operation_id,
                     command_id: Some(command_id),
                     undo_id: Some(event.undo_id),
-                    action: BlueprintAction::StoreBlueprint(blueprint),
+                    action: BlueprintOperation::StoreBlueprint(blueprint),
                 });
             }
 

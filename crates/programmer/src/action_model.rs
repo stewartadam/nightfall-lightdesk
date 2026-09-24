@@ -14,7 +14,7 @@ use nightfall::prelude::{
 };
 use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::command_traits;
-use nightfall_engine::prelude::{EngineAction, EnginePayload, IngressCommand};
+use nightfall_engine::prelude::{EngineOperation, EnginePayload, IngressCommand};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -167,7 +167,7 @@ impl AttributeFilter {
 
 /// Programmer runtime actions.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ProgrammerAction {
+pub enum ProgrammerOperation {
     /// Clear active selection.
     ClearSelection,
     /// Clear values according to scope and attribute filter.
@@ -194,8 +194,8 @@ pub enum ProgrammerAction {
     },
 }
 
-impl EnginePayload for ProgrammerAction {}
-impl EngineAction for ProgrammerAction {}
+impl EnginePayload for ProgrammerOperation {}
+impl EngineOperation for ProgrammerOperation {}
 
 fn format_attribute(attribute: &Attribute) -> String {
     let label = attribute.to_string();

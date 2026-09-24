@@ -54,7 +54,7 @@ pub fn handle_set_dmx_channels(
 /// Handle RestoreFixtureSnapshot commands to recreate a deleted fixture.
 pub fn handle_restore_fixture_snapshot(
     mut commands: Commands,
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreFixtureSnapshot>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreFixtureSnapshot>>,
     mut data_provider: ResMut<FixtureDataProviderExt>,
     mut responder: CommandResponder,
 ) {
@@ -135,7 +135,7 @@ fn disabled_binding_matches_fixture(binding: &DisabledBinding, uid: uuid::Uuid) 
 
 /// Handle RestoreBindingSnapshot commands to restore fixture binding configuration.
 pub fn handle_restore_binding_snapshot(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreBindingSnapshot>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreBindingSnapshot>>,
     data_provider: Res<FixtureDataProviderExt>,
     mut output_bindings: ResMut<OutputBindings>,
     mut disabled_bindings: ResMut<DisabledBindings>,
@@ -184,7 +184,7 @@ pub fn handle_restore_binding_snapshot(
 
 /// Handle RestorePatchBindingsSnapshot commands to restore all patch bindings.
 pub fn handle_restore_patch_bindings_snapshot(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestorePatchBindingsSnapshot>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestorePatchBindingsSnapshot>>,
     mut input_bindings: ResMut<InputBindings>,
     mut output_bindings: ResMut<OutputBindings>,
     mut disabled_bindings: ResMut<DisabledBindings>,
@@ -203,7 +203,7 @@ pub fn handle_restore_patch_bindings_snapshot(
 
 /// Handle RestoreOffsetSnapshot commands to restore fixture parameter offset.
 pub fn handle_restore_offset_snapshot(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreOffsetSnapshot>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreOffsetSnapshot>>,
     mut data_provider: ResMut<FixtureDataProviderExt>,
     mut parameter_query: Query<InstanceMut<Parameter>>,
     mut responder: CommandResponder,
@@ -295,7 +295,7 @@ pub fn handle_restore_offset_snapshot(
 ///
 /// Resets affected parameters to their default values.
 pub fn handle_clear_dmx_channels(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::ClearDmxChannels>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::ClearDmxChannels>>,
     mut universes: ResMut<ConsoleDmxUniverses>,
     mut responder: CommandResponder,
 ) {
@@ -318,7 +318,9 @@ pub fn handle_clear_dmx_channels(
 
 /// Handle RestoreColorPathDefaultsSnapshot commands to restore fixture default assignments.
 pub fn handle_restore_color_path_defaults_snapshot(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreColorPathDefaultsSnapshot>>,
+    mut events: MessageReader<
+        EngineOperationEnvelope<crate::undo::RestoreColorPathDefaultsSnapshot>,
+    >,
     mut data_provider: ResMut<FixtureDataProviderExt>,
     mut responder: CommandResponder,
 ) {

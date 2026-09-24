@@ -17,21 +17,21 @@ use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::SequencePlaybackAction;
+use crate::SequencePlaybackOperation;
 use crate::data_provider_ext::CueDataProviderExt;
 use crate::materialized_sequence::MaterializedSequence;
-use crate::prelude::{Cue, CueAction, CueCommand, Sequence};
+use crate::prelude::{Cue, CueCommand, CueOperation, Sequence};
 
 /// Capture the previous cue definition as an inverse store operation.
 fn inverse_for_store_cue(
     cue: &Cue,
     cues: &DataProvider<Cue>,
     sequences: &DataProvider<Sequence>,
-) -> Option<Box<dyn UndoableOperation>> {
+) -> Option<Box<dyn Undoable>> {
     match cues.get(cue.identifiers.uid) {
         Ok(existing) => {
             let old_cue: Cue = (*existing).clone();
-            Some(Box::new(CueAction::StoreCue(Box::new(old_cue))))
+            Some(Box::new(CueOperation::StoreCue(Box::new(old_cue))))
         }
         Err(_) => {
             let sequence_id = find_sequence_id_for_cue_uid(sequences, cue.identifiers.uid)
@@ -48,11 +48,13 @@ fn inverse_for_store_cue(
 fn inverse_for_store_sequence(
     sequence: &Sequence,
     sequences: &DataProvider<Sequence>,
-) -> Option<Box<dyn UndoableOperation>> {
+) -> Option<Box<dyn Undoable>> {
     match sequences.get(sequence.identifiers.uid) {
         Ok(existing) => {
             let old_sequence: Sequence = (*existing).clone();
-            Some(Box::new(CueAction::StoreSequence(Box::new(old_sequence))))
+            Some(Box::new(CueOperation::StoreSequence(Box::new(
+                old_sequence,
+            ))))
         }
         Err(_) => Some(Box::new(CueCommand::DeleteSequence(
             sequence.identifiers.id,
@@ -60,9 +62,9 @@ fn inverse_for_store_sequence(
     }
 }
 
-impl UndoableOperation for CueCommand {
+impl Undoable for CueCommand {
     /// Build the inverse cue operation from the definitions captured before mutation.
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let cues = ctx.world.resource::<DataProvider<Cue>>();
         let sequences = ctx.world.resource::<DataProvider<Sequence>>();
         let color_paths = ctx.world.resource::<DataProvider<ColorPath>>();
@@ -79,7 +81,7 @@ impl UndoableOperation for CueCommand {
                     .ok()
                     .map(|cue_ref| {
                         let cue: Cue = (*cue_ref).clone();
-                        Box::new(CueAction::StoreCue(Box::new(cue))) as Box<dyn UndoableOperation>
+                        Box::new(CueOperation::StoreCue(Box::new(cue))) as Box<dyn Undoable>
                     })
             }
             CueCommand::RenameCue {
@@ -111,16 +113,14 @@ impl UndoableOperation for CueCommand {
                 if *cue_id == 0 {
                     sequences.from_id(*sequence_id).ok().map(|seq_ref| {
                         let seq: Sequence = (*seq_ref).clone();
-                        Box::new(CueAction::StoreSequence(Box::new(seq)))
-                            as Box<dyn UndoableOperation>
+                        Box::new(CueOperation::StoreSequence(Box::new(seq))) as Box<dyn Undoable>
                     })
                 } else {
                     cues.cue_by_sequence_id(sequences, *sequence_id, *cue_id)
                         .ok()
                         .map(|cue_ref| {
                             let cue: Cue = (*cue_ref).clone();
-                            Box::new(CueAction::StoreCue(Box::new(cue)))
-                                as Box<dyn UndoableOperation>
+                            Box::new(CueOperation::StoreCue(Box::new(cue))) as Box<dyn Undoable>
                         })
                 }
             }
@@ -138,7 +138,7 @@ impl UndoableOperation for CueCommand {
             CueCommand::LabelColorPath { id, .. } => {
                 color_paths.from_id(*id).ok().map(|color_path_ref| {
                     let color_path: ColorPath = (*color_path_ref).clone();
-                    Box::new(CueCommand::StoreColorPath(color_path)) as Box<dyn UndoableOperation>
+                    Box::new(CueCommand::StoreColorPath(color_path)) as Box<dyn Undoable>
                 })
             }
             CueCommand::DuplicateColorPath { new_id, .. } => {
@@ -154,14 +154,14 @@ impl UndoableOperation for CueCommand {
             CueCommand::DeleteColorPath(id) => {
                 color_paths.from_id(*id).ok().map(|color_path_ref| {
                     let color_path: ColorPath = (*color_path_ref).clone();
-                    Box::new(CueCommand::StoreColorPath(color_path)) as Box<dyn UndoableOperation>
+                    Box::new(CueCommand::StoreColorPath(color_path)) as Box<dyn Undoable>
                 })
             }
             CueCommand::DeleteSequence(id) => {
                 // Capture full sequence before deletion
                 sequences.from_id(*id).ok().map(|seq_ref| {
                     let seq: Sequence = (*seq_ref).clone();
-                    Box::new(CueAction::StoreSequence(Box::new(seq))) as Box<dyn UndoableOperation>
+                    Box::new(CueOperation::StoreSequence(Box::new(seq))) as Box<dyn Undoable>
                 })
             }
             CueCommand::RenameSequence { id, new_id } => {
@@ -253,17 +253,19 @@ impl UndoableOperation for CueCommand {
     }
 }
 
-impl UndoableOperation for CueAction {
+impl Undoable for CueOperation {
     /// Build the inverse cue operation from the definitions captured before mutation.
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let cues = ctx.world.resource::<DataProvider<Cue>>();
         let sequences = ctx.world.resource::<DataProvider<Sequence>>();
 
         match self {
-            CueAction::StoreCue(cue) => inverse_for_store_cue(cue, cues, sequences),
-            CueAction::StoreSequence(sequence) => inverse_for_store_sequence(sequence, sequences),
-            CueAction::StoreCueInSequence { .. } => None,
-            CueAction::RestoreCueStoreState {
+            CueOperation::StoreCue(cue) => inverse_for_store_cue(cue, cues, sequences),
+            CueOperation::StoreSequence(sequence) => {
+                inverse_for_store_sequence(sequence, sequences)
+            }
+            CueOperation::StoreCueInSequence { .. } => None,
+            CueOperation::RestoreCueStoreState {
                 sequence_id,
                 cue_uid,
                 undo_label,
@@ -274,7 +276,7 @@ impl UndoableOperation for CueAction {
                     .from_id(*sequence_id)
                     .ok()
                     .map(|sequence_ref| (*sequence_ref).clone());
-                Some(Box::new(CueAction::RestoreCueStoreState {
+                Some(Box::new(CueOperation::RestoreCueStoreState {
                     sequence_id: *sequence_id,
                     cue_uid: *cue_uid,
                     previous_cue: current_cue.map(Box::new),
@@ -287,12 +289,12 @@ impl UndoableOperation for CueAction {
 
     fn description(&self) -> String {
         match self {
-            CueAction::StoreCue(cue) => format!("Store Cue {}", cue.identifiers.id),
-            CueAction::StoreSequence(sequence) => {
+            CueOperation::StoreCue(cue) => format!("Store Cue {}", cue.identifiers.id),
+            CueOperation::StoreSequence(sequence) => {
                 format!("Store Sequence {}", sequence.identifiers.id)
             }
-            CueAction::StoreCueInSequence { undo_label, .. }
-            | CueAction::RestoreCueStoreState { undo_label, .. } => undo_label.clone(),
+            CueOperation::StoreCueInSequence { undo_label, .. }
+            | CueOperation::RestoreCueStoreState { undo_label, .. } => undo_label.clone(),
         }
     }
 }
@@ -327,11 +329,11 @@ pub struct SequencePositionSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 pub struct RestoreSequencePosition(pub SequencePositionSnapshot);
 
-impl EngineAction for RestoreSequencePosition {}
+impl EngineOperation for RestoreSequencePosition {}
 
-impl UndoableOperation for RestoreSequencePosition {
+impl Undoable for RestoreSequencePosition {
     /// Build the inverse cue operation from the definitions captured before mutation.
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         // Capture current position before restoring
         let position = get_sequence_position(ctx.world, self.0.instance_id)?;
         Some(Box::new(RestoreSequencePosition(
@@ -355,14 +357,14 @@ fn get_sequence_position(world: &World, instance_id: InstanceId) -> Option<u32> 
     Some(mseq.position())
 }
 
-impl UndoableOperation for SequencePlaybackAction {
+impl Undoable for SequencePlaybackOperation {
     /// Build the inverse cue operation from the definitions captured before mutation.
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         match self {
-            SequencePlaybackAction::Go { instance_id }
-            | SequencePlaybackAction::Back { instance_id }
-            | SequencePlaybackAction::Goto { instance_id, .. }
-            | SequencePlaybackAction::RenderAt { instance_id, .. } => {
+            SequencePlaybackOperation::Go { instance_id }
+            | SequencePlaybackOperation::Back { instance_id }
+            | SequencePlaybackOperation::Goto { instance_id, .. }
+            | SequencePlaybackOperation::RenderAt { instance_id, .. } => {
                 // Capture current position before sequence navigation changes it.
                 let position = get_sequence_position(ctx.world, *instance_id)?;
                 Some(Box::new(RestoreSequencePosition(
@@ -372,7 +374,7 @@ impl UndoableOperation for SequencePlaybackAction {
                     },
                 )))
             }
-            SequencePlaybackAction::Stop { .. } => {
+            SequencePlaybackOperation::Stop { .. } => {
                 // Stopping a playback cannot be reliably undone - the playback state is lost
                 // The playback would need to be re-started manually
                 None
@@ -382,27 +384,27 @@ impl UndoableOperation for SequencePlaybackAction {
 
     fn description(&self) -> String {
         match self {
-            SequencePlaybackAction::Go { instance_id } => {
+            SequencePlaybackOperation::Go { instance_id } => {
                 format!("Sequence Go ({})", instance_id.0)
             }
-            SequencePlaybackAction::Back { instance_id } => {
+            SequencePlaybackOperation::Back { instance_id } => {
                 format!("Sequence Back ({})", instance_id.0)
             }
-            SequencePlaybackAction::Goto {
+            SequencePlaybackOperation::Goto {
                 instance_id,
                 position,
                 ..
             } => {
                 format!("Sequence Goto {} ({})", position, instance_id.0)
             }
-            SequencePlaybackAction::RenderAt {
+            SequencePlaybackOperation::RenderAt {
                 instance_id,
                 position,
                 ..
             } => {
                 format!("Sequence RenderAt {} ({})", position, instance_id.0)
             }
-            SequencePlaybackAction::Stop { instance_id } => {
+            SequencePlaybackOperation::Stop { instance_id } => {
                 format!("Sequence Stop ({})", instance_id.0)
             }
         }

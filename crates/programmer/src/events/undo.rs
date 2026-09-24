@@ -12,10 +12,10 @@ use super::*;
 
 /// Handles programmer undo-related events
 pub fn handle_undo_events(
-    mut events_reader: MessageReader<EngineActionEnvelope<crate::undo::RestoreProgrammerState>>,
+    mut events_reader: MessageReader<EngineOperationEnvelope<crate::undo::RestoreProgrammerState>>,
     mut operation_results: MessageReader<OperationResult<(), CommandError>>,
     mut programmer: ResMut<Programmer>,
-    mut cue_lifecycle_actions: MessageWriter<EngineActionEnvelope<CueLifecycleAction>>,
+    mut cue_lifecycle_actions: MessageWriter<EngineOperationEnvelope<CueLifecycleOperation>>,
     mut responder: CommandResponder,
     mut pending_cue_releases: Local<HashMap<OperationId, CommandId>>,
 ) {
@@ -49,11 +49,11 @@ pub fn handle_undo_events(
             .collect::<Vec<_>>();
         let release_pending = !uids.is_empty();
         if release_pending {
-            let envelope = EngineActionEnvelope::with_context(
+            let envelope = EngineOperationEnvelope::with_context(
                 OperationId::new(),
                 event.command_id,
                 event.undo_id,
-                CueLifecycleAction::ReleaseCueInstances { uids },
+                CueLifecycleOperation::ReleaseCueInstances { uids },
             );
             if let Some(command_id) = event.command_id {
                 pending_cue_releases.insert(envelope.operation_id, command_id);

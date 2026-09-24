@@ -285,9 +285,9 @@ impl IngressCommand for DeskCommand {}
 
 /// Concrete internal desk work initiated by automation or timeline playback.
 #[derive(Debug, Clone, EnginePayload)]
-pub enum DeskAction {
+pub enum DeskOperation {
     /// Parse and dispatch one command-language statement without a user reply lifecycle.
     Eval(String),
 }
 
-impl EngineAction for DeskAction {}
+impl EngineOperation for DeskOperation {}

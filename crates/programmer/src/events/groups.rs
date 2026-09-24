@@ -122,7 +122,7 @@ fn stored_group_selection_branch(
 pub fn handle_group_events(
     mut events_reader: MessageReader<CommandEnvelope<ProgrammerCommand>>,
     programmer: Res<Programmer>,
-    mut actions: MessageWriter<EngineActionEnvelope<GroupAction>>,
+    mut actions: MessageWriter<EngineOperationEnvelope<GroupOperation>>,
     mut workflows: ResMut<StoreObjectWorkflows>,
     mut group_storage: ParamSet<(SpatialSelectionResolver, ResMut<DataProvider<Group>>)>,
 ) {
@@ -172,11 +172,11 @@ pub fn handle_group_events(
             let operation_id = OperationId::new();
             let command_id = event.command_id;
             workflows.commands.insert(operation_id, command_id);
-            actions.write(EngineActionEnvelope {
+            actions.write(EngineOperationEnvelope {
                 operation_id,
                 command_id: Some(command_id),
                 undo_id: Some(event.undo_id),
-                action: GroupAction::StoreGroup(group),
+                action: GroupOperation::StoreGroup(group),
             });
         }
     }

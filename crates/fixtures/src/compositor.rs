@@ -17,12 +17,12 @@ use nightfall_compositor::types::{Layer, ObjectRefMarker, ParameterMap, Paramete
 use nightfall_dmx::prelude::{ParameterDmxValue, ParameterValue};
 use nightfall_engine::LayerGeneration;
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandError, CommandResponder, EngineActionEnvelope,
+    CommandEnvelope, CommandError, CommandResponder, EngineOperationEnvelope,
 };
-use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_instances::{PlaybackOperation, PlaybackScope};
 
 use crate::prelude::{
-    ConsoleDmxUniverses, DmxAction, FixtureCommand, InputDmxUniverses, OutputDestination,
+    ConsoleDmxUniverses, DmxOperation, FixtureCommand, InputDmxUniverses, OutputDestination,
     Parameter, ParameterAssertion, ParameterAssertionSource, ResolvedInputBindings,
     ResolvedInputDestination, ResolvedInputSource, ResolvedOutputDestinations,
 };
@@ -238,9 +238,9 @@ fn resolved_input_destination_contains_parameter(
 /// Materialize manual DMX channel commands into the manual assertion layer.
 pub fn update_manual_assertion_layer(
     mut set_events: MessageReader<CommandEnvelope<FixtureCommand>>,
-    mut clear_events: MessageReader<EngineActionEnvelope<crate::undo::ClearDmxChannels>>,
-    mut playback_actions: MessageReader<EngineActionEnvelope<PlaybackAction>>,
-    mut dmx_actions: MessageReader<EngineActionEnvelope<DmxAction>>,
+    mut clear_events: MessageReader<EngineOperationEnvelope<crate::undo::ClearDmxChannels>>,
+    mut playback_actions: MessageReader<EngineOperationEnvelope<PlaybackOperation>>,
+    mut dmx_actions: MessageReader<EngineOperationEnvelope<DmxOperation>>,
     mut responder: CommandResponder,
     universes: Res<ConsoleDmxUniverses>,
     destinations_query: Query<(InstanceRef<Parameter>, Option<&ResolvedOutputDestinations>)>,
@@ -287,7 +287,7 @@ pub fn update_manual_assertion_layer(
     for event in playback_actions.read() {
         if matches!(
             &event.action,
-            PlaybackAction::ReleaseParameters {
+            PlaybackOperation::ReleaseParameters {
                 scope: PlaybackScope::All
             }
         ) {
@@ -297,7 +297,7 @@ pub fn update_manual_assertion_layer(
     }
 
     for event in dmx_actions.read() {
-        let DmxAction::ReleaseChannels { channels } = &event.action;
+        let DmxOperation::ReleaseChannels { channels } = &event.action;
         for channel in channels.expand() {
             remove_manual_assertion_for_channel(&channel, &destinations_query, &mut layer);
         }

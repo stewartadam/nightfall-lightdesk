@@ -35,7 +35,7 @@ use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     AppState, ClientOutput, ClockUpdate, CommandEnvelope, CommandNotice, CommandOrigin,
     CommandOutcome, CommandReply, CommandResult, CommandTracker, DataProvider, DmxOutput,
-    EngineActionEnvelope, EventHandling, FinishedCommand, ReplyTarget, ResyncRequested,
+    EngineOperationEnvelope, EventHandling, FinishedCommand, ReplyTarget, ResyncRequested,
 };
 use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, OutputSource, Parameter,
@@ -49,7 +49,7 @@ use nightfall_timecode::prelude::{
     Timecode, TimecodeCommand, TimecodeGenerator, TimecodeRate, TimecodeSource,
 };
 use nightfall_timeline::prelude::{
-    Action, ActionKind, MaterializedTimeline, Timeline, TimelineAction, Track,
+    Action, ActionKind, MaterializedTimeline, Timeline, TimelineOperation, Track,
 };
 use uuid::Uuid;
 
@@ -269,7 +269,7 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
         .expect("test timeline should be stored");
     app.world_mut().spawn(MaterializedTimeline::new(timeline));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(TimelineAction::Start(
+        .write_message(EngineOperationEnvelope::detached(TimelineOperation::Start(
             timeline_id,
         )));
     app.update();

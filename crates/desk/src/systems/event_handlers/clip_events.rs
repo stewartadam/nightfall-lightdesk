@@ -13,16 +13,16 @@ use std::collections::{HashMap, HashSet};
 use bevy_ecs::{prelude::*, system::SystemState};
 use nightfall_clips::ClipSourceRef;
 use nightfall_clips::{
-    Clip, ClipAction, ClipCommand, ClipLookup, ClipLookupError, MaterializedClip,
+    Clip, ClipCommand, ClipLookup, ClipLookupError, ClipOperation, MaterializedClip,
     RestoreClipSource, Source, clip_action_from_command, log_clip_lookup_failure,
 };
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_engine::object_registry::{ObjectLookupError, resolve_object};
 use nightfall_engine::prelude::*;
-use nightfall_flow::events::FlowPlaybackAction;
-use nightfall_fx::events::FxPlaybackAction;
+use nightfall_flow::events::FlowPlaybackOperation;
+use nightfall_fx::events::FxPlaybackOperation;
 #[cfg(feature = "fx-module-host")]
-use nightfall_fx_module::events::FxModulePlaybackAction;
+use nightfall_fx_module::events::FxModulePlaybackOperation;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, ClipInstanceStartContext, InstanceClock,
     InstanceControls, InstanceId, InstanceKind, InstanceMetadata, InstanceOptions,
@@ -449,7 +449,7 @@ fn release_playback_by_id(
 
 /// Handles RestoreClipSource commands for undo.
 pub fn handle_restore_clip_source(
-    mut events: MessageReader<EngineActionEnvelope<RestoreClipSource>>,
+    mut events: MessageReader<EngineOperationEnvelope<RestoreClipSource>>,
     mut exec_params: ParamSet<(ClipLookup, Query<&mut Clip>)>,
     mut responder: CommandResponder,
 ) {
@@ -506,20 +506,20 @@ pub fn handle_restore_clip_source(
 /// Plans live clip ingress commands as concrete runtime actions.
 pub fn forward_clip_ingress_actions(
     mut commands: MessageReader<CommandEnvelope<ClipCommand>>,
-    mut runtime_actions: MessageWriter<EngineActionEnvelope<ClipAction>>,
+    mut runtime_actions: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
 ) {
     for envelope in commands.read() {
         let Some(action) = clip_action_from_command(&envelope.command) else {
             continue;
         };
 
-        runtime_actions.write(EngineActionEnvelope::for_command(envelope, action));
+        runtime_actions.write(EngineOperationEnvelope::for_command(envelope, action));
     }
 }
 
 /// Handles clip runtime commands that directly control attached playback rate.
 pub fn handle_clip_rate_commands(
-    mut events: MessageReader<EngineActionEnvelope<ClipAction>>,
+    mut events: MessageReader<EngineOperationEnvelope<ClipOperation>>,
     mut pending_rates: ResMut<PendingClipPlaybackRates>,
     instance_index: Res<InstanceIndex>,
     materialized_clips: Query<&MaterializedClip>,
@@ -557,7 +557,7 @@ pub fn handle_clip_rate_commands(
         .collect::<HashSet<_>>();
 
     for event in event_batch {
-        let ClipAction::SetRate { clip_id, rate } = &event.action else {
+        let ClipOperation::SetRate { clip_id, rate } = &event.action else {
             continue;
         };
 
@@ -589,9 +589,11 @@ pub fn handle_clip_rate_commands(
     }
 }
 
-fn clip_start_ids(action: &ClipAction) -> Vec<u32> {
+fn clip_start_ids(action: &ClipOperation) -> Vec<u32> {
     match action {
-        ClipAction::Start(clip_id) | ClipAction::StartAtTiming { clip_id, .. } => clip_id.expand(),
+        ClipOperation::Start(clip_id) | ClipOperation::StartAtTiming { clip_id, .. } => {
+            clip_id.expand()
+        }
         _ => Vec::new(),
     }
 }
@@ -599,15 +601,15 @@ fn clip_start_ids(action: &ClipAction) -> Vec<u32> {
 /// Resolves non-desk clip playback requests into desk-owned runtime actions.
 pub fn forward_clip_playback_requests(
     mut requests: MessageReader<RequestEnvelope<ClipInstanceRequest>>,
-    mut clip_events: MessageWriter<EngineActionEnvelope<ClipAction>>,
+    mut clip_events: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
 ) {
     for request in requests.read() {
         let action = match &request.request {
-            ClipInstanceRequest::Start(id_expr) => ClipAction::Start(id_expr.clone()),
-            ClipInstanceRequest::Stop(id_expr) => ClipAction::Stop(id_expr.clone()),
-            ClipInstanceRequest::Go(id_expr) => ClipAction::Go(id_expr.clone()),
+            ClipInstanceRequest::Start(id_expr) => ClipOperation::Start(id_expr.clone()),
+            ClipInstanceRequest::Stop(id_expr) => ClipOperation::Stop(id_expr.clone()),
+            ClipInstanceRequest::Go(id_expr) => ClipOperation::Go(id_expr.clone()),
         };
-        clip_events.write(EngineActionEnvelope::with_context(
+        clip_events.write(EngineOperationEnvelope::with_context(
             OperationId::new(),
             request.command_id,
             request.undo_id,
@@ -619,24 +621,24 @@ pub fn forward_clip_playback_requests(
 /// Resolves desk-owned clip commands into domain-owned playback actions.
 pub fn route_clip_playback_actions(
     mut commands: Commands,
-    mut clip_events: MessageReader<EngineActionEnvelope<ClipAction>>,
+    mut clip_events: MessageReader<EngineOperationEnvelope<ClipOperation>>,
     exec_query: Query<&Clip>,
     materialized_clips: Query<(Entity, &MaterializedClip)>,
     instance_query: Query<ClipPlaybackData>,
-    mut fx_actions: MessageWriter<EngineActionEnvelope<FxPlaybackAction>>,
-    mut flow_actions: MessageWriter<EngineActionEnvelope<FlowPlaybackAction>>,
+    mut fx_actions: MessageWriter<EngineOperationEnvelope<FxPlaybackOperation>>,
+    mut flow_actions: MessageWriter<EngineOperationEnvelope<FlowPlaybackOperation>>,
     #[cfg(feature = "fx-module-host")] mut fx_module_actions: Option<
-        MessageWriter<EngineActionEnvelope<FxModulePlaybackAction>>,
+        MessageWriter<EngineOperationEnvelope<FxModulePlaybackOperation>>,
     >,
 ) {
     for event in clip_events.read() {
         match &event.action {
-            ClipAction::Start(id_expr)
-            | ClipAction::StartAtTiming {
+            ClipOperation::Start(id_expr)
+            | ClipOperation::StartAtTiming {
                 clip_id: id_expr, ..
             } => {
                 let (timing, instance_options) = match &event.action {
-                    ClipAction::StartAtTiming {
+                    ClipOperation::StartAtTiming {
                         timing,
                         instance_options,
                         ..
@@ -669,7 +671,7 @@ pub fn route_clip_playback_actions(
                     );
                 }
             }
-            ClipAction::Go(id_expr) => {
+            ClipOperation::Go(id_expr) => {
                 for id in id_expr.expand() {
                     let Some(clip) = exec_query.iter().find(|clip| clip.identifiers.id == id)
                     else {
@@ -701,12 +703,12 @@ pub fn route_clip_playback_actions(
                     }
                 }
             }
-            ClipAction::Stop(id_expr)
-            | ClipAction::StopAtTiming {
+            ClipOperation::Stop(id_expr)
+            | ClipOperation::StopAtTiming {
                 clip_id: id_expr, ..
             } => {
                 let timing = match &event.action {
-                    ClipAction::StopAtTiming { timing, .. } => Some(*timing),
+                    ClipOperation::StopAtTiming { timing, .. } => Some(*timing),
                     _ => None,
                 };
                 for id in id_expr.expand() {
@@ -732,7 +734,7 @@ pub fn route_clip_playback_actions(
                     }
                     fx_actions.write(routed_playback_action(
                         event,
-                        FxPlaybackAction::Stop {
+                        FxPlaybackOperation::Stop {
                             clip_id: id,
                             attached_instances: attached_instances.clone(),
                             timing,
@@ -740,7 +742,7 @@ pub fn route_clip_playback_actions(
                     ));
                     flow_actions.write(routed_playback_action(
                         event,
-                        FlowPlaybackAction::Stop {
+                        FlowPlaybackOperation::Stop {
                             clip_id: id,
                             attached_instances,
                             timing,
@@ -752,7 +754,7 @@ pub fn route_clip_playback_actions(
                     {
                         fx_module_actions.write(routed_playback_action(
                             event,
-                            FxModulePlaybackAction::Stop {
+                            FxModulePlaybackOperation::Stop {
                                 clip_id: id,
                                 fx_module_uid,
                             },
@@ -801,15 +803,15 @@ pub fn handle_clip_playback_attachments(
 
 /// Sends a start action to the domain that owns the clip source.
 fn route_start_action(
-    event: &EngineActionEnvelope<ClipAction>,
+    event: &EngineOperationEnvelope<ClipOperation>,
     clip: &Clip,
     timing: Option<PlaybackReconstructionTiming>,
     instance_options: Option<InstanceOptions>,
     attached_instance: Option<InstanceId>,
-    fx_actions: &mut MessageWriter<EngineActionEnvelope<FxPlaybackAction>>,
-    flow_actions: &mut MessageWriter<EngineActionEnvelope<FlowPlaybackAction>>,
+    fx_actions: &mut MessageWriter<EngineOperationEnvelope<FxPlaybackOperation>>,
+    flow_actions: &mut MessageWriter<EngineOperationEnvelope<FlowPlaybackOperation>>,
     #[cfg(feature = "fx-module-host")] fx_module_actions: Option<
-        &mut MessageWriter<EngineActionEnvelope<FxModulePlaybackAction>>,
+        &mut MessageWriter<EngineOperationEnvelope<FxModulePlaybackOperation>>,
     >,
 ) {
     let context = ClipInstanceStartContext {
@@ -826,13 +828,13 @@ fn route_start_action(
         Some(Source::Fx(fx_uid)) => {
             fx_actions.write(routed_playback_action(
                 event,
-                FxPlaybackAction::StartFx { fx_uid, context },
+                FxPlaybackOperation::StartFx { fx_uid, context },
             ));
         }
         Some(Source::StepFx(step_fx_uid)) => {
             fx_actions.write(routed_playback_action(
                 event,
-                FxPlaybackAction::StartStepFx {
+                FxPlaybackOperation::StartStepFx {
                     step_fx_uid,
                     context,
                 },
@@ -841,7 +843,7 @@ fn route_start_action(
         Some(Source::Flow(flow_uid)) => {
             flow_actions.write(routed_playback_action(
                 event,
-                FlowPlaybackAction::Start { flow_uid, context },
+                FlowPlaybackOperation::Start { flow_uid, context },
             ));
         }
         #[cfg(feature = "fx-module-host")]
@@ -850,7 +852,7 @@ fn route_start_action(
                 fx_module_actions.expect("fx module action messages were checked");
             fx_module_actions.write(routed_playback_action(
                 event,
-                FxModulePlaybackAction::Start {
+                FxModulePlaybackOperation::Start {
                     fx_module_uid,
                     context,
                 },
@@ -864,10 +866,15 @@ fn route_start_action(
 
 /// Wraps one routed playback action with fresh operation identity and inherited lifecycle context.
 fn routed_playback_action<T>(
-    event: &EngineActionEnvelope<ClipAction>,
+    event: &EngineOperationEnvelope<ClipOperation>,
     action: T,
-) -> EngineActionEnvelope<T> {
-    EngineActionEnvelope::with_context(OperationId::new(), event.command_id, event.undo_id, action)
+) -> EngineOperationEnvelope<T> {
+    EngineOperationEnvelope::with_context(
+        OperationId::new(),
+        event.command_id,
+        event.undo_id,
+        action,
+    )
 }
 
 /// Marks an attached playback for release when an clip start retargets across domains.
@@ -1085,7 +1092,7 @@ mod tests {
             ));
         } else if let Some(action) = clip_action_from_command(&command) {
             app.world_mut()
-                .write_message(EngineActionEnvelope::for_command_context(
+                .write_message(EngineOperationEnvelope::for_command_context(
                     command_id, undo_id, action,
                 ));
         }
@@ -1302,7 +1309,7 @@ mod tests {
     fn live_clip_command_forwards_with_lifecycle_context() {
         let mut app = App::new();
         app.add_message::<CommandEnvelope<ClipCommand>>();
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_systems(Update, forward_clip_ingress_actions);
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
@@ -1318,7 +1325,7 @@ mod tests {
 
         let actions = app
             .world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+            .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
             .drain()
             .collect::<Vec<_>>();
         assert_eq!(actions.len(), 1);
@@ -1326,7 +1333,7 @@ mod tests {
         assert_eq!(actions[0].undo_id, Some(undo_id));
         assert!(matches!(
             actions[0].action,
-            ClipAction::Go(IdExpr::Single(7))
+            ClipOperation::Go(IdExpr::Single(7))
         ));
     }
 
@@ -1335,7 +1342,7 @@ mod tests {
     fn clip_playback_request_resolves_with_lifecycle_context() {
         let mut app = App::new();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_systems(Update, forward_clip_playback_requests);
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
@@ -1350,7 +1357,7 @@ mod tests {
 
         let actions = app
             .world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+            .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
             .drain()
             .collect::<Vec<_>>();
         assert_eq!(actions.len(), 1);
@@ -1358,7 +1365,7 @@ mod tests {
         assert_eq!(actions[0].undo_id, Some(undo_id));
         assert!(matches!(
             actions[0].action,
-            ClipAction::Start(IdExpr::Single(9))
+            ClipOperation::Start(IdExpr::Single(9))
         ));
     }
 
@@ -1579,7 +1586,7 @@ mod tests {
     #[test]
     fn clip_rate_command_updates_attached_instance_rate() {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
         app.insert_resource(PendingClipPlaybackRates::default());
         app.add_systems(Update, handle_clip_rate_commands);
@@ -1629,25 +1636,25 @@ mod tests {
     #[test]
     fn clip_rate_command_applies_after_playback_materializes() {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
         app.insert_resource(PendingClipPlaybackRates::default());
         app.add_systems(Update, handle_clip_rate_commands);
 
         let undo_id = Uuid::new_v4();
         app.world_mut()
-            .write_message(EngineActionEnvelope::with_context(
+            .write_message(EngineOperationEnvelope::with_context(
                 OperationId::new(),
                 None,
                 Some(undo_id.into()),
-                ClipAction::Start(IdExpr::Single(7)),
+                ClipOperation::Start(IdExpr::Single(7)),
             ));
         app.world_mut()
-            .write_message(EngineActionEnvelope::with_context(
+            .write_message(EngineOperationEnvelope::with_context(
                 OperationId::new(),
                 None,
                 Some(undo_id.into()),
-                ClipAction::SetRate {
+                ClipOperation::SetRate {
                     clip_id: IdExpr::Single(7),
                     rate: 2.0,
                 },
@@ -1700,7 +1707,7 @@ mod tests {
     #[test]
     fn clip_rate_command_without_same_batch_start_is_not_persisted() {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
         app.insert_resource(PendingClipPlaybackRates::default());
         app.add_systems(Update, handle_clip_rate_commands);
@@ -1752,11 +1759,11 @@ mod tests {
     fn routed_playback_action_preserves_lifecycle_context() {
         let undo_id = Uuid::from_u128(2);
         let command_id = CommandId::new();
-        let event = EngineActionEnvelope::with_context(
+        let event = EngineOperationEnvelope::with_context(
             OperationId::new(),
             Some(command_id),
             Some(UndoId::from(undo_id)),
-            ClipAction::Start(IdExpr::Single(7)),
+            ClipOperation::Start(IdExpr::Single(7)),
         );
 
         let action = routed_playback_action(&event, "start playback");

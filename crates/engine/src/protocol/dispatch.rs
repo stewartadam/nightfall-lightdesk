@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Semantic command and engine-action dispatch via downcasting.
+//! Semantic command and engine-operation dispatch via downcasting.
 
 use std::{any::TypeId, collections::HashMap};
 
@@ -14,7 +14,7 @@ use bevy_ecs::prelude::*;
 
 use crate::{
     prelude::*,
-    protocol::erased::{DynEngineActionEnvelope, PayloadEnvelope},
+    protocol::erased::{DynEngineOperationEnvelope, PayloadEnvelope},
 };
 
 /// A handler that can process a specific type of command.
@@ -25,12 +25,12 @@ use crate::{
 type CommandHandlerFn = fn(&mut World, &PayloadEnvelope);
 
 /// Handler that restores a concrete typed action message from an erased queue entry.
-type ActionHandlerFn = fn(&mut World, &DynEngineActionEnvelope);
+type ActionHandlerFn = fn(&mut World, &DynEngineOperationEnvelope);
 
 /// Fails an originating command when queued action dispatch cannot continue.
 fn fail_action_dispatch(
     world: &mut World,
-    envelope: &DynEngineActionEnvelope,
+    envelope: &DynEngineOperationEnvelope,
     code: &'static str,
     message: String,
 ) {
@@ -48,7 +48,7 @@ fn fail_action_dispatch(
         command_id,
         CommandOutcome::failed(CommandError::new(code, message)),
     ) {
-        tracing::error!(%command_id, %error, "engine_action_dispatch_failure_response_failed");
+        tracing::error!(%command_id, %error, "engine_operation_dispatch_failure_response_failed");
     }
 }
 
@@ -129,22 +129,23 @@ fn handle_ingress_typed<C: IngressCommand + Clone + 'static>(
     ));
 }
 
-/// Restores one registered engine action to its domain-owned typed envelope.
-fn handle_action_typed<A: EngineAction + Clone + 'static>(
+/// Restores one registered engine operation to its domain-owned typed envelope.
+fn handle_action_typed<A: EngineOperation + Clone + 'static>(
     world: &mut World,
-    envelope: &DynEngineActionEnvelope,
+    envelope: &DynEngineOperationEnvelope,
 ) {
     let Some(action) = envelope.action.as_any().downcast_ref::<A>() else {
         return;
     };
-    let Some(mut messages) = world.get_resource_mut::<Messages<EngineActionEnvelope<A>>>() else {
+    let Some(mut messages) = world.get_resource_mut::<Messages<EngineOperationEnvelope<A>>>()
+    else {
         let message = format!(
-            "Engine action message resource is unavailable for {}",
+            "Engine operation message resource is unavailable for {}",
             std::any::type_name::<A>()
         );
         tracing::warn!(
             action_type = %std::any::type_name::<A>(),
-            "engine_action_message_resource_missing"
+            "engine_operation_message_resource_missing"
         );
         fail_action_dispatch(
             world,
@@ -154,7 +155,7 @@ fn handle_action_typed<A: EngineAction + Clone + 'static>(
         );
         return;
     };
-    messages.write(EngineActionEnvelope {
+    messages.write(EngineOperationEnvelope {
         operation_id: envelope.operation_id,
         command_id: envelope.command_id,
         undo_id: envelope.undo_id,
@@ -168,15 +169,15 @@ pub struct CommandIngressRouter {
     handlers: HashMap<TypeId, CommandHandlerFn>,
 }
 
-/// Registry that dispatches erased engine actions to domain-owned typed messages.
+/// Registry that dispatches erased engine operations to domain-owned typed messages.
 #[derive(Resource, Default)]
-pub struct EngineActionRouter {
+pub struct EngineOperationRouter {
     handlers: HashMap<TypeId, ActionHandlerFn>,
 }
 
-impl EngineActionRouter {
-    /// Registers a concrete engine action type for typed dispatch.
-    pub fn register<A: EngineAction + Clone + 'static>(&mut self) {
+impl EngineOperationRouter {
+    /// Registers a concrete engine operation type for typed dispatch.
+    pub fn register<A: EngineOperation + Clone + 'static>(&mut self) {
         self.handlers.insert(
             TypeId::of::<A>(),
             handle_action_typed::<A> as ActionHandlerFn,
@@ -184,10 +185,10 @@ impl EngineActionRouter {
     }
 
     /// Dispatches one erased action through its registered concrete handler.
-    pub fn dispatch(&self, world: &mut World, envelope: &DynEngineActionEnvelope) {
+    pub fn dispatch(&self, world: &mut World, envelope: &DynEngineOperationEnvelope) {
         let action_type_id = envelope.action.as_any().type_id();
         let _span = tracing::debug_span!(
-            "engine_action_dispatch",
+            "engine_operation_dispatch",
             operation_id = %envelope.operation_id,
             command_id = ?envelope.command_id,
             undo_id = ?envelope.undo_id,
@@ -198,12 +199,12 @@ impl EngineActionRouter {
         match self.handlers.get(&action_type_id) {
             Some(handler) => handler(world, envelope),
             None => {
-                tracing::warn!("no_engine_action_handler_found");
+                tracing::warn!("no_engine_operation_handler_found");
                 fail_action_dispatch(
                     world,
                     envelope,
                     "engine.action_handler_missing",
-                    format!("No engine action handler is registered for {action_type_id:?}"),
+                    format!("No engine operation handler is registered for {action_type_id:?}"),
                 );
             }
         }
@@ -269,12 +270,12 @@ impl Command for PayloadEnvelope {
     }
 }
 
-/// Dispatches one queued engine action through the registered action router.
-impl Command for DynEngineActionEnvelope {
+/// Dispatches one queued engine operation through the registered action router.
+impl Command for DynEngineOperationEnvelope {
     type Out = ();
 
     fn apply(self, world: &mut World) {
-        world.resource_scope(|world, router: Mut<EngineActionRouter>| {
+        world.resource_scope(|world, router: Mut<EngineOperationRouter>| {
             router.dispatch(world, &self);
         });
     }
@@ -289,7 +290,7 @@ mod tests {
     struct TestAction(u32);
 
     impl EnginePayload for TestAction {}
-    impl EngineAction for TestAction {}
+    impl EngineOperation for TestAction {}
 
     /// Concrete command used to verify semantic ingress routing.
     #[derive(Clone, Debug, PartialEq)]
@@ -311,19 +312,19 @@ mod tests {
     #[test]
     fn registered_action_dispatches_to_typed_message() {
         let mut world = World::new();
-        world.init_resource::<EngineActionRouter>();
-        world.init_resource::<Messages<EngineActionEnvelope<TestAction>>>();
+        world.init_resource::<EngineOperationRouter>();
+        world.init_resource::<Messages<EngineOperationEnvelope<TestAction>>>();
         world
-            .resource_mut::<EngineActionRouter>()
+            .resource_mut::<EngineOperationRouter>()
             .register::<TestAction>();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
 
-        DynEngineActionEnvelope::for_command(command_id, undo_id, Box::new(TestAction(7)))
+        DynEngineOperationEnvelope::for_command(command_id, undo_id, Box::new(TestAction(7)))
             .apply(&mut world);
 
         let dispatched = world
-            .resource_mut::<Messages<EngineActionEnvelope<TestAction>>>()
+            .resource_mut::<Messages<EngineOperationEnvelope<TestAction>>>()
             .drain()
             .next()
             .expect("registered action should dispatch");
@@ -431,7 +432,7 @@ mod tests {
     #[test]
     fn missing_action_handler_fails_originating_command() {
         let mut world = World::new();
-        world.init_resource::<EngineActionRouter>();
+        world.init_resource::<EngineOperationRouter>();
         init_lifecycle(&mut world);
         let command =
             CommandEnvelope::new("test command", CommandOrigin::Cli, ReplyTarget::Detached);
@@ -440,7 +441,7 @@ mod tests {
             .register(&command)
             .expect("test command should register");
 
-        DynEngineActionEnvelope::for_command(
+        DynEngineOperationEnvelope::for_command(
             command.command_id,
             command.undo_id,
             Box::new(TestAction(7)),

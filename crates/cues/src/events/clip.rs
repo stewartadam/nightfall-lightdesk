@@ -13,7 +13,7 @@ use super::*;
 /// Groups playback resources used while translating clip commands.
 #[derive(SystemParam)]
 pub struct ClipPlaybackParams<'w> {
-    pending_buffer: ResMut<'w, PendingEngineActionBuffer>,
+    pending_buffer: ResMut<'w, PendingEngineOperationBuffer>,
     instance_index: Option<Res<'w, InstanceIndex>>,
 }
 
@@ -137,7 +137,7 @@ pub(super) fn release_cue_instances(
 /// Couples cue lifecycle action input with its typed internal result channel.
 #[derive(SystemParam)]
 pub struct CueLifecycleIo<'w, 's> {
-    actions: MessageReader<'w, 's, EngineActionEnvelope<CueLifecycleAction>>,
+    actions: MessageReader<'w, 's, EngineOperationEnvelope<CueLifecycleOperation>>,
     results: MessageWriter<'w, OperationResult<(), CommandError>>,
 }
 
@@ -175,7 +175,7 @@ pub struct CueClipEventContext<'w, 's> {
     selection_resolver: SpatialSelectionResolver<'w>,
     desk_events: MessageReader<'w, 's, CommandEnvelope<DeskCommand>>,
     cue_lifecycle: CueLifecycleIo<'w, 's>,
-    clip_events: MessageReader<'w, 's, EngineActionEnvelope<ClipAction>>,
+    clip_events: MessageReader<'w, 's, EngineOperationEnvelope<ClipOperation>>,
     outbound: CommandResponder<'w>,
     materialized_cues_for_release: Query<'w, 's, (Entity, &'static MaterializedCue)>,
     msequences: Query<'w, 's, ClipSequencePlaybackView>,
@@ -254,18 +254,18 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
             .map(uuid::Uuid::from)
             .unwrap_or(correlation_id);
         match &event.action {
-            ClipAction::Start(id_expr)
-            | ClipAction::StartAtTiming {
+            ClipOperation::Start(id_expr)
+            | ClipOperation::StartAtTiming {
                 clip_id: id_expr, ..
             } => {
                 let start_timing = match &event.action {
-                    ClipAction::StartAtTiming { timing, .. } => {
+                    ClipOperation::StartAtTiming { timing, .. } => {
                         Some(sequence_start_timing_from_timeline(*timing))
                     }
                     _ => None,
                 };
                 let start_lookahead_enabled = match &event.action {
-                    ClipAction::StartAtTiming {
+                    ClipOperation::StartAtTiming {
                         instance_options, ..
                     } => instance_options.and_then(|options| options.lookahead_enabled),
                     _ => None,
@@ -433,12 +433,12 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                 }
             }
 
-            ClipAction::Stop(id_expr)
-            | ClipAction::StopAtTiming {
+            ClipOperation::Stop(id_expr)
+            | ClipOperation::StopAtTiming {
                 clip_id: id_expr, ..
             } => {
                 let stop_timing = match &event.action {
-                    ClipAction::StopAtTiming { timing, .. } => Some(*timing),
+                    ClipOperation::StopAtTiming { timing, .. } => Some(*timing),
                     _ => None,
                 };
                 for id in id_expr.expand() {
@@ -491,15 +491,15 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                                 let should_cancel = pending_cmd
                                     .action
                                     .as_any()
-                                    .downcast_ref::<SequencePlaybackAction>()
+                                    .downcast_ref::<SequencePlaybackOperation>()
                                     .is_some_and(|sequence_cmd| match sequence_cmd {
-                                        SequencePlaybackAction::Go { instance_id }
-                                        | SequencePlaybackAction::Back { instance_id }
-                                        | SequencePlaybackAction::Goto { instance_id, .. }
-                                        | SequencePlaybackAction::RenderAt {
+                                        SequencePlaybackOperation::Go { instance_id }
+                                        | SequencePlaybackOperation::Back { instance_id }
+                                        | SequencePlaybackOperation::Goto { instance_id, .. }
+                                        | SequencePlaybackOperation::RenderAt {
                                             instance_id, ..
                                         }
-                                        | SequencePlaybackAction::Stop { instance_id } => {
+                                        | SequencePlaybackOperation::Stop { instance_id } => {
                                             instance_ids_to_cancel.contains(instance_id)
                                         }
                                     });
@@ -546,7 +546,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                 }
             }
 
-            ClipAction::Go(id_expr) => {
+            ClipOperation::Go(id_expr) => {
                 for id in id_expr.expand() {
                     if let Some(deferred) = deferred_autostarts.get_mut(&id) {
                         let playback_position = deferred.start_timing.map(|timing| timing.position);
@@ -621,12 +621,12 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
 
                     match instance_id {
                         Some(instance_id) => {
-                            // Delegate to SequencePlaybackAction with same undo_id for unified undo
-                            let delegated_cmd = DynEngineActionEnvelope::with_context(
+                            // Delegate to SequencePlaybackOperation with same undo_id for unified undo
+                            let delegated_cmd = DynEngineOperationEnvelope::with_context(
                                 OperationId::new(),
                                 event.command_id,
                                 event.undo_id,
-                                Box::new(SequencePlaybackAction::Go { instance_id }),
+                                Box::new(SequencePlaybackOperation::Go { instance_id }),
                             );
                             clip_playback.pending_buffer.push(delegated_cmd);
 
@@ -634,7 +634,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                                 clip_id = %id,
                                 instance_id = ?instance_id,
                                 undo_id = ?undo_id,
-                                "Delegating GoClip to SequencePlaybackAction::Go"
+                                "Delegating GoClip to SequencePlaybackOperation::Go"
                             );
                         }
                         None => {
@@ -674,7 +674,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                 }
             }
 
-            ClipAction::Back(clip_id_expr) => {
+            ClipOperation::Back(clip_id_expr) => {
                 for clip_id in clip_id_expr.expand() {
                     if let Some(deferred) = deferred_autostarts.get_mut(&clip_id) {
                         deferred.operations.push(DeferredClipOperation::Back {
@@ -739,11 +739,11 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
 
                     match instance_id {
                         Some(instance_id) => {
-                            let delegated_cmd = DynEngineActionEnvelope::with_context(
+                            let delegated_cmd = DynEngineOperationEnvelope::with_context(
                                 OperationId::new(),
                                 event.command_id,
                                 event.undo_id,
-                                Box::new(SequencePlaybackAction::Back { instance_id }),
+                                Box::new(SequencePlaybackOperation::Back { instance_id }),
                             );
                             clip_playback.pending_buffer.push(delegated_cmd);
 
@@ -751,7 +751,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                                 clip_id = %clip_id,
                                 instance_id = ?instance_id,
                                 undo_id = ?undo_id,
-                                "Delegating BackClip to SequencePlaybackAction::Back"
+                                "Delegating BackClip to SequencePlaybackOperation::Back"
                             );
                         }
                         None => {
@@ -791,7 +791,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                 }
             }
 
-            ClipAction::Goto {
+            ClipOperation::Goto {
                 clip_id: clip_id_expr,
                 position,
                 timing,
@@ -900,12 +900,12 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
 
                     match instance_id {
                         Some(instance_id) => {
-                            // Delegate to SequencePlaybackAction with same undo_id for unified undo
-                            let delegated_cmd = DynEngineActionEnvelope::with_context(
+                            // Delegate to SequencePlaybackOperation with same undo_id for unified undo
+                            let delegated_cmd = DynEngineOperationEnvelope::with_context(
                                 OperationId::new(),
                                 event.command_id,
                                 event.undo_id,
-                                Box::new(SequencePlaybackAction::Goto {
+                                Box::new(SequencePlaybackOperation::Goto {
                                     instance_id,
                                     position: *position,
                                     timing: *timing,
@@ -918,7 +918,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                                 instance_id = ?instance_id,
                                 position = %position,
                                 undo_id = ?undo_id,
-                                "Delegating GotoClip to SequencePlaybackAction::Goto for sequence '{}'",
+                                "Delegating GotoClip to SequencePlaybackOperation::Goto for sequence '{}'",
                                 sequence_label
                             );
                         }
@@ -951,7 +951,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                 }
             }
 
-            ClipAction::RenderAt {
+            ClipOperation::RenderAt {
                 clip_id: clip_id_expr,
                 position,
                 timing,
@@ -1062,11 +1062,11 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
 
                     match instance_id {
                         Some(instance_id) => {
-                            let delegated_cmd = DynEngineActionEnvelope::with_context(
+                            let delegated_cmd = DynEngineOperationEnvelope::with_context(
                                 OperationId::new(),
                                 event.command_id,
                                 event.undo_id,
-                                Box::new(SequencePlaybackAction::RenderAt {
+                                Box::new(SequencePlaybackOperation::RenderAt {
                                     instance_id,
                                     position: *position,
                                     timing: *timing,
@@ -1079,7 +1079,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
                                 instance_id = ?instance_id,
                                 position = %position,
                                 undo_id = ?undo_id,
-                                "Delegating RenderClipAt to SequencePlaybackAction::RenderAt for sequence '{}'",
+                                "Delegating RenderClipAt to SequencePlaybackOperation::RenderAt for sequence '{}'",
                                 sequence_label
                             );
                         }
@@ -1369,7 +1369,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
     }
 
     for event in cue_lifecycle.actions.read() {
-        let CueLifecycleAction::ReleaseCueInstances { uids } = &event.action;
+        let CueLifecycleOperation::ReleaseCueInstances { uids } = &event.action;
         release_cue_instances(uids, &materialized_cues_for_release, &mut commands);
         cue_lifecycle
             .results

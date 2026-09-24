@@ -15,7 +15,7 @@ mod model;
 mod source_reference;
 mod undo;
 
-pub use command::{ClipAction, ClipCommand, clip_action_from_command};
+pub use command::{ClipCommand, ClipOperation, clip_action_from_command};
 pub use lookup::{ClipLookup, ClipLookupError, ClipLookupSnapshot, log_clip_lookup_failure};
 pub use model::{Clip, ClipOptions, ClipSourceRef, MaterializedClip, Source};
 pub use source_reference::UnsupportedClipSource;

@@ -9,7 +9,7 @@
 use bevy_app::prelude::*;
 use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall_engine::prelude::{
-    CommandNotice, CommandReply, CommandResult, CommandTracker, EngineActionEnvelope,
+    CommandNotice, CommandReply, CommandResult, CommandTracker, EngineOperationEnvelope,
     FinishedCommand,
 };
 use nightfall_fixtures::events::handle_clear_dmx_channels;
@@ -29,7 +29,7 @@ fn init_command_lifecycle(app: &mut App) {
 fn test_clear_dmx_channels_resets_manual_channel() {
     let mut app = App::new();
     init_command_lifecycle(&mut app);
-    app.add_message::<EngineActionEnvelope<ClearDmxChannels>>();
+    app.add_message::<EngineOperationEnvelope<ClearDmxChannels>>();
     app.insert_resource(ConsoleDmxUniverses::default());
     app.add_systems(Update, handle_clear_dmx_channels);
 
@@ -40,7 +40,7 @@ fn test_clear_dmx_channels_resets_manual_channel() {
     }
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(ClearDmxChannels(
+        .write_message(EngineOperationEnvelope::detached(ClearDmxChannels(
             DmxChannelSnapshot {
                 channels: DmxChannelExpr::Single(DmxChannelRef {
                     universe: 5,

@@ -73,7 +73,7 @@ impl Plugin for FxPlugin {
         app.add_message::<events::FxPreviewUpdate>();
         app.add_message::<events::StepFxPreviewUpdate>();
         app.add_message::<events::StepFxCommandResult>();
-        register_engine_action::<events::FxPlaybackAction>(app);
+        register_engine_operation::<events::FxPlaybackOperation>(app);
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FxAstConverter>();

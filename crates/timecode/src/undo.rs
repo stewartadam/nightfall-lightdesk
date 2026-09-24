@@ -14,8 +14,8 @@ use nightfall_undo::prelude::*;
 use crate::prelude::*;
 use crate::timecode::Timecode;
 
-impl UndoableOperation for TimecodeCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for TimecodeCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let timecodes = ctx.world.resource::<DataProvider<Timecode>>();
         match self {
             // CRUD operations
@@ -39,7 +39,7 @@ impl UndoableOperation for TimecodeCommand {
                 // Capture full timecode before deletion
                 timecodes.from_id(*id).ok().map(|timecode_ref| {
                     let timecode: Timecode = (*timecode_ref).clone();
-                    Box::new(TimecodeCommand::StoreTimecode(timecode)) as Box<dyn UndoableOperation>
+                    Box::new(TimecodeCommand::StoreTimecode(timecode)) as Box<dyn Undoable>
                 })
             }
             TimecodeCommand::RenameTimecode { id, new_id } => {

@@ -16,8 +16,8 @@ use crate::TimelineNondeterministicSeekBehavior;
 #[test]
 fn seek_tracks_clip_autostarted_by_jump_to_cue_after_cleanup() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -96,14 +96,14 @@ fn seek_tracks_clip_autostarted_by_jump_to_cue_after_cleanup() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
         clip_events[0],
-        ClipAction::Stop(IdExpr::Single(id)) if id == clip_id
+        ClipOperation::Stop(IdExpr::Single(id)) if id == clip_id
     ));
 
     let timeline = app
@@ -117,8 +117,8 @@ fn seek_tracks_clip_autostarted_by_jump_to_cue_after_cleanup() {
 #[test]
 fn seek_replay_direct_materializes_jump_to_cue_autostart() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -219,7 +219,7 @@ fn seek_replay_direct_materializes_jump_to_cue_autostart() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -261,8 +261,8 @@ fn seek_replay_direct_materializes_jump_to_cue_autostart() {
 #[test]
 fn seek_replay_direct_materializes_go_autostart() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -353,7 +353,7 @@ fn seek_replay_direct_materializes_go_autostart() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -385,8 +385,8 @@ fn seek_replay_direct_materializes_go_autostart() {
 #[test]
 fn seek_replay_ignores_desk_eval_go_autostart_by_default() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -476,7 +476,7 @@ fn seek_replay_ignores_desk_eval_go_autostart_by_default() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -487,7 +487,7 @@ fn seek_replay_ignores_desk_eval_go_autostart_by_default() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -513,8 +513,8 @@ fn seek_replay_ignores_desk_eval_go_autostart_by_default() {
 #[test]
 fn seek_replay_tracks_sequence_navigation_desk_eval_and_running_jump_clips() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -707,8 +707,8 @@ fn seek_replay_tracks_sequence_navigation_desk_eval_and_running_jump_clips() {
 #[test]
 fn seek_replay_ignores_desk_eval_clip_go_by_default() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -772,7 +772,7 @@ fn seek_replay_ignores_desk_eval_clip_go_by_default() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -783,7 +783,7 @@ fn seek_replay_ignores_desk_eval_clip_go_by_default() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -803,8 +803,8 @@ fn seek_replay_ignores_desk_eval_clip_go_by_default() {
 #[test]
 fn seek_replay_dispatches_desk_eval_clip_back_when_configured() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -869,19 +869,19 @@ fn seek_replay_dispatches_desk_eval_clip_back_when_configured() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(desk_events.len(), 1);
     assert!(matches!(
         &desk_events[0],
-        DeskAction::Eval(command) if command == "clip 23 back"
+        DeskOperation::Eval(command) if command == "clip 23 back"
     ));
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -901,8 +901,8 @@ fn seek_replay_dispatches_desk_eval_clip_back_when_configured() {
 #[test]
 fn seek_replay_dispatches_registered_desk_eval_when_configured() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
     app.add_message::<ActionInvocation>();
 
@@ -966,8 +966,8 @@ fn seek_replay_dispatches_registered_desk_eval_when_configured() {
 #[test]
 fn seek_replay_direct_materializes_sequence_without_desk_eval_go() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1076,7 +1076,7 @@ fn seek_replay_direct_materializes_sequence_without_desk_eval_go() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1086,7 +1086,7 @@ fn seek_replay_direct_materializes_sequence_without_desk_eval_go() {
     );
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1118,8 +1118,8 @@ fn seek_replay_direct_materializes_sequence_without_desk_eval_go() {
 #[test]
 fn seek_replay_direct_materializes_sequence_with_unrelated_clip_cleanup() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1236,14 +1236,14 @@ fn seek_replay_direct_materializes_sequence_with_unrelated_clip_cleanup() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
         clip_events[0],
-        ClipAction::Stop(IdExpr::Single(id)) if id == old_clip_id
+        ClipOperation::Stop(IdExpr::Single(id)) if id == old_clip_id
     ));
 
     let mut sequence_query = app.world_mut().query::<(
@@ -1285,8 +1285,8 @@ fn seek_replay_direct_materializes_sequence_with_unrelated_clip_cleanup() {
 #[test]
 fn seek_replay_direct_materializes_sequence_with_same_clip_cleanup() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1404,7 +1404,7 @@ fn seek_replay_direct_materializes_sequence_with_same_clip_cleanup() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1452,8 +1452,8 @@ fn seek_replay_direct_materializes_sequence_with_same_clip_cleanup() {
 #[test]
 fn seek_replay_skips_opaque_desk_eval_commands() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1499,7 +1499,7 @@ fn seek_replay_skips_opaque_desk_eval_commands() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1510,7 +1510,7 @@ fn seek_replay_skips_opaque_desk_eval_commands() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1524,8 +1524,8 @@ fn seek_replay_skips_opaque_desk_eval_commands() {
 #[test]
 fn seek_replay_skips_started_clip_with_missing_sequence_data() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1583,7 +1583,7 @@ fn seek_replay_skips_started_clip_with_missing_sequence_data() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1597,8 +1597,8 @@ fn seek_replay_skips_started_clip_with_missing_sequence_data() {
 #[test]
 fn seek_replay_materializes_autonomous_sequence_progression() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1698,7 +1698,7 @@ fn seek_replay_materializes_autonomous_sequence_progression() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1730,8 +1730,8 @@ fn seek_replay_materializes_autonomous_sequence_progression() {
 #[test]
 fn seek_replay_applies_autonomous_progression_before_planned_intervention() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1853,7 +1853,7 @@ fn seek_replay_applies_autonomous_progression_before_planned_intervention() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1885,8 +1885,8 @@ fn seek_replay_applies_autonomous_progression_before_planned_intervention() {
 #[test]
 fn seek_replay_materializes_stopped_sequence_release_directly() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1984,7 +1984,7 @@ fn seek_replay_materializes_stopped_sequence_release_directly() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2049,8 +2049,8 @@ fn seek_replay_materializes_stopped_sequence_release_directly() {
 #[test]
 fn seek_replay_skips_timed_stop_with_missing_sequence_data() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2117,7 +2117,7 @@ fn seek_replay_skips_timed_stop_with_missing_sequence_data() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2131,8 +2131,8 @@ fn seek_replay_skips_timed_stop_with_missing_sequence_data() {
 #[test]
 fn seek_replay_skips_advanced_sequence_with_missing_cue_data() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2223,7 +2223,7 @@ fn seek_replay_skips_advanced_sequence_with_missing_cue_data() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2234,7 +2234,7 @@ fn seek_replay_skips_advanced_sequence_with_missing_cue_data() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2254,8 +2254,8 @@ fn seek_replay_skips_advanced_sequence_with_missing_cue_data() {
 #[test]
 fn seek_replay_skips_back_sequence_with_missing_cue_data() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2343,7 +2343,7 @@ fn seek_replay_skips_back_sequence_with_missing_cue_data() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2354,7 +2354,7 @@ fn seek_replay_skips_back_sequence_with_missing_cue_data() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();

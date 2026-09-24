@@ -13,7 +13,7 @@ use nightfall_instances::{InstanceControlUpdate, InstanceControls, InstanceId};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    clips::{Clip, ClipAction, MaterializedClip},
+    clips::{Clip, ClipOperation, MaterializedClip},
     instances::InstanceIndex,
     masters::{Master, MasterUpdate},
 };
@@ -683,7 +683,7 @@ pub fn handle_control_updates(
     materialized_clips: Query<&MaterializedClip>,
     instance_index: Res<InstanceIndex>,
     controls_query: Query<&InstanceControls>,
-    mut clip_writer: MessageWriter<EngineActionEnvelope<ClipAction>>,
+    mut clip_writer: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     mut master_writer: MessageWriter<MasterUpdate>,
     mut playback_control_writer: MessageWriter<InstanceControlUpdate>,
 ) {
@@ -733,13 +733,13 @@ pub fn handle_control_updates(
                 let actions = slot.handle_console_value(*value, runtime);
 
                 if actions.should_start_clip {
-                    clip_writer.write(EngineActionEnvelope::detached(ClipAction::Start(
+                    clip_writer.write(EngineOperationEnvelope::detached(ClipOperation::Start(
                         IdExpr::Single(clip_id),
                     )));
                 }
 
                 if actions.should_stop_clip {
-                    clip_writer.write(EngineActionEnvelope::detached(ClipAction::Stop(
+                    clip_writer.write(EngineOperationEnvelope::detached(ClipOperation::Stop(
                         IdExpr::Single(clip_id),
                     )));
                 }
@@ -798,13 +798,13 @@ pub fn handle_control_updates(
                 let actions = slot.handle_hardware_value(*value, runtime);
 
                 if actions.should_start_clip {
-                    clip_writer.write(EngineActionEnvelope::detached(ClipAction::Start(
+                    clip_writer.write(EngineOperationEnvelope::detached(ClipOperation::Start(
                         IdExpr::Single(clip_id),
                     )));
                 }
 
                 if actions.should_stop_clip {
-                    clip_writer.write(EngineActionEnvelope::detached(ClipAction::Stop(
+                    clip_writer.write(EngineOperationEnvelope::detached(ClipOperation::Stop(
                         IdExpr::Single(clip_id),
                     )));
                 }
@@ -884,13 +884,13 @@ pub fn handle_control_updates(
                 );
 
                 if actions.should_start_clip {
-                    clip_writer.write(EngineActionEnvelope::detached(ClipAction::Start(
+                    clip_writer.write(EngineOperationEnvelope::detached(ClipOperation::Start(
                         IdExpr::Single(clip_id),
                     )));
                 }
 
                 if actions.should_stop_clip {
-                    clip_writer.write(EngineActionEnvelope::detached(ClipAction::Stop(
+                    clip_writer.write(EngineOperationEnvelope::detached(ClipOperation::Stop(
                         IdExpr::Single(clip_id),
                     )));
                 }

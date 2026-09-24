@@ -201,7 +201,7 @@ pub(super) fn reconcile_timeline_runtime_entities(
                         write_timeline_clip_action(
                             &mut dispatch.ev_clip,
                             &mut dispatch.timeline_command_origins,
-                            ClipAction::Stop(IdExpr::Single(clip.identifiers.id)),
+                            ClipOperation::Stop(IdExpr::Single(clip.identifiers.id)),
                         );
                     }
                 }

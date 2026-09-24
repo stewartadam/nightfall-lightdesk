@@ -9,17 +9,17 @@
 use super::*;
 
 pub(super) fn write_timeline_desk_action(
-    writer: &mut MessageWriter<EngineActionEnvelope<DeskAction>>,
+    writer: &mut MessageWriter<EngineOperationEnvelope<DeskOperation>>,
     origins: &mut TimelineCommandOrigins,
     command: String,
 ) {
     let operation_id = OperationId::new();
     let undo_id = UndoId::new();
-    let event = EngineActionEnvelope::with_context(
+    let event = EngineOperationEnvelope::with_context(
         operation_id,
         None,
         Some(undo_id),
-        DeskAction::Eval(command),
+        DeskOperation::Eval(command),
     );
     origins.mark_clip_undo_id(undo_id.into());
     writer.write(event);

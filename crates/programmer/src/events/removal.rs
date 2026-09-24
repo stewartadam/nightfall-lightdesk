@@ -13,7 +13,7 @@ use super::*;
 /// Handles remove instruction by UUID events
 pub fn handle_remove_instruction_events(
     mut events_reader: MessageReader<
-        EngineActionEnvelope<crate::undo::RemoveProgrammerInstructionByUuid>,
+        EngineOperationEnvelope<crate::undo::RemoveProgrammerInstructionByUuid>,
     >,
     mut programmer: ResMut<Programmer>,
     mut responder: CommandResponder,

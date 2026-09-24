@@ -20,7 +20,7 @@ use nightfall_engine::prelude::*;
 
 use crate::context::UndoContext;
 use crate::manager::{UndoEntry, UndoManager};
-use crate::traits::UndoableOperation;
+use crate::traits::Undoable;
 
 /// Type alias for inverse generator functions.
 ///
@@ -45,16 +45,16 @@ pub(crate) enum UndoReplay {
     /// An inverse whose handler still consumes the legacy command route.
     LegacyCommand(PayloadEnvelope),
     /// A concrete inverse operation dispatched through its domain action router.
-    EngineAction(DynEngineActionEnvelope),
+    EngineOperation(DynEngineOperationEnvelope),
 }
 
 /// Rebuilds one stored inverse as the semantic payload type registered by its domain.
 type ReplayFactory =
-    Box<dyn Fn(&dyn UndoableOperation, UndoReplayContext) -> Option<UndoReplay> + Send + Sync>;
+    Box<dyn Fn(&dyn Undoable, UndoReplayContext) -> Option<UndoReplay> + Send + Sync>;
 
 /// Registry for undoable command types.
 ///
-/// Commands that implement `UndoableOperation` must be registered here
+/// Commands that implement `Undoable` must be registered here
 /// for the undo system to capture their inverses during dispatch.
 #[derive(Resource, Default)]
 pub struct UndoRegistry {
@@ -71,13 +71,13 @@ impl UndoRegistry {
         }
     }
 
-    /// Register a command type that implements UndoableOperation.
+    /// Register a command type that implements Undoable.
     ///
     /// This enables automatic inverse generation when commands of this
     /// type are dispatched.
     pub fn register<C>(&mut self)
     where
-        C: UndoableOperation + Clone + 'static,
+        C: Undoable + Clone + 'static,
     {
         self.register_inverse_generator::<C>();
         self.replay_factories.insert(
@@ -93,18 +93,18 @@ impl UndoRegistry {
         );
     }
 
-    /// Registers an undoable concrete engine action and its typed replay route.
-    pub fn register_action<A>(&mut self)
+    /// Registers an undoable concrete engine operation and its typed replay route.
+    pub fn register_operation<A>(&mut self)
     where
-        A: UndoableOperation + EngineAction + Clone + 'static,
+        A: Undoable + EngineOperation + Clone + 'static,
     {
         self.register_inverse_generator::<A>();
         self.replay_factories.insert(
             TypeId::of::<A>(),
             Box::new(|operation, context| {
                 let operation = operation.as_any().downcast_ref::<A>()?;
-                Some(UndoReplay::EngineAction(
-                    DynEngineActionEnvelope::for_command(
+                Some(UndoReplay::EngineOperation(
+                    DynEngineOperationEnvelope::for_command(
                         context.command_id,
                         context.undo_id,
                         Box::new(operation.clone()),
@@ -117,7 +117,7 @@ impl UndoRegistry {
     /// Registers inverse generation shared by command and action replay routes.
     fn register_inverse_generator<C>(&mut self)
     where
-        C: UndoableOperation + Clone + 'static,
+        C: Undoable + Clone + 'static,
     {
         let type_id = TypeId::of::<C>();
         tracing::trace!(?type_id, "Registering undoable operation handler");
@@ -148,10 +148,10 @@ impl UndoRegistry {
         generator(envelope.payload.as_ref(), Some(envelope.command_id), ctx)
     }
 
-    /// Tries to generate an inverse for a typed engine action crossing the erased queue.
+    /// Tries to generate an inverse for a typed engine operation crossing the erased queue.
     pub fn try_generate_action_inverse(
         &self,
-        envelope: &DynEngineActionEnvelope,
+        envelope: &DynEngineOperationEnvelope,
         ctx: &UndoContext,
     ) -> Option<UndoEntry> {
         let type_id = envelope.action.as_any().type_id();
@@ -162,7 +162,7 @@ impl UndoRegistry {
     /// Rebuilds a stored inverse using the command or action route registered for its type.
     pub(crate) fn prepare_replay(
         &self,
-        operation: &dyn UndoableOperation,
+        operation: &dyn Undoable,
         context: UndoReplayContext,
     ) -> Option<UndoReplay> {
         let factory = self.replay_factories.get(&operation.as_any().type_id())?;
@@ -231,19 +231,19 @@ pub fn process_pending_commands(world: &mut World) {
     }
 }
 
-/// Action-stage undo processing.
+/// Operation-stage undo processing.
 ///
 /// This system:
-/// 1. Reads actions from `PendingEngineActionBuffer`
+/// 1. Reads actions from `PendingEngineOperationBuffer`
 /// 2. Captures inverses for undoable actions
 /// 3. Queues actions for runtime dispatch
 pub fn process_pending_actions(world: &mut World) {
-    if world.resource::<PendingEngineActionBuffer>().is_empty() {
+    if world.resource::<PendingEngineOperationBuffer>().is_empty() {
         return;
     }
 
     let actions_to_process: Vec<_> = world
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain()
         .into_iter()
         .collect();
@@ -256,7 +256,7 @@ pub fn process_pending_actions(world: &mut World) {
         for correlated_action in &actions_to_process {
             if let Some(entry) = registry.try_generate_action_inverse(correlated_action, &ctx) {
                 tracing::debug!(
-                    "Captured action-stage undo inverse for: {}",
+                    "Captured operation-stage undo inverse for: {}",
                     entry.description
                 );
                 if let Some(undo_id) = correlated_action.undo_id {
@@ -291,12 +291,12 @@ mod tests {
 
     /// Minimal undoable action used to verify semantic replay registration.
     #[derive(Clone, Debug, EnginePayload, PartialEq)]
-    struct TestUndoAction(u32);
+    struct TestUndoOperation(u32);
 
-    impl EngineAction for TestUndoAction {}
+    impl EngineOperation for TestUndoOperation {}
 
-    impl UndoableOperation for TestUndoAction {
-        fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    impl Undoable for TestUndoOperation {
+        fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
             Some(Box::new(self.clone()))
         }
 
@@ -308,7 +308,7 @@ mod tests {
     fn setup_world() -> World {
         let mut world = World::new();
         world.init_resource::<PendingCommandBuffer>();
-        world.init_resource::<PendingEngineActionBuffer>();
+        world.init_resource::<PendingEngineOperationBuffer>();
         world.init_resource::<UndoManager>();
         world.init_resource::<UndoRegistry>();
         world.init_resource::<CommandTracker>();
@@ -323,38 +323,42 @@ mod tests {
         process_pending_commands(&mut world);
 
         assert!(world.resource::<PendingCommandBuffer>().is_empty());
-        assert!(world.resource::<PendingEngineActionBuffer>().is_empty());
+        assert!(world.resource::<PendingEngineOperationBuffer>().is_empty());
     }
 
-    /// Verifies action-stage processing drains every queued action.
+    /// Verifies operation-stage processing drains every queued action.
     #[test]
     fn process_pending_actions_drains_action_buffer() {
         let mut world = setup_world();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
-        world.resource_mut::<PendingEngineActionBuffer>().push(
-            DynEngineActionEnvelope::for_command(command_id, undo_id, Box::new(TestUndoAction(1))),
+        world.resource_mut::<PendingEngineOperationBuffer>().push(
+            DynEngineOperationEnvelope::for_command(
+                command_id,
+                undo_id,
+                Box::new(TestUndoOperation(1)),
+            ),
         );
 
         process_pending_actions(&mut world);
 
         assert!(
-            world.resource::<PendingEngineActionBuffer>().is_empty(),
-            "action-stage processing should drain PendingEngineActionBuffer",
+            world.resource::<PendingEngineOperationBuffer>().is_empty(),
+            "operation-stage processing should drain PendingEngineOperationBuffer",
         );
     }
 
-    /// Verifies action registrations rebuild stored inverses as typed engine-action envelopes.
+    /// Verifies action registrations rebuild stored inverses as typed engine-operation envelopes.
     #[test]
     fn action_registration_prepares_semantic_replay() {
         let mut registry = UndoRegistry::new();
-        registry.register_action::<TestUndoAction>();
+        registry.register_operation::<TestUndoOperation>();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
 
         let replay = registry
             .prepare_replay(
-                &TestUndoAction(7),
+                &TestUndoOperation(7),
                 UndoReplayContext {
                     command_id,
                     undo_id,
@@ -362,14 +366,14 @@ mod tests {
             )
             .expect("registered action should prepare replay");
 
-        let UndoReplay::EngineAction(envelope) = replay else {
+        let UndoReplay::EngineOperation(envelope) = replay else {
             panic!("action registration should not use the legacy command route");
         };
         assert_eq!(envelope.command_id, Some(command_id));
         assert_eq!(envelope.undo_id, Some(undo_id));
         assert_eq!(
-            envelope.action.as_any().downcast_ref::<TestUndoAction>(),
-            Some(&TestUndoAction(7))
+            envelope.action.as_any().downcast_ref::<TestUndoOperation>(),
+            Some(&TestUndoOperation(7))
         );
     }
 
@@ -377,13 +381,13 @@ mod tests {
     #[test]
     fn command_registration_prepares_joined_replay() {
         let mut registry = UndoRegistry::new();
-        registry.register::<TestUndoAction>();
+        registry.register::<TestUndoOperation>();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
 
         let replay = registry
             .prepare_replay(
-                &TestUndoAction(9),
+                &TestUndoOperation(9),
                 UndoReplayContext {
                     command_id,
                     undo_id,
@@ -397,8 +401,11 @@ mod tests {
         assert_eq!(envelope.command_id, command_id);
         assert_eq!(envelope.undo_id, undo_id);
         assert_eq!(
-            envelope.payload.as_any().downcast_ref::<TestUndoAction>(),
-            Some(&TestUndoAction(9))
+            envelope
+                .payload
+                .as_any()
+                .downcast_ref::<TestUndoOperation>(),
+            Some(&TestUndoOperation(9))
         );
     }
 }

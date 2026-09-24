@@ -23,14 +23,14 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker,
-    EngineActionEnvelope, FinishedCommand, ReplyTarget,
+    EngineOperationEnvelope, FinishedCommand, ReplyTarget,
 };
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::undo::{
     ClearDmxChannels, DmxChannelSnapshot, FixtureSnapshot, ParameterSnapshot,
     RestoreFixtureSnapshot,
 };
-use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_instances::{PlaybackOperation, PlaybackScope};
 use nightfall_io::prelude::*;
 
 /// Installs the command lifecycle resources required by action handlers.
@@ -560,7 +560,7 @@ fn compositor_recomputes_when_layer_compositing_context_is_removed() {
 fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters() {
     let mut app = App::new();
     init_command_lifecycle(&mut app);
-    app.add_message::<EngineActionEnvelope<RestoreFixtureSnapshot>>();
+    app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.add_systems(
@@ -624,7 +624,7 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
         }),
     ));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(RestoreFixtureSnapshot(
+        .write_message(EngineOperationEnvelope::detached(RestoreFixtureSnapshot(
             FixtureSnapshot {
                 fixture,
                 parameters: vec![ParameterSnapshot {
@@ -1486,9 +1486,9 @@ fn test_compositor_resets_inverted_parameter_to_logical_default() {
 fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<FixtureCommand>>();
-    app.add_message::<EngineActionEnvelope<ClearDmxChannels>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
-    app.add_message::<EngineActionEnvelope<DmxAction>>();
+    app.add_message::<EngineOperationEnvelope<ClearDmxChannels>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
+    app.add_message::<EngineOperationEnvelope<DmxOperation>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
@@ -1604,7 +1604,7 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     assert!(MANUAL_ASSERTION_LAYER_PRIORITY.0 > TRANSPORT_INPUT_LAYER_PRIORITY.0);
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(ClearDmxChannels(
+        .write_message(EngineOperationEnvelope::detached(ClearDmxChannels(
             DmxChannelSnapshot {
                 channels: DmxChannelExpr::Single(DmxChannelRef {
                     universe: 5,
@@ -1634,8 +1634,8 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     assert_eq!(parameter.values.current_value, 111.0);
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            PlaybackAction::ReleaseParameters {
+        .write_message(EngineOperationEnvelope::detached(
+            PlaybackOperation::ReleaseParameters {
                 scope: PlaybackScope::All,
             },
         ));

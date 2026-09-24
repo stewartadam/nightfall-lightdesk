@@ -9,10 +9,10 @@
 use bevy_app::prelude::*;
 use bevy_ecs::{prelude::Messages, schedule::IntoScheduleConfigs};
 use nightfall::prelude::*;
-use nightfall_desk::prelude::GroupAction;
+use nightfall_desk::prelude::GroupOperation;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker,
-    DataProvider, EngineActionEnvelope, FinishedCommand, OperationResult, ReplyTarget,
+    DataProvider, EngineOperationEnvelope, FinishedCommand, OperationResult, ReplyTarget,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_fixtures::selection::SpatialSelectionResolver;
@@ -77,7 +77,7 @@ fn element_fixture_ref(fixture_id: u32, element_index: u32) -> FixtureRef {
 fn setup_app() -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<ProgrammerCommand>>();
-    app.add_message::<EngineActionEnvelope<GroupAction>>();
+    app.add_message::<EngineOperationEnvelope<GroupOperation>>();
     app.insert_resource(Programmer::default());
     app.insert_resource(StoreObjectWorkflows::default());
     app.insert_resource(FixtureDataProviderExt::default());
@@ -120,7 +120,7 @@ fn resolve_selection(app: &mut App, selection: &SpatialSelection) -> ResolvedSel
 }
 
 /// Runs one store-group command and returns the queued group action.
-fn run_store_group_command(app: &mut App, group_id: u32) -> GroupAction {
+fn run_store_group_command(app: &mut App, group_id: u32) -> GroupOperation {
     app.world_mut().write_message(CommandEnvelope::new(
         ProgrammerCommand::StoreGroup {
             group_id,
@@ -131,7 +131,7 @@ fn run_store_group_command(app: &mut App, group_id: u32) -> GroupAction {
     ));
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<GroupAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<GroupOperation>>>()
         .drain()
         .map(|envelope| envelope.action)
         .next()
@@ -219,7 +219,7 @@ fn store_group_materializes_expanded_split_active_selection_source() {
         .resource_mut::<Programmer>()
         .set_active_spatial_selection(active_selection);
 
-    let GroupAction::StoreGroup(group) = run_store_group_command(&mut app, 9);
+    let GroupOperation::StoreGroup(group) = run_store_group_command(&mut app, 9);
 
     assert_eq!(
         group.selection.clauses,
@@ -260,7 +260,7 @@ fn store_group_preserves_materialized_source_spans_before_projection() {
         .resource_mut::<Programmer>()
         .set_active_spatial_selection(active_selection);
 
-    let GroupAction::StoreGroup(group) = run_store_group_command(&mut app, 9);
+    let GroupOperation::StoreGroup(group) = run_store_group_command(&mut app, 9);
 
     assert_eq!(
         group.selection.clauses,
@@ -292,7 +292,7 @@ fn store_group_preserves_unshaped_active_selection() {
         .resource_mut::<Programmer>()
         .set_active_spatial_selection(active_selection.clone());
 
-    let GroupAction::StoreGroup(group) = run_store_group_command(&mut app, 9);
+    let GroupOperation::StoreGroup(group) = run_store_group_command(&mut app, 9);
 
     assert_eq!(group.selection, active_selection);
 }
@@ -316,7 +316,7 @@ fn store_group_preserves_projected_active_selection() {
         .resource_mut::<Programmer>()
         .set_active_spatial_selection(active_selection.clone());
 
-    let GroupAction::StoreGroup(group) = run_store_group_command(&mut app, 9);
+    let GroupOperation::StoreGroup(group) = run_store_group_command(&mut app, 9);
 
     assert_eq!(group.selection, active_selection);
 }
@@ -337,7 +337,7 @@ fn store_group_preserves_split_only_active_selection() {
         .resource_mut::<Programmer>()
         .set_active_spatial_selection(active_selection.clone());
 
-    let GroupAction::StoreGroup(group) = run_store_group_command(&mut app, 9);
+    let GroupOperation::StoreGroup(group) = run_store_group_command(&mut app, 9);
 
     assert_eq!(group.selection, active_selection);
 }
@@ -365,7 +365,7 @@ fn store_group_preserves_group_expansion_with_whole_fixtures() {
         .resource_mut::<Programmer>()
         .set_active_spatial_selection(active_selection.clone());
 
-    let GroupAction::StoreGroup(group) = run_store_group_command(&mut app, 9);
+    let GroupOperation::StoreGroup(group) = run_store_group_command(&mut app, 9);
 
     assert_eq!(
         group.selection,
@@ -394,7 +394,7 @@ fn store_group_stabilizes_group_refs_across_numeric_rename() {
             GroupRefExpr::ById(1),
         )));
 
-    let GroupAction::StoreGroup(stored_group) = run_store_group_command(&mut app, 9);
+    let GroupOperation::StoreGroup(stored_group) = run_store_group_command(&mut app, 9);
 
     assert_eq!(
         stored_group.selection.source,

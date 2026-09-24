@@ -13,7 +13,7 @@ pub(super) fn release_timeline_owned_entities(
     commands: &mut Commands,
     clip_query: &Query<&Clip>,
     instance_clocks: &mut Query<(Option<&mut InstanceClock>, Option<&mut InstanceControls>)>,
-    ev_clip: &mut MessageWriter<EngineActionEnvelope<ClipAction>>,
+    ev_clip: &mut MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     timeline_command_origins: &mut TimelineCommandOrigins,
     timeline: &MaterializedTimeline,
 ) {
@@ -32,7 +32,7 @@ pub(super) fn release_timeline_owned_entities(
                 write_timeline_clip_action(
                     ev_clip,
                     timeline_command_origins,
-                    ClipAction::Stop(IdExpr::Single(clip.identifiers.id)),
+                    ClipOperation::Stop(IdExpr::Single(clip.identifiers.id)),
                 );
             }
             SpawnedEntityType::Cue => {

@@ -209,13 +209,13 @@ fn stopped_timeline_ids_from_timeline_events(
 
 /// Returns timeline IDs that received an internal stop action this frame.
 fn stopped_timeline_ids_from_actions(
-    actions: &mut MessageReader<EngineActionEnvelope<TimelineAction>>,
+    actions: &mut MessageReader<EngineOperationEnvelope<TimelineOperation>>,
 ) -> HashSet<u32> {
     actions
         .read()
         .filter_map(|event| match event.action {
-            TimelineAction::Stop(id) => Some(id),
-            TimelineAction::Start(_) | TimelineAction::InsertRecordedActions { .. } => None,
+            TimelineOperation::Stop(id) => Some(id),
+            TimelineOperation::Start(_) | TimelineOperation::InsertRecordedActions { .. } => None,
         })
         .collect()
 }
@@ -233,7 +233,7 @@ fn timeline_matches_stop_signal(
 pub fn reset_timeline_triggers_system(
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
-    mut timeline_actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
+    mut timeline_actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
 ) {
@@ -259,7 +259,7 @@ pub fn reset_timeline_triggers_system(
 pub fn record_stopped_timeline_release_clocks(
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
-    mut timeline_actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
+    mut timeline_actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
     timeline_query: Query<&MaterializedTimeline>,
     mut pending_detaches: ResMut<PendingStoppedTimelineReleaseClocks>,
@@ -338,9 +338,9 @@ pub fn stop_timeline_owned_clips(
     timeline_query: Query<&MaterializedTimeline>,
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
-    mut timeline_actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
+    mut timeline_actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
-    mut ev_clip: MessageWriter<EngineActionEnvelope<ClipAction>>,
+    mut ev_clip: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     mut timeline_command_origins: ResMut<TimelineCommandOrigins>,
     clip_query: Query<&Clip>,
 ) {
@@ -379,7 +379,7 @@ pub fn stop_timeline_owned_clips(
                 write_timeline_clip_action(
                     &mut ev_clip,
                     &mut timeline_command_origins,
-                    ClipAction::Stop(IdExpr::Single(clip.identifiers.id)),
+                    ClipOperation::Stop(IdExpr::Single(clip.identifiers.id)),
                 );
             } else {
                 tracing::warn!(
@@ -398,7 +398,7 @@ pub fn cleanup_timeline_entities(
     mut timeline_query: Query<&mut MaterializedTimeline>,
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
-    mut timeline_actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
+    mut timeline_actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
     mut commands: Commands,
 ) {

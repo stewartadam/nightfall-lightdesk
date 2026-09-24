@@ -15,8 +15,8 @@ use super::*;
 fn live_repeated_sequence_go_reaches_each_manual_cue() {
     for batched in [false, true] {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<DeskAction>>();
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_message::<TimecodeEvent>();
         app.init_resource::<DataProvider<Cue>>();
         app.init_resource::<DataProvider<Sequence>>();
@@ -100,11 +100,11 @@ fn live_repeated_sequence_go_reaches_each_manual_cue() {
             app.update();
             let positions = app
                 .world_mut()
-                .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+                .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
                 .drain()
                 .map(|event| match event.action {
-                    ClipAction::StartAtTiming { .. } => 1,
-                    ClipAction::RenderAt { position, .. } => position,
+                    ClipOperation::StartAtTiming { .. } => 1,
+                    ClipOperation::RenderAt { position, .. } => position,
                     other => panic!("unexpected playback action: {other:?}"),
                 })
                 .collect::<Vec<_>>();

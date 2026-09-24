@@ -17,13 +17,13 @@ use nightfall_actions::{
 };
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
-    PlannedPlaybackInterventionKind, TimelinePlaybackActionOperation, TimelinePlaybackActionPlan,
+    PlannedPlaybackInterventionKind, TimelinePlaybackActionKind, TimelinePlaybackActionPlan,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::clips::{Clip, ClipAction};
+use crate::clips::{Clip, ClipOperation};
 use crate::controls::ControlUpdate;
 use crate::desk_command::DeskCommand;
 
@@ -140,22 +140,22 @@ pub fn register_desk_actions(app: &mut App) {
         &mut registry,
         CLIP_START_ACTION_ID,
         "Start clip",
-        ClipAction::Start,
-        TimelinePlaybackActionOperation::Start,
+        ClipOperation::Start,
+        TimelinePlaybackActionKind::Start,
     );
     register_clip_action(
         &mut registry,
         CLIP_STOP_ACTION_ID,
         "Stop clip",
-        ClipAction::Stop,
-        TimelinePlaybackActionOperation::Stop,
+        ClipOperation::Stop,
+        TimelinePlaybackActionKind::Stop,
     );
     register_clip_action(
         &mut registry,
         CLIP_GO_ACTION_ID,
         "Go clip",
-        ClipAction::Go,
-        TimelinePlaybackActionOperation::Intervene(PlannedPlaybackInterventionKind::SequenceGo),
+        ClipOperation::Go,
+        TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceGo),
     );
     registry.register::<ControlActionArguments, _>(
         descriptor(
@@ -188,8 +188,8 @@ fn register_clip_action(
     registry: &mut ActionRegistry,
     action_id: &'static str,
     label: &'static str,
-    action: fn(IdExpr) -> ClipAction,
-    timeline_operation: TimelinePlaybackActionOperation,
+    action: fn(IdExpr) -> ClipOperation,
+    timeline_operation: TimelinePlaybackActionKind,
 ) {
     registry.register::<ClipActionArguments, _>(
         descriptor(
@@ -209,14 +209,16 @@ fn register_clip_action(
         move |world, arguments, _invocation| {
             let id = resolve_clip_id(world, arguments.target)?;
             let Some(mut messages) =
-                world.get_resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+                world.get_resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
             else {
                 return Err(InvocationError::new(
                     "clip.dispatch_unavailable",
                     "Clip action dispatch is unavailable",
                 ));
             };
-            messages.write(EngineActionEnvelope::detached(action(IdExpr::Single(id))));
+            messages.write(EngineOperationEnvelope::detached(action(IdExpr::Single(
+                id,
+            ))));
             Ok(InvocationDispatch::Accepted)
         },
     );
@@ -364,7 +366,7 @@ mod tests {
     fn desk_action_app() -> App {
         let mut app = App::new();
         app.add_plugins(ActionsPlugin);
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_message::<ControlUpdate>();
         app.add_message::<CommandEnvelope<DeskCommand>>();
         app.init_resource::<DataProvider<Clip>>();
@@ -395,13 +397,13 @@ mod tests {
 
         let actions = app
             .world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+            .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
             .drain()
             .collect::<Vec<_>>();
         assert!(matches!(
             actions.as_slice(),
-            [EngineActionEnvelope {
-                action: ClipAction::Start(IdExpr::Single(7)),
+            [EngineOperationEnvelope {
+                action: ClipOperation::Start(IdExpr::Single(7)),
                 ..
             }]
         ));

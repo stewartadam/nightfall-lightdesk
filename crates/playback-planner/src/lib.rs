@@ -388,12 +388,12 @@ pub struct TimelinePlaybackActionPlan {
     /// Stable runtime owner addressed by the action.
     pub owner_uid: Uuid,
     /// Planner operation represented by the registered action.
-    pub operation: TimelinePlaybackActionOperation,
+    pub operation: TimelinePlaybackActionKind,
 }
 
 /// Generic playback operations a registered action can contribute to timeline planning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TimelinePlaybackActionOperation {
+pub enum TimelinePlaybackActionKind {
     /// Start the owner's configured playback source.
     Start,
     /// Stop and release the owner's active playback source.

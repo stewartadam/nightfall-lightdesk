@@ -20,7 +20,7 @@ use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     CommandId, CommandNotice, CommandOrigin, CommandOutcome, CommandReply, CommandResult,
     CommandTracker, DataProvider, FinishedCommand, PayloadEnvelope, PendingCommandBuffer,
-    PendingEngineActionBuffer, ReplyTarget, UndoId,
+    PendingEngineOperationBuffer, ReplyTarget, UndoId,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_programmer::events::{
@@ -28,7 +28,7 @@ use nightfall_programmer::events::{
     StoreCuePartId, StoreMode, plan_pending_user_commands,
 };
 use nightfall_programmer::prelude::{
-    AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerAction, ReleaseCommand,
+    AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerOperation, ReleaseCommand,
     ReleaseTarget, Scope, UserCommand,
 };
 use uuid::Uuid;
@@ -45,7 +45,7 @@ fn setup_app() -> App {
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(PendingCommandBuffer::default());
-    app.insert_resource(PendingEngineActionBuffer::default());
+    app.insert_resource(PendingEngineOperationBuffer::default());
     app.init_resource::<CommandTracker>();
     app.init_resource::<SelectionFlattenApprovals>();
     app.init_resource::<PendingUserCommandPlans>();
@@ -158,7 +158,7 @@ fn rejects_multi_action_plan_atomically_when_one_action_requires_confirmation() 
 
     assert!(
         app.world_mut()
-            .resource_mut::<PendingEngineActionBuffer>()
+            .resource_mut::<PendingEngineOperationBuffer>()
             .drain()
             .is_empty(),
         "no sibling action may dispatch when confirmation rejects the plan",
@@ -249,14 +249,17 @@ fn rejects_multi_action_plan_atomically_when_one_action_requires_confirmation() 
 
     let approved_actions = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     assert_eq!(approved_actions.len(), 2);
     assert!(approved_actions.iter().all(|envelope| {
         matches!(
-            envelope.action.as_any().downcast_ref::<ProgrammerAction>(),
-            Some(ProgrammerAction::ClearSelection)
-                | Some(ProgrammerAction::ReleaseValues {
+            envelope
+                .action
+                .as_any()
+                .downcast_ref::<ProgrammerOperation>(),
+            Some(ProgrammerOperation::ClearSelection)
+                | Some(ProgrammerOperation::ReleaseValues {
                     allow_selection_flatten: true,
                     ..
                 })
@@ -380,7 +383,7 @@ fn plans_pending_user_command_into_actions() {
 
     let planned = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     assert_eq!(
         planned.len(),
@@ -397,11 +400,11 @@ fn plans_pending_user_command_into_actions() {
         let action = action_envelope
             .action
             .as_any()
-            .downcast_ref::<ProgrammerAction>()
+            .downcast_ref::<ProgrammerOperation>()
             .expect("expected programmer action after planning");
         assert_eq!(
             action,
-            &ProgrammerAction::ReleaseValues {
+            &ProgrammerOperation::ReleaseValues {
                 scope: Scope::All,
                 attributes: AttributeFilter::All,
                 allow_selection_flatten: false,
@@ -490,7 +493,7 @@ fn plans_second_clear_against_updated_selection_context() {
         .drain();
     let planned = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     assert_eq!(
         planned.len(),
@@ -502,22 +505,22 @@ fn plans_second_clear_against_updated_selection_context() {
     let first = planned[0]
         .action
         .as_any()
-        .downcast_ref::<ProgrammerAction>()
+        .downcast_ref::<ProgrammerOperation>()
         .expect("expected first planned programmer action");
     assert_eq!(
         first,
-        &ProgrammerAction::ClearSelection,
+        &ProgrammerOperation::ClearSelection,
         "first clear should clear selection",
     );
 
     let second = planned[1]
         .action
         .as_any()
-        .downcast_ref::<ProgrammerAction>()
+        .downcast_ref::<ProgrammerOperation>()
         .expect("expected second planned programmer action");
     assert_eq!(
         second,
-        &ProgrammerAction::ClearValues {
+        &ProgrammerOperation::ClearValues {
             scope: Scope::All,
             attributes: AttributeFilter::All,
             allow_selection_flatten: false,
@@ -569,17 +572,17 @@ fn plans_clear_after_pending_selection_command_using_projected_context() {
     );
     let actions = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     assert_eq!(actions.len(), 1);
     let clear_action = actions[0]
         .action
         .as_any()
-        .downcast_ref::<ProgrammerAction>()
+        .downcast_ref::<ProgrammerOperation>()
         .expect("clear should be planned into a programmer action");
     assert_eq!(
         clear_action,
-        &ProgrammerAction::ClearSelection,
+        &ProgrammerOperation::ClearSelection,
         "clear should treat pending selection command as active selection",
     );
 }

@@ -10,14 +10,14 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_actions::ActionsPlugin;
-use nightfall_clips::{ClipAction, ClipCommand, RestoreClipSource};
+use nightfall_clips::{ClipCommand, ClipOperation, RestoreClipSource};
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
 #[cfg(feature = "fx-module-host")]
 use nightfall_fx_module::FxModuleRuntimeNotification;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, InstanceCommand, InstanceControlUpdate,
-    PlaybackAction, PlaybackReleaseAction,
+    PlaybackOperation, PlaybackReleaseOperation,
 };
 use nightfall_io::{AvailableUsbDmxDevices, IoRuntimeSettings, NetworkInterfaceState};
 use nightfall_undo::{UndoPlugin, prelude::*};
@@ -54,17 +54,17 @@ pub mod prelude {
         stop_clip_action,
     };
     pub use crate::blueprint_command::{
-        BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
+        BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation, BlueprintReferenceIndex,
     };
     pub use crate::controls::{
         ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
     };
     pub use crate::desk_command::{
-        DeskAction, DeskCommand, ShowfileImportOptions, ShowfileImportPolicy,
+        DeskCommand, DeskOperation, ShowfileImportOptions, ShowfileImportPolicy,
         ShowfileRevisionSelection, ShowfileSaveOptions,
     };
-    pub use crate::group_command::GroupAction;
     pub use crate::group_command::GroupCommand;
+    pub use crate::group_command::GroupOperation;
     pub use crate::instances::{ClipReleaseAfterInstance, InstanceIndex};
     pub use crate::masters::{
         FixtureMasterTarget, InstanceMasterTarget, MASTER_INTENSITY_ATTRIBUTES, Master,
@@ -110,15 +110,15 @@ impl Plugin for DeskPlugin {
         automation_actions::register_desk_actions(app);
 
         register_ingress_command::<DeskCommand>(app);
-        register_engine_action::<DeskAction>(app);
+        register_engine_operation::<DeskOperation>(app);
         register_ingress_command::<ClipCommand>(app);
-        register_engine_action::<ClipAction>(app);
+        register_engine_operation::<ClipOperation>(app);
         register_ingress_command::<GroupCommand>(app);
-        app.add_message::<EngineActionEnvelope<GroupAction>>();
+        app.add_message::<EngineOperationEnvelope<GroupOperation>>();
         register_ingress_command::<MasterCommand>(app);
         app.add_message::<masters::MasterUpdate>();
         register_ingress_command::<BlueprintCommand>(app);
-        app.add_message::<EngineActionEnvelope<BlueprintAction>>();
+        app.add_message::<EngineOperationEnvelope<BlueprintOperation>>();
         app.add_message::<BlueprintDefinitionChange>();
         app.init_resource::<BlueprintReferenceIndex>();
         app.add_message::<OperationResult<(), CommandError>>();
@@ -131,8 +131,8 @@ impl Plugin for DeskPlugin {
         register_ingress_command::<SettingsCommand>(app);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
         register_ingress_command::<InstanceCommand>(app);
-        register_engine_action::<PlaybackAction>(app);
-        register_engine_action::<PlaybackReleaseAction>(app);
+        register_engine_operation::<PlaybackOperation>(app);
+        register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();
         register_ingress_command::<ControlCommand>(app);
         app.add_message::<ControlUpdate>();
@@ -192,11 +192,11 @@ impl Plugin for DeskPlugin {
             registry.register::<GroupCommand>();
             registry.register::<MasterCommand>();
             registry.register::<ClipCommand>();
-            registry.register_action::<RestoreClipSource>();
+            registry.register_operation::<RestoreClipSource>();
         }
 
         // Register event dispatchers for undo helper commands
-        register_engine_action::<RestoreClipSource>(app);
+        register_engine_operation::<RestoreClipSource>(app);
 
         // Process scheduled commands before the undo system processes pending commands
         // This ensures commands that have reached their scheduled time are moved to

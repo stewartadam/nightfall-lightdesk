@@ -272,7 +272,7 @@ impl Plugin for FxModulePlugin {
 
         register_ingress_command::<FxModuleCommand>(app);
         app.add_message::<FxModulePreviewUpdate>();
-        register_engine_action::<events::FxModulePlaybackAction>(app);
+        register_engine_operation::<events::FxModulePlaybackOperation>(app);
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         app.add_message::<NotificationEnvelope<FxModuleRuntimeNotification>>();

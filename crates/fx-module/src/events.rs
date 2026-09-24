@@ -19,7 +19,7 @@ use nightfall_instances::{
     instance_clock_from_reconstruction_timing,
 };
 use nightfall_playback_planner::{PlannedPlaybackSource, PlaybackReconstructionTiming};
-use nightfall_undo::prelude::{UndoEntry, UndoManager, UndoableOperation};
+use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 use uuid::Uuid;
 
 use crate::{
@@ -46,7 +46,7 @@ fn fx_module_clock_from_reconstruction_timing(
 
 /// Clip-routed playback actions owned by the fx-module domain.
 #[derive(Debug, Clone, EnginePayload)]
-pub enum FxModulePlaybackAction {
+pub enum FxModulePlaybackOperation {
     /// Start or refresh a stored fx module playback for an clip.
     Start {
         /// Stored fx module source UID to activate.
@@ -63,7 +63,7 @@ pub enum FxModulePlaybackAction {
     },
 }
 
-impl EngineAction for FxModulePlaybackAction {}
+impl EngineOperation for FxModulePlaybackOperation {}
 
 /// Stored definitions and runtime indexes mutated by FX module management commands.
 #[derive(SystemParam)]
@@ -123,7 +123,7 @@ fn push_forwarded_undo(
 ) {
     management.undo_manager.push(
         UndoEntry {
-            command: Box::new(command) as Box<dyn UndoableOperation>,
+            command: Box::new(command) as Box<dyn Undoable>,
             description,
             command_id: Some(event.command_id),
         },
@@ -466,11 +466,11 @@ pub fn handle_clip_commands(
     mut active_fx_module_ids: ResMut<ActiveFxModuleIds>,
     mut active_fx_module_timings: Option<ResMut<ActiveFxModuleTimings>>,
     mut clip_bindings: ResMut<FxModuleClipBindings>,
-    mut events: MessageReader<EngineActionEnvelope<FxModulePlaybackAction>>,
+    mut events: MessageReader<EngineOperationEnvelope<FxModulePlaybackOperation>>,
 ) {
     for event in events.read() {
         match &event.action {
-            FxModulePlaybackAction::Start {
+            FxModulePlaybackOperation::Start {
                 fx_module_uid,
                 context,
             } => {
@@ -503,7 +503,7 @@ pub fn handle_clip_commands(
                     }
                 }
             }
-            FxModulePlaybackAction::Stop {
+            FxModulePlaybackOperation::Stop {
                 clip_id,
                 fx_module_uid,
             } => {
@@ -623,7 +623,7 @@ mod tests {
         app.insert_resource(DataProvider::<StoredFxModule>::default());
         app.insert_resource(ActiveFxModuleIds::default());
         app.insert_resource(FxModuleClipBindings::default());
-        app.add_message::<EngineActionEnvelope<FxModulePlaybackAction>>();
+        app.add_message::<EngineOperationEnvelope<FxModulePlaybackOperation>>();
         app.add_systems(Update, handle_clip_commands);
         app.world_mut()
             .resource_mut::<DataProvider<StoredFxModule>>()
@@ -694,8 +694,8 @@ mod tests {
         let mut app = setup_app(module_uid);
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(
-                FxModulePlaybackAction::Start {
+            .write_message(EngineOperationEnvelope::detached(
+                FxModulePlaybackOperation::Start {
                     fx_module_uid: module_uid,
                     context: test_start_context(31, true),
                 },
@@ -733,8 +733,8 @@ mod tests {
             );
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(
-                FxModulePlaybackAction::Stop {
+            .write_message(EngineOperationEnvelope::detached(
+                FxModulePlaybackOperation::Stop {
                     clip_id: 31,
                     fx_module_uid: module_uid,
                 },

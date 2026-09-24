@@ -73,7 +73,7 @@ impl Plugin for FlowPlugin {
 
         register_ingress_command::<FlowCommand>(app);
         app.add_message::<events::FlowCommandResult>();
-        register_engine_action::<events::FlowPlaybackAction>(app);
+        register_engine_operation::<events::FlowPlaybackOperation>(app);
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FlowAstConverter>(

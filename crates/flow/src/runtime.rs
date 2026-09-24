@@ -17,7 +17,7 @@ use nightfall_compositor::prelude::*;
 #[cfg(feature = "fx-module")]
 use nightfall_engine::prelude::DataProvider;
 use nightfall_engine::prelude::{
-    ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, EngineActionEnvelope, RequestEnvelope,
+    ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, EngineOperationEnvelope, RequestEnvelope,
 };
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
@@ -410,7 +410,7 @@ pub fn evaluate_flow_instances(
     selection_resolver: SpatialSelectionResolver,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     mut clip_events: MessageWriter<RequestEnvelope<ClipInstanceRequest>>,
-    mut timecode_actions: MessageWriter<EngineActionEnvelope<TimecodeAction>>,
+    mut timecode_actions: MessageWriter<EngineOperationEnvelope<TimecodeOperation>>,
 ) {
     for (entity, mut instance, clock) in instances.iter_mut() {
         if !instance.is_running {
@@ -1042,7 +1042,7 @@ fn dispatch_action_commands(
     inputs: &FlowPortValues,
     input_triggers: &FlowTriggerValues,
     clip_events: &mut MessageWriter<RequestEnvelope<ClipInstanceRequest>>,
-    timecode_actions: &mut MessageWriter<EngineActionEnvelope<TimecodeAction>>,
+    timecode_actions: &mut MessageWriter<EngineOperationEnvelope<TimecodeOperation>>,
 ) {
     match node_def.kind.as_str() {
         CLIP_ACTION_KIND => dispatch_clip_action(inputs, input_triggers, clip_events),
@@ -1100,7 +1100,7 @@ fn dispatch_clip_action(
 fn dispatch_timecode_action(
     inputs: &FlowPortValues,
     input_triggers: &FlowTriggerValues,
-    timecode_actions: &mut MessageWriter<EngineActionEnvelope<TimecodeAction>>,
+    timecode_actions: &mut MessageWriter<EngineOperationEnvelope<TimecodeOperation>>,
 ) {
     let count = input_triggers
         .get(&TIMECODE_IN_TRIGGER)
@@ -1121,13 +1121,19 @@ fn dispatch_timecode_action(
     let action = action.trim().to_ascii_lowercase();
     match action.as_str() {
         "start" | "on" => {
-            timecode_actions.write(EngineActionEnvelope::detached(TimecodeAction::Start(id)));
+            timecode_actions.write(EngineOperationEnvelope::detached(TimecodeOperation::Start(
+                id,
+            )));
         }
         "stop" | "off" => {
-            timecode_actions.write(EngineActionEnvelope::detached(TimecodeAction::Stop(id)));
+            timecode_actions.write(EngineOperationEnvelope::detached(TimecodeOperation::Stop(
+                id,
+            )));
         }
         "pause" => {
-            timecode_actions.write(EngineActionEnvelope::detached(TimecodeAction::Pause(id)));
+            timecode_actions.write(EngineOperationEnvelope::detached(TimecodeOperation::Pause(
+                id,
+            )));
         }
         other => {
             tracing::warn!("Timecode action node has unknown action '{}'", other);
@@ -1531,7 +1537,7 @@ mod tests {
         app.insert_resource(DataProvider::<Group>::default());
         app.insert_resource(DataProvider::<StoredFxModule>::default());
         app.insert_resource(Messages::<RequestEnvelope<ClipInstanceRequest>>::default());
-        app.insert_resource(Messages::<EngineActionEnvelope<TimecodeAction>>::default());
+        app.insert_resource(Messages::<EngineOperationEnvelope<TimecodeOperation>>::default());
 
         let mut registry = FlowNodeRegistry::default();
         register_builtin_nodes(&mut registry).expect("register builtin nodes");

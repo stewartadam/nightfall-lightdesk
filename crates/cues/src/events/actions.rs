@@ -21,7 +21,7 @@ pub(super) struct CueStoreOperationResources<'a, 'cue_w, 'sequence_w> {
 
 /// Stores a complete sequence after validation and records its inverse operation.
 pub(super) fn execute_sequence_store_operation(
-    operation: &EngineActionEnvelope<CueStoreOperation>,
+    operation: &EngineOperationEnvelope<CueStoreOperation>,
     sequence: &Sequence,
     selection_resolver: &SpatialSelectionResolver,
     undo_label: &str,
@@ -43,8 +43,8 @@ pub(super) fn execute_sequence_store_operation(
             )
         })?;
 
-    let inverse: Box<dyn UndoableOperation> = match previous_sequence {
-        Some(previous) => Box::new(CueAction::StoreSequence(Box::new(previous))),
+    let inverse: Box<dyn Undoable> = match previous_sequence {
+        Some(previous) => Box::new(CueOperation::StoreSequence(Box::new(previous))),
         None => Box::new(CueCommand::DeleteSequence(sequence.identifiers.id)),
     };
     sequence_data_provider
@@ -67,7 +67,7 @@ pub(super) fn execute_sequence_store_operation(
 
 /// Stores one cue part and its sequence membership as one validated operation.
 pub(super) fn execute_cue_store_operation(
-    operation: &EngineActionEnvelope<CueStoreOperation>,
+    operation: &EngineOperationEnvelope<CueStoreOperation>,
     sequence_id: u32,
     cue_id: CueStoreTarget,
     part_id: CuePartStoreTarget,
@@ -178,7 +178,7 @@ pub(super) fn execute_cue_store_operation(
     if sequence_changed {
         write_sequence_definition_updated(sequence_definition_changes, &sequence);
     }
-    let restore_action = CueAction::RestoreCueStoreState {
+    let restore_action = CueOperation::RestoreCueStoreState {
         sequence_id,
         cue_uid: cue.identifiers.uid,
         previous_cue: previous_cue.map(Box::new),
@@ -204,7 +204,7 @@ pub fn cue_store_operations(
     mut cue_data_provider: ResMut<DataProvider<Cue>>,
     mut sequence_data_provider: ResMut<DataProvider<Sequence>>,
     mut undo_manager: ResMut<UndoManager>,
-    mut operations: MessageReader<EngineActionEnvelope<CueStoreOperation>>,
+    mut operations: MessageReader<EngineOperationEnvelope<CueStoreOperation>>,
     mut results: MessageWriter<OperationResult<CueStoreSuccess, CueStoreError>>,
     mut cue_definition_changes: MessageWriter<CueDefinitionChange>,
     mut sequence_definition_changes: MessageWriter<SequenceDefinitionChange>,
@@ -259,7 +259,7 @@ pub fn cue_action_events(
     mut cue_data_provider: ResMut<DataProvider<Cue>>,
     mut sequence_data_provider: ResMut<DataProvider<Sequence>>,
     mut undo_manager: ResMut<UndoManager>,
-    mut actions: MessageReader<EngineActionEnvelope<CueAction>>,
+    mut actions: MessageReader<EngineOperationEnvelope<CueOperation>>,
     mut outbound: CommandResponder,
     mut cue_definition_changes: MessageWriter<CueDefinitionChange>,
     mut sequence_definition_changes: MessageWriter<SequenceDefinitionChange>,
@@ -275,7 +275,7 @@ pub fn cue_action_events(
             .map(uuid::Uuid::from)
             .unwrap_or(correlation_id);
         match &event.action {
-            CueAction::StoreCue(cue) => {
+            CueOperation::StoreCue(cue) => {
                 if store_cue_definition(
                     cue,
                     &selection_resolver,
@@ -287,7 +287,7 @@ pub fn cue_action_events(
                     outbound.succeed_cue(correlation_id);
                 }
             }
-            CueAction::StoreSequence(sequence) => {
+            CueOperation::StoreSequence(sequence) => {
                 if store_sequence_definition(
                     sequence,
                     &selection_resolver,
@@ -299,7 +299,7 @@ pub fn cue_action_events(
                     outbound.succeed_cue(correlation_id);
                 }
             }
-            CueAction::StoreCueInSequence {
+            CueOperation::StoreCueInSequence {
                 sequence_id,
                 cue_id,
                 part_id,
@@ -364,7 +364,7 @@ pub fn cue_action_events(
                     *sequence_id,
                     cue.identifiers.uid,
                 );
-                let restore_action = CueAction::RestoreCueStoreState {
+                let restore_action = CueOperation::RestoreCueStoreState {
                     sequence_id: *sequence_id,
                     cue_uid: cue.identifiers.uid,
                     previous_cue: previous_cue.map(Box::new),
@@ -403,7 +403,7 @@ pub fn cue_action_events(
                     undo_id,
                 );
             }
-            CueAction::RestoreCueStoreState {
+            CueOperation::RestoreCueStoreState {
                 sequence_id,
                 cue_uid,
                 previous_cue,

@@ -13,7 +13,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall::prelude::IdExpr;
 use nightfall_actions::ActionReference;
-use nightfall_clips::{Clip, ClipAction};
+use nightfall_clips::{Clip, ClipOperation};
 use nightfall_compositor::prelude::ReleaseMarker;
 #[cfg(test)]
 use nightfall_desk::prelude::{ClipTarget, start_clip_action};
@@ -102,7 +102,7 @@ pub(crate) struct TimelineMutationContext<'w, 's> {
     /// Websocket broadcaster used by beat-grid detection requests.
     broadcaster: Res<'w, ClientEventSink>,
     /// Clip actions emitted while cleaning timeline-owned playback.
-    ev_clip: MessageWriter<'w, EngineActionEnvelope<ClipAction>>,
+    ev_clip: MessageWriter<'w, EngineOperationEnvelope<ClipOperation>>,
     /// Origins retained for timeline-issued clip actions.
     timeline_command_origins: ResMut<'w, TimelineCommandOrigins>,
     /// Exact-once command lifecycle responder.
@@ -115,7 +115,7 @@ pub(crate) struct TimelineMutationContext<'w, 's> {
 pub fn crud_events(
     mut context: TimelineMutationContext,
     mut events: MessageReader<CommandEnvelope<TimelineCommand>>,
-    mut actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
+    mut actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
 ) {
     for event in events.read() {
         match &event.command {

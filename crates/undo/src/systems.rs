@@ -55,12 +55,12 @@ fn prepare_group_replays(
         .collect()
 }
 
-/// Queues prepared inverses at their registered command or engine-action boundary.
+/// Queues prepared inverses at their registered command or engine-operation boundary.
 fn queue_group_replays(world: &mut World, replays: Vec<UndoReplay>) {
     for replay in replays {
         match replay {
             UndoReplay::LegacyCommand(command) => world.commands().queue(command),
-            UndoReplay::EngineAction(action) => world.commands().queue(action),
+            UndoReplay::EngineOperation(action) => world.commands().queue(action),
         }
     }
 }
@@ -277,14 +277,14 @@ mod tests {
     use nightfall_engine::prelude::EnginePayload;
 
     use super::*;
-    use crate::traits::UndoableOperation;
+    use crate::traits::Undoable;
 
     /// Command whose inverse is unavailable, modeling a state conflict during undo.
     #[derive(Debug, Clone, EnginePayload)]
     struct ConflictingCommand;
 
-    impl UndoableOperation for ConflictingCommand {
-        fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    impl Undoable for ConflictingCommand {
+        fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
             None
         }
 
@@ -295,12 +295,12 @@ mod tests {
 
     /// Undoable action used to verify the action replay boundary end to end.
     #[derive(Debug, Clone, EnginePayload, PartialEq)]
-    struct ReplayAction(u32);
+    struct ReplayOperation(u32);
 
-    impl EngineAction for ReplayAction {}
+    impl EngineOperation for ReplayOperation {}
 
-    impl UndoableOperation for ReplayAction {
-        fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    impl Undoable for ReplayOperation {
+        fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
             Some(Box::new(self.clone()))
         }
 
@@ -366,27 +366,27 @@ mod tests {
 
     /// Verifies undo dispatch waits for every registered action replay to report success.
     #[test]
-    fn undo_replays_registered_engine_action() {
+    fn undo_replays_registered_engine_operation() {
         let mut world = World::new();
         world.init_resource::<UndoManager>();
         world.init_resource::<UndoRegistry>();
-        world.init_resource::<EngineActionRouter>();
+        world.init_resource::<EngineOperationRouter>();
         world.init_resource::<CommandTracker>();
         world.insert_resource(Messages::<CommandEnvelope<UndoCommand>>::default());
-        world.insert_resource(Messages::<EngineActionEnvelope<ReplayAction>>::default());
+        world.insert_resource(Messages::<EngineOperationEnvelope<ReplayOperation>>::default());
         world.insert_resource(Messages::<CommandResult>::default());
         world.insert_resource(Messages::<CommandReply>::default());
         world.insert_resource(Messages::<FinishedCommand>::default());
         world
             .resource_mut::<UndoRegistry>()
-            .register_action::<ReplayAction>();
+            .register_operation::<ReplayOperation>();
         world
-            .resource_mut::<EngineActionRouter>()
-            .register::<ReplayAction>();
+            .resource_mut::<EngineOperationRouter>()
+            .register::<ReplayOperation>();
         let stored_undo_id = UndoId::new();
         world.resource_mut::<UndoManager>().push(
             UndoEntry {
-                command: Box::new(ReplayAction(7)),
+                command: Box::new(ReplayOperation(7)),
                 description: "Replay action".to_string(),
                 command_id: None,
             },
@@ -395,7 +395,7 @@ mod tests {
         );
         world.resource_mut::<UndoManager>().push(
             UndoEntry {
-                command: Box::new(ReplayAction(8)),
+                command: Box::new(ReplayOperation(8)),
                 description: "Second replay action".to_string(),
                 command_id: None,
             },
@@ -438,7 +438,7 @@ mod tests {
         );
 
         let actions = world
-            .resource_mut::<Messages<EngineActionEnvelope<ReplayAction>>>()
+            .resource_mut::<Messages<EngineOperationEnvelope<ReplayOperation>>>()
             .drain()
             .collect::<Vec<_>>();
         assert_eq!(actions.len(), 2);
@@ -446,8 +446,8 @@ mod tests {
             assert_eq!(action.command_id, Some(command_id));
             assert_eq!(action.undo_id, Some(undo_id));
         }
-        assert_eq!(actions[0].action, ReplayAction(8));
-        assert_eq!(actions[1].action, ReplayAction(7));
+        assert_eq!(actions[0].action, ReplayOperation(8));
+        assert_eq!(actions[1].action, ReplayOperation(7));
 
         let mut tracker = world.resource_mut::<CommandTracker>();
         assert!(tracker.record_success(command_id, None).unwrap().is_none());

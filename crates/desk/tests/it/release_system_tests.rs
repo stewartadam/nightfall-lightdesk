@@ -10,18 +10,18 @@ use bevy_app::prelude::*;
 use nightfall::prelude::Group;
 use nightfall_desk::systems::event_handlers::instance_events::handle_events;
 use nightfall_engine::prelude::{
-    CommandError, DataProvider, EngineActionEnvelope, OperationResult,
+    CommandError, DataProvider, EngineOperationEnvelope, OperationResult,
 };
 use nightfall_fixtures::prelude::{
     ConsoleChannelOrigin, ConsoleDmxUniverses, FixtureDataProviderExt,
 };
-use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_instances::{PlaybackOperation, PlaybackScope};
 
 /// Verifies releasing every parameter also clears console DMX universe values.
 #[test]
 fn test_release_all_clears_dmx_universes() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
     app.add_message::<OperationResult<(), CommandError>>();
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(DataProvider::<Group>::default());
@@ -38,8 +38,8 @@ fn test_release_all_clears_dmx_universes() {
     }
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            PlaybackAction::ReleaseParameters {
+        .write_message(EngineOperationEnvelope::detached(
+            PlaybackOperation::ReleaseParameters {
                 scope: PlaybackScope::All,
             },
         ));

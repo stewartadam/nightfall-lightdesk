@@ -39,8 +39,8 @@ fn timeline_for_live_action_edit(
 #[test]
 fn process_actions_skips_regular_trigger_scan_on_seek_frames() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -105,7 +105,7 @@ fn process_actions_skips_regular_trigger_scan_on_seek_frames() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .collect();
     assert!(
@@ -118,8 +118,8 @@ fn process_actions_skips_regular_trigger_scan_on_seek_frames() {
 #[test]
 fn process_actions_resumes_after_running_seek_target() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -185,7 +185,7 @@ fn process_actions_resumes_after_running_seek_target() {
 
     let skipped_frame_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .collect();
     assert!(
@@ -197,7 +197,7 @@ fn process_actions_resumes_after_running_seek_target() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -218,8 +218,8 @@ fn process_actions_resumes_after_running_seek_target() {
 #[test]
 fn process_actions_replays_mutation_after_move_playhead_only_seek_frame() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -275,7 +275,7 @@ fn process_actions_replays_mutation_after_move_playhead_only_seek_frame() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -299,7 +299,7 @@ fn process_actions_replays_mutation_after_move_playhead_only_seek_frame() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -322,8 +322,8 @@ fn process_actions_dispatches_registered_clip_action() {
     let mut app = App::new();
     app.add_plugins(ActionsPlugin);
     nightfall_desk::automation_actions::register_desk_actions(&mut app);
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -385,7 +385,7 @@ fn process_actions_dispatches_registered_clip_action() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -402,8 +402,8 @@ fn process_actions_dispatches_registered_clip_action() {
 #[test]
 fn process_actions_delegates_registered_domain_action() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
     app.add_message::<ActionInvocation>();
     app.insert_resource(DataProvider::<Cue>::default());
@@ -459,8 +459,8 @@ fn process_actions_delegates_registered_domain_action() {
 #[test]
 fn process_actions_syncs_live_fire_cue_clock_from_timeline_position() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -628,8 +628,8 @@ fn process_actions_syncs_live_fire_cue_clock_from_timeline_position() {
 #[test]
 fn process_actions_releases_bounded_fire_cue_at_action_end() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -762,8 +762,8 @@ fn process_actions_releases_bounded_fire_cue_at_action_end() {
 #[test]
 fn process_actions_skips_bounded_fire_cue_after_release_tail() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -838,8 +838,8 @@ fn process_actions_skips_bounded_fire_cue_after_release_tail() {
 #[test]
 fn process_actions_sends_timed_start_clip_from_timeline_position() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -897,7 +897,7 @@ fn process_actions_sends_timed_start_clip_from_timeline_position() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -910,7 +910,7 @@ fn process_actions_sends_timed_start_clip_from_timeline_position() {
     ));
     assert!(matches!(
         &clip_events[0],
-        ClipAction::StartAtTiming {
+        ClipOperation::StartAtTiming {
             instance_options: Some(InstanceOptions {
                 lookahead_enabled: Some(true)
             }),
@@ -923,8 +923,8 @@ fn process_actions_sends_timed_start_clip_from_timeline_position() {
 #[test]
 fn process_actions_stops_clip_when_started_action_is_deleted() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -986,7 +986,7 @@ fn process_actions_stops_clip_when_started_action_is_deleted() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -999,14 +999,14 @@ fn process_actions_stops_clip_when_started_action_is_deleted() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
         clip_events[0],
-        ClipAction::Stop(IdExpr::Single(5))
+        ClipOperation::Stop(IdExpr::Single(5))
     ));
 
     let timeline = app
@@ -1023,8 +1023,8 @@ fn process_actions_stops_clip_when_started_action_is_deleted() {
 #[test]
 fn process_actions_applies_inserted_elapsed_stop_action() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1086,7 +1086,7 @@ fn process_actions_applies_inserted_elapsed_stop_action() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -1105,14 +1105,14 @@ fn process_actions_applies_inserted_elapsed_stop_action() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
         clip_events[0],
-        ClipAction::Stop(IdExpr::Single(5))
+        ClipOperation::Stop(IdExpr::Single(5))
     ));
 
     let timeline = app
@@ -1129,8 +1129,8 @@ fn process_actions_applies_inserted_elapsed_stop_action() {
 #[test]
 fn process_actions_restores_start_when_elapsed_stop_action_is_deleted() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1201,7 +1201,7 @@ fn process_actions_restores_start_when_elapsed_stop_action_is_deleted() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -1214,7 +1214,7 @@ fn process_actions_restores_start_when_elapsed_stop_action_is_deleted() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1241,8 +1241,8 @@ fn process_actions_restores_start_when_elapsed_stop_action_is_deleted() {
 #[test]
 fn process_actions_leaves_lookahead_unset_when_timeline_setting_is_unset() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1300,14 +1300,14 @@ fn process_actions_leaves_lookahead_unset_when_timeline_setting_is_unset() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
         &clip_events[0],
-        ClipAction::StartAtTiming {
+        ClipOperation::StartAtTiming {
             instance_options: None,
             ..
         }
@@ -1318,8 +1318,8 @@ fn process_actions_leaves_lookahead_unset_when_timeline_setting_is_unset() {
 #[test]
 fn process_actions_tracks_last_processed_per_timeline() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1414,7 +1414,7 @@ fn process_actions_tracks_last_processed_per_timeline() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1437,8 +1437,8 @@ fn process_actions_tracks_last_processed_per_timeline() {
 #[test]
 fn process_actions_keeps_started_clip_active_after_action_duration() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1504,7 +1504,7 @@ fn process_actions_keeps_started_clip_active_after_action_duration() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1530,8 +1530,8 @@ fn process_actions_keeps_started_clip_active_after_action_duration() {
 #[test]
 fn process_actions_ignores_start_clip_duration_resize() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1594,7 +1594,7 @@ fn process_actions_ignores_start_clip_duration_resize() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -1607,7 +1607,7 @@ fn process_actions_ignores_start_clip_duration_resize() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1631,8 +1631,8 @@ fn process_actions_ignores_start_clip_duration_resize() {
 #[test]
 fn process_actions_ignores_inserted_elapsed_muted_action() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1706,7 +1706,7 @@ fn process_actions_ignores_inserted_elapsed_muted_action() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -1725,7 +1725,7 @@ fn process_actions_ignores_inserted_elapsed_muted_action() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1749,8 +1749,8 @@ fn process_actions_ignores_inserted_elapsed_muted_action() {
 #[test]
 fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -1813,7 +1813,7 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
     let instance_id = InstanceId::new();
     let materialized_clip_entity = app
@@ -1836,7 +1836,7 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -1875,9 +1875,9 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
 fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
@@ -1892,7 +1892,7 @@ fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
     app.init_resource::<PendingCommandBuffer>();
-    app.init_resource::<PendingEngineActionBuffer>();
+    app.init_resource::<PendingEngineOperationBuffer>();
     app.add_systems(
         Update,
         (
@@ -2029,8 +2029,8 @@ fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
 #[test]
 fn process_actions_preserves_active_start_after_future_only_edit() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2093,7 +2093,7 @@ fn process_actions_preserves_active_start_after_future_only_edit() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
     let instance_id = InstanceId::new();
     let materialized_clip_entity = app
@@ -2122,7 +2122,7 @@ fn process_actions_preserves_active_start_after_future_only_edit() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2153,8 +2153,8 @@ fn process_actions_preserves_active_start_after_future_only_edit() {
 #[test]
 fn process_actions_ignores_inserted_stop_before_active_start() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2217,7 +2217,7 @@ fn process_actions_ignores_inserted_stop_before_active_start() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -2239,7 +2239,7 @@ fn process_actions_ignores_inserted_stop_before_active_start() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2262,8 +2262,8 @@ fn process_actions_ignores_inserted_stop_before_active_start() {
 #[test]
 fn process_actions_ignores_deleted_stop_before_active_start() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2335,7 +2335,7 @@ fn process_actions_ignores_deleted_stop_before_active_start() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -2348,7 +2348,7 @@ fn process_actions_ignores_deleted_stop_before_active_start() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2371,8 +2371,8 @@ fn process_actions_ignores_deleted_stop_before_active_start() {
 #[test]
 fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2444,7 +2444,7 @@ fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -2457,7 +2457,7 @@ fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2480,8 +2480,8 @@ fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
 #[test]
 fn process_actions_replays_inserted_rate_before_active_start() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2541,7 +2541,7 @@ fn process_actions_replays_inserted_rate_before_active_start() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -2566,14 +2566,14 @@ fn process_actions_replays_inserted_rate_before_active_start() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert!(
         clip_events.iter().any(|event| matches!(
             event,
-            ClipAction::SetRate {
+            ClipOperation::SetRate {
                 clip_id: IdExpr::Single(id),
                 rate,
             } if *id == clip_id && (*rate - 2.0).abs() < f32::EPSILON
@@ -2586,8 +2586,8 @@ fn process_actions_replays_inserted_rate_before_active_start() {
 #[test]
 fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2659,7 +2659,7 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -2672,7 +2672,7 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2688,7 +2688,7 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
     assert!(
         clip_events
             .iter()
-            .all(|event| !matches!(event, ClipAction::SetRate { .. })),
+            .all(|event| !matches!(event, ClipOperation::SetRate { .. })),
         "removed rate action should not replay a SetRate command: {clip_events:?}"
     );
 }
@@ -2697,8 +2697,8 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
 #[test]
 fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2768,7 +2768,7 @@ fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -2781,7 +2781,7 @@ fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2797,7 +2797,7 @@ fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
     assert!(
         clip_events
             .iter()
-            .all(|event| !matches!(event, ClipAction::Stop(_))),
+            .all(|event| !matches!(event, ClipOperation::Stop(_))),
         "removed stop action should not replay a StopClip command: {clip_events:?}"
     );
 }
@@ -2806,8 +2806,8 @@ fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
 #[test]
 fn process_actions_replays_start_after_elapsed_stop_moves_before_it() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2879,7 +2879,7 @@ fn process_actions_replays_start_after_elapsed_stop_moves_before_it() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -2892,7 +2892,7 @@ fn process_actions_replays_start_after_elapsed_stop_moves_before_it() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -2920,8 +2920,8 @@ fn process_actions_replays_start_after_elapsed_stop_moves_before_it() {
 #[test]
 fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -2992,7 +2992,7 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -3005,14 +3005,14 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(desk_events.len(), 1);
     assert!(matches!(
         &desk_events[0],
-        DeskAction::Eval(command) if command == "clip 52 go"
+        DeskOperation::Eval(command) if command == "clip 52 go"
     ));
 }
 
@@ -3020,8 +3020,8 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
 #[test]
 fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3094,7 +3094,7 @@ fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -3107,7 +3107,7 @@ fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -3126,8 +3126,8 @@ fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
 #[test]
 fn process_actions_desk_eval_delete_does_not_duplicate_active_fire_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3241,8 +3241,8 @@ fn process_actions_desk_eval_delete_does_not_duplicate_active_fire_cue() {
 #[test]
 fn process_actions_skips_inserted_desk_eval_when_seek_policy_ignores_it() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3300,7 +3300,7 @@ fn process_actions_skips_inserted_desk_eval_when_seek_policy_ignores_it() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -3314,8 +3314,8 @@ fn process_actions_skips_inserted_desk_eval_when_seek_policy_ignores_it() {
 #[test]
 fn process_actions_drops_skipped_deleted_action_trigger_state() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3416,8 +3416,8 @@ fn process_actions_drops_skipped_deleted_action_trigger_state() {
 #[test]
 fn process_actions_does_not_pretrigger_skipped_future_action() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3520,8 +3520,8 @@ fn process_actions_does_not_pretrigger_skipped_future_action() {
 #[test]
 fn process_actions_sends_untimed_stop_without_tracked_origin() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3580,14 +3580,14 @@ fn process_actions_sends_untimed_stop_without_tracked_origin() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
         clip_events[0],
-        ClipAction::Stop(IdExpr::Single(id)) if id == clip_id
+        ClipOperation::Stop(IdExpr::Single(id)) if id == clip_id
     ));
 }
 
@@ -3595,8 +3595,8 @@ fn process_actions_sends_untimed_stop_without_tracked_origin() {
 #[test]
 fn process_actions_dispatches_desk_eval_actions() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3643,13 +3643,13 @@ fn process_actions_dispatches_desk_eval_actions() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .collect();
     assert_eq!(desk_events.len(), 1);
     assert!(matches!(
         &desk_events[0].action,
-        DeskAction::Eval(actual) if actual == &command
+        DeskOperation::Eval(actual) if actual == &command
     ));
     assert!(
         app.world()
@@ -3668,8 +3668,8 @@ fn process_actions_dispatches_desk_eval_actions() {
 #[test]
 fn process_actions_tracks_desk_eval_clip_actions() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3744,8 +3744,8 @@ fn process_actions_tracks_desk_eval_clip_actions() {
 #[test]
 fn process_actions_tracks_sequence_navigation_clip_actions() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3825,19 +3825,22 @@ fn process_actions_tracks_sequence_navigation_clip_actions() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 2);
-    assert!(matches!(clip_events[0], ClipAction::Go(IdExpr::Single(6))));
+    assert!(matches!(
+        clip_events[0],
+        ClipOperation::Go(IdExpr::Single(6))
+    ));
     assert!(matches!(
         clip_events[1],
-        ClipAction::Back(IdExpr::Single(7))
+        ClipOperation::Back(IdExpr::Single(7))
     ));
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .collect();
     assert!(
@@ -3868,8 +3871,8 @@ fn process_actions_tracks_sequence_navigation_clip_actions() {
 #[test]
 fn process_actions_sends_timed_sequence_navigation_from_planner() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -3978,7 +3981,7 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -3991,7 +3994,7 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
     ));
     assert!(matches!(
         clip_events[1],
-        ClipAction::RenderAt {
+        ClipOperation::RenderAt {
             clip_id: IdExpr::Single(id),
             position: 2,
             timing,
@@ -4004,7 +4007,7 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
     assert!(
         matches!(
         clip_events[2],
-        ClipAction::RenderAt {
+        ClipOperation::RenderAt {
             clip_id: IdExpr::Single(id),
             position: 2,
             timing,
@@ -4020,7 +4023,7 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<DeskOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -4243,7 +4246,7 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
     app.init_resource::<TimelinePausedPlaybackRates>();
     app.init_resource::<InstanceIndex>();
     app.init_resource::<PendingClipPlaybackRates>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_systems(
         Update,
         (
@@ -4397,7 +4400,7 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
         .current_time = Duration::from_millis(2500);
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(ClipAction::SetRate {
+        .write_message(EngineOperationEnvelope::detached(ClipOperation::SetRate {
             clip_id: IdExpr::Single(clip_id),
             rate: 0.5,
         }));
@@ -4422,7 +4425,7 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
         .current_time = Duration::from_millis(3500);
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(ClipAction::SetRate {
+        .write_message(EngineOperationEnvelope::detached(ClipOperation::SetRate {
             clip_id: IdExpr::Single(clip_id),
             rate: 0.0,
         }));
@@ -4569,7 +4572,7 @@ fn process_parameters_applies_rate_master_to_attached_instance() {
     app.init_resource::<TimelineCommandOrigins>();
     app.init_resource::<InstanceIndex>();
     app.init_resource::<PendingClipPlaybackRates>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_systems(
         Update,
         (process_parameters_system, handle_clip_rate_commands).chain(),
@@ -4661,7 +4664,7 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
         app.init_resource::<TimelinePausedPlaybackRates>();
         app.init_resource::<InstanceIndex>();
         app.init_resource::<PendingClipPlaybackRates>();
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_systems(
             Update,
             (
@@ -4855,7 +4858,7 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
             1.0
         );
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::SetRate {
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::SetRate {
                 clip_id: IdExpr::Single(42),
                 rate: 0.75,
             }));
@@ -5044,8 +5047,8 @@ fn paused_timeline_freezes_owned_cue_instance_clock_without_shifting() {
 #[test]
 fn process_actions_skips_missing_clip_actions_without_panicking() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -5093,7 +5096,7 @@ fn process_actions_skips_missing_clip_actions_without_panicking() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .collect();
     assert!(
@@ -5106,8 +5109,8 @@ fn process_actions_skips_missing_clip_actions_without_panicking() {
 #[test]
 fn process_actions_tracks_clip_autostarted_by_jump_to_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -5172,14 +5175,14 @@ fn process_actions_tracks_clip_autostarted_by_jump_to_cue() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
         clip_events[0],
-        ClipAction::Goto {
+        ClipOperation::Goto {
             clip_id: IdExpr::Single(id),
             position: 2,
             timing: None,
@@ -5201,8 +5204,8 @@ fn process_actions_tracks_clip_autostarted_by_jump_to_cue() {
 #[test]
 fn process_actions_tracks_running_clip_for_jump_to_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -5272,14 +5275,14 @@ fn process_actions_tracks_running_clip_for_jump_to_cue() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(clip_events.len(), 1);
     assert!(matches!(
         clip_events[0],
-        ClipAction::Goto {
+        ClipOperation::Goto {
             clip_id: IdExpr::Single(id),
             position: 2,
             timing: None,
@@ -5302,8 +5305,8 @@ fn process_actions_tracks_running_clip_for_jump_to_cue() {
 #[test]
 fn process_actions_preserves_started_clip_origin_for_jump_to_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<DeskOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -5410,7 +5413,7 @@ fn process_actions_preserves_started_clip_origin_for_jump_to_cue() {
 
     let clip_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -5423,7 +5426,7 @@ fn process_actions_preserves_started_clip_origin_for_jump_to_cue() {
     ));
     assert!(matches!(
         clip_events[1],
-        ClipAction::RenderAt {
+        ClipOperation::RenderAt {
             clip_id: IdExpr::Single(id),
             position: 2,
             timing,

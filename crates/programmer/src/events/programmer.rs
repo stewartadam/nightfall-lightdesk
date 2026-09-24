@@ -47,10 +47,10 @@ pub struct ProgrammerMutationState<'w, 's> {
 pub fn handle_programmer_events(
     mut events_reader: MessageReader<CommandEnvelope<ProgrammerCommand>>,
     mut command_events: ParamSet<(
-        MessageReader<EngineActionEnvelope<ProgrammerAction>>,
-        MessageWriter<EngineActionEnvelope<CueLifecycleAction>>,
-        MessageWriter<EngineActionEnvelope<PlaybackAction>>,
-        MessageWriter<EngineActionEnvelope<ProgrammerAction>>,
+        MessageReader<EngineOperationEnvelope<ProgrammerOperation>>,
+        MessageWriter<EngineOperationEnvelope<CueLifecycleOperation>>,
+        MessageWriter<EngineOperationEnvelope<PlaybackOperation>>,
+        MessageWriter<EngineOperationEnvelope<ProgrammerOperation>>,
         MessageReader<OperationResult<(), CommandError>>,
     )>,
     state: ProgrammerMutationState,
@@ -78,7 +78,7 @@ pub fn handle_programmer_events(
         spatial_selection_resolver: &SpatialSelectionResolver,
         fixture_data: &FixtureDataProviderExt,
         inherit_command_context: bool,
-        cue_lifecycle_actions: &mut MessageWriter<EngineActionEnvelope<CueLifecycleAction>>,
+        cue_lifecycle_actions: &mut MessageWriter<EngineOperationEnvelope<CueLifecycleOperation>>,
     ) -> Option<OperationId> {
         /// Returns whether an attribute-scoped release targets a live Blueprint row.
         fn release_targets_blueprint_application(
@@ -214,17 +214,17 @@ pub fn handle_programmer_events(
         let release_operation_id = if released_uids.is_empty() {
             None
         } else {
-            let action = CueLifecycleAction::ReleaseCueInstances {
+            let action = CueLifecycleOperation::ReleaseCueInstances {
                 uids: released_uids,
             };
             let envelope = if inherit_command_context {
-                EngineActionEnvelope::for_command_context(
+                EngineOperationEnvelope::for_command_context(
                     correlation_id.into(),
                     undo_id.into(),
                     action,
                 )
             } else {
-                EngineActionEnvelope::detached(action)
+                EngineOperationEnvelope::detached(action)
             };
             let operation_id = envelope.operation_id;
             cue_lifecycle_actions.write(envelope);
@@ -300,36 +300,40 @@ pub fn handle_programmer_events(
         match &event.command {
             ProgrammerCommand::ClearProgrammer => {
                 let action = if programmer.active_selection().is_empty() {
-                    ProgrammerAction::ClearValues {
+                    ProgrammerOperation::ClearValues {
                         scope: Scope::All,
                         attributes: AttributeFilter::All,
                         allow_selection_flatten: false,
                     }
                 } else {
-                    ProgrammerAction::ClearSelection
+                    ProgrammerOperation::ClearSelection
                 };
 
                 command_events
                     .p3()
-                    .write(EngineActionEnvelope::for_command(event, action));
+                    .write(EngineOperationEnvelope::for_command(event, action));
             }
 
             ProgrammerCommand::ClearProgrammerSelection => {
-                command_events.p3().write(EngineActionEnvelope::for_command(
-                    event,
-                    ProgrammerAction::ClearSelection,
-                ));
+                command_events
+                    .p3()
+                    .write(EngineOperationEnvelope::for_command(
+                        event,
+                        ProgrammerOperation::ClearSelection,
+                    ));
             }
 
             ProgrammerCommand::ClearProgrammerValues => {
-                command_events.p3().write(EngineActionEnvelope::for_command(
-                    event,
-                    ProgrammerAction::ClearValues {
-                        scope: Scope::All,
-                        attributes: AttributeFilter::All,
-                        allow_selection_flatten: false,
-                    },
-                ));
+                command_events
+                    .p3()
+                    .write(EngineOperationEnvelope::for_command(
+                        event,
+                        ProgrammerOperation::ClearValues {
+                            scope: Scope::All,
+                            attributes: AttributeFilter::All,
+                            allow_selection_flatten: false,
+                        },
+                    ));
             }
 
             ProgrammerCommand::ReleaseProgrammerValues {
@@ -352,14 +356,16 @@ pub fn handle_programmer_events(
                     );
                     continue;
                 }
-                command_events.p3().write(EngineActionEnvelope::for_command(
-                    event,
-                    ProgrammerAction::ReleaseValues {
-                        scope: selection.clone().map_or(Scope::All, Scope::Selection),
-                        attributes: AttributeFilter::from_attributes(attributes),
-                        allow_selection_flatten: approved,
-                    },
-                ));
+                command_events
+                    .p3()
+                    .write(EngineOperationEnvelope::for_command(
+                        event,
+                        ProgrammerOperation::ReleaseValues {
+                            scope: selection.clone().map_or(Scope::All, Scope::Selection),
+                            attributes: AttributeFilter::from_attributes(attributes),
+                            allow_selection_flatten: approved,
+                        },
+                    ));
             }
 
             ProgrammerCommand::AddProgrammerInstruction {
@@ -581,10 +587,10 @@ pub fn handle_programmer_events(
         let undo_id: uuid::Uuid = event.undo_id.map(Into::into).unwrap_or(correlation_id);
         let respond_on_completion = event.command_id.is_some();
         match &event.action {
-            ProgrammerAction::ClearSelection => {
+            ProgrammerOperation::ClearSelection => {
                 clear_selection_events.push((correlation_id, respond_on_completion));
             }
-            ProgrammerAction::ClearValues {
+            ProgrammerOperation::ClearValues {
                 scope,
                 attributes,
                 allow_selection_flatten,
@@ -600,7 +606,7 @@ pub fn handle_programmer_events(
                     respond_on_completion,
                 ));
             }
-            ProgrammerAction::ReleaseValues {
+            ProgrammerOperation::ReleaseValues {
                 scope,
                 attributes,
                 allow_selection_flatten,
@@ -717,20 +723,20 @@ pub fn handle_programmer_events(
             delegated_operations.push(operation_id);
         }
         if emit_release_selection {
-            let action = PlaybackAction::ReleaseParameters {
+            let action = PlaybackOperation::ReleaseParameters {
                 scope: match selection {
                     Some(selection) => PlaybackScope::Selection(selection),
                     None => PlaybackScope::All,
                 },
             };
             let envelope = if respond_on_completion {
-                EngineActionEnvelope::for_command_context(
+                EngineOperationEnvelope::for_command_context(
                     CommandId::from(correlation_id),
                     UndoId::from(undo_id),
                     action,
                 )
             } else {
-                EngineActionEnvelope::detached(action)
+                EngineOperationEnvelope::detached(action)
             };
             if respond_on_completion {
                 delegated_operations.push(envelope.operation_id);

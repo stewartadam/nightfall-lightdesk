@@ -13,7 +13,7 @@
 //! storage, persistence handlers, or domain materialization systems.
 
 use bevy_ecs::prelude::*;
-use nightfall::engine::{EngineAction, EngineIngressMeta, EnginePayload, IngressCommand};
+use nightfall::engine::{EngineIngressMeta, EngineOperation, EnginePayload, IngressCommand};
 use nightfall::prelude::{IdExpr, Priority};
 use nightfall_playback_planner::{PlaybackPositionSource, PlaybackReconstructionTiming};
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ pub enum PlaybackScope {
 
 /// Runtime actions owned by the playback domain.
 #[derive(Debug, Clone, PartialEq)]
-pub enum PlaybackAction {
+pub enum PlaybackOperation {
     /// Release output parameters according to scope.
     ReleaseParameters {
         /// Scope to release.
@@ -66,8 +66,8 @@ pub enum PlaybackAction {
     },
 }
 
-impl EnginePayload for PlaybackAction {}
-impl EngineAction for PlaybackAction {}
+impl EnginePayload for PlaybackOperation {}
+impl EngineOperation for PlaybackOperation {}
 
 /// Marks an instance as an editor-owned preview rather than a live show playback.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -599,7 +599,7 @@ impl IngressCommand for InstanceCommand {}
 
 /// Concrete internal work that releases one or more running instances.
 #[derive(Debug, Clone)]
-pub enum PlaybackReleaseAction {
+pub enum PlaybackReleaseOperation {
     /// Release one instance by runtime identity.
     One(InstanceId),
     /// Release every running instance.
@@ -610,13 +610,13 @@ pub enum PlaybackReleaseAction {
     ByTag(String),
 }
 
-impl EnginePayload for PlaybackReleaseAction {}
+impl EnginePayload for PlaybackReleaseOperation {}
 
-impl EngineIngressMeta for PlaybackReleaseAction {
-    const COMMAND_MODULE: &'static str = "PlaybackReleaseAction";
+impl EngineIngressMeta for PlaybackReleaseOperation {
+    const COMMAND_MODULE: &'static str = "PlaybackReleaseOperation";
 }
 
-impl EngineAction for PlaybackReleaseAction {}
+impl EngineOperation for PlaybackReleaseOperation {}
 
 /// High-frequency updates applied to `InstanceControls` without a user-command lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize, Message)]

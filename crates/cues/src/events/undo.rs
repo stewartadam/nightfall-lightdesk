@@ -129,7 +129,7 @@ pub(super) fn restore_sequence_snapshot(
 /// Pushes a resolved undo command using the user-facing label and undo identity.
 pub(super) fn push_labeled_undo_entry(
     undo_manager: &mut UndoManager,
-    command: Option<Box<dyn UndoableOperation>>,
+    command: Option<Box<dyn Undoable>>,
     label: &str,
     correlation_id: uuid::Uuid,
     undo_id: uuid::Uuid,
@@ -150,9 +150,9 @@ pub(super) fn push_labeled_undo_entry(
 /// Pushes an undo entry for one workflow operation when it belongs to an undo group.
 pub(super) fn push_operation_undo_entry(
     undo_manager: &mut UndoManager,
-    command: Box<dyn UndoableOperation>,
+    command: Box<dyn Undoable>,
     label: &str,
-    operation: &EngineActionEnvelope<CueStoreOperation>,
+    operation: &EngineOperationEnvelope<CueStoreOperation>,
 ) {
     let Some(undo_id) = operation.undo_id else {
         return;
@@ -170,7 +170,7 @@ pub(super) fn push_operation_undo_entry(
 
 /// Handles RestoreSequencePosition commands for undo.
 pub fn handle_restore_sequence_position(
-    mut events: MessageReader<EngineActionEnvelope<RestoreSequencePosition>>,
+    mut events: MessageReader<EngineOperationEnvelope<RestoreSequencePosition>>,
     instance_index: Res<InstanceIndex>,
     mut msequence_query: Query<&mut MaterializedSequence>,
     mut responder: CommandResponder,

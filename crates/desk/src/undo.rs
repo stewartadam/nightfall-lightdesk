@@ -20,8 +20,8 @@ use crate::masters::{Master, MasterCommand};
 // Master Commands
 // ============================================================================
 
-impl UndoableOperation for MasterCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for MasterCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let masters = ctx.world.resource::<DataProvider<Master>>();
         match self {
             MasterCommand::StoreMaster(master) => match masters.get(master.identifiers.uid) {
@@ -29,7 +29,7 @@ impl UndoableOperation for MasterCommand {
                 Err(_) => Some(Box::new(MasterCommand::DeleteMaster(master.identifiers.id))),
             },
             MasterCommand::DeleteMaster(id) => masters.from_id(*id).ok().map(|master| {
-                Box::new(MasterCommand::StoreMaster(master.clone())) as Box<dyn UndoableOperation>
+                Box::new(MasterCommand::StoreMaster(master.clone())) as Box<dyn Undoable>
             }),
             MasterCommand::RenameMaster { id, new_id } => {
                 Some(Box::new(MasterCommand::RenameMaster {
@@ -41,14 +41,14 @@ impl UndoableOperation for MasterCommand {
                 Box::new(MasterCommand::SetMasterLevel {
                     id: *id,
                     level_percent: master.level_percent,
-                }) as Box<dyn UndoableOperation>
+                }) as Box<dyn Undoable>
             }),
             MasterCommand::SetMasterMode { id, .. } | MasterCommand::ToggleMaster { id } => {
                 masters.from_id(*id).ok().map(|master| {
                     Box::new(MasterCommand::SetMasterMode {
                         id: *id,
                         mode: master.mode.clone(),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 })
             }
         }
@@ -77,7 +77,7 @@ impl UndoableOperation for MasterCommand {
 fn inverse_for_store_blueprint(
     blueprint: &Blueprint,
     blueprints: &DataProvider<Blueprint>,
-) -> Option<Box<dyn UndoableOperation>> {
+) -> Option<Box<dyn Undoable>> {
     match blueprints.get(blueprint.identifiers.uid) {
         Ok(existing) => {
             let old_blueprint: Blueprint = (*existing).clone();
@@ -89,8 +89,8 @@ fn inverse_for_store_blueprint(
     }
 }
 
-impl UndoableOperation for BlueprintCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for BlueprintCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let blueprints = ctx.world.resource::<DataProvider<Blueprint>>();
         match self {
             BlueprintCommand::StoreBlueprint(blueprint) => {
@@ -100,8 +100,7 @@ impl UndoableOperation for BlueprintCommand {
                 // Capture full blueprint before deletion
                 blueprints.from_id(*id).ok().map(|blueprint_ref| {
                     let blueprint: Blueprint = (*blueprint_ref).clone();
-                    Box::new(BlueprintCommand::StoreBlueprint(blueprint))
-                        as Box<dyn UndoableOperation>
+                    Box::new(BlueprintCommand::StoreBlueprint(blueprint)) as Box<dyn Undoable>
                 })
             }
             BlueprintCommand::RenameBlueprint { id, new_id } => {
@@ -133,7 +132,7 @@ impl UndoableOperation for BlueprintCommand {
 fn inverse_for_store_group(
     group: &Group,
     groups: &DataProvider<Group>,
-) -> Option<Box<dyn UndoableOperation>> {
+) -> Option<Box<dyn Undoable>> {
     match groups.get(group.identifiers.uid) {
         Ok(existing) => {
             let old_group: Group = (*existing).clone();
@@ -143,8 +142,8 @@ fn inverse_for_store_group(
     }
 }
 
-impl UndoableOperation for GroupCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for GroupCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let groups = ctx.world.resource::<DataProvider<Group>>();
         match self {
             GroupCommand::StoreGroup(group) => inverse_for_store_group(group, groups),
@@ -152,7 +151,7 @@ impl UndoableOperation for GroupCommand {
                 // Capture full group before deletion
                 groups.from_id(*id).ok().map(|group_ref| {
                     let group: Group = (*group_ref).clone();
-                    Box::new(GroupCommand::StoreGroup(group)) as Box<dyn UndoableOperation>
+                    Box::new(GroupCommand::StoreGroup(group)) as Box<dyn Undoable>
                 })
             }
             GroupCommand::RenameGroup { id, new_id } => Some(Box::new(GroupCommand::RenameGroup {
@@ -193,7 +192,7 @@ mod tests {
     }
 
     /// Extracts an clip command from a boxed undo command.
-    fn inverse_clip_command(command: Box<dyn UndoableOperation>) -> ClipCommand {
+    fn inverse_clip_command(command: Box<dyn Undoable>) -> ClipCommand {
         *command
             .into_any()
             .downcast::<ClipCommand>()
@@ -201,7 +200,7 @@ mod tests {
     }
 
     /// Extracts a Blueprint command from a boxed undo command.
-    fn inverse_blueprint_command(command: Box<dyn UndoableOperation>) -> BlueprintCommand {
+    fn inverse_blueprint_command(command: Box<dyn Undoable>) -> BlueprintCommand {
         *command
             .into_any()
             .downcast::<BlueprintCommand>()

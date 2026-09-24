@@ -11,7 +11,7 @@ use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 
 use crate::{
-    TimecodeAction, TimecodeCommand, TimecodeEvent, components::TimecodeGenerator,
+    TimecodeCommand, TimecodeEvent, TimecodeOperation, components::TimecodeGenerator,
     timecode::Timecode,
 };
 
@@ -53,7 +53,7 @@ pub fn handle_events(
 /// Applies detached runtime actions and publishes facts for downstream observers.
 pub fn handle_actions(
     mut timecode_gen_query: Query<(Entity, &mut TimecodeGenerator)>,
-    mut actions: MessageReader<EngineActionEnvelope<TimecodeAction>>,
+    mut actions: MessageReader<EngineOperationEnvelope<TimecodeOperation>>,
     mut timecode_events: MessageWriter<TimecodeEvent>,
 ) {
     for envelope in actions.read() {
@@ -66,12 +66,12 @@ pub fn handle_actions(
 }
 
 /// Converts the runtime subset of user commands into domain-owned actions.
-fn runtime_action_from_command(command: &TimecodeCommand) -> Option<TimecodeAction> {
+fn runtime_action_from_command(command: &TimecodeCommand) -> Option<TimecodeOperation> {
     match command {
-        TimecodeCommand::StartTimecode(id) => Some(TimecodeAction::Start(*id)),
-        TimecodeCommand::PauseTimecode(id) => Some(TimecodeAction::Pause(*id)),
-        TimecodeCommand::StopTimecode(id) => Some(TimecodeAction::Stop(*id)),
-        TimecodeCommand::SeekTimecode { id, position } => Some(TimecodeAction::Seek {
+        TimecodeCommand::StartTimecode(id) => Some(TimecodeOperation::Start(*id)),
+        TimecodeCommand::PauseTimecode(id) => Some(TimecodeOperation::Pause(*id)),
+        TimecodeCommand::StopTimecode(id) => Some(TimecodeOperation::Stop(*id)),
+        TimecodeCommand::SeekTimecode { id, position } => Some(TimecodeOperation::Seek {
             id: *id,
             position: *position,
         }),
@@ -82,11 +82,13 @@ fn runtime_action_from_command(command: &TimecodeCommand) -> Option<TimecodeActi
 /// Applies one runtime timecode action and reports whether its target existed.
 fn apply_runtime_action(
     timecode_gen_query: &mut Query<(Entity, &mut TimecodeGenerator)>,
-    action: &TimecodeAction,
+    action: &TimecodeOperation,
 ) -> bool {
     let id = match action {
-        TimecodeAction::Start(id) | TimecodeAction::Pause(id) | TimecodeAction::Stop(id) => *id,
-        TimecodeAction::Seek { id, .. } => *id,
+        TimecodeOperation::Start(id)
+        | TimecodeOperation::Pause(id)
+        | TimecodeOperation::Stop(id) => *id,
+        TimecodeOperation::Seek { id, .. } => *id,
     };
     let mut found = false;
     for (entity, mut generator) in timecode_gen_query
@@ -96,22 +98,22 @@ fn apply_runtime_action(
         found = true;
         tracing::trace!(%entity, timecode_id = id, ?action, "Applying timecode runtime action");
         match action {
-            TimecodeAction::Start(_) => generator.start(),
-            TimecodeAction::Pause(_) => generator.pause(),
-            TimecodeAction::Stop(_) => generator.stop(),
-            TimecodeAction::Seek { position, .. } => generator.seek(*position),
+            TimecodeOperation::Start(_) => generator.start(),
+            TimecodeOperation::Pause(_) => generator.pause(),
+            TimecodeOperation::Stop(_) => generator.stop(),
+            TimecodeOperation::Seek { position, .. } => generator.seek(*position),
         }
     }
     found
 }
 
 /// Converts an applied runtime action into its observable domain fact.
-fn runtime_event(action: &TimecodeAction) -> TimecodeEvent {
+fn runtime_event(action: &TimecodeOperation) -> TimecodeEvent {
     match action {
-        TimecodeAction::Start(id) => TimecodeEvent::Started(*id),
-        TimecodeAction::Pause(id) => TimecodeEvent::Paused(*id),
-        TimecodeAction::Stop(id) => TimecodeEvent::Stopped(*id),
-        TimecodeAction::Seek { id, position } => TimecodeEvent::Seeked {
+        TimecodeOperation::Start(id) => TimecodeEvent::Started(*id),
+        TimecodeOperation::Pause(id) => TimecodeEvent::Paused(*id),
+        TimecodeOperation::Stop(id) => TimecodeEvent::Stopped(*id),
+        TimecodeOperation::Seek { id, position } => TimecodeEvent::Seeked {
             id: *id,
             position: *position,
         },
@@ -264,7 +266,7 @@ mod tests {
         app.init_resource::<DataProvider<Timecode>>();
         app.init_resource::<CommandTracker>();
         app.add_message::<CommandEnvelope<TimecodeCommand>>();
-        app.add_message::<EngineActionEnvelope<TimecodeAction>>();
+        app.add_message::<EngineOperationEnvelope<TimecodeOperation>>();
         app.add_message::<TimecodeEvent>();
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
@@ -348,7 +350,9 @@ mod tests {
         let mut app = timecode_app();
         app.world_mut().spawn(TimecodeGenerator::new(timecode(7)));
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(TimecodeAction::Start(7)));
+            .write_message(EngineOperationEnvelope::detached(TimecodeOperation::Start(
+                7,
+            )));
 
         app.update();
 

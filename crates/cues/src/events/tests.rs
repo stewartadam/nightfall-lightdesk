@@ -573,7 +573,7 @@ fn rename_color_path_moves_path_and_rewrites_references() {
 #[test]
 fn timed_sequence_goto_inserts_instance_clock_at_evaluated_position() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<SequencePlaybackAction>>();
+    app.add_message::<EngineOperationEnvelope<SequencePlaybackOperation>>();
     add_command_lifecycle(&mut app);
     app.add_systems(Update, handle_sequence_playback_actions);
 
@@ -588,8 +588,8 @@ fn timed_sequence_goto_inserts_instance_clock_at_evaluated_position() {
     app.insert_resource(instance_index);
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            SequencePlaybackAction::Goto {
+        .write_message(EngineOperationEnvelope::detached(
+            SequencePlaybackOperation::Goto {
                 instance_id,
                 position: 1,
                 timing: Some(PlaybackReconstructionTiming::timeline_source_local(
@@ -627,7 +627,7 @@ fn timed_sequence_goto_inserts_instance_clock_at_evaluated_position() {
 #[test]
 fn sequence_render_at_inserts_instance_clock_at_evaluated_position() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<SequencePlaybackAction>>();
+    app.add_message::<EngineOperationEnvelope<SequencePlaybackOperation>>();
     add_command_lifecycle(&mut app);
     app.add_systems(Update, handle_sequence_playback_actions);
 
@@ -648,8 +648,8 @@ fn sequence_render_at_inserts_instance_clock_at_evaluated_position() {
     app.insert_resource(instance_index);
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            SequencePlaybackAction::RenderAt {
+        .write_message(EngineOperationEnvelope::detached(
+            SequencePlaybackOperation::RenderAt {
                 instance_id: first_instance_id,
                 position: 1,
                 timing: PlaybackReconstructionTiming::timeline_source_local(
@@ -661,8 +661,8 @@ fn sequence_render_at_inserts_instance_clock_at_evaluated_position() {
             },
         ));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            SequencePlaybackAction::RenderAt {
+        .write_message(EngineOperationEnvelope::detached(
+            SequencePlaybackOperation::RenderAt {
                 instance_id: second_instance_id,
                 position: 1,
                 timing: PlaybackReconstructionTiming::timeline_source_local(

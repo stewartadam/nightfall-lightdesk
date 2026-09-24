@@ -15,7 +15,7 @@ pub fn process_parameters_system(
     global_vars: ResMut<GlobalVariables>,
     clip_lookup: ClipLookup,
     materialized_clips: Query<&MaterializedClip>,
-    mut clip_actions: MessageWriter<EngineActionEnvelope<ClipAction>>,
+    mut clip_actions: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     mut origins: ResMut<TimelineCommandOrigins>,
     mut applied_rate_targets: Local<HashMap<Uuid, Uuid>>,
 ) {
@@ -117,7 +117,7 @@ fn apply_rate_master_value(
     value: f32,
     clip_lookup: &ClipLookupSnapshot,
     materialized_clips: &Query<&MaterializedClip>,
-    clip_actions: &mut MessageWriter<EngineActionEnvelope<ClipAction>>,
+    clip_actions: &mut MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     origins: &mut TimelineCommandOrigins,
 ) {
     let Ok((_, clip)) = clip_lookup.by_uid(clip_uid) else {
@@ -134,7 +134,7 @@ fn apply_rate_master_value(
         write_timeline_clip_action(
             clip_actions,
             origins,
-            ClipAction::SetRate {
+            ClipOperation::SetRate {
                 clip_id: IdExpr::Single(clip.identifiers.id),
                 rate: value,
             },

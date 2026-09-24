@@ -12,24 +12,24 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::Messages;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
-use nightfall_cues::CueLifecycleAction;
+use nightfall_cues::CueLifecycleOperation;
 use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
 use nightfall_desk::prelude::{DeskSettings, SelectionFlattenPolicy};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin, CommandOutcome,
-    CommandReply, CommandResult, CommandTracker, DataProvider, EngineActionEnvelope,
+    CommandReply, CommandResult, CommandTracker, DataProvider, EngineOperationEnvelope,
     FinishedCommand, OperationResult, PayloadEnvelope, PendingCommandBuffer,
-    PendingEngineActionBuffer, ReplyTarget,
+    PendingEngineOperationBuffer, ReplyTarget,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
-use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_instances::{PlaybackOperation, PlaybackScope};
 use nightfall_programmer::events::{
     PendingUserCommandPlans, ProgrammerCommand, SelectionFlattenApprovals,
     handle_programmer_events, plan_pending_user_commands,
 };
 use nightfall_programmer::prelude::{
-    AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerAction, Scope, UserCommand,
+    AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerOperation, Scope, UserCommand,
 };
 use uuid::Uuid;
 
@@ -86,9 +86,9 @@ fn instruction_with_red_blue() -> CueInstruction {
 fn setup_app() -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<ProgrammerCommand>>();
-    app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
-    app.add_message::<EngineActionEnvelope<ProgrammerAction>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+    app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
+    app.add_message::<EngineOperationEnvelope<ProgrammerOperation>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
     app.add_message::<OperationResult<(), CommandError>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
@@ -98,7 +98,7 @@ fn setup_app() -> App {
     app.init_resource::<SelectionFlattenApprovals>();
     app.init_resource::<PendingUserCommandPlans>();
     app.init_resource::<PendingCommandBuffer>();
-    app.init_resource::<PendingEngineActionBuffer>();
+    app.init_resource::<PendingEngineOperationBuffer>();
     app.insert_resource(Programmer::default());
     app.insert_resource(DeskSettings::default());
     app.insert_resource(FixtureDataProviderExt::default());
@@ -132,11 +132,11 @@ fn emit_release_action(
     attributes: Vec<Attribute>,
 ) {
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ProgrammerAction>>>()
-        .write(EngineActionEnvelope::for_command_context(
+        .resource_mut::<Messages<EngineOperationEnvelope<ProgrammerOperation>>>()
+        .write(EngineOperationEnvelope::for_command_context(
             correlation_id.into(),
             correlation_id.into(),
-            ProgrammerAction::ReleaseValues {
+            ProgrammerOperation::ReleaseValues {
                 scope: selection.map_or(Scope::All, Scope::Selection),
                 attributes: AttributeFilter::from_attributes(&attributes),
                 allow_selection_flatten: false,
@@ -750,18 +750,18 @@ fn test_release_programmer_values_emits_release_selection_for_full_release() {
 
     let action_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<PlaybackAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<PlaybackOperation>>>()
         .drain()
         .collect();
     assert!(
         action_events.iter().any(|event| {
             matches!(
                 &event.action,
-                PlaybackAction::ReleaseParameters { scope: PlaybackScope::Selection(SelectionExpr::Resolved(fixtures)) }
+                PlaybackOperation::ReleaseParameters { scope: PlaybackScope::Selection(SelectionExpr::Resolved(fixtures)) }
                     if fixtures.len() == 1 && fixtures[0] == fixture
             )
         }),
-        "full release should emit PlaybackAction::ReleaseParameters",
+        "full release should emit PlaybackOperation::ReleaseParameters",
     );
 }
 
@@ -935,11 +935,11 @@ fn test_explicitly_approved_desk_release_removes_fixture_from_group_range_instru
 
     let correlation_id = Uuid::new_v4();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<ProgrammerAction>>>()
-        .write(EngineActionEnvelope::for_command_context(
+        .resource_mut::<Messages<EngineOperationEnvelope<ProgrammerOperation>>>()
+        .write(EngineOperationEnvelope::for_command_context(
             correlation_id.into(),
             correlation_id.into(),
-            ProgrammerAction::ReleaseValues {
+            ProgrammerOperation::ReleaseValues {
                 scope: Scope::Selection(SelectionExpr::Fixture(UnresolvedFixtureRef {
                     fixture_id: 501,
                     element_index: None,
@@ -1159,7 +1159,7 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
         );
     }
 
-    let detached_action = EngineActionEnvelope::detached(ProgrammerAction::ReleaseValues {
+    let detached_action = EngineOperationEnvelope::detached(ProgrammerOperation::ReleaseValues {
         scope: Scope::Selection(SelectionExpr::Fixture(UnresolvedFixtureRef {
             fixture_id: fixture_a.identifiers.id,
             element_index: None,
@@ -1201,14 +1201,14 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
 
     let action_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<PlaybackAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<PlaybackOperation>>>()
         .drain()
         .collect();
     assert!(
         action_events.iter().any(|event| {
             matches!(
                 &event.action,
-                PlaybackAction::ReleaseParameters {
+                PlaybackOperation::ReleaseParameters {
                     scope: PlaybackScope::Selection(SelectionExpr::Fixture(UnresolvedFixtureRef {
                         fixture_id,
                         element_index: None,
@@ -1216,7 +1216,7 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
                 } if *fixture_id == fixture_a.identifiers.id
             )
         }),
-        "approved retry should emit PlaybackAction::ReleaseParameters",
+        "approved retry should emit PlaybackOperation::ReleaseParameters",
     );
 
     let release_operation_id = action_events
@@ -1224,7 +1224,7 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
         .find_map(|event| {
             matches!(
                 &event.action,
-                PlaybackAction::ReleaseParameters {
+                PlaybackOperation::ReleaseParameters {
                     scope: PlaybackScope::Selection(_)
                 }
             )
@@ -1352,16 +1352,16 @@ fn stale_multi_action_plan_is_rejected_before_any_sibling_mutates() {
         });
     let planned = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     for envelope in planned {
         let action = *envelope
             .action
             .into_any()
-            .downcast::<ProgrammerAction>()
+            .downcast::<ProgrammerOperation>()
             .expect("planner should emit programmer actions");
         app.world_mut()
-            .write_message(EngineActionEnvelope::with_context(
+            .write_message(EngineOperationEnvelope::with_context(
                 envelope.operation_id,
                 envelope.command_id,
                 envelope.undo_id,
@@ -1409,16 +1409,16 @@ fn combined_clear_selection_and_values_finishes_both_action_slots() {
         .expect_completions(command_id, 2)
         .expect("combined clear should expect both planned actions");
     app.world_mut()
-        .write_message(EngineActionEnvelope::for_command_context(
+        .write_message(EngineOperationEnvelope::for_command_context(
             command_id,
             command_id.into(),
-            ProgrammerAction::ClearSelection,
+            ProgrammerOperation::ClearSelection,
         ));
     app.world_mut()
-        .write_message(EngineActionEnvelope::for_command_context(
+        .write_message(EngineOperationEnvelope::for_command_context(
             command_id,
             command_id.into(),
-            ProgrammerAction::ClearValues {
+            ProgrammerOperation::ClearValues {
                 scope: Scope::All,
                 attributes: AttributeFilter::All,
                 allow_selection_flatten: false,
@@ -1463,10 +1463,10 @@ fn full_release_waits_for_all_delegated_operations_before_succeeding() {
         )
         .expect("release command should register");
     app.world_mut()
-        .write_message(EngineActionEnvelope::for_command_context(
+        .write_message(EngineOperationEnvelope::for_command_context(
             command_id,
             command_id.into(),
-            ProgrammerAction::ReleaseValues {
+            ProgrammerOperation::ReleaseValues {
                 scope: Scope::All,
                 attributes: AttributeFilter::All,
                 allow_selection_flatten: false,
@@ -1477,14 +1477,14 @@ fn full_release_waits_for_all_delegated_operations_before_succeeding() {
 
     let cue_operation_id = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<CueLifecycleAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<CueLifecycleOperation>>>()
         .drain()
         .next()
         .expect("full release should delegate cue cleanup")
         .operation_id;
     let playback_operation_id = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<PlaybackAction>>>()
+        .resource_mut::<Messages<EngineOperationEnvelope<PlaybackOperation>>>()
         .drain()
         .next()
         .expect("full release should delegate playback release")
