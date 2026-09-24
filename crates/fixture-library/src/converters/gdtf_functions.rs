@@ -13,9 +13,12 @@
 //! All DMX values are converted to the parameter's byte resolution.
 
 use gdtf::dmx_mode::{ChannelFunction, DmxChannel, LogicalChannel};
-use gdtf::values::DmxValue;
+use gdtf::fixture_type::FixtureType;
+use gdtf::physical_descriptions::EmitterOptic;
+use gdtf::values::{ColorCie, DmxValue};
+use gdtf::wheel::WheelSlotOptic;
 use nightfall_dmx::prelude::DmxValueResolution;
-use nightfall_fixtures::prelude::{ParameterFunction, ParameterFunctionSet};
+use nightfall_fixtures::prelude::{CieColor, ParameterFunction, ParameterFunctionSet};
 use nightfall_fixtures::wire_layout::dmx_max;
 
 /// DMX values a parameter declares beyond its byte placement.
@@ -33,6 +36,23 @@ pub(super) struct ChannelSemantics {
 fn scaled(value: DmxValue, resolution: DmxValueResolution) -> u32 {
     let bytes = resolution.channel_width() as u8;
     value.to(bytes).min(dmx_max(resolution) as u64) as u32
+}
+
+/// Converts a GDTF CIE color.
+fn cie(color: &ColorCie) -> CieColor {
+    CieColor {
+        x: color.x as f32,
+        y: color.y as f32,
+        luminance: color.z as f32,
+    }
+}
+
+/// Returns the measured color of the emitter a function drives, if it declares one.
+fn emitter_color(fixture_type: &FixtureType, function: &ChannelFunction) -> Option<CieColor> {
+    match &function.emitter(fixture_type)?.optic {
+        EmitterOptic::Color { color, .. } => Some(cie(color)),
+        EmitterOptic::WaveLength { .. } => None,
+    }
 }
 
 /// Returns inclusive `(from, to)` bounds for ascending start values ending at `last`.
@@ -55,6 +75,7 @@ fn ranges(starts: &[u32], last: u32) -> Vec<(u32, u32)> {
 /// function when none is named. Virtual channels keep their functions for
 /// display but have no DMX default or highlight to output.
 pub(super) fn channel_semantics(
+    fixture_type: &FixtureType,
     channel: &DmxChannel,
     logical: &LogicalChannel,
     resolution: DmxValueResolution,
@@ -79,6 +100,7 @@ pub(super) fn channel_semantics(
                 .collect();
             sets.sort_by_key(|(from, _)| *from);
             let set_starts: Vec<u32> = sets.iter().map(|(from, _)| *from).collect();
+            let wheel = function.wheel(fixture_type);
             ParameterFunction {
                 name: function
                     .name
@@ -91,6 +113,7 @@ pub(super) fn channel_semantics(
                 physical_from: function.physical_from as f32,
                 physical_to: function.physical_to as f32,
                 wheel: function.wheel.as_ref().map(|wheel| wheel.to_string()),
+                emitter_color: emitter_color(fixture_type, function),
                 sets: sets
                     .iter()
                     .zip(ranges(&set_starts, dmx_to))
@@ -103,6 +126,14 @@ pub(super) fn channel_semantics(
                         dmx_from: from,
                         dmx_to: to,
                         wheel_slot: set.wheel_slot_index.map(|index| index as u32 + 1),
+                        color: wheel
+                            .and_then(|wheel| set.wheel_slot(wheel))
+                            .and_then(|slot| match &slot.optic {
+                                WheelSlotOptic::Color(color) => Some(cie(color)),
+                                WheelSlotOptic::Filter(_) => {
+                                    slot.filter(fixture_type).map(|filter| cie(&filter.color))
+                                }
+                            }),
                     })
                     .collect(),
             }
@@ -214,5 +245,60 @@ mod tests {
         );
         assert_eq!(dimmer.functions.len(), 1);
         assert_eq!(dimmer.default_dmx, None);
+    }
+
+    /// Verifies additive functions carry their linked emitter's measured color.
+    #[test]
+    fn emitter_links_carry_measured_color() {
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Emitters")
+            .emitter("Lime", [0.405, 0.54, 60.0])
+            .geometry(GeometrySpec::generic("Base"))
+            .mode(
+                ModeSpec::new("Mode", "Base").channel(
+                    ChannelSpec::new("Base", "ColorAdd_Lime", &[1])
+                        .function(FunctionSpec::new("ColorAdd_Lime").emitter("Lime")),
+                ),
+            )
+            .write_metadata(dir.path());
+        let (fixture, _) = convert_gdtf_to_fixture(&metadata, "Mode", 1).unwrap();
+        let color = fixture.elements[0].parameters[0].functions[0]
+            .emitter_color
+            .unwrap();
+        assert_eq!((color.x, color.y, color.luminance), (0.405, 0.54, 60.0));
+    }
+
+    /// Verifies color wheel sets carry their slot's filter color and open slots stay uncolored-white.
+    #[test]
+    fn wheel_sets_carry_slot_colors() {
+        use crate::testing::{SlotSpec, WheelSpec};
+
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Wheel")
+            .wheel(
+                WheelSpec::new("Color Wheel")
+                    .slot(SlotSpec::new("Open"))
+                    .slot(SlotSpec::new("Red").color(0.64, 0.33, 21.0)),
+            )
+            .geometry(GeometrySpec::generic("Base"))
+            .mode(
+                ModeSpec::new("Mode", "Base").channel(
+                    ChannelSpec::new("Base", "Color1", &[1]).function(
+                        FunctionSpec::new("Color1")
+                            .wheel("Color Wheel")
+                            .set("Open", 0, Some(1))
+                            .set("Red", 10, Some(2)),
+                    ),
+                ),
+            )
+            .write_metadata(dir.path());
+        let (fixture, _) = convert_gdtf_to_fixture(&metadata, "Mode", 1).unwrap();
+        let sets = &fixture.elements[0].parameters[0].functions[0].sets;
+        assert_eq!(sets[1].color.map(|c| (c.x, c.y)), Some((0.64, 0.33)));
+        let open = sets[0].color.unwrap();
+        assert!(
+            (open.x - 0.3127).abs() < 0.01,
+            "open slot defaults to white"
+        );
     }
 }
