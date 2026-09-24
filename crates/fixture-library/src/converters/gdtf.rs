@@ -195,8 +195,12 @@ fn convert_channel_to_parameter(
         Attribute::Intensity | Attribute::VirtualIntensity
     );
 
-    let semantics =
-        super::gdtf_functions::channel_semantics(resolved.channel, logical_channel, resolution);
+    let semantics = super::gdtf_functions::channel_semantics(
+        fixture_type,
+        resolved.channel,
+        logical_channel,
+        resolution,
+    );
     let mut metadata = ParameterMetadata {
         dmx_slots,
         functions: semantics.functions,

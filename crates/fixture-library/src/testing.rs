@@ -370,6 +370,26 @@ impl ModeSpec {
     }
 }
 
+/// A `<Slot>` of a wheel.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WheelSlotSpec {
+    /// Slot name.
+    pub name: String,
+    /// CIE `x, y, Y` filter color, when the slot colors the beam.
+    pub color: Option<[f64; 3]>,
+    /// Image file name under `wheels/`, without extension.
+    pub media: Option<String>,
+}
+
+/// A `<Wheel>` definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WheelSpec {
+    /// Wheel name.
+    pub name: String,
+    /// Slots in wheel order.
+    pub slots: Vec<WheelSlotSpec>,
+}
+
 /// Builder for a single-fixture-type GDTF archive.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GdtfBuilder {
@@ -380,6 +400,8 @@ pub struct GdtfBuilder {
     geometries: Vec<GeometrySpec>,
     modes: Vec<ModeSpec>,
     extra_files: Vec<(String, Vec<u8>)>,
+    emitters: Vec<(String, [f64; 3])>,
+    wheels: Vec<WheelSpec>,
 }
 
 impl GdtfBuilder {
@@ -393,6 +415,8 @@ impl GdtfBuilder {
             geometries: Vec::new(),
             modes: Vec::new(),
             extra_files: Vec::new(),
+            emitters: Vec::new(),
+            wheels: Vec::new(),
         }
     }
 
@@ -424,6 +448,21 @@ impl GdtfBuilder {
         self
     }
 
+    /// Adds an emitter with a CIE `x, y, Y` color.
+    pub fn emitter(mut self, name: &str, color: [f64; 3]) -> Self {
+        self.emitters.push((name.to_string(), color));
+        self
+    }
+
+    /// Adds a wheel.
+    pub fn wheel(mut self, name: &str, slots: Vec<WheelSlotSpec>) -> Self {
+        self.wheels.push(WheelSpec {
+            name: name.to_string(),
+            slots,
+        });
+        self
+    }
+
     /// Adds an arbitrary archive entry, e.g. a mesh or wheel image.
     pub fn file(mut self, path: &str, bytes: &[u8]) -> Self {
         self.extra_files.push((path.to_string(), bytes.to_vec()));
@@ -442,7 +481,33 @@ impl GdtfBuilder {
             make = escape(&self.manufacturer),
         );
         self.write_attribute_definitions(&mut xml);
-        xml.push_str("<Wheels/>\n<PhysicalDescriptions/>\n<Models>\n");
+        xml.push_str("<Wheels>\n");
+        for wheel in &self.wheels {
+            let _ = writeln!(xml, "<Wheel Name=\"{}\">", escape(&wheel.name));
+            for slot in &wheel.slots {
+                let color = slot
+                    .color
+                    .map(|[x, y, luminance]| format!(" Color=\"{x},{y},{luminance}\""))
+                    // The parser requires a color; open slots are white.
+                    .unwrap_or_else(|| " Color=\"0.3127,0.3290,100\"".to_string());
+                let media = slot
+                    .media
+                    .as_ref()
+                    .map(|media| format!(" MediaFileName=\"{}\"", escape(media)))
+                    .unwrap_or_default();
+                let _ = writeln!(xml, "<Slot Name=\"{}\"{color}{media}/>", escape(&slot.name));
+            }
+            xml.push_str("</Wheel>\n");
+        }
+        xml.push_str("</Wheels>\n<PhysicalDescriptions>\n<Emitters>\n");
+        for (name, [x, y, luminance]) in &self.emitters {
+            let _ = writeln!(
+                xml,
+                "<Emitter Name=\"{}\" Color=\"{x},{y},{luminance}\" DominantWaveLength=\"0\"/>",
+                escape(name)
+            );
+        }
+        xml.push_str("</Emitters>\n</PhysicalDescriptions>\n<Models>\n");
         for model in &self.models {
             let _ = writeln!(
                 xml,
