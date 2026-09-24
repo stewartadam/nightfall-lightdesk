@@ -11,6 +11,7 @@ import {
   applyAvailableAudioDevicesSnapshot,
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
+  applyClientActionInvocation,
   applyExternalControlStateSnapshot,
   applyIoSettingsSnapshot,
   applyMidiDeviceListSnapshot,
@@ -93,5 +94,9 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("ActionCatalog", (message) => {
     applyActionCatalogSnapshot(message.data);
+  });
+
+  registry.register("ClientActionInvocation", (message) => {
+    applyClientActionInvocation(message.data);
   });
 }

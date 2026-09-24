@@ -8,4 +8,12 @@
 
 export * from "./command-types";
 export { CommandPaletteContext, useCommandPalette } from "./context";
-export { useCommand } from "./use-command";
+export {
+  $uiActions,
+  executeUiAction,
+  registerUiAction,
+  UI_ACTION_PREFIX,
+  uiActionId,
+  unregisterUiAction,
+} from "./ui-action-registry";
+export { useUiAction } from "./use-ui-action";

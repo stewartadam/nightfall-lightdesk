@@ -13,13 +13,13 @@ import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { Show } from "solid-js";
 import { compactViewport } from "../../../state/viewport";
 import { useAppShell } from "../../providers/app-shell";
-import { useCommand } from "../command-palette";
+import { useUiAction } from "../command-palette";
 
 /** Registers commands that store or manage named arrangements of the docked workspace. */
 function LayoutManagementCommands() {
   const { showLayoutManager } = useAppShell();
 
-  useCommand({
+  useUiAction({
     id: "manage-layouts",
     name: "Manage Layouts",
     description: "Create, save, rename, show, hide, and delete panel layouts",
@@ -27,7 +27,7 @@ function LayoutManagementCommands() {
     category: "Layout",
     execute: showLayoutManager,
   });
-  useCommand({
+  useUiAction({
     id: "store-current-layout",
     name: "Store Current Layout",
     description:
@@ -49,7 +49,7 @@ export default function LayoutCommands() {
   const { showShortcutsPopup } = useAppShell();
   const compact = useStore(compactViewport);
 
-  useCommand({
+  useUiAction({
     id: "show-keyboard-shortcuts",
     name: "Show Keyboard Shortcuts",
     description: "Show all available keyboard shortcuts",

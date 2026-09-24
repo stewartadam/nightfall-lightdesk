@@ -9,6 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { Show } from "solid-js";
 import { MappingModeBanner, MappingModeController } from "../../../features/io";
+import { KeybindingController } from "../../../features/keybindings";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
@@ -43,6 +44,7 @@ function ShellRuntime() {
       <FeedbackCommands />
       <LayoutCommands />
       <MappingModeController />
+      <KeybindingController />
       <TauriMenuBridge />
       <ConnectionOverlay />
       <ShellOverlayHosts />

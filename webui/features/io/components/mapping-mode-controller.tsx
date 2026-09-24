@@ -9,7 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { PlugsConnectedIcon } from "@squidlab/phosphor-solid/plugs-connected";
 import { onCleanup, Show } from "solid-js";
-import { useCommand } from "../../../components/providers/command-registry";
+import { useUiAction } from "../../../components/providers/command-registry";
 import { Button } from "../../../components/ui/visual-language/button";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { midiLastEvent, oscLastEvent } from "../../../state/appStores";
@@ -45,7 +45,7 @@ export function MappingModeController() {
     unsubscribeOsc();
   });
 
-  useCommand({
+  useUiAction({
     id: "io.toggle-mapping-mode",
     name: "Toggle Controller Mapping Mode",
     description:

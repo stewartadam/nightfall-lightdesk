@@ -15,30 +15,16 @@ import {
   Show,
   splitProps,
 } from "solid-js";
-import {
-  actionCatalog,
-  midiMappings,
-  oscMappings,
-  pushToast,
-} from "../../../state/appStores";
+import { midiMappings, oscMappings } from "../../../state/appStores";
 import type * as types from "../../../types";
 import {
   actionReferencesEqual,
   formatActionReference,
   useActionTargetNames,
+  useBindableActionCatalog,
 } from "../../actions";
-import {
-  midiMappingFromEvent,
-  midiSourceLabel,
-  oscMappingFromEvent,
-  upsertMidiMapping,
-  upsertOscMapping,
-} from "../model/controller-mappings";
-import {
-  $mappingMode,
-  type ArmedSource,
-  describeArmedSource,
-} from "../model/mapping-mode";
+import { bindArmedSource } from "../model/mapping-bind";
+import { $mappingMode } from "../model/mapping-mode";
 
 /** One action a mappable control can bind, with the label shown when choosing it. */
 export interface MappableChoice {
@@ -78,7 +64,7 @@ export function Mappable(props: MappableProps): JSX.Element {
   const $mode = useStore($mappingMode);
   const $midiMappings = useStore(midiMappings);
   const $oscMappings = useStore(oscMappings);
-  const $catalog = useStore(actionCatalog);
+  const $catalog = useBindableActionCatalog();
   const targetNames = useActionTargetNames();
   const [choosing, setChoosing] = createSignal(false);
 
@@ -96,18 +82,10 @@ export function Mappable(props: MappableProps): JSX.Element {
   /** Binds the armed source to an action and reports the result. */
   const bind = async (action: types.ActionReference) => {
     setChoosing(false);
-    const armed = $mode().armed;
-    if (!armed) {
-      pushToast("info", "Move a MIDI or OSC control first, then click here.");
-      return;
-    }
-    const bound = await bindArmedSource(armed, action);
-    if (bound) {
-      pushToast(
-        "success",
-        `Mapped ${describeArmedSource(armed, midiSourceLabel)} to ${formatActionReference(action, $catalog(), targetNames)}`,
-      );
-    }
+    await bindArmedSource(
+      action,
+      formatActionReference(action, $catalog(), targetNames),
+    );
   };
 
   /** Binds directly with one choice, or asks which action to bind with several. */
@@ -167,16 +145,4 @@ export function Mappable(props: MappableProps): JSX.Element {
       </Show>
     </div>
   );
-}
-
-/** Creates or replaces the mapping for an armed source; returns whether it was stored. */
-async function bindArmedSource(
-  armed: ArmedSource,
-  action: types.ActionReference,
-): Promise<boolean> {
-  if (armed.kind === "osc") {
-    return upsertOscMapping(oscMappingFromEvent(armed.event, action));
-  }
-  const mapping = midiMappingFromEvent(armed.event, action);
-  return mapping ? upsertMidiMapping(mapping) : false;
 }

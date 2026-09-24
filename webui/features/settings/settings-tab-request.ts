@@ -15,6 +15,7 @@ export type SettingsTab =
   | "editors"
   | "network"
   | "visualizer"
+  | "keyboard"
   | "privacy";
 
 /**

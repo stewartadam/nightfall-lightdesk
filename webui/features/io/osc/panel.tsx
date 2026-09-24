@@ -40,7 +40,6 @@ import {
 } from "../../../lib/datagrid-filtering";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
-  actionCatalog,
   oscLastEvent,
   oscListenerStatus,
   oscMappings,
@@ -56,6 +55,7 @@ import {
   ActionPicker,
   formatActionReference,
   useActionTargetNames,
+  useBindableActionCatalog,
 } from "../../actions";
 import {
   deleteOscMapping,
@@ -194,7 +194,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
   const $oscMappings = useStore(oscMappings);
   const $oscLastEvent = useStore(oscLastEvent);
   const $oscListenerStatus = useStore(oscListenerStatus);
-  const $actionCatalog = useStore(actionCatalog);
+  const $actionCatalog = useBindableActionCatalog();
   const targetNames = useActionTargetNames();
   const [lastEventAction, setLastEventAction] = createSignal<
     ActionReference | undefined
@@ -412,6 +412,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                 <ActionPicker
                   label="Action for last input"
                   inputKinds={OSC_INPUT_KINDS}
+                  includeUiActions
                   onChange={setLastEventAction}
                 />
                 <Button
@@ -478,6 +479,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                 label="Selected mapping action"
                 value={row().mapping.action}
                 inputKinds={OSC_INPUT_KINDS}
+                includeUiActions
                 onChange={updateSelectedAction}
               />
             </div>

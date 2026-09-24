@@ -40,7 +40,6 @@ import {
 } from "../../../lib/datagrid-filtering";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
-  actionCatalog,
   midiDevices,
   midiLastEvent,
   midiMappings,
@@ -54,6 +53,7 @@ import {
   ActionPicker,
   formatActionReference,
   useActionTargetNames,
+  useBindableActionCatalog,
 } from "../../actions";
 import {
   deleteMidiMapping,
@@ -128,7 +128,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   const $midiDevices = useStore(midiDevices);
   const $midiMappings = useStore(midiMappings);
   const $midiLastEvent = useStore(midiLastEvent);
-  const $actionCatalog = useStore(actionCatalog);
+  const $actionCatalog = useBindableActionCatalog();
   const targetNames = useActionTargetNames();
   const [lastEventAction, setLastEventAction] = createSignal<
     ActionReference | undefined
@@ -339,6 +339,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                     <ActionPicker
                       label="Action for last input"
                       inputKinds={MIDI_INPUT_KINDS}
+                      includeUiActions
                       onChange={setLastEventAction}
                     />
                     <Button
@@ -406,6 +407,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                 label="Selected mapping action"
                 value={row().mapping.action}
                 inputKinds={MIDI_INPUT_KINDS}
+                includeUiActions
                 onChange={updateSelectedAction}
               />
             </div>
