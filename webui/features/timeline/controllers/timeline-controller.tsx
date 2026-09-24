@@ -290,30 +290,16 @@ export const TimelineController = (props: TimelineControllerProps) => {
     $timelines()[props.initialTimelineUid]?.trigger_mode === "Manual";
 
   const playbackCommands = {
-    onPlay: () => {
-      if (isManualTriggerMode()) {
-        sendTimelineCommand((timelineId) => ({
-          type: "StartTimeline",
-          data: timelineId,
-        }));
-      }
-      sendTimecodeCommand((timecodeId) => ({
-        type: "StartTimecode",
-        data: timecodeId,
-      }));
-    },
-    onPause: () => {
-      if (isManualTriggerMode()) {
-        sendTimelineCommand((timelineId) => ({
-          type: "StopTimeline",
-          data: timelineId,
-        }));
-      }
-      sendTimecodeCommand((timecodeId) => ({
-        type: "PauseTimecode",
-        data: timecodeId,
-      }));
-    },
+    onPlay: () =>
+      sendTimelineCommand((timelineId) => ({
+        type: "PlayTimeline",
+        data: timelineId,
+      })),
+    onPause: () =>
+      sendTimelineCommand((timelineId) => ({
+        type: "PauseTimeline",
+        data: timelineId,
+      })),
     onSeek: (position: number) =>
       sendTimecodeCommand((timecodeId) => ({
         type: "SeekTimecode",

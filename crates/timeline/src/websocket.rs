@@ -102,7 +102,10 @@ pub fn forward_timeline_commands(
             | TimelineCommand::RequestBeatgridDetection { .. }
             | TimelineCommand::ApplyBeatgridProposal { .. }
             | TimelineCommand::RejectBeatgridProposal { .. }
-            | TimelineCommand::SetBeatgridStart { .. } => {}
+            | TimelineCommand::SetBeatgridStart { .. }
+            | TimelineCommand::PlayTimeline(_)
+            | TimelineCommand::PauseTimeline(_)
+            | TimelineCommand::TogglePlayback(_) => {}
             TimelineCommand::StartTimeline(_)
             | TimelineCommand::StopTimeline(_)
             | TimelineCommand::SetTimelineRecording { .. } => {

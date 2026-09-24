@@ -171,7 +171,10 @@ export const createTimelinePlaybackController = (
 
   onCleanup(clearPlaybackFrame);
 
-  /** Starts playback, seeking to an enabled loop's start when necessary. */
+  /**
+   * Starts playback. The backend seeks to an enabled loop's start, so the local playhead
+   * is anchored there to match.
+   */
   const play = () => {
     const loop = options.loopRange();
     let playPosition = position();
@@ -179,7 +182,6 @@ export const createTimelinePlaybackController = (
       const loopStart = durationToMs(loop.start);
       playPosition = loopStart;
       anchorPosition(loopStart);
-      options.commands.onSeek(loopStart);
     }
     if (options.isManualTriggerMode()) setManualTimelinePlaybackActive(true);
     setPlaybackStartPending(true);

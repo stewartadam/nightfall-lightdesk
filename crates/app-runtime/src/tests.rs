@@ -35,7 +35,7 @@ use nightfall_cues::prelude::{
     BoundCueInstruction, Cue, CueInstruction, MaterializedSequence, Sequence,
 };
 use nightfall_desk::{
-    prelude::{ToastLevel, UiNotification, UiNotificationState, set_control_action},
+    prelude::{ToastLevel, UiNotification, UiNotificationState, control_level_action},
     resources::log_config::{LogConfig, TracingTarget},
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
@@ -1295,7 +1295,7 @@ fn sample_data_build_seeds_default_midi_mapping() {
             && mapping.channel == 176
             && mapping.note == 36
             && mapping.velocity.is_none()
-            && mapping.action == set_control_action(1)
+            && mapping.action == control_level_action(1)
     }));
 }
 
@@ -2288,15 +2288,28 @@ fn render_systems_only_read_messages_written_in_render() {
         .collect();
     assert!(violations.is_empty(), "{}", violations.join("\n"));
 }
-/// Invokes one action in a sample world and returns the terminal result of its submitted command.
-fn run_sample_action(invocation: nightfall_actions::ActionInvocation) -> Option<CommandOutcome> {
-    use nightfall_actions::{InvocationOutcome, InvocationResult};
 
-    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+/// Builds a sample-data world with seeded clips, faders, and timelines.
+fn sample_app() -> App {
+    WorldFactory::new(test_log_config(), false, false, false)
         .build(WorldBootstrap::SampleData {
             showfile_name: None,
         })
-        .expect("sample world");
+        .expect("sample world")
+}
+
+/// Invokes one action in a fresh sample world and returns its submitted command's result.
+fn run_sample_action(invocation: nightfall_actions::ActionInvocation) -> Option<CommandOutcome> {
+    run_action(&mut sample_app(), invocation)
+}
+
+/// Invokes one action and returns the terminal result of the command it submitted.
+fn run_action(
+    app: &mut App,
+    invocation: nightfall_actions::ActionInvocation,
+) -> Option<CommandOutcome> {
+    use nightfall_actions::{InvocationOutcome, InvocationResult};
+
     app.world_mut().write_message(invocation);
 
     let mut submitted = None;
@@ -2352,6 +2365,86 @@ async fn automation_eval_action_expands_and_completes() {
 
     let outcome = run_sample_action(ActionInvocation::trigger(
         desk_eval_action("clip 1 start"),
+        ActionSurface::Osc,
+    ));
+
+    assert_eq!(outcome, Some(CommandOutcome::succeeded()));
+}
+
+/// Verifies a mapped control Go starts the control's assigned clip like the UI Go button.
+#[tokio::test]
+async fn automation_control_go_starts_assigned_clip() {
+    use nightfall_actions::{ActionInvocation, ActionSurface};
+    use nightfall_clips::MaterializedClip;
+    use nightfall_desk::prelude::control_go_action;
+
+    let mut app = sample_app();
+    let outcome = run_action(
+        &mut app,
+        ActionInvocation::trigger(control_go_action(1), ActionSurface::Midi),
+    );
+    app.update();
+
+    assert_eq!(outcome, Some(CommandOutcome::succeeded()));
+    let mut clips = app.world_mut().query::<&MaterializedClip>();
+    assert!(
+        clips.iter(app.world()).any(|clip| clip.clip_id == 1),
+        "control 1's clip should be running after Go"
+    );
+}
+
+/// Verifies the timeline toggle action starts and then pauses the linked timecode.
+#[tokio::test]
+async fn automation_timeline_toggle_starts_then_pauses_timecode() {
+    use nightfall_actions::{ActionInvocation, ActionSurface};
+    use nightfall_timeline::prelude::{
+        TIMELINE_TOGGLE_PLAYBACK_ACTION_ID, Timeline, timeline_transport_action,
+    };
+
+    let mut app = sample_app();
+    let timeline = app
+        .world()
+        .resource::<DataProvider<Timeline>>()
+        .iter()
+        .next()
+        .map(|entry| entry.value().clone())
+        .expect("sample data should seed a timeline");
+    let toggle = || {
+        ActionInvocation::trigger(
+            timeline_transport_action(TIMELINE_TOGGLE_PLAYBACK_ACTION_ID, timeline.identifiers.uid),
+            ActionSurface::Midi,
+        )
+    };
+    let is_running = |app: &mut App| {
+        let mut generators = app.world_mut().query::<&TimecodeGenerator>();
+        generators.iter(app.world()).any(|generator| {
+            generator.timecode.identifiers.uid == timeline.timecode_uid && generator.state.is_active
+        })
+    };
+
+    let started = run_action(&mut app, toggle());
+    let running_after_start = is_running(&mut app);
+    let paused = run_action(&mut app, toggle());
+
+    assert_eq!(started, Some(CommandOutcome::succeeded()));
+    assert!(
+        running_after_start,
+        "toggle should start the linked timecode"
+    );
+    assert_eq!(paused, Some(CommandOutcome::succeeded()));
+    assert!(
+        !is_running(&mut app),
+        "second toggle should pause the timecode"
+    );
+}
+
+/// Verifies the programmer clear action completes through its tracked command.
+#[tokio::test]
+async fn automation_programmer_clear_completes() {
+    use nightfall_actions::{ActionInvocation, ActionReference, ActionSurface};
+
+    let outcome = run_sample_action(ActionInvocation::trigger(
+        ActionReference::new("programmer.clear", serde_json::json!({})),
         ActionSurface::Osc,
     ));
 

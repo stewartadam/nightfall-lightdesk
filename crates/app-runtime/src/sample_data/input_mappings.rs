@@ -20,7 +20,7 @@ pub(super) fn add_midi_mappings(world: &mut World) {
         channel: 176,
         note: 36,
         velocity: None,
-        action: set_control_action(1),
+        action: control_level_action(1),
     }]);
 }
 
