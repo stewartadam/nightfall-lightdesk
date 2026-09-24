@@ -64,6 +64,25 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await expect(visualizer).toBeFocused();
   await expect(visualizer).toBeInViewport({ ratio: 1 });
   await expect(dialog.getByLabel("Quality preset")).toBeVisible();
+  const quality = dialog.getByRole("slider", { name: "Quality preset" });
+  await quality.focus();
+  await quality.press("Home");
+  await expect(quality).toHaveAttribute("aria-valuetext", "Low (faster)");
+  await expect(
+    dialog.getByText("Simple geometry beams for maximum performance."),
+  ).toBeVisible();
+  await quality.press("ArrowRight");
+  await expect(quality).toHaveAttribute("aria-valuetext", "Medium");
+  await expect(
+    dialog.getByText(
+      "Smoothly shaded beams and surface lighting, without fog or glow.",
+    ),
+  ).toBeVisible();
+  await quality.press("End");
+  await expect(quality).toHaveAttribute("aria-valuetext", "High (slower)");
+  await expect(
+    dialog.getByText("Atmospheric beams, fog, glow, and optical effects."),
+  ).toBeVisible();
   await expect
     .poll(async () => {
       const highlight = await indicator.boundingBox();

@@ -719,22 +719,46 @@ export function SettingsOverlay() {
                   </label>
                   <label class="block">
                     <span class="text-sm text-gray-400">Quality preset</span>
-                    <NativeSelect
-                      value={quality()}
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="1"
+                      aria-label="Quality preset"
+                      aria-valuetext={
+                        QUALITY_OPTIONS.find(
+                          (option) => option.value === quality(),
+                        )?.label
+                      }
+                      value={QUALITY_OPTIONS.findIndex(
+                        (option) => option.value === quality(),
+                      )}
                       onInput={(e) =>
                         setVisualizerQuality(
-                          (e.currentTarget.value as QualityPreset) ?? "medium",
+                          QUALITY_OPTIONS[e.currentTarget.valueAsNumber].value,
                         )
                       }
-                      class="mt-1"
+                      class="mt-2 w-full"
+                    />
+                    <span
+                      class="flex justify-between text-xs text-gray-400"
+                      aria-hidden="true"
                     >
                       <For each={QUALITY_OPTIONS}>
                         {(option) => (
-                          <option value={option.value}>{option.label}</option>
+                          <span
+                            class={
+                              quality() === option.value
+                                ? "text-gray-100 font-medium"
+                                : ""
+                            }
+                          >
+                            {option.label}
+                          </span>
                         )}
                       </For>
-                    </NativeSelect>
-                    <p class="mt-1 text-xs text-gray-500">
+                    </span>
+                    <p class="mt-1 text-xs text-gray-500" aria-live="polite">
                       {quality() === "low"
                         ? "Simple geometry beams for maximum performance."
                         : quality() === "medium"

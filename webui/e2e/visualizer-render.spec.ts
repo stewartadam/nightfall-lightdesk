@@ -465,7 +465,9 @@ for (const worker of [false, true]) {
       await dialog
         .getByRole("tab", { name: "Visualizer", exact: true })
         .click();
-      await dialog.getByLabel(/Quality preset/).selectOption(preset);
+      await dialog
+        .getByRole("slider", { name: "Quality preset" })
+        .fill(String(["low", "medium", "high"].indexOf(preset)));
       await expect
         .poll(() =>
           page.evaluate(
@@ -518,7 +520,9 @@ for (const worker of [false, true]) {
     await page.keyboard.press("ControlOrMeta+,");
     const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
     await dialog.getByRole("tab", { name: "Visualizer", exact: true }).click();
-    await expect(dialog.getByLabel(/Quality preset/)).toHaveValue("high");
+    await expect(
+      dialog.getByRole("slider", { name: "Quality preset" }),
+    ).toHaveValue("2");
     await dialog
       .getByRole("slider", { name: "Darkness", exact: true })
       .fill("0");
