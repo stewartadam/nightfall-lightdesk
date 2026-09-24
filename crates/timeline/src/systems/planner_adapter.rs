@@ -385,7 +385,6 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
             },
         ],
         &planner_resolver,
-        None,
     )
     .evaluate();
 
@@ -500,7 +499,6 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
         current_position,
         instance_actions,
         &planner_resolver,
-        None,
     );
     let interval = plan
         .instances

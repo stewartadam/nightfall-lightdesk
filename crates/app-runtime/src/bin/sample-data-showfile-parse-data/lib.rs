@@ -777,7 +777,7 @@ fn add_timecode_and_timeline(world: &mut World) -> Result<(), String> {
             actions: vec![Action {
                 id: "item-1".to_owned(),
                 label: "Start Parser Sequence".to_owned(),
-                action: ActionKind::StartClip(uuid(CUE_CLIP_UID)),
+                action: ActionKind::StartClip(uuid(CUE_CLIP_UID)).to_reference(),
                 position: Duration::from_secs(1),
                 duration: Duration::from_secs(2),
             }],

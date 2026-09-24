@@ -558,7 +558,7 @@ mod tests {
                 label: "Recorded".to_string(),
                 position: Duration::from_millis(100),
                 duration: Duration::from_millis(1000),
-                action: ActionKind::StartClip(Uuid::new_v4()),
+                action: ActionKind::StartClip(Uuid::new_v4()).to_reference(),
             }],
         }
         .inverse(&UndoContext { world: &world })

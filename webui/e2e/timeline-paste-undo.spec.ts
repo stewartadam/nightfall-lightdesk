@@ -148,8 +148,8 @@ async function openTimelinePasteFixture(
                     position: { secs: 1, nanos: 0 },
                     duration: { secs: 1, nanos: 0 },
                     action: {
-                      type: "StartClip",
-                      data: disconnectedClipUid,
+                      id: "clip.start",
+                      arguments: { clip: disconnectedClipUid },
                     },
                   },
                 ],

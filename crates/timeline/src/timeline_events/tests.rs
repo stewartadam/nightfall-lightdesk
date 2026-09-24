@@ -24,6 +24,7 @@ struct ObservedTimelineActions(Vec<TimelineOperation>);
 /// Builds a focused app for testing direct timeline command completion.
 fn timeline_runtime_command_app() -> App {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<CommandEnvelope<TimelineCommand>>();
     app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
     app.add_message::<CommandResult>();
@@ -238,7 +239,7 @@ fn store_timeline_action_change_requests_reconstruction_event() {
             label: "Start".to_owned(),
             position: Duration::from_secs(1),
             duration: Duration::ZERO,
-            action: ActionKind::StartClip(clip_uid),
+            action: ActionKind::StartClip(clip_uid).to_reference(),
         }],
         automation_lanes: Vec::new(),
     }];
@@ -276,14 +277,14 @@ fn store_timeline_action_reorder_requests_reconstruction_event() {
                 label: "First".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(first_clip_uid),
+                action: ActionKind::StartClip(first_clip_uid).to_reference(),
             },
             Action {
                 id: "action-second".to_owned(),
                 label: "Second".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(second_clip_uid),
+                action: ActionKind::StartClip(second_clip_uid).to_reference(),
             },
         ],
         automation_lanes: Vec::new(),
@@ -317,14 +318,15 @@ fn store_timeline_start_action_duration_change_does_not_request_reconstruction_e
                 label: "Start".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::from_secs(1),
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             },
             Action {
                 id: "action-registered-start".to_owned(),
                 label: "Registered start".to_owned(),
                 position: Duration::from_secs(2),
                 duration: Duration::from_secs(1),
-                action: ActionKind::RegisteredAction(start_clip_action(registered_clip_uid)),
+                action: ActionKind::RegisteredAction(start_clip_action(registered_clip_uid))
+                    .to_reference(),
             },
         ],
         automation_lanes: Vec::new(),
@@ -366,7 +368,7 @@ fn store_timeline_marker_change_does_not_request_reconstruction_event() {
             label: "Desk eval".to_owned(),
             position: Duration::from_secs(1),
             duration: Duration::ZERO,
-            action: ActionKind::DeskEval("go sequence".to_owned()),
+            action: ActionKind::DeskEval("go sequence".to_owned()).to_reference(),
         }],
         automation_lanes: Vec::new(),
     }];
@@ -538,6 +540,7 @@ fn active_timeline_for_timecode(
 #[test]
 fn delete_timecode_stops_associated_timelines() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
     app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
@@ -682,6 +685,7 @@ fn run_release_timeline_owned_entities(
 /// Creates an app with the resources needed to release timeline-owned entities.
 fn release_test_app() -> App {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.init_resource::<TimelineCommandOrigins>();
     app

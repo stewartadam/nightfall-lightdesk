@@ -317,8 +317,7 @@ pub fn process_actions_system(
             .iter()
             .any(|(action, _)| {
                 matches!(
-                    normalized_registered_action_kind(&action.action, action_registry.as_deref())
-                        .unwrap_or_else(|| action.action.clone()),
+                    action.kind(action_registry.as_deref()),
                     ActionKind::AdvanceSequence(_)
                         | ActionKind::BackSequence(_)
                         | ActionKind::JumpToCue { .. }
@@ -331,11 +330,7 @@ pub fn process_actions_system(
                 .map(|(action, track)| TimelinePlanningAction {
                     track_id: track.id.clone(),
                     action_id: action.id.clone(),
-                    action: normalized_registered_action_kind(
-                        &action.action,
-                        action_registry.as_deref(),
-                    )
-                    .unwrap_or_else(|| action.action.clone()),
+                    action: action.kind(action_registry.as_deref()),
                     position: action.position,
                     duration: action.duration,
                 })
@@ -355,13 +350,8 @@ pub fn process_actions_system(
                 position = ?current_position,
                 "Triggering action"
             );
-            let normalized_action = normalized_registered_action_kind(
-                &timeline_action.action,
-                action_registry.as_deref(),
-            );
-            if normalized_action.is_none()
-                && let ActionKind::RegisteredAction(registered_action) = &timeline_action.action
-            {
+            let resolved_action = timeline_action.kind(action_registry.as_deref());
+            if let ActionKind::RegisteredAction(registered_action) = &resolved_action {
                 if let Some(action_invocations) = action_invocations.as_mut() {
                     action_invocations.write(
                         ActionInvocation::trigger(
@@ -381,9 +371,7 @@ pub fn process_actions_system(
                 }
                 continue;
             }
-            let action_kind = normalized_action
-                .as_ref()
-                .unwrap_or(&timeline_action.action);
+            let action_kind = &resolved_action;
 
             match action_kind {
                 ActionKind::FireCue(cue_uid) => {
@@ -413,7 +401,6 @@ pub fn process_actions_system(
                             duration: timeline_action.duration,
                         }],
                         &planner_resolver,
-                        None,
                     )
                     .evaluate();
                     let Some(playback) =
@@ -486,7 +473,6 @@ pub fn process_actions_system(
                                 duration: timeline_action.duration,
                             }],
                             &planner_resolver,
-                            None,
                         )
                         .evaluate();
                         let Some(playback) =
@@ -845,7 +831,8 @@ pub fn process_actions_system(
                     .and_then(|track| {
                         track.actions.iter().find(|action| action.id == *action_id)
                     })?;
-                let ActionKind::FireCue(cue_uid) = &action.action else {
+                let resolved_action = action.kind(action_registry.as_deref());
+                let ActionKind::FireCue(cue_uid) = &resolved_action else {
                     return None;
                 };
                 if action.duration.is_zero() {
@@ -871,12 +858,11 @@ pub fn process_actions_system(
                     [TimelinePlanningAction {
                         track_id: track_id.clone(),
                         action_id: action_id.clone(),
-                        action: action.action.clone(),
+                        action: resolved_action.clone(),
                         position: action.position,
                         duration: action.duration,
                     }],
                     &planner_resolver,
-                    None,
                 )
                 .evaluate();
                 let Some(playback) = evaluated_timeline_state.instances.iter().find(|playback| {
@@ -928,6 +914,7 @@ mod update_timeline_tests {
     #[test]
     fn loop_seek_targets_associated_timecode() {
         let mut app = App::new();
+        crate::install_timeline_test_actions(&mut app);
         app.add_systems(Update, update_timeline_system);
 
         let mut unrelated_timecode = TimecodeGenerator::default();

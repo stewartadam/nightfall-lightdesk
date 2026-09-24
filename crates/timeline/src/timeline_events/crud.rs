@@ -8,39 +8,7 @@
 
 use super::cleanup::release_timeline_owned_entities;
 use super::*;
-
-/// Live-relevant identity for a timeline action action while deciding whether to rebuild playback.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum TimelineActionKindSignature {
-    /// Cue playback action.
-    FireCue(Uuid),
-    /// Clip start action.
-    StartClip(Uuid),
-    /// Clip stop action.
-    StopClip(Uuid),
-    /// Clip sequence advance action.
-    AdvanceSequence(Uuid),
-    /// Clip sequence back action.
-    BackSequence(Uuid),
-    /// Clip rate action.
-    SetClipRate {
-        /// Clip UID.
-        uid: Uuid,
-        /// Raw f32 rate bits for stable equality.
-        rate_bits: u32,
-    },
-    /// Clip cue jump action.
-    JumpToCue {
-        /// Clip UID.
-        uid: Uuid,
-        /// One-based cue index.
-        cue_index: u32,
-    },
-    /// Desk eval action.
-    DeskEval(String),
-    /// Unsupported registered action payload.
-    RegisteredAction(ActionReference),
-}
+use crate::prelude::TIMELINE_FIRE_CUE_ACTION_ID;
 
 /// Live-relevant identity for an active timeline action.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,49 +21,18 @@ struct TimelineActionSignature {
     position: Duration,
     /// Action duration when it affects live playback semantics.
     duration: Option<Duration>,
-    /// Action identity used to determine live playback impact.
-    action: TimelineActionKindSignature,
-}
-
-/// Project a action action into the identity fields that affect live playback.
-fn timeline_action_kind_signature(action: &ActionKind) -> TimelineActionKindSignature {
-    match action {
-        ActionKind::FireCue(uid) => TimelineActionKindSignature::FireCue(*uid),
-        ActionKind::StartClip(uid) => TimelineActionKindSignature::StartClip(*uid),
-        ActionKind::StopClip(uid) => TimelineActionKindSignature::StopClip(*uid),
-        ActionKind::AdvanceSequence(uid) => TimelineActionKindSignature::AdvanceSequence(*uid),
-        ActionKind::BackSequence(uid) => TimelineActionKindSignature::BackSequence(*uid),
-        ActionKind::SetClipRate { uid, rate } => TimelineActionKindSignature::SetClipRate {
-            uid: *uid,
-            rate_bits: rate.to_bits(),
-        },
-        ActionKind::JumpToCue { uid, cue_index } => TimelineActionKindSignature::JumpToCue {
-            uid: *uid,
-            cue_index: *cue_index,
-        },
-        ActionKind::DeskEval(command) => TimelineActionKindSignature::DeskEval(command.clone()),
-        ActionKind::RegisteredAction(action) => {
-            TimelineActionKindSignature::RegisteredAction(action.clone())
-        }
-    }
+    /// Stored action reference; any change to it can change live playback.
+    action: ActionReference,
 }
 
 /// Returns action duration only when duration affects live playback output.
+///
+/// Only fired cues last for their action's duration; other actions are instantaneous.
 fn timeline_action_relevant_duration(
-    action: &TimelineActionKindSignature,
+    action: &ActionReference,
     duration: Duration,
 ) -> Option<Duration> {
-    match action {
-        TimelineActionKindSignature::FireCue(_) => Some(duration),
-        TimelineActionKindSignature::StartClip(_)
-        | TimelineActionKindSignature::StopClip(_)
-        | TimelineActionKindSignature::AdvanceSequence(_)
-        | TimelineActionKindSignature::BackSequence(_)
-        | TimelineActionKindSignature::SetClipRate { .. }
-        | TimelineActionKindSignature::JumpToCue { .. }
-        | TimelineActionKindSignature::DeskEval(_)
-        | TimelineActionKindSignature::RegisteredAction(_) => None,
-    }
+    (action.id.as_str() == TIMELINE_FIRE_CUE_ACTION_ID).then_some(duration)
 }
 
 /// Builds active live action signatures for a timeline under current mute and solo state.
@@ -106,19 +43,19 @@ fn active_timeline_action_signatures(timeline: &Timeline) -> Vec<TimelineActionS
         .iter()
         .filter(|track| !track.muted && (!solo_mode || track.solo))
         .flat_map(|track| {
-            track.actions.iter().map(|timeline_action| {
-                let action_signature = timeline_action_kind_signature(&timeline_action.action);
-                TimelineActionSignature {
+            track
+                .actions
+                .iter()
+                .map(|timeline_action| TimelineActionSignature {
                     track_id: track.id.clone(),
                     action_id: timeline_action.id.clone(),
                     position: timeline_action.position,
                     duration: timeline_action_relevant_duration(
-                        &action_signature,
+                        &timeline_action.action,
                         timeline_action.duration,
                     ),
-                    action: action_signature,
-                }
-            })
+                    action: timeline_action.action.clone(),
+                })
         })
         .collect::<Vec<_>>()
 }

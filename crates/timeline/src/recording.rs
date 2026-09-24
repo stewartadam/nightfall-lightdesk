@@ -295,7 +295,7 @@ fn create_recorded_action(position: Duration, recorded_action: &RecordedClipActi
         label: recorded_action.label(),
         position: rounded_duration_millis(position),
         duration: Duration::from_millis(1000),
-        action: recorded_action.action.clone(),
+        action: recorded_action.action.to_reference(),
     }
 }
 
@@ -614,6 +614,7 @@ mod tests {
 
     fn setup_recording_app() -> App {
         let mut app = App::new();
+        crate::install_timeline_test_actions(&mut app);
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_message::<TimecodeEvent>();
         app.add_message::<CommandEnvelope<TimelineCommand>>();
@@ -771,10 +772,10 @@ mod tests {
         assert_eq!(actions.len(), 1);
         let action = &actions[0];
         assert_eq!(action.position, Duration::from_millis(1250));
-        assert!(matches!(
+        assert_eq!(
             action.action,
-            ActionKind::StartClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StartClip(clip_uid).to_reference()
+        );
     }
 
     #[test]
@@ -859,10 +860,10 @@ mod tests {
         assert_eq!(previews[0].timeline_id, 49);
         assert_eq!(previews[0].target_track_id, "track-1");
         assert_eq!(previews[0].actions.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             previews[0].actions[0].action,
-            ActionKind::StartClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StartClip(clip_uid).to_reference()
+        );
 
         assert!(
             app.world()
@@ -883,7 +884,7 @@ mod tests {
                 label: "Recorded".to_string(),
                 position: Duration::from_millis(100),
                 duration: Duration::from_millis(1000),
-                action: ActionKind::StartClip(Uuid::new_v4()),
+                action: ActionKind::StartClip(Uuid::new_v4()).to_reference(),
             }],
         );
 
@@ -917,10 +918,10 @@ mod tests {
         };
         assert!(track_id.starts_with("recorded-actions-"));
         assert_eq!(actions.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             actions[0].action,
-            ActionKind::StopClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StopClip(clip_uid).to_reference()
+        );
         let recording_states = app.world().resource::<TimelineRecordingStates>();
         assert_eq!(
             recording_states
@@ -959,10 +960,10 @@ mod tests {
         };
         assert_eq!(track_id, "pending-record-target");
         assert_eq!(actions.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             actions[0].action,
-            ActionKind::StartClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StartClip(clip_uid).to_reference()
+        );
     }
 
     #[test]
@@ -1023,14 +1024,14 @@ mod tests {
             panic!("expected recorded insert command");
         };
         assert_eq!(actions.len(), 2);
-        assert!(matches!(
+        assert_eq!(
             actions[0].action,
-            ActionKind::AdvanceSequence(uid) if uid == first_uid
-        ));
-        assert!(matches!(
+            ActionKind::AdvanceSequence(first_uid).to_reference()
+        );
+        assert_eq!(
             actions[1].action,
-            ActionKind::AdvanceSequence(uid) if uid == second_uid
-        ));
+            ActionKind::AdvanceSequence(second_uid).to_reference()
+        );
     }
 
     #[test]
@@ -1074,10 +1075,10 @@ mod tests {
         assert_eq!(timeline_id, 48);
         assert_eq!(track_id, "track-1");
         assert_eq!(actions.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             actions[0].action,
-            ActionKind::StartClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StartClip(clip_uid).to_reference()
+        );
         let recording_states = app.world().resource::<TimelineRecordingStates>();
         assert!(
             !recording_states.get(48).is_some_and(|state| state.enabled),

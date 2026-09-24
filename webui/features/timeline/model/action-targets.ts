@@ -19,6 +19,7 @@ import type {
 } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { formatCueEditorTitle } from "../../cues";
+import type { TimelineActionKind } from "./timeline-action-kind";
 
 export type ActionEditorTarget = {
   panelId: string;
@@ -289,7 +290,7 @@ function clipEditorTarget(
 
 /** Resolves the clip directly controlled by a timeline action kind. */
 export function resolveActionClipPropertiesTarget(
-  action: types.ActionKind,
+  action: TimelineActionKind,
   index: ActionTargetIndex,
 ): ActionClipPropertiesTarget | undefined {
   const clipUid = (() => {
@@ -353,7 +354,7 @@ function sequenceCueEditorTarget(
 
 /** Resolves the editor panel that best matches the timeline action target. */
 export function resolveActionEditorTarget(
-  action: types.ActionKind,
+  action: TimelineActionKind,
   label: string,
   index: ActionTargetIndex,
 ): ActionEditorTarget | undefined {
@@ -386,7 +387,7 @@ export function resolveActionEditorTarget(
 
 /** Resolves the visible chip label for a timeline action target. */
 export function resolveActionDisplayLabel(
-  action: types.ActionKind,
+  action: TimelineActionKind,
   fallbackLabel: string,
   index: ActionTargetIndex,
 ): string {

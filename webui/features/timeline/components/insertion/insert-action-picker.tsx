@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createMemo,
@@ -29,6 +30,10 @@ import {
   visiblePaletteRowCount,
 } from "../../../../lib/palette-navigation";
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
+import { actionCatalog } from "../../../../state/appStores";
+import type * as types from "../../../../types";
+import { ActionInputKind } from "../../../../types";
+import { ActionPicker, actionsAccepting } from "../../../actions";
 import type {
   ActionTargetOption,
   InsertableActionType,
@@ -36,7 +41,6 @@ import type {
 import {
   type ActionTargets,
   getActionFamilyForType,
-  getInsertableActionDefinition,
   getTargetsForAction,
   INSERTABLE_ACTIONS,
   type InsertableActionDefinition,
@@ -53,16 +57,41 @@ type InsertActionPickerProps = {
     cueIndex?: number;
     rate?: number;
   }) => void;
+  /** Inserts a catalog action that the timeline does not plan with a built-in kind. */
+  onInsertReference: (action: types.ActionReference, label: string) => void;
   onClose: () => void;
 };
 
-type PickerStep = "action" | "command" | "target" | "rate";
+type PickerStep = "action" | "command" | "target" | "rate" | "registered";
 
+/** One selectable row: a built-in timeline action kind or a registered catalog action. */
 type ActionCommand = {
-  action: InsertableActionDefinition;
+  /** Unique row key. */
+  key: string;
+  label: string;
+  description: string;
   category: string;
   available: boolean;
+  /** Built-in timeline action definition, when this row is one. */
+  builtIn?: InsertableActionDefinition;
+  /** Catalog entry, when this row is a registered action. */
+  entry?: types.ActionCatalogEntry;
 };
+
+/** Catalog actions already offered as built-in timeline kinds. */
+const BUILT_IN_ACTION_IDS = new Set([
+  "timeline.fire-cue",
+  "clip.start",
+  "clip.stop",
+  "clip.go",
+  "clip.back",
+  "clip.set-rate",
+  "clip.goto",
+  "desk.eval",
+]);
+
+/** Timeline capabilities that make an action deterministic under seeking. */
+const TIMELINE_CAPABILITIES = ["timeline.plan", "timeline.eval"];
 
 const hasTargetForAction = (
   action: InsertableActionDefinition,
@@ -78,9 +107,13 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
   const [actionQuery, setActionQuery] = createSignal("");
   const [targetQuery, setTargetQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
-  const [selectedActionType, setSelectedActionType] = createSignal<
-    InsertableActionType | undefined
+  const [selectedCommand, setSelectedCommand] = createSignal<
+    ActionCommand | undefined
   >(undefined);
+  const [pendingReference, setPendingReference] = createSignal<
+    types.ActionReference | undefined
+  >(undefined);
+  const $catalog = useStore(actionCatalog);
   const [pendingTarget, setPendingTarget] = createSignal<
     ActionTargetOption | undefined
   >(undefined);
@@ -101,9 +134,13 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     return Math.max(12, Math.min(props.y, window.innerHeight - 420));
   };
 
-  const allActions = createMemo<ActionCommand[]>(() =>
-    INSERTABLE_ACTIONS.map((action) => ({
-      action,
+  /** Returns built-in timeline kinds followed by other trigger actions from the catalog. */
+  const allActions = createMemo<ActionCommand[]>(() => [
+    ...INSERTABLE_ACTIONS.map((action) => ({
+      key: action.type,
+      label: action.label,
+      description: action.description,
+      builtIn: action,
       category:
         getActionFamilyForType(action.type) === "cue"
           ? "Cue Actions"
@@ -112,7 +149,21 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
             : "Clip Actions",
       available: hasTargetForAction(action, props.targets),
     })),
-  );
+    ...actionsAccepting($catalog(), [ActionInputKind.Trigger])
+      .filter((entry) => !BUILT_IN_ACTION_IDS.has(entry.descriptor.id))
+      .map((entry) => ({
+        key: `registered:${entry.descriptor.id}`,
+        label: entry.descriptor.label,
+        description: entry.capabilities.some((capability) =>
+          TIMELINE_CAPABILITIES.includes(capability),
+        )
+          ? (entry.descriptor.description ?? "")
+          : `${entry.descriptor.description ?? entry.descriptor.label} (live only; not replayed when seeking)`,
+        entry,
+        category: `${entry.descriptor.category} Actions`,
+        available: true,
+      })),
+  ]);
 
   const filteredActions = createMemo<ActionCommand[]>(() => {
     const normalizedQuery = actionQuery().trim().toLowerCase();
@@ -120,10 +171,10 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
       return allActions();
     }
 
-    return allActions().filter(({ action }) => {
+    return allActions().filter((command) => {
       return (
-        action.label.toLowerCase().includes(normalizedQuery) ||
-        action.description.toLowerCase().includes(normalizedQuery)
+        command.label.toLowerCase().includes(normalizedQuery) ||
+        command.description.toLowerCase().includes(normalizedQuery)
       );
     });
   });
@@ -139,10 +190,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     return grouped;
   });
 
-  const selectedAction = createMemo(() => {
-    const actionType = selectedActionType();
-    return actionType ? getInsertableActionDefinition(actionType) : undefined;
-  });
+  const selectedAction = createMemo(() => selectedCommand()?.builtIn);
 
   const targetOptions = createMemo<ActionTargetOption[]>(() => {
     const action = selectedAction();
@@ -177,7 +225,8 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
 
   /** Moves the highlighted action or target row, preserving disabled action skip behavior. */
   const moveSelection = (key: PaletteNavigationKey, pageSize = 1) => {
-    if (step() === "command" || step() === "rate") return;
+    if (step() === "command" || step() === "rate" || step() === "registered")
+      return;
     const list = step() === "action" ? filteredActions() : filteredTargets();
     if (list.length === 0) return;
 
@@ -234,17 +283,36 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     requestAnimationFrame(() => inputRef?.focus());
   };
 
-  const selectAction = (actionType: InsertableActionType) => {
-    const action = filteredActions().find(
-      (entry) => entry.action.type === actionType,
-    );
-    if (!action?.available) return;
-    setSelectedActionType(actionType);
+  /** Advances to the input step the chosen action needs. */
+  const selectAction = (command: ActionCommand) => {
+    if (!command.available) return;
+    setSelectedCommand(command);
     setTargetQuery("");
     setPendingTarget(undefined);
-    setStep(action.action.requiresCommand ? "command" : "target");
+    setPendingReference(
+      command.entry?.descriptor.parameters.every(
+        (parameter) => !parameter.required,
+      )
+        ? { id: command.entry.descriptor.id, arguments: {} }
+        : undefined,
+    );
+    setStep(
+      command.entry
+        ? "registered"
+        : command.builtIn?.requiresCommand
+          ? "command"
+          : "target",
+    );
     setSelectedIndex(0);
     focusSearchInput();
+  };
+
+  /** Inserts the registered action configured in the argument picker. */
+  const insertRegisteredAction = () => {
+    const command = selectedCommand();
+    const action = pendingReference();
+    if (!command?.entry || !action) return;
+    props.onInsertReference(action, command.label);
   };
 
   const selectTarget = (target: ActionTargetOption) => {
@@ -296,7 +364,12 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     if (step() === "action") {
       const command = filteredActions()[selectedIndex()];
       if (!command?.available) return;
-      selectAction(command.action.type);
+      selectAction(command);
+      return;
+    }
+
+    if (step() === "registered") {
+      insertRegisteredAction();
       return;
     }
 
@@ -329,7 +402,11 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
           setSelectedIndex(0);
           return;
         }
-        if (step() === "target" || step() === "command") {
+        if (
+          step() === "target" ||
+          step() === "command" ||
+          step() === "registered"
+        ) {
           setStep("action");
           setPendingTarget(undefined);
           setSelectedIndex(0);
@@ -384,7 +461,8 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
   });
 
   createEffect(() => {
-    if (step() === "command" || step() === "rate") return;
+    if (step() === "command" || step() === "rate" || step() === "registered")
+      return;
     const list = step() === "action" ? filteredActions() : filteredTargets();
     if (list.length === 0) {
       setSelectedIndex(0);
@@ -448,7 +526,9 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
               ? "Desk command..."
               : step() === "rate"
                 ? "Rate multiplier..."
-                : `Select target for ${selectedAction()?.label ?? "action"}...`
+                : step() === "registered"
+                  ? `Configure ${selectedCommand()?.label ?? "action"}...`
+                  : `Select target for ${selectedAction()?.label ?? "action"}...`
         }
         value={step() === "action" ? actionQuery() : targetQuery()}
         onInput={(event) => {
@@ -462,7 +542,10 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
         trailing={
           <Show
             when={
-              step() === "target" || step() === "command" || step() === "rate"
+              step() === "target" ||
+              step() === "command" ||
+              step() === "rate" ||
+              step() === "registered"
             }
           >
             <Button
@@ -499,167 +582,201 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
           "data-insert-action-options-list": "true",
         }}
       >
-        <Show
-          when={step() === "action"}
-          fallback={
-            <Show
-              when={step() === "command"}
-              fallback={
-                <Show
-                  when={step() === "rate"}
-                  fallback={
-                    <Show
-                      when={filteredTargets().length > 0}
-                      fallback={
-                        <div class="px-6 py-10 text-center">
-                          <h3 class="text-sm font-medium text-gray-100">
-                            No targets found
-                          </h3>
-                          <p class="mt-1 text-sm text-gray-400">
-                            Try a different search term, or press{" "}
-                            <code>Escape</code>.
-                          </p>
-                        </div>
-                      }
-                    >
-                      <ul>
-                        <For each={filteredTargets()}>
-                          {(target, index) => (
-                            <li>
-                              <SearchPickerOption
-                                type="button"
-                                data-insert-action-option-selected={
-                                  index() === selectedIndex()
-                                    ? "true"
-                                    : undefined
-                                }
-                                selected={index() === selectedIndex()}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onMouseEnter={() => setSelectedIndex(index())}
-                                onClick={() => selectTarget(target)}
-                              >
-                                <div class="min-w-0 flex-1">
-                                  <div class="font-medium">{target.label}</div>
-                                  <Show when={target.description}>
-                                    <div class="text-sm text-gray-400">
-                                      {target.description}
-                                    </div>
-                                  </Show>
-                                </div>
-                              </SearchPickerOption>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Show>
-                  }
-                >
-                  <div class="px-3 py-3">
-                    <SearchPickerOption
-                      type="button"
-                      selected
-                      disabled={
-                        !Number.isFinite(
-                          Number.parseFloat(targetQuery().trim()),
-                        )
-                      }
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={insertRateAction}
-                    >
-                      Set {pendingTarget()?.label ?? "clip"} Rate
-                    </SearchPickerOption>
-                  </div>
-                </Show>
+        <Show when={step() === "registered"}>
+          <div class="space-y-3 px-3 py-3" data-insert-registered-action>
+            <ActionPicker
+              label="Registered action"
+              value={
+                selectedCommand()?.entry
+                  ? {
+                      id: selectedCommand()!.entry!.descriptor.id,
+                      arguments: {},
+                    }
+                  : undefined
               }
+              inputKinds={[ActionInputKind.Trigger]}
+              onChange={setPendingReference}
+              onIncomplete={() => setPendingReference(undefined)}
+            />
+            <SearchPickerOption
+              type="button"
+              selected
+              disabled={!pendingReference()}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={insertRegisteredAction}
             >
-              <div class="px-3 py-3">
-                <SearchPickerOption
-                  type="button"
-                  selected
-                  disabled={targetQuery().trim().length === 0}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={insertCommandAction}
-                >
-                  Insert Command
-                </SearchPickerOption>
-              </div>
-            </Show>
-          }
-        >
+              Insert {selectedCommand()?.label ?? "action"}
+            </SearchPickerOption>
+          </div>
+        </Show>
+        <Show when={step() !== "registered"}>
           <Show
-            when={filteredActions().length > 0}
+            when={step() === "action"}
             fallback={
-              <div class="px-6 py-10 text-center">
-                <h3 class="text-sm font-medium text-gray-100">
-                  No actions found
-                </h3>
-                <p class="mt-1 text-sm text-gray-400">
-                  Try a different search term, or press <code>Escape</code>.
-                </p>
-              </div>
+              <Show
+                when={step() === "command"}
+                fallback={
+                  <Show
+                    when={step() === "rate"}
+                    fallback={
+                      <Show
+                        when={filteredTargets().length > 0}
+                        fallback={
+                          <div class="px-6 py-10 text-center">
+                            <h3 class="text-sm font-medium text-gray-100">
+                              No targets found
+                            </h3>
+                            <p class="mt-1 text-sm text-gray-400">
+                              Try a different search term, or press{" "}
+                              <code>Escape</code>.
+                            </p>
+                          </div>
+                        }
+                      >
+                        <ul>
+                          <For each={filteredTargets()}>
+                            {(target, index) => (
+                              <li>
+                                <SearchPickerOption
+                                  type="button"
+                                  data-insert-action-option-selected={
+                                    index() === selectedIndex()
+                                      ? "true"
+                                      : undefined
+                                  }
+                                  selected={index() === selectedIndex()}
+                                  onMouseDown={(event) =>
+                                    event.preventDefault()
+                                  }
+                                  onMouseEnter={() => setSelectedIndex(index())}
+                                  onClick={() => selectTarget(target)}
+                                >
+                                  <div class="min-w-0 flex-1">
+                                    <div class="font-medium">
+                                      {target.label}
+                                    </div>
+                                    <Show when={target.description}>
+                                      <div class="text-sm text-gray-400">
+                                        {target.description}
+                                      </div>
+                                    </Show>
+                                  </div>
+                                </SearchPickerOption>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+                    }
+                  >
+                    <div class="px-3 py-3">
+                      <SearchPickerOption
+                        type="button"
+                        selected
+                        disabled={
+                          !Number.isFinite(
+                            Number.parseFloat(targetQuery().trim()),
+                          )
+                        }
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={insertRateAction}
+                      >
+                        Set {pendingTarget()?.label ?? "clip"} Rate
+                      </SearchPickerOption>
+                    </div>
+                  </Show>
+                }
+              >
+                <div class="px-3 py-3">
+                  <SearchPickerOption
+                    type="button"
+                    selected
+                    disabled={targetQuery().trim().length === 0}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={insertCommandAction}
+                  >
+                    Insert Command
+                  </SearchPickerOption>
+                </div>
+              </Show>
             }
           >
-            <ul>
-              <For each={Object.entries(groupedActions())}>
-                {([category, group]) => (
-                  <li class="border-b border-gray-800">
-                    <MenuHeading>{category}</MenuHeading>
-                    <ul>
-                      <For each={group}>
-                        {(command) => {
-                          const index = createMemo(() =>
-                            filteredActions().findIndex(
-                              (entry) =>
-                                entry.action.type === command.action.type,
-                            ),
-                          );
-                          const isSelected = createMemo(
-                            () => index() === selectedIndex(),
-                          );
-                          return (
-                            <li>
-                              <SearchPickerOption
-                                type="button"
-                                data-insert-action-option-selected={
-                                  isSelected() ? "true" : undefined
-                                }
-                                selected={isSelected()}
-                                disabled={!command.available}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onMouseEnter={() => {
-                                  if (index() >= 0) {
-                                    setSelectedIndex(index());
+            <Show
+              when={filteredActions().length > 0}
+              fallback={
+                <div class="px-6 py-10 text-center">
+                  <h3 class="text-sm font-medium text-gray-100">
+                    No actions found
+                  </h3>
+                  <p class="mt-1 text-sm text-gray-400">
+                    Try a different search term, or press <code>Escape</code>.
+                  </p>
+                </div>
+              }
+            >
+              <ul>
+                <For each={Object.entries(groupedActions())}>
+                  {([category, group]) => (
+                    <li class="border-b border-gray-800">
+                      <MenuHeading>{category}</MenuHeading>
+                      <ul>
+                        <For each={group}>
+                          {(command) => {
+                            const index = createMemo(() =>
+                              filteredActions().findIndex(
+                                (entry) => entry.key === command.key,
+                              ),
+                            );
+                            const isSelected = createMemo(
+                              () => index() === selectedIndex(),
+                            );
+                            return (
+                              <li>
+                                <SearchPickerOption
+                                  type="button"
+                                  data-insert-action-option-selected={
+                                    isSelected() ? "true" : undefined
                                   }
-                                }}
-                                onClick={() => {
-                                  if (!command.available) return;
-                                  selectAction(command.action.type);
-                                }}
-                              >
-                                <div class="min-w-0 flex-1">
-                                  <div class="font-medium">
-                                    {command.action.label}
-                                  </div>
-                                  <div class="text-sm text-gray-400">
-                                    {command.action.description}
-                                  </div>
-                                  <Show when={!command.available}>
-                                    <div class="mt-1 text-xs text-amber-400">
-                                      No compatible targets loaded for this
-                                      action.
+                                  selected={isSelected()}
+                                  disabled={!command.available}
+                                  onMouseDown={(event) =>
+                                    event.preventDefault()
+                                  }
+                                  onMouseEnter={() => {
+                                    if (index() >= 0) {
+                                      setSelectedIndex(index());
+                                    }
+                                  }}
+                                  onClick={() => {
+                                    if (!command.available) return;
+                                    selectAction(command);
+                                  }}
+                                >
+                                  <div class="min-w-0 flex-1">
+                                    <div class="font-medium">
+                                      {command.label}
                                     </div>
-                                  </Show>
-                                </div>
-                              </SearchPickerOption>
-                            </li>
-                          );
-                        }}
-                      </For>
-                    </ul>
-                  </li>
-                )}
-              </For>
-            </ul>
+                                    <div class="text-sm text-gray-400">
+                                      {command.description}
+                                    </div>
+                                    <Show when={!command.available}>
+                                      <div class="mt-1 text-xs text-amber-400">
+                                        No compatible targets loaded for this
+                                        action.
+                                      </div>
+                                    </Show>
+                                  </div>
+                                </SearchPickerOption>
+                              </li>
+                            );
+                          }}
+                        </For>
+                      </ul>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
           </Show>
         </Show>
       </ScrollArea>

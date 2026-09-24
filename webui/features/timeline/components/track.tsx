@@ -17,6 +17,7 @@ import { useTimelineContext } from "../context/timeline-context";
 import { resolveActionVisualDuration } from "../model/action-duration";
 import type { ActionTargetIndex } from "../model/action-targets";
 import { seekPositionFromTimelineX } from "../model/grid-utils";
+import { timelineActionKind } from "../model/timeline-action-kind";
 import {
   Action,
   type ActionDragPreview,
@@ -252,8 +253,8 @@ export const Track = (props: TrackProps) => {
               label={action.label}
               position={durationToMs(action.position)}
               durationTrail={visualDurationForAction(action)}
-              action={action.action}
-              actionType={action.action.type}
+              action={timelineActionKind(action.action)}
+              actionType={timelineActionKind(action.action).type}
               targetIndex={props.actionTargetIndex}
               showDurationTrail={ctx.showDurationTrails()}
               isPlayheadActive={playheadActiveActionId() === action.id}
@@ -274,8 +275,8 @@ export const Track = (props: TrackProps) => {
               label={previewItem.action.label}
               position={previewItem.positionMs}
               durationTrail={visualDurationForAction(previewItem.action)}
-              action={previewItem.action.action}
-              actionType={previewItem.action.action.type}
+              action={timelineActionKind(previewItem.action.action)}
+              actionType={timelineActionKind(previewItem.action.action).type}
               targetIndex={props.actionTargetIndex}
               showDurationTrail={ctx.showDurationTrails()}
               trackId={props.id}

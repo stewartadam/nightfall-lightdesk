@@ -254,7 +254,7 @@ function timeline(): object {
             label: "Start Owned Pixel Clip",
             position: { secs: 5, nanos: 0 },
             duration: { secs: 0, nanos: 0 },
-            action: { type: "StartClip", data: CLIP_UID },
+            action: { id: "clip.start", arguments: { clip: CLIP_UID } },
           },
         ],
       },

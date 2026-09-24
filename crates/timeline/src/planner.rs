@@ -11,14 +11,12 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use nightfall_actions::{ActionReference, ActionRegistry};
 use nightfall_playback_planner::{
     PlannedNoOp, PlannedNoOpReason, PlannedPlaybackInterval, PlannedPlaybackIntervention,
     PlannedPlaybackInterventionKind, PlannedPlaybackLifecycle, PlannedPlaybackRateChange,
     PlannedPlaybackSource, PlannedReleaseInterval, PlannedTimelineEvent, PlannedTimelineEventKind,
     PlaybackDurationProfile, PlaybackExtent, TimelinePlan, TimelinePlannerDiagnostic,
-    TimelinePlannerDiagnosticSeverity, TimelinePlaybackActionKind, TimelinePlaybackActionPlan,
-    TimelinePlaybackOwner,
+    TimelinePlannerDiagnosticSeverity, TimelinePlaybackOwner,
 };
 use uuid::Uuid;
 
@@ -59,7 +57,6 @@ pub fn plan_timeline_at(
     target_time: Duration,
     actions: impl IntoIterator<Item = TimelinePlanningAction>,
     resolver: &impl TimelinePlaybackSourceResolver,
-    action_registry: Option<&ActionRegistry>,
 ) -> TimelinePlan {
     let mut plan = TimelinePlan {
         timeline_uid,
@@ -183,14 +180,11 @@ pub fn plan_timeline_at(
                 push_unsupported_desk_eval(&mut plan, owner, &command);
             }
             ActionKind::RegisteredAction(registered_action) => {
-                plan_registered_action(
+                push_unsupported_registered_action(
                     &mut plan,
-                    &mut active_by_clip_uid,
-                    &registered_action,
                     owner,
-                    action.position,
-                    resolver,
-                    action_registry,
+                    registered_action.id.as_str(),
+                    None,
                 );
             }
         }
@@ -205,92 +199,6 @@ fn owner_for_action(timeline_uid: Uuid, action: &TimelinePlanningAction) -> Time
         timeline_uid,
         track_id: action.track_id.clone(),
         action_id: action.action_id.clone(),
-    }
-}
-
-/// Applies deterministic planning supplied by a domain's registered action capability.
-fn plan_registered_action(
-    plan: &mut TimelinePlan,
-    active_by_owner_uid: &mut HashMap<Uuid, usize>,
-    action: &ActionReference,
-    owner: TimelinePlaybackOwner,
-    timeline_position: Duration,
-    resolver: &impl TimelinePlaybackSourceResolver,
-    action_registry: Option<&ActionRegistry>,
-) {
-    let Some(action_registry) = action_registry else {
-        push_unsupported_registered_action(plan, owner, action.id.as_str(), None);
-        return;
-    };
-    let capability = match action_registry.resolve_capability::<TimelinePlaybackActionPlan>(action)
-    {
-        Ok(Some(capability)) => capability,
-        Ok(None) => {
-            push_unsupported_registered_action(plan, owner, action.id.as_str(), None);
-            return;
-        }
-        Err(error) => {
-            push_unsupported_registered_action(
-                plan,
-                owner,
-                action.id.as_str(),
-                Some(&error.message),
-            );
-            return;
-        }
-    };
-
-    let owner_uid = capability.owner_uid;
-    match capability.kind {
-        TimelinePlaybackActionKind::Start => {
-            let Some(source) = resolver.clip_source(owner_uid) else {
-                push_unresolved_source(plan, owner, "registered-action-start");
-                return;
-            };
-            plan.events.push(PlannedTimelineEvent {
-                owner: owner.clone(),
-                timeline_position,
-                kind: PlannedTimelineEventKind::Start(source),
-            });
-            if let Some(previous_interval_index) = active_by_owner_uid.remove(&owner_uid) {
-                complete_interval_at(plan, previous_interval_index, timeline_position);
-            }
-            let interval_index = push_started_interval(
-                plan,
-                owner,
-                source,
-                timeline_position,
-                Duration::ZERO,
-                resolver,
-            );
-            active_by_owner_uid.insert(owner_uid, interval_index);
-        }
-        TimelinePlaybackActionKind::Stop => {
-            let Some(source) = resolver.clip_source(owner_uid) else {
-                push_unresolved_source(plan, owner, "registered-action-stop");
-                return;
-            };
-            plan.events.push(PlannedTimelineEvent {
-                owner: owner.clone(),
-                timeline_position,
-                kind: PlannedTimelineEventKind::Stop(source),
-            });
-            let Some(interval_index) = active_by_owner_uid.remove(&owner_uid) else {
-                push_missing_active_interval(plan, owner, "registered-action-stop");
-                return;
-            };
-            release_interval_at(plan, interval_index, owner, timeline_position, resolver);
-        }
-        TimelinePlaybackActionKind::Intervene(kind) => push_intervention(
-            plan,
-            active_by_owner_uid,
-            owner_uid,
-            owner,
-            timeline_position,
-            kind,
-            "registered-action-intervention",
-            resolver,
-        ),
     }
 }
 
@@ -610,7 +518,10 @@ fn dedup_noops(no_ops: &mut Vec<PlannedNoOp>) {
 mod tests {
     use std::collections::HashMap;
 
-    use nightfall_actions::{ActionDescriptor, InvocationDispatch};
+    use nightfall_actions::{
+        ActionDescriptor, ActionReference, ActionRegistry, InvocationDispatch,
+    };
+    use nightfall_playback_planner::{TimelinePlaybackActionKind, TimelinePlaybackActionPlan};
     use serde::Deserialize;
     use serde_json::json;
 
@@ -691,14 +602,16 @@ mod tests {
             Duration::from_millis(100),
             [action(
                 "registered-start",
-                ActionKind::RegisteredAction(ActionReference::new(
-                    "test-domain.timeline-start",
-                    json!({ "owner_uid": clip_uid }),
-                )),
+                ActionKind::resolve(
+                    &ActionReference::new(
+                        "test-domain.timeline-start",
+                        json!({ "owner_uid": clip_uid }),
+                    ),
+                    Some(&registry),
+                ),
                 100,
             )],
             &resolver,
-            Some(&registry),
         );
 
         assert_eq!(plan.instances.len(), 1);
@@ -724,7 +637,6 @@ mod tests {
                 100,
             )],
             &resolver,
-            None,
         );
 
         assert!(plan.events.is_empty());
@@ -771,7 +683,6 @@ mod tests {
                 action("go", ActionKind::AdvanceSequence(clip_uid), 250),
             ],
             &resolver,
-            None,
         );
 
         assert_eq!(plan.instances.len(), 1);
@@ -816,7 +727,6 @@ mod tests {
                 action("go", ActionKind::AdvanceSequence(clip_uid), 300),
             ],
             &resolver,
-            None,
         );
 
         assert_eq!(plan.instances.len(), 1);
@@ -867,7 +777,6 @@ mod tests {
                 action("back", ActionKind::BackSequence(clip_uid), 200),
             ],
             &resolver,
-            None,
         );
 
         assert_eq!(plan.instances.len(), 1);
@@ -918,7 +827,6 @@ mod tests {
             Duration::from_millis(100),
             [action("go", ActionKind::AdvanceSequence(clip_uid), 100)],
             &resolver,
-            None,
         );
 
         assert!(plan.instances.is_empty());
@@ -952,7 +860,6 @@ mod tests {
                 action("start-2", ActionKind::StartClip(clip_uid), 200),
             ],
             &resolver,
-            None,
         );
 
         assert_eq!(plan.instances.len(), 2);
@@ -1005,7 +912,6 @@ mod tests {
                 action("go", ActionKind::AdvanceSequence(clip_uid), 200),
             ],
             &resolver,
-            None,
         );
 
         assert!(plan.no_ops.is_empty());
@@ -1043,7 +949,6 @@ mod tests {
                 action("stop", ActionKind::StopClip(clip_uid), 250),
             ],
             &resolver,
-            None,
         );
 
         assert_eq!(
@@ -1093,7 +998,6 @@ mod tests {
                 action("stop", ActionKind::StopClip(clip_uid), 250),
             ],
             &resolver,
-            None,
         );
 
         assert_eq!(

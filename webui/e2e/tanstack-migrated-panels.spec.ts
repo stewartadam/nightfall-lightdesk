@@ -165,14 +165,14 @@ async function seedMappingStores(page: Page) {
         channel: 144,
         note: 60,
         velocity: 127,
-        action: { type: "StartClip", data: 1 },
+        action: { id: "clip.start", arguments: { clip: 1 } },
       },
       {
         device_name: "E2E Controller",
         channel: 144,
         note: 61,
         velocity: undefined,
-        action: { type: "StopClip", data: 1 },
+        action: { id: "clip.stop", arguments: { clip: 1 } },
       },
     ]);
     stores.oscMappings.set([
@@ -188,7 +188,7 @@ async function seedMappingStores(page: Page) {
         address: "/e2e/stop",
         arg_index: 0,
         arg_value: "0",
-        action: { type: "StopClip", data: 1 },
+        action: { id: "clip.stop", arguments: { clip: 1 } },
       },
     ]);
   });

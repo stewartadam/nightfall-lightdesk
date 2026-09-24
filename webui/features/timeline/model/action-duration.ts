@@ -10,6 +10,10 @@ import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import { durationToMs } from "../../../lib/duration";
 import type * as types from "../../../types";
 import type { ActionTargetIndex } from "./action-targets";
+import {
+  type TimelineActionKind,
+  timelineActionKind,
+} from "./timeline-action-kind";
 
 const MIN_DURATION_TRAIL_LOOP_MARKER_SPACING_PX = 8;
 const MAX_DURATION_TRAIL_LOOP_MARKER_ELEMENTS = 256;
@@ -151,7 +155,7 @@ function visualDuration(
 }
 
 /** Returns the clip UID targeted by a start or stop timeline action. */
-function clipLifecycleUid(action: types.ActionKind): string | undefined {
+function clipLifecycleUid(action: TimelineActionKind): string | undefined {
   if (action.type !== "StartClip" && action.type !== "StopClip") {
     return undefined;
   }
@@ -163,16 +167,17 @@ function nextClipStopDurationMs(
   action: types.Action,
   actions: types.Action[],
 ): number | undefined {
-  if (action.action.type !== "StartClip") return undefined;
-  const clipUid = normalizeDurationTargetUid(action.action.data);
+  const kind = timelineActionKind(action.action);
+  if (kind.type !== "StartClip") return undefined;
+  const clipUid = normalizeDurationTargetUid(kind.data);
   const itemPositionMs = durationToMs(action.position);
   const nextStopPositionMs = actions
     .filter(
       (candidate) =>
         candidate.id !== action.id &&
         durationToMs(candidate.position) > itemPositionMs &&
-        candidate.action.type === "StopClip" &&
-        clipLifecycleUid(candidate.action) === clipUid,
+        clipLifecycleUid(timelineActionKind(candidate.action)) === clipUid &&
+        timelineActionKind(candidate.action).type === "StopClip",
     )
     .map((candidate) => durationToMs(candidate.position))
     .sort((left, right) => left - right)[0];
@@ -384,10 +389,11 @@ export function resolveActionVisualDuration(options: {
   targetIndex: ActionTargetIndex;
 }): ActionVisualDuration | undefined {
   const { action, actions, targetIndex } = options;
-  if (action.action.type !== "StartClip") return undefined;
+  const kind = timelineActionKind(action.action);
+  if (kind.type !== "StartClip") return undefined;
 
   const clip = targetIndex.clipMapByUid.get(
-    normalizeDurationTargetUid(action.action.data),
+    normalizeDurationTargetUid(kind.data),
   )?.[0];
   if (!clip) return undefined;
 
