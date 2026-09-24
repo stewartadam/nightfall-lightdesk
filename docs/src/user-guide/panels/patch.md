@@ -16,4 +16,6 @@ The **DMX I/O** tab shows bindings. Group by fixture or universe to inspect rout
 
 A console address alone does not select a network destination or USB device. Configure output targets in [I/O Transports](io-transports.md), then use bindings to route console channels to those targets. Use [Console DMX](console-dmx.md) to inspect channel values independently of the physical transport.
 
+Some GDTF modes split their channels across several DMX breaks, such as a lamp with an accessory scroller that has its own start address. Fixture bindings route break 1. Route each additional break to an output target with its own binding, for example `patch fix 12 break 2 @ artnet:2.1`. The Fixture Library's **Mode Parameters** list shows which break each channel belongs to.
+
 Changing fixture mode changes how channels represent attributes. Review the wizard's version/mode warnings and confirm your routing after a change. Save the showfile when the patch is correct.

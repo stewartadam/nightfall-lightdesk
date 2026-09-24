@@ -260,6 +260,14 @@ function toOutputSourceEndpoint(
         },
       };
     }
+    case "FixtureBreak": {
+      const ids = toFixtureIds(source.data.uids, fixtureMap);
+      if (!ids) return null;
+      return {
+        type: "FixtureBreak",
+        data: { ids, dmx_break: source.data.dmx_break },
+      };
+    }
   }
 }
 

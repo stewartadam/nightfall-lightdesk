@@ -43,17 +43,28 @@ impl<T> Default for WireLayout<T> {
 }
 
 impl<T> WireLayout<T> {
-    /// Lays out parameters given in fixture DMX order.
+    /// Lays out the primary DMX break of parameters given in fixture DMX order.
     ///
     /// Sequential parameters are packed after the highest slot used so far.
     /// Explicit parameters use their declared slots; missing trailing bytes
     /// continue after the last declared slot. Virtual parameters and
     /// parameters on additional DMX breaks are omitted.
     pub fn new<'a>(parameters: impl IntoIterator<Item = (T, &'a ParameterMetadata)>) -> Self {
+        Self::for_break(parameters, 1)
+    }
+
+    /// Lays out only the parameters on `dmx_break`, given in fixture DMX order.
+    ///
+    /// Each break has its own start address, so slots are relative to the
+    /// first slot of that break. Placement follows the rules of [`Self::new`].
+    pub fn for_break<'a>(
+        parameters: impl IntoIterator<Item = (T, &'a ParameterMetadata)>,
+        dmx_break: u16,
+    ) -> Self {
         let mut next_free = 0u16;
         let mut placed = Vec::new();
         for (target, metadata) in parameters {
-            if !metadata.occupies_primary_footprint() {
+            if metadata.dmx_break() != Some(dmx_break) {
                 continue;
             }
             let width = metadata.resolution.channel_width();
@@ -211,6 +222,27 @@ mod tests {
         assert_eq!(layout.parameters.len(), 1);
         assert_eq!(layout.parameters[0].target, 3);
         assert_eq!(layout.footprint(), 2);
+    }
+
+    /// Verifies a secondary break lays out only its own parameters relative to its start address.
+    #[test]
+    fn secondary_break_layout_uses_break_relative_offsets() {
+        let break_two = |offsets: &[u16]| DmxSlots::Explicit {
+            dmx_break: 2,
+            offsets: offsets.to_vec(),
+        };
+        let params = [
+            metadata(DmxValueResolution::Coarse, explicit(&[1])),
+            metadata(DmxValueResolution::Fine, break_two(&[2, 3])),
+            metadata(DmxValueResolution::Coarse, DmxSlots::Sequential),
+            metadata(DmxValueResolution::Coarse, break_two(&[1])),
+        ];
+        let layout = WireLayout::for_break(params.iter().enumerate(), 2);
+        let targets: Vec<usize> = layout.parameters.iter().map(|p| p.target).collect();
+        assert_eq!(targets, vec![1, 3]);
+        assert_eq!(layout.parameters[0].slots, vec![1, 2]);
+        assert_eq!(layout.parameters[1].slots, vec![0]);
+        assert_eq!(layout.footprint(), 3);
     }
 
     /// Verifies rebasing makes a partial selection start at slot zero.

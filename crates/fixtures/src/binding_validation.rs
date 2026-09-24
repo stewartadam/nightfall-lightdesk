@@ -307,7 +307,7 @@ fn validate_console_address_uniqueness(
                         continue;
                     }
                 };
-                let footprint = shape_footprint(&shape);
+                let footprint = shape_footprint(&shape, 1);
                 if footprint == 0 {
                     continue;
                 }
@@ -613,31 +613,33 @@ fn collect_transport_spans(
     for binding in &output_bindings.bindings {
         match (&binding.source, &binding.target) {
             (
-                OutputSource::Fixture {
-                    uids,
-                    element,
-                    param,
-                },
+                source @ (OutputSource::Fixture { .. } | OutputSource::FixtureBreak { .. }),
                 OutputTarget::Transport {
                     target,
                     universe,
                     address,
                 },
             ) => {
+                let Some(selection) = source.fixture_selection() else {
+                    continue;
+                };
                 let universes = expand_universe_range(*universe, 1);
                 for universe_id in universes {
                     let mut next_address = address.unwrap_or(1);
-                    for uid in uids {
+                    for uid in selection.uids {
                         let fixture = match data_provider.inner.get(*uid) {
                             Ok(fixture) => fixture,
                             Err(_) => continue,
                         };
-                        let shape = match fixture_shape(fixture.value(), *element, param.as_deref())
-                        {
+                        let shape = match fixture_shape(
+                            fixture.value(),
+                            selection.element,
+                            selection.param,
+                        ) {
                             Ok(shape) => shape,
                             Err(_) => continue,
                         };
-                        let footprint = shape_footprint(&shape);
+                        let footprint = shape_footprint(&shape, selection.dmx_break);
                         if footprint == 0 {
                             continue;
                         }
@@ -655,7 +657,14 @@ fn collect_transport_spans(
                             universe: universe_id..=universe_id,
                             address: start..=end,
                             kind: TransportSpanKind::Fixture,
-                            label: format!("fixture {}", fixture.identifiers.id),
+                            label: if selection.dmx_break == 1 {
+                                format!("fixture {}", fixture.identifiers.id)
+                            } else {
+                                format!(
+                                    "fixture {} break {}",
+                                    fixture.identifiers.id, selection.dmx_break
+                                )
+                            },
                             fixtures: vec![*uid],
                         });
                     }
@@ -771,9 +780,12 @@ fn fixture_shape(
     })
 }
 
-/// Returns the number of DMX slots a binding's selection spans.
-fn shape_footprint(shape: &FixtureShape) -> u16 {
-    let layout = WireLayout::new(shape.parameters.iter().map(|metadata| ((), metadata)));
+/// Returns the number of DMX slots a binding's selection spans on `dmx_break`.
+fn shape_footprint(shape: &FixtureShape, dmx_break: u16) -> u16 {
+    let layout = WireLayout::for_break(
+        shape.parameters.iter().map(|metadata| ((), metadata)),
+        dmx_break,
+    );
     if shape.partial {
         layout.rebased().footprint()
     } else {

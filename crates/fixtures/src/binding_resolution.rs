@@ -56,12 +56,15 @@ fn range_contains(range: Option<DmxRange>, value: u16) -> bool {
 /// parameter selections are rebased so the first selected byte lands on the
 /// binding's address. `VirtualIntensity` parameters are included only for
 /// input bindings that request them; they are placed as sequential bytes.
+/// Only parameters on `dmx_break` are laid out; secondary breaks keep their
+/// break-relative offsets since each break has its own start address.
 fn collect_fixture_parameters(
     data_provider: &FixtureDataProviderExt,
     param_query: &Query<InstanceRef<Parameter>>,
     fixture_uid: Uuid,
     element: Option<u16>,
     param: Option<&str>,
+    dmx_break: u16,
     include_virtual: bool,
 ) -> WireLayout<Entity> {
     let element_indices: Vec<u32> = if let Some(element) = element {
@@ -100,10 +103,11 @@ fn collect_fixture_parameters(
         }
     }
 
-    let layout = WireLayout::new(
+    let layout = WireLayout::for_break(
         selected
             .iter()
             .map(|(entity, metadata)| (*entity, metadata)),
+        dmx_break,
     );
     if element.is_some() || param.is_some() {
         layout.rebased()
@@ -266,6 +270,21 @@ fn output_source_matches(source: &OutputSource, disabled: &OutputSource) -> bool
                     .is_none_or(|p| param.as_ref() == Some(p))
         }
         (
+            OutputSource::FixtureBreak { uids, dmx_break },
+            OutputSource::FixtureBreak {
+                uids: disabled_uids,
+                dmx_break: disabled_break,
+            },
+        ) => dmx_break == disabled_break && uids.iter().any(|uid| disabled_uids.contains(uid)),
+        (
+            OutputSource::FixtureBreak { uids, .. },
+            OutputSource::Fixture {
+                uids: disabled_uids,
+                element: None,
+                param: None,
+            },
+        ) => uids.iter().any(|uid| disabled_uids.contains(uid)),
+        (
             OutputSource::Console { universe, address },
             OutputSource::Console {
                 universe: disabled_universe,
@@ -391,6 +410,7 @@ pub fn derive_console_addresses(
                 *uid,
                 *element,
                 param.as_deref(),
+                1,
                 false,
             );
             if params.parameters.is_empty() {
@@ -719,6 +739,7 @@ fn resolve_input_targets(
                     *uid,
                     *element,
                     param.as_deref(),
+                    1,
                     include_virtual,
                 );
                 if params.parameters.is_empty() {
@@ -763,8 +784,15 @@ fn resolve_input_targets(
                     continue;
                 }
 
-                let params =
-                    collect_fixture_parameters(data_provider, param_query, uid, None, None, false);
+                let params = collect_fixture_parameters(
+                    data_provider,
+                    param_query,
+                    uid,
+                    None,
+                    None,
+                    1,
+                    false,
+                );
                 let base_offset = console_address.address - base_address;
                 for param in params.parameters {
                     targets.push(ResolvedInputTarget {
@@ -842,17 +870,16 @@ pub fn resolve_output_bindings(
 
         match (&binding.source, &binding.target) {
             (
-                OutputSource::Fixture {
-                    uids,
-                    element,
-                    param,
-                },
+                source @ (OutputSource::Fixture { .. } | OutputSource::FixtureBreak { .. }),
                 OutputTarget::Transport {
                     target,
                     universe,
                     address,
                 },
             ) => {
+                let Some(selection) = source.fixture_selection() else {
+                    continue;
+                };
                 let Some(output_transport) =
                     output_transport_from_target_id(target, &network_outputs, &usb_outputs)
                 else {
@@ -869,7 +896,7 @@ pub fn resolve_output_bindings(
                 let mut running_address = base_address;
                 let mut last_universe = base_universes.first().copied().unwrap_or(1);
 
-                for (index, uid) in uids.iter().enumerate() {
+                for (index, uid) in selection.uids.iter().enumerate() {
                     let target_universe =
                         map_universe_by_index(&base_universes, &base_universes, index);
                     if target_universe != last_universe {
@@ -881,8 +908,9 @@ pub fn resolve_output_bindings(
                         &data_provider,
                         &param_query,
                         *uid,
-                        *element,
-                        param.as_deref(),
+                        selection.element,
+                        selection.param,
+                        selection.dmx_break,
                         false,
                     );
                     if params.parameters.is_empty() {
@@ -980,6 +1008,7 @@ pub fn resolve_output_bindings(
                             uid,
                             None,
                             None,
+                            1,
                             false,
                         );
                         let fixture_address = target_base_address

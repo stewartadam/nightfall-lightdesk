@@ -1048,6 +1048,23 @@ fn strict_structural_dispatch_handles_patch_passthrough_and_fixture_source_varia
     ));
 }
 
+/// Verifies `break N` on a fixture endpoint parses as a whole-fixture DMX break target.
+#[test]
+fn strict_structural_dispatch_handles_patch_fixture_break() {
+    let Some(CommandAst::PatchAdd(command)) =
+        super::materialize_strict_ast_from_structural_dispatch("patch fix 12 break 2 @ artnet:2.1")
+    else {
+        panic!("expected patch add command");
+    };
+    let PatchEndpointAst::Fixture(fixture) = &command.source else {
+        panic!("expected fixture source");
+    };
+    let target = fixture.target.as_ref().expect("fixture target");
+    assert_eq!(target.dmx_break.as_ref().map(|value| value.0), Some("2"));
+    assert!(target.element.is_none() && target.param.is_none());
+    assert!(matches!(command.target, PatchEndpointAst::Transport(_)));
+}
+
 #[test]
 fn strict_structural_dispatch_handles_rm_general_object_branch() {
     assert_eq!(
