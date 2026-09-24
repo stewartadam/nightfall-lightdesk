@@ -149,3 +149,34 @@ export function buildActionReference(
   }
   return { id: descriptor.id, arguments: cleaned };
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+
+/** Normalizes argument values so UIDs compare equal regardless of hyphenation or case. */
+function canonicalArgument(value: unknown): unknown {
+  if (typeof value === "string" && UUID_PATTERN.test(value)) {
+    return normalizeActionUid(value);
+  }
+  if (Array.isArray(value)) return value.map(canonicalArgument);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalArgument(entry)]),
+    );
+  }
+  return value;
+}
+
+/** Returns whether two action references invoke the same action with the same arguments. */
+export function actionReferencesEqual(
+  left: types.ActionReference,
+  right: types.ActionReference,
+): boolean {
+  return (
+    left.id === right.id &&
+    JSON.stringify(canonicalArgument(left.arguments)) ===
+      JSON.stringify(canonicalArgument(right.arguments))
+  );
+}

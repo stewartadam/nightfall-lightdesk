@@ -16,6 +16,7 @@ import PanelToolbar, {
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
+import { Mappable, type MappableChoice } from "../../io";
 
 interface ProgrammerToolbarProps {
   storeCue: () => void;
@@ -24,6 +25,14 @@ interface ProgrammerToolbarProps {
   filterMenu: ComponentProps<typeof DataGridFilterMenu>;
   columnVisibilityMenu: ComponentProps<typeof ColumnVisibilityMenu>;
 }
+
+/** Returns the action bound when a clear-programmer button is mapped to a controller. */
+const clearProgrammerChoices = (): MappableChoice[] => [
+  {
+    label: "Clear programmer",
+    action: { id: "programmer.clear", arguments: {} },
+  },
+];
 
 /** Renders programmer store/clear actions and grid view controls. */
 export function ProgrammerToolbar(props: ProgrammerToolbarProps) {
@@ -51,14 +60,20 @@ export function ProgrammerToolbar(props: ProgrammerToolbarProps) {
 
           <ToolbarSeparator />
 
-          <ToolbarButton
-            tooltip={"Clear programmer (selection first, then values)"}
-            type="button"
-            label="Clear programmer"
-            onClick={props.clear}
+          <Mappable
+            class="inline-flex"
+            label="clear programmer"
+            choices={clearProgrammerChoices}
           >
-            <EraserIcon class="size-4" aria-hidden />
-          </ToolbarButton>
+            <ToolbarButton
+              tooltip={"Clear programmer (selection first, then values)"}
+              type="button"
+              label="Clear programmer"
+              onClick={props.clear}
+            >
+              <EraserIcon class="size-4" aria-hidden />
+            </ToolbarButton>
+          </Mappable>
         </>
       }
       right={

@@ -17,6 +17,7 @@ import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { useSharedStore } from "../../lib/use-shared-store";
 import { clips, groups, masters } from "../../state/appStores";
 import * as types from "../../types";
+import { Mappable } from "../io";
 import {
   allFixturesTarget,
   allInstancesTarget,
@@ -319,26 +320,40 @@ export default function MastersPanel(
                   </td>
                   <td>
                     <div class="flex items-center gap-2">
-                      <input
-                        type="range"
-                        min="0"
-                        max={masterLevelMax(master)}
-                        step="1"
-                        value={master.level_percent}
-                        class="w-full"
-                        onInput={(event) =>
-                          dragMasterLevel(
-                            master,
-                            Number(event.currentTarget.value),
-                          )
-                        }
-                        onChange={(event) =>
-                          commitMasterLevel(
-                            master,
-                            Number(event.currentTarget.value),
-                          )
-                        }
-                      />
+                      <Mappable
+                        class="flex w-full"
+                        label={`${master.identifiers.label} level`}
+                        choices={() => [
+                          {
+                            label: `${master.identifiers.label} level`,
+                            action: {
+                              id: "master.level",
+                              arguments: { master: master.identifiers.uid },
+                            },
+                          },
+                        ]}
+                      >
+                        <input
+                          type="range"
+                          min="0"
+                          max={masterLevelMax(master)}
+                          step="1"
+                          value={master.level_percent}
+                          class="w-full"
+                          onInput={(event) =>
+                            dragMasterLevel(
+                              master,
+                              Number(event.currentTarget.value),
+                            )
+                          }
+                          onChange={(event) =>
+                            commitMasterLevel(
+                              master,
+                              Number(event.currentTarget.value),
+                            )
+                          }
+                        />
+                      </Mappable>
                       <span class="w-11 text-right font-mono text-xs text-neutral-400">
                         {Math.round(master.level_percent)}%
                       </span>
@@ -346,17 +361,31 @@ export default function MastersPanel(
                   </td>
                   <td class="text-right">
                     <Show when={master.mode?.type === "Toggle"}>
-                      <Button
-                        size="compact"
-                        type="button"
-                        onClick={() =>
-                          sendMasterCommand(
-                            buildToggleMasterCommand(master.identifiers.id),
-                          )
-                        }
+                      <Mappable
+                        class="inline-flex"
+                        label={`toggle ${master.identifiers.label}`}
+                        choices={() => [
+                          {
+                            label: `Toggle ${master.identifiers.label}`,
+                            action: {
+                              id: "master.toggle",
+                              arguments: { master: master.identifiers.uid },
+                            },
+                          },
+                        ]}
                       >
-                        Toggle
-                      </Button>
+                        <Button
+                          size="compact"
+                          type="button"
+                          onClick={() =>
+                            sendMasterCommand(
+                              buildToggleMasterCommand(master.identifiers.id),
+                            )
+                          }
+                        >
+                          Toggle
+                        </Button>
+                      </Mappable>
                     </Show>
                   </td>
                 </tr>

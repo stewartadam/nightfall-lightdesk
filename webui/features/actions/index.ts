@@ -10,6 +10,7 @@ export { ActionPicker } from "./components/action-picker";
 export {
   type ActionTargetNames,
   actionInputKind,
+  actionReferencesEqual,
   actionsAccepting,
   buildActionReference,
   findCatalogEntry,

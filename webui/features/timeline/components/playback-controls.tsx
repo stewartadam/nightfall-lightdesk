@@ -15,6 +15,7 @@ import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import { browserDemoAudioHost } from "../../../lib/browser-demo-audio";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
+import { Mappable } from "../../io";
 import { useTimelineContext } from "../context/timeline-context";
 
 /** Controls timeline playback and recording with shared toolbar actions. */
@@ -67,18 +68,32 @@ export const InstanceControls = () => {
 
   return (
     <div class="flex items-center gap-1">
-      <ToolbarButton
-        ariaPressed={!ctx.paused()}
-        onClick={() => void togglePaused()}
-        disabled={connectionStatus() !== "connected"}
-        label={ctx.paused() ? "Play timeline" : "Pause timeline"}
+      <Mappable
+        class="inline-flex"
+        label="timeline play/pause"
+        choices={() => [
+          {
+            label: "Play/pause timeline",
+            action: {
+              id: "timeline.toggle-playback",
+              arguments: { timeline: ctx.timelineUid },
+            },
+          },
+        ]}
       >
-        <Dynamic
-          component={ctx.paused() ? PlayIcon : PauseIcon}
-          class="size-4"
-          aria-hidden
-        />
-      </ToolbarButton>
+        <ToolbarButton
+          ariaPressed={!ctx.paused()}
+          onClick={() => void togglePaused()}
+          disabled={connectionStatus() !== "connected"}
+          label={ctx.paused() ? "Play timeline" : "Pause timeline"}
+        >
+          <Dynamic
+            component={ctx.paused() ? PlayIcon : PauseIcon}
+            class="size-4"
+            aria-hidden
+          />
+        </ToolbarButton>
+      </Mappable>
       <ToolbarButton
         onClick={() => ctx.playback.stop()}
         disabled={connectionStatus() !== "connected"}
