@@ -46,3 +46,4 @@
 
 - [CI builds](developer-reference/ci-builds.md)
 - [GDTF regression testing](developer-reference/gdtf-regression-testing.md)
+- [Control layers](developer-reference/control-layers.md)

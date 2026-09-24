@@ -120,7 +120,7 @@ fn normalized_registered_action_kind(
         .resolve_capability::<TimelinePlaybackActionPlan>(action)
         .ok()
         .flatten()?;
-    match capability.operation {
+    match capability.kind {
         TimelinePlaybackActionKind::Start => Some(ActionKind::StartClip(capability.owner_uid)),
         TimelinePlaybackActionKind::Stop => Some(ActionKind::StopClip(capability.owner_uid)),
         TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceGo) => {

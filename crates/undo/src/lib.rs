@@ -64,8 +64,7 @@ impl Plugin for UndoPlugin {
                 dispatcher::process_pending_actions,
             )
                 .chain()
-                .after(InputHandling)
-                .before(EventHandling),
+                .in_set(PendingCommandProcessing),
         );
 
         // Register handler systems

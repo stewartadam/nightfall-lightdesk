@@ -6,14 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Domain-owned registrations for desk automation capabilities.
+//! Domain-owned bindable actions for desk clips, controls, and command evaluation.
 
 use bevy_app::App;
-use bevy_ecs::prelude::Messages;
+use bevy_ecs::prelude::World;
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
-    ActionDescriptor, ActionId, ActionInput, ActionInvocation, ActionReference, ActionRegistry,
-    ActionSurface, ExternalCommandInvocation, InvocationDispatch, InvocationError,
+    ActionAppExt, ActionDescriptor, ActionInputKind, ActionInvocation, ActionParameter,
+    ActionParameterKind, ActionReference, ExternalCommandInvocation, InvocationDispatch,
+    InvocationError, submit_command,
 };
 use nightfall_clips::{
     CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipTarget,
@@ -23,9 +24,8 @@ use nightfall_playback_planner::{
     PlannedPlaybackInterventionKind, TimelinePlaybackActionKind, TimelinePlaybackActionPlan,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
-use crate::clips::{Clip, ClipOperation};
+use crate::clips::{Clip, ClipCommand};
 use crate::controls::ControlUpdate;
 use crate::desk_command::DeskCommand;
 
@@ -71,112 +71,78 @@ pub fn desk_eval_action(command: impl Into<String>) -> ActionReference {
     .expect("desk eval action arguments should serialize")
 }
 
-/// Decodes a clip target only when a reference matches the expected desk action.
-pub fn clip_target_for_action(
-    action: &ActionReference,
-    expected_action_id: &str,
-) -> Option<ClipTarget> {
-    if action.id.as_str() != expected_action_id {
-        return None;
-    }
-    serde_json::from_value::<ClipActionArguments>(action.arguments.clone())
-        .ok()
-        .map(|arguments| arguments.target)
-}
-
-/// Decodes command text only when a reference identifies the desk eval capability.
-pub fn desk_eval_command_for_action(action: &ActionReference) -> Option<&str> {
-    if action.id.as_str() != DESK_EVAL_ACTION_ID {
-        return None;
-    }
-    action.arguments.get("command")?.as_str()
-}
-
-/// Registers every automation capability owned by the desk domain.
+/// Registers every bindable action owned by the desk domain.
 pub fn register_desk_actions(app: &mut App) {
-    let mut registry = app.world_mut().resource_mut::<ActionRegistry>();
     register_clip_action(
-        &mut registry,
+        app,
         CLIP_START_ACTION_ID,
         "Start clip",
-        ClipOperation::Start,
+        ClipCommand::StartClip,
         TimelinePlaybackActionKind::Start,
     );
     register_clip_action(
-        &mut registry,
+        app,
         CLIP_STOP_ACTION_ID,
         "Stop clip",
-        ClipOperation::Stop,
+        ClipCommand::StopClip,
         TimelinePlaybackActionKind::Stop,
     );
     register_clip_action(
-        &mut registry,
+        app,
         CLIP_GO_ACTION_ID,
         "Go clip",
-        ClipOperation::Go,
+        ClipCommand::GoClip,
         TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceGo),
     );
-    registry.register::<ControlActionArguments, _>(
-        descriptor(
-            CONTROL_SET_ACTION_ID,
-            "Set control",
-            vec![ActionSurface::Midi, ActionSurface::Osc],
-            object_schema("control_index", "integer"),
-        ),
-        invoke_control,
+    app.register_update_action::<ControlActionArguments, ControlUpdate, _>(
+        ActionDescriptor::new(CONTROL_SET_ACTION_ID, "Set control", "Controls")
+            .with_input(ActionInputKind::Absolute)
+            .with_parameter(ActionParameter::required(
+                "control_index",
+                "Control",
+                ActionParameterKind::Control,
+            )),
+        |_world, arguments, value| {
+            Ok(ControlUpdate::SetExternalHardwareValue {
+                control_index: arguments.control_index,
+                value: value * 100.0,
+            })
+        },
     );
-    registry.register::<DeskEvalActionArguments, _>(
-        descriptor(
-            DESK_EVAL_ACTION_ID,
-            "Evaluate command",
-            vec![ActionSurface::Osc, ActionSurface::Timeline],
-            object_schema("command", "string"),
-        ),
+    app.register_action::<DeskEvalActionArguments, _>(
+        ActionDescriptor::new(DESK_EVAL_ACTION_ID, "Evaluate command", "Desk")
+            .with_description("Runs a desk command line as if it were typed")
+            .with_parameter(ActionParameter::required(
+                "command",
+                "Command",
+                ActionParameterKind::Text,
+            )),
         invoke_desk_eval,
     );
 }
 
-/// Registers one clip lifecycle capability with shared typed argument handling.
+/// Registers one clip lifecycle action lowering to its clip command and timeline plan.
 fn register_clip_action(
-    registry: &mut ActionRegistry,
+    app: &mut App,
     action_id: &'static str,
     label: &'static str,
-    action: fn(IdExpr) -> ClipOperation,
-    timeline_operation: TimelinePlaybackActionKind,
+    command: fn(IdExpr) -> ClipCommand,
+    timeline_kind: TimelinePlaybackActionKind,
 ) {
-    registry.register::<ClipActionArguments, _>(
-        descriptor(
-            action_id,
-            label,
-            vec![
-                ActionSurface::Midi,
-                ActionSurface::Osc,
-                ActionSurface::Timeline,
-            ],
-            json!({
-                "type": "object",
-                "required": ["target"],
-                "properties": { "target": { "type": "object" } }
-            }),
-        ),
-        move |world, arguments, _invocation| {
+    app.register_command_action::<ClipActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(action_id, label, "Clips").with_parameter(ActionParameter::required(
+            "target",
+            "Clip",
+            ActionParameterKind::Clip,
+        )),
+        move |world, arguments| {
             let id = resolve_clip_id(world, arguments.target)?;
-            let Some(mut messages) =
-                world.get_resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
-            else {
-                return Err(InvocationError::new(
-                    "clip.dispatch_unavailable",
-                    "Clip action dispatch is unavailable",
-                ));
-            };
-            messages.write(EngineOperationEnvelope::detached(action(IdExpr::Single(
-                id,
-            ))));
-            Ok(InvocationDispatch::Accepted)
+            Ok(command(IdExpr::Single(id)))
         },
-    );
-    registry.register_capability::<ClipActionArguments, TimelinePlaybackActionPlan, _>(
+    )
+    .register_action_capability::<ClipActionArguments, TimelinePlaybackActionPlan, _>(
         action_id,
+        TimelinePlaybackActionPlan::CAPABILITY,
         move |arguments| {
             let ClipTarget::Uid(owner_uid) = arguments.target else {
                 return Err(InvocationError::new(
@@ -186,17 +152,14 @@ fn register_clip_action(
             };
             Ok(TimelinePlaybackActionPlan {
                 owner_uid,
-                operation: timeline_operation,
+                kind: timeline_kind,
             })
         },
     );
 }
 
 /// Resolves a persisted clip target to the numeric ID used by runtime commands.
-fn resolve_clip_id(
-    world: &bevy_ecs::prelude::World,
-    target: ClipTarget,
-) -> Result<u32, InvocationError> {
+fn resolve_clip_id(world: &World, target: ClipTarget) -> Result<u32, InvocationError> {
     match target {
         ClipTarget::Id(id) => Ok(id),
         ClipTarget::Uid(uid) => world
@@ -215,104 +178,33 @@ fn resolve_clip_id(
     }
 }
 
-/// Applies normalized automation input to a desk-owned control update.
-fn invoke_control(
-    world: &mut bevy_ecs::prelude::World,
-    arguments: ControlActionArguments,
-    invocation: &ActionInvocation,
-) -> Result<InvocationDispatch, InvocationError> {
-    let ActionInput::Scalar(value) = invocation.input else {
-        return Err(InvocationError::new(
-            "control.scalar_required",
-            "Control actions require a scalar input value",
-        ));
-    };
-    let Some(mut messages) = world.get_resource_mut::<Messages<ControlUpdate>>() else {
-        return Err(InvocationError::new(
-            "control.dispatch_unavailable",
-            "Control dispatch is unavailable",
-        ));
-    };
-    messages.write(ControlUpdate::SetExternalHardwareValue {
-        control_index: arguments.control_index,
-        value: value * 100.0,
-    });
-    Ok(InvocationDispatch::Accepted)
-}
-
-/// Starts a tracked desk eval command when an automation capability requests one.
+/// Submits a tracked desk eval command and announces the command text to the invoking surface.
 fn invoke_desk_eval(
-    world: &mut bevy_ecs::prelude::World,
+    world: &mut World,
     arguments: DeskEvalActionArguments,
     invocation: &ActionInvocation,
 ) -> Result<InvocationDispatch, InvocationError> {
-    let eval = CommandEnvelope::new(
+    let command_id = submit_command(
+        world,
+        invocation,
         DeskCommand::Eval(arguments.command.clone()),
-        CommandOrigin::Remote(format!("{:?}", invocation.surface)),
-        ReplyTarget::ClientBroadcast,
-    );
-    world
-        .get_resource_mut::<CommandTracker>()
-        .ok_or_else(|| {
-            InvocationError::new(
-                "desk.command_tracker_unavailable",
-                "Command tracking is unavailable",
-            )
-        })?
-        .register(&eval)
-        .map_err(|error| {
-            InvocationError::new(
-                "desk.command_registration_failed",
-                format!("Unable to register command: {error}"),
-            )
-        })?;
-
-    let source = invocation
-        .source
-        .clone()
-        .unwrap_or_else(|| format!("{:?}", invocation.surface));
+    )?;
     world.write_message(ExternalCommandInvocation {
         invocation_id: invocation.invocation_id,
-        command_id: eval.command_id.into(),
+        command_id,
         command: arguments.command,
         surface: invocation.surface,
-        source,
+        source: invocation.source_label(),
     });
-    world.write_message(eval);
-    Ok(InvocationDispatch::Accepted)
-}
-
-/// Creates one action descriptor with a stable ID and domain schema.
-fn descriptor(
-    id: &str,
-    label: &str,
-    allowed_surfaces: Vec<ActionSurface>,
-    argument_schema: Value,
-) -> ActionDescriptor {
-    ActionDescriptor {
-        id: ActionId::new(id),
-        label: label.to_string(),
-        allowed_surfaces,
-        argument_schema,
-    }
-}
-
-/// Creates a compact JSON Schema for one required object property.
-fn object_schema(property: &str, property_type: &str) -> Value {
-    let mut properties = serde_json::Map::new();
-    properties.insert(property.to_string(), json!({ "type": property_type }));
-    json!({
-        "type": "object",
-        "required": [property],
-        "properties": properties
-    })
+    Ok(InvocationDispatch::Submitted { command_id })
 }
 
 #[cfg(test)]
 mod tests {
     use bevy_ecs::message::Messages;
-    use nightfall_actions::{ActionsPlugin, InvocationOutcome, InvocationResult};
-    use nightfall_clips::start_clip_action;
+    use nightfall_actions::{ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult};
+    use nightfall_clips::{go_clip_action, start_clip_action};
+    use uuid::Uuid;
 
     use super::*;
 
@@ -320,11 +212,10 @@ mod tests {
     fn desk_action_app() -> App {
         let mut app = App::new();
         app.add_plugins(ActionsPlugin);
-        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_message::<ControlUpdate>();
-        app.add_message::<CommandEnvelope<DeskCommand>>();
         app.init_resource::<DataProvider<Clip>>();
         app.init_resource::<CommandTracker>();
+        app.init_resource::<PendingCommandBuffer>();
         register_desk_actions(&mut app);
         app
     }
@@ -338,38 +229,69 @@ mod tests {
             .expect("registered action should emit an invocation result")
     }
 
-    /// Verifies clip action arguments are interpreted only by the desk registration.
+    /// Drains the commands queued for undo capture and ingress dispatch.
+    fn take_pending_commands(app: &mut App) -> Vec<PayloadEnvelope> {
+        app.world_mut()
+            .resource_mut::<PendingCommandBuffer>()
+            .drain()
+    }
+
+    /// Verifies clip actions lower to tracked clip commands instead of runtime operations.
     #[test]
-    fn clip_action_invoker_dispatches_runtime_action() {
+    fn clip_action_submits_tracked_clip_command() {
         let mut app = desk_action_app();
         app.world_mut().write_message(ActionInvocation::trigger(
-            start_clip_action(ClipTarget::Id(7)),
+            go_clip_action(ClipTarget::Id(7)),
             ActionSurface::Midi,
         ));
 
         app.update();
 
-        let actions = app
-            .world_mut()
-            .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
-            .drain()
-            .collect::<Vec<_>>();
+        let InvocationOutcome::Submitted { command_id } = take_invocation_result(&mut app).outcome
+        else {
+            panic!("clip action should submit a tracked command");
+        };
+        let pending = take_pending_commands(&mut app);
+        let [envelope] = pending.as_slice() else {
+            panic!("clip action should queue one command");
+        };
+        assert_eq!(envelope.command_id, command_id);
         assert!(matches!(
-            actions.as_slice(),
-            [EngineOperationEnvelope {
-                operation: ClipOperation::Start(IdExpr::Single(7)),
-                ..
-            }]
+            envelope.payload.as_any().downcast_ref::<ClipCommand>(),
+            Some(ClipCommand::GoClip(IdExpr::Single(7)))
         ));
-        assert!(matches!(
-            take_invocation_result(&mut app).outcome,
-            InvocationOutcome::Accepted
-        ));
+    }
+
+    /// Verifies clip actions expose deterministic timeline plans for stable targets only.
+    #[test]
+    fn clip_action_plans_timeline_playback_for_uid_targets() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
+        let uid = Uuid::new_v4();
+
+        let plan = registry
+            .resolve_capability::<TimelinePlaybackActionPlan>(&start_clip_action(ClipTarget::Uid(
+                uid,
+            )))
+            .expect("uid targets should plan")
+            .expect("clip actions should expose timeline planning");
+        let numeric = registry.resolve_capability::<TimelinePlaybackActionPlan>(
+            &start_clip_action(ClipTarget::Id(3)),
+        );
+
+        assert_eq!(
+            plan,
+            TimelinePlaybackActionPlan {
+                owner_uid: uid,
+                kind: TimelinePlaybackActionKind::Start,
+            }
+        );
+        assert!(numeric.is_err());
     }
 
     /// Verifies normalized action input is converted to the desk control percentage scale.
     #[test]
-    fn control_invoker_dispatches_normalized_update() {
+    fn control_action_writes_normalized_update() {
         let mut app = desk_action_app();
         app.world_mut().write_message(ActionInvocation::scalar(
             set_control_action(3),
@@ -391,15 +313,12 @@ mod tests {
                 value,
             }] if (*value - 25.0).abs() < f32::EPSILON
         ));
-        assert!(matches!(
-            take_invocation_result(&mut app).outcome,
-            InvocationOutcome::Accepted
-        ));
+        assert!(take_pending_commands(&mut app).is_empty());
     }
 
-    /// Verifies discrete eval invocations explicitly create tracked command lifecycles.
+    /// Verifies eval invocations submit tracked commands and announce their source.
     #[test]
-    fn desk_eval_invoker_registers_command_and_source_notification() {
+    fn desk_eval_action_submits_command_and_source_notification() {
         let mut app = desk_action_app();
         app.world_mut().write_message(
             ActionInvocation::trigger(desk_eval_action("clip 1 go"), ActionSurface::Osc)
@@ -408,22 +327,18 @@ mod tests {
 
         app.update();
 
-        let commands = app
-            .world_mut()
-            .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
-            .drain()
-            .collect::<Vec<_>>();
-        let [command] = commands.as_slice() else {
-            panic!("eval invocation should dispatch one desk command");
+        let pending = take_pending_commands(&mut app);
+        let [envelope] = pending.as_slice() else {
+            panic!("eval invocation should queue one desk command");
         };
         assert!(matches!(
-            command.command,
-            DeskCommand::Eval(ref value) if value == "clip 1 go"
+            envelope.payload.as_any().downcast_ref::<DeskCommand>(),
+            Some(DeskCommand::Eval(value)) if value == "clip 1 go"
         ));
         assert!(
             app.world()
                 .resource::<CommandTracker>()
-                .is_active(command.command_id)
+                .is_active(envelope.command_id)
         );
         let notifications = app
             .world_mut()
@@ -431,14 +346,11 @@ mod tests {
             .drain()
             .collect::<Vec<_>>();
         assert_eq!(notifications.len(), 1);
-        assert_eq!(
-            notifications[0].command_id,
-            uuid::Uuid::from(command.command_id)
-        );
+        assert_eq!(notifications[0].command_id, envelope.command_id);
         assert_eq!(notifications[0].source, "OSC 127.0.0.1:9000");
         assert!(matches!(
             take_invocation_result(&mut app).outcome,
-            InvocationOutcome::Accepted
+            InvocationOutcome::Submitted { command_id } if command_id == envelope.command_id
         ));
     }
 }
