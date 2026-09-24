@@ -1,0 +1,41 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Standard": [
+      "Body · Custom { label: \"Color1\" } · b1 · 1",
+      "Body · StrobeShutter · b1 · 2",
+      "Body · Intensity · b1 · 3",
+      "Body · Gobo · b1 · 4",
+      "Body · Prism · b1 · 5",
+      "Body · Custom { label: \"Prism1PosRotate\" } · b1 · 6",
+      "Body · Custom { label: \"Effects1Pos\" } · b1 · 7",
+      "Body · Frost · b1 · 8",
+      "Body · Custom { label: \"Focus1\" } · b1 · 9",
+      "Body · Tilt · b1 · 12,13",
+      "Body · Custom { label: \"Function\" } · b1 · 14",
+      "Body · Custom { label: \"FixtureGlobalReset\" } · b1 · 15",
+      "Body · Custom { label: \"LampControl\" } · b1 · 16",
+      "Yoke · Pan · b1 · 10,11"
+    ],
+    "Vector": [
+      "Body · Custom { label: \"Color1\" } · b1 · 1",
+      "Body · StrobeShutter · b1 · 2",
+      "Body · Intensity · b1 · 3",
+      "Body · Gobo · b1 · 4",
+      "Body · Prism · b1 · 5",
+      "Body · Custom { label: \"Prism1PosRotate\" } · b1 · 6",
+      "Body · Custom { label: \"Effects1Pos\" } · b1 · 7",
+      "Body · Frost · b1 · 8",
+      "Body · Custom { label: \"Focus1\" } · b1 · 9",
+      "Body · Tilt · b1 · 12,13",
+      "Body · Custom { label: \"Function\" } · b1 · 14",
+      "Body · Custom { label: \"FixtureGlobalReset\" } · b1 · 15",
+      "Body · Custom { label: \"LampControl\" } · b1 · 16",
+      "Body · Custom { label: \"PositionMSpeed\" } · b1 · 17",
+      "Body · Custom { label: \"ColorWheelSelectMSpeed\" } · b1 · 18",
+      "Body · Custom { label: \"BeamTime\" } · b1 · 19",
+      "Body · Custom { label: \"GoboTime\" } · b1 · 20",
+      "Yoke · Pan · b1 · 10,11"
+    ]
+  }
+}
