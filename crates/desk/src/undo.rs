@@ -43,6 +43,12 @@ impl Undoable for MasterCommand {
                     level_percent: master.level_percent,
                 }) as Box<dyn Undoable>
             }),
+            MasterCommand::CommitMasterLevel {
+                id, from_percent, ..
+            } => Some(Box::new(MasterCommand::SetMasterLevel {
+                id: *id,
+                level_percent: *from_percent,
+            })),
             MasterCommand::SetMasterMode { id, .. } | MasterCommand::ToggleMaster { id } => {
                 masters.from_id(*id).ok().map(|master| {
                     Box::new(MasterCommand::SetMasterMode {
@@ -64,6 +70,9 @@ impl Undoable for MasterCommand {
             MasterCommand::SetMasterLevel { id, level_percent } => {
                 format!("Set Master {} Level {}", id, level_percent)
             }
+            MasterCommand::CommitMasterLevel {
+                id, level_percent, ..
+            } => format!("Set Master {} Level {}", id, level_percent),
             MasterCommand::SetMasterMode { id, .. } => format!("Set Master {} Mode", id),
             MasterCommand::ToggleMaster { id } => format!("Toggle Master {}", id),
         }
@@ -205,6 +214,32 @@ mod tests {
             .into_any()
             .downcast::<BlueprintCommand>()
             .expect("inverse should be a Blueprint command")
+    }
+
+    /// Verifies a committed drag undoes to the level from before the drag, not the live level.
+    #[test]
+    fn commit_master_level_inverse_restores_drag_start() {
+        let mut world = World::new();
+        world.insert_resource(DataProvider::<Master>::default());
+
+        let inverse = MasterCommand::CommitMasterLevel {
+            id: 3,
+            from_percent: 25.0,
+            level_percent: 90.0,
+        }
+        .inverse(&UndoContext { world: &world })
+        .expect("committed levels should be undoable");
+
+        assert!(matches!(
+            *inverse
+                .into_any()
+                .downcast::<MasterCommand>()
+                .expect("inverse should be a master command"),
+            MasterCommand::SetMasterLevel {
+                id: 3,
+                level_percent,
+            } if (level_percent - 25.0).abs() < f32::EPSILON
+        ));
     }
 
     /// Verifies Blueprint edits undo to the previous UUID-backed logical definition.

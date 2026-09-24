@@ -11,7 +11,7 @@ import type { ActionReference } from "../../../../types";
 const CLIP_START_ACTION_ID = "clip.start";
 const CLIP_STOP_ACTION_ID = "clip.stop";
 const CLIP_GO_ACTION_ID = "clip.go";
-const CONTROL_SET_ACTION_ID = "control.set-external";
+const CONTROL_SET_ACTION_ID = "control.level";
 
 type MidiActionName = "StartClip" | "StopClip" | "GoClip" | "SetControl";
 

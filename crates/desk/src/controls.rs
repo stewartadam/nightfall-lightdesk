@@ -8,14 +8,15 @@
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
+use nightfall_clips::Source;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceControlUpdate, InstanceControls, InstanceId};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    clips::{Clip, ClipOperation, MaterializedClip},
+    clips::{Clip, ClipCommand, ClipOperation, MaterializedClip},
     instances::InstanceIndex,
-    masters::{Master, MasterUpdate},
+    masters::{Master, MasterCommand, MasterMode, MasterUpdate},
 };
 
 const CONTROL_EPSILON: f32 = 0.0001;
@@ -27,9 +28,24 @@ pub const DEFAULT_CONTROL_COUNT: usize = 10;
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
 pub enum ControlCommand {
-    AssignClip { control_index: u32, clip_id: u32 },
-    AssignMaster { control_index: u32, master_id: u32 },
-    ClearClip { control_index: u32 },
+    AssignClip {
+        control_index: u32,
+        clip_id: u32,
+    },
+    AssignMaster {
+        control_index: u32,
+        master_id: u32,
+    },
+    ClearClip {
+        control_index: u32,
+    },
+    /// Runs the control's Go behavior for its current assignment.
+    ///
+    /// Sequence clips start or advance, other clips start when inactive, and toggle-mode
+    /// masters toggle. Expanded into the concrete clip or master command before dispatch.
+    Go {
+        control_index: u32,
+    },
 }
 
 impl IngressCommand for ControlCommand {}
@@ -405,6 +421,11 @@ impl Controls {
         controls
     }
 
+    fn slot(&self, control_index: u32) -> Option<&Control> {
+        let zero_based = usize::try_from(control_index.checked_sub(1)?).ok()?;
+        self.slots.get(zero_based)
+    }
+
     fn slot_mut(&mut self, control_index: u32) -> Option<&mut Control> {
         let zero_based = usize::try_from(control_index.checked_sub(1)?).ok()?;
         self.slots.get_mut(zero_based)
@@ -578,6 +599,10 @@ pub fn handle_control_commands(
             ControlCommand::ClearClip { control_index } => {
                 clear_control(&mut controls, *control_index)
             }
+            ControlCommand::Go { control_index } => Err(CommandError::new(
+                "control.go_not_expanded",
+                format!("Go for control {control_index} must be queued through command expansion"),
+            )),
         };
         finish_control_command(&mut responder, event.command_id, result);
     }
@@ -657,6 +682,97 @@ fn clear_control(controls: &mut Controls, control_index: u32) -> Result<(), Comm
     })?;
     slot.clear();
     Ok(())
+}
+
+/// Replaces queued control Go commands with the clip or master command their assignment needs.
+///
+/// Runs in the pending command expansion stage so the concrete command inherits the Go
+/// command's identity and undo group and dispatches in the same frame. Go on an empty control,
+/// a non-toggle master, or an already running non-sequence clip completes without effect.
+pub fn expand_control_go_commands(
+    mut pending: ResMut<PendingCommandBuffer>,
+    controls: Res<Controls>,
+    clips: Query<&Clip>,
+    materialized_clips: Query<&MaterializedClip>,
+    masters: Res<DataProvider<Master>>,
+    mut responder: CommandResponder,
+) {
+    for envelope in pending.drain() {
+        let Some(&ControlCommand::Go { control_index }) =
+            envelope.payload.as_any().downcast_ref::<ControlCommand>()
+        else {
+            pending.push(envelope);
+            continue;
+        };
+        match resolve_control_go(
+            &controls,
+            control_index,
+            &clips,
+            &materialized_clips,
+            &masters,
+        ) {
+            Ok(Some(command)) => pending.push(PayloadEnvelope::with_context(
+                envelope.command_id,
+                envelope.undo_id,
+                command,
+            )),
+            Ok(None) => finish_control_command(&mut responder, envelope.command_id, Ok(())),
+            Err(error) => {
+                finish_control_command(&mut responder, envelope.command_id, Err(error));
+            }
+        }
+    }
+}
+
+/// Decides which command a control's Go runs for its current assignment and playback state.
+fn resolve_control_go(
+    controls: &Controls,
+    control_index: u32,
+    clips: &Query<&Clip>,
+    materialized_clips: &Query<&MaterializedClip>,
+    masters: &DataProvider<Master>,
+) -> Result<Option<DynEnginePayload>, CommandError> {
+    let slot = controls.slot(control_index).ok_or_else(|| {
+        CommandError::new(
+            "control.not_found",
+            format!("Control {control_index} does not exist"),
+        )
+    })?;
+    if let Some(master_id) = slot.assigned_master_id {
+        let master = masters.from_id(master_id).map_err(|_| {
+            CommandError::new(
+                "master.not_found",
+                format!("Assigned master {master_id} does not exist"),
+            )
+        })?;
+        return Ok(matches!(master.mode, MasterMode::Toggle { .. })
+            .then(|| Box::new(MasterCommand::ToggleMaster { id: master_id }) as DynEnginePayload));
+    }
+    let Some(clip_id) = slot.assigned_clip_id else {
+        return Ok(None);
+    };
+    let clip = clips
+        .iter()
+        .find(|clip| clip.identifiers.id == clip_id)
+        .ok_or_else(|| {
+            CommandError::new(
+                "clip.not_found",
+                format!("Assigned clip {clip_id} does not exist"),
+            )
+        })?;
+    let Some(source) = &clip.source else {
+        return Ok(None);
+    };
+    let is_active = materialized_clips
+        .iter()
+        .any(|materialized| materialized.clip_id == clip_id);
+    let target = IdExpr::Single(clip_id);
+    let command = match (source, is_active) {
+        (Source::Sequence(_), true) => Some(ClipCommand::GoClip(target)),
+        (_, false) => Some(ClipCommand::StartClip(target)),
+        (_, true) => None,
+    };
+    Ok(command.map(|command| Box::new(command) as DynEnginePayload))
 }
 
 /// Publishes the terminal outcome for one control assignment command.
@@ -992,6 +1108,147 @@ mod tests {
         app.add_message::<CommandNotice>();
         app.add_systems(Update, handle_control_commands);
         app
+    }
+
+    /// Builds an app running only Go expansion over a controlled pending buffer.
+    fn control_go_app() -> App {
+        let mut app = control_command_app();
+        app.init_resource::<PendingCommandBuffer>();
+        app.add_systems(Update, expand_control_go_commands);
+        app
+    }
+
+    /// Spawns a clip with the given source, optionally as a running playback.
+    fn spawn_clip(app: &mut App, id: u32, source: Option<Source>, running: bool) {
+        app.world_mut().spawn(Clip {
+            identifiers: Identifiers {
+                id,
+                uid: uuid::Uuid::from_u128(u128::from(id)),
+                label: format!("Clip {id}"),
+            },
+            source,
+            ..Default::default()
+        });
+        if running {
+            app.world_mut().spawn(MaterializedClip {
+                clip_id: id,
+                attached_instance: InstanceId::new(),
+                auto_release_on_stop: false,
+            });
+        }
+    }
+
+    /// Queues Go for control 1 after assigning it, and returns what expansion produced.
+    fn expand_go(app: &mut App, assignment: ControlAssignment) -> Vec<PayloadEnvelope> {
+        let mut controls = Controls::from_assignments(&[Some(assignment)]);
+        std::mem::swap(
+            &mut *app.world_mut().resource_mut::<Controls>(),
+            &mut controls,
+        );
+        let envelope = CommandEnvelope::new(
+            ControlCommand::Go { control_index: 1 },
+            CommandOrigin::WebUi,
+            ReplyTarget::Detached,
+        );
+        app.world_mut()
+            .resource_mut::<CommandTracker>()
+            .register(&envelope)
+            .expect("go should register");
+        app.world_mut()
+            .resource_mut::<PendingCommandBuffer>()
+            .push(PayloadEnvelope::with_context(
+                envelope.command_id,
+                envelope.undo_id,
+                Box::new(envelope.command),
+            ));
+        app.update();
+        app.world_mut()
+            .resource_mut::<PendingCommandBuffer>()
+            .drain()
+    }
+
+    /// Extracts a clip command from an expanded pending envelope.
+    fn clip_command(envelope: &PayloadEnvelope) -> Option<&ClipCommand> {
+        envelope.payload.as_any().downcast_ref::<ClipCommand>()
+    }
+
+    /// Verifies Go advances a running sequence and starts an idle one.
+    #[test]
+    fn go_advances_running_sequence_and_starts_idle_sequence() {
+        let mut app = control_go_app();
+        spawn_clip(&mut app, 7, Some(Source::Sequence(uuid::Uuid::nil())), true);
+        spawn_clip(
+            &mut app,
+            8,
+            Some(Source::Sequence(uuid::Uuid::nil())),
+            false,
+        );
+
+        let running = expand_go(&mut app, ControlAssignment::Clip(7));
+        let idle = expand_go(&mut app, ControlAssignment::Clip(8));
+
+        assert!(matches!(
+            running.as_slice(),
+            [envelope] if matches!(clip_command(envelope), Some(ClipCommand::GoClip(IdExpr::Single(7))))
+        ));
+        assert!(matches!(
+            idle.as_slice(),
+            [envelope] if matches!(clip_command(envelope), Some(ClipCommand::StartClip(IdExpr::Single(8))))
+        ));
+    }
+
+    /// Verifies Go leaves a running non-sequence clip alone and completes the command.
+    #[test]
+    fn go_on_running_effect_clip_completes_without_command() {
+        let mut app = control_go_app();
+        spawn_clip(&mut app, 9, Some(Source::Fx(uuid::Uuid::nil())), true);
+
+        let expanded = expand_go(&mut app, ControlAssignment::Clip(9));
+
+        assert!(expanded.is_empty());
+        assert_eq!(
+            take_control_result(&mut app).outcome,
+            CommandOutcome::succeeded()
+        );
+    }
+
+    /// Verifies Go toggles toggle-mode masters and ignores always-on masters.
+    #[test]
+    fn go_toggles_only_toggle_mode_masters() {
+        let mut app = control_go_app();
+        for (id, mode) in [
+            (1, MasterMode::Toggle { active: false }),
+            (2, MasterMode::AlwaysOn),
+        ] {
+            app.world_mut()
+                .resource_mut::<DataProvider<Master>>()
+                .add(Master {
+                    identifiers: Identifiers {
+                        id,
+                        uid: uuid::Uuid::from_u128(u128::from(id)),
+                        label: format!("Master {id}"),
+                    },
+                    kind: crate::masters::MasterKind::InhibitiveIntensity,
+                    target: crate::masters::MasterTarget::Instances(
+                        crate::masters::InstanceMasterTarget::All,
+                    ),
+                    mode,
+                    level_percent: 100.0,
+                })
+                .expect("master should store");
+        }
+
+        let toggle = expand_go(&mut app, ControlAssignment::Master(1));
+        let always_on = expand_go(&mut app, ControlAssignment::Master(2));
+
+        assert!(matches!(
+            toggle.as_slice(),
+            [envelope] if matches!(
+                envelope.payload.as_any().downcast_ref::<MasterCommand>(),
+                Some(MasterCommand::ToggleMaster { id: 1 })
+            )
+        ));
+        assert!(always_on.is_empty());
     }
 
     /// Registers and submits one control command to the focused app.

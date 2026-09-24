@@ -6,31 +6,23 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 /**
- * Opens a unique blank showfile for a timeline playback UID scenario.
+ * Opens a blank showfile on the test's isolated backend for a timeline playback scenario.
  */
-async function openOwnedTimelinePlaybackApp(page: Page): Promise<void> {
-  const testInfo = test.info();
-  const showfileName = `timeline-playback-uid-${testInfo.workerIndex}-${testInfo.retry}-${Date.now()}`;
-
+async function openOwnedTimelinePlaybackApp(
+  page: Page,
+  backendPort: number,
+): Promise<void> {
+  await prepareFreshBackendShowfile(backendPort);
   await page.addInitScript(() => {
-    window.localStorage.removeItem("nightfall.currentShowfileName");
-    window.localStorage.removeItem("nightfall.e2eAutoOpenStartupShowfile");
+    window.localStorage.clear();
+    window.localStorage.setItem("nightfall.currentShowfileName", "default");
   });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
-
-  const openDialog = page.getByRole("dialog", { name: "Open Showfile" });
-  await expect(openDialog).toBeVisible();
-  await openDialog.getByRole("button", { name: "New showfile" }).click();
-
-  const newDialog = page.getByRole("dialog", { name: "New Showfile" });
-  await expect(newDialog).toBeVisible();
-  await newDialog.getByLabel("Show name").fill(showfileName);
-  await newDialog.getByRole("button", { name: "Create Show" }).click();
-  await expect(newDialog).not.toBeVisible({ timeout: 10_000 });
   await waitForDockviewApp(page);
 }
 
@@ -63,9 +55,10 @@ async function timelinePlayheadLeft(page: Page, timelineUid: string) {
 }
 
 test("timeline playback targets linked timecode uid when numeric ids differ", async ({
+  backendSlot,
   page,
 }) => {
-  await openOwnedTimelinePlaybackApp(page);
+  await openOwnedTimelinePlaybackApp(page, backendSlot.backendPort);
   await waitForAppStores(page);
 
   const ids = await page.evaluate(async () => {
@@ -142,7 +135,9 @@ test("timeline playback targets linked timecode uid when numeric ids differ", as
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: api.panels.find(
+          (panel: { title?: string }) => panel.title === "3D Visualizer",
+        )?.id,
         direction: "within",
       },
     });
@@ -183,9 +178,10 @@ test("timeline playback targets linked timecode uid when numeric ids differ", as
 });
 
 test("deleting linked timecode stops visible timeline playhead", async ({
+  backendSlot,
   page,
 }) => {
-  await openOwnedTimelinePlaybackApp(page);
+  await openOwnedTimelinePlaybackApp(page, backendSlot.backendPort);
   await waitForAppStores(page);
 
   const ids = await page.evaluate(async () => {
@@ -262,7 +258,9 @@ test("deleting linked timecode stops visible timeline playhead", async ({
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: api.panels.find(
+          (panel: { title?: string }) => panel.title === "3D Visualizer",
+        )?.id,
         direction: "within",
       },
     });

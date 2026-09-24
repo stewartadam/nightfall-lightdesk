@@ -255,7 +255,7 @@
       "note": 36,
       "velocity": null,
       "action": {
-        "id": "control.set-external",
+        "id": "control.level",
         "arguments": {
           "control_index": 1
         }
@@ -269,7 +269,7 @@
       "arg_index": 0,
       "arg_value": "0.5",
       "action": {
-        "id": "control.set-external",
+        "id": "control.level",
         "arguments": {
           "control_index": 2
         }

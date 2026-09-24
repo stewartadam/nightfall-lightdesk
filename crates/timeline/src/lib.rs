@@ -44,6 +44,7 @@ mod storage;
 mod systems;
 mod timeline;
 mod timeline_events;
+mod transport;
 mod undo;
 pub mod websocket;
 
@@ -64,6 +65,10 @@ pub mod prelude {
         TimelineNondeterministicSeekBehavior, TimelineRegion, TimelineScrollMode,
         TimelineSeekBehavior, TimelineSelection, TimelineState, TimelineStopBehavior,
         TimelineTriggerMode, Track,
+    };
+    pub use crate::transport::{
+        TIMELINE_PAUSE_ACTION_ID, TIMELINE_PLAY_ACTION_ID, TIMELINE_TOGGLE_PLAYBACK_ACTION_ID,
+        TimelineActionArguments, timeline_transport_action,
     };
     pub use crate::{TimelineCommand, TimelineOperation};
 }
@@ -179,6 +184,14 @@ impl Plugin for TimelinePlugin {
                 .before(ClientOutput),
         );
 
+        transport::register_timeline_actions(app);
+        app.add_systems(
+            Update,
+            transport::expand_timeline_transport_commands
+                .after(nightfall_desk::systems::event_handlers::desk_events::expand_pending_eval_commands)
+                .in_set(PendingCommandExpansion),
+        );
+
         // WebSocket forwarding and sends owned by timeline plugin
         app.add_systems(
             Update,
@@ -210,6 +223,15 @@ pub enum TimelineCommand {
 
     /// Deactivate a timeline
     StopTimeline(u32),
+
+    /// Start playback of a timeline and its linked timecode, honoring trigger mode and loop.
+    PlayTimeline(u32),
+
+    /// Pause playback of a timeline and its linked timecode.
+    PauseTimeline(u32),
+
+    /// Play a paused timeline or pause a playing one.
+    TogglePlayback(u32),
 
     /// Store a timeline object
     StoreTimeline(Timeline),

@@ -41,6 +41,22 @@ pub fn handle_timeline_events(
                 );
             }
 
+            TimelineCommand::PlayTimeline(id)
+            | TimelineCommand::PauseTimeline(id)
+            | TimelineCommand::TogglePlayback(id) => {
+                if let Err(error) = responder.fail(
+                    event.command_id,
+                    CommandError::new(
+                        "timeline.transport_not_expanded",
+                        format!(
+                            "Transport for timeline {id} must be queued through command expansion"
+                        ),
+                    ),
+                ) {
+                    tracing::error!(%error, "timeline_transport_failure_response_failed");
+                }
+            }
+
             _ => {}
         }
     }
