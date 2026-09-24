@@ -173,3 +173,28 @@ test("gobo wheel slots report their image index", () => {
     2,
   );
 });
+
+/** Verifies a profile shutter strobes only inside strobe functions, with rate from their range. */
+test("shutter functions strobe only in strobe ranges", () => {
+  resetDmxPool();
+  const element: FixtureElement = {
+    label: "Head",
+    parameters: [
+      parameter({ type: "Intensity" }),
+      parameter({ type: "StrobeShutter" }, [
+        fn("Shutter1", { dmx_from: 0, dmx_to: 49 }),
+        fn("Shutter1Strobe", { dmx_from: 50, dmx_to: 200 }),
+        fn("Shutter1", { dmx_from: 201, dmx_to: 255 }),
+      ]),
+    ],
+  };
+  /** Returns the extracted strobe rate at a raw shutter DMX value. */
+  const strobeAt = (value: number) =>
+    extractVisualizerDmx({ Intensity: 255, StrobeShutter: value }, element)
+      .strobeShutter;
+  assert.equal(strobeAt(30), 0);
+  assert.equal(strobeAt(230), 0);
+  assert.ok(strobeAt(50) > 0);
+  near(strobeAt(125), 0.5, "mid strobe rate");
+  near(strobeAt(200), 1, "fastest strobe rate");
+});
