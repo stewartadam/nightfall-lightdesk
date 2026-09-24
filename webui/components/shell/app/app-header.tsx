@@ -13,6 +13,7 @@ import { FileIcon } from "@squidlab/phosphor-solid/file";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { Show } from "solid-js";
+import { MappingModeToggle } from "../../../features/io";
 import { useShowfileObjectPalette } from "../../../features/showfile";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
@@ -71,6 +72,9 @@ function HeaderActions() {
         >
           <FileIcon class="size-4" aria-hidden />
         </Button>
+      </Tooltip>
+      <Tooltip content={() => "Controller mapping mode"} position="bottom">
+        <MappingModeToggle />
       </Tooltip>
       <HeaderNotificationHistory />
     </>

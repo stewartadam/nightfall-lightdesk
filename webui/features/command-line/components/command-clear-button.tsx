@@ -8,6 +8,7 @@
 
 import { EraserIcon } from "@squidlab/phosphor-solid/eraser";
 import { Button } from "../../../components/ui/visual-language/button";
+import { Mappable } from "../../io";
 
 interface CommandClearButtonProps {
   variant: "panel" | "nav";
@@ -17,18 +18,29 @@ interface CommandClearButtonProps {
 /** Renders the shared programmer action and preserves command-input focus when clicked. */
 export const CommandClearButton = (props: CommandClearButtonProps) => {
   return (
-    <Button
-      size="icon"
-      type="button"
-      class="shrink-0"
-      style={{ height: "auto" }}
-      aria-label="Clear programmer"
-      title="Clear programmer (Shift+Esc)"
-      data-command-programmer-clear
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={() => props.onClear()}
+    <Mappable
+      class="inline-flex shrink-0"
+      label="clear programmer"
+      choices={() => [
+        {
+          label: "Clear programmer",
+          action: { id: "programmer.clear", arguments: {} },
+        },
+      ]}
     >
-      <EraserIcon class="size-4" aria-hidden />
-    </Button>
+      <Button
+        size="icon"
+        type="button"
+        class="shrink-0"
+        style={{ height: "auto" }}
+        aria-label="Clear programmer"
+        title="Clear programmer (Shift+Esc)"
+        data-command-programmer-clear
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => props.onClear()}
+      >
+        <EraserIcon class="size-4" aria-hidden />
+      </Button>
+    </Mappable>
   );
 };
