@@ -320,6 +320,7 @@ fn benchmark_transition(mode: BenchTransitionMode) -> Option<MaterializedTransit
 
 fn spawn_parameters(app: &mut App, parameter_count: usize) -> Vec<Instance<Parameter>> {
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Intensity,
         native_unit: Attribute::Intensity.native_unit(),
@@ -354,6 +355,7 @@ fn spawn_parameters(app: &mut App, parameter_count: usize) -> Vec<Instance<Param
 
 fn register_fixture_data(app: &mut App, parameters: &[Instance<Parameter>]) {
     let parameter_metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Intensity,
         native_unit: Attribute::Intensity.native_unit(),

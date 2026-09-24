@@ -7,7 +7,7 @@
  */
 
 import type * as types from "../types/index";
-import { getResolutionChannelWidth } from "./dmx";
+import { fixtureWireLayout } from "./dmx";
 import {
   defaultNetworkDmxOutputs,
   defaultUsbDmxOutputs,
@@ -16,7 +16,10 @@ import {
 
 type FixturePatchEntry = {
   universe: number;
+  /** Address of the element's first patched byte. */
   address: number;
+  /** Byte addresses per element parameter index, most significant first; empty when unpatched. */
+  parameterAddresses: number[][];
   transport?: types.OutputTransport;
 };
 
@@ -24,26 +27,6 @@ export type FixturePatchMap = Record<
   string,
   Record<string, Array<FixturePatchEntry>>
 >;
-
-type ElementLayout = {
-  elementId: number;
-  offset: number;
-  width: number;
-};
-
-type FixtureLayout = {
-  elements: ElementLayout[];
-  totalWidth: number;
-};
-
-type ElementLayoutCache = {
-  totalWidth: number;
-  paramWidths: Record<string, number>;
-};
-
-type FixtureLayoutCache = {
-  elements: ElementLayoutCache[];
-};
 
 const DEFAULT_UNIVERSE = 1;
 const DEFAULT_ADDRESS = 1;
@@ -188,78 +171,6 @@ function outputSourceMatches(
   return false;
 }
 
-function buildFixtureLayoutCache(
-  fixtures: Record<string, types.Fixture>,
-): Record<string, FixtureLayoutCache> {
-  const cache: Record<string, FixtureLayoutCache> = {};
-
-  for (const [uid, fixture] of Object.entries(fixtures)) {
-    const elements: ElementLayoutCache[] = [];
-
-    for (const element of fixture.elements) {
-      const paramWidths: Record<string, number> = {};
-      let totalWidth = 0;
-
-      for (const param of element.parameters) {
-        if (param.attribute.type === "VirtualIntensity") continue;
-
-        const width = getResolutionChannelWidth(param.resolution);
-        totalWidth += width;
-
-        const name = normalizeParamName(attributeName(param.attribute));
-        paramWidths[name] = (paramWidths[name] ?? 0) + width;
-      }
-
-      elements.push({ totalWidth, paramWidths });
-    }
-
-    cache[uid] = { elements };
-  }
-
-  return cache;
-}
-
-function collectFixtureLayout(
-  layoutCache: FixtureLayoutCache | undefined,
-  elementFilter?: number,
-  paramFilter?: string,
-): FixtureLayout {
-  if (!layoutCache) return { elements: [], totalWidth: 0 };
-
-  const elements: ElementLayout[] = [];
-  let offset = 0;
-  const normalizedParam = paramFilter
-    ? normalizeParamName(paramFilter)
-    : undefined;
-
-  const pushElement = (index: number, element?: ElementLayoutCache) => {
-    if (!element) return;
-
-    let width = 0;
-    if (normalizedParam) {
-      width = element.paramWidths[normalizedParam] ?? 0;
-    } else {
-      width = element.totalWidth;
-    }
-
-    if (width === 0) return;
-
-    elements.push({ elementId: index + 1, offset, width });
-    offset += width;
-  };
-
-  if (elementFilter && elementFilter > 0) {
-    const index = elementFilter - 1;
-    pushElement(index, layoutCache.elements[index]);
-  } else {
-    for (let index = 0; index < layoutCache.elements.length; index += 1) {
-      pushElement(index, layoutCache.elements[index]);
-    }
-  }
-
-  return { elements, totalWidth: offset };
-}
-
 export function buildFixturePatchMapFromBindings(
   snapshot: types.BindingsSnapshot,
   fixtures: Record<string, types.Fixture>,
@@ -267,7 +178,6 @@ export function buildFixturePatchMapFromBindings(
   usbDmxOutputs: types.UsbDmxOutputTargets = defaultUsbDmxOutputs(),
 ): FixturePatchMap {
   const patchMap: FixturePatchMap = {};
-  const layoutCache = buildFixtureLayoutCache(fixtures);
   const disabledSources: types.OutputSource[] = [];
   for (const binding of snapshot.disabled) {
     if (binding.type === "Output") {
@@ -319,33 +229,48 @@ export function buildFixturePatchMapFromBindings(
         lastUniverse = targetUniverse;
       }
 
-      const layout = collectFixtureLayout(
-        layoutCache[uid],
-        sourceData.element,
-        sourceData.param,
-      );
-      if (layout.totalWidth === 0) continue;
+      const paramFilter = sourceData.param
+        ? normalizeParamName(sourceData.param)
+        : undefined;
+      const layout = fixtureWireLayout(fixture, {
+        elementId: sourceData.element,
+        includeParameter: paramFilter
+          ? (parameter) =>
+              normalizeParamName(attributeName(parameter.attribute)) ===
+              paramFilter
+          : undefined,
+      });
+      if (layout.footprint === 0) continue;
 
-      const fixtureOffset = binding.clone ? 0 : runningAddress - baseAddress;
+      const fixtureAddress = binding.clone ? baseAddress : runningAddress;
+      const entries = new Map<number, FixturePatchEntry>();
+      for (const placed of layout.parameters) {
+        const addresses = placed.slots.map((slot) => fixtureAddress + slot);
+        let entry = entries.get(placed.elementIndex);
+        if (!entry) {
+          entry = {
+            universe: targetUniverse,
+            address: Number.POSITIVE_INFINITY,
+            parameterAddresses: fixture.elements[
+              placed.elementIndex
+            ].parameters.map(() => []),
+            transport: outputTransport,
+          };
+          entries.set(placed.elementIndex, entry);
+        }
+        entry.parameterAddresses[placed.parameterIndex] = addresses;
+        entry.address = Math.min(entry.address, ...addresses);
+      }
 
-      for (const element of layout.elements) {
-        const elementAddress = baseAddress + fixtureOffset + element.offset;
-        if (!patchMap[uid]) {
-          patchMap[uid] = {};
-        }
-        const elementId = String(element.elementId);
-        if (!patchMap[uid][elementId]) {
-          patchMap[uid][elementId] = [];
-        }
-        patchMap[uid][elementId].push({
-          universe: targetUniverse,
-          address: elementAddress,
-          transport: outputTransport,
-        });
+      for (const [elementIndex, entry] of entries) {
+        patchMap[uid] ??= {};
+        const elementId = String(elementIndex + 1);
+        patchMap[uid][elementId] ??= [];
+        patchMap[uid][elementId].push(entry);
       }
 
       if (!binding.clone) {
-        runningAddress = baseAddress + fixtureOffset + layout.totalWidth;
+        runningAddress = fixtureAddress + layout.footprint;
       }
     }
   }

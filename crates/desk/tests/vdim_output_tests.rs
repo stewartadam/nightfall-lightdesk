@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 fn param(attribute: Attribute, merge_type: MergeStrategy) -> ParameterMetadata {
     ParameterMetadata {
+        dmx_slots: Default::default(),
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
         attribute,
@@ -99,7 +100,7 @@ fn virtual_intensity_scales_higher_priority_color_output() {
                     mode: SacnDelivery::Multicast,
                 },
                 universe: 1,
-                address: 1,
+                addresses: vec![1],
             }],
         });
     app.world_mut()
@@ -110,7 +111,7 @@ fn virtual_intensity_scales_higher_priority_color_output() {
                     mode: SacnDelivery::Multicast,
                 },
                 universe: 1,
-                address: 2,
+                addresses: vec![2],
             }],
         });
 
@@ -285,7 +286,7 @@ fn virtual_intensity_above_full_is_capped_before_scaling_color_output() {
                     mode: SacnDelivery::Multicast,
                 },
                 universe: 1,
-                address: 1,
+                addresses: vec![1],
             }],
         });
 

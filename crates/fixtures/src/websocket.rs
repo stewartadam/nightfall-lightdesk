@@ -739,7 +739,8 @@ fn send_input_contribution_trace(
             let Ok(parameter) = parameter_query.get(target.entity) else {
                 continue;
             };
-            let source_address = address.saturating_add(target.offset);
+            let source_address =
+                address.saturating_add(target.offsets.first().copied().unwrap_or(0));
             if source_address == 0 {
                 continue;
             }

@@ -96,6 +96,7 @@ fn test_fixture_ref(fixture_id: u32) -> FixtureRef {
 /// Helper function to build red parameter metadata for materialized output tests.
 fn red_parameter_metadata() -> ParameterMetadata {
     ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Red,
         native_unit: Attribute::Red.native_unit(),

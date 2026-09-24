@@ -113,7 +113,7 @@ fn accepted_input_applies_only_bound_channels() {
         destination: ResolvedInputDestination::Fixture {
             targets: vec![ResolvedInputTarget {
                 entity: bound_parameter,
-                offset: 0,
+                offsets: vec![0],
             }],
         },
     }];
@@ -321,7 +321,7 @@ fn routing_preserves_binding_precedence_and_consumes_each_frame_once() {
             destination: ResolvedInputDestination::Fixture {
                 targets: vec![ResolvedInputTarget {
                     entity: parameter,
-                    offset: 0,
+                    offsets: vec![0],
                 }],
             },
         })

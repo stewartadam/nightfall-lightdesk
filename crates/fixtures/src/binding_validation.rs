@@ -25,7 +25,9 @@ use crate::bindings::{
 };
 use crate::data_provider_ext::FixtureDataProviderExt;
 use crate::fixture::Fixture;
+use crate::parameter::ParameterMetadata;
 use crate::prelude::DisabledBindings;
+use crate::wire_layout::WireLayout;
 
 /// Validation mode for binding overlaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -237,7 +239,7 @@ fn validate_fixture_to_fixture_shapes(
             let source_shape = source_shapes[0].as_ref().unwrap();
             for (idx, target_shape) in target_shapes.iter().enumerate() {
                 let target_shape = target_shape.as_ref().unwrap();
-                if source_shape != target_shape {
+                if !source_shape.matches(target_shape) {
                     issues.push(BindingValidationIssue::for_fixtures(
                         format!(
                             "Fixture-to-fixture shape mismatch between source {} and target {}",
@@ -251,7 +253,7 @@ fn validate_fixture_to_fixture_shapes(
             for idx in 0..source_uids.len() {
                 let source_shape = source_shapes[idx].as_ref().unwrap();
                 let target_shape = target_shapes[idx].as_ref().unwrap();
-                if source_shape != target_shape {
+                if !source_shape.matches(target_shape) {
                     issues.push(BindingValidationIssue::for_fixtures(
                         format!(
                             "Fixture-to-fixture shape mismatch between source {} and target {}",
@@ -700,25 +702,30 @@ fn fixture_shape_for_binding(
     fixture_shape(fixture.value(), element, param)
 }
 
-/// Fixture-level footprint used to validate patch binding spans.
-#[derive(Debug, Clone, PartialEq)]
+/// Parameters selected by a binding, used to validate patch binding spans.
+#[derive(Debug, Clone)]
 struct FixtureShape {
-    elements: Vec<ElementShape>,
+    /// Selected parameters in element order.
+    parameters: Vec<ParameterMetadata>,
+    /// Whether the binding selects only part of the fixture and starts at its first selected byte.
+    partial: bool,
 }
 
-/// Element-level DMX footprint used to validate patch binding spans.
-#[derive(Debug, Clone, PartialEq)]
-struct ElementShape {
-    parameters: Vec<ParameterShape>,
+impl FixtureShape {
+    /// Returns whether two selections carry the same attributes at the same resolutions in order.
+    fn matches(&self, other: &Self) -> bool {
+        self.parameters.len() == other.parameters.len()
+            && self
+                .parameters
+                .iter()
+                .zip(&other.parameters)
+                .all(|(left, right)| {
+                    left.attribute == right.attribute && left.resolution == right.resolution
+                })
+    }
 }
 
-/// Parameter-level DMX footprint used to validate patch binding spans.
-#[derive(Debug, Clone, PartialEq)]
-struct ParameterShape {
-    attribute: Attribute,
-    resolution: DmxValueResolution,
-}
-
+/// Collects the parameters a binding selects from a fixture.
 fn fixture_shape(
     fixture: &Fixture,
     element: Option<u16>,
@@ -737,10 +744,10 @@ fn fixture_shape(
         None => (0..fixture.elements.len()).collect(),
     };
 
-    let mut elements = Vec::new();
+    let mut parameters = Vec::new();
     for idx in element_indices {
         let element = &fixture.elements[idx];
-        let parameters = if let Some(param_name) = param {
+        if let Some(param_name) = param {
             let attribute = attribute_from_param(param_name);
             let metadata = element
                 .parameters
@@ -752,35 +759,26 @@ fn fixture_shape(
                         fixture.identifiers.uid, attribute
                     ))
                 })?;
-            vec![ParameterShape {
-                attribute,
-                resolution: metadata.resolution,
-            }]
+            parameters.push(metadata.clone());
         } else {
-            element
-                .parameters
-                .iter()
-                .map(|param| ParameterShape {
-                    attribute: param.attribute.clone(),
-                    resolution: param.resolution,
-                })
-                .collect()
-        };
-
-        elements.push(ElementShape { parameters });
+            parameters.extend(element.parameters.iter().cloned());
+        }
     }
 
-    Ok(FixtureShape { elements })
+    Ok(FixtureShape {
+        parameters,
+        partial: element.is_some() || param.is_some(),
+    })
 }
 
+/// Returns the number of DMX slots a binding's selection spans.
 fn shape_footprint(shape: &FixtureShape) -> u16 {
-    shape
-        .elements
-        .iter()
-        .flat_map(|element| element.parameters.iter())
-        .filter(|param| param.attribute != Attribute::VirtualIntensity)
-        .map(|param| param.resolution.channel_width())
-        .sum()
+    let layout = WireLayout::new(shape.parameters.iter().map(|metadata| ((), metadata)));
+    if shape.partial {
+        layout.rebased().footprint()
+    } else {
+        layout.footprint()
+    }
 }
 
 fn attribute_from_param(name: &str) -> Attribute {

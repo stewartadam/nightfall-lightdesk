@@ -21,6 +21,7 @@ use crate::prelude::*;
 pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
     let parameters = vec![
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::VirtualIntensity,
             native_unit: Attribute::VirtualIntensity.native_unit(),
             value_polarity: Attribute::VirtualIntensity.value_polarity(),
@@ -34,6 +35,7 @@ pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: true,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Red,
             native_unit: Attribute::Red.native_unit(),
             value_polarity: Attribute::Red.value_polarity(),
@@ -47,6 +49,7 @@ pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Green,
             native_unit: Attribute::Green.native_unit(),
             value_polarity: Attribute::Green.value_polarity(),
@@ -60,6 +63,7 @@ pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Blue,
             native_unit: Attribute::Blue.native_unit(),
             value_polarity: Attribute::Blue.value_polarity(),
@@ -73,6 +77,7 @@ pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::White,
             native_unit: Attribute::White.native_unit(),
             value_polarity: Attribute::White.value_polarity(),
@@ -115,6 +120,7 @@ pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
 pub(super) fn create_rgb_bar_60(id: u32, make: &str, model: &str) -> Fixture {
     let parameters = vec![
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::VirtualIntensity,
             native_unit: Attribute::VirtualIntensity.native_unit(),
             value_polarity: Attribute::VirtualIntensity.value_polarity(),
@@ -128,6 +134,7 @@ pub(super) fn create_rgb_bar_60(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: true,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Red,
             native_unit: Attribute::Red.native_unit(),
             value_polarity: Attribute::Red.value_polarity(),
@@ -141,6 +148,7 @@ pub(super) fn create_rgb_bar_60(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Green,
             native_unit: Attribute::Green.native_unit(),
             value_polarity: Attribute::Green.value_polarity(),
@@ -154,6 +162,7 @@ pub(super) fn create_rgb_bar_60(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Blue,
             native_unit: Attribute::Blue.native_unit(),
             value_polarity: Attribute::Blue.value_polarity(),
@@ -197,6 +206,7 @@ pub(super) fn create_rgb_bar_60(id: u32, make: &str, model: &str) -> Fixture {
 pub(super) fn create_grb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
     let parameters = vec![
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::VirtualIntensity,
             native_unit: Attribute::VirtualIntensity.native_unit(),
             value_polarity: Attribute::VirtualIntensity.value_polarity(),
@@ -210,6 +220,7 @@ pub(super) fn create_grb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: true,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Green,
             native_unit: Attribute::Green.native_unit(),
             value_polarity: Attribute::Green.value_polarity(),
@@ -223,6 +234,7 @@ pub(super) fn create_grb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Red,
             native_unit: Attribute::Red.native_unit(),
             value_polarity: Attribute::Red.value_polarity(),
@@ -236,6 +248,7 @@ pub(super) fn create_grb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Blue,
             native_unit: Attribute::Blue.native_unit(),
             value_polarity: Attribute::Blue.value_polarity(),
@@ -279,6 +292,7 @@ pub(super) fn create_grb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
 pub(super) fn create_rgb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
     let parameters = vec![
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::VirtualIntensity,
             native_unit: Attribute::VirtualIntensity.native_unit(),
             value_polarity: Attribute::VirtualIntensity.value_polarity(),
@@ -292,6 +306,7 @@ pub(super) fn create_rgb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: true,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Red,
             native_unit: Attribute::Red.native_unit(),
             value_polarity: Attribute::Red.value_polarity(),
@@ -305,6 +320,7 @@ pub(super) fn create_rgb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Green,
             native_unit: Attribute::Green.native_unit(),
             value_polarity: Attribute::Green.value_polarity(),
@@ -318,6 +334,7 @@ pub(super) fn create_rgb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Blue,
             native_unit: Attribute::Blue.native_unit(),
             value_polarity: Attribute::Blue.value_polarity(),

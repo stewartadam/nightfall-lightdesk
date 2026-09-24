@@ -74,15 +74,18 @@ pub fn convert_gdtf_to_fixture(
     for channel in &dmx_mode.dmx_channels {
         let geometry_name = channel.geometry.to_string();
 
-        for logical_channel in &channel.logical_channels {
-            if let Some(param) =
-                convert_logical_channel_to_parameter(logical_channel, channel, fixture_type)
-            {
-                geometry_params
-                    .entry(geometry_name.clone())
-                    .or_default()
-                    .push(param);
-            }
+        // Logical channels of one DMX channel are mutually exclusive views of the
+        // same bytes, so only the first becomes the output-bearing parameter.
+        let Some(logical_channel) = channel.logical_channels.first() else {
+            continue;
+        };
+        if let Some(param) =
+            convert_logical_channel_to_parameter(logical_channel, channel, fixture_type)
+        {
+            geometry_params
+                .entry(geometry_name)
+                .or_default()
+                .push(param);
         }
     }
 
@@ -187,17 +190,7 @@ fn convert_logical_channel_to_parameter(
     // Map GDTF attribute to nightfall Attribute
     let attribute = map_gdtf_attribute_to_nightfall(&logical_channel.attribute)?;
 
-    // Determine resolution from offset array length
-    let resolution = if let Some(offset) = &dmx_channel.offset {
-        match offset.len() {
-            1 => DmxValueResolution::Coarse,
-            2 => DmxValueResolution::Fine,
-            3 => DmxValueResolution::UltraFine,
-            _ => DmxValueResolution::Coarse,
-        }
-    } else {
-        DmxValueResolution::Coarse
-    };
+    let (resolution, dmx_slots) = gdtf_channel_slots(dmx_channel)?;
 
     // Determine merge strategy based on attribute
     let merge_type = match &attribute {
@@ -219,6 +212,7 @@ fn convert_logical_channel_to_parameter(
     };
 
     let mut metadata = ParameterMetadata {
+        dmx_slots,
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
         attribute,
@@ -236,6 +230,40 @@ fn convert_logical_channel_to_parameter(
         gdtf_position_physical_range(logical_channel, fixture_type),
     );
     Some(metadata)
+}
+
+/// Resolves a DMX channel's byte resolution and footprint slots from its GDTF `Offset` and `DMXBreak`.
+///
+/// Channels without an `Offset` are virtual and occupy no slots. `Overwrite`
+/// breaks are supplied per geometry reference and default to break 1 here.
+/// Returns `None` for offsets that cannot be represented (more than four
+/// bytes, or slots outside `1..=512`).
+pub(super) fn gdtf_channel_slots(
+    dmx_channel: &gdtf::dmx_mode::DmxChannel,
+) -> Option<(DmxValueResolution, DmxSlots)> {
+    let Some(offsets) = &dmx_channel.offset else {
+        return Some((DmxValueResolution::Coarse, DmxSlots::Virtual));
+    };
+    let resolution = match offsets.len() {
+        1 => DmxValueResolution::Coarse,
+        2 => DmxValueResolution::Fine,
+        3 => DmxValueResolution::UltraFine,
+        4 => DmxValueResolution::Uber,
+        _ => return None,
+    };
+    let offsets = offsets
+        .iter()
+        .map(|offset| {
+            u16::try_from(*offset)
+                .ok()
+                .filter(|slot| (1..=512).contains(slot))
+        })
+        .collect::<Option<Vec<u16>>>()?;
+    let dmx_break = match dmx_channel.dmx_break {
+        gdtf::dmx_mode::DmxBreak::Value(value) => u16::try_from(value).ok()?.max(1),
+        gdtf::dmx_mode::DmxBreak::Overwrite => 1,
+    };
+    Some((resolution, DmxSlots::Explicit { dmx_break, offsets }))
 }
 
 /// Resolve an angular physical range from a GDTF logical channel.
