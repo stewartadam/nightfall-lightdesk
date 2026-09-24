@@ -42,17 +42,25 @@ impl Plugin for FixtureLibraryPlugin {
             crate::websocket::deserialize_fixture_library_command,
         );
 
-        // Register HTTP routes for mesh and wheel image serving
+        // Register HTTP routes for mesh and wheel image serving, restricted to
+        // archives the library indexes.
+        let archives = crate::http_routes::IndexedArchives::default();
+        app.insert_resource(archives.clone());
         let mut routes = app
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>();
+        let mesh_archives = archives.clone();
         routes.register(
             "/api/mesh/{gdtf_path}/{model_name}",
-            axum::routing::get(crate::http_routes::serve_mesh),
+            axum::routing::get(move |path| {
+                crate::http_routes::serve_mesh(path, mesh_archives.clone())
+            }),
         );
         routes.register(
             "/api/gdtf-wheel/{gdtf_path}/{media_name}",
-            axum::routing::get(crate::http_routes::serve_wheel_media),
+            axum::routing::get(move |path| {
+                crate::http_routes::serve_wheel_media(path, archives.clone())
+            }),
         );
 
         // Try to initialize the file watcher (optional - may fail if library path doesn't exist)
@@ -142,10 +150,23 @@ impl nightfall_fixtures::prelude::GeometryProvider for LibraryGeometryProvider {
     }
 }
 
-/// Refreshes fixture geometry lookup when the library or selected showfile package changes.
-fn register_geometry_provider(mut commands: Commands, library: Res<FixtureLibraryManager>) {
+/// Refreshes fixture geometry lookup and the servable archive set when the library or selected showfile package changes.
+fn register_geometry_provider(
+    mut commands: Commands,
+    library: Res<FixtureLibraryManager>,
+    archives: Option<Res<crate::http_routes::IndexedArchives>>,
+) {
     if !library.is_changed() {
         return;
+    }
+    if let Some(archives) = archives {
+        archives.replace(
+            library
+                .list_fixtures()
+                .into_iter()
+                .filter(|profile| !profile.file_path.as_os_str().is_empty())
+                .map(|profile| profile.file_path.clone()),
+        );
     }
     let library_arc = std::sync::Arc::new(std::sync::RwLock::new(library.clone()));
 
