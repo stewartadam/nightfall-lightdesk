@@ -34,11 +34,51 @@ import type {
   FixturePhysical,
 } from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
+import { FilteredEmitterRow } from "../effects/filtered-emitter-row";
 import { EMITTER_RADIANCE } from "../emitter-radiance";
 
 const LED_BAR_HOUSING_HEIGHT = 0.06;
 const LED_BAR_HANGING_HOUSING_Y = -LED_BAR_HOUSING_HEIGHT / 2;
 const LED_BAR_CELL_Y = -0.07;
+
+/** Uses a shared filtered surface only when the actual cell positions form a regular straight row. */
+function createFilteredRow(
+  group: Group,
+  cellMesh: InstancedMesh<BoxGeometry>,
+  positions: readonly { x: number; y: number; z: number }[],
+): FilteredEmitterRow | undefined {
+  if (positions.length < 2) return undefined;
+  const first = positions[0];
+  const spacing = positions[1].x - first.x;
+  if (
+    spacing <= 0 ||
+    positions.some(
+      (position, index) =>
+        Math.abs(position.x - first.x - index * spacing) > spacing * 0.001 ||
+        Math.abs(position.y - first.y) > spacing * 0.001 ||
+        Math.abs(position.z - first.z) > spacing * 0.001,
+    )
+  )
+    return undefined;
+  const { width, height, depth } = cellMesh.geometry.parameters;
+  if (width > spacing) return undefined;
+  const row = new FilteredEmitterRow(
+    positions.length,
+    spacing,
+    width,
+    height,
+    depth,
+  );
+  row.mesh.position.set(
+    (first.x + positions[positions.length - 1].x) / 2,
+    first.y,
+    first.z,
+  );
+  group.add(row.mesh);
+  // Keep the physical cells for opaque depth and dark lenses; the row supplies their emission.
+  (cellMesh.material as MeshBasicMaterial).color.setScalar(0);
+  return row;
+}
 
 /**
  * LED bar specific data stored on the fixture instance.
@@ -46,6 +86,8 @@ const LED_BAR_CELL_Y = -0.07;
 export interface LedBarData {
   type: "led-bar";
   cellMesh: InstancedMesh;
+  /** Spatially filtered luminous surface for regular rows; original cells retain DMX and selection indexing. */
+  filteredRow?: FilteredEmitterRow;
   cellCount: number;
   /** Per-cell proxy meshes used by outline selection passes. */
   cellSelectionMeshes: Mesh[];
@@ -194,6 +236,8 @@ export function buildLedBarFixture(
     cellPositions,
   );
 
+  const filteredRow = createFilteredRow(group, cellMesh, cellPositions);
+
   // Scale from GDTF millimeters to scene meters
   group.scale.setScalar(0.001);
 
@@ -226,6 +270,7 @@ export function buildLedBarFixture(
     ledBarData: {
       type: "led-bar",
       cellMesh,
+      filteredRow,
       cellCount,
       cellSelectionMeshes,
       cellSelectionMaterial,
@@ -268,7 +313,9 @@ export function updateLedBarColors(
     instanceColor.setXYZ(cellIndex, color.r, color.g, color.b);
   }
 
-  instanceColor.needsUpdate = true;
+  const { filteredRow } = instance.ledBarData;
+  if (filteredRow) filteredRow.update(instanceColor.array);
+  else instanceColor.needsUpdate = true;
 }
 
 /**
@@ -281,6 +328,7 @@ export function disposeLedBar(
   cellMesh.geometry?.dispose();
   (cellMesh.material as MeshBasicMaterial)?.dispose();
   cellSelectionMaterial.dispose();
+  instance.ledBarData.filteredRow?.dispose();
 
   // Dispose housing (first child of group)
   const housing = instance.group.children[0] as Mesh | undefined;
@@ -377,6 +425,7 @@ export function buildSimpleLedBar(
 
   // Create emitter map for DMX updates
   // Each emitter needs its own positioned Object3D so debug overlays can place markers correctly.
+  const filteredRow = createFilteredRow(group, cellMesh, cellPositions);
   const emitters = new Map<string, EmitterData>();
   for (let i = 0; i < elements.length; i++) {
     const pos = cellPositions[i];
@@ -418,6 +467,7 @@ export function buildSimpleLedBar(
     ledBarData: {
       type: "led-bar",
       cellMesh,
+      filteredRow,
       cellCount,
       cellSelectionMeshes,
       cellSelectionMaterial,

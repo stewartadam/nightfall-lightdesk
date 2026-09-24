@@ -12,10 +12,31 @@
  */
 
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { outline } from "three/addons/tsl/display/OutlineNode.js";
-import { color, float, pass } from "three/tsl";
-import type { Camera, Object3D, Scene } from "three/webgpu";
-import { RenderPipeline, type WebGPURenderer } from "three/webgpu";
+import {
+  color,
+  Fn,
+  float,
+  fwidth,
+  luminance,
+  mix,
+  pass,
+  renderOutput,
+  smoothstep,
+  uv,
+  vec2,
+  vec4,
+} from "three/tsl";
+import type { Camera, Object3D } from "three/webgpu";
+import {
+  NodeMaterial,
+  QuadMesh,
+  RenderPipeline,
+  Scene,
+  UnsignedByteType,
+  type WebGPURenderer,
+} from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import { AtmosphereBudget, type GpuBudgetSample } from "./atmosphere-budget";
 import { createOpticalRenderContext } from "./optical-render-context";
@@ -112,6 +133,9 @@ export interface PostProcessingState {
   volumePass: ReturnType<typeof pass>;
   postProcessing: RenderPipeline;
   scenePass: ReturnType<typeof pass>;
+  /** High-quality display conversion precedes edge filtering to preserve HDR coverage. */
+  displayPass?: ReturnType<typeof pass>;
+  displayMaterial?: NodeMaterial;
   bloomPass: ReturnType<typeof bloom>;
   outlinePass: ReturnType<typeof outline>;
   editSelectionOutlinePass: ReturnType<typeof outline>;
@@ -176,6 +200,37 @@ export function createPostProcessing(
     config.bloomRadius,
     config.bloomThreshold,
   );
+  /** Integrates the bright-pass footprint so thin HDR emitters cannot fall between reduced-resolution samples. */
+  bloomPass.highPassFn = Fn(
+    ({
+      threshold,
+      smoothWidth,
+    }: Parameters<typeof bloomPass.highPassFn>[0]) => {
+      const coordinates = uv();
+      const footprint = fwidth(coordinates);
+      const filtered = vec4(0).toVar();
+      for (const y of [-0.25, 0.25]) {
+        for (const x of [-0.25, 0.25]) {
+          const sampleUV = coordinates.add(footprint.mul(vec2(x, y)));
+          filtered.addAssign(
+            scenePassColor
+              .sample(sampleUV)
+              .add(volumePass.getTextureNode("output").sample(sampleUV))
+              .mul(0.25),
+          );
+        }
+      }
+      return mix(
+        vec4(0),
+        filtered,
+        smoothstep(
+          threshold,
+          threshold.add(smoothWidth),
+          luminance(filtered.rgb),
+        ),
+      );
+    },
+  );
 
   // Create separate outline passes for programmer, edit, and active-span state.
   const outlinePass = outline(scene, camera, {
@@ -235,6 +290,26 @@ export function createPostProcessing(
     .add(editSelectionOutlineColor)
     .add(programmerValueOutlineColor)
     .add(activeSpanOutlineColor);
+  let displayPass: ReturnType<typeof pass> | undefined;
+  let displayMaterial: NodeMaterial | undefined;
+  if (quality === "high") {
+    displayMaterial = new NodeMaterial();
+    displayMaterial.fragmentNode = renderOutput(
+      postProcessing.outputNode,
+      renderer.toneMapping,
+      renderer.outputColorSpace,
+    );
+    const quad = new QuadMesh(displayMaterial);
+    const displayScene = new Scene();
+    displayScene.add(quad);
+    displayPass = pass(displayScene, quad.camera, {
+      samples: 0,
+      type: UnsignedByteType,
+      depthBuffer: false,
+    });
+    postProcessing.outputNode = fxaa(displayPass.getTextureNode("output"));
+    postProcessing.outputColorTransform = false;
+  }
 
   const state: PostProcessingState = {
     quality,
@@ -248,6 +323,8 @@ export function createPostProcessing(
     volumePass,
     postProcessing,
     scenePass,
+    displayPass,
+    displayMaterial,
     bloomPass,
     outlinePass,
     editSelectionOutlinePass,
@@ -376,5 +453,7 @@ export function disposePostProcessing(
   state.bloomPass.dispose();
   state.volumePass.dispose();
   state.scenePass.dispose();
+  state.displayPass?.dispose();
+  state.displayMaterial?.dispose();
   state.postProcessing.dispose();
 }

@@ -152,7 +152,10 @@ export class FixtureManager {
       if (instance.ledBarData)
         (
           instance.ledBarData.cellMesh.material as MeshBasicMaterial
-        ).color.setScalar(displayGain);
+        ).color.setScalar(instance.ledBarData.filteredRow ? 0 : displayGain);
+      instance.ledBarData?.filteredRow?.mesh.material.color.setScalar(
+        displayGain,
+      );
       for (const { mesh } of instance.strobePanelData?.emitterBatches ?? [])
         (mesh.material as MeshBasicMaterial).color.setScalar(displayGain);
     }

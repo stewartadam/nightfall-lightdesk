@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-export { float, pass, positionWorld, vec4 } from "three/tsl";
+export { bloom } from "three/addons/tsl/display/BloomNode.js";
+export { float, pass, positionWorld, renderOutput, vec4 } from "three/tsl";
 // Browser shader fixtures must share Vite's Three module instance with application materials.
 export * from "three/webgpu";
