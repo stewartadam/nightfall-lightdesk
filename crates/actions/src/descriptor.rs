@@ -78,6 +78,11 @@ pub enum ActionInputKind {
 }
 
 /// Semantic kind of one persisted action argument, used to render pickers and capture targets.
+///
+/// The kind also fixes how the value is stored under the parameter's name in the persisted
+/// arguments object: object references (`Clip`, `Master`, `Timeline`, `Cue`) are UID strings,
+/// `Control` is a one-based slot index, `Panel` is a panel ID string, numeric kinds are JSON
+/// numbers, and `Text` is a string. Clients rely on this to build arguments generically.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]

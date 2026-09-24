@@ -411,6 +411,9 @@ export const activeInstances = deepMap<ActiveInstancesMap>({});
 export const controls = atom<ControlState[]>([]);
 export const engineMetrics = atom<EngineMetrics | null>(null);
 
+// Bindable action catalog published by backend domains
+export const actionCatalog = atom<types.ActionCatalogEntry[]>([]);
+
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);
 export const midiMappings = atom<types.MidiMapping[]>([]);
@@ -1051,6 +1054,7 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     flowDefinitionsRevision,
     flowPortValues,
     flowTriggerTicks,
+    actionCatalog,
     midiDevices,
     midiMappings,
     midiLastEvent,

@@ -66,6 +66,7 @@ export type AnyWsMessage =
   | types.TimelineWsMessage
   | types.MidiWsMessage
   | types.OscWsMessage
+  | types.ActionsWsMessage
   | types.EngineClientMessage
   | DeskCommandWsMessage
   | types.SceneObjectWsMessage

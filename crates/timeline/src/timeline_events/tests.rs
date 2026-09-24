@@ -324,9 +324,7 @@ fn store_timeline_start_action_duration_change_does_not_request_reconstruction_e
                 label: "Registered start".to_owned(),
                 position: Duration::from_secs(2),
                 duration: Duration::from_secs(1),
-                action: ActionKind::RegisteredAction(start_clip_action(ClipTarget::Uid(
-                    registered_clip_uid,
-                ))),
+                action: ActionKind::RegisteredAction(start_clip_action(registered_clip_uid)),
             },
         ],
         automation_lanes: Vec::new(),

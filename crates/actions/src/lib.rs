@@ -16,6 +16,7 @@ mod descriptor;
 mod invocation;
 mod lowering;
 mod registry;
+pub mod websocket;
 
 use bevy_app::{App, Plugin, Update};
 use bevy_ecs::{
@@ -32,7 +33,9 @@ pub use invocation::{
     InvocationError, InvocationId, InvocationOutcome, InvocationResult,
 };
 pub use lowering::{ActionAppExt, submit_command};
-use nightfall_engine::prelude::{InputHandling, PendingCommandExpansion};
+use nightfall_engine::prelude::{
+    ClientOutput, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
+};
 pub use registry::ActionRegistry;
 
 /// Plugin that installs the generic registered-action invocation stage.
@@ -48,6 +51,7 @@ impl Plugin for ActionsPlugin {
         app.add_message::<ActionInvocation>();
         app.add_message::<InvocationResult>();
         app.add_message::<ExternalCommandInvocation>();
+        app.add_message::<ResyncRequested>();
         app.configure_sets(
             Update,
             ActionInvocationHandling
@@ -57,6 +61,13 @@ impl Plugin for ActionsPlugin {
         app.add_systems(
             Update,
             dispatch_action_invocations.in_set(ActionInvocationHandling),
+        );
+        app.add_systems(
+            Update,
+            (
+                websocket::send_action_catalog_on_change.in_set(ClientOutput),
+                websocket::handle_resync_state.in_set(ResyncHandling),
+            ),
         );
     }
 }

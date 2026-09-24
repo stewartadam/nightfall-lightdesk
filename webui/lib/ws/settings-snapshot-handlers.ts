@@ -7,6 +7,7 @@
  */
 
 import {
+  applyActionCatalogSnapshot,
   applyAvailableAudioDevicesSnapshot,
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
@@ -83,5 +84,9 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("OscListenerStatus", (message) => {
     applyOscListenerStatusSnapshot(message.data);
+  });
+
+  registry.register("ActionCatalog", (message) => {
+    applyActionCatalogSnapshot(message.data);
   });
 }

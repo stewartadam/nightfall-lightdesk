@@ -1783,10 +1783,19 @@ fn run_action(
 #[tokio::test]
 async fn automation_clip_action_completes_tracked_command() {
     use nightfall_actions::{ActionInvocation, ActionSurface};
-    use nightfall_desk::prelude::{ClipTarget, start_clip_action};
+    use nightfall_desk::prelude::start_clip_action;
 
-    let outcome = run_sample_action(
-        ActionInvocation::trigger(start_clip_action(ClipTarget::Id(1)), ActionSurface::Midi)
+    let mut app = sample_app();
+    let clip_uid = app
+        .world_mut()
+        .query::<&Clip>()
+        .iter(app.world())
+        .find(|clip| clip.identifiers.id == 1)
+        .map(|clip| clip.identifiers.uid)
+        .expect("sample data should seed clip 1");
+    let outcome = run_action(
+        &mut app,
+        ActionInvocation::trigger(start_clip_action(clip_uid), ActionSurface::Midi)
             .with_source("MIDI test device"),
     );
 

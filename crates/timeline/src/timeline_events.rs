@@ -16,7 +16,7 @@ use nightfall_actions::ActionReference;
 use nightfall_clips::{Clip, ClipOperation};
 use nightfall_compositor::prelude::ReleaseMarker;
 #[cfg(test)]
-use nightfall_desk::prelude::{ClipTarget, start_clip_action};
+use nightfall_desk::prelude::start_clip_action;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceClock, InstanceClockSource, InstanceControls};
 #[cfg(test)]

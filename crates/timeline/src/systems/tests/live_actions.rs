@@ -8,7 +8,7 @@
 
 use nightfall_actions::{ActionInvocation, ActionReference, ActionSurface, ActionsPlugin};
 use nightfall_desk::instances::InstanceIndex;
-use nightfall_desk::prelude::{CLIP_START_ACTION_ID, ClipTarget, start_clip_action};
+use nightfall_desk::prelude::{CLIP_START_ACTION_ID, start_clip_action};
 use nightfall_desk::systems::event_handlers::clip_events::{
     PendingClipPlaybackRates, handle_clip_rate_commands,
 };
@@ -349,7 +349,7 @@ fn process_actions_dispatches_registered_clip_action() {
         ..Default::default()
     });
 
-    let action = start_clip_action(ClipTarget::Uid(clip_uid));
+    let action = start_clip_action(clip_uid);
     assert_eq!(action.id.as_str(), CLIP_START_ACTION_ID);
 
     let timeline = Timeline {
