@@ -30,6 +30,7 @@ test-support = ["dep:zip"]
 
 [dev-dependencies]
 async-channel.workspace = true
+sha2 = "0.10"
 tempfile.workspace = true
 tokio.workspace = true
 zip = { version = "8.6", default-features = false, features = ["deflate"] }

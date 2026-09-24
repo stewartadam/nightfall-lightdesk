@@ -1,0 +1,26 @@
+{
+  "known_violations": {},
+  "charts": {
+    "19 CH": [
+      "Base · Intensity · b1 · 1",
+      "Base · StrobeShutter · b1 · 2",
+      "Base · Red · b1 · 3",
+      "Base · Green · b1 · 4",
+      "Base · Blue · b1 · 5",
+      "Base · White · b1 · 6",
+      "Base · Custom { label: \"PositionMSpeed\" } · b1 · 19",
+      "Head 1 (Yoke) · Pan · b1 · 7",
+      "Head 1 · Tilt · b1 · 8",
+      "Beam 1 · Intensity · b1 · 9",
+      "Head 2 (Yoke) · Pan · b1 · 10",
+      "Head 2 · Tilt · b1 · 11",
+      "Beam 2 · Intensity · b1 · 12",
+      "Head 3 (Yoke) · Pan · b1 · 13",
+      "Head 3 · Tilt · b1 · 14",
+      "Beam 3 · Intensity · b1 · 15",
+      "Head 4 (Yoke) · Pan · b1 · 16",
+      "Head 4 · Tilt · b1 · 17",
+      "Beam 4 · Intensity · b1 · 18"
+    ]
+  }
+}

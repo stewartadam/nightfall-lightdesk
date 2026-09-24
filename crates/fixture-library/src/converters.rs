@@ -12,6 +12,8 @@ use nightfall_dmx::prelude::{Attribute, ParameterUnit};
 use nightfall_fixtures::prelude::ParameterMetadata;
 
 pub mod gdtf;
+#[cfg(test)]
+mod gdtf_bench_tests;
 mod gdtf_functions;
 #[cfg(test)]
 mod gdtf_joint_tests;

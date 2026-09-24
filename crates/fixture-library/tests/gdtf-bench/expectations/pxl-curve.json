@@ -1,0 +1,26 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Single Mode: 20Ch Mode": [
+      "Head_Master · Tilt · b1 · 1,2",
+      "Head_Master · Custom { label: \"PositionMSpeed\" } · b1 · 3",
+      "Head_Master · Custom { label: \"PositionEffect\" } · b1 · 4",
+      "Head_Master · Custom { label: \"CTC\" } · b1 · 5",
+      "Head_Master · Custom { label: \"ColorMacro1\" } · b1 · 6",
+      "Head_Master · Custom { label: \"Effects1\" } · b1 · 7",
+      "Head_Master · Custom { label: \"Effects2\" } · b1 · 8",
+      "Head_Master · Custom { label: \"Effects2Rate\" } · b1 · 9",
+      "Head_Master · Custom { label: \"Effects2Adjust1\" } · b1 · 10",
+      "Head_Master · Custom { label: \"ColorMacro2\" } · b1 · 11",
+      "Head_Master · Custom { label: \"Background Dimmer\" } · b1 · 12",
+      "Head_Master · Intensity · b1 · 13",
+      "Head_Master · StrobeShutter · b1 · 14",
+      "Head_Master · Zoom · b1 · 15",
+      "Head_Master · Custom { label: \"Control1\" } · b1 · 16",
+      "Head_Master · Red · b1 · 17",
+      "Head_Master · Green · b1 · 18",
+      "Head_Master · Blue · b1 · 19",
+      "Head_Master · White · b1 · 20"
+    ]
+  }
+}
