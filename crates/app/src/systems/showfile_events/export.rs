@@ -448,7 +448,12 @@ fn collect_fixtures(
             }
         };
         for fixture in &snapshot.fixtures {
-            match library.find_fixture(&fixture.make, &fixture.model) {
+            // Package the revision the fixture was created from, not merely the newest one.
+            match library.find_revision(
+                &fixture.make,
+                &fixture.model,
+                fixture.library_asset_etag.as_deref(),
+            ) {
                 Some(profile) if !profile.file_path.as_os_str().is_empty() => {
                     collector.copy(Ok(profile.file_path.clone()), "fixtures", None)?;
                 }

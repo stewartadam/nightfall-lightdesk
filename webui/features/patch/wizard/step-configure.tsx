@@ -23,6 +23,7 @@ import { fixtureWireLayout } from "../../../lib/dmx";
 import {
   computeFixtureChannelCount,
   fetchFixtureProfile,
+  libraryDefinitionId,
 } from "../../../lib/fixture-service";
 import {
   bindings,
@@ -211,7 +212,7 @@ export function StepConfigure() {
   const selectedFixture = createMemo(() => {
     const defId = state().fixtureDefinitionId;
     if (!defId) return null;
-    return $fixtureLibrary().find((f) => `${f.make}:${f.model}` === defId);
+    return $fixtureLibrary().find((f) => libraryDefinitionId(f) === defId);
   });
 
   onMount(() => {

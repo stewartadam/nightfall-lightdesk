@@ -22,9 +22,7 @@ use crate::commands::{
     AvailableFixtureInfo, FixtureLibraryCommand, FixtureLibraryEntry, GetFixtureProfileResponse,
     ListAvailableFixturesResponse,
 };
-use crate::manager::{
-    FixtureLibraryManager, FixtureProfile, FixtureSource, fixture_source_version,
-};
+use crate::manager::{FixtureLibraryManager, FixtureProfile, FixtureSource};
 use crate::watcher::FixtureLibraryEvent;
 
 /// Wrapper for serializing fixture-library messages with the WebSocket wire format.
@@ -89,17 +87,28 @@ pub fn handle_fixture_library_commands(
                 list_available_fixtures(&library, &broadcaster)
                     .map(FixtureLibraryCommandSuccess::AvailableFixtures)
             }
-            FixtureLibraryCommand::GetFixtureProfile { make, model, mode } => {
-                get_fixture_profile(&library, make, model, mode.as_deref(), &broadcaster)
-                    .map(Box::new)
-                    .map(FixtureLibraryCommandSuccess::FixtureProfile)
-            }
+            FixtureLibraryCommand::GetFixtureProfile {
+                make,
+                model,
+                mode,
+                asset_etag,
+            } => get_fixture_profile(
+                &library,
+                make,
+                model,
+                asset_etag.as_deref(),
+                mode.as_deref(),
+                &broadcaster,
+            )
+            .map(Box::new)
+            .map(FixtureLibraryCommandSuccess::FixtureProfile),
             FixtureLibraryCommand::RefreshLibrary => refresh_library(&mut library),
             FixtureLibraryCommand::CreateFixtureFromLibrary {
                 id,
                 make,
                 model,
                 mode,
+                asset_etag,
                 label,
                 update_existing_ids,
                 update_existing_only,
@@ -110,6 +119,7 @@ pub fn handle_fixture_library_commands(
                 *id,
                 make,
                 model,
+                asset_etag.as_deref(),
                 mode,
                 label.as_deref(),
                 update_existing_ids,
@@ -164,13 +174,7 @@ fn list_available_fixtures(
         .list_fixtures()
         .into_iter()
         .map(available_fixture_info)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| {
-            CommandError::new(
-                "fixture_library.metadata_failed",
-                format!("Failed to load fixture metadata: {error}"),
-            )
-        })?;
+        .collect();
     let response = ListAvailableFixturesResponse { fixtures };
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
@@ -184,26 +188,24 @@ fn get_fixture_profile(
     library: &FixtureLibraryManager,
     make: &str,
     model: &str,
+    revision: Option<&str>,
     mode: Option<&str>,
     broadcaster: &ClientEventSink,
 ) -> Result<GetFixtureProfileResponse, CommandError> {
-    let profile = library.find_fixture(make, model).ok_or_else(|| {
-        CommandError::new(
-            "fixture_library.not_found",
-            format!("Fixture {make} {model} does not exist in the library"),
-        )
-    })?;
-    let info = available_fixture_info(profile).map_err(|error| {
-        CommandError::new(
-            "fixture_library.metadata_failed",
-            format!("Failed to load fixture metadata: {error}"),
-        )
-    })?;
+    let profile = library
+        .find_revision(make, model, revision)
+        .ok_or_else(|| {
+            CommandError::new(
+                "fixture_library.not_found",
+                format!("Fixture {make} {model} does not exist in the library"),
+            )
+        })?;
+    let info = available_fixture_info(profile);
     let modes = profile.mode_names();
     let requested_mode = mode.map(str::to_string).or_else(|| modes.first().cloned());
     let (fixture, geometry) = match requested_mode.as_ref() {
         Some(mode) => library
-            .create_fixture(make, model, mode, 0)
+            .create_fixture_from_revision(make, model, Some(&profile.revision), mode, 0)
             .map(|(fixture, geometry)| (Some(fixture), geometry))
             .map_err(|error| {
                 CommandError::new(
@@ -264,7 +266,11 @@ fn delete_fixtures(
         .iter()
         .filter_map(|fixture| {
             library
-                .delete_fixture(&fixture.make, &fixture.model)
+                .delete_fixture_revision(
+                    &fixture.make,
+                    &fixture.model,
+                    fixture.asset_etag.as_deref(),
+                )
                 .err()
                 .map(|error| format!("{} {}: {error}", fixture.make, fixture.model))
         })
@@ -288,6 +294,7 @@ fn create_fixture_from_library(
     id: u32,
     make: &str,
     model: &str,
+    revision: Option<&str>,
     mode: &str,
     label: Option<&str>,
     update_existing_ids: &[u32],
@@ -312,20 +319,17 @@ fn create_fixture_from_library(
         ));
     }
 
-    let profile = library.find_fixture(make, model).ok_or_else(|| {
-        CommandError::new(
-            "fixture_library.not_found",
-            format!("Fixture {make} {model} does not exist in the library"),
-        )
-    })?;
-    let asset_etag = fixture_profile_asset_etag(profile).map_err(|error| {
-        CommandError::new(
-            "fixture_library.fingerprint_failed",
-            format!("Failed to fingerprint fixture source: {error}"),
-        )
-    })?;
+    let profile = library
+        .find_revision(make, model, revision)
+        .ok_or_else(|| {
+            CommandError::new(
+                "fixture_library.not_found",
+                format!("Fixture {make} {model} does not exist in the library"),
+            )
+        })?;
+    let asset_etag = profile.revision.clone();
     let (mut template, _) = library
-        .create_fixture(make, model, mode, id)
+        .create_fixture_from_revision(make, model, Some(&asset_etag), mode, id)
         .map_err(|error| {
             CommandError::new(
                 "fixture_library.create_failed",
@@ -458,18 +462,7 @@ pub fn send_available_fixtures_on_change(
         let fixtures = library
             .list_fixtures()
             .iter()
-            .filter_map(|profile| match available_fixture_info(profile) {
-                Ok(info) => Some(info),
-                Err(error) => {
-                    tracing::warn!(
-                        make = profile.make,
-                        model = profile.model,
-                        %error,
-                        "fixture_library_refresh_entry_skipped"
-                    );
-                    None
-                }
-            })
+            .map(|profile| available_fixture_info(profile))
             .collect();
         let response = ListAvailableFixturesResponse { fixtures };
         broadcaster.publish(
@@ -480,8 +473,8 @@ pub fn send_available_fixtures_on_change(
 }
 
 /// Converts a fixture profile into its transport-facing summary.
-fn available_fixture_info(profile: &FixtureProfile) -> Result<AvailableFixtureInfo, String> {
-    Ok(AvailableFixtureInfo {
+fn available_fixture_info(profile: &FixtureProfile) -> AvailableFixtureInfo {
+    AvailableFixtureInfo {
         make: profile.make.clone(),
         model: profile.model.clone(),
         modes: profile.mode_names(),
@@ -490,18 +483,7 @@ fn available_fixture_info(profile: &FixtureProfile) -> Result<AvailableFixtureIn
             FixtureSource::Ofl(_) => "OFL".to_string(),
             FixtureSource::BuiltIn { .. } => "Built-in".to_string(),
         },
-        asset_etag: fixture_profile_asset_etag(profile)?,
-    })
-}
-
-/// Returns the deterministic version fingerprint for one fixture profile.
-fn fixture_profile_asset_etag(profile: &FixtureProfile) -> Result<String, String> {
-    match &profile.source {
-        FixtureSource::BuiltIn { asset_etag, .. } => Ok(asset_etag.clone()),
-        FixtureSource::Gdtf(_) | FixtureSource::Ofl(_) => {
-            fixture_source_version(&profile.file_path)
-                .map_err(|error| format!("{} ({})", error, profile.file_path.display()))
-        }
+        asset_etag: profile.revision.clone(),
     }
 }
 
@@ -586,6 +568,7 @@ mod tests {
         submit_command(
             &mut app,
             FixtureLibraryCommand::GetFixtureProfile {
+                asset_etag: None,
                 make: "Missing".to_string(),
                 model: "Fixture".to_string(),
                 mode: None,
@@ -624,6 +607,7 @@ mod tests {
         let command_id = submit_command(
             &mut app,
             FixtureLibraryCommand::CreateFixtureFromLibrary {
+                asset_etag: None,
                 id: 77,
                 make,
                 model,
@@ -680,6 +664,7 @@ mod tests {
         submit_command(
             &mut app,
             FixtureLibraryCommand::CreateFixtureFromLibrary {
+                asset_etag: None,
                 id: 99,
                 make,
                 model,

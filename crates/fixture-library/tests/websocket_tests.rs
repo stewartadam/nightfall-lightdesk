@@ -28,6 +28,7 @@ fn test_list_available_fixtures_command_serialization() {
 #[test]
 fn test_get_fixture_profile_command_serialization() {
     let command = FixtureLibraryCommand::GetFixtureProfile {
+        asset_etag: None,
         make: "Chauvet".to_string(),
         model: "ColorDash Par".to_string(),
         mode: None,
@@ -67,6 +68,7 @@ fn test_refresh_library_command_serialization() {
 #[test]
 fn test_create_fixture_command_serialization() {
     let command = FixtureLibraryCommand::CreateFixtureFromLibrary {
+        asset_etag: None,
         id: 42,
         make: "Chauvet".to_string(),
         model: "ColorDash Par".to_string(),
@@ -98,6 +100,7 @@ fn test_create_fixture_command_serialization() {
         label,
         update_existing_ids,
         update_existing_only,
+        ..
     } = deserialized
     {
         assert_eq!(id, 42);
@@ -209,12 +212,14 @@ fn test_command_roundtrip() {
     let commands = vec![
         FixtureLibraryCommand::ListAvailableFixtures,
         FixtureLibraryCommand::GetFixtureProfile {
+            asset_etag: None,
             make: "Test".to_string(),
             model: "Fixture".to_string(),
             mode: None,
         },
         FixtureLibraryCommand::RefreshLibrary,
         FixtureLibraryCommand::CreateFixtureFromLibrary {
+            asset_etag: None,
             id: 1,
             make: "Test".to_string(),
             model: "Fixture".to_string(),

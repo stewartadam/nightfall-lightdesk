@@ -222,11 +222,12 @@ pub struct FixtureGeometry {
 /// The fixtures crate uses this to materialize fixtures with geometry
 /// without directly depending on the fixture-library crate.
 pub trait GeometryProvider: Send + Sync {
-    /// Get geometry for a fixture by its library identifiers.
+    /// Get geometry for a patched fixture from the library revision it was created from.
     ///
-    /// Returns `None` if the fixture source doesn't have geometry (e.g., OFL)
-    /// or if the fixture is not found in the library.
-    fn get_geometry(&self, make: &str, model: &str, mode: &str) -> Option<FixtureGeometry>;
+    /// Returns `None` if the fixture source doesn't have geometry (e.g., OFL),
+    /// or if its revision is unavailable and no available revision has the
+    /// same element structure.
+    fn get_geometry(&self, fixture: &crate::fixture::Fixture) -> Option<FixtureGeometry>;
 }
 
 /// Resource wrapper for a geometry provider.
@@ -242,8 +243,8 @@ impl GeometryProviderResource {
         Self(Box::new(provider))
     }
 
-    /// Get geometry for a fixture.
-    pub fn get_geometry(&self, make: &str, model: &str, mode: &str) -> Option<FixtureGeometry> {
-        self.0.get_geometry(make, model, mode)
+    /// Get geometry for a patched fixture.
+    pub fn get_geometry(&self, fixture: &crate::fixture::Fixture) -> Option<FixtureGeometry> {
+        self.0.get_geometry(fixture)
     }
 }
