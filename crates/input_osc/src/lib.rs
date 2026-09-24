@@ -18,7 +18,8 @@ use std::net::SocketAddr;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
-    ActionInput, ActionInvocation, ActionSurface, ActionsPlugin, ExternalCommandInvocation,
+    ActionInput, ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin,
+    ExternalCommandInvocation, SourceEdgeStates,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -145,28 +146,29 @@ fn osc_event_system(
     }
 }
 
+/// Invokes the action bound to each matching OSC message, adapted to its input kind.
 fn handle_osc_events(
     mut events: MessageReader<OscInput>,
     mappings: Res<OscMappings>,
+    registry: Res<ActionRegistry>,
+    mut edges: ResMut<SourceEdgeStates>,
     mut invocations: MessageWriter<ActionInvocation>,
 ) {
     for event in events.read() {
         let osc_event = &event.0;
-        if let Some(mapping) = mappings.lookup_mapping(osc_event) {
-            let arg_index = usize::from(mapping.arg_index.unwrap_or(0));
-            let input = osc_event
-                .args
-                .get(arg_index)
-                .and_then(command::OscType::as_hardware_fader_percent)
-                .map(|percent| ActionInput::Scalar(percent / 100.0))
-                .unwrap_or(ActionInput::Trigger);
-            invocations.write(ActionInvocation {
-                invocation_id: Default::default(),
-                action: mapping.action.clone(),
-                surface: ActionSurface::Osc,
-                input,
-                source: Some(format!("OSC {}", osc_event.source)),
-            });
+        let Some(mapping) = mappings.lookup_mapping(osc_event) else {
+            continue;
+        };
+        // Unknown actions still dispatch so the registry reports them as unregistered.
+        let input = match registry.input_kind(&mapping.action.id) {
+            Some(kind) => edges.adapt(mapping.id, kind, mapping.signal(osc_event)),
+            None => Some(ActionInput::Trigger),
+        };
+        if let Some(input) = input {
+            invocations.write(
+                ActionInvocation::new(mapping.action.clone(), ActionSurface::Osc, input)
+                    .with_source(format!("OSC {}", osc_event.source)),
+            );
         }
     }
 }
@@ -192,25 +194,41 @@ fn forward_external_command_invocations(
 fn handle_osc_crud(
     mut events: MessageReader<CommandEnvelope<OscCommand>>,
     mut mappings: ResMut<OscMappings>,
+    registry: Res<ActionRegistry>,
+    mut edges: ResMut<SourceEdgeStates>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
         let result = match &event.command {
-            OscCommand::StoreMappings(new_mappings) => {
-                tracing::info!("Storing {} OSC mappings", new_mappings.len());
-                mappings.set_mappings(new_mappings.clone());
-                responder.succeed(event.command_id)
+            OscCommand::UpsertMapping(mapping) => {
+                match registry.validate_binding(&mapping.action, |kind| mapping.can_drive(kind)) {
+                    Ok(()) => {
+                        edges.forget(mapping.id);
+                        let displaced = mappings.upsert(mapping.clone());
+                        for id in &displaced {
+                            edges.forget(*id);
+                        }
+                        responder.succeed_with_output(
+                            event.command_id,
+                            &serde_json::json!({ "replaced": displaced }),
+                        )
+                    }
+                    Err(error) => responder.fail(
+                        event.command_id,
+                        CommandError::new(error.code, error.message),
+                    ),
+                }
             }
-            OscCommand::DeleteMapping(index) => {
-                if mappings.delete_mapping(*index as usize) {
-                    tracing::info!("Deleted OSC mapping at index {}", index);
+            OscCommand::DeleteMapping(id) => {
+                if mappings.delete(*id) {
+                    edges.forget(*id);
                     responder.succeed(event.command_id)
                 } else {
                     responder.fail(
                         event.command_id,
                         CommandError::new(
                             "osc.mapping_not_found",
-                            format!("OSC mapping index {index} does not exist"),
+                            format!("OSC mapping {id} does not exist"),
                         ),
                     )
                 }
@@ -225,6 +243,8 @@ fn handle_osc_crud(
 #[cfg(test)]
 mod tests {
     use bevy_ecs::message::Messages;
+    use nightfall_actions::SourceSignal;
+    use uuid::Uuid;
 
     use super::*;
     use crate::command::{OscMapping, OscType};
@@ -232,6 +252,7 @@ mod tests {
     /// Creates a generic registered-action mapping used by focused OSC tests.
     fn test_mapping() -> OscMapping {
         OscMapping {
+            id: Uuid::nil(),
             source: None,
             address: "/control".to_string(),
             arg_index: None,
@@ -247,7 +268,19 @@ mod tests {
     fn osc_command_app() -> App {
         let mut app = App::new();
         app.init_resource::<OscMappings>();
+        app.init_resource::<SourceEdgeStates>();
         app.init_resource::<CommandTracker>();
+        app.init_resource::<ActionRegistry>();
+        let mut registry = app.world_mut().resource_mut::<ActionRegistry>();
+        registry.register::<serde::de::IgnoredAny, _>(
+            nightfall_actions::ActionDescriptor::new("test.eval", "Test eval", "Tests"),
+            |_world, _arguments, _invocation| Ok(nightfall_actions::InvocationDispatch::succeeded()),
+        );
+        registry.register::<serde::de::IgnoredAny, _>(
+            nightfall_actions::ActionDescriptor::new("test.level", "Test level", "Tests")
+                .with_input(nightfall_actions::ActionInputKind::Absolute),
+            |_world, _arguments, _invocation| Ok(nightfall_actions::InvocationDispatch::succeeded()),
+        );
         app.add_message::<CommandEnvelope<OscCommand>>();
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
@@ -295,83 +328,85 @@ mod tests {
         }
     }
 
-    /// Reproduces mapped scalar normalization for focused value-shape assertions.
-    fn osc_mapping_value(mapping: &command::OscMapping, event: &OscLastEvent) -> Option<f32> {
-        let index = mapping.arg_index.unwrap_or(0) as usize;
-        let value = event.args.get(index)?;
-        let (raw, prefer_seven_bit_scaling) = match value {
-            command::OscType::Int(value) => (*value as f32, true),
-            command::OscType::Float(value) => (*value, false),
-            command::OscType::Double(value) => (*value as f32, value.fract() == 0.0),
-            command::OscType::Long(value) => (value.parse::<f32>().ok()?, true),
-            command::OscType::Bool(value) => {
-                return Some(if *value { 1.0 } else { 0.0 });
-            }
-            _ => return None,
+    /// Verifies a selected numeric argument reads as a normalized level.
+    #[test]
+    fn selected_numeric_argument_is_a_level() {
+        let mapping = OscMapping {
+            arg_index: Some(0),
+            ..test_mapping()
         };
 
-        if prefer_seven_bit_scaling && (0.0..=127.0).contains(&raw) {
-            return Some(raw / 127.0);
-        }
-        if (0.0..=1.0).contains(&raw) {
-            return Some(raw);
-        }
-        if (0.0..=127.0).contains(&raw) {
-            return Some(raw / 127.0);
-        }
-
-        Some(raw.clamp(0.0, 1.0))
-    }
-
-    /// Verifies integral controller inputs use seven-bit normalization.
-    #[test]
-    fn normalizes_integral_control_values_as_seven_bit() {
-        let mapping = test_mapping();
-
         assert_eq!(
-            osc_mapping_value(&mapping, &test_event(OscType::Int(1))),
-            Some(1.0 / 127.0)
+            mapping.signal(&test_event(OscType::Float(0.5))),
+            SourceSignal::Level(0.5)
         );
         assert_eq!(
-            osc_mapping_value(&mapping, &test_event(OscType::Long("127".to_string()))),
-            Some(1.0)
-        );
-        assert_eq!(
-            osc_mapping_value(&mapping, &test_event(OscType::Double(1.0))),
-            Some(1.0 / 127.0)
+            mapping.signal(&test_event(OscType::Bool(true))),
+            SourceSignal::Button(true)
         );
     }
 
-    /// Verifies already-normalized floating-point inputs retain their values.
+    /// Verifies value-matching and argument-free mappings treat messages as pulses.
     #[test]
-    fn preserves_normalized_floating_point_control_values() {
-        let mapping = test_mapping();
+    fn value_filters_and_missing_arguments_are_pulses() {
+        let filtered = OscMapping {
+            arg_index: Some(0),
+            arg_value: Some("1".to_string()),
+            ..test_mapping()
+        };
 
         assert_eq!(
-            osc_mapping_value(&mapping, &test_event(OscType::Float(1.0))),
-            Some(1.0)
+            filtered.signal(&test_event(OscType::Int(1))),
+            SourceSignal::Pulse
         );
         assert_eq!(
-            osc_mapping_value(&mapping, &test_event(OscType::Double(0.5))),
-            Some(0.5)
+            test_mapping().signal(&test_event(OscType::Float(0.2))),
+            SourceSignal::Pulse
         );
+        assert!(!test_mapping().can_drive(nightfall_actions::ActionInputKind::Absolute));
     }
 
-    /// Verifies replacing OSC mappings returns success after resource mutation.
+    /// Verifies upserting a valid mapping stores it before reporting success.
     #[test]
-    fn store_mappings_mutates_before_success() {
+    fn upsert_mapping_mutates_before_success() {
         let mut app = osc_command_app();
-        submit_command(&mut app, OscCommand::StoreMappings(vec![test_mapping()]));
+        submit_command(&mut app, OscCommand::UpsertMapping(test_mapping()));
         app.update();
         assert_eq!(app.world().resource::<OscMappings>().mappings().len(), 1);
-        assert_eq!(take_result(&mut app).outcome, CommandOutcome::succeeded());
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Succeeded { .. }
+        ));
+    }
+
+    /// Verifies an argument-free address cannot be bound to a fader-style action.
+    #[test]
+    fn upsert_rejects_pulse_source_for_absolute_action() {
+        let mut app = osc_command_app();
+        let mapping = OscMapping {
+            action: nightfall_actions::ActionReference::new("test.level", serde_json::json!({})),
+            ..test_mapping()
+        };
+
+        submit_command(&mut app, OscCommand::UpsertMapping(mapping));
+        app.update();
+
+        assert!(app.world().resource::<OscMappings>().mappings().is_empty());
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. })
+                if code == "action.input_incompatible"
+        ));
     }
 
     /// Verifies deleting an unknown OSC mapping returns a stable failure.
     #[test]
     fn delete_unknown_mapping_returns_failure() {
         let mut app = osc_command_app();
-        submit_command(&mut app, OscCommand::DeleteMapping(4));
+        submit_command(
+            &mut app,
+            OscCommand::DeleteMapping(uuid::Uuid::from_u128(4)),
+        );
         app.update();
         assert!(matches!(
             take_result(&mut app).outcome,

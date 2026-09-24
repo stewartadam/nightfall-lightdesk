@@ -991,9 +991,11 @@ fn sample_data_build_seeds_default_midi_mapping() {
 
     assert!(mappings.iter().any(|mapping| {
         mapping.device_name == "Grid"
-            && mapping.channel == 176
-            && mapping.note == 36
-            && mapping.velocity.is_none()
+            && mapping.source
+                == MidiSource::ControlChange {
+                    channel: 0,
+                    controller: 36,
+                }
             && mapping.action == control_level_action(1)
     }));
 }

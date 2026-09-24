@@ -250,10 +250,15 @@
   },
   "midiMappings": [
     {
+      "id": "00000000-0000-0000-0000-00005a3d0001",
       "device_name": "Parser Grid",
-      "channel": 176,
-      "note": 36,
-      "velocity": null,
+      "source": {
+        "type": "ControlChange",
+        "data": {
+          "channel": 0,
+          "controller": 36
+        }
+      },
       "action": {
         "id": "control.level",
         "arguments": {
@@ -264,10 +269,11 @@
   ],
   "oscMappings": [
     {
+      "id": "00000000-0000-0000-0000-00005a3d0002",
       "source": "127.0.0.1:9000",
       "address": "/parser/fader",
       "arg_index": 0,
-      "arg_value": "0.5",
+      "arg_value": null,
       "action": {
         "id": "control.level",
         "arguments": {
