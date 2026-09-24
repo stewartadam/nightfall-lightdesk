@@ -10,7 +10,7 @@ import type { FixtureLibraryCommand } from "../types/index";
 import * as types from "../types/index";
 import { normalizeFixtureUid } from "./binding-utils";
 import { commandEnvelope } from "./command-envelope";
-import { getResolutionChannelWidth } from "./dmx";
+import { fixtureWireLayout } from "./dmx";
 import { engineRuntime } from "./engine-runtime";
 import { getLogger } from "./logger";
 
@@ -23,19 +23,11 @@ function bindingTransportToTargetId(transport: types.BindingTransport): string {
 }
 
 /**
- * Compute the total DMX channel count for a fixture from its elements and parameters.
+ * Compute the DMX footprint of a fixture, including gaps between explicitly placed channels.
  * This provides a deterministic channel count based on the fixture profile metadata.
  */
 export function computeFixtureChannelCount(fixture: types.Fixture): number {
-  let total = 0;
-  for (const element of fixture.elements) {
-    for (const param of element.parameters) {
-      // Skip virtual parameters that don't occupy DMX channels
-      if (param.attribute.type === "VirtualIntensity") continue;
-      total += getResolutionChannelWidth(param.resolution);
-    }
-  }
-  return total;
+  return fixtureWireLayout(fixture).footprint;
 }
 
 export function sendFixturePlacementUpdate(

@@ -26,10 +26,32 @@ pub enum MergeStrategy {
     LTP,
 }
 
+/// Placement of a parameter's bytes within its fixture's DMX footprint.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(tag = "type", content = "data")]
+pub enum DmxSlots {
+    /// Bytes directly follow the previous parameter in fixture DMX order.
+    #[default]
+    Sequential,
+    /// Bytes occupy the given footprint slots.
+    Explicit {
+        /// DMX break (1-based) the slots belong to. Each break has its own start address.
+        dmx_break: u16,
+        /// 1-based footprint slots of every byte, most significant first.
+        offsets: Vec<u16>,
+    },
+    /// The parameter is computed by the desk and never occupies a DMX slot.
+    Virtual,
+}
+
 /// Metadata for a parameter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct ParameterMetadata {
+    /// Where this parameter's bytes are placed in the fixture footprint.
+    #[serde(default)]
+    pub dmx_slots: DmxSlots,
     /// The DMX channel width of this logical parameter
     pub resolution: DmxValueResolution,
     /// Which attribute this parameter controls
@@ -66,6 +88,7 @@ pub struct ParameterMetadata {
 impl Default for ParameterMetadata {
     fn default() -> Self {
         Self {
+            dmx_slots: DmxSlots::Sequential,
             resolution: DmxValueResolution::Coarse,
             attribute: Attribute::Intensity,
             native_unit: ParameterUnit::Percent,
@@ -82,6 +105,20 @@ impl Default for ParameterMetadata {
 }
 
 impl ParameterMetadata {
+    /// Returns whether this parameter writes bytes to its fixture's primary DMX footprint.
+    ///
+    /// Virtual parameters and parameters on additional DMX breaks do not.
+    pub fn occupies_primary_footprint(&self) -> bool {
+        if self.attribute == Attribute::VirtualIntensity {
+            return false;
+        }
+        match &self.dmx_slots {
+            DmxSlots::Sequential => true,
+            DmxSlots::Explicit { dmx_break, .. } => *dmx_break == 1,
+            DmxSlots::Virtual => false,
+        }
+    }
+
     /// Returns the minimum logical value operators should use for this parameter.
     pub fn logical_min(&self) -> ParameterDmxValue {
         if self.value_polarity == ParameterValuePolarity::Signed && self.min >= 0.0 {

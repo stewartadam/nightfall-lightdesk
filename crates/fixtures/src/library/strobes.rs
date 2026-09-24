@@ -26,6 +26,7 @@ pub(super) fn create_strobe(
     white_segment_count: usize,
 ) -> Fixture {
     let vdim_parameter = ParameterMetadata {
+        dmx_slots: Default::default(),
         attribute: Attribute::VirtualIntensity,
         native_unit: Attribute::VirtualIntensity.native_unit(),
         value_polarity: Attribute::VirtualIntensity.value_polarity(),
@@ -42,6 +43,7 @@ pub(super) fn create_strobe(
     let rgb_parameters = vec![
         vdim_parameter.clone(),
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Red,
             native_unit: Attribute::Red.native_unit(),
             value_polarity: Attribute::Red.value_polarity(),
@@ -55,6 +57,7 @@ pub(super) fn create_strobe(
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Green,
             native_unit: Attribute::Green.native_unit(),
             value_polarity: Attribute::Green.value_polarity(),
@@ -68,6 +71,7 @@ pub(super) fn create_strobe(
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Blue,
             native_unit: Attribute::Blue.native_unit(),
             value_polarity: Attribute::Blue.value_polarity(),
@@ -85,6 +89,7 @@ pub(super) fn create_strobe(
     let white_dimmer_parameters = vec![
         vdim_parameter,
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::White,
             native_unit: Attribute::White.native_unit(),
             value_polarity: Attribute::White.value_polarity(),
@@ -100,6 +105,7 @@ pub(super) fn create_strobe(
     ];
 
     let tilt_parameter = ParameterMetadata {
+        dmx_slots: Default::default(),
         attribute: Attribute::Tilt,
         native_unit: Attribute::Tilt.native_unit(),
         value_polarity: Attribute::Tilt.value_polarity(),
@@ -114,6 +120,7 @@ pub(super) fn create_strobe(
     };
 
     let rotation_speed_parameter = ParameterMetadata {
+        dmx_slots: Default::default(),
         attribute: Attribute::Custom {
             label: "Rotation Speed".to_owned(),
         },
@@ -130,6 +137,7 @@ pub(super) fn create_strobe(
     };
 
     let reset_parameter = ParameterMetadata {
+        dmx_slots: Default::default(),
         attribute: Attribute::Custom {
             label: "Reset".to_owned(),
         },
@@ -198,6 +206,7 @@ pub(super) fn create_strobe(
 /// in 16ch mode strobe goes from 0-8=full 9=34.7bpm, 15=43.08bpm 23=55.5bpm 31=70.78bpm 64=147.7bpm 128=257.3bpm 192=465bpm (~7.8hz)
 pub(super) fn create_rgb_strobe_bar_168(id: u32, make: &str, model: &str) -> Fixture {
     let vdim_parameter = ParameterMetadata {
+        dmx_slots: Default::default(),
         attribute: Attribute::VirtualIntensity,
         native_unit: Attribute::VirtualIntensity.native_unit(),
         value_polarity: Attribute::VirtualIntensity.value_polarity(),
@@ -214,6 +223,7 @@ pub(super) fn create_rgb_strobe_bar_168(id: u32, make: &str, model: &str) -> Fix
     let rgb_parameters = vec![
         vdim_parameter.clone(),
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Red,
             native_unit: Attribute::Red.native_unit(),
             value_polarity: Attribute::Red.value_polarity(),
@@ -227,6 +237,7 @@ pub(super) fn create_rgb_strobe_bar_168(id: u32, make: &str, model: &str) -> Fix
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Green,
             native_unit: Attribute::Green.native_unit(),
             value_polarity: Attribute::Green.value_polarity(),
@@ -240,6 +251,7 @@ pub(super) fn create_rgb_strobe_bar_168(id: u32, make: &str, model: &str) -> Fix
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Blue,
             native_unit: Attribute::Blue.native_unit(),
             value_polarity: Attribute::Blue.value_polarity(),
@@ -257,6 +269,7 @@ pub(super) fn create_rgb_strobe_bar_168(id: u32, make: &str, model: &str) -> Fix
     let white_parameters = vec![
         vdim_parameter,
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::White,
             native_unit: Attribute::White.native_unit(),
             value_polarity: Attribute::White.value_polarity(),
