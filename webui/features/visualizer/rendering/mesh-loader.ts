@@ -126,6 +126,11 @@ function encodeGdtfPath(path: string): string {
  * @param modelName - Name of the model/mesh to load (without extension)
  * @returns A cloned Group containing the mesh, or null if loading failed
  */
+/** Returns the backend URL serving a wheel slot image (e.g. a gobo) from a GDTF archive. */
+export function gdtfWheelMediaUrl(gdtfPath: string, mediaName: string): string {
+  return `${getBackendUrl()}/api/gdtf-wheel/${encodeGdtfPath(gdtfPath)}/${encodeURIComponent(mediaName)}`;
+}
+
 export async function loadMesh(
   gdtfPath: string,
   modelName: string,

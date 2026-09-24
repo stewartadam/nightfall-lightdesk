@@ -39,13 +39,18 @@ impl Plugin for FixtureLibraryPlugin {
         // Register fixture library commands with the engine
         register_fixture_library_commands(app);
 
-        // Register HTTP routes for mesh serving
-        app.world_mut()
-            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>()
-            .register(
-                "/api/mesh/{gdtf_path}/{model_name}",
-                axum::routing::get(crate::http_routes::serve_mesh),
-            );
+        // Register HTTP routes for mesh and wheel image serving
+        let mut routes = app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>();
+        routes.register(
+            "/api/mesh/{gdtf_path}/{model_name}",
+            axum::routing::get(crate::http_routes::serve_mesh),
+        );
+        routes.register(
+            "/api/gdtf-wheel/{gdtf_path}/{media_name}",
+            axum::routing::get(crate::http_routes::serve_wheel_media),
+        );
 
         // Try to initialize the file watcher (optional - may fail if library path doesn't exist)
         if let Ok(manager) = FixtureLibraryManager::new() {
