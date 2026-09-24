@@ -140,7 +140,8 @@ function buildElementParameterGroups(
           startChannel === null
             ? "Virtual"
             : `${breakPrefix}${channelListLabel(channels)}`,
-        offsetLabel: startChannel === null ? "n/a" : `${startChannel - 1}`,
+        offsetLabel:
+          startChannel === null ? "n/a" : `${breakPrefix}${startChannel - 1}`,
         order: order++,
         width,
       };

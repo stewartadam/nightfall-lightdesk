@@ -157,7 +157,8 @@ export function createDmxChannelNavigationController(
 
     for (const [bindingIndex, binding] of snapshot.output.entries()) {
       if (
-        binding.source.type !== "Fixture" ||
+        (binding.source.type !== "Fixture" &&
+          binding.source.type !== "FixtureBreak") ||
         binding.target.type !== "Transport"
       )
         continue;

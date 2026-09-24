@@ -291,4 +291,22 @@ test("buildFixturePatchMapFromBindings places additional dmx breaks", () => {
 
   assert.deepEqual(patchMap[uid]["1"][0].parameterAddresses, [[10], []]);
   assert.deepEqual(patchMap[uid]["1"][1].parameterAddresses, [[], [201]]);
+
+  const disabled = buildFixturePatchMapFromBindings(
+    {
+      ...snapshot,
+      disabled: [
+        {
+          type: "Output",
+          data: {
+            source: { type: "Fixture", data: { uids: [uid] } },
+            priority: 0,
+            clone: false,
+          },
+        },
+      ],
+    },
+    { [uid]: fixture },
+  );
+  assert.equal(disabled[uid], undefined);
 });
