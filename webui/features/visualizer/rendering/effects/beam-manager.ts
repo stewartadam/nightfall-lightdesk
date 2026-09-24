@@ -11,8 +11,16 @@
  * Creates and updates volumetric light beams attached to fixture emitters.
  */
 
-import { Mesh, Object3D, Quaternion, SpotLight, Vector3 } from "three/webgpu";
+import {
+  Mesh,
+  Object3D,
+  Quaternion,
+  SpotLight,
+  Texture,
+  Vector3,
+} from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
+import { getLogger } from "../../../../lib/logger";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
 import { DEFAULT_STAGE_FLOOR_TOP_Y } from "../scene-environment";
@@ -23,9 +31,23 @@ import {
   createBeamMaterial,
   defaultBeamParameters,
   disposeBeamMaterial,
+  isLowQualityBeamMaterial,
   updateBeamMaterial,
 } from "./beam-material";
 import { beamConeAngleDegrees } from "./beam-zoom";
+
+const log = getLogger(import.meta.url);
+
+/** Fetches a gobo image and wraps it in a texture usable from the main thread or a worker. */
+async function loadGoboTexture(url: string): Promise<Texture> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const bitmap = await createImageBitmap(await response.blob());
+  const texture = new Texture(bitmap);
+  texture.flipY = false;
+  texture.needsUpdate = true;
+  return texture;
+}
 
 /** Beam specification for a fixture */
 export interface BeamSpec {
@@ -54,6 +76,8 @@ type BeamInstanceMap = Map<string, BeamInstance>;
  */
 export class BeamManager {
   private beams: BeamInstanceMap = new Map();
+  /** Gobo textures by URL; null while loading or after a failed load. */
+  private goboTextures = new Map<string, Texture | null>();
   private beamQuality: VisualizerBeamQuality;
   /** Default beam specification when fixture doesn't provide one */
   private defaultBeamSpec: BeamSpec = {
@@ -123,6 +147,31 @@ export class BeamManager {
   }
 
   /**
+   * Shapes a beam with a gobo image, or opens it when `goboUrl` is undefined.
+   *
+   * Images load once per URL (in the main thread or a worker) and are shared
+   * between beams; until an image is ready the beam renders open.
+   */
+  private applyGobo(beam: BeamInstance, goboUrl: string | undefined): void {
+    if (isLowQualityBeamMaterial(beam.material)) return;
+    const material = beam.material;
+    const loaded = goboUrl ? this.goboTextures.get(goboUrl) : undefined;
+    if (goboUrl && loaded === undefined) {
+      this.goboTextures.set(goboUrl, null);
+      loadGoboTexture(goboUrl).then(
+        (texture) => this.goboTextures.set(goboUrl, texture),
+        () => log.warn(`Failed to load gobo image ${goboUrl}`),
+      );
+    }
+    if (loaded) {
+      for (const node of material.goboTextureNodes) node.value = loaded;
+      material.goboActiveUniform.value = 1;
+    } else {
+      material.goboActiveUniform.value = 0;
+    }
+  }
+
+  /**
    * Update a beam's appearance based on DMX values.
    */
   updateBeam(
@@ -132,10 +181,13 @@ export class BeamManager {
       beamSpec?: BeamSpec;
       zoom?: number;
       frost?: number;
+      /** URL of the gobo image shaping the beam; undefined for an open beam. */
+      goboUrl?: string;
     },
   ): void {
     const beam = this.beams.get(fixtureUid);
     if (!beam) return;
+    this.applyGobo(beam, options?.goboUrl);
 
     const beamSpec = options?.beamSpec ?? this.defaultBeamSpec;
     const zoom = options?.zoom ?? 0.5;
@@ -274,5 +326,9 @@ export class BeamManager {
     for (const fixtureUid of [...this.beams.keys()]) {
       this.removeBeam(fixtureUid);
     }
+    for (const texture of this.goboTextures.values()) {
+      texture?.dispose();
+    }
+    this.goboTextures.clear();
   }
 }

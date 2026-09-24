@@ -117,23 +117,27 @@ pub(super) fn channel_semantics(
                 sets: sets
                     .iter()
                     .zip(ranges(&set_starts, dmx_to))
-                    .map(|((_, set), (from, to))| ParameterFunctionSet {
-                        name: set
-                            .name
-                            .as_ref()
-                            .map(|name| name.to_string())
-                            .unwrap_or_default(),
-                        dmx_from: from,
-                        dmx_to: to,
-                        wheel_slot: set.wheel_slot_index.map(|index| index as u32 + 1),
-                        color: wheel
-                            .and_then(|wheel| set.wheel_slot(wheel))
-                            .and_then(|slot| match &slot.optic {
+                    .map(|((_, set), (from, to))| {
+                        let slot = wheel.and_then(|wheel| set.wheel_slot(wheel));
+                        ParameterFunctionSet {
+                            name: set
+                                .name
+                                .as_ref()
+                                .map(|name| name.to_string())
+                                .unwrap_or_default(),
+                            dmx_from: from,
+                            dmx_to: to,
+                            wheel_slot: set.wheel_slot_index.map(|index| index as u32 + 1),
+                            color: slot.and_then(|slot| match &slot.optic {
                                 WheelSlotOptic::Color(color) => Some(cie(color)),
                                 WheelSlotOptic::Filter(_) => {
                                     slot.filter(fixture_type).map(|filter| cie(&filter.color))
                                 }
                             }),
+                            media: slot
+                                .and_then(|slot| slot.media_name.clone())
+                                .filter(|media| !media.is_empty()),
+                        }
                     })
                     .collect(),
             }
@@ -300,5 +304,45 @@ mod tests {
             (open.x - 0.3127).abs() < 0.01,
             "open slot defaults to white"
         );
+    }
+
+    /// Verifies gobo wheel sets carry their slot image name.
+    #[test]
+    fn wheel_sets_carry_slot_media() {
+        use crate::testing::WheelSlotSpec;
+
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Gobos")
+            .wheel(
+                "Gobo Wheel",
+                vec![
+                    WheelSlotSpec {
+                        name: "Open".to_string(),
+                        color: None,
+                        media: None,
+                    },
+                    WheelSlotSpec {
+                        name: "Stars".to_string(),
+                        color: None,
+                        media: Some("stars".to_string()),
+                    },
+                ],
+            )
+            .geometry(GeometrySpec::generic("Base"))
+            .mode(
+                ModeSpec::new("Mode", "Base").channel(
+                    ChannelSpec::new("Base", "Gobo1", &[1]).function(
+                        FunctionSpec::new("Gobo1")
+                            .wheel("Gobo Wheel")
+                            .set("Open", 0, Some(1))
+                            .set("Stars", 10, Some(2)),
+                    ),
+                ),
+            )
+            .write_metadata(dir.path());
+        let (fixture, _) = convert_gdtf_to_fixture(&metadata, "Mode", 1).unwrap();
+        let sets = &fixture.elements[0].parameters[0].functions[0].sets;
+        assert_eq!(sets[0].media, None);
+        assert_eq!(sets[1].media.as_deref(), Some("stars"));
     }
 }

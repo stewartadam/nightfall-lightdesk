@@ -523,6 +523,7 @@ export class SceneManager {
       frost: number;
       white?: number;
       strobeShutter?: number;
+      gobo?: number;
     },
     fixtureElements: Map<string, FixtureElement[]>,
   ): void {
@@ -631,6 +632,7 @@ export class SceneManager {
             tilt: dmx.tilt,
             zoom: dmx.zoom,
             frost: dmx.frost,
+            gobo: dmx.gobo,
           });
         }
 
