@@ -108,8 +108,8 @@ pub fn sync_timeline_paused_instance_controls_system(
                 .iter()
                 .find(|track| track.id == *track_id)
                 .and_then(|track| track.actions.iter().find(|action| action.id == *action_id))
-                .map(|action| &action.action)
-                && let Some(clip_uid) = timeline_start_clip_uid(action, action_registry.as_deref())
+                .map(|action| action.kind(action_registry.as_deref()))
+                && let Some(clip_uid) = timeline_start_clip_uid(&action)
             {
                 playback_states_by_timeline_clip_uid
                     .insert((timeline.timeline.identifiers.uid, clip_uid), state.clone());
@@ -366,9 +366,8 @@ fn planned_clip_playback_sync_states(
     plan_timeline_at(
         timeline.timeline.identifiers.uid,
         timeline_position,
-        timeline_planning_actions(timeline),
+        timeline_planning_actions(timeline, action_registry),
         resolver,
-        action_registry,
     )
     .instances
     .into_iter()
@@ -384,23 +383,27 @@ fn planned_clip_playback_sync_states(
 }
 
 /// Converts authored track actions into the source-agnostic planning action DTO.
-fn timeline_planning_actions(
-    timeline: &MaterializedTimeline,
-) -> impl Iterator<Item = TimelinePlanningAction> + '_ {
+fn timeline_planning_actions<'a>(
+    timeline: &'a MaterializedTimeline,
+    action_registry: Option<&'a ActionRegistry>,
+) -> impl Iterator<Item = TimelinePlanningAction> + 'a {
     let solo_mode = timeline.timeline.tracks.iter().any(|track| track.solo);
     timeline
         .timeline
         .tracks
         .iter()
         .filter(move |track| timeline_track_is_active(track, solo_mode))
-        .flat_map(|track| {
-            track.actions.iter().map(|action| TimelinePlanningAction {
-                track_id: track.id.clone(),
-                action_id: action.id.clone(),
-                action: action.action.clone(),
-                position: action.position,
-                duration: action.duration,
-            })
+        .flat_map(move |track| {
+            track
+                .actions
+                .iter()
+                .map(move |action| TimelinePlanningAction {
+                    track_id: track.id.clone(),
+                    action_id: action.id.clone(),
+                    action: action.kind(action_registry),
+                    position: action.position,
+                    duration: action.duration,
+                })
         })
 }
 

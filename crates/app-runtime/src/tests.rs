@@ -301,7 +301,7 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
                 label: "Start Sequence".to_owned(),
                 position: Duration::from_millis(100),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -759,6 +759,9 @@ fn world_factory_sample_timelines_drive_seeded_clips() {
         .map(|clip| (clip.identifiers.uid, clip))
         .collect();
     let timelines = app.world().resource::<DataProvider<Timeline>>();
+    let registry = app
+        .world()
+        .get_resource::<nightfall_actions::ActionRegistry>();
 
     for timeline in timelines.iter() {
         let lanes = if timeline.identifiers.label == "Rap" {
@@ -776,24 +779,25 @@ fn world_factory_sample_timelines_drive_seeded_clips() {
             .tracks
             .iter()
             .flat_map(|track| &track.actions)
+            .map(|action| (action, ActionKind::resolve(&action.action, registry)))
             .collect();
-        for action in &actions {
+        for (action, kind) in &actions {
             let (ActionKind::StartClip(uid)
             | ActionKind::StopClip(uid)
-            | ActionKind::SetClipRate { uid, .. }) = &action.action
+            | ActionKind::SetClipRate { uid, .. }) = kind
             else {
                 panic!("unexpected sample action {:?}", action.action);
             };
             let clip = clip_by_uid
                 .get(uid)
                 .unwrap_or_else(|| panic!("{} targets unknown clip {uid}", action.label));
-            if let ActionKind::StartClip(_) = action.action
+            if let ActionKind::StartClip(_) = kind
                 && !clip.options.deactivate_on_sequence_end
             {
                 assert!(
-                    actions.iter().any(|stop| matches!(
-                        stop.action,
-                        ActionKind::StopClip(stop_uid) if stop_uid == *uid
+                    actions.iter().any(|(stop, stop_kind)| matches!(
+                        stop_kind,
+                        ActionKind::StopClip(stop_uid) if stop_uid == uid
                     ) && stop.position > action.position),
                     "{} on {} is never stopped",
                     action.label,
@@ -2371,8 +2375,8 @@ async fn automation_clip_action_completes_tracked_command() {
 /// Verifies an OSC-triggered eval action expands and completes in the pending command stage.
 #[tokio::test]
 async fn automation_eval_action_expands_and_completes() {
+    use nightfall_actions::desk_eval_action;
     use nightfall_actions::{ActionInvocation, ActionSurface};
-    use nightfall_desk::prelude::desk_eval_action;
 
     let outcome = run_sample_action(ActionInvocation::trigger(
         desk_eval_action("clip 1 start"),

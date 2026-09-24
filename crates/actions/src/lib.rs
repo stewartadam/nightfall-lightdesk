@@ -13,6 +13,7 @@
 //! never introduces a second execution path next to commands, updates, and engine operations.
 
 mod descriptor;
+mod eval;
 mod invocation;
 mod lowering;
 mod registry;
@@ -29,6 +30,7 @@ pub use descriptor::{
     ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionParameter,
     ActionParameterKind, ActionSurface,
 };
+pub use eval::{DESK_EVAL_ACTION_ID, DeskEvalActionArguments, desk_eval_action};
 pub use invocation::{
     ActionInput, ActionInvocation, ActionReference, ExternalCommandInvocation, InvocationDispatch,
     InvocationError, InvocationId, InvocationOutcome, InvocationResult,

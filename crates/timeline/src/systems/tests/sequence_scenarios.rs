@@ -15,6 +15,7 @@ use super::*;
 fn live_repeated_sequence_go_reaches_each_manual_cue() {
     for batched in [false, true] {
         let mut app = App::new();
+        crate::install_timeline_test_actions(&mut app);
         app.add_message::<EngineOperationEnvelope<EvalOperation>>();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_message::<TimecodeEvent>();
@@ -81,9 +82,9 @@ fn live_repeated_sequence_go_reaches_each_manual_cue() {
                         position: Duration::from_secs(cue),
                         duration: Duration::ZERO,
                         action: if cue == 1 {
-                            ActionKind::StartClip(clip_uid)
+                            ActionKind::StartClip(clip_uid).to_reference()
                         } else {
-                            ActionKind::AdvanceSequence(clip_uid)
+                            ActionKind::AdvanceSequence(clip_uid).to_reference()
                         },
                     })
                     .collect(),
@@ -236,7 +237,7 @@ fn seek_timeline_sequence_materializes_setup_only_clip() {
                 label: "Start setup-only sequence".to_owned(),
                 position: Duration::from_millis(100),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -531,7 +532,7 @@ fn timeline_lookahead_preactivates_future_sequence_start() {
                 label: "Start sequence".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -1006,7 +1007,7 @@ fn timeline_lookahead_preactivates_setup_and_first_sequence_cues() {
                 label: "Start sequence".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -1199,7 +1200,7 @@ fn timeline_lookahead_reports_future_sequence_status_while_stopped() {
                 label: "Start sequence".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -1430,14 +1431,14 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fixture_assertion(
                     label: "Blocker".to_owned(),
                     position: Duration::from_millis(500),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(blocker_clip_uid),
+                    action: ActionKind::StartClip(blocker_clip_uid).to_reference(),
                 },
                 Action {
                     id: "action-future".to_owned(),
                     label: "Future".to_owned(),
                     position: Duration::from_secs(1),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(future_clip_uid),
+                    action: ActionKind::StartClip(future_clip_uid).to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),
@@ -1672,7 +1673,7 @@ fn timeline_lookahead_reports_bounded_blockers_for_dense_intervening_actions() {
             label: format!("Blocker {index}"),
             position: Duration::from_millis(500 + index as u64 * 100),
             duration: Duration::ZERO,
-            action: ActionKind::StartClip(*clip_uid),
+            action: ActionKind::StartClip(*clip_uid).to_reference(),
         })
         .collect::<Vec<_>>();
     actions.push(Action {
@@ -1680,7 +1681,7 @@ fn timeline_lookahead_reports_bounded_blockers_for_dense_intervening_actions() {
         label: "Future".to_owned(),
         position: Duration::from_secs(2),
         duration: Duration::ZERO,
-        action: ActionKind::StartClip(future_clip_uid),
+        action: ActionKind::StartClip(future_clip_uid).to_reference(),
     });
 
     let timeline_id = 46;
@@ -1920,14 +1921,14 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fx_selection() {
                     label: "Blocker".to_owned(),
                     position: Duration::from_millis(500),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(blocker_clip_uid),
+                    action: ActionKind::StartClip(blocker_clip_uid).to_reference(),
                 },
                 Action {
                     id: "action-future".to_owned(),
                     label: "Future".to_owned(),
                     position: Duration::from_secs(1),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(future_clip_uid),
+                    action: ActionKind::StartClip(future_clip_uid).to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),
@@ -2148,14 +2149,14 @@ fn timeline_lookahead_rebuilds_when_intervening_fx_group_selection_changes() {
                     label: "Blocker".to_owned(),
                     position: Duration::from_millis(500),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(blocker_clip_uid),
+                    action: ActionKind::StartClip(blocker_clip_uid).to_reference(),
                 },
                 Action {
                     id: "action-future".to_owned(),
                     label: "Future".to_owned(),
                     position: Duration::from_secs(1),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(future_clip_uid),
+                    action: ActionKind::StartClip(future_clip_uid).to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),
@@ -2365,14 +2366,14 @@ fn timeline_lookahead_blocks_future_source_behind_unknown_intervening_action() {
                     label: "Unknown".to_owned(),
                     position: Duration::from_millis(500),
                     duration: Duration::ZERO,
-                    action: ActionKind::DeskEval("group 1 at 50".to_owned()),
+                    action: ActionKind::DeskEval("group 1 at 50".to_owned()).to_reference(),
                 },
                 Action {
                     id: "action-future".to_owned(),
                     label: "Future".to_owned(),
                     position: Duration::from_secs(1),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(future_clip_uid),
+                    action: ActionKind::StartClip(future_clip_uid).to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),
@@ -2449,9 +2450,10 @@ fn seek_timeline_sequence_reconstructs_authored_rate() {
         let mut timeline = timeline_query
             .single_mut(app.world_mut())
             .expect("helper timeline should exist");
-        let ActionKind::StartClip(clip_uid) = timeline.timeline.tracks[0].actions[0].action else {
-            panic!("helper timeline should start a clip");
-        };
+        let clip_uid = timeline.timeline.tracks[0].actions[0].action.arguments["clip"]
+            .as_str()
+            .and_then(|uid| Uuid::parse_str(uid).ok())
+            .expect("helper timeline should start a clip");
         timeline.timeline.tracks[0].actions.push(Action {
             id: "action-rate".to_owned(),
             label: "Set sequence rate".to_owned(),
@@ -2460,7 +2462,8 @@ fn seek_timeline_sequence_reconstructs_authored_rate() {
             action: ActionKind::SetClipRate {
                 uid: clip_uid,
                 rate: 2.0,
-            },
+            }
+            .to_reference(),
         });
     }
 
@@ -3206,7 +3209,7 @@ fn live_timeline_sequence_auto_end_holds_ltp_until_htp_release_completes() {
                     label: "Start sequence".to_owned(),
                     position: Duration::from_millis(100),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(clip_uid),
+                    action: ActionKind::StartClip(clip_uid).to_reference(),
                 }],
                 automation_lanes: Vec::new(),
             }],
@@ -3386,7 +3389,7 @@ fn live_timeline_sequence_auto_end_scoped_release_holds_ltp_until_htp_release_co
                     label: "Start sequence".to_owned(),
                     position: Duration::from_millis(100),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(clip_uid),
+                    action: ActionKind::StartClip(clip_uid).to_reference(),
                 }],
                 automation_lanes: Vec::new(),
             }],
@@ -3594,14 +3597,14 @@ fn seek_timeline_sequence_release_delay_keeps_boundary_cue_and_tracked_values() 
                     label: "Start sequence".to_owned(),
                     position: Duration::from_millis(100),
                     duration: Duration::ZERO,
-                    action: ActionKind::StartClip(clip_uid),
+                    action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
                     id: "action-stop".to_owned(),
                     label: "Stop sequence".to_owned(),
                     position: Duration::from_millis(2100),
                     duration: Duration::ZERO,
-                    action: ActionKind::StopClip(clip_uid),
+                    action: ActionKind::StopClip(clip_uid).to_reference(),
                 },
             ],
             automation_lanes: Vec::new(),

@@ -12,7 +12,14 @@ import { Input, Textarea } from "../../../components/ui/form-controls";
 import { durationToMs, msToDuration } from "../../../lib/utils";
 import { timelineLookaheadActionStatuses } from "../../../state/appStores";
 import * as types from "../../../types";
+import { ActionInputKind } from "../../../types";
+import { ActionPicker } from "../../actions";
 import type { SelectedAction } from "../context/timeline-context";
+import {
+  type TimelineActionKind,
+  timelineActionKind,
+  timelineActionReference,
+} from "../model/timeline-action-kind";
 
 type SelectedActionRecord = {
   track: types.Track;
@@ -38,7 +45,7 @@ type TimelineActionPropertiesProps = {
   ) => void;
 };
 
-const ACTION_LABELS: Record<types.ActionKind["type"], string> = {
+const ACTION_LABELS: Record<TimelineActionKind["type"], string> = {
   FireCue: "Fire cue",
   StartClip: "Start clip",
   StopClip: "Stop clip",
@@ -74,12 +81,12 @@ function parseCueIndex(value: string): number | undefined {
 }
 
 /** Returns the editable action label for display. */
-function actionLabel(action: types.ActionKind): string {
+function actionLabel(action: TimelineActionKind): string {
   return ACTION_LABELS[action.type];
 }
 
 /** Returns a stable label for the target UID carried by action variants. */
-function actionTargetLabel(action: types.ActionKind): string | undefined {
+function actionTargetLabel(action: TimelineActionKind): string | undefined {
   switch (action.type) {
     case "FireCue":
       return action.data;
@@ -99,25 +106,18 @@ function actionTargetLabel(action: types.ActionKind): string | undefined {
 }
 
 /** Returns the current clip rate from a SetClipRate action. */
-function clipRateValue(action: types.ActionKind): number {
+function clipRateValue(action: TimelineActionKind): number {
   return action.type === "SetClipRate" ? action.data.rate : 1;
 }
 
 /** Returns the current cue index from a JumpToCue action. */
-function cueIndexValue(action: types.ActionKind): number {
+function cueIndexValue(action: TimelineActionKind): number {
   return action.type === "JumpToCue" ? action.data.cue_index : 1;
 }
 
 /** Returns the command text from a DeskEval action. */
-function deskEvalValue(action: types.ActionKind): string {
+function deskEvalValue(action: TimelineActionKind): string {
   return action.type === "DeskEval" ? action.data : "";
-}
-
-/** Returns a compact argument summary for registered action references. */
-function registeredActionArgumentsLabel(action: types.ActionKind): string {
-  return action.type === "RegisteredAction"
-    ? JSON.stringify(action.data.arguments)
-    : "Unknown";
 }
 
 /** Returns the operator-facing label for a lookahead status kind. */
@@ -151,7 +151,7 @@ function lookaheadStatusClass(
 }
 
 /** Renders read-only target metadata for the selected action kind. */
-function ActionTargetSummary(props: { action: types.ActionKind }) {
+function ActionTargetSummary(props: { action: TimelineActionKind }) {
   const targetLabel = () => actionTargetLabel(props.action);
 
   return (
@@ -257,35 +257,37 @@ export default function TimelineActionProperties(
   };
 
   /** Commits a new clip rate for SetClipRate actions. */
-  const updateClipRate = (action: types.ActionKind, value: string) => {
+  const updateClipRate = (action: TimelineActionKind, value: string) => {
     if (action.type !== "SetClipRate") return;
     const nextRate = parseRate(value);
     if (nextRate === undefined) return;
     updateSelectedItem({
-      action: {
+      action: timelineActionReference({
         type: "SetClipRate",
         data: { ...action.data, rate: nextRate },
-      },
+      }),
     });
   };
 
   /** Commits a new cue index for JumpToCue actions. */
-  const updateCueIndex = (action: types.ActionKind, value: string) => {
+  const updateCueIndex = (action: TimelineActionKind, value: string) => {
     if (action.type !== "JumpToCue") return;
     const nextCueIndex = parseCueIndex(value);
     if (nextCueIndex === undefined) return;
     updateSelectedItem({
-      action: {
+      action: timelineActionReference({
         type: "JumpToCue",
         data: { ...action.data, cue_index: nextCueIndex },
-      },
+      }),
     });
   };
 
   /** Commits a new desk eval command string. */
-  const updateDeskEval = (action: types.ActionKind, value: string) => {
+  const updateDeskEval = (action: TimelineActionKind, value: string) => {
     if (action.type !== "DeskEval") return;
-    updateSelectedItem({ action: { type: "DeskEval", data: value } });
+    updateSelectedItem({
+      action: timelineActionReference({ type: "DeskEval", data: value }),
+    });
   };
 
   return (
@@ -364,7 +366,7 @@ export default function TimelineActionProperties(
               <div>
                 <div class="uppercase tracking-wide">Action</div>
                 <div class="mt-1 text-neutral-200">
-                  {actionLabel(record().action.action)}
+                  {actionLabel(timelineActionKind(record().action.action))}
                 </div>
               </div>
             </div>
@@ -447,10 +449,17 @@ export default function TimelineActionProperties(
               Action
             </h4>
 
-            <ActionTargetSummary action={record().action.action} />
+            <ActionTargetSummary
+              action={timelineActionKind(record().action.action)}
+            />
 
             <Switch>
-              <Match when={record().action.action.type === "SetClipRate"}>
+              <Match
+                when={
+                  timelineActionKind(record().action.action).type ===
+                  "SetClipRate"
+                }
+              >
                 <label class="block space-y-1">
                   <span class="text-xs text-neutral-400">Clip rate</span>
                   <Input
@@ -459,10 +468,12 @@ export default function TimelineActionProperties(
                     type="number"
                     min="0"
                     step="0.01"
-                    value={clipRateValue(record().action.action)}
+                    value={clipRateValue(
+                      timelineActionKind(record().action.action),
+                    )}
                     onChange={(event) =>
                       updateClipRate(
-                        record().action.action,
+                        timelineActionKind(record().action.action),
                         event.currentTarget.value,
                       )
                     }
@@ -470,7 +481,12 @@ export default function TimelineActionProperties(
                 </label>
               </Match>
 
-              <Match when={record().action.action.type === "JumpToCue"}>
+              <Match
+                when={
+                  timelineActionKind(record().action.action).type ===
+                  "JumpToCue"
+                }
+              >
                 <label class="block space-y-1">
                   <span class="text-xs text-neutral-400">Cue index</span>
                   <Input
@@ -479,10 +495,12 @@ export default function TimelineActionProperties(
                     type="number"
                     min="1"
                     step="1"
-                    value={cueIndexValue(record().action.action)}
+                    value={cueIndexValue(
+                      timelineActionKind(record().action.action),
+                    )}
                     onChange={(event) =>
                       updateCueIndex(
-                        record().action.action,
+                        timelineActionKind(record().action.action),
                         event.currentTarget.value,
                       )
                     }
@@ -490,17 +508,23 @@ export default function TimelineActionProperties(
                 </label>
               </Match>
 
-              <Match when={record().action.action.type === "DeskEval"}>
+              <Match
+                when={
+                  timelineActionKind(record().action.action).type === "DeskEval"
+                }
+              >
                 <label class="block space-y-1">
                   <span class="text-xs text-neutral-400">Eval string</span>
                   <Textarea
                     density="compact"
                     aria-label="Action eval string"
                     rows={4}
-                    value={deskEvalValue(record().action.action)}
+                    value={deskEvalValue(
+                      timelineActionKind(record().action.action),
+                    )}
                     onChange={(event) =>
                       updateDeskEval(
-                        record().action.action,
+                        timelineActionKind(record().action.action),
                         event.currentTarget.value,
                       )
                     }
@@ -508,12 +532,22 @@ export default function TimelineActionProperties(
                 </label>
               </Match>
 
-              <Match when={record().action.action.type === "RegisteredAction"}>
+              <Match
+                when={
+                  timelineActionKind(record().action.action).type ===
+                  "RegisteredAction"
+                }
+              >
                 <div class="space-y-2">
-                  <div class="text-xs text-neutral-400">Arguments</div>
-                  <div class="rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-300">
-                    {registeredActionArgumentsLabel(record().action.action)}
+                  <div class="text-xs text-neutral-400">
+                    Runs live; seeking does not replay this action.
                   </div>
+                  <ActionPicker
+                    label="Timeline action"
+                    value={record().action.action}
+                    inputKinds={[ActionInputKind.Trigger]}
+                    onChange={(action) => updateSelectedItem({ action })}
+                  />
                 </div>
               </Match>
             </Switch>

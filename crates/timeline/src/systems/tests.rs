@@ -243,6 +243,7 @@ fn evaluated_intervention_reconstruction_timing_uses_source_local_intervention_a
 #[test]
 fn stop_timecode_detaches_releasing_timeline_instance_clock() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimecodeCommand>>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
@@ -320,6 +321,7 @@ fn stop_timecode_detaches_releasing_timeline_instance_clock() {
 #[test]
 fn paused_timecode_keeps_releasing_timeline_instance_clock_attached() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
     app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
@@ -381,6 +383,7 @@ fn paused_timecode_keeps_releasing_timeline_instance_clock_attached() {
 #[test]
 fn keep_state_stop_keeps_releasing_timeline_instance_clock_attached() {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
     app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
@@ -526,6 +529,7 @@ fn setup_sequence_timeline_app_with_stop(
 /// Builds a timeline test app with the sequence instance systems needed for seek or live mode.
 fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
     app.add_message::<CommandEnvelope<DeskCommand>>();
     app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineOperationEnvelope<EvalOperation>>();
@@ -781,7 +785,7 @@ fn setup_sequence_timeline_app_with_clip_options(
         label: "Start sequence".to_owned(),
         position: Duration::from_millis(100),
         duration: start_duration,
-        action: ActionKind::StartClip(clip_uid),
+        action: ActionKind::StartClip(clip_uid).to_reference(),
     }];
     if let Some(stop_position) = stop_position {
         actions.push(Action {
@@ -789,7 +793,7 @@ fn setup_sequence_timeline_app_with_clip_options(
             label: "Stop sequence".to_owned(),
             position: stop_position,
             duration: Duration::ZERO,
-            action: ActionKind::StopClip(clip_uid),
+            action: ActionKind::StopClip(clip_uid).to_reference(),
         });
     }
 
@@ -1150,7 +1154,7 @@ fn setup_four_cue_auto_sequence_timeline_app(
         label: "Start sequence".to_owned(),
         position: Duration::from_millis(100),
         duration: Duration::ZERO,
-        action: ActionKind::StartClip(clip_uid),
+        action: ActionKind::StartClip(clip_uid).to_reference(),
     }];
     if let Some(stop_position) = stop_position {
         actions.push(Action {
@@ -1158,7 +1162,7 @@ fn setup_four_cue_auto_sequence_timeline_app(
             label: "Stop sequence".to_owned(),
             position: stop_position,
             duration: Duration::ZERO,
-            action: ActionKind::StopClip(clip_uid),
+            action: ActionKind::StopClip(clip_uid).to_reference(),
         });
     }
 

@@ -64,8 +64,9 @@ pub mod prelude {
         TimelineTriggerMode, Track,
     };
     pub use crate::transport::{
-        TIMELINE_PAUSE_ACTION_ID, TIMELINE_PLAY_ACTION_ID, TIMELINE_TOGGLE_PLAYBACK_ACTION_ID,
-        TimelineActionArguments, timeline_transport_action,
+        TIMELINE_FIRE_CUE_ACTION_ID, TIMELINE_PAUSE_ACTION_ID, TIMELINE_PLAY_ACTION_ID,
+        TIMELINE_TOGGLE_PLAYBACK_ACTION_ID, TimelineActionArguments, TimelineFireCueArguments,
+        fire_cue_action, timeline_transport_action,
     };
     pub use crate::{TimelineCommand, TimelineOperation};
 }
@@ -437,3 +438,10 @@ pub enum TimelineOperation {
 }
 
 impl EngineOperation for TimelineOperation {}
+
+/// Registers the desk and timeline actions that timeline tests resolve stored references with.
+#[cfg(test)]
+pub(crate) fn install_timeline_test_actions(app: &mut App) {
+    nightfall_desk::automation_actions::register_desk_actions(app);
+    transport::register_timeline_actions(app);
+}

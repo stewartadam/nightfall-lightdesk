@@ -44,6 +44,7 @@ import {
   resolveActionEditorTarget,
 } from "../model/action-targets";
 import { msPerBeat, type SnapConfig } from "../model/grid-utils";
+import type { TimelineActionKind } from "../model/timeline-action-kind";
 
 const log = getLogger(import.meta.url);
 
@@ -52,8 +53,8 @@ export type ActionProps = {
   label: string;
   position: number;
   durationTrail?: ActionVisualDuration;
-  action: types.ActionKind;
-  actionType: types.ActionKind["type"];
+  action: TimelineActionKind;
+  actionType: TimelineActionKind["type"];
   targetIndex: ActionTargetIndex;
   showDurationTrail?: boolean;
   isPlayheadActive?: boolean;
@@ -100,7 +101,7 @@ type DragSession = {
 };
 
 export const getMarkerStyle = (
-  actionType: types.ActionKind["type"],
+  actionType: TimelineActionKind["type"],
 ): MarkerStyle => {
   switch (actionType) {
     case "FireCue":

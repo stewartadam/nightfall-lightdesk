@@ -112,7 +112,7 @@ test("resolveTrackCompatibility warns when inserting mismatched family", () => {
         label: "Cue Action",
         position: { secs: 0, nanos: 0 },
         duration: { secs: 1, nanos: 0 },
-        action: { type: "FireCue", data: "cue-1" },
+        action: { id: "timeline.fire-cue", arguments: { cue: "cue-1" } },
       },
     ],
     automation_lanes: [],

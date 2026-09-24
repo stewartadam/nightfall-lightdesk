@@ -72,7 +72,6 @@ fn bench_plan(c: &mut Criterion, action_counts: &[usize], resolver: &BenchResolv
                             target_time,
                             actions.iter().cloned(),
                             resolver,
-                            None,
                         )
                         .instances
                         .len(),
@@ -92,7 +91,7 @@ fn bench_evaluate(c: &mut Criterion, action_counts: &[usize], resolver: &BenchRe
 
     for &action_count in action_counts {
         let actions = timeline_actions(action_count);
-        let plan = plan_timeline_at(Uuid::nil(), end_of(&actions), actions, resolver, None);
+        let plan = plan_timeline_at(Uuid::nil(), end_of(&actions), actions, resolver);
         group.throughput(Throughput::Elements(plan.instances.len() as u64));
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("actions={action_count}")),
