@@ -58,6 +58,12 @@ const MAGIC_PANEL: BenchFixture = {
   model: "MagicPanel FX",
   mode: "Extended",
 };
+const FOCUS_JET: BenchFixture = {
+  file: "Concept_K@Focus_Jet_90@Version_2.gdtf",
+  make: "Concept K",
+  model: "Focus Jet 90",
+  mode: "25 Channels",
+};
 const STATIC_BENCH: BenchFixture[] = [
   {
     file: "Martin_Professional@MAC_Aura@20230201NoMeas.gdtf",
@@ -596,4 +602,95 @@ test("Sharpy gobo slot shapes the beam", async ({
     )
     .toBe(1);
   await attachCanvas(page, "sharpy-gobo", testInfo);
+});
+
+/** Verifies each DMX break of a multi-break profile is patched from its own start address. */
+test("Focus Jet patches additional DMX breaks", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await installBenchFixture(page, backendSlot.dataDir, FOCUS_JET, 1);
+
+  await submitCommand(page, "patch fix 1 @ sacn:1.1");
+  await submitCommand(page, "patch fix 1 break 2 @ sacn:1.100");
+  await submitCommand(page, "patch fix 1 break 3 @ sacn:1.200");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.bindings
+          .get()
+          .output.map((binding: any) =>
+            binding.source.type === "FixtureBreak"
+              ? `${binding.source.data.dmx_break}@${binding.target.data.address}`
+              : `1@${binding.target.data.address}`,
+          ),
+      ),
+    )
+    .toEqual(["1@1", "2@100", "3@200"]);
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  await page.getByPlaceholder("Type a command or search...").fill("Open Patch");
+  await page.keyboard.press("Enter");
+  const panel = page.locator('[data-panel-kind="patch"]:visible');
+  await expect(panel).toHaveCount(1);
+  await page.evaluate(() =>
+    (window as any).appStores.dockApi.get().activePanel.api.maximize(),
+  );
+  await panel
+    .getByRole("tablist", { name: "Patch views" })
+    .getByRole("tab", { name: "DMX I/O" })
+    .click();
+  await expect(panel.getByText("Fixture 1 break 2")).toBeVisible();
+  await expect(panel.getByText("Fixture 1 break 3")).toBeVisible();
+  const path = testInfo.outputPath("focus-jet-breaks.png");
+  await panel.screenshot({ path });
+  await testInfo.attach("focus-jet-breaks", {
+    path,
+    contentType: "image/png",
+  });
+
+  // A tall viewport leaves room for the mode parameter table in Properties.
+  await page.setViewportSize({ width: 1600, height: 2600 });
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    api.activePanel.api.exitMaximized();
+    const library = api.addPanel({
+      id: "panel-FixtureLibrary-breaks",
+      component: "FixtureLibrary",
+      title: "Fixture Library",
+      params: { initialPanelId: "panel-FixtureLibrary-breaks" },
+      position: { referencePanel: "panel-Visualizer", direction: "within" },
+    });
+    api.addPanel({
+      id: "panel-PropertiesInspector-breaks",
+      component: "PropertiesInspector",
+      title: "Properties",
+      position: { referencePanel: "panel-Visualizer", direction: "below" },
+    });
+    library.api.setActive();
+    library.focus();
+  });
+  await page
+    .locator('[data-grid-kind="tanstack"]')
+    .filter({ hasText: "Focus Jet 90" })
+    .last()
+    .getByText("Focus Jet 90", { exact: true })
+    .click();
+  await page.getByLabel("Mode", { exact: true }).selectOption(FOCUS_JET.mode);
+  await expect(
+    page.getByRole("cell", { name: "Break 2: 1" }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "Break 3: 12" }).first(),
+  ).toBeVisible();
+  await page
+    .getByRole("cell", { name: "Break 2: 1" })
+    .last()
+    .evaluate((cell) => cell.scrollIntoView({ block: "center" }));
+  const propertiesPath = testInfo.outputPath("focus-jet-mode-parameters.png");
+  await page.screenshot({ path: propertiesPath });
+  await testInfo.attach("focus-jet-mode-parameters", {
+    path: propertiesPath,
+    contentType: "image/png",
+  });
 });

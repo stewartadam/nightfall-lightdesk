@@ -1,0 +1,26 @@
+{
+  "known_violations": {},
+  "charts": {
+    "25 Channels": [
+      "Base · Tilt · b1 · 1,2",
+      "Base · Custom { label: \"TiltRotate\" } · b1 · 6",
+      "Base · Custom { label: \"TiltMode\" } · b1 · 3",
+      "Base · Zoom · b1 · 7,8",
+      "Base · Custom { label: \"ZoomMSpeed\" } · b1 · 9",
+      "Base · Custom { label: \"ZoomMode\" } · b1 · 12",
+      "Base · Intensity · b2 · 1",
+      "Arc 1 · StrobeShutter · b3 · 1",
+      "Arc 1 · Intensity · b3 · 2",
+      "Arc 1 · Red · b3 · 3",
+      "Arc 1 · Green · b3 · 4",
+      "Arc 1 · Blue · b3 · 5",
+      "Arc 1 · White · b3 · 6",
+      "Arc 2 · StrobeShutter · b3 · 7",
+      "Arc 2 · Intensity · b3 · 8",
+      "Arc 2 · Red · b3 · 9",
+      "Arc 2 · Green · b3 · 10",
+      "Arc 2 · Blue · b3 · 11",
+      "Arc 2 · White · b3 · 12"
+    ]
+  }
+}

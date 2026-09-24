@@ -144,6 +144,16 @@ pub enum OutputSource {
         /// Optional parameter name.
         param: Option<String>,
     },
+    /// An additional DMX break (2 or higher) of fixtures, patched as a whole.
+    ///
+    /// Profiles such as a lamp plus scroller place some channels on a second
+    /// break with its own start address; `Fixture` sources carry break 1.
+    FixtureBreak {
+        /// Fixture UIDs.
+        uids: Vec<Uuid>,
+        /// DMX break number.
+        dmx_break: u16,
+    },
     /// Console source.
     Console {
         /// Optional universe range.
@@ -151,6 +161,51 @@ pub enum OutputSource {
         /// Optional address.
         address: Option<u16>,
     },
+}
+
+/// Fixtures, and the part of each fixture, addressed by a fixture output source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixtureOutputSelection<'a> {
+    /// Fixture UIDs in patch order.
+    pub uids: &'a [Uuid],
+    /// Optional element index.
+    pub element: Option<u16>,
+    /// Optional parameter name.
+    pub param: Option<&'a str>,
+    /// DMX break whose parameters are patched.
+    pub dmx_break: u16,
+}
+
+impl OutputSource {
+    /// Returns the fixture selection of a `Fixture` or `FixtureBreak` source.
+    ///
+    /// `Fixture` sources address the primary break 1.
+    pub fn fixture_selection(&self) -> Option<FixtureOutputSelection<'_>> {
+        match self {
+            OutputSource::Fixture {
+                uids,
+                element,
+                param,
+            } => Some(FixtureOutputSelection {
+                uids,
+                element: *element,
+                param: param.as_deref(),
+                dmx_break: 1,
+            }),
+            OutputSource::FixtureBreak { uids, dmx_break } => Some(FixtureOutputSelection {
+                uids,
+                element: None,
+                param: None,
+                dmx_break: *dmx_break,
+            }),
+            OutputSource::Console { .. } => None,
+        }
+    }
+
+    /// Returns the fixture UIDs a fixture source patches, or `None` for console sources.
+    pub fn fixture_uids(&self) -> Option<&[Uuid]> {
+        self.fixture_selection().map(|selection| selection.uids)
+    }
 }
 
 /// Output binding target.

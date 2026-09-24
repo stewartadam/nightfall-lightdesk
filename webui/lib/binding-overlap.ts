@@ -106,6 +106,7 @@ function collectUniversesFromOutputSource(
       return expanded ?? [];
     }
     case "Fixture":
+    case "FixtureBreak":
       return [];
   }
 }

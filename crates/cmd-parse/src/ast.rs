@@ -1507,6 +1507,8 @@ pub struct FixtureEndpointAst<'i> {
 pub struct FixtureTargetAst<'i> {
     pub element: Option<FixtureElementAst<'i>>,
     pub param: Option<FixtureParamAst<'i>>,
+    /// Additional DMX break (`break N`) patched as a whole; excludes element and param.
+    pub dmx_break: Option<IntegerAst<'i>>,
 }
 
 /// Fixture element index used inside patch endpoint syntax.

@@ -761,6 +761,14 @@
       "sha256": "94e33f42cfbcbf6b67e95724ff2c57f4cbf518f04b57fab5a64e9226530d7214",
       "modes": ["Extended", "Standard", "Basic"],
       "chart_modes": ["Extended"]
+    },
+    {
+      "id": "focus-jet",
+      "group": "full",
+      "file": "Concept_K@Focus_Jet_90@Version_2.gdtf",
+      "sha256": "4916efb7a636dadd7cb791afe9c97120e959745d40f4cbd723b59fe6fa01e9a7",
+      "modes": ["25 Channels"],
+      "chart_modes": ["25 Channels"]
     }
   ]
 }

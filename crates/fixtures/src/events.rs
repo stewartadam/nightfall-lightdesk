@@ -118,18 +118,17 @@ pub fn handle_restore_fixture_snapshot(
 }
 
 fn output_binding_matches_fixture(binding: &OutputBinding, uid: uuid::Uuid) -> bool {
-    match &binding.source {
-        OutputSource::Fixture { uids, .. } => uids.contains(&uid),
-        _ => false,
-    }
+    binding
+        .source
+        .fixture_uids()
+        .is_some_and(|uids| uids.contains(&uid))
 }
 
 fn disabled_binding_matches_fixture(binding: &DisabledBinding, uid: uuid::Uuid) -> bool {
     match binding {
-        DisabledBinding::Output {
-            source: OutputSource::Fixture { uids, .. },
-            ..
-        } => uids.contains(&uid),
+        DisabledBinding::Output { source, .. } => source
+            .fixture_uids()
+            .is_some_and(|uids| uids.contains(&uid)),
         _ => false,
     }
 }
