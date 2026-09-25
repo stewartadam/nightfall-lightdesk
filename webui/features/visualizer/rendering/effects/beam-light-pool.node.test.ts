@@ -9,7 +9,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Scene, Texture, Vector3 } from "three/webgpu";
-import { BeamLightPool } from "./beam-light-pool";
+import {
+  BeamLightPool,
+  GOBO_RESERVED_SHARE,
+  selectProxies,
+} from "./beam-light-pool";
 import type { BeamLightProxy } from "./beam-light-proxies";
 
 // Node has no ImageData; lights returning to white build one.
@@ -93,4 +97,38 @@ test("gobo proxies reuse mapped lights and open proxies avoid them", () => {
     1,
     "only one light holds a map",
   );
+});
+
+/** Verifies a dim gobo proxy still gets a light when brighter merged open proxies fill the pool. */
+test("gobo proxies keep a light when open proxies outnumber the pool", () => {
+  const pool = new BeamLightPool(new Scene(), 4);
+  const open = Array.from({ length: 8 }, (_, index) =>
+    proxy(`bar${index}:0:0`, 100 + index),
+  );
+  pool.assign([...open, proxy("spot:gobo:1", 10, gobo(256))]);
+  const goboLight = lightFor(pool, "spot");
+  assert.ok(goboLight, "gobo proxy is lit");
+  assert.equal(goboLight.userData.projectsGobo, true);
+  assert.equal(
+    pool.lights.filter((light) => light.intensity > 0).length,
+    4,
+    "every light is used",
+  );
+  assert.ok(lightFor(pool, "bar7"), "brightest open proxy is lit");
+});
+
+/** Verifies gobo proxies take at most their reserved share, leaving the rest to the brightest proxies. */
+test("gobo reservation leaves lights for bright open proxies", () => {
+  const gobos = Array.from({ length: 6 }, (_, index) =>
+    proxy(`spot${index}:gobo:1`, 1, gobo(256)),
+  );
+  const open = [proxy("wash:0:0", 100), proxy("bar:0:0", 50)];
+  const selected = selectProxies([...gobos, ...open], 4);
+  assert.equal(selected.length, 4);
+  assert.equal(
+    selected.filter((entry) => entry.gobo instanceof Texture).length,
+    Math.ceil(4 * GOBO_RESERVED_SHARE),
+  );
+  assert.ok(selected.some((entry) => entry.key === "wash:0:0"));
+  assert.ok(selected.some((entry) => entry.key === "bar:0:0"));
 });

@@ -22,6 +22,9 @@ import type { BeamLightProxy } from "./beam-light-proxies";
 /** Number of spot lights shared by all GDTF beams. */
 export const BEAM_LIGHT_POOL_SIZE = 12;
 
+/** Share of the pool guaranteed to gobo proxies when proxies outnumber lights. */
+export const GOBO_RESERVED_SHARE = 0.5;
+
 /** Reach of pooled lights, in meters. */
 const LIGHT_DISTANCE = 50;
 
@@ -58,6 +61,33 @@ function sameImageSize(map: Texture | null, gobo: Texture): boolean {
   );
 }
 
+/**
+ * Chooses which proxies get one of `size` lights this frame.
+ *
+ * Proxies are ranked by intensity, but an open proxy carries the summed
+ * output of many beams while a gobo proxy stands for a single beam, so gobo
+ * proxies would lose a purely global ranking and their visible beams would
+ * project no image. The brightest gobo proxies are therefore guaranteed up
+ * to {@link GOBO_RESERVED_SHARE} of the lights; the rest go to the brightest
+ * of all remaining proxies.
+ */
+export function selectProxies(
+  proxies: readonly BeamLightProxy[],
+  size: number,
+): BeamLightProxy[] {
+  const ranked = [...proxies].sort((a, b) => b.intensity - a.intensity);
+  if (ranked.length <= size) return ranked;
+  const reserved = new Set(
+    ranked
+      .filter((proxy) => proxy.gobo instanceof Texture)
+      .slice(0, Math.ceil(size * GOBO_RESERVED_SHARE)),
+  );
+  const rest = ranked
+    .filter((proxy) => !reserved.has(proxy))
+    .slice(0, size - reserved.size);
+  return [...reserved, ...rest];
+}
+
 /** Fixed set of spot lights assigned to beam light proxies each frame. */
 export class BeamLightPool {
   private readonly slots: PoolSlot[] = [];
@@ -88,15 +118,14 @@ export class BeamLightPool {
    * Points the pool at the brightest proxies and darkens the remaining lights.
    *
    * When there are more proxies than lights, the dimmest proxies do not
-   * light surfaces this frame. Placement avoids changing any light's map,
+   * light surfaces this frame, with part of the pool held for gobo proxies
+   * (see {@link selectProxies}). Placement avoids changing any light's map,
    * which would recompile lit shaders: a proxy keeps the light it had last
    * frame, gobo proxies take lights that already hold a map (of the same
    * image size first), and open proxies take lights without one.
    */
   assign(proxies: readonly BeamLightProxy[]): void {
-    const selected = [...proxies]
-      .sort((a, b) => b.intensity - a.intensity)
-      .slice(0, this.slots.length);
+    const selected = selectProxies(proxies, this.slots.length);
     const assigned = new Map<PoolSlot, BeamLightProxy>();
     const free = new Set(this.slots);
     const take = (slot: PoolSlot | undefined, proxy: BeamLightProxy) => {
