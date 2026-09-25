@@ -24,6 +24,11 @@ thiserror.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+
+[features]
+# Exposes the synthetic GDTF archive builder to other crates' tests.
+test-support = []
 
 [dev-dependencies]
 async-channel.workspace = true
