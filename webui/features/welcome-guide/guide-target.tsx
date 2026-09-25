@@ -17,6 +17,42 @@ interface GuideTargetProps {
   onBounds?: (bounds: DOMRect | null) => void;
 }
 
+/**
+ * Scrolls the nearest user-scrollable ancestor just enough to show an element it clips.
+ * Unlike scrollIntoView, this never moves overflow-hidden layout containers such as the app shell.
+ * Returns whether a scroll was applied.
+ */
+function revealInScroller(element: HTMLElement): boolean {
+  for (
+    let scroller = element.parentElement;
+    scroller;
+    scroller = scroller.parentElement
+  ) {
+    const style = getComputedStyle(scroller);
+    const scrollsY =
+      /(auto|scroll)/.test(style.overflowY) &&
+      scroller.scrollHeight > scroller.clientHeight;
+    const scrollsX =
+      /(auto|scroll)/.test(style.overflowX) &&
+      scroller.scrollWidth > scroller.clientWidth;
+    if (!scrollsY && !scrollsX) continue;
+    const view = scroller.getBoundingClientRect();
+    const rect = element.getBoundingClientRect();
+    let top = 0;
+    let left = 0;
+    if (scrollsY && rect.bottom > view.bottom)
+      top = Math.min(rect.bottom - view.bottom, rect.top - view.top);
+    else if (scrollsY && rect.top < view.top) top = rect.top - view.top;
+    if (scrollsX && rect.right > view.right)
+      left = Math.min(rect.right - view.right, rect.left - view.left);
+    else if (scrollsX && rect.left < view.left) left = rect.left - view.left;
+    if (top === 0 && left === 0) continue;
+    scroller.scrollBy({ top, left });
+    return true;
+  }
+  return false;
+}
+
 /** Highlights a visible control and optionally focuses it once when its lesson step begins. */
 export function GuideTarget(props: GuideTargetProps) {
   const [bounds, setBounds] = createSignal<DOMRect | null>(null);
@@ -26,12 +62,14 @@ export function GuideTarget(props: GuideTargetProps) {
     const selector = props.selector;
     const stepId = props.stepId;
     const focusTarget = props.focusTarget;
+    const reveal = props.highlight !== false;
     void stepId;
     setBounds(null);
     props.onBounds?.(null);
     if (!selector) return;
     let previous = "";
     let focused = false;
+    let revealed = false;
     let focusFrame: number | undefined;
     /** Ignores hidden, clipped, disabled, or modal-obscured controls. */
     const update = () => {
@@ -77,6 +115,22 @@ export function GuideTarget(props: GuideTargetProps) {
           );
         },
       );
+      // Scroll a rendered but clipped target into view once per step, so users need not hunt for it.
+      if (!target && reveal && !revealed) {
+        for (const element of document.querySelectorAll<HTMLElement>(
+          selector,
+        )) {
+          if (modal && !modal.contains(element)) continue;
+          if (element.closest('[inert], [aria-hidden="true"], [disabled]'))
+            continue;
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) continue;
+          if (revealInScroller(element)) {
+            revealed = true;
+            break;
+          }
+        }
+      }
       const rect = target?.getBoundingClientRect() ?? null;
       if (target && focusTarget && !focused) {
         focused = true;

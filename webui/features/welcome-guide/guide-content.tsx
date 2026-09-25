@@ -8,7 +8,10 @@
 
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { For, Match, Show, Switch } from "solid-js";
-import { OPEN_COMMAND_PALETTE_SHORTCUT } from "../../components/providers/command-registry";
+import {
+  CLEAR_PROGRAMMER_SHORTCUT,
+  OPEN_COMMAND_PALETTE_SHORTCUT,
+} from "../../components/providers/command-registry";
 import { ShortcutKeys } from "../../components/ui/shortcut-keys";
 import { Button } from "../../components/ui/visual-language/button";
 import {
@@ -16,11 +19,12 @@ import {
   panelDefinitionByName,
 } from "../../lib/panel-definitions";
 import type { GuideContent } from "./lessons";
+import { stopAllPlayback } from "./playback";
 
 // TODO: Replace shortcut placeholders with action references so shortcuts can be discovered and injected automatically.
 const lessonShortcuts: Record<string, string> = {
   "{command-palette-shortcut}": OPEN_COMMAND_PALETTE_SHORTCUT,
-  "{clear-shortcut}": "Shift+Escape",
+  "{clear-shortcut}": CLEAR_PROGRAMMER_SHORTCUT,
 };
 
 /** Expands shortcut placeholders in any text block using the actual platform binding. */
@@ -54,6 +58,7 @@ export function GuideContentItem(props: {
   openPanel: (name: PanelComponentName) => void;
   openTimeline: () => void;
   copyCommand: (command: string) => void;
+  playbackRunning: boolean;
 }) {
   return (
     <Switch>
@@ -79,7 +84,7 @@ export function GuideContentItem(props: {
                   onClick={props.openTimeline}
                   disabled={!props.canOpenTimeline}
                 >
-                  Open Timeline 1: Lo-Fi
+                  Open Timeline 1: Lo-fi
                 </Button>
               </Show>
               <For
@@ -132,6 +137,17 @@ export function GuideContentItem(props: {
             </Show>
           </div>
         )}
+      </Match>
+      <Match when={props.item.type === "stop-playback"}>
+        <div class="nf-guide-shortcuts">
+          <Button
+            size="compact"
+            disabled={!props.playbackRunning}
+            onClick={stopAllPlayback}
+          >
+            Stop all playback
+          </Button>
+        </div>
       </Match>
       <Match when={props.item.type === "details" && props.item}>
         {(item) => (
