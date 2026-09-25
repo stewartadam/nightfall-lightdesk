@@ -56,13 +56,15 @@ import {
   useBindableActionCatalog,
 } from "../../actions";
 import {
-  deleteMidiMapping,
   midiMappingFromEvent,
   midiSourceLabel,
   midiSourceNumber,
-  upsertMidiMapping,
   withMidiChannel,
   withMidiNumber,
+} from "../model/controller-mapping-builders";
+import {
+  deleteMidiMapping,
+  upsertMidiMapping,
 } from "../model/controller-mappings";
 
 /** Input kinds a MIDI control can drive: notes as buttons, controllers as faders or buttons. */
@@ -341,6 +343,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                       inputKinds={MIDI_INPUT_KINDS}
                       includeUiActions
                       onChange={setLastEventAction}
+                      onIncomplete={() => setLastEventAction(undefined)}
                     />
                     <Button
                       size="compact"

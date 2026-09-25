@@ -234,6 +234,7 @@ test("OSC event can create a mapping and render dispatched command source", asyn
       data: {
         address: "/e2e/osc/go",
         arg_index: 0,
+        arg_value: "0.75",
         action: { id: "programmer.clear", arguments: {} },
       },
     });
@@ -244,6 +245,7 @@ test("OSC event can create a mapping and render dispatched command source", asyn
     data: {
       address: "/e2e/osc/go",
       arg_index: 0,
+      arg_value: "0.75",
       action: { id: "programmer.clear", arguments: {} },
     },
   });

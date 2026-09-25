@@ -6,15 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { pushToast } from "../../../state/appStores";
+import { actionCatalog, pushToast } from "../../../state/appStores";
 import type * as types from "../../../types";
+import { actionInputKind } from "../../actions";
 import {
   midiMappingFromEvent,
   midiSourceLabel,
   oscMappingFromEvent,
-  upsertMidiMapping,
-  upsertOscMapping,
-} from "./controller-mappings";
+} from "./controller-mapping-builders";
+import { upsertMidiMapping, upsertOscMapping } from "./controller-mappings";
 import { $mappingMode, describeArmedSource } from "./mapping-mode";
 
 /**
@@ -34,7 +34,13 @@ export async function bindArmedSource(
   }
   let stored = false;
   if (armed.kind === "osc") {
-    stored = await upsertOscMapping(oscMappingFromEvent(armed.event, action));
+    stored = await upsertOscMapping(
+      oscMappingFromEvent(
+        armed.event,
+        action,
+        actionInputKind(actionCatalog.get(), action),
+      ),
+    );
   } else {
     const mapping = midiMappingFromEvent(armed.event, action);
     stored = mapping ? await upsertMidiMapping(mapping) : false;

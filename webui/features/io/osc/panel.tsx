@@ -53,13 +53,14 @@ import {
 } from "../../../types";
 import {
   ActionPicker,
+  actionInputKind,
   formatActionReference,
   useActionTargetNames,
   useBindableActionCatalog,
 } from "../../actions";
+import { oscMappingFromEvent } from "../model/controller-mapping-builders";
 import {
   deleteOscMapping,
-  oscMappingFromEvent,
   upsertOscMapping,
 } from "../model/controller-mappings";
 
@@ -354,7 +355,13 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     const event = $oscLastEvent();
     const action = lastEventAction();
     if (!event || !action) return;
-    void upsertOscMapping(oscMappingFromEvent(event, action));
+    void upsertOscMapping(
+      oscMappingFromEvent(
+        event,
+        action,
+        actionInputKind($actionCatalog(), action),
+      ),
+    );
   };
 
   return (
@@ -414,6 +421,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                   inputKinds={OSC_INPUT_KINDS}
                   includeUiActions
                   onChange={setLastEventAction}
+                  onIncomplete={() => setLastEventAction(undefined)}
                 />
                 <Button
                   size="compact"

@@ -13,7 +13,7 @@ import { useUiAction } from "../../../components/providers/command-registry";
 import { Button } from "../../../components/ui/visual-language/button";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { midiLastEvent, oscLastEvent } from "../../../state/appStores";
-import { midiSourceLabel } from "../model/controller-mappings";
+import { midiSourceLabel } from "../model/controller-mapping-builders";
 import {
   $mappingMode,
   armSource,
