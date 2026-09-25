@@ -39,6 +39,14 @@ export function uiActionCatalogEntries(
   }));
 }
 
+/** Returns every action this client can bind right now, without tracking changes. */
+export function bindableActionCatalogSnapshot(): types.ActionCatalogEntry[] {
+  return [
+    ...actionCatalog.get(),
+    ...uiActionCatalogEntries(uiActionsStore.get()),
+  ];
+}
+
 /** Tracks every action this client can bind: the backend catalog plus local UI actions. */
 export function useBindableActionCatalog(): Accessor<
   types.ActionCatalogEntry[]

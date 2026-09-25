@@ -9,7 +9,7 @@
 //! MIDI mapping storage and lookup
 
 use bevy_ecs::prelude::*;
-use nightfall_actions::{ActionInputKind, ActionReference};
+use nightfall_actions::{ActionInputKind, ActionReference, BindingStore};
 use uuid::Uuid;
 
 use crate::command::{MidiMapping, MidiSource};
@@ -38,7 +38,7 @@ impl MidiMappings {
         &self.mappings
     }
 
-    /// Creates or replaces a mapping and returns the IDs of other mappings it displaced.
+    /// Creates or replaces a mapping and returns the other mappings it displaced.
     ///
     /// A control fires at most one action per edge, so other mappings on the same device and
     /// control are removed when they would fire from the same edge (see
@@ -48,12 +48,11 @@ impl MidiMappings {
         &mut self,
         mapping: MidiMapping,
         input_kind: impl Fn(&ActionReference) -> Option<ActionInputKind>,
-    ) -> Vec<Uuid> {
+    ) -> Vec<MidiMapping> {
         let kind = input_kind(&mapping.action);
-        let displaced = self
-            .mappings
-            .iter()
-            .filter(|existing| {
+        let (displaced, kept) = std::mem::take(&mut self.mappings)
+            .into_iter()
+            .partition::<Vec<_>, _>(|existing| {
                 existing.id != mapping.id
                     && existing.device_name == mapping.device_name
                     && existing.source == mapping.source
@@ -62,11 +61,8 @@ impl MidiMappings {
                         existing.behavior,
                         input_kind(&existing.action),
                     )
-            })
-            .map(|existing| existing.id)
-            .collect::<Vec<_>>();
-        self.mappings
-            .retain(|existing| !displaced.contains(&existing.id));
+            });
+        self.mappings = kept;
         match self
             .mappings
             .iter_mut()
@@ -90,6 +86,25 @@ impl MidiMappings {
         self.mappings
             .iter()
             .filter(move |mapping| mapping.device_name == device && mapping.source == source)
+    }
+}
+
+impl BindingStore for MidiMappings {
+    type Binding = MidiMapping;
+
+    /// Returns the mappings in list order.
+    fn bindings(&self) -> &[MidiMapping] {
+        &self.mappings
+    }
+
+    /// Returns the mappings for undo and redo restoration.
+    fn bindings_mut(&mut self) -> &mut Vec<MidiMapping> {
+        &mut self.mappings
+    }
+
+    /// Returns the mapping's stable ID.
+    fn binding_id(binding: &MidiMapping) -> Uuid {
+        binding.id
     }
 }
 
@@ -169,7 +184,7 @@ mod tests {
 
         let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.c"), triggers);
 
-        assert_eq!(displaced, vec![Uuid::from_u128(1)]);
+        assert_eq!(displaced, vec![note_mapping(1, "Device A", 60, "test.a")]);
         assert_eq!(
             mappings
                 .mappings()
@@ -220,7 +235,13 @@ mod tests {
         assert_eq!(mappings.lookup("Device A", pad).count(), 2);
 
         let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.hold"), input_kind);
-        assert_eq!(displaced, vec![Uuid::from_u128(1), Uuid::from_u128(2)]);
+        assert_eq!(
+            displaced
+                .iter()
+                .map(|mapping| mapping.id)
+                .collect::<Vec<_>>(),
+            vec![Uuid::from_u128(1), Uuid::from_u128(2)]
+        );
         assert_eq!(mappings.lookup("Device A", pad).count(), 1);
     }
 }

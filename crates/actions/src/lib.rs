@@ -12,6 +12,7 @@
 //! ingress commands and continuous actions lower to untracked update messages, so an action
 //! never introduces a second execution path next to commands, updates, and engine operations.
 
+mod binding_undo;
 mod command;
 mod descriptor;
 mod eval;
@@ -30,6 +31,10 @@ use bevy_ecs::{
     prelude::{MessageReader, Messages, SystemSet, World},
     schedule::IntoScheduleConfigs,
     system::SystemState,
+};
+pub use binding_undo::{
+    BindingRestoreConflict, BindingStore, RestoreBindings, apply_binding_restores,
+    capture_binding_edit, register_binding_undo,
 };
 pub use command::ActionCommand;
 pub use descriptor::{

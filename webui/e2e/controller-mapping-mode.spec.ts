@@ -8,6 +8,7 @@
 
 import { createSocket } from "node:dgram";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { gridCellByKey } from "./data-grid-selectors";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -679,4 +680,104 @@ test("touching a mapped control in mapping mode arms it without firing its actio
   await expect
     .poll(async () => (await onlyMaster(page)).level_percent)
     .toBeCloseTo(60, 3);
+});
+
+/** Returns the action IDs of the stored OSC mappings, in list order. */
+function oscMappingActions(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    (window as any).appStores.oscMappings
+      .get()
+      .map((mapping: any) => mapping.action.id as string),
+  );
+}
+
+/**
+ * Verifies rebinding a bound OSC button names the binding it replaced, and that undo brings
+ * the replaced binding back while redo reapplies the rebinding.
+ */
+test("rebinding a control names the replaced binding and undo restores it", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page))?.mode.type)
+    .toBe("Toggle");
+
+  // Bind an OSC button to the master's toggle.
+  await enterMapping(page);
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await sendOsc(port, "/e2e/map/rebind");
+  await expect(banner).toContainText("OSC /e2e/map/rebind");
+  await page.getByRole("button", { name: "Map toggle Global Master" }).click();
+  await expect.poll(() => oscMappingActions(page)).toHaveLength(1);
+  const [toggleAction] = await oscMappingActions(page);
+  expect(toggleAction).not.toBe("programmer.clear");
+
+  // Rebinding the same button to clear the programmer replaces the toggle binding. The
+  // just-bound control ignores messages briefly, so touch it until it arms again.
+  await expect(async () => {
+    await sendOsc(port, "/e2e/map/rebind");
+    await expect(banner).toContainText("OSC /e2e/map/rebind", {
+      timeout: 500,
+    });
+  }).toPass();
+  await page
+    .getByRole("navigation", { name: "Global" })
+    .getByRole("button", { name: "Map clear programmer" })
+    .click();
+  const clearMenu = page.getByRole("menu", { name: "Map clear programmer to" });
+  if (await clearMenu.isVisible()) {
+    await clearMenu.getByRole("menuitem", { name: "On press" }).click();
+  }
+  await expect
+    .poll(() => oscMappingActions(page))
+    .toEqual(["programmer.clear"]);
+  const replacedToast = page.getByText(
+    /^Bound OSC \/e2e\/map\/rebind → Clear programmer · On press \(replaced: .*Global Master\)$/,
+  );
+  await expect(replacedToast).toBeInViewport({ ratio: 1 });
+  await replacedToast.screenshot({
+    path: test.info().outputPath("controller-mapping-replaced.png"),
+  });
+  await leaveMapping(page);
+
+  // Undo restores the toggle binding, visible again in the OSC panel. A taller window leaves
+  // room for the mapping grid below the listener details.
+  await page.setViewportSize({ width: 1800, height: 2200 });
+  await openPanel(page, "OSC Input");
+  await page.getByRole("button", { name: "Undo: Map OSC control" }).click();
+  await expect.poll(() => oscMappingActions(page)).toEqual([toggleAction]);
+  const grid = page.locator('[data-grid-kind="tanstack"]').filter({
+    has: page.locator('[data-grid-header-id="tanstack-header-address"]'),
+  });
+  const restoredKey = await page.evaluate(
+    () => (window as any).appStores.oscMappings.get()[0].id as string,
+  );
+  const restoredAction = gridCellByKey(grid, {
+    columnKey: "action",
+    rowKey: restoredKey,
+  });
+  await restoredAction.scrollIntoViewIfNeeded();
+  await expect(restoredAction).toContainText("Global Master");
+  await expect(
+    gridCellByKey(grid, { columnKey: "address", rowKey: restoredKey }),
+  ).toContainText("/e2e/map/rebind");
+  await grid.screenshot({
+    path: test.info().outputPath("controller-mapping-undo-restored.png"),
+  });
+
+  // Redo reapplies the rebinding.
+  await page.getByRole("button", { name: "Redo: Map OSC control" }).click();
+  await expect
+    .poll(() => oscMappingActions(page))
+    .toEqual(["programmer.clear"]);
 });

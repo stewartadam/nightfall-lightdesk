@@ -9,7 +9,7 @@
 //! OSC mapping storage and lookup.
 
 use bevy_ecs::prelude::*;
-use nightfall_actions::{ActionInputKind, ActionReference, SourceSignal};
+use nightfall_actions::{ActionInputKind, ActionReference, BindingStore, SourceSignal};
 use uuid::Uuid;
 
 use crate::command::{OscLastEvent, OscMapping, OscType};
@@ -38,7 +38,7 @@ impl OscMappings {
         &self.mappings
     }
 
-    /// Creates or replaces a mapping and returns the IDs of other mappings it displaced.
+    /// Creates or replaces a mapping and returns the other mappings it displaced.
     ///
     /// Mappings with identical match criteria address the same control, which fires at most
     /// one action per edge, so any such mapping that would fire from the same edge is removed
@@ -48,13 +48,12 @@ impl OscMappings {
         &mut self,
         mapping: OscMapping,
         input_kind: impl Fn(&ActionReference) -> Option<ActionInputKind>,
-    ) -> Vec<Uuid> {
+    ) -> Vec<OscMapping> {
         let mapping = normalize_mapping(mapping);
         let kind = input_kind(&mapping.action);
-        let displaced = self
-            .mappings
-            .iter()
-            .filter(|existing| {
+        let (displaced, kept) = std::mem::take(&mut self.mappings)
+            .into_iter()
+            .partition::<Vec<_>, _>(|existing| {
                 existing.id != mapping.id
                     && same_criteria(existing, &mapping)
                     && mapping.behavior.overlaps(
@@ -62,11 +61,8 @@ impl OscMappings {
                         existing.behavior,
                         input_kind(&existing.action),
                     )
-            })
-            .map(|existing| existing.id)
-            .collect::<Vec<_>>();
-        self.mappings
-            .retain(|existing| !displaced.contains(&existing.id));
+            });
+        self.mappings = kept;
         match self
             .mappings
             .iter_mut()
@@ -97,6 +93,25 @@ impl OscMappings {
         self.mappings
             .iter()
             .filter(move |mapping| control.is_some_and(|control| same_criteria(control, mapping)))
+    }
+}
+
+impl BindingStore for OscMappings {
+    type Binding = OscMapping;
+
+    /// Returns the mappings in list order.
+    fn bindings(&self) -> &[OscMapping] {
+        &self.mappings
+    }
+
+    /// Returns the mappings for undo and redo restoration.
+    fn bindings_mut(&mut self) -> &mut Vec<OscMapping> {
+        &mut self.mappings
+    }
+
+    /// Returns the mapping's stable ID.
+    fn binding_id(binding: &OscMapping) -> Uuid {
+        binding.id
     }
 }
 

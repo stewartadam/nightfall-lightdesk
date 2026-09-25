@@ -16,13 +16,21 @@ import {
   oscMappingFromGesture,
   oscMappingReportsRelease,
 } from "./controller-mapping-builders";
-import { upsertMidiMapping, upsertOscMapping } from "./controller-mappings";
+import {
+  replacedMappingLabels,
+  upsertMidiMapping,
+  upsertOscMapping,
+} from "./controller-mappings";
 import {
   $mappingMode,
   type ArmedSource,
   describeArmedSource,
   disarmMappingSource,
 } from "./mapping-mode";
+import {
+  type DescribedMapping,
+  formatBindConfirmation,
+} from "./mapping-replacements";
 
 /** Returns the action surface a binding from the armed control invokes through. */
 function armedSourceSurface(armed: ArmedSource): types.ActionSurface {
@@ -72,8 +80,9 @@ export function armedSourceSupports(
 /**
  * Binds the armed MIDI or OSC control to an action with a behavior.
  *
- * `actionLabel` describes the action in the confirmation toast. A stored binding disarms
- * the control, so the next click cannot silently rebind it. Returns whether a mapping was
+ * `actionLabel` describes the action in the confirmation toast, which also names any
+ * bindings on the control that the new one replaced. A stored binding disarms the control,
+ * so the next click cannot silently rebind it. Returns whether a mapping was
  * stored; without an armed control the user is told to move one first.
  */
 export async function bindArmedSource(
@@ -94,7 +103,7 @@ export async function bindArmedSource(
     return false;
   }
   const inputKind = actionInputKind(actionCatalog.get(), action);
-  let stored = false;
+  let replaced: DescribedMapping[] | null = null;
   if (armed.kind === "osc") {
     if (!armedSourceSupports(armed, action, behavior)) {
       pushToast(
@@ -103,19 +112,23 @@ export async function bindArmedSource(
       );
       return false;
     }
-    stored = await upsertOscMapping(
+    replaced = await upsertOscMapping(
       oscMappingFromGesture(armed, action, inputKind, behavior),
     );
   } else {
     const mapping = midiMappingFromEvent(armed.event, action, behavior);
-    stored = mapping ? await upsertMidiMapping(mapping) : false;
+    replaced = mapping ? await upsertMidiMapping(mapping) : null;
   }
-  if (stored) {
-    disarmMappingSource();
-    pushToast(
-      "success",
-      `Bound ${describeArmedSource(armed, midiSourceLabel)} → ${actionLabel} · ${behaviorLabel(behavior, inputKind)}`,
-    );
-  }
-  return stored;
+  if (replaced === null) return false;
+  disarmMappingSource();
+  pushToast(
+    "success",
+    formatBindConfirmation({
+      control: describeArmedSource(armed, midiSourceLabel),
+      action: actionLabel,
+      behavior: behaviorLabel(behavior, inputKind),
+      replaced: replacedMappingLabels(replaced),
+    }),
+  );
+  return true;
 }

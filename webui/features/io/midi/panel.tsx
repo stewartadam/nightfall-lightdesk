@@ -72,6 +72,7 @@ import {
   withMidiNumber,
 } from "../model/controller-mapping-builders";
 import {
+  announceReplacedMappings,
   deleteMidiMapping,
   upsertMidiMapping,
 } from "../model/controller-mappings";
@@ -322,7 +323,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
       const mapping = visibleRows[targetRow]?.mapping;
       if (!mapping) continue;
       const edited = editedMapping(mapping, colId, newValue);
-      if (edited) void upsertMidiMapping(edited);
+      if (edited) void upsertMidiMapping(edited).then(announceReplacedMappings);
     }
   };
 
@@ -342,7 +343,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     const action = lastEventAction();
     if (!event || !action) return;
     const mapping = midiMappingFromEvent(event, action, lastEventBehavior());
-    if (mapping) void upsertMidiMapping(mapping);
+    if (mapping) void upsertMidiMapping(mapping).then(announceReplacedMappings);
   };
 
   /** Returns the single selected mapping row, when exactly one is selected. */
@@ -355,7 +356,11 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   /** Replaces the action of the selected mapping. */
   const updateSelectedAction = (action: ActionReference) => {
     const row = selectedMapping();
-    if (row) void upsertMidiMapping({ ...row.mapping, action });
+    if (row) {
+      void upsertMidiMapping({ ...row.mapping, action }).then(
+        announceReplacedMappings,
+      );
+    }
   };
 
   return (

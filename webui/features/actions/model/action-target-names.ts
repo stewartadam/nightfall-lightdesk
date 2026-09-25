@@ -46,6 +46,27 @@ function toOptions(
   })).sort((left, right) => left.id - right.id);
 }
 
+/**
+ * Builds display-name lookups over the targets currently in the backend stores.
+ *
+ * Unlike {@link useActionTargetNames}, this reads each store once without tracking changes,
+ * for describing actions outside a reactive scope such as in a command's completion.
+ */
+export function actionTargetNamesSnapshot(): ActionTargetNames {
+  /** Indexes one option list by UID. */
+  const lookup = (options: ActionTargetOption[]) => {
+    const byUid = new Map(options.map((option) => [option.uid, option.label]));
+    return (uid: string) => byUid.get(uid);
+  };
+  return {
+    clip: lookup(toOptions(Object.values(clips.get()).map(([clip]) => clip))),
+    master: lookup(toOptions(Object.values(masters.get()))),
+    timeline: lookup(toOptions(Object.values(timelines.get()))),
+    cue: lookup(toOptions(Object.values(cues.get()))),
+    panel: () => undefined,
+  };
+}
+
 /** Tracks the objects action arguments can reference, reactive to backend stores. */
 export function useActionTargetOptions(): ActionTargetOptions {
   const $clips = useStore(clips);

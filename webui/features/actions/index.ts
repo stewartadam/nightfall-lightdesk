@@ -22,10 +22,12 @@ export {
 export {
   type ActionTargetOption,
   type ActionTargetOptions,
+  actionTargetNamesSnapshot,
   useActionTargetNames,
   useActionTargetOptions,
 } from "./model/action-target-names";
 export {
+  bindableActionCatalogSnapshot,
   uiActionCatalogEntries,
   useBindableActionCatalog,
 } from "./model/ui-action-catalog";
