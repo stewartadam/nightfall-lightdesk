@@ -18,6 +18,11 @@ concurrency:
 jobs:
   scope:
     name: Acquire source and select validation
+    # Run standalone PRs and the lowest unmerged/top PRs of a stack.
+    if: >-
+      github.event.pull_request.stack == null ||
+      github.event.pull_request.stack.base.ref == github.event.pull_request.base.ref ||
+      github.event.pull_request.stack.position == github.event.pull_request.stack.size
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -207,8 +212,8 @@ jobs:
 
   precommit:
     name: Run prek hooks
-    needs: [native, wasm-bridge, browser-runtime]
-    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/') }}
+    needs: [scope, native, wasm-bridge, browser-runtime]
+    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
