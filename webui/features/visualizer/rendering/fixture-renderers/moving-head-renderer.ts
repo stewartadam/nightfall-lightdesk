@@ -8,30 +8,25 @@
 
 /**
  * Moving head fixture renderer for Visualizer.
- * Renders moving head fixtures with pan/tilt movement and volumetric beam.
+ * Renders moving head fixtures with pan/tilt movement; the beam itself is drawn by
+ * the scene's shared optical batch from the head's aperture.
  *
  * Moving heads have:
  * - A base (static, pan rotation)
  * - A yoke (rotates for pan)
  * - A head (rotates for tilt, contains the light source)
- * - A volumetric light beam
+ * - An optical aperture on the head's lens
  */
 
 import {
-  AdditiveBlending,
   BoxGeometry,
-  CircleGeometry,
   Color,
-  DoubleSide,
   Group,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
-  Quaternion,
-  SpotLight,
-  Vector3,
 } from "three/webgpu";
 import type {
   FixtureElement,
@@ -41,25 +36,9 @@ import type {
 import { BeamType } from "../../../../types";
 import { bindEmitterOpticalChannels } from "../../model/optical-bindings";
 import type { EmitterData, FixtureInstance } from "../../model/types";
-import type { VisualizerQualityPreset } from "../../state/settings";
-import {
-  type BeamMaterial,
-  type BeamParameters,
-  createBeamGeometry,
-  createBeamMaterial,
-  defaultBeamParameters,
-  disposeBeamMaterial,
-  isLowQualityBeamMaterial,
-  MAX_CONE_ANGLE_DEGREES,
-  MIN_CONE_ANGLE_DEGREES,
-  updateBeamMaterial,
-} from "../effects/beam-material";
 import { beamConeAngleDegrees } from "../effects/beam-zoom";
-import { DEFAULT_STAGE_FLOOR_TOP_Y } from "../scene-environment";
 
 /** Moving head constants */
-const MAX_BEAM_LENGTH = 50.0;
-const MIN_BEAM_RADIUS = 0.04;
 const HEAD_OFFSET_Y = 0.32;
 
 /** Default pan/tilt ranges in degrees */
@@ -74,38 +53,16 @@ const DEFAULT_LUMENS = 10000;
 /** Default pan/tilt movement speed in degrees per second */
 const DEFAULT_PAN_SPEED_DEG_PER_SEC = 180;
 const DEFAULT_TILT_SPEED_DEG_PER_SEC = 180;
-const WORLD_UP = new Vector3(0, 1, 0);
-const WORLD_RIGHT = new Vector3(1, 0, 0);
-const FLOOR_SPOT_FLOOR_QUATERNION = new Quaternion().setFromAxisAngle(
-  WORLD_RIGHT,
-  -Math.PI / 2,
-);
-const FLOOR_SPOT_PARENT_QUATERNION = new Quaternion();
-const FLOOR_SPOT_YAW_QUATERNION = new Quaternion();
-const FLOOR_SPOT_WORLD_QUATERNION = new Quaternion();
 
 /**
  * Moving head specific data stored on the fixture instance.
  */
 export interface MovingHeadData {
   type: "moving-head";
-  /** Uses the scene's shared atmospheric draw when available. */
-  sharedAtmosphere?: boolean;
-  sharedSurfaceLighting?: boolean;
   /** Yoke group that rotates for pan */
   yokeGroup: Group;
   /** Head group that rotates for tilt */
   headGroup: Group;
-  /** Beam mesh */
-  beamMesh: Mesh;
-  /** Beam material with uniforms */
-  beamMaterial: BeamMaterial;
-  /** Floor illumination mesh */
-  floorSpotMesh: Mesh;
-  /** SpotLight for ground illumination */
-  spotLight: SpotLight;
-  /** SpotLight target */
-  spotlightTarget: Object3D;
   /** Current pan angle (radians) - smoothed toward target */
   currentPan: number;
   /** Current tilt angle (radians) - smoothed toward target */
@@ -128,8 +85,6 @@ export interface MovingHeadData {
   beamAngleDeg: number;
   /** Field angle in degrees */
   fieldAngleDeg: number;
-  /** Fixture lumens */
-  lumens: number;
   /** Element label for DMX lookup (first element) */
   elementLabel: string;
 }
@@ -258,7 +213,6 @@ export function buildMovingHeadFixture(
   fixtureUid: string,
   elements: FixtureElement[],
   geometry?: FixtureGeometry,
-  beamQuality: VisualizerQualityPreset = "high",
   physical?: FixturePhysical,
 ): FixtureInstance & { movingHeadData: MovingHeadData } {
   const group = new Group();
@@ -327,54 +281,6 @@ export function buildMovingHeadFixture(
   lens.position.y = -0.11;
   headGroup.add(lens);
 
-  // Create beam material and geometry
-  const beamMaterial = createBeamMaterial(beamQuality);
-  const beamGeometryMesh = createBeamGeometry(beamQuality);
-
-  // Beam mesh - unit cone that gets scaled dynamically
-  const beamMesh = new Mesh(beamGeometryMesh, beamMaterial);
-  beamMesh.name = "Beam";
-  beamMesh.position.set(0, -0.5, 0);
-  beamMesh.castShadow = false;
-  beamMesh.frustumCulled = false;
-  beamMesh.renderOrder = 100;
-  beamMesh.visible = false; // Start hidden until intensity > 0
-  headGroup.add(beamMesh);
-
-  const floorSpotGeometry = new CircleGeometry(1, 64);
-  const floorSpotMaterial = new MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    side: DoubleSide,
-    blending: AdditiveBlending,
-  });
-  const floorSpotMesh = new Mesh(floorSpotGeometry, floorSpotMaterial);
-  floorSpotMesh.name = "BeamFootprint";
-  floorSpotMesh.rotation.x = -Math.PI / 2;
-  floorSpotMesh.renderOrder = 101;
-  floorSpotMesh.visible = false;
-  group.add(floorSpotMesh);
-
-  // Create spotlight for ground illumination
-  const spotLight = new SpotLight(0xffffff, 0);
-  spotLight.name = "SpotLight";
-  spotLight.angle = Math.PI / 12;
-  spotLight.penumbra = 0.5;
-  spotLight.decay = 2;
-  spotLight.distance = 50;
-  spotLight.castShadow = false;
-  spotLight.visible = false;
-  headGroup.add(spotLight);
-
-  // Spotlight target
-  const spotlightTarget = new Object3D();
-  spotlightTarget.name = "SpotLightTarget";
-  spotlightTarget.position.set(0, -10, 0);
-  headGroup.add(spotlightTarget);
-  spotLight.target = spotlightTarget;
-
   const sourceNode = geometry?.nodes.find((node) => node.beam);
   const source = sourceNode?.beam?.physical ?? physical;
   const beamAngleDeg = source?.beamAngle ?? DEFAULT_BEAM_ANGLE;
@@ -429,11 +335,6 @@ export function buildMovingHeadFixture(
       type: "moving-head",
       yokeGroup,
       headGroup,
-      beamMesh,
-      beamMaterial,
-      floorSpotMesh,
-      spotLight,
-      spotlightTarget,
       currentPan: 0,
       currentTilt: 0,
       targetPan: 0,
@@ -445,7 +346,6 @@ export function buildMovingHeadFixture(
       tiltRangeDeg: DEFAULT_TILT_RANGE,
       beamAngleDeg,
       fieldAngleDeg,
-      lumens,
       elementLabel,
     },
   };
@@ -525,35 +425,7 @@ export function updateMovingHeadColors(
   const coneAngleDeg =
     dmx.zoomDegrees ??
     beamConeAngleDegrees(data.beamAngleDeg, data.fieldAngleDeg, zoom);
-  const halfAngleRad = MathUtils.degToRad(coneAngleDeg / 2);
 
-  // Calculate beam origin world position
-  const beamOrigin = new Vector3();
-  const beamDirection = new Vector3(0, -1, 0);
-  const beamQuaternion = new Quaternion();
-  data.headGroup.updateMatrixWorld(true);
-  data.headGroup.getWorldPosition(beamOrigin);
-  data.headGroup.getWorldQuaternion(beamQuaternion);
-  beamDirection.applyQuaternion(beamQuaternion).normalize();
-
-  const isLowQuality = isLowQualityBeamMaterial(data.beamMaterial);
-  // Keep the full cone length so the low-quality material does not expose the
-  // cone cap as a moving floor-intersection shape.
-  const beamLength = MAX_BEAM_LENGTH;
-
-  // Cone radius at base
-  const baseRadius = Math.max(
-    MIN_BEAM_RADIUS,
-    beamLength * Math.tan(halfAngleRad),
-  );
-
-  // Scale beam mesh: X/Z for radius, Y for length
-  if (!data.sharedAtmosphere) {
-    data.beamMesh.scale.set(baseRadius, beamLength, baseRadius);
-    data.beamMesh.position.set(0, -beamLength / 2, 0);
-  }
-
-  // Build beam parameters
   const color = new Color(
     beamColor.primary.red,
     beamColor.primary.green,
@@ -583,53 +455,8 @@ export function updateMovingHeadColors(
     ? secondaryColor.b
     : undefined;
 
-  if (!data.sharedAtmosphere) {
-    const params: BeamParameters = {
-      ...defaultBeamParameters,
-      intensity,
-      color: [color.r, color.g, color.b, 0.6],
-      secondaryColor: [secondaryColor.r, secondaryColor.g, secondaryColor.b],
-      splitColorAmount: beamColor.secondary ? 1 : 0,
-      coneAngleDegrees: Math.max(
-        MIN_CONE_ANGLE_DEGREES,
-        Math.min(MAX_CONE_ANGLE_DEGREES, coneAngleDeg),
-      ),
-      beamDirection,
-      beamOrigin,
-      beamLength,
-      clipY: DEFAULT_STAGE_FLOOR_TOP_Y,
-      softIntersectionFade: 0.0,
-      frostAmount: frost,
-    };
-
-    // Update beam material uniforms
-    updateBeamMaterial(data.beamMaterial, params);
-  }
-
-  // Update spotlight to match beam
-  data.spotLight.color.copy(color);
-  data.spotLight.intensity = isLowQuality ? 0 : intensity * data.lumens * 0.01;
-  data.spotLight.angle = halfAngleRad;
-  data.spotLight.distance = MAX_BEAM_LENGTH + 10;
-  data.spotlightTarget.position.set(0, -beamLength, 0);
-
-  // Visibility based on intensity
-  const isVisible = intensity > 0.01;
-  data.beamMesh.visible = isVisible && !data.sharedAtmosphere;
-  data.spotLight.visible = false;
-  if (data.sharedSurfaceLighting) data.floorSpotMesh.visible = false;
-  else
-    updateMovingHeadFloorSpot(
-      instance,
-      color,
-      intensity,
-      beamOrigin,
-      beamDirection,
-      halfAngleRad,
-      beamLength,
-    );
-
   // Update lens emissive color
+  const isVisible = intensity > 0.01;
   const lensMaterial = (instance.emitters.get("MainEmitter")?.mesh as Mesh)
     ?.material;
   if (lensMaterial instanceof MeshBasicMaterial) {
@@ -646,83 +473,11 @@ export function updateMovingHeadColors(
 }
 
 /**
- * Updates the synthetic floor illumination for a moving-head beam.
- */
-function updateMovingHeadFloorSpot(
-  instance: FixtureInstance & { movingHeadData: MovingHeadData },
-  color: Color,
-  intensity: number,
-  beamOrigin: Vector3,
-  beamDirection: Vector3,
-  halfAngleRad: number,
-  beamLength: number,
-): void {
-  const { floorSpotMesh } = instance.movingHeadData;
-  const material = floorSpotMesh.material as MeshBasicMaterial;
-
-  if (intensity <= 0.01 || beamDirection.y >= -0.001) {
-    floorSpotMesh.visible = false;
-    material.opacity = 0;
-    return;
-  }
-
-  const distanceToFloor =
-    (DEFAULT_STAGE_FLOOR_TOP_Y - beamOrigin.y) / beamDirection.y;
-  if (distanceToFloor <= 0 || distanceToFloor > beamLength) {
-    floorSpotMesh.visible = false;
-    material.opacity = 0;
-    return;
-  }
-
-  const radius = Math.max(
-    MIN_BEAM_RADIUS,
-    distanceToFloor * Math.tan(halfAngleRad),
-  );
-  const incidence = Math.max(Math.abs(beamDirection.y), 0.15);
-  const majorRadius = Math.min(radius / incidence, beamLength);
-
-  const worldHit = beamOrigin
-    .clone()
-    .addScaledVector(beamDirection, distanceToFloor);
-  worldHit.y = DEFAULT_STAGE_FLOOR_TOP_Y + 0.003;
-  floorSpotMesh.position.copy(instance.group.worldToLocal(worldHit));
-
-  const horizontalDirection = new Vector3(beamDirection.x, 0, beamDirection.z);
-  let floorSpotYaw = 0;
-  if (horizontalDirection.lengthSq() > 1e-6) {
-    horizontalDirection.normalize();
-    floorSpotYaw = Math.atan2(-horizontalDirection.z, horizontalDirection.x);
-  }
-
-  FLOOR_SPOT_YAW_QUATERNION.setFromAxisAngle(WORLD_UP, floorSpotYaw);
-  FLOOR_SPOT_WORLD_QUATERNION.copy(FLOOR_SPOT_YAW_QUATERNION).multiply(
-    FLOOR_SPOT_FLOOR_QUATERNION,
-  );
-  instance.group.getWorldQuaternion(FLOOR_SPOT_PARENT_QUATERNION);
-  floorSpotMesh.quaternion
-    .copy(FLOOR_SPOT_PARENT_QUATERNION)
-    .invert()
-    .multiply(FLOOR_SPOT_WORLD_QUATERNION);
-  floorSpotMesh.scale.set(majorRadius, radius, 1);
-  material.color.copy(color);
-  material.opacity = MathUtils.clamp(intensity * 0.35, 0, 0.45);
-  floorSpotMesh.visible = true;
-}
-
-/**
  * Dispose moving head resources.
  */
 export function disposeMovingHead(
   instance: FixtureInstance & { movingHeadData: MovingHeadData },
 ): void {
-  const data = instance.movingHeadData;
-
-  // Dispose beam
-  data.beamMesh.geometry?.dispose();
-  disposeBeamMaterial(data.beamMaterial);
-  data.spotLight.dispose();
-
-  // Dispose meshes in group
   instance.group.traverse((child) => {
     if (child instanceof Mesh) {
       child.geometry?.dispose();

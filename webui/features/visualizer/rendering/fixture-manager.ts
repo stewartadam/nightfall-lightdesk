@@ -11,18 +11,10 @@
  * Handles fixture lifecycle (add/remove/update) and synchronization with stores.
  */
 
-import {
-  Euler,
-  MathUtils,
-  type MeshBasicMaterial,
-  Quaternion,
-  type Scene,
-} from "three/webgpu";
+import { Euler, MathUtils, Quaternion, type Scene } from "three/webgpu";
 import { createLogger } from "../../../lib/logger";
 import type { RenderableFixture } from "../model/types";
 import type { VisualizerQualityPreset } from "../state/settings";
-import { getOpticalRenderContext } from "./effects/optical-render-context";
-import { EMITTER_RADIANCE } from "./emitter-radiance";
 import {
   buildFixtureWithoutGeometry,
   buildFixtureWithRenderer,
@@ -146,34 +138,6 @@ export class FixtureManager {
     }
 
     instance.layout = fixture.layout;
-    if (this.beamQuality !== "high") {
-      const displayGain = 2 / EMITTER_RADIANCE;
-      if (instance.ledBarData)
-        (
-          instance.ledBarData.cellMesh.material as MeshBasicMaterial
-        ).color.setScalar(instance.ledBarData.filteredRow ? 0 : displayGain);
-      instance.ledBarData?.filteredRow?.mesh.material.color.setScalar(
-        displayGain,
-      );
-      for (const { mesh } of instance.strobePanelData?.emitterBatches ?? [])
-        (mesh.material as MeshBasicMaterial).color.setScalar(displayGain);
-    }
-    const opticalContext = getOpticalRenderContext(this.scene);
-    if (instance.movingHeadData) {
-      instance.movingHeadData.sharedAtmosphere = !!opticalContext;
-      instance.movingHeadData.sharedSurfaceLighting =
-        !!opticalContext?.surfaceScene || this.beamQuality === "low";
-      if (opticalContext?.surfaceScene)
-        instance.movingHeadData.floorSpotMesh.visible = false;
-    }
-    if (instance.rotatingWashBeamData) {
-      instance.rotatingWashBeamData.sharedAtmosphere = !!opticalContext;
-      instance.rotatingWashBeamData.sharedSurfaceLighting =
-        !!opticalContext?.surfaceScene || this.beamQuality === "low";
-      if (opticalContext?.surfaceScene)
-        for (const beam of instance.rotatingWashBeamData.beamEmitters)
-          beam.floorSpotMesh.visible = false;
-    }
     instance.physicalSignature = fixture.physicalSignature;
 
     // Apply fixture placement transform

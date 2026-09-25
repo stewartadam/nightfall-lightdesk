@@ -263,10 +263,12 @@ function createRgbStrobeBarSegmentMesh(
 /**
  * Build a strobe panel fixture.
  * Creates a hardcoded strobe panel layout (doesn't use GDTF geometry).
+ * `displayGain` scales the batched emitter faces for the active quality preset.
  */
 export function buildStrobePanelFixture(
   fixtureUid: string,
   elements: FixtureElement[],
+  displayGain = 1,
 ): FixtureInstance & { strobePanelData: StrobePanelData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -371,10 +373,11 @@ export function buildStrobePanelFixture(
     strobePanelData: {
       type: "strobe-panel",
       layout: "matrix",
-      emitterBatches: createEmitterBatches(panelGroup, [
-        pixelMeshes,
-        whiteSegmentMeshes,
-      ]),
+      emitterBatches: createEmitterBatches(
+        panelGroup,
+        [pixelMeshes, whiteSegmentMeshes],
+        displayGain,
+      ),
       panelGroup,
       pixelMeshes,
       whiteSegmentMeshes,
@@ -389,9 +392,14 @@ export function buildStrobePanelFixture(
   };
 }
 
+/**
+ * Build an RGB strobe bar with its pixel row above independently controlled white segments.
+ * `displayGain` scales the batched emitter faces for the active quality preset.
+ */
 export function buildRgbStrobeBarFixture(
   fixtureUid: string,
   elements: FixtureElement[],
+  displayGain = 1,
 ): FixtureInstance & { strobePanelData: StrobePanelData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -501,10 +509,11 @@ export function buildRgbStrobeBarFixture(
     strobePanelData: {
       type: "strobe-panel",
       layout: "rgb-strobe-bar",
-      emitterBatches: createEmitterBatches(panelGroup, [
-        pixelMeshes,
-        whiteSegmentMeshes,
-      ]),
+      emitterBatches: createEmitterBatches(
+        panelGroup,
+        [pixelMeshes, whiteSegmentMeshes],
+        displayGain,
+      ),
       panelGroup,
       pixelMeshes,
       whiteSegmentMeshes,

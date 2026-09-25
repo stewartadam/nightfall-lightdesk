@@ -19,18 +19,20 @@ export interface EmitterBatch {
   sources: Mesh[];
 }
 
-/** Batches identical cells sharing a rigid parent while retaining individual selection proxies. */
+/**
+ * Batches identical cells sharing a rigid parent while retaining individual selection proxies.
+ * `displayGain` scales every instance color, letting presets without bloom tame HDR emitters.
+ */
 export function createEmitterBatches(
   parent: Group,
   sets: Mesh[][],
+  displayGain = 1,
 ): EmitterBatch[] {
   return sets
     .filter((sources) => sources.length > 0)
     .map((sources) => {
-      const material = new MeshBasicMaterial({
-        color: 0xffffff,
-        vertexColors: true,
-      });
+      const material = new MeshBasicMaterial({ vertexColors: true });
+      material.color.setScalar(displayGain);
       const mesh = new InstancedMesh(
         sources[0].geometry,
         material,

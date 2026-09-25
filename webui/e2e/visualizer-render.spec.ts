@@ -863,7 +863,7 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
     .toEqual({
       baseCount: 1,
       lensCount: 12,
-      beamCount: 12,
+      apertureCount: 12,
       topStripCount: 12,
       bottomStripCount: 12,
       litTopStripCount: 0,
@@ -885,8 +885,6 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
       opticalBeamCount: 12,
       atmosphericBeamCount: 12,
       atmosphericDraws: 1,
-      visibleBeamCount: 0,
-      visibleSpotLightCount: 0,
     });
 });
 
@@ -1040,8 +1038,6 @@ test("generic wash beam low-quality setting uses geometry beams", async ({
       opticalBeamCount: 12,
       atmosphericBeamCount: 0,
       atmosphericDraws: 0,
-      visibleBeamCount: 0,
-      visibleSpotLightCount: 0,
     });
 
   const canvasBox = await largestVisibleCanvasBox(page);
@@ -1821,7 +1817,7 @@ async function rotatingWashBeamSceneStats(
 ): Promise<{
   baseCount: number;
   lensCount: number;
-  beamCount: number;
+  apertureCount: number;
   topStripCount: number;
   bottomStripCount: number;
   litTopStripCount: number;
@@ -1837,7 +1833,7 @@ async function rotatingWashBeamSceneStats(
     const stats = {
       baseCount: 0,
       lensCount: 0,
-      beamCount: 0,
+      apertureCount: 0,
       topStripCount: 0,
       bottomStripCount: 0,
       litTopStripCount: 0,
@@ -1858,8 +1854,8 @@ async function rotatingWashBeamSceneStats(
         stats.baseCount += 1;
       } else if (object.name.startsWith("Lens_")) {
         stats.lensCount += 1;
-      } else if (object.name.startsWith("Beam_")) {
-        stats.beamCount += 1;
+      } else if (object.name.startsWith("OpticalAperture_")) {
+        stats.apertureCount += 1;
       } else if (object.name.startsWith("TopStripPixel_")) {
         stats.topStripCount += 1;
         if (lit) stats.litTopStripCount += 1;
@@ -1926,7 +1922,7 @@ async function rotatingWashBeamFirstBeamRadius(
 }
 
 /**
- * Matches active atmospheric instances to this fixture's optical lights and checks legacy suppression.
+ * Matches active atmospheric instances to this fixture's optical surface lights.
  */
 async function rotatingWashBeamOpticalStats(
   page: Page,
@@ -1935,8 +1931,6 @@ async function rotatingWashBeamOpticalStats(
   opticalBeamCount: number;
   atmosphericBeamCount: number;
   atmosphericDraws: number;
-  visibleBeamCount: number;
-  visibleSpotLightCount: number;
 } | null> {
   return page.evaluate(async (uid) => {
     const api = (window as any).visualizerApi;
@@ -1948,22 +1942,7 @@ async function rotatingWashBeamOpticalStats(
       opticalBeamCount: 0,
       atmosphericBeamCount: 0,
       atmosphericDraws: 0,
-      visibleBeamCount: 0,
-      visibleSpotLightCount: 0,
     };
-
-    root.traverse((object: any) => {
-      if (object.name.startsWith("Beam_")) {
-        if (object.visible === true) {
-          stats.visibleBeamCount += 1;
-        }
-      } else if (
-        object.name.startsWith("SpotLight_") &&
-        object.visible === true
-      ) {
-        stats.visibleSpotLightCount += 1;
-      }
-    });
 
     const lightIds = new Set<number>();
     scene.traverse((object: any) => {
@@ -2524,7 +2503,7 @@ test("generic sample bars render their complete segment layouts", async ({
     .poll(() => rotatingWashBeamSceneStats(page, fixtures[2]))
     .toMatchObject({
       lensCount: 10,
-      beamCount: 10,
+      apertureCount: 10,
       topStripCount: 0,
       bottomStripCount: 0,
     });

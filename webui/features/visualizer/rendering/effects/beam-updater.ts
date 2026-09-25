@@ -11,7 +11,6 @@
  * Encapsulates beam update logic for use in both main thread and worker modes.
  */
 
-import { BeamType } from "../../../../types";
 import type { EmitterData } from "../../model/types";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
@@ -96,7 +95,7 @@ export class BeamUpdater {
 
   /**
    * Updates a fixture's defined optical apertures from independently controlled emitter colors.
-   * Legacy fixture renderers retain ownership of their projection until they opt into shared atmosphere.
+   * Every aperture is drawn by the scene's shared atmospheric and surface batch; dark apertures are removed.
    *
    * @param uid Fixture UID
    * @param instance Fixture instance
@@ -108,74 +107,36 @@ export class BeamUpdater {
     elementColors: Map<string, BeamColorData>,
   ): void {
     if (!this.enabled) return;
-    if (
-      (instance.movingHeadData && !instance.movingHeadData.sharedAtmosphere) ||
-      (instance.rotatingWashBeamData &&
-        !instance.rotatingWashBeamData.sharedAtmosphere)
-    )
-      return;
-    if (instance.emitters.size === 0) return;
 
-    // Create/update a beam for each emitter
     for (const [emitterName, emitter] of instance.emitters) {
-      if (!emitter.nodeGroup) {
+      // Glow-only pixels have no aperture; only projecting emitters reach the shared batch.
+      if (!emitter.nodeGroup || !emitter.optics) {
         this.reducedPrisms.delete(emitter);
         continue;
       }
       const beamId = `${uid}:${emitterName}`;
       const beamColor =
         emitter.beamColor ?? elementColors.get(emitter.controlledElement);
-      if (emitter.optics) {
-        const opticalState = this.opticalStates.get(emitter);
-        opticalState?.update(elementColors);
-        if (
-          opticalState?.prismReduced &&
-          beamColor &&
-          beamColor.intensity > 0.01
-        )
-          this.reducedPrisms.add(emitter);
-        else this.reducedPrisms.delete(emitter);
-        if (beamColor && beamColor.intensity > 0.01)
-          this.beamManager.updateOpticalBeam(
-            beamId,
-            emitter.nodeGroup,
-            emitter.optics,
-            beamColor,
-            opticalState?.zoomDegrees ?? beamColor.zoomDegrees,
-            opticalState?.goboSlot,
-            opticalState?.goboRotation,
-            opticalState?.prism,
-            opticalState?.prismRotation,
-            opticalState?.focusDistance,
-            opticalState?.gobos,
-          );
-        else this.beamManager.removeOpticalBeam(beamId);
-        continue;
-      }
-      if (instance.rendererType !== "gdtf") continue;
-      // Mixed fixtures can contain both projecting apertures and glow-only pixels.
-      if (instance.beamType === BeamType.Glow) continue;
-
-      if (beamColor && beamColor.intensity > 0.01) {
-        // Create or get beam, attach to emitter's node group
-        const beam = this.beamManager.getOrCreateBeam(
+      const opticalState = this.opticalStates.get(emitter);
+      opticalState?.update(elementColors);
+      if (opticalState?.prismReduced && beamColor && beamColor.intensity > 0.01)
+        this.reducedPrisms.add(emitter);
+      else this.reducedPrisms.delete(emitter);
+      if (beamColor && beamColor.intensity > 0.01)
+        this.beamManager.updateOpticalBeam(
           beamId,
           emitter.nodeGroup,
+          emitter.optics,
+          beamColor,
+          opticalState?.zoomDegrees ?? beamColor.zoomDegrees,
+          opticalState?.goboSlot,
+          opticalState?.goboRotation,
+          opticalState?.prism,
+          opticalState?.prismRotation,
+          opticalState?.focusDistance,
+          opticalState?.gobos,
         );
-        if (beam) {
-          this.beamManager.updateBeam(beamId, beamColor, {
-            zoom: beamColor.zoom,
-            frost: beamColor.frost,
-          });
-        }
-      } else if (this.beamManager.hasBeam(beamId)) {
-        // Hide beam when intensity is too low
-        const beam = this.beamManager.getBeam(beamId);
-        if (beam) {
-          beam.mesh.visible = false;
-          beam.spotLight.visible = false;
-        }
-      }
+      else this.beamManager.removeOpticalBeam(beamId);
     }
   }
 

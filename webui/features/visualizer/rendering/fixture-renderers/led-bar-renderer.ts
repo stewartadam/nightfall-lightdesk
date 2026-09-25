@@ -343,11 +343,13 @@ export function disposeLedBar(
  * Creates a simple linear arrangement of pixels based on element count.
  *
  * This is used for fixtures patched without GDTF data, like generic pixel tapes.
+ * `displayGain` scales the luminous cells for the active quality preset.
  */
 export function buildSimpleLedBar(
   fixtureUid: string,
   elements: FixtureElement[],
   physical?: FixturePhysical,
+  displayGain = 1,
 ): FixtureInstance & { ledBarData: LedBarData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -426,6 +428,9 @@ export function buildSimpleLedBar(
   // Create emitter map for DMX updates
   // Each emitter needs its own positioned Object3D so debug overlays can place markers correctly.
   const filteredRow = createFilteredRow(group, cellMesh, cellPositions);
+  // A filtered row supplies the emission, leaving the physical cells as dark lenses.
+  if (filteredRow) filteredRow.mesh.material.color.setScalar(displayGain);
+  else cellMaterial.color.setScalar(displayGain);
   const emitters = new Map<string, EmitterData>();
   for (let i = 0; i < elements.length; i++) {
     const pos = cellPositions[i];

@@ -14,7 +14,6 @@ import {
   MathUtils,
   Mesh,
   type MeshBasicMaterial,
-  Quaternion,
   Scene,
   Vector3,
 } from "three/webgpu";
@@ -36,7 +35,6 @@ import {
 import { fixturePhysicalSignature } from "../model/physical-signature";
 import type { FixtureInstance, RenderableFixture } from "../model/types";
 import { BeamManager } from "./effects/beam-manager";
-import { isLowQualityBeamMaterial } from "./effects/beam-material";
 import { BeamUpdater } from "./effects/beam-updater";
 import { EmitterOpticalState } from "./effects/emitter-optical-state";
 import { createOpticalRenderContext } from "./effects/optical-render-context";
@@ -462,11 +460,13 @@ test("fallback moving head keeps zero pan/tilt hanging straight down", () => {
 
   const basePosition = new Vector3();
   const headPosition = new Vector3();
-  const beamTargetPosition = new Vector3();
 
   instance.nodeObjects.get("Base")?.getWorldPosition(basePosition);
   instance.movingHeadData.headGroup.getWorldPosition(headPosition);
-  instance.movingHeadData.spotlightTarget.getWorldPosition(beamTargetPosition);
+  // Apertures project along their local -Z axis.
+  const beamTargetPosition = instance.emitters
+    .get("MainEmitter")!
+    .nodeGroup!.localToWorld(new Vector3(0, 0, -10));
 
   approx(instance.movingHeadData.yokeGroup.rotation.y, 0);
   approx(instance.movingHeadData.headGroup.rotation.x, 0);
@@ -588,172 +588,6 @@ test("moving head treats signed pan and tilt output as degree offsets", () => {
 
   approx(instance.movingHeadData.yokeGroup.rotation.y, MathUtils.degToRad(90));
   approx(instance.movingHeadData.headGroup.rotation.x, MathUtils.degToRad(-45));
-});
-
-/**
- * Verifies the moving-head floor footprint is synthetic and does not enable the costly spotlight.
- */
-test("moving head floor footprint follows beam hit without enabling spotlight", () => {
-  const instance = buildMovingHeadFixture("fixture-floor-spot", [
-    { label: "Main" } as FixtureElement,
-  ]);
-  instance.group.position.y = 5;
-
-  updateMovingHeadColors(
-    instance,
-    new Map([
-      [
-        "Main",
-        {
-          red: 1,
-          green: 0,
-          blue: 0,
-          intensity: 1,
-          pan: 0,
-          tilt: -45 / 270,
-          zoom: 0.5,
-          frost: 0,
-        },
-      ],
-    ]),
-  );
-
-  instance.group.updateMatrixWorld(true);
-
-  const floorSpot = instance.movingHeadData.floorSpotMesh;
-  const floorSpotWorldPosition = floorSpot.localToWorld(new Vector3(0, 0, 0));
-  const floorSpotMaterial = floorSpot.material as MeshBasicMaterial;
-
-  assert.ok(floorSpot.visible);
-  assert.equal(instance.movingHeadData.spotLight.visible, false);
-  assert.ok(
-    floorSpot.scale.x > floorSpot.scale.y,
-    `expected angled beam footprint to stretch, got ${floorSpot.scale.x}x${floorSpot.scale.y}`,
-  );
-  assert.ok(
-    floorSpotWorldPosition.y > 0 && floorSpotWorldPosition.y < 0.01,
-    `expected footprint just above floor, got y=${floorSpotWorldPosition.y}`,
-  );
-  assert.ok(
-    floorSpotMaterial.opacity > 0,
-    `expected visible footprint opacity, got ${floorSpotMaterial.opacity}`,
-  );
-
-  updateMovingHeadColors(
-    instance,
-    new Map([
-      [
-        "Main",
-        {
-          red: 1,
-          green: 0,
-          blue: 0,
-          intensity: 0,
-          pan: 0,
-          tilt: -45 / 270,
-          zoom: 0.5,
-          frost: 0,
-        },
-      ],
-    ]),
-  );
-
-  assert.equal(floorSpot.visible, false);
-  assert.equal(floorSpotMaterial.opacity, 0);
-});
-
-/**
- * Verifies moving-head floor footprints stay aligned to the world floor
- * when the fixture is mounted on a rotated parent.
- */
-test("moving head floor footprint remains world-floor aligned under rotated fixture groups", () => {
-  const instance = buildMovingHeadFixture("fixture-rotated-floor-spot", [
-    { label: "Main" } as FixtureElement,
-  ]);
-  instance.group.position.y = 5;
-  instance.group.rotation.z = MathUtils.degToRad(25);
-
-  updateMovingHeadColors(
-    instance,
-    new Map([
-      [
-        "Main",
-        {
-          red: 1,
-          green: 0,
-          blue: 0,
-          intensity: 1,
-          pan: 0,
-          tilt: -45 / 270,
-          zoom: 0.5,
-          frost: 0,
-        },
-      ],
-    ]),
-  );
-  instance.group.updateMatrixWorld(true);
-
-  const floorSpot = instance.movingHeadData.floorSpotMesh;
-  const floorSpotWorldQuaternion = floorSpot.getWorldQuaternion(
-    new Quaternion(),
-  );
-  const floorSpotNormal = new Vector3(0, 0, 1)
-    .applyQuaternion(floorSpotWorldQuaternion)
-    .normalize();
-  const floorSpotWorldPosition = floorSpot.localToWorld(new Vector3(0, 0, 0));
-
-  assert.ok(floorSpot.visible);
-  assert.ok(
-    Math.abs(floorSpotNormal.dot(new Vector3(0, 1, 0))) > 0.999,
-    `expected footprint normal to align with world floor, got ${floorSpotNormal.x}, ` +
-      `${floorSpotNormal.y}, ${floorSpotNormal.z}`,
-  );
-  assert.ok(
-    floorSpotWorldPosition.y > 0 && floorSpotWorldPosition.y < 0.01,
-    `expected footprint just above floor, got y=${floorSpotWorldPosition.y}`,
-  );
-});
-
-/**
- * Verifies low-quality moving-head beams keep the full cone and use depth-tested low opacity.
- */
-test("low quality moving head beam keeps full geometry with depth-tested material", () => {
-  const instance = buildMovingHeadFixture(
-    "fixture-low-quality-depth-tested",
-    [{ label: "Main" } as FixtureElement],
-    undefined,
-    "low",
-  );
-  instance.group.position.y = 5;
-
-  updateMovingHeadColors(
-    instance,
-    new Map([
-      [
-        "Main",
-        {
-          red: 1,
-          green: 1,
-          blue: 1,
-          intensity: 1,
-          pan: 0,
-          tilt: -45 / 270,
-          zoom: 0.5,
-          frost: 0,
-        },
-      ],
-    ]),
-  );
-
-  assert.ok(isLowQualityBeamMaterial(instance.movingHeadData.beamMaterial));
-  assert.equal(instance.movingHeadData.beamMaterial.depthTest, true);
-  assert.equal(
-    instance.movingHeadData.beamMaterial.lowQualityClipYUniform.value,
-    0,
-  );
-  assert.equal(instance.movingHeadData.beamMaterial.forceSinglePass, true);
-  assert.equal(instance.movingHeadData.beamMesh.scale.y, 50);
-  assert.ok(instance.movingHeadData.beamMaterial.opacity <= 0.3);
 });
 
 /** Cell anchors and selection proxies must follow fixture placement through parent transforms. */
@@ -1269,7 +1103,10 @@ test("generic wash beam renderer maps beams and strips left-to-right", () => {
     );
   const beamDirection = beamTip.sub(beamOrigin).normalize();
 
-  assert.ok(instance.rotatingWashBeamData.beamEmitters[0].beamMesh.visible);
+  assert.ok(
+    instance.rotatingWashBeamData.beamEmitters[0].optical.beamColor!.intensity >
+      0.01,
+  );
   approx(
     instance.rotatingWashBeamData.tiltGroup.rotation.x,
     MathUtils.degToRad(-90),
@@ -1301,89 +1138,12 @@ test("generic wash beam treats zero tilt as neutral reference", () => {
 });
 
 /**
- * Verifies low-quality mode keeps Generic beams visible without volumetric shader materials or SpotLights.
+ * Verifies each Generic wash lens publishes its own optical color and intensity to the shared batch.
  */
-test("generic wash beam low quality uses cheap beam materials", () => {
+test("generic wash beam apertures keep independent optical output", () => {
   const instance = buildRotatingWashBeamFixture(
-    "fixture-rotating-wash-beam-low",
+    "fixture-rotating-wash-beam-independent-apertures",
     rotatingWashBeamElements(),
-    "low",
-  );
-
-  updateRotatingWashBeamColors(
-    instance,
-    new Map([
-      ["0", { red: 0, green: 0, blue: 0, intensity: 1, tilt: 0, zoom: 0.5 }],
-      ["1", { red: 1, green: 0.5, blue: 0.25, intensity: 1 }],
-    ]),
-  );
-
-  const beam = instance.rotatingWashBeamData.beamEmitters[0];
-  assert.ok(isLowQualityBeamMaterial(beam.beamMaterial));
-  assert.equal(beam.beamMaterial.forceSinglePass, true);
-  assert.equal(beam.beamMesh.visible, true);
-  assert.equal(beam.spotLight.visible, false);
-  assert.equal(beam.spotLight.intensity, 0);
-  assert.equal(beam.floorSpotMesh.visible, false);
-  assert.ok(
-    beam.beamMaterial.opacity > 0,
-    `expected visible low-quality beam opacity, got ${beam.beamMaterial.opacity}`,
-  );
-});
-
-/**
- * Verifies high-quality Generic wash beams use synthetic floor footprints instead of costly SpotLights.
- */
-test("generic wash beam high quality uses synthetic floor footprints", () => {
-  const instance = buildRotatingWashBeamFixture(
-    "fixture-rotating-wash-beam-floor-spot",
-    rotatingWashBeamElements(),
-    "high",
-  );
-  instance.group.position.y = 5;
-
-  updateRotatingWashBeamColors(
-    instance,
-    new Map([
-      [
-        "0",
-        { red: 0, green: 0, blue: 0, intensity: 1, tilt: 135 / 270, zoom: 0.5 },
-      ],
-      ["1", { red: 1, green: 0.5, blue: 0.25, intensity: 1 }],
-    ]),
-  );
-  instance.group.updateMatrixWorld(true);
-
-  const beam = instance.rotatingWashBeamData.beamEmitters[0];
-  const floorSpot = beam.floorSpotMesh;
-  const floorSpotWorldPosition = floorSpot.localToWorld(new Vector3(0, 0, 0));
-  const floorSpotMaterial = floorSpot.material as MeshBasicMaterial;
-
-  assert.equal(beam.spotLight.visible, false);
-  assert.equal(beam.spotLight.intensity, 0);
-  assert.ok(floorSpot.visible);
-  assert.ok(
-    floorSpot.scale.x > floorSpot.scale.y,
-    `expected angled Generic beam footprint to stretch, got ${floorSpot.scale.x}x${floorSpot.scale.y}`,
-  );
-  assert.ok(
-    floorSpotWorldPosition.y > 0 && floorSpotWorldPosition.y < 0.01,
-    `expected Generic footprint just above floor, got y=${floorSpotWorldPosition.y}`,
-  );
-  assert.ok(
-    floorSpotMaterial.opacity > 0,
-    `expected visible Generic footprint opacity, got ${floorSpotMaterial.opacity}`,
-  );
-});
-
-/**
- * Verifies high-quality Generic beams keep independent shader uniforms per emitter.
- */
-test("generic wash beam high quality keeps per-beam material uniforms", () => {
-  const instance = buildRotatingWashBeamFixture(
-    "fixture-rotating-wash-beam-independent-materials",
-    rotatingWashBeamElements(),
-    "high",
   );
 
   updateRotatingWashBeamColors(
@@ -1398,21 +1158,13 @@ test("generic wash beam high quality keeps per-beam material uniforms", () => {
     ]),
   );
 
-  const firstBeam = instance.rotatingWashBeamData.beamEmitters[0];
-  const secondBeam = instance.rotatingWashBeamData.beamEmitters[1];
-  if (
-    isLowQualityBeamMaterial(firstBeam.beamMaterial) ||
-    isLowQualityBeamMaterial(secondBeam.beamMaterial)
-  ) {
-    assert.fail("expected high-quality Generic beam materials");
-  }
-
-  assert.notEqual(firstBeam.beamMaterial, secondBeam.beamMaterial);
-  assert.equal(firstBeam.beamMaterial.beamIntensityUniform.value, 0);
-  assert.equal(secondBeam.beamMaterial.beamIntensityUniform.value, 1);
+  const [firstBeam, secondBeam] = instance.rotatingWashBeamData.beamEmitters;
+  assert.notEqual(firstBeam.optical.beamColor, secondBeam.optical.beamColor);
+  assert.equal(firstBeam.optical.beamColor!.intensity, 0);
+  assert.equal(secondBeam.optical.beamColor!.intensity, 1);
   assert.ok(
-    secondBeam.beamMaterial.beamColorUniform.value.x > 0.9,
-    `expected second beam to keep red material uniforms, got ${secondBeam.beamMaterial.beamColorUniform.value.x}`,
+    secondBeam.optical.beamColor!.red > 0.9,
+    `expected second aperture to stay red, got ${secondBeam.optical.beamColor!.red}`,
   );
 });
 
@@ -1751,7 +1503,7 @@ test("moving head spot uses white beam when intensity has no RGB output", () => 
       material: MeshBasicMaterial;
     }
   ).material;
-  assert.equal(instance.movingHeadData.beamMesh.visible, true);
+  assert.ok(instance.emitters.get("MainEmitter")!.beamColor!.intensity > 0.01);
   assert.ok(
     lensMaterial.color.r > 0.9 &&
       lensMaterial.color.g > 0.9 &&
@@ -1783,7 +1535,7 @@ test("moving head spot decodes Generic color wheel red", () => {
       material: MeshBasicMaterial;
     }
   ).material;
-  assert.equal(instance.movingHeadData.beamMesh.visible, true);
+  assert.ok(instance.emitters.get("MainEmitter")!.beamColor!.intensity > 0.01);
   assert.ok(
     lensMaterial.color.r > 0.9 &&
       lensMaterial.color.g < 0.01 &&
@@ -1808,24 +1560,17 @@ test("moving head spot decodes Generic color wheel split colors", () => {
 
   updateMovingHeadColors(instance, new Map([["Head", dmx]]));
 
-  const material = instance.movingHeadData.beamMaterial;
-  assert.equal(instance.movingHeadData.beamMesh.visible, true);
-  if (isLowQualityBeamMaterial(material)) {
-    assert.fail("expected high-quality beam material");
-  }
-  assert.equal(material.forceSinglePass, true);
-  assert.equal(material.splitColorAmountUniform.value, 1);
+  const beam = instance.emitters.get("MainEmitter")!.beamColor!;
+  assert.ok(beam.intensity > 0.01);
   assert.ok(
-    material.beamColorUniform.value.x > 0.9 &&
-      material.beamColorUniform.value.y > 0.9 &&
-      material.beamColorUniform.value.z > 0.9,
-    `expected primary split color to remain white, got ${material.beamColorUniform.value.x},${material.beamColorUniform.value.y},${material.beamColorUniform.value.z}`,
+    beam.red > 0.9 && beam.green > 0.9 && beam.blue > 0.9,
+    `expected primary split color to remain white, got ${beam.red},${beam.green},${beam.blue}`,
   );
   assert.ok(
-    material.secondaryBeamColorUniform.value.x < 0.01 &&
-      material.secondaryBeamColorUniform.value.y > 0.9 &&
-      material.secondaryBeamColorUniform.value.z < 0.01,
-    `expected secondary split color to remain green, got ${material.secondaryBeamColorUniform.value.x},${material.secondaryBeamColorUniform.value.y},${material.secondaryBeamColorUniform.value.z}`,
+    (beam.secondaryRed ?? 1) < 0.01 &&
+      (beam.secondaryGreen ?? 0) > 0.9 &&
+      (beam.secondaryBlue ?? 1) < 0.01,
+    `expected secondary split color to remain green, got ${beam.secondaryRed},${beam.secondaryGreen},${beam.secondaryBlue}`,
   );
 });
 
@@ -1916,7 +1661,6 @@ test("explicit layouts select renderers without fixture names", () => {
   const instance = buildRotatingWashBeamFixture(
     "linear-wash",
     rotatingWashBeamElements().slice(0, 11),
-    "low",
     10,
   );
   assert.equal(instance.rotatingWashBeamData.beamEmitters.length, 10);
@@ -1953,8 +1697,6 @@ test("moving heads publish resolved output to the shared atmospheric batch", () 
     colors,
   );
   updater.updateFixtureBeam(fixture.uid, instance, colors);
-  assert.equal(instance.movingHeadData?.beamMesh.visible, false);
-  assert.equal(instance.movingHeadData?.floorSpotMesh.visible, false);
   const draw = context.scene
     .children[0] as import("three/webgpu").InstancedMesh;
   assert.equal(draw.count, 1);
@@ -2159,11 +1901,6 @@ test("rotating wash routes each lens independently to shared atmosphere", () => 
     new Set(Array.from({ length: 12 }, (_, i) => positions.getX(i))).size,
     12,
   );
-  assert.ok(
-    instance.rotatingWashBeamData.beamEmitters.every(
-      (beam) => !beam.beamMesh.visible && !beam.floorSpotMesh.visible,
-    ),
-  );
   colors.get(
     instance.rotatingWashBeamData.beamEmitters[0].elementLabel,
   )!.intensity = 0;
@@ -2202,7 +1939,10 @@ test("fixture photometry reaches built-in moving heads and updates without chang
   const initial = manager.getFixtureInstance(fixture.uid)!;
   assert.equal(initial.movingHeadData?.beamAngleDeg, 8);
   assert.equal(initial.movingHeadData?.fieldAngleDeg, 12);
-  assert.equal(initial.movingHeadData?.lumens, 4200);
+  assert.equal(
+    initial.emitters.get("MainEmitter")?.optics?.physical.lumens,
+    4200,
+  );
   const updatedPhysical = { ...physical, beamAngle: 4 };
   const updated = {
     ...fixture,
