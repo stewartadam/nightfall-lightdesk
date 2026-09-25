@@ -20,6 +20,7 @@ mod invocation;
 mod lowering;
 mod registry;
 mod source;
+mod targets;
 pub mod websocket;
 
 use bevy_app::{App, Plugin, Update};
@@ -47,6 +48,10 @@ use nightfall_engine::prelude::{
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
 pub use source::{BindingTarget, ControlBehavior, SourceEdgeStates, SourceSignal};
+pub use targets::{
+    ActionTargetTracking, ActionTargets, BindingDiagnostic, bindings_need_diagnosis,
+    collect_binding_diagnostics, mark_action_targets_changed,
+};
 
 /// Plugin that installs the generic registered-action invocation stage.
 pub struct ActionsPlugin;
@@ -60,6 +65,7 @@ impl Plugin for ActionsPlugin {
         app.init_resource::<ActionRegistry>();
         app.init_resource::<SourceEdgeStates>();
         app.init_resource::<InvocationFailureThrottle>();
+        app.init_resource::<ActionTargets>();
         app.add_message::<ActionInvocation>();
         app.add_message::<InvocationResult>();
         app.add_message::<ActionInvocationFailure>();
@@ -71,6 +77,12 @@ impl Plugin for ActionsPlugin {
             ActionInvocationHandling
                 .after(InputHandling)
                 .before(PendingCommandExpansion),
+        );
+        app.configure_sets(
+            Update,
+            ActionTargetTracking
+                .after(EventHandling)
+                .before(ClientOutput),
         );
         app.add_systems(
             Update,

@@ -64,7 +64,7 @@ pub mod prelude {
         TimelineLookaheadActionStatuses, TimelineLookaheadMode, TimelineLoopRange, TimelineMarker,
         TimelineNondeterministicSeekBehavior, TimelineRegion, TimelineScrollMode,
         TimelineSeekBehavior, TimelineSelection, TimelineState, TimelineStopBehavior,
-        TimelineTriggerMode, Track,
+        TimelineTriggerMode, Track, validate_timeline_action,
     };
     pub use crate::transport::{
         TIMELINE_FIRE_CUE_ACTION_ID, TIMELINE_PAUSE_ACTION_ID, TIMELINE_PLAY_ACTION_ID,

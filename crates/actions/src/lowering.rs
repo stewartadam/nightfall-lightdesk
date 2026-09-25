@@ -13,17 +13,19 @@
 //! messages. Domains describe the mapping from typed arguments to their own command or
 //! update types and never mutate the world from an action invoker directly.
 
-use bevy_app::App;
+use bevy_app::{App, Update};
 use bevy_ecs::prelude::{Message, World};
+use bevy_ecs::schedule::{IntoScheduleConfigs, SystemCondition};
 use nightfall_engine::prelude::{
     CommandId, CommandOrigin, CommandTracker, IngressCommand, PayloadEnvelope,
     PendingCommandBuffer, ReplyTarget, UndoId,
 };
 use serde::de::DeserializeOwned;
 
-use crate::descriptor::{ActionDescriptor, ActionInputKind};
+use crate::descriptor::{ActionDescriptor, ActionInputKind, ActionParameterKind};
 use crate::invocation::{ActionInvocation, InvocationDispatch, InvocationError};
 use crate::registry::ActionRegistry;
+use crate::targets::{ActionTargetTracking, ActionTargets, mark_action_targets_changed};
 
 /// Submits one ingress command on behalf of an action invocation.
 ///
@@ -149,9 +151,62 @@ pub trait ActionAppExt {
         A: DeserializeOwned + 'static,
         C: Send + Sync + 'static,
         F: Fn(A) -> Result<C, InvocationError> + Send + Sync + 'static;
+
+    /// Registers the read-only validator for arguments of one parameter kind.
+    ///
+    /// See [`ActionRegistry::register_target_validator`]. Pair it with
+    /// [`Self::invalidate_action_targets_when`] so binding diagnostics follow the state the
+    /// validator reads.
+    fn register_action_target_validator<T, F>(
+        &mut self,
+        kind: ActionParameterKind,
+        validator: F,
+    ) -> &mut Self
+    where
+        T: DeserializeOwned + 'static,
+        F: Fn(&World, T) -> Result<(), InvocationError> + Send + Sync + 'static;
+
+    /// Marks [`ActionTargets`] changed on frames where `condition` holds.
+    ///
+    /// Domains pass a cheap change-detection condition over the state their target
+    /// validators read, such as `resource_exists_and_changed::<DataProvider<Master>>`, so
+    /// binding diagnostics are recomputed only when targets may have appeared or vanished.
+    fn invalidate_action_targets_when<M>(
+        &mut self,
+        condition: impl SystemCondition<M> + 'static,
+    ) -> &mut Self;
 }
 
 impl ActionAppExt for App {
+    fn register_action_target_validator<T, F>(
+        &mut self,
+        kind: ActionParameterKind,
+        validator: F,
+    ) -> &mut Self
+    where
+        T: DeserializeOwned + 'static,
+        F: Fn(&World, T) -> Result<(), InvocationError> + Send + Sync + 'static,
+    {
+        self.init_resource::<ActionRegistry>();
+        self.world_mut()
+            .resource_mut::<ActionRegistry>()
+            .register_target_validator::<T, F>(kind, validator);
+        self
+    }
+
+    fn invalidate_action_targets_when<M>(
+        &mut self,
+        condition: impl SystemCondition<M> + 'static,
+    ) -> &mut Self {
+        self.init_resource::<ActionTargets>();
+        self.add_systems(
+            Update,
+            mark_action_targets_changed
+                .run_if(condition)
+                .in_set(ActionTargetTracking),
+        )
+    }
+
     fn register_action<A, F>(&mut self, descriptor: ActionDescriptor, invoker: F) -> &mut Self
     where
         A: DeserializeOwned + 'static,

@@ -388,6 +388,201 @@ fn store_timeline_marker_change_does_not_request_reconstruction_event() {
     );
 }
 
+/// Builds an app whose action registry holds the desk and timeline actions plus an action
+/// whose timeline plan always fails, for validating stored timeline actions.
+fn stored_action_validation_app() -> App {
+    use nightfall_actions::{ActionAppExt, ActionDescriptor, InvocationDispatch, InvocationError};
+    use nightfall_playback_planner::TimelinePlaybackActionPlan;
+
+    let mut app = App::new();
+    crate::install_timeline_test_actions(&mut app);
+    app.register_action::<serde_json::Value, _>(
+        ActionDescriptor::new("test.unplannable", "Unplannable", "Tests"),
+        |_world, _arguments, _invocation| Ok(InvocationDispatch::succeeded()),
+    )
+    .register_action_capability::<serde_json::Value, TimelinePlaybackActionPlan, _>(
+        "test.unplannable",
+        TimelinePlaybackActionPlan::CAPABILITY,
+        |_arguments| Err(InvocationError::new("test.unplannable", "Cannot plan")),
+    );
+    app
+}
+
+/// Builds one timeline action invoking `action`.
+fn timeline_action(id: &str, action: ActionReference) -> Action {
+    Action {
+        id: id.to_owned(),
+        label: id.to_owned(),
+        position: Duration::from_secs(1),
+        duration: Duration::ZERO,
+        action,
+    }
+}
+
+/// Builds a timeline with one track holding `actions`.
+fn timeline_with_actions(actions: Vec<Action>) -> Timeline {
+    let mut timeline = timeline(12, 0x120, "Timeline 12");
+    timeline.tracks = vec![Track {
+        id: "track-1".to_owned(),
+        label: "Track 1".to_owned(),
+        muted: false,
+        solo: false,
+        expanded: false,
+        actions,
+        automation_lanes: Vec::new(),
+    }];
+    timeline
+}
+
+/// Returns the failure code of validating the actions a command would store.
+fn stored_action_failure(app: &App, command: &TimelineCommand) -> Option<String> {
+    validate_stored_actions(
+        command,
+        &DataProvider::<Timeline>::default(),
+        Some(app.world().resource::<ActionRegistry>()),
+    )
+    .err()
+    .map(|error| error.code)
+}
+
+/// Verifies timeline ingress rejects unregistered, malformed, non-timeline, and unplannable
+/// actions while accepting valid ones, including actions whose target does not exist yet.
+#[test]
+fn storing_timeline_actions_rejects_invalid_references() {
+    let app = stored_action_validation_app();
+    let store = |action: ActionReference| {
+        TimelineCommand::StoreTimeline(timeline_with_actions(vec![timeline_action(
+            "action-1", action,
+        )]))
+    };
+
+    assert_eq!(
+        stored_action_failure(&app, &store(start_clip_action(Uuid::new_v4()))),
+        None,
+        "a clip that does not exist yet is still storable"
+    );
+    assert_eq!(
+        stored_action_failure(
+            &app,
+            &store(ActionReference::new(
+                "missing.action",
+                serde_json::json!({})
+            ))
+        ),
+        Some("action.not_registered".to_owned())
+    );
+    assert_eq!(
+        stored_action_failure(
+            &app,
+            &store(ActionReference::new(
+                "clip.start",
+                serde_json::json!({ "clip": "nope" })
+            ))
+        ),
+        Some("action.invalid_arguments".to_owned())
+    );
+    assert_eq!(
+        stored_action_failure(
+            &app,
+            &store(ActionReference::new(
+                "test.unplannable",
+                serde_json::json!({})
+            ))
+        ),
+        Some("test.unplannable".to_owned())
+    );
+}
+
+/// Verifies creation and recorded-action insertion validate every stored action.
+#[test]
+fn creating_and_recording_timeline_actions_validates_them() {
+    let app = stored_action_validation_app();
+    let invalid = timeline_action(
+        "bad",
+        ActionReference::new("missing.action", serde_json::json!({})),
+    );
+
+    assert_eq!(
+        stored_action_failure(
+            &app,
+            &TimelineCommand::CreateTimeline {
+                timeline: timeline_with_actions(vec![invalid.clone()]),
+                timecode: timecode(12, 0x121, "Timecode 12"),
+            }
+        ),
+        Some("action.not_registered".to_owned())
+    );
+    assert_eq!(
+        stored_action_failure(
+            &app,
+            &TimelineCommand::InsertRecordedActions {
+                timeline_id: 12,
+                track_id: "track-1".to_owned(),
+                actions: vec![invalid],
+            }
+        ),
+        Some("action.not_registered".to_owned())
+    );
+}
+
+/// Verifies storing a timeline revalidates only new or changed actions, so a timeline loaded
+/// with a legacy invalid action stays editable.
+#[test]
+fn storing_timeline_keeps_unchanged_legacy_actions() {
+    let app = stored_action_validation_app();
+    let registry = app.world().resource::<ActionRegistry>();
+    let legacy = timeline_action(
+        "legacy",
+        ActionReference::new("removed.action", serde_json::json!({})),
+    );
+    let mut timelines = DataProvider::<Timeline>::default();
+    timelines
+        .add(timeline_with_actions(vec![legacy.clone()]))
+        .expect("timeline should store");
+
+    let mut edited = timeline_with_actions(vec![
+        legacy,
+        timeline_action("new", start_clip_action(Uuid::new_v4())),
+    ]);
+    assert!(
+        validate_stored_actions(
+            &TimelineCommand::StoreTimeline(edited.clone()),
+            &timelines,
+            Some(registry)
+        )
+        .is_ok()
+    );
+
+    edited.tracks[0].actions[0].action =
+        ActionReference::new("other.removed", serde_json::json!({}));
+    let error = validate_stored_actions(
+        &TimelineCommand::StoreTimeline(edited),
+        &timelines,
+        Some(registry),
+    )
+    .expect_err("a changed invalid action should be rejected");
+    assert_eq!(error.code, "action.not_registered");
+    assert_eq!(
+        error
+            .details
+            .as_ref()
+            .and_then(|details| details.get("action_id")),
+        Some(&serde_json::json!("legacy"))
+    );
+}
+
+/// Verifies an action whose timeline plan fails still resolves to a live invocation.
+#[test]
+fn unplannable_action_resolves_to_live_invocation() {
+    let app = stored_action_validation_app();
+    let action = ActionReference::new("test.unplannable", serde_json::json!({}));
+
+    assert_eq!(
+        ActionKind::resolve(&action, Some(app.world().resource::<ActionRegistry>())),
+        ActionKind::RegisteredAction(action)
+    );
+}
+
 /// Builds a minimal timeline definition for timeline event tests.
 fn timeline(id: u32, uid: u128, label: &str) -> Timeline {
     Timeline {

@@ -6,11 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::collections::BTreeSet;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use bevy_ecs::prelude::Resource;
 use nightfall::prelude::*;
-use nightfall_actions::{ActionReference, ActionRegistry};
+use nightfall_actions::{
+    ActionReference, ActionRegistry, ActionSurface, InvocationError, is_client_action,
+};
 use nightfall_desk::prelude::{
     back_clip_action, desk_eval_action, go_clip_action, goto_clip_action, set_clip_rate_action,
     start_clip_action, stop_clip_action,
@@ -524,13 +528,38 @@ impl ActionKind {
     ///
     /// Without a registry, or for actions that expose no timeline capability, the action is
     /// invoked live as a registered action.
+    ///
+    /// A capability that fails to decode the stored arguments is logged and the action falls
+    /// back to live invocation, which reports the same failure when it fires. Command ingress
+    /// rejects such actions, so this only happens for timelines loaded from older showfiles.
     pub fn resolve(action: &ActionReference, registry: Option<&ActionRegistry>) -> Self {
         let Some(registry) = registry else {
             return Self::RegisteredAction(action.clone());
         };
-        if let Ok(Some(plan)) = registry.resolve_capability::<TimelinePlaybackActionPlan>(action) {
+        match Self::resolve_planned(action, registry) {
+            Ok(Some(kind)) => kind,
+            Ok(None) => Self::RegisteredAction(action.clone()),
+            Err(error) => {
+                warn_invalid_plan_once(action, &error);
+                Self::RegisteredAction(action.clone())
+            }
+        }
+    }
+
+    /// Resolves a stored reference through the timeline planning capabilities.
+    ///
+    /// Returns `Ok(None)` for actions without a timeline capability, and the capability's
+    /// failure when the stored arguments cannot be planned.
+    fn resolve_planned(
+        action: &ActionReference,
+        registry: &ActionRegistry,
+    ) -> Result<Option<Self>, InvocationError> {
+        if is_client_action(&action.id) {
+            return Ok(None);
+        }
+        if let Some(plan) = registry.resolve_capability::<TimelinePlaybackActionPlan>(action)? {
             let uid = plan.owner_uid;
-            return match plan.kind {
+            return Ok(Some(match plan.kind {
                 TimelinePlaybackActionKind::Start => Self::StartClip(uid),
                 TimelinePlaybackActionKind::Stop => Self::StopClip(uid),
                 TimelinePlaybackActionKind::FireCue => Self::FireCue(uid),
@@ -543,12 +572,11 @@ impl ActionKind {
                     }
                     PlannedPlaybackInterventionKind::Stop => Self::StopClip(uid),
                 },
-            };
+            }));
         }
-        if let Ok(Some(eval)) = registry.resolve_capability::<TimelineEvalActionPlan>(action) {
-            return Self::DeskEval(eval.command);
-        }
-        Self::RegisteredAction(action.clone())
+        Ok(registry
+            .resolve_capability::<TimelineEvalActionPlan>(action)?
+            .map(|eval| Self::DeskEval(eval.command)))
     }
 
     /// Returns the persisted action reference that resolves to this timeline meaning.
@@ -565,6 +593,42 @@ impl ActionKind {
             Self::RegisteredAction(action) => action.clone(),
         }
     }
+}
+
+/// Stored references whose timeline plan failed, already reported in the log.
+static REPORTED_INVALID_PLANS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Logs a warning the first time a stored reference fails timeline planning.
+///
+/// Timeline playback resolves actions every frame, so each distinct reference is reported
+/// once per process instead of flooding the log.
+fn warn_invalid_plan_once(action: &ActionReference, error: &InvocationError) {
+    let key = format!("{}:{}", action.id.as_str(), action.arguments);
+    let first = REPORTED_INVALID_PLANS
+        .lock()
+        .map(|mut reported| reported.insert(key))
+        .unwrap_or(true);
+    if first {
+        tracing::warn!(
+            action_id = action.id.as_str(),
+            code = %error.code,
+            message = %error.message,
+            "timeline_action_plan_invalid; running it as a live action without seek support"
+        );
+    }
+}
+
+/// Validates an action reference before a timeline command stores it.
+///
+/// The action must be registered and allowed on the timeline surface, its arguments must fit
+/// its parameters, and any timeline planning capability must accept them. Missing targets
+/// are not rejected: timelines may reference clips or cues that are created later.
+pub fn validate_timeline_action(
+    registry: &ActionRegistry,
+    action: &ActionReference,
+) -> Result<(), InvocationError> {
+    registry.validate_reference(action, ActionSurface::Timeline)?;
+    ActionKind::resolve_planned(action, registry).map(drop)
 }
 
 /// A parameter that can be adjusted over time with a curve of control points

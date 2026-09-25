@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { gridCellByRowIndex } from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { prepareStoreSeededTestApp } from "./showfile-startup";
 
@@ -466,8 +467,12 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
   });
   const oscGrid = page.locator('[data-grid-kind="tanstack"]').last();
   await expect(oscGrid).toBeVisible();
-  await expect(oscGrid.locator("#tanstack-cell-1-0")).toHaveText("/e2e/go");
-  await oscGrid.locator("#tanstack-cell-1-0").click();
+  const oscAddress = gridCellByRowIndex(oscGrid, {
+    columnKey: "address",
+    rowIndex: 0,
+  });
+  await expect(oscAddress).toHaveText("/e2e/go");
+  await oscAddress.click();
   await expect(
     page.getByRole("button", { name: /Delete/ }).last(),
   ).toContainText("1");
@@ -475,7 +480,7 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
   await expect(
     page.getByRole("button", { name: /Delete/ }).last(),
   ).toContainText("2");
-  await editCellText(oscGrid.locator("#tanstack-cell-1-0"), "/e2e/stop");
+  await editCellText(oscAddress, "/e2e/stop");
   await expect
     .poll(
       async () => (await latestUpsertedMapping(page, "OscCommand"))?.address,

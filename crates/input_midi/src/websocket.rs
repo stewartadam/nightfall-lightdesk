@@ -13,13 +13,14 @@
 //! - Broadcasters for device list, mappings, and last event
 
 use bevy_ecs::prelude::*;
+use nightfall_actions::BindingDiagnostic;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::command::{MidiCommand, MidiLastEvent, MidiMapping};
 use crate::mapping::MidiMappings;
-use crate::{LastMidiEvent, MidiDevices};
+use crate::{LastMidiEvent, MidiDevices, MidiMappingDiagnostics};
 
 /// MIDI device information sent to the UI
 #[derive(Debug, Clone, Serialize)]
@@ -42,6 +43,8 @@ enum MidiWsMessage<'a> {
     MidiMappings(&'a [MidiMapping]),
     /// Last received MIDI event (for identification)
     MidiLastEvent(&'a MidiLastEvent),
+    /// MIDI mappings that cannot currently invoke their action, and why
+    MidiMappingDiagnostics(&'a [BindingDiagnostic]),
 }
 
 /// Deserialize and dispatch MidiCommand from JSON
@@ -70,6 +73,7 @@ pub fn handle_resync_state(
     mut events: MessageReader<ResyncRequested>,
     devices: Res<MidiDevices>,
     mappings: Res<MidiMappings>,
+    diagnostics: Res<MidiMappingDiagnostics>,
     last_event: Res<LastMidiEvent>,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -81,6 +85,7 @@ pub fn handle_resync_state(
 
     send_device_list(&devices, &broadcaster);
     send_mappings(&mappings, &broadcaster);
+    send_diagnostics(&diagnostics, &broadcaster);
     if let Some(ref event) = last_event.0 {
         send_last_event(event, &broadcaster);
     }
@@ -90,6 +95,7 @@ pub fn handle_resync_state(
 pub fn send_midi_state(
     devices: Res<MidiDevices>,
     mappings: Res<MidiMappings>,
+    diagnostics: Res<MidiMappingDiagnostics>,
     last_event: Res<LastMidiEvent>,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -104,6 +110,10 @@ pub fn send_midi_state(
             mappings.mappings().len()
         );
         send_mappings(&mappings, &broadcaster);
+    }
+
+    if diagnostics.is_changed() {
+        send_diagnostics(&diagnostics, &broadcaster);
     }
 
     if last_event.is_changed() {
@@ -135,6 +145,14 @@ fn send_mappings(mappings: &MidiMappings, broadcaster: &ClientEventSink) {
         &MidiWsMessage::MidiMappings(mappings.mappings()),
     );
     tracing::trace!("Sending MIDI mappings to WebSocket clients");
+}
+
+/// Send the current MIDI mapping diagnostics to WebSocket clients.
+fn send_diagnostics(diagnostics: &MidiMappingDiagnostics, broadcaster: &ClientEventSink) {
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &MidiWsMessage::MidiMappingDiagnostics(&diagnostics.0),
+    );
 }
 
 /// Send last MIDI event to WebSocket clients

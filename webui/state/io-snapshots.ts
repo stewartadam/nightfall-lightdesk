@@ -23,9 +23,11 @@ import {
   clientActionInvocation,
   midiDevices,
   midiLastEvent,
+  midiMappingDiagnostics,
   midiMappings,
   oscLastEvent,
   oscListenerStatus,
+  oscMappingDiagnostics,
   oscMappings,
   oscSources,
 } from "./appStores";
@@ -126,6 +128,17 @@ export function applyMidiMappingsSnapshot(mappings: types.MidiMapping[]): void {
   setStoreAction(midiMappings, "Receive MidiMappings", mappings);
 }
 
+/** Applies the backend's diagnostics of MIDI mappings that cannot invoke their action. */
+export function applyMidiMappingDiagnosticsSnapshot(
+  diagnostics: types.BindingDiagnostic[],
+): void {
+  setStoreAction(
+    midiMappingDiagnostics,
+    "Receive MidiMappingDiagnostics",
+    diagnostics,
+  );
+}
+
 /** Applies the last observed MIDI event to the MIDI store. */
 export function applyMidiLastEventSnapshot(
   event: types.MidiLastEvent | null,
@@ -182,6 +195,17 @@ export function applyOscSourcesSnapshot(sources: types.OscSource[]): void {
 /** Applies the current OSC mapping list to the OSC store. */
 export function applyOscMappingsSnapshot(mappings: types.OscMapping[]): void {
   setStoreAction(oscMappings, "Receive OscMappings", mappings);
+}
+
+/** Applies the backend's diagnostics of OSC mappings that cannot invoke their action. */
+export function applyOscMappingDiagnosticsSnapshot(
+  diagnostics: types.BindingDiagnostic[],
+): void {
+  setStoreAction(
+    oscMappingDiagnostics,
+    "Receive OscMappingDiagnostics",
+    diagnostics,
+  );
 }
 
 /** Applies the last observed OSC event to the OSC store. */

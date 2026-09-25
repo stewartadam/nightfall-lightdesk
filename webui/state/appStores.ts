@@ -426,8 +426,12 @@ export const actionInvocationFailures = atom<types.ActionInvocationFailure[]>(
 export const midiDevices = atom<types.MidiDevice[]>([]);
 export const midiMappings = atom<types.MidiMapping[]>([]);
 export const midiLastEvent = atom<types.MidiLastEvent | null>(null);
+/** MIDI mappings that cannot currently invoke their action, as diagnosed by the backend. */
+export const midiMappingDiagnostics = atom<types.BindingDiagnostic[]>([]);
 export const oscSources = atom<types.OscSource[]>([]);
 export const oscMappings = atom<types.OscMapping[]>([]);
+/** OSC mappings that cannot currently invoke their action, as diagnosed by the backend. */
+export const oscMappingDiagnostics = atom<types.BindingDiagnostic[]>([]);
 export const oscLastEvent = atom<types.OscLastEvent | null>(null);
 export const oscListenerStatus = atom<types.OscListenerStatus | null>(null);
 
@@ -1067,8 +1071,10 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     midiDevices,
     midiMappings,
     midiLastEvent,
+    midiMappingDiagnostics,
     oscSources,
     oscMappings,
+    oscMappingDiagnostics,
     oscLastEvent,
     oscListenerStatus,
     consoleScrollback,

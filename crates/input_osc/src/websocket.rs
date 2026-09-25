@@ -9,13 +9,14 @@
 //! WebSocket integration for OSC input.
 
 use bevy_ecs::prelude::*;
+use nightfall_actions::BindingDiagnostic;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
 use crate::mapping::OscMappings;
-use crate::{LastOscEvent, OscRuntimeStatus, OscSources};
+use crate::{LastOscEvent, OscMappingDiagnostics, OscRuntimeStatus, OscSources};
 
 /// OSC source info for UI display.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -41,6 +42,8 @@ pub enum OscWsMessage<'a> {
     OscListenerStatus(&'a OscListenerStatus),
     /// External eval metadata for CommandLine source tagging.
     OscExternalEval(&'a OscExternalEval),
+    /// OSC mappings that cannot currently invoke their action, and why.
+    OscMappingDiagnostics(&'a [BindingDiagnostic]),
 }
 
 /// Deserialize and dispatch `OscCommand` from JSON.
@@ -69,6 +72,7 @@ pub fn handle_resync_state(
     mut events: MessageReader<ResyncRequested>,
     sources: Res<OscSources>,
     mappings: Res<OscMappings>,
+    diagnostics: Res<OscMappingDiagnostics>,
     last_event: Res<LastOscEvent>,
     status: Res<OscRuntimeStatus>,
     broadcaster: Res<ClientEventSink>,
@@ -81,6 +85,7 @@ pub fn handle_resync_state(
 
     send_sources(&sources, &broadcaster);
     send_mappings(&mappings, &broadcaster);
+    send_diagnostics(&diagnostics, &broadcaster);
     send_listener_status(&status, &broadcaster);
     if let Some(ref event) = last_event.0 {
         send_last_event(event, &broadcaster);
@@ -91,6 +96,7 @@ pub fn handle_resync_state(
 pub fn send_osc_state(
     sources: Res<OscSources>,
     mappings: Res<OscMappings>,
+    diagnostics: Res<OscMappingDiagnostics>,
     last_event: Res<LastOscEvent>,
     status: Res<OscRuntimeStatus>,
     broadcaster: Res<ClientEventSink>,
@@ -100,6 +106,9 @@ pub fn send_osc_state(
     }
     if mappings.is_changed() {
         send_mappings(&mappings, &broadcaster);
+    }
+    if diagnostics.is_changed() {
+        send_diagnostics(&diagnostics, &broadcaster);
     }
     if status.is_changed() {
         send_listener_status(&status, &broadcaster);
@@ -135,6 +144,14 @@ fn send_mappings(mappings: &OscMappings, broadcaster: &ClientEventSink) {
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &OscWsMessage::OscMappings(mappings.mappings()),
+    );
+}
+
+/// Sends the current OSC mapping diagnostics to websocket clients.
+fn send_diagnostics(diagnostics: &OscMappingDiagnostics, broadcaster: &ClientEventSink) {
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &OscWsMessage::OscMappingDiagnostics(&diagnostics.0),
     );
 }
 

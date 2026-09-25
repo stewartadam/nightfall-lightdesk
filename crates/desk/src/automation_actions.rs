@@ -9,7 +9,7 @@
 //! Domain-owned bindable actions for desk clips, controls, and command evaluation.
 
 use bevy_app::App;
-use bevy_ecs::prelude::World;
+use bevy_ecs::prelude::{Changed, Query, RemovedComponents, World, resource_exists_and_changed};
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionInputKind, ActionInvocation, ActionParameter,
@@ -195,6 +195,7 @@ pub fn desk_eval_action(command: impl Into<String>) -> ActionReference {
 
 /// Registers every bindable action owned by the desk domain.
 pub fn register_desk_actions(app: &mut App) {
+    register_desk_target_validators(app);
     register_clip_action(
         app,
         ActionDescriptor::new(CLIP_START_ACTION_ID, "Start clip", "Clips")
@@ -364,6 +365,25 @@ pub fn register_desk_actions(app: &mut App) {
     );
 }
 
+/// Registers how stored bindings check that their clip and master targets exist.
+///
+/// Binding diagnostics are recomputed when clip entities or master definitions change.
+fn register_desk_target_validators(app: &mut App) {
+    app.register_action_target_validator::<Uuid, _>(ActionParameterKind::Clip, |world, uid| {
+        resolve_clip_id(world, uid).map(drop)
+    })
+    .register_action_target_validator::<Uuid, _>(ActionParameterKind::Master, |world, uid| {
+        resolve_master(world, uid).map(drop)
+    })
+    .invalidate_action_targets_when(clips_changed)
+    .invalidate_action_targets_when(resource_exists_and_changed::<DataProvider<Master>>);
+}
+
+/// Run condition reporting whether any clip was added, edited, or removed.
+fn clips_changed(changed: Query<(), Changed<Clip>>, removed: RemovedComponents<Clip>) -> bool {
+    !changed.is_empty() || !removed.is_empty()
+}
+
 /// Creates a control action reference for one stable action ID.
 fn control_action_reference(action_id: &str, control_index: u32) -> ActionReference {
     ActionReference::with_arguments(action_id, &ControlActionArguments { control_index })
@@ -514,6 +534,7 @@ fn invoke_desk_eval(
 
 #[cfg(test)]
 mod tests {
+    use bevy_ecs::change_detection::DetectChanges;
     use bevy_ecs::message::Messages;
     use nightfall_actions::{
         ActionInput, ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult,
@@ -683,6 +704,68 @@ mod tests {
             InvocationOutcome::Submitted { command_id } if command_id == envelope.command_id
         ));
     }
+
+    /// Verifies desk target validators report missing clips and masters and accept present ones.
+    #[test]
+    fn target_validation_resolves_clips_and_masters() {
+        let mut app = desk_action_app();
+        let clip_uid = Uuid::from_u128(8);
+        let master_uid = Uuid::from_u128(41);
+        /// Validates one reference's targets against the app's current world.
+        fn validate(app: &App, action: &ActionReference) -> Result<(), InvocationError> {
+            app.world()
+                .resource::<nightfall_actions::ActionRegistry>()
+                .validate_target(app.world(), action)
+        }
+
+        assert_eq!(
+            validate(&app, &start_clip_action(clip_uid)).map_err(|error| error.code),
+            Err("clip.not_found".to_string())
+        );
+        assert_eq!(
+            validate(&app, &master_level_action(master_uid)).map_err(|error| error.code),
+            Err("master.not_found".to_string())
+        );
+
+        app.world_mut().spawn(Clip {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 8,
+                uid: clip_uid,
+                label: "Clip 8".to_string(),
+            },
+            ..Default::default()
+        });
+        add_rate_master(&mut app);
+
+        assert!(validate(&app, &start_clip_action(clip_uid)).is_ok());
+        assert!(validate(&app, &master_level_action(master_uid)).is_ok());
+        assert!(validate(&app, &control_go_action(2)).is_ok());
+    }
+
+    /// Verifies removing a clip marks action targets changed so bindings are re-diagnosed.
+    #[test]
+    fn removing_a_clip_marks_action_targets_changed() {
+        let mut app = desk_action_app();
+        let clip = app.world_mut().spawn(Clip::default()).id();
+        app.update();
+        app.update();
+        let unchanged = app
+            .world()
+            .resource_ref::<nightfall_actions::ActionTargets>()
+            .last_changed();
+
+        app.world_mut().despawn(clip);
+        app.update();
+
+        assert!(
+            app.world()
+                .resource_ref::<nightfall_actions::ActionTargets>()
+                .last_changed()
+                .is_newer_than(unchanged, app.world().read_change_tick()),
+            "clip removal should mark action targets changed"
+        );
+    }
+
     /// Stores a toggle-mode playback rate master and returns its persistent UID.
     fn add_rate_master(app: &mut App) -> Uuid {
         let uid = Uuid::from_u128(41);
