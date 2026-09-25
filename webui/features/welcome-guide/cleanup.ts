@@ -8,9 +8,22 @@
 
 import { engineRuntime } from "../../lib/engine-runtime";
 import { activeInstances, timecodes } from "../../state/appStores";
-import type { InstanceCommand, TimecodeCommand } from "../../types";
+import type {
+  InstanceCommand,
+  ProgrammerCommand,
+  TimecodeCommand,
+} from "../../types";
 
 export { isPlaybackRunning } from "./progress";
+
+/** Releases the Programmer's selection and values in one step, unlike the two-press Clear button. */
+export function clearProgrammerCompletely(): void {
+  for (const command of [
+    { type: "ClearProgrammerSelection" },
+    { type: "ClearProgrammerValues" },
+  ] satisfies ProgrammerCommand[])
+    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+}
 
 /** Stops running timelines first so they cannot relaunch clips, then every playback instance. */
 export function stopAllPlayback(): void {
