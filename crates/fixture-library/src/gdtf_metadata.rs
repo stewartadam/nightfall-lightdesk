@@ -15,7 +15,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::gdtf_repair::open_gdtf;
+use crate::gdtf_repair::{open_gdtf, open_gdtf_description};
 use crate::{FixtureLibraryError, Result};
 
 /// Metadata extracted from a GDTF file
@@ -34,7 +34,7 @@ pub struct GdtfMetadata {
 impl GdtfMetadata {
     /// Extract metadata from a GDTF file
     pub fn from_file(path: &Path) -> Result<Self> {
-        let (gdtf_file, _) = open_gdtf(path)
+        let (gdtf_file, _) = open_gdtf_description(path)
             .map_err(|e| FixtureLibraryError::Gdtf(format!("Failed to parse GDTF file: {}", e)))?;
 
         // Extract manufacturer and model from description
