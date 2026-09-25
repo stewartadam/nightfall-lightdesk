@@ -86,8 +86,7 @@ export class FixtureManager {
       } else {
         const layoutChanged = existing.layout !== fixture.layout;
         const physicalChanged =
-          existing.physicalSignature !==
-          JSON.stringify(fixture.physical ?? null);
+          existing.physicalSignature !== fixture.physicalSignature;
         const geometryArrived =
           !fixture.layout && !existing.geometry && !!fixture.geometry;
 
@@ -175,7 +174,7 @@ export class FixtureManager {
         for (const beam of instance.rotatingWashBeamData.beamEmitters)
           beam.floorSpotMesh.visible = false;
     }
-    instance.physicalSignature = JSON.stringify(fixture.physical ?? null);
+    instance.physicalSignature = fixture.physicalSignature;
 
     // Apply fixture placement transform
     this.applyPlacement(instance, fixture);

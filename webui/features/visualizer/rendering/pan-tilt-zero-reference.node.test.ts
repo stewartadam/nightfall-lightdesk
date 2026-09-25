@@ -33,6 +33,7 @@ import {
   PhysicalUnit,
   type Transform,
 } from "../../../types";
+import { fixturePhysicalSignature } from "../model/physical-signature";
 import type { FixtureInstance, RenderableFixture } from "../model/types";
 import { BeamManager } from "./effects/beam-manager";
 import { isLowQualityBeamMaterial } from "./effects/beam-material";
@@ -1939,6 +1940,7 @@ test("moving heads publish resolved output to the shared atmospheric batch", () 
     rotation: { x: 0, y: 0, z: 0 },
     elements: [{ label: "Head", parameters: [] } as unknown as FixtureElement],
     layout: FixtureLayout.MovingHead,
+    physicalSignature: fixturePhysicalSignature(undefined),
   };
   manager.syncFixtures([fixture]);
   const instance = manager.getFixtureInstance(fixture.uid)!;
@@ -2072,6 +2074,7 @@ test("moving-head layout preserves inherited optical controls", () => {
     elements: [{ label: "Head", parameters: [] } as unknown as FixtureElement],
     layout: FixtureLayout.MovingHead,
     geometry,
+    physicalSignature: fixturePhysicalSignature(undefined),
   };
   manager.syncFixtures([fixture]);
   const instance = manager.getFixtureInstance(fixture.uid)!;
@@ -2132,6 +2135,7 @@ test("rotating wash routes each lens independently to shared atmosphere", () => 
     rotation: { x: 0, y: 0, z: 0 },
     elements,
     layout: FixtureLayout.RotatingWashBeam,
+    physicalSignature: fixturePhysicalSignature(undefined),
   };
   manager.syncFixtures([fixture]);
   const instance = manager.getFixtureInstance(fixture.uid)! as ReturnType<
@@ -2175,6 +2179,13 @@ test("rotating wash routes each lens independently to shared atmosphere", () => 
 /** Source photometry overrides fallback values and rebuilds only when the physical definition changes. */
 test("fixture photometry reaches built-in moving heads and updates without changing placement", () => {
   const manager = new FixtureManager(new Scene(), "low");
+  const physical = {
+    beamType: BeamType.Spot,
+    beamAngle: 8,
+    fieldAngle: 12,
+    lumens: 4200,
+    colorTemperature: 6500,
+  };
   const fixture: RenderableFixture = {
     uid: "physical-head",
     fixtureId: 1,
@@ -2184,22 +2195,19 @@ test("fixture photometry reaches built-in moving heads and updates without chang
     rotation: { x: 0, y: 0, z: 0 },
     elements: [{ label: "Main", parameters: [] } as unknown as FixtureElement],
     layout: FixtureLayout.MovingHead,
-    physical: {
-      beamType: BeamType.Spot,
-      beamAngle: 8,
-      fieldAngle: 12,
-      lumens: 4200,
-      colorTemperature: 6500,
-    },
+    physical,
+    physicalSignature: fixturePhysicalSignature(physical),
   };
   manager.syncFixtures([fixture]);
   const initial = manager.getFixtureInstance(fixture.uid)!;
   assert.equal(initial.movingHeadData?.beamAngleDeg, 8);
   assert.equal(initial.movingHeadData?.fieldAngleDeg, 12);
   assert.equal(initial.movingHeadData?.lumens, 4200);
+  const updatedPhysical = { ...physical, beamAngle: 4 };
   const updated = {
     ...fixture,
-    physical: { ...fixture.physical!, beamAngle: 4 },
+    physical: updatedPhysical,
+    physicalSignature: fixturePhysicalSignature(updatedPhysical),
   };
   manager.syncFixtures([updated]);
   const rebuilt = manager.getFixtureInstance(fixture.uid)!;
@@ -2223,6 +2231,7 @@ test("fixture manager rebuilds changed layouts and preserves renamed layouts", (
     rotation: { x: 0, y: 0, z: 0 },
     elements: rotatingWashBeamElements(),
     layout: FixtureLayout.RotatingWashBeam,
+    physicalSignature: fixturePhysicalSignature(undefined),
   };
   manager.syncFixtures([fixture]);
   const original = manager.getFixtureInstance(fixture.uid);

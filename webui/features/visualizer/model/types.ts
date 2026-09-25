@@ -44,6 +44,8 @@ export interface RenderableFixture {
   beamType?: BeamType;
   /** Source photometry retained for fixtures rendered without an imported geometry tree. */
   physical?: import("../../../types").FixturePhysical;
+  /** Change-detection key for `physical`, from {@link fixturePhysicalSignature}. */
+  physicalSignature: string;
   /** Explicit physical layout independent of fixture display names. */
   layout?: import("../../../types").FixtureLayout;
 }

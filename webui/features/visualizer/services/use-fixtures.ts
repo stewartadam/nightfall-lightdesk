@@ -26,6 +26,7 @@
 import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo } from "solid-js";
 import { fixtureGeometries, fixtures } from "../../../state/appStores";
+import { fixturePhysicalSignature } from "../model/physical-signature";
 import type { RenderableFixture } from "../model/types";
 
 /**
@@ -67,6 +68,7 @@ export function useFixtures(): Accessor<readonly RenderableFixture[]> {
         elements: fixture.elements,
         beamType: fixture.physical?.beamType,
         physical: fixture.physical,
+        physicalSignature: fixturePhysicalSignature(fixture.physical),
         layout: fixture.layout,
       });
     }

@@ -82,7 +82,7 @@ function toFixtureSyncSnapshot(
     make: fixture.make,
     model: fixture.model,
     beamType: fixture.beamType,
-    physicalSignature: JSON.stringify(fixture.physical ?? null),
+    physicalSignature: fixture.physicalSignature,
     layout: fixture.layout,
     elementSignature: buildElementSignature(fixture),
     geometrySignature: buildGeometrySignature(fixture),
