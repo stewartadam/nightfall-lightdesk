@@ -2182,3 +2182,44 @@ test("lesson end clears the programmer in one press", async ({ page }) => {
     guide.getByRole("button", { name: "Clear programmer", exact: true }),
   ).toHaveCount(0);
 });
+
+/** Pressing Play relabels its button to Pause; the card must stay put while the step completes. */
+test("guide keeps its position while the Play step completes", async ({
+  page,
+}) => {
+  await openSample(page);
+  const guide = await startLesson(page, /Welcome to Nightfall/);
+  await reachStep(page, "Open the sample timeline");
+  const timeline = guide.getByRole("button", {
+    name: "Open Timeline 1: Lo-fi",
+    exact: true,
+  });
+  if (await timeline.isVisible()) await timeline.click();
+  await expectStep(page, "Start the sample show", { target: true });
+  // Let the floating card settle beside the Play button before measuring.
+  await expect
+    .poll(async () => JSON.stringify(await guide.boundingBox()), {
+      intervals: [300],
+    })
+    .toBe(JSON.stringify(await guide.boundingBox()));
+  const before = (await guide.boundingBox())!;
+  await page
+    .getByRole("button", { name: "Play timeline", exact: true })
+    .click();
+  await expect(guide.locator(".nf-guide-step-done")).toBeVisible();
+  const positions: { x: number; y: number }[] = [];
+  while (await guide.locator(".nf-guide-step-done").isVisible()) {
+    const box = await guide.boundingBox();
+    if (box) positions.push({ x: box.x, y: box.y });
+    await page.waitForTimeout(50);
+  }
+  expect(positions.length).toBeGreaterThan(0);
+  for (const position of positions) {
+    expect(position.x).toBeCloseTo(before.x, 0);
+    expect(position.y).toBeCloseTo(before.y, 0);
+  }
+  await expectStep(page, "Stop playback");
+  await page
+    .getByRole("button", { name: "Stop timeline", exact: true })
+    .click();
+});

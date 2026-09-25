@@ -348,6 +348,14 @@ export default function WelcomeGuide() {
     heading?.focus();
   };
 
+  /**
+   * Keeps the card in place while a finished step shows its checkmark, even when the
+   * completing action removes or relabels its target (Play becoming Pause, Save disabling).
+   */
+  const holdAnchorWhileCompleting = (bounds: DOMRect | null) => {
+    if (!completing()) setAnchor(bounds);
+  };
+
   /** Shows a checkmark on the finished instruction briefly before revealing the next one. */
   const completeStep = () => {
     if (completionTimer !== undefined) return;
@@ -539,7 +547,7 @@ export default function WelcomeGuide() {
                         selector={targetSelector()}
                         highlight={!blocked()}
                         focusTarget={!blocked() && instruction().focusTarget}
-                        onBounds={setAnchor}
+                        onBounds={holdAnchorWhileCompleting}
                       />
                       <GuideTarget
                         stepId={instruction().id}
