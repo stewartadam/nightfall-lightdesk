@@ -213,3 +213,31 @@ test("iris and zoom use physical values", () => {
   near(dmx.iris, 0.16, "iris closed to its authored aperture");
   near(dmx.zoomDegrees, 50, "zoom at its widest angle");
 });
+
+/**
+ * Verifies functions left at GDTF's 0-1 default physical range keep their
+ * conventional meaning: the iris is open at DMX 0, and an open shutter
+ * passes light from its first DMX value.
+ */
+test("default physical ranges keep iris open and shutters passing light", () => {
+  resetDmxPool();
+  const element = lamp(
+    custom("Iris", 0, 1),
+    parameter({ type: "StrobeShutter" }, [
+      fn("Shutter1", 0, 31, { name: "Closed" }),
+      fn("Shutter1", 32, 255, { name: "Open" }),
+    ]),
+  );
+  const open = extractVisualizerDmx(
+    { Intensity: 255, Iris: 0, StrobeShutter: 32 },
+    element,
+  );
+  near(open.iris, 1, "iris open at DMX 0");
+  near(open.intensity, 1, "open shutter passes light");
+  const closed = extractVisualizerDmx(
+    { Intensity: 255, Iris: 255, StrobeShutter: 0 },
+    element,
+  );
+  near(closed.iris, 0.05, "iris fully closed");
+  near(closed.intensity, 0, "closed shutter blocks light");
+});
