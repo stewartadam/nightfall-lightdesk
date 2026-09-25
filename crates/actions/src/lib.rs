@@ -45,7 +45,7 @@ use nightfall_engine::prelude::{
     register_command_deserializer, register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
-pub use source::{SourceEdgeStates, SourceSignal};
+pub use source::{SourceEdge, SourceEdgeStates, SourceSignal};
 
 /// Plugin that installs the generic registered-action invocation stage.
 pub struct ActionsPlugin;

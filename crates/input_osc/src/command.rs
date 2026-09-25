@@ -8,7 +8,7 @@
 
 //! OSC command and state types.
 
-use nightfall_actions::ActionReference;
+use nightfall_actions::{ActionReference, SourceEdge};
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -162,8 +162,14 @@ pub struct OscMapping {
     pub address: String,
     /// Optional argument index to match against (defaults to 0 when `arg_value` is set).
     pub arg_index: Option<u8>,
-    /// Optional argument value to match against.
+    /// Optional argument value to match against; with `release_value`, the pressed value.
     pub arg_value: Option<String>,
+    /// Argument value a button sends when released, turning matches into press and release edges.
+    #[serde(default)]
+    pub release_value: Option<String>,
+    /// Edge of the control that fires a trigger action.
+    #[serde(default)]
+    pub edge: SourceEdge,
     /// Action to trigger when mapping criteria match.
     pub action: ActionReference,
 }

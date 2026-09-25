@@ -8,7 +8,7 @@
 
 //! MIDI command types for CRUD operations and runtime events
 
-use nightfall_actions::{ActionReference, SourceSignal};
+use nightfall_actions::{ActionReference, SourceEdge, SourceSignal};
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -90,6 +90,9 @@ pub struct MidiMapping {
     pub device_name: String,
     /// Control on the device that drives the action.
     pub source: MidiSource,
+    /// Edge of the control that fires a trigger action.
+    #[serde(default)]
+    pub edge: SourceEdge,
     /// Action invoked by the control.
     pub action: ActionReference,
 }
