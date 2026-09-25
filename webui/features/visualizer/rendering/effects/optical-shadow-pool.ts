@@ -33,6 +33,7 @@ import {
   RendererUtils,
   RenderTarget,
   Scene,
+  Vector2,
   Vector3,
   WebGLCoordinateSystem,
   WebGPUCoordinateSystem,
@@ -64,6 +65,15 @@ const SHADOW_MAP_COUNT = 2;
  * outlive routine cadence jitter and readback latency, but stale occluders are bounded.
  */
 const MAP_AGE_REFRESH_CYCLES = 5;
+const SHADOW_MAP_SIZE = 512;
+/**
+ * Depth comparisons happen in metres along the projector axis: non-linear depth
+ * compresses at stage throws, so a fixed depth-buffer bias would hide occluders
+ * metres in front of a distant receiver.
+ */
+const SHADOW_DEPTH_BIAS_METRES = 0.02;
+/** Extra bias per shadow-map texel footprint, absorbing sloped-receiver acne at any throw. */
+const SHADOW_SLOPE_BIAS_TEXELS = 1.5;
 // Depth textures use [0, 1] on both backends; WebGL clip coordinates use [-1, 1].
 const WEBGL_DEPTH_TO_TEXTURE = new Matrix4().set(
   1,
@@ -86,9 +96,13 @@ const WEBGL_DEPTH_TO_TEXTURE = new Matrix4().set(
 
 /** Creates a reusable map and its shader-visible pose without allocating during playback. */
 function createShadowSlot() {
-  const target = new RenderTarget(512, 512);
+  const target = new RenderTarget(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
   target.texture.name = "optical-shadow";
-  target.depthTexture = new DepthTexture(512, 512, FloatType);
+  target.depthTexture = new DepthTexture(
+    SHADOW_MAP_SIZE,
+    SHADOW_MAP_SIZE,
+    FloatType,
+  );
   const camera = new PerspectiveCamera(45, 1, 0.02, 40);
   camera.coordinateSystem = WebGPUCoordinateSystem;
   return {
@@ -98,6 +112,10 @@ function createShadowSlot() {
     /** Shadow key of the source whose map is currently valid; 0 disables sampling. */
     key: uniform(0),
     projection: uniform(new Matrix4()),
+    /** Projector near/far planes, for recovering metric distance from stored depth. */
+    depthRange: uniform(new Vector2(0.02, 40)),
+    /** World-space width of one map texel per metre of distance from the projector. */
+    texelSlope: uniform(0),
     position: new Vector3(),
     right: new Vector3(),
     up: new Vector3(),
@@ -213,10 +231,25 @@ export class OpticalShadowPool {
           If(inside, () => {
             const depth = textureLoad(
               slot.target.depthTexture!,
-              ivec2(clamp(uv.mul(512), 0, 511)),
+              ivec2(clamp(uv.mul(SHADOW_MAP_SIZE), 0, SHADOW_MAP_SIZE - 1)),
             ).r;
+            // Both backends store [0, 1] perspective depth; invert it to metres along the axis.
+            const near = slot.depthRange.x;
+            const far = slot.depthRange.y;
+            const occluder = near
+              .mul(far)
+              .div(far.sub(depth.mul(far.sub(near))));
+            // Perspective clip w is the receiver's distance along the same axis.
+            const receiver = clip.w;
+            const bias = float(SHADOW_DEPTH_BIAS_METRES).add(
+              receiver.mul(slot.texelSlope).mul(SHADOW_SLOPE_BIAS_TEXELS),
+            );
             visibility.assign(
-              select(ndc.z.lessThanEqual(depth.add(0.001)), float(1), float(0)),
+              select(
+                receiver.lessThanEqual(occluder.add(bias)),
+                float(1),
+                float(0),
+              ),
             );
           });
         });
@@ -321,6 +354,10 @@ export class OpticalShadowPool {
     );
     if (slot.camera.coordinateSystem === WebGLCoordinateSystem)
       slot.projection.value.premultiply(WEBGL_DEPTH_TO_TEXTURE);
+    slot.depthRange.value.set(slot.camera.near, slot.camera.far);
+    const halfHeight = Math.tan((slot.camera.fov * Math.PI) / 360);
+    slot.texelSlope.value =
+      (2 * halfHeight * Math.max(1, slot.camera.aspect)) / SHADOW_MAP_SIZE;
     slot.key.value = source.shadowKey;
     slot.position.copy(source.position);
     slot.right.copy(source.apertureRight);

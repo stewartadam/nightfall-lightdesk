@@ -214,6 +214,117 @@ for (const forceWebGL of [false, true]) {
   });
 
   /**
+   * At stage throws the projector's non-linear depth compresses: a light 10m from the floor
+   * and an occluder 1.5m above it differ by ~0.0003 in depth-buffer units. The occluder must
+   * still cast a shadow, and the receiving surface must not shadow itself.
+   */
+  test(`optical shadows resolve occluders near a distant receiver (${backend})`, async ({
+    page,
+  }, testInfo) => {
+    const errors = await openOpticsFixture(page);
+    const result = await evaluateOnBackend(
+      page,
+      async (forceWebGL) => {
+        const T = await import("/e2e/fixtures/three-api.ts");
+        const { OpticalSurfaceLight, OpticalSurfaceLighting } = await import(
+          "/features/visualizer/rendering/effects/optical-surface-lighting.ts"
+        );
+        const {
+          channelSums,
+          createTestRenderer,
+          readPixels,
+          renderFrames,
+          retainCanvas,
+        } = await import("/e2e/fixtures/optics-harness.ts");
+        const { renderer } = await createTestRenderer({
+          forceWebGL,
+          width: 320,
+          height: 320,
+        });
+        const lighting = new OpticalSurfaceLighting({
+          gobos: false,
+          shadows: true,
+        });
+        renderer.lighting = lighting;
+        const pool = lighting.shadows!;
+        await pool.prepare(renderer);
+        const scene = new T.Scene();
+        // Look along the beam from the fixture so the receiver fills the frame.
+        const camera = new T.PerspectiveCamera(40, 1, 0.1, 30);
+        const source = new OpticalSurfaceLight({
+          shape: "round",
+          radius: 0.01,
+          slopeX: 0.1,
+          slopeY: 0.1,
+          halfPowerRatio: 0.5,
+          distributionPower: 4,
+          lumens: 1000,
+        });
+        source.beamLength = 12;
+        scene.add(source);
+        pool.register(source);
+        const material = new T.MeshBasicNodeMaterial();
+        const visibility = pool.sample(
+          T.positionWorld,
+          T.float(source.shadowKey),
+        );
+        material.fragmentNode = T.vec4(visibility, visibility, visibility, 1);
+        const floor = new T.Mesh(new T.PlaneGeometry(12, 12), material);
+        floor.position.z = -10;
+        scene.add(floor);
+        const blocker = new T.Mesh(
+          new T.BoxGeometry(1, 1, 0.2),
+          new T.MeshStandardNodeMaterial(),
+        );
+        blocker.position.set(0.6, 0.6, -8.5);
+        scene.add(blocker);
+
+        /** Averages the red channel of a 7×7 patch centred on a pixel. */
+        const patch = (x: number, y: number) =>
+          channelSums(
+            readPixels(renderer.domElement, {
+              x: x - 3,
+              y: y - 3,
+              width: 7,
+              height: 7,
+            }),
+          ).red / 49;
+
+        try {
+          const refreshes = pool.update(renderer, scene, camera, 0, true, 60);
+          blocker.visible = false;
+          await renderFrames(renderer, 3, () => renderer.render(scene, camera));
+          retainCanvas("stage-throw-shadow", renderer.domElement);
+          // The blocker's shadow centres near (0.7, 0.7) on the floor; the clear patch mirrors it.
+          return {
+            refreshes,
+            shadow: patch(191, 129),
+            clear: patch(129, 191),
+          };
+        } finally {
+          lighting.dispose();
+          floor.geometry.dispose();
+          material.dispose();
+          blocker.geometry.dispose();
+          blocker.material.dispose();
+          renderer.dispose();
+        }
+      },
+      forceWebGL,
+    );
+    await expectWithArtifacts(
+      testInfo,
+      { page, artifacts: { "stage-throw-shadow.json": result } },
+      () => {
+        expect(errors).toEqual([]);
+        expect(result.refreshes).toBe(1);
+        expect(result.shadow).toBeLessThan(20);
+        expect(result.clear).toBeGreaterThan(230);
+      },
+    );
+  });
+
+  /**
    * Drives the real refresh budget without GPU timestamps (as on WebGL or browsers without
    * timestamp queries) for several seconds while the source drifts, and verifies the shadow
    * appears promptly and never flickers off.
