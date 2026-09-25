@@ -363,7 +363,9 @@ export function startRenderLoop(
     callbacks?.onUpdate?.();
     const updateEnd = performance.now();
 
-    // Render scene and track timing
+    // Render scene and track timing. `inspector.frames` and the pools'
+    // `frameIntervals` are three.js internals (the latter added by
+    // patches/three+0.185.1.patch), guarded by scripts/three-timestamp-query.node.test.mjs.
     const gpu = state.inspector
       ? readInspectorGpuSample(
           (state.inspector as unknown as { frames: InspectorGpuFrame[] })
