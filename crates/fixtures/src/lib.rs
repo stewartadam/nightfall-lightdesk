@@ -21,6 +21,7 @@ pub mod fixture;
 pub mod geometry;
 pub mod input_apply;
 pub mod library;
+pub mod output_frames;
 pub mod parameter;
 pub mod physical;
 pub mod placement;
@@ -66,8 +67,9 @@ pub mod prelude {
     pub use crate::bindings::{
         ConsoleDmxAddress, ConsoleDmxAddresses, DisabledBinding, DisabledBindings, DmxRange,
         InputBinding, InputBindings, InputSource, InputTarget, OutputBinding, OutputBindings,
-        OutputDestination, OutputSource, OutputTarget, ResolvedConsoleTarget, ResolvedInputBinding,
-        ResolvedInputBindings, ResolvedInputDestination, ResolvedInputSource, ResolvedInputTarget,
+        OutputDestination, OutputSource, OutputTarget, ResolvedConsoleDestination,
+        ResolvedConsoleTarget, ResolvedInputBinding, ResolvedInputBindings,
+        ResolvedInputDestination, ResolvedInputSource, ResolvedInputTarget,
         ResolvedOutputDestinations, ResolvedTransportTarget,
     };
     pub use crate::compositor::{
@@ -82,13 +84,17 @@ pub mod prelude {
         GeometryProviderResource, GeometryType, MeshFormat, MeshResource, PrimitiveType, Transform,
     };
     pub use crate::input_apply::{ParameterAssertion, ParameterAssertionSource};
+    pub use crate::output_frames::{
+        ChannelWindow, OutputBindingRoute, OutputDmxFrame, OutputDmxFrames, OutputFrameKey,
+        OutputRouting, output_transport_label,
+    };
     pub use crate::parameter::{MergeStrategy, Parameter, ParameterMetadata, ParameterValues};
     pub use crate::physical::{BeamType, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
     pub use crate::universe::{
         ConsoleChannelOrigin, ConsoleDmxUniverses, DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS,
-        InputDmxUniverses, InputUniverseStaleTimeout, UniverseTransportMap,
+        InputDmxUniverses, InputUniverseStaleTimeout,
     };
     pub use crate::{
         BindingEndpoint, DmxAction, FixtureCommand, FixturePlacementPositionUpdate,
@@ -121,7 +127,8 @@ impl Plugin for FixturePlugin {
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();
         app.init_resource::<universe::InputUniverseStaleTimeout>();
-        app.init_resource::<universe::UniverseTransportMap>();
+        app.init_resource::<output_frames::OutputRouting>();
+        app.init_resource::<output_frames::OutputDmxFrames>();
         app.init_resource::<nightfall_io::NetworkDmxOutputTargets>();
         app.init_resource::<nightfall_io::UsbDmxOutputTargets>();
         app.init_resource::<nightfall_io::InputUniverseVisibilityMode>();
@@ -180,8 +187,9 @@ impl Plugin for FixturePlugin {
             Update,
             (
                 binding_resolution::resolve_output_bindings,
-                universe::update_transport_map,
+                output_frames::update_input_routing,
                 universe::dmx_universes,
+                output_frames::compose_output_frames,
                 universe::dmx_universes_debug,
             )
                 .chain()

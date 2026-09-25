@@ -8,7 +8,10 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo } from "solid-js";
-import { buildFixturePatchMapFromBindings } from "../../../lib/binding-utils";
+import {
+  buildFixturePatchMapFromBindings,
+  type FixturePatchEntry,
+} from "../../../lib/binding-utils";
 import { fixtureValueTransitionColor } from "../../../lib/datagrid";
 import { fixtureValueSourceState } from "../../../lib/fixture-value-state";
 import { layerHasTransitioningAttribute } from "../../../lib/layer-transition-state";
@@ -31,9 +34,9 @@ import {
   type DmxChannelValueTone,
   type FixtureJumpTarget,
   getAttributeName,
-  getChannelWidth,
   normalizeFixtureJumpAttributeSearch,
 } from "../model/dmx-universe-model";
+import { outputTransportMatchesSelection } from "../model/output-binding-follow";
 import { createDmxChannelNavigationController } from "./dmx-channel-navigation-controller";
 import { createDmxFixtureJumpController } from "./dmx-fixture-jump-controller";
 import { createDmxUniverseSelectionController } from "./dmx-universe-selection-controller";
@@ -59,6 +62,7 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
     availableTransports,
     selectedTransport,
     setSelectedTransport,
+    selectedOutputSpace,
     universeIds,
     universeById,
     currentUniverse,
@@ -84,24 +88,9 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
     ),
   );
 
-  /** Maps the selected display transport onto binding transport variants. */
-  const transportFilter = createMemo(() => {
-    if (ioMode() !== DmxIoMode.Output) return null;
-    const transport = selectedTransport();
-    if (!transport || transport === "Console") return null;
-    switch (transport) {
-      case "sACN":
-        return "Sacn";
-      case "Art-Net":
-        return "ArtNet";
-      case "USB":
-        return "Udmx";
-      case "Disabled":
-        return "Disabled";
-      default:
-        return null;
-    }
-  });
+  /** Returns whether a patch location belongs to the selected numbering space. */
+  const patchInSelectedSpace = (patch: FixturePatchEntry) =>
+    outputTransportMatchesSelection(patch.transport, selectedOutputSpace());
 
   /** Indexes visible DMX addresses by their patched fixture parameter. */
   const channelToFixture = createMemo(() => {
@@ -110,7 +99,6 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
     const universeId = selectedUniverse();
     if (universeId === null) return map;
-    const transport = transportFilter();
 
     for (const [fixtureUid, patchByElement] of Object.entries(patchData())) {
       const fixture = $fixtures()[fixtureUid];
@@ -125,18 +113,16 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
         for (const patch of patches) {
           if (patch.universe !== universeId) continue;
-          if (transport && patch.transport?.type !== transport) continue;
+          if (!patchInSelectedSpace(patch)) continue;
 
-          let currentAddress = patch.address;
-
-          // Process each parameter in the element
-          for (const param of element.parameters) {
-            // VirtualIntensity is virtual - it doesn't consume DMX channels
-            if (param.attribute.type === "VirtualIntensity") continue;
+          for (const channel of patch.channels) {
+            const param = element.parameters[channel.parameterIndex];
+            if (!param) continue;
 
             const attrName = getAttributeName(param.attribute);
             const attributeKey = normalizeAttributeName(attrName);
-            const channelWidth = getChannelWidth(param.resolution);
+            const currentAddress = channel.address;
+            const channelWidth = channel.width;
 
             map.set(currentAddress, {
               fixtureUid,
@@ -160,8 +146,6 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
                 attributeKey,
               });
             }
-
-            currentAddress += channelWidth;
           }
         }
       }
@@ -174,10 +158,9 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
     if (ioMode() !== DmxIoMode.Output) return [];
     const visibleUniverseIds = new Set(universeIds());
     if (visibleUniverseIds.size === 0) return [];
-    const transport = transportFilter();
     const targets: FixtureJumpTarget[] = [];
-    const seenFixtureUniverses = new Set<string>();
-    const seenElementUniverses = new Set<string>();
+    const fixtureTargets = new Map<string, FixtureJumpTarget>();
+    const elementTargets = new Map<string, FixtureJumpTarget>();
 
     for (const [fixtureUid, patchByElement] of Object.entries(patchData())) {
       const fixture = $fixtures()[fixtureUid];
@@ -190,12 +173,12 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
         for (const patch of patches) {
           if (!visibleUniverseIds.has(patch.universe)) continue;
-          if (transport && patch.transport?.type !== transport) continue;
+          if (!patchInSelectedSpace(patch)) continue;
 
           const targetKey = `${fixture.identifiers.id}:${patch.universe}`;
-          if (!seenFixtureUniverses.has(targetKey)) {
-            seenFixtureUniverses.add(targetKey);
-            targets.push({
+          const fixtureTarget = fixtureTargets.get(targetKey);
+          if (!fixtureTarget || patch.address < fixtureTarget.address) {
+            fixtureTargets.set(targetKey, {
               universeId: patch.universe,
               address: patch.address,
               fixtureId: fixture.identifiers.id,
@@ -204,9 +187,9 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
           }
 
           const elementTargetKey = `${targetKey}:${elementId}`;
-          if (!seenElementUniverses.has(elementTargetKey)) {
-            seenElementUniverses.add(elementTargetKey);
-            targets.push({
+          const elementTarget = elementTargets.get(elementTargetKey);
+          if (!elementTarget || patch.address < elementTarget.address) {
+            elementTargets.set(elementTargetKey, {
               universeId: patch.universe,
               address: patch.address,
               fixtureId: fixture.identifiers.id,
@@ -215,14 +198,14 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
             });
           }
 
-          let currentAddress = patch.address;
-          for (const param of element.parameters) {
-            if (param.attribute.type === "VirtualIntensity") continue;
+          for (const channel of patch.channels) {
+            const param = element.parameters[channel.parameterIndex];
+            if (!param) continue;
 
             const attributeName = getAttributeName(param.attribute);
             targets.push({
               universeId: patch.universe,
-              address: currentAddress,
+              address: channel.address,
               fixtureId: fixture.identifiers.id,
               elementIndex: elementId,
               attributeName,
@@ -230,12 +213,12 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
                 normalizeFixtureJumpAttributeSearch(attributeName),
               targetKind: "attribute",
             });
-            currentAddress += getChannelWidth(param.resolution);
           }
         }
       }
     }
 
+    targets.push(...fixtureTargets.values(), ...elementTargets.values());
     return targets.sort(
       (a, b) =>
         a.fixtureId - b.fixtureId ||
@@ -252,7 +235,6 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
     const universeId = selectedUniverse();
     if (universeId === null) return channels;
-    const transport = transportFilter();
 
     const selection = $programmerSelection();
     if (selection.length === 0) return channels;
@@ -276,21 +258,12 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
         for (const patch of patches) {
           if (patch.universe !== universeId) continue;
-          if (transport && patch.transport?.type !== transport) continue;
+          if (!patchInSelectedSpace(patch)) continue;
 
-          let currentAddress = patch.address;
-
-          // Process each parameter in the element
-          for (const param of element.parameters) {
-            if (param.attribute.type === "VirtualIntensity") continue;
-
-            const channelWidth = getChannelWidth(param.resolution);
-
-            for (let offset = 0; offset < channelWidth; offset++) {
-              channels.add(currentAddress + offset);
+          for (const channel of patch.channels) {
+            for (let offset = 0; offset < channel.width; offset++) {
+              channels.add(channel.address + offset);
             }
-
-            currentAddress += channelWidth;
           }
         }
       }

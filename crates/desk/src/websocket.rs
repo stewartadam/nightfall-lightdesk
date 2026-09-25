@@ -27,8 +27,8 @@ use nightfall_clips::{Clip, ClipCommand, MaterializedClip};
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
+use nightfall_fixtures::output_frames::OutputDmxFrames;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::universe::ConsoleDmxUniverses;
 use nightfall_framepace::FramePaceStats;
 use nightfall_fx::prelude::{
     ActiveStepFx, PreviewStepFxDefinition, StepFxLanePhaseOffsets, StepFxPreviewPlaybackStatus,

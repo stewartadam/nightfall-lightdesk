@@ -100,7 +100,7 @@ pub(crate) fn handle_low_freq_updates(
     layers: Query<super::layers::LayerSnapshotData>,
     io_settings: Res<IoRuntimeSettings>,
     network_interface_state: Res<NetworkInterfaceState>,
-    dmx_universes: Res<ConsoleDmxUniverses>,
+    output_frames: Res<OutputDmxFrames>,
     network_stats: Res<crate::resources::network_stats::NetworkStats>,
     layer_only_query: Query<&Layer>,
     entities_query: Query<Entity>,
@@ -127,7 +127,7 @@ pub(crate) fn handle_low_freq_updates(
     LAST_DROPPABLE_SEND_MS.store(now_ms, std::sync::atomic::Ordering::Relaxed);
 
     send_metrics(
-        dmx_universes,
+        output_frames,
         network_stats,
         layer_only_query,
         entities_query,

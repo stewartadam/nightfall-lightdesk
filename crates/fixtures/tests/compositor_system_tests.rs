@@ -1438,6 +1438,174 @@ fn test_compositor_resets_inverted_parameter_to_logical_default() {
     );
 }
 
+/// Builds an app with a manual assertion layer and one 16-bit parameter at `value`, returning
+/// the parameter entity. `components` supply the parameter's resolved console/wire addresses.
+fn manual_channel_app(value: f32, components: impl Bundle) -> (App, Entity) {
+    let mut app = App::new();
+    app.add_message::<CommandEnvelope<FixtureCommand>>();
+    app.add_message::<EngineActionEnvelope<ClearDmxChannels>>();
+    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+    app.add_message::<EngineActionEnvelope<DmxAction>>();
+    init_command_lifecycle(&mut app);
+    app.insert_resource(FixtureDataProviderExt::default());
+    app.insert_resource(ConsoleDmxUniverses::default());
+    app.init_resource::<FinalLayerAttributedAssertions>();
+
+    let metadata = ParameterMetadata {
+        attribute: Attribute::Pan,
+        resolution: DmxValueResolution::Fine,
+        min: 0.0,
+        max: 65535.0,
+        ..Default::default()
+    };
+    let fixture = Fixture {
+        identifiers: Identifiers {
+            id: 1,
+            uid: uuid::Uuid::new_v4(),
+            label: "mover".to_string(),
+        },
+        elements: vec![FixtureElement {
+            label: "mover".to_owned(),
+            parameters: vec![metadata.clone()],
+        }],
+        ..Default::default()
+    };
+    let parameter_entity = app
+        .world_mut()
+        .spawn((
+            Parameter {
+                metadata: metadata.clone(),
+                values: ParameterValues {
+                    default_value: value,
+                    current_value: value,
+                    ..Default::default()
+                },
+            },
+            components,
+        ))
+        .id();
+    {
+        let mut data_provider = app.world_mut().resource_mut::<FixtureDataProviderExt>();
+        let _ = data_provider.inner.add(fixture.clone());
+        // SAFETY: the entity was just spawned with a `Parameter` component.
+        let parameter: Instance<Parameter> =
+            unsafe { Instance::from_entity_unchecked(parameter_entity) };
+        data_provider.add_parameter(
+            FixtureRef {
+                fixture_uid: fixture.identifiers.uid,
+                index: Some(1),
+            },
+            metadata.attribute,
+            parameter,
+        );
+    }
+    app.world_mut().spawn((
+        Layer::new("test manual".to_string(), MANUAL_ASSERTION_LAYER_PRIORITY),
+        ManualAssertionLayer,
+        ObjectRefMarker(ObjectRef::ById {
+            object_type: ObjectType::Parameter,
+            id: 1,
+        }),
+    ));
+    app.add_systems(
+        Update,
+        (
+            nightfall_fixtures::events::handle_set_dmx_channels,
+            nightfall_fixtures::compositor::update_manual_assertion_layer,
+            compositor::<Parameter>,
+        )
+            .chain(),
+    );
+    (app, parameter_entity)
+}
+
+/// Sends `ch universe/address @ value` and returns the parameter's resulting value.
+fn set_manual_channel(
+    app: &mut App,
+    parameter_entity: Entity,
+    universe: u16,
+    address: u16,
+    value: u8,
+) -> f32 {
+    write_tracked_fixture_command(
+        app,
+        FixtureCommand::SetDmxChannels {
+            channels: DmxChannelExpr::Single(DmxChannelRef { universe, address }),
+            value,
+        },
+    );
+    app.update();
+    app.world()
+        .get::<Parameter>(parameter_entity)
+        .unwrap()
+        .values
+        .current_value
+}
+
+/// `ch U/A` addresses console-bound parameters by console address: the coarse write keeps
+/// the current fine byte, and the parameter's wire coordinates do not match.
+#[test]
+fn test_manual_dmx_channel_uses_console_address_for_console_bound_parameter() {
+    let (mut app, parameter) = manual_channel_app(
+        0x1234 as f32,
+        (
+            ResolvedConsoleDestination {
+                address: Some(ConsoleDmxAddress {
+                    universe: 2,
+                    address: 121,
+                }),
+            },
+            ResolvedOutputDestinations {
+                destinations: vec![OutputDestination {
+                    transport: OutputTransport::Sacn {
+                        mode: SacnDelivery::Multicast,
+                    },
+                    universe: 10,
+                    address: 121,
+                }],
+            },
+        ),
+    );
+
+    assert_eq!(
+        set_manual_channel(&mut app, parameter, 10, 121, 0x05),
+        0x1234 as f32,
+        "wire coordinates must not address a console-bound parameter"
+    );
+    assert_eq!(
+        set_manual_channel(&mut app, parameter, 2, 121, 0x80),
+        0x8034 as f32,
+        "coarse write must keep the current fine byte"
+    );
+    assert_eq!(
+        set_manual_channel(&mut app, parameter, 2, 122, 0x56),
+        0x8056 as f32
+    );
+}
+
+/// Parameters without a console address stay addressable by their direct wire patch, and a
+/// coarse write keeps the current fine byte instead of reading an unrelated console channel.
+#[test]
+fn test_manual_dmx_channel_falls_back_to_wire_address_for_direct_patch() {
+    let (mut app, parameter) = manual_channel_app(
+        0x1234 as f32,
+        ResolvedOutputDestinations {
+            destinations: vec![OutputDestination {
+                transport: OutputTransport::Sacn {
+                    mode: SacnDelivery::Multicast,
+                },
+                universe: 1,
+                address: 5,
+            }],
+        },
+    );
+
+    assert_eq!(
+        set_manual_channel(&mut app, parameter, 1, 5, 0x80),
+        0x8034 as f32
+    );
+}
+
 #[test]
 fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     let mut app = App::new();

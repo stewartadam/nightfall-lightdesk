@@ -9,7 +9,207 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as types from "../../../types";
-import { findInputBindingIdForOutputChannel } from "./output-binding-follow";
+import {
+  findInputBindingIdForOutputChannel,
+  findOutputBindingIdForChannel,
+  type OutputSpaceSelection,
+} from "./output-binding-follow";
+
+/** Console-space selection used across follow tests. */
+const CONSOLE: OutputSpaceSelection = { kind: "console" };
+/** Multicast sACN selection used across follow tests. */
+const SACN: OutputSpaceSelection = { kind: "transport", key: "Sacn:Multicast" };
+
+/** Builds coarse parameter metadata for output follow tests. */
+function makeParam(attribute: types.Attribute): types.ParameterMetadata {
+  return {
+    resolution: types.DmxValueResolution.Coarse,
+    attribute,
+    min: 0,
+    max: 255,
+    offset: { type: "Absolute", data: { value: 0 } },
+    is_inverted: false,
+    is_snap: false,
+    merge_type: types.MergeStrategy.HTP,
+    use_grandmaster: true,
+  };
+}
+
+/** Builds a one-element RGB fixture occupying three coarse channels. */
+function makeRgbFixture(uid: string, id: number): types.Fixture {
+  return {
+    identifiers: { id, uid, label: `Fixture ${id}` },
+    make: "Test",
+    model: "RGB",
+    mode: "3ch",
+    elements: [
+      {
+        label: "Cell",
+        parameters: [
+          makeParam({ type: "Red" }),
+          makeParam({ type: "Green" }),
+          makeParam({ type: "Blue" }),
+        ],
+      },
+    ],
+  };
+}
+
+/** Builds a fixture→console binding at one console address with a priority. */
+function consoleBinding(
+  universe: number,
+  address: number,
+  priority: number,
+): types.OutputBinding {
+  return {
+    source: { type: "Fixture", data: { uids: ["a"] } },
+    target: {
+      type: "Console",
+      data: { universe: singleUniverse(universe), address },
+    },
+    priority,
+    clone: false,
+  };
+}
+
+/**
+ * Verifies binding follow skips a lower-priority console binding whose address is
+ * replaced by a higher-priority console binding, and follows the winning row instead.
+ */
+test("follows the highest-priority console binding driving a channel", () => {
+  const fixtures = { a: makeRgbFixture("a", 1) };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [consoleBinding(1, 1, 5), consoleBinding(1, 1, 0)],
+  };
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 2),
+    "output-0",
+  );
+
+  const moved: types.BindingsSnapshot = {
+    ...snapshot,
+    output: [consoleBinding(1, 100, 5), consoleBinding(1, 1, 0)],
+  };
+  assert.equal(
+    findOutputBindingIdForChannel(moved, fixtures, CONSOLE, 1, 2),
+    null,
+  );
+  assert.equal(
+    findOutputBindingIdForChannel(moved, fixtures, CONSOLE, 1, 101),
+    "output-0",
+  );
+});
+
+/**
+ * Verifies binding follow matches the frame composer's precedence: where a console→transport
+ * route and a direct fixture→transport binding cover the same wire channel, direct output is
+ * overlaid last and supplies the value, so follow selects it even when the console route has
+ * the higher binding priority. Channels only the route writes still follow the route.
+ */
+test("follows direct fixture output over a higher-priority console route", () => {
+  const fixtures = {
+    a: makeRgbFixture("a", 1),
+    b: makeRgbFixture("b", 2),
+  };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      consoleBinding(1, 1, 0),
+      {
+        source: { type: "Console", data: { universe: singleUniverse(1) } },
+        target: {
+          type: "Transport",
+          data: { target: "sacn", universe: singleUniverse(1), address: 1 },
+        },
+        priority: 10,
+        clone: false,
+      },
+      {
+        source: { type: "Fixture", data: { uids: ["b"] } },
+        target: {
+          type: "Transport",
+          data: { target: "sacn", universe: singleUniverse(1), address: 3 },
+        },
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, SACN, 1, 3),
+    "output-2",
+  );
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, SACN, 1, 1),
+    "output-1",
+  );
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 3),
+    "output-0",
+  );
+});
+
+/**
+ * Verifies binding follow only matches the channels a parameter-filtered binding writes:
+ * a Red-only console binding at 1.1 owns address 1, not the Green/Blue addresses after it.
+ */
+test("follows only the parameters a filtered binding writes", () => {
+  const fixtures = { a: makeRgbFixture("a", 1) };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      {
+        ...consoleBinding(1, 1, 0),
+        source: { type: "Fixture", data: { uids: ["a"], param: "Red" } },
+      },
+    ],
+  };
+
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 1),
+    "output-0",
+  );
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 2),
+    null,
+  );
+});
+
+/** Verifies binding follow ignores bindings overridden by a Fixture→Disabled row. */
+test("does not follow bindings overridden by a disabled row", () => {
+  const fixtures = { a: makeRgbFixture("a", 1) };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      {
+        source: { type: "Fixture", data: { uids: ["a"] } },
+        target: {
+          type: "Transport",
+          data: { target: "sacn", universe: singleUniverse(1), address: 1 },
+        },
+        priority: 0,
+        clone: false,
+      },
+      {
+        source: { type: "Fixture", data: { uids: ["a"] } },
+        target: { type: "Disabled" },
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, SACN, 1, 1),
+    null,
+  );
+});
 
 /**
  * Builds a one-universe DMX range for output binding follow tests.
@@ -29,6 +229,7 @@ function makeSnapshot(input: types.InputBinding[]): types.BindingsSnapshot {
   };
 }
 
+/** Verifies a transport→console input binding is followed from a console channel. */
 test("finds transport->console binding for console output channel", () => {
   const snapshot = makeSnapshot([
     {
@@ -52,10 +253,11 @@ test("finds transport->console binding for console output channel", () => {
     },
   ]);
 
-  const id = findInputBindingIdForOutputChannel(snapshot, "console", 1, 10);
+  const id = findInputBindingIdForOutputChannel(snapshot, CONSOLE, 1, 10);
   assert.equal(id, "input-0");
 });
 
+/** Verifies a transport→transport input binding is followed from its wire channel. */
 test("finds transport->transport binding for selected transport output channel", () => {
   const snapshot = makeSnapshot([
     {
@@ -80,10 +282,11 @@ test("finds transport->transport binding for selected transport output channel",
     },
   ]);
 
-  const id = findInputBindingIdForOutputChannel(snapshot, "sacn", 1, 10);
+  const id = findInputBindingIdForOutputChannel(snapshot, SACN, 1, 10);
   assert.equal(id, "input-0");
 });
 
+/** Verifies transport-targeted input bindings are not followed from console space. */
 test("does not match transport target when console is selected", () => {
   const snapshot = makeSnapshot([
     {
@@ -108,10 +311,11 @@ test("does not match transport target when console is selected", () => {
     },
   ]);
 
-  const id = findInputBindingIdForOutputChannel(snapshot, "console", 1, 10);
+  const id = findInputBindingIdForOutputChannel(snapshot, CONSOLE, 1, 10);
   assert.equal(id, null);
 });
 
+/** Verifies follow only matches channels inside the source→target copy window. */
 test("respects source/target address copy window", () => {
   const snapshot = makeSnapshot([
     {
@@ -137,11 +341,8 @@ test("respects source/target address copy window", () => {
   ]);
 
   assert.equal(
-    findInputBindingIdForOutputChannel(snapshot, "sacn", 1, 12),
+    findInputBindingIdForOutputChannel(snapshot, SACN, 1, 12),
     "input-0",
   );
-  assert.equal(
-    findInputBindingIdForOutputChannel(snapshot, "sacn", 1, 14),
-    null,
-  );
+  assert.equal(findInputBindingIdForOutputChannel(snapshot, SACN, 1, 14), null);
 });

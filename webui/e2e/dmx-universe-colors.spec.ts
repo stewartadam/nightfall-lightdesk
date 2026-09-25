@@ -171,7 +171,7 @@ async function seedDmxUniverseColorState(page: Page) {
       {
         universe_id: 1,
         channels,
-        transports: ["sACN"],
+        transport: "sACN",
         io_mode: "output",
       },
     ]);
@@ -312,13 +312,13 @@ async function seedDmxUniverseJumpState(page: Page) {
         {
           universe_id: 1,
           channels: universeOneChannels,
-          transports: ["sACN"],
+          transport: "sACN",
           io_mode: "output",
         },
         {
           universe_id: 2,
           channels: universeTwoChannels,
-          transports: ["sACN"],
+          transport: "sACN",
           io_mode: "output",
         },
       ]);
@@ -683,7 +683,7 @@ test("dmx shared controls switch direction and request external traffic visibili
   await expect(
     panel.getByRole("tab", { name: "Output", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
-  await expect(panel.getByLabel("Transport")).toHaveValue("Console");
+  await expect(panel.getByLabel("Transport")).toHaveValue("sACN");
   await panel.screenshot({
     path: testInfo.outputPath("shared-dmx-output.png"),
   });

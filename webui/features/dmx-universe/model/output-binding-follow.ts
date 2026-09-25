@@ -6,10 +6,71 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  buildFixturePatchMapFromBindings,
+  type FixturePatchEntry,
+  type FixturePatchMap,
+} from "../../../lib/binding-utils";
+import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
+import {
+  defaultNetworkDmxOutputs,
+  defaultUsbDmxOutputs,
+  outputTransportForOutputTargetId,
+  outputTransportKey,
+} from "../../../lib/network-dmx-output-targets";
 import type * as types from "../../../types";
 
-export type OutputTransportSelection = string | null;
+/**
+ * Output numbering space shown by the DMX universe panel: console space, or one concrete
+ * output transport identified by its {@link outputTransportKey}. `null` matches any space.
+ */
+export type OutputSpaceSelection =
+  | { kind: "console" }
+  | { kind: "transport"; key: string }
+  | null;
 
+/**
+ * Resolves the selected output numbering space from the selected view label and the
+ * concrete transport reported by that label's universes.
+ */
+export function outputSpaceSelection(
+  label: string,
+  outputTransport: types.OutputTransport | null | undefined,
+): OutputSpaceSelection {
+  if (label === CONSOLE_TRANSPORT) return { kind: "console" };
+  if (!outputTransport) return null;
+  return { kind: "transport", key: outputTransportKey(outputTransport) };
+}
+
+/**
+ * Returns whether a patch location belongs to the selected numbering space. Console
+ * selection matches console-space locations (`null` transport) only; transport selections
+ * match wire locations of that exact concrete transport.
+ */
+export function outputTransportMatchesSelection(
+  transport: types.OutputTransport | null,
+  selection: OutputSpaceSelection,
+): boolean {
+  if (selection === null) return true;
+  if (selection.kind === "console") return transport === null;
+  return transport !== null && outputTransportKey(transport) === selection.key;
+}
+
+/** Output target configuration used to resolve binding target ids to transports. */
+export type OutputTargetConfig = {
+  networkDmxOutputs: types.NetworkDmxOutputTargets;
+  usbDmxOutputs: types.UsbDmxOutputTargets;
+};
+
+/** Returns the default output target configuration. */
+function defaultOutputTargets(): OutputTargetConfig {
+  return {
+    networkDmxOutputs: defaultNetworkDmxOutputs(),
+    usbDmxOutputs: defaultUsbDmxOutputs(),
+  };
+}
+
+/** Returns whether an optional DMX range contains a value; a missing range matches all. */
 function rangeContains(
   range: types.DmxRange | undefined,
   value: number,
@@ -20,10 +81,12 @@ function rangeContains(
   return value >= range.start && value <= range.end;
 }
 
+/** Returns whether a value is a valid 1-indexed DMX address. */
 function isValidAddress(address: number): boolean {
   return Number.isInteger(address) && address >= 1 && address <= 512;
 }
 
+/** Returns whether an output address falls inside a source→target channel copy window. */
 function outputAddressMatchesInputMapping(
   sourceAddress: number,
   targetAddress: number,
@@ -48,11 +111,13 @@ function outputAddressMatchesInputMapping(
   return outputAddress >= targetAddress && outputAddress <= targetEnd;
 }
 
+/** Returns whether an input binding writes the selected output space's channel. */
 function bindingProducesOutputChannel(
   binding: types.InputBinding,
-  selectedTransport: OutputTransportSelection,
+  selection: OutputSpaceSelection,
   selectedUniverse: number,
   outputAddress: number,
+  targets: OutputTargetConfig,
 ): boolean {
   if (
     binding.source.type !== "Transport" &&
@@ -69,15 +134,20 @@ function bindingProducesOutputChannel(
   }
 
   if (binding.target.type === "Console") {
-    if (selectedTransport !== null && selectedTransport !== "console") {
+    if (selection !== null && selection.kind !== "console") {
       return false;
     }
   } else {
-    if (selectedTransport === "console") {
+    if (selection?.kind === "console") {
       return false;
     }
-    if (selectedTransport !== null) {
-      if (binding.target.data.target !== selectedTransport) {
+    if (selection !== null) {
+      const transport = outputTransportForOutputTargetId(
+        binding.target.data.target,
+        targets.networkDmxOutputs,
+        targets.usbDmxOutputs,
+      );
+      if (!transport || outputTransportKey(transport) !== selection.key) {
         return false;
       }
     }
@@ -104,24 +174,153 @@ function bindingProducesOutputChannel(
 }
 
 /**
- * Find input binding ID for output channel.
+ * Finds the input binding row that writes one output channel of the selected space.
  */
 export function findInputBindingIdForOutputChannel(
   snapshot: types.BindingsSnapshot,
-  selectedTransport: OutputTransportSelection,
+  selection: OutputSpaceSelection,
   selectedUniverse: number,
   outputAddress: number,
+  targets: OutputTargetConfig = defaultOutputTargets(),
 ): string | null {
   for (const [index, binding] of snapshot.input.entries()) {
     if (
       bindingProducesOutputChannel(
         binding,
-        selectedTransport,
+        selection,
         selectedUniverse,
         outputAddress,
+        targets,
       )
     ) {
       return `input-${index}`;
+    }
+  }
+  return null;
+}
+
+/** Returns whether a patch location writes one DMX address through any of its channels. */
+function patchWritesAddress(patch: FixturePatchEntry, address: number) {
+  return patch.channels.some(
+    (channel) =>
+      address >= channel.address &&
+      address <= channel.address + channel.width - 1,
+  );
+}
+
+/**
+ * Ranks output bindings by the order the frame composer lets them win a wire channel:
+ * direct fixture→transport output overlays console→transport windows, so it ranks first.
+ */
+function outputBindingPrecedenceTier(binding: types.OutputBinding): number {
+  return binding.source.type === "Fixture" &&
+    binding.target.type === "Transport"
+    ? 0
+    : 1;
+}
+
+/** Returns a key identifying one element patch location across patch maps. */
+function patchLocationKey(
+  fixtureUid: string,
+  elementId: string,
+  patch: FixturePatchEntry,
+): string {
+  const transport = patch.transport
+    ? outputTransportKey(patch.transport)
+    : CONSOLE_TRANSPORT;
+  return `${fixtureUid}:${elementId}:${transport}:${patch.universe}:${patch.address}`;
+}
+
+/** Collects the location keys of every entry in a patch map. */
+function patchLocationKeys(patchMap: FixturePatchMap): Set<string> {
+  const keys = new Set<string>();
+  for (const [fixtureUid, patchesByElement] of Object.entries(patchMap)) {
+    for (const [elementId, patches] of Object.entries(patchesByElement)) {
+      for (const patch of patches) {
+        keys.add(patchLocationKey(fixtureUid, elementId, patch));
+      }
+    }
+  }
+  return keys;
+}
+
+/**
+ * Finds the output binding row driving one output channel of the selected space.
+ *
+ * Candidate rows are checked in the frame composer's precedence: direct fixture→transport
+ * rows first (their output overlays console→transport windows on the wire), then the rest
+ * from highest to lowest effective priority (later rows win ties, as in the engine). A row
+ * only matches when it writes the channel itself and the location it patches is also part
+ * of the effective patch map built from the full binding set, so rows overridden by a
+ * Fixture→Disabled row, a disabled binding, or a higher-priority console binding are
+ * never followed.
+ */
+export function findOutputBindingIdForChannel(
+  snapshot: types.BindingsSnapshot,
+  fixtures: Record<string, types.Fixture>,
+  selection: OutputSpaceSelection,
+  selectedUniverse: number,
+  outputAddress: number,
+  targets: OutputTargetConfig = defaultOutputTargets(),
+): string | null {
+  const effectiveLocations = patchLocationKeys(
+    buildFixturePatchMapFromBindings(
+      snapshot,
+      fixtures,
+      targets.networkDmxOutputs,
+      targets.usbDmxOutputs,
+    ),
+  );
+  const fixtureConsoleBindings = snapshot.output.filter(
+    (binding) =>
+      binding.source.type === "Fixture" && binding.target.type === "Console",
+  );
+  const candidates = snapshot.output
+    .map((binding, index) => ({ binding, index }))
+    .sort(
+      (a, b) =>
+        outputBindingPrecedenceTier(a.binding) -
+          outputBindingPrecedenceTier(b.binding) ||
+        b.binding.priority - a.binding.priority ||
+        b.index - a.index,
+    );
+
+  for (const { binding, index } of candidates) {
+    const isConsolePassthrough =
+      binding.source.type === "Console" && binding.target.type === "Transport";
+    const isFixtureBinding =
+      binding.source.type === "Fixture" &&
+      (binding.target.type === "Transport" ||
+        binding.target.type === "Console");
+    if (!isConsolePassthrough && !isFixtureBinding) continue;
+
+    const patchMap = buildFixturePatchMapFromBindings(
+      {
+        input: [],
+        output: isConsolePassthrough
+          ? [...fixtureConsoleBindings, binding]
+          : [binding],
+        disabled: snapshot.disabled,
+      },
+      fixtures,
+      targets.networkDmxOutputs,
+      targets.usbDmxOutputs,
+    );
+    for (const [fixtureUid, patchesByElement] of Object.entries(patchMap)) {
+      for (const [elementId, patches] of Object.entries(patchesByElement)) {
+        for (const patch of patches) {
+          if (isConsolePassthrough && patch.transport === null) continue;
+          if (
+            patch.universe === selectedUniverse &&
+            outputTransportMatchesSelection(patch.transport, selection) &&
+            patchWritesAddress(patch, outputAddress) &&
+            effectiveLocations.has(
+              patchLocationKey(fixtureUid, elementId, patch),
+            )
+          )
+            return `output-${index}`;
+        }
+      }
     }
   }
   return null;

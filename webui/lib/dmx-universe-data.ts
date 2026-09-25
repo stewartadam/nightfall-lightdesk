@@ -8,6 +8,12 @@
 
 import { DmxIoMode, type OutboundDmxUniverse } from "../types";
 
+/**
+ * `transport` label of output universes reported in console space (console numbering);
+ * other output labels name a transport family using on-the-wire numbering.
+ */
+export const CONSOLE_TRANSPORT = "Console";
+
 type InputFreshnessDot = "live" | "stale" | "unknown";
 
 export interface InputFreshnessView {
@@ -40,9 +46,9 @@ export function normalizeDmxUniverseData(
   return data.map((universe) => ({
     universe_id: universe.universe_id,
     channels: universe.channels,
-    transports: universe.transports,
     io_mode: universe.io_mode,
     transport: universe.transport,
+    output_transport: universe.output_transport,
     frame_age_ms: universe.frame_age_ms,
     is_stale: universe.is_stale,
     is_self: universe.is_self,

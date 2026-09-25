@@ -8,20 +8,16 @@
 
 //! Provides a logical representation of DMX universes and their channel values.
 
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
 
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall_dmx::prelude::*;
-#[cfg(test)]
-use nightfall_io::ArtNetDelivery;
 use nightfall_io::BindingTransport;
 use nightfall_io::OutputTransport;
 use web_time::Instant;
 
+use crate::output_frames::ChannelWindow;
 use crate::prelude::*;
 
 /// Default timeout before an input universe is treated as stale.
@@ -109,6 +105,17 @@ impl InputDmxUniverses {
             .unwrap_or([0; MAX_CHANNELS_PER_UNIVERSE])
     }
 
+    /// Borrows the latest frame of a transport/universe, if one was received.
+    pub fn universe(
+        &self,
+        transport: BindingTransport,
+        universe_id: u16,
+    ) -> Option<&[ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE]> {
+        self.universes
+            .get(&transport)
+            .and_then(|by_universe| by_universe.get(&universe_id))
+    }
+
     /// Returns a mutable universe buffer, creating it if absent.
     pub fn get_universe_mut(
         &mut self,
@@ -181,53 +188,47 @@ impl Default for ConsoleUniverse {
     }
 }
 
-/// Aggregates transport metadata per universe from resolved output destinations.
-/// A universe may be associated with multiple transports when different address ranges
-/// are routed to different outputs (e.g., 1:0-120 on sACN, 1:121-511 on Art-Net).
-#[derive(Default, Resource)]
-pub struct UniverseTransportMap {
-    /// Maps each universe to its set of transports.
-    by_universe: HashMap<u16, HashSet<OutputTransport>>,
+/// Returns whether a 1-indexed DMX address lies inside a universe.
+fn is_valid_address(address: u16) -> bool {
+    address != 0 && address as usize <= MAX_CHANNELS_PER_UNIVERSE
 }
 
-impl UniverseTransportMap {
-    /// Records that a universe uses a given transport.
-    pub fn add_transport(&mut self, universe_id: u16, transport: OutputTransport) {
-        let transports = self.by_universe.entry(universe_id).or_default();
-        if transports.insert(transport.clone()) {
-            tracing::trace!(universe_id, ?transport, "Universe added to transport map");
+/// Writes `values` into consecutive channels of `universe` starting at a 1-indexed `address`.
+///
+/// Channels past the end of the universe are skipped with a warning.
+fn write_channel_window(
+    universe: &mut ConsoleUniverse,
+    universe_id: u16,
+    address: u16,
+    values: &[ChannelDmxValue],
+    origin: ConsoleChannelOrigin,
+) {
+    for (offset, value) in values.iter().enumerate() {
+        let channel = address as usize + offset;
+        if channel == 0 || channel > MAX_CHANNELS_PER_UNIVERSE {
+            tracing::warn!(
+                universe_id,
+                address = channel,
+                "Address is invalid, skipping"
+            );
+            continue;
         }
-    }
-
-    /// Gets all transports for a specific universe.
-    pub fn transports_for_universe(
-        &self,
-        universe_id: u16,
-    ) -> impl Iterator<Item = &OutputTransport> {
-        self.by_universe.get(&universe_id).into_iter().flatten()
-    }
-
-    /// Gets all universes that have any transport configured.
-    pub fn universes(&self) -> impl Iterator<Item = u16> + '_ {
-        self.by_universe.keys().copied()
-    }
-
-    /// Checks if a universe has a transport matching the given predicate.
-    pub fn has_transport(
-        &self,
-        universe_id: u16,
-        predicate: impl Fn(&OutputTransport) -> bool,
-    ) -> bool {
-        self.transports_for_universe(universe_id).any(predicate)
-    }
-
-    /// Clears all transport mappings.
-    pub fn clear(&mut self) {
-        self.by_universe.clear();
+        universe.values[channel - 1] = *value;
+        universe.origins[channel - 1] = Some(origin);
     }
 }
 
 /// Console DMX universe space with per-channel origin metadata.
+///
+/// Holds two numbering spaces:
+/// - console universes, keyed by console numbering: fixture values at their console
+///   addresses, manual `ch` writes, and input bindings targeting the console;
+/// - output buffers, keyed by concrete transport and on-the-wire universe numbering, holding
+///   direct fixture→transport values.
+///
+/// Neither is sent as-is: [`crate::output_frames::compose_output_frames`] combines them
+/// according to the routing plan, so console space only reaches the wire through
+/// console→transport bindings.
 #[derive(Default, Resource)]
 pub struct ConsoleDmxUniverses {
     universes: HashMap<u16, ConsoleUniverse>,
@@ -235,6 +236,112 @@ pub struct ConsoleDmxUniverses {
 }
 
 impl ConsoleDmxUniverses {
+    /// Writes consecutive console channel values starting at a 1-indexed address.
+    ///
+    /// Values that would fall past the end of the universe are dropped with a warning.
+    pub fn set_values(
+        &mut self,
+        universe_id: u16,
+        address: u16,
+        values: &[ChannelDmxValue],
+        origin: ConsoleChannelOrigin,
+    ) {
+        if !is_valid_address(address) {
+            tracing::warn!(universe_id, address, "Address is invalid, skipping");
+            return;
+        }
+        let universe = self.universes.entry(universe_id).or_default();
+        write_channel_window(universe, universe_id, address, values, origin);
+    }
+
+    /// Writes consecutive channel values for one output transport starting at a 1-indexed address.
+    pub fn set_output_values(
+        &mut self,
+        transport: &OutputTransport,
+        universe_id: u16,
+        address: u16,
+        values: &[ChannelDmxValue],
+        origin: ConsoleChannelOrigin,
+    ) {
+        if !is_valid_address(address) {
+            tracing::warn!(universe_id, address, "Address is invalid, skipping");
+            return;
+        }
+        let universe = self
+            .output_universes
+            .entry((transport.clone(), universe_id))
+            .or_default();
+        write_channel_window(universe, universe_id, address, values, origin);
+    }
+
+    /// Copies every written channel of one transport's output buffer onto `target`.
+    ///
+    /// Returns whether the buffer exists. Unwritten channels leave `target` untouched so
+    /// direct fixture output layers over routed console windows.
+    pub fn overlay_output_universe(
+        &self,
+        transport: &OutputTransport,
+        universe_id: u16,
+        target: &mut [ChannelDmxValue],
+    ) -> bool {
+        let Some(universe) = self.output_universes.get(&(transport.clone(), universe_id)) else {
+            return false;
+        };
+        for ((target, value), origin) in target
+            .iter_mut()
+            .zip(universe.values.iter())
+            .zip(universe.origins.iter())
+        {
+            if origin.is_some() {
+                *target = *value;
+            }
+        }
+        true
+    }
+
+    /// Copies the written channels of a console universe window onto a wire frame.
+    ///
+    /// Only channels with an origin are copied, so unwritten console channels never mask
+    /// values placed by other windows. Returns whether the console universe exists.
+    pub fn overlay_console_window(
+        &self,
+        universe_id: u16,
+        window: ChannelWindow,
+        target: &mut [ChannelDmxValue],
+    ) -> bool {
+        let Some(universe) = self.universes.get(&universe_id) else {
+            return false;
+        };
+        if let Some((source_start, target_start, len)) =
+            window.span(universe.values.len(), target.len())
+        {
+            for offset in 0..len {
+                if universe.origins[source_start + offset].is_some() {
+                    target[target_start + offset] = universe.values[source_start + offset];
+                }
+            }
+        }
+        true
+    }
+
+    /// Removes every value written by output bindings after the bindings were re-resolved.
+    ///
+    /// Output buffers are dropped entirely, console channels owned by output bindings are
+    /// zeroed and unowned, and console universes left without any owned channel are removed.
+    /// The next [`dmx_universes`] run rewrites values for the bindings that still apply.
+    pub fn clear_output_binding_values(&mut self) {
+        self.output_universes.clear();
+        self.universes.retain(|_, universe| {
+            for (value, origin) in universe.values.iter_mut().zip(universe.origins.iter_mut()) {
+                if *origin == Some(ConsoleChannelOrigin::OutputBinding) {
+                    *value = 0;
+                    *origin = None;
+                }
+            }
+            universe.origins.iter().any(Option::is_some)
+        });
+    }
+
     /// Sets a DMX channel value with explicit origin metadata.
     /// Address is 1-indexed (DMX convention).
     pub fn set_value(
@@ -250,30 +357,6 @@ impl ConsoleDmxUniverses {
         }
 
         let universe = self.universes.entry(universe_id).or_default();
-        let index = (address - 1) as usize;
-        universe.values[index] = value;
-        universe.origins[index] = Some(origin);
-    }
-
-    /// Sets a DMX channel value for one concrete output transport.
-    /// Address is 1-indexed (DMX convention).
-    pub fn set_output_value(
-        &mut self,
-        transport: OutputTransport,
-        universe_id: u16,
-        address: u16,
-        value: ChannelDmxValue,
-        origin: ConsoleChannelOrigin,
-    ) {
-        if address == 0 || address > MAX_CHANNELS_PER_UNIVERSE as u16 {
-            tracing::warn!("Address {} is invalid, skipping", address);
-            return;
-        }
-
-        let universe = self
-            .output_universes
-            .entry((transport, universe_id))
-            .or_default();
         let index = (address - 1) as usize;
         universe.values[index] = value;
         universe.origins[index] = Some(origin);
@@ -411,84 +494,52 @@ fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
     (normalized * dmx_max as ParameterDmxValue).round() as u32
 }
 
-fn write_parameter_to_console_universe(
-    universes: &mut ConsoleDmxUniverses,
-    transport: Option<&OutputTransport>,
-    universe_id: u16,
-    address: u16,
-    parameter: &Parameter,
-    origin: ConsoleChannelOrigin,
-) {
-    let dmx_value = parameter_to_dmx_value(parameter);
-
-    if parameter.metadata.resolution >= DmxValueResolution::Coarse {
-        let coarse = match parameter.metadata.resolution {
-            DmxValueResolution::Coarse => dmx_value as ChannelDmxValue,
-            DmxValueResolution::Fine => (dmx_value >> 8) as ChannelDmxValue,
-            DmxValueResolution::UltraFine => (dmx_value >> 16) as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 24) as ChannelDmxValue,
-        };
-        universes.set_value(universe_id, address, coarse, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address, coarse, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::Fine {
-        let fine = match parameter.metadata.resolution {
-            DmxValueResolution::Fine => dmx_value as ChannelDmxValue,
-            DmxValueResolution::UltraFine => (dmx_value >> 8) as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 16) as ChannelDmxValue,
-            _ => 0,
-        };
-        universes.set_value(universe_id, address + 1, fine, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address + 1, fine, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::UltraFine {
-        let ultra = match parameter.metadata.resolution {
-            DmxValueResolution::UltraFine => dmx_value as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 8) as ChannelDmxValue,
-            _ => 0,
-        };
-        universes.set_value(universe_id, address + 2, ultra, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address + 2, ultra, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::Uber {
-        universes.set_value(
-            universe_id,
-            address + 3,
-            dmx_value as ChannelDmxValue,
-            origin,
-        );
-        if let Some(transport) = transport {
-            universes.set_output_value(
-                transport.clone(),
-                universe_id,
-                address + 3,
-                dmx_value as ChannelDmxValue,
-                origin,
-            );
-        }
-    }
+/// Encodes a parameter's current value as its big-endian DMX channel bytes.
+///
+/// Returns a fixed buffer plus the number of leading bytes that are meaningful; the slice
+/// `bytes[4 - width..]` holds coarse through finest channel values in DMX order.
+pub(crate) fn parameter_dmx_bytes(parameter: &Parameter) -> ([ChannelDmxValue; 4], usize) {
+    let width = parameter.metadata.resolution.channel_width() as usize;
+    (
+        parameter_to_dmx_value(parameter).to_be_bytes(),
+        width.min(4),
+    )
 }
 
-/// Organizes DMX values from parameters into universes according to resolved destinations.
+/// Writes parameter values into console space and each resolved transport output buffer.
+///
+/// Console-space values are keyed by console universe numbering (from console bindings),
+/// while transport buffers are keyed by on-the-wire universe numbering.
 pub fn dmx_universes(
-    query: Query<(InstanceRef<Parameter>, Option<&ResolvedOutputDestinations>)>,
+    query: Query<(
+        InstanceRef<Parameter>,
+        Option<&ResolvedOutputDestinations>,
+        Option<&ResolvedConsoleDestination>,
+    )>,
     mut universes: ResMut<ConsoleDmxUniverses>,
 ) {
-    for (parameter, destinations) in &query {
-        let Some(destinations) = destinations else {
+    for (parameter, destinations, console_destination) in &query {
+        let console_address = console_destination.and_then(|console| console.address);
+        let destinations = destinations
+            .map(|destinations| destinations.destinations.as_slice())
+            .unwrap_or_default();
+        if console_address.is_none() && destinations.is_empty() {
             continue;
-        };
+        }
 
-        for destination in &destinations.destinations {
+        let (bytes, width) = parameter_dmx_bytes(&parameter);
+        let channels = &bytes[bytes.len() - width..];
+
+        if let Some(console_address) = console_address {
+            universes.set_values(
+                console_address.universe,
+                console_address.address,
+                channels,
+                ConsoleChannelOrigin::OutputBinding,
+            );
+        }
+
+        for destination in destinations {
             if destination.address == 0 {
                 tracing::warn!(
                     attribute = ?parameter.metadata.attribute,
@@ -497,48 +548,12 @@ pub fn dmx_universes(
                 );
             }
 
-            write_parameter_to_console_universe(
-                &mut universes,
-                Some(&destination.transport),
+            universes.set_output_values(
+                &destination.transport,
                 destination.universe,
                 destination.address,
-                &parameter,
+                channels,
                 ConsoleChannelOrigin::OutputBinding,
-            );
-        }
-    }
-}
-
-/// Updates transport map when patch entities change.
-pub fn update_transport_map(
-    changed_query: Query<&ResolvedOutputDestinations, Changed<ResolvedOutputDestinations>>,
-    all_destinations_query: Query<&ResolvedOutputDestinations>,
-    resolved_input_bindings: Res<ResolvedInputBindings>,
-    mut removed: RemovedComponents<ResolvedOutputDestinations>,
-    mut transport_map: ResMut<UniverseTransportMap>,
-) {
-    if changed_query.is_empty()
-        && removed.read().next().is_none()
-        && !resolved_input_bindings.is_changed()
-    {
-        return;
-    }
-
-    transport_map.clear();
-    for destinations in &all_destinations_query {
-        for destination in &destinations.destinations {
-            transport_map.add_transport(destination.universe, destination.transport.clone());
-        }
-    }
-
-    for binding in &resolved_input_bindings.bindings {
-        if let ResolvedInputDestination::Transport {
-            target: transport_target,
-        } = &binding.destination
-        {
-            transport_map.add_transport(
-                transport_target.universe,
-                transport_target.transport.clone(),
             );
         }
     }
@@ -555,46 +570,28 @@ pub fn dmx_universes_debug(universes: ResMut<ConsoleDmxUniverses>) {
 
 #[cfg(test)]
 mod tests {
-    use bevy_app::{App, Update};
-
     use super::*;
 
+    /// Clearing output-binding values keeps manual writes, drops fixture-owned channels,
+    /// removes universes left without owned channels, and drops output buffers.
     #[test]
-    fn update_transport_map_includes_input_transport_targets() {
-        let mut app = App::new();
-        app.init_resource::<ResolvedInputBindings>();
-        app.init_resource::<UniverseTransportMap>();
+    fn clear_output_binding_values_keeps_only_non_binding_channels() {
+        let mut universes = ConsoleDmxUniverses::default();
+        let sacn = OutputTransport::Sacn {
+            mode: nightfall_io::SacnDelivery::Multicast,
+        };
+        universes.set_values(1, 1, &[10, 20], ConsoleChannelOrigin::OutputBinding);
+        universes.set_value(1, 5, 55, ConsoleChannelOrigin::ManualCommand);
+        universes.set_values(2, 1, &[30], ConsoleChannelOrigin::OutputBinding);
+        universes.set_output_values(&sacn, 3, 1, &[40], ConsoleChannelOrigin::OutputBinding);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
-            source: ResolvedInputSource::Transport {
-                transport: BindingTransport::Sacn,
-                universe: 2,
-                address: 1,
-            },
-            priority: 0,
-            destination: ResolvedInputDestination::Transport {
-                target: ResolvedTransportTarget {
-                    target: "artnet".to_string(),
-                    protocol: BindingTransport::ArtNet,
-                    transport: OutputTransport::ArtNet {
-                        mode: ArtNetDelivery::Broadcast,
-                    },
-                    universe: 7,
-                    address: 1,
-                },
-            },
-        }];
+        universes.clear_output_binding_values();
 
-        app.add_systems(Update, update_transport_map);
-        app.update();
-
-        let map = app.world().resource::<UniverseTransportMap>();
-        assert!(map.has_transport(7, |transport| matches!(
-            transport,
-            OutputTransport::ArtNet { .. }
-        )));
+        assert_eq!(universes.get_value(1, 1), Some(0));
+        assert_eq!(universes.get_origin(1, 1), None);
+        assert_eq!(universes.get_value(1, 5), Some(55));
+        assert!(!universes.has_universe(2));
+        assert!(!universes.has_output_universe(&sacn, 3));
     }
 
     #[test]

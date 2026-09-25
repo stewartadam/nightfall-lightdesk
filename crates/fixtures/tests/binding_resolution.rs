@@ -440,6 +440,8 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
         ];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -499,6 +501,8 @@ fn resolve_output_bindings_uses_generic_rgb_strobe_bar_hardware_dmx_order() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -540,6 +544,8 @@ fn resolve_output_bindings_uses_rotating_wash_beam_hardware_dmx_order() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -588,6 +594,8 @@ fn resolve_output_bindings_uses_moving_spot_hardware_dmx_order() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -629,6 +637,8 @@ fn resolve_output_bindings_supports_floating_fixtures() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -857,6 +867,20 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
         );
         console_addresses.addresses.insert(
             uid_b,
+            ConsoleDmxAddress {
+                universe: 3,
+                address: 1,
+            },
+        );
+        console_addresses.parameters.insert(
+            param_a,
+            ConsoleDmxAddress {
+                universe: 1,
+                address: 1,
+            },
+        );
+        console_addresses.parameters.insert(
+            param_b,
             ConsoleDmxAddress {
                 universe: 3,
                 address: 1,
@@ -1107,6 +1131,8 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -1192,6 +1218,8 @@ fn resolve_output_bindings_resolves_named_usb_targets() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -1255,6 +1283,8 @@ fn resolve_output_bindings_applies_disabled_filter_from_target_disabled() {
         ];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 

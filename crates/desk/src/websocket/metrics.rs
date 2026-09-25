@@ -12,7 +12,7 @@ use super::*;
 
 /// Send aggregated engine metrics (active layers/universes, network stats) to UI
 pub fn send_metrics(
-    dmx_universes: Res<ConsoleDmxUniverses>,
+    output_frames: Res<OutputDmxFrames>,
     network_stats: Res<NetworkStats>,
     layer_query: Query<&Layer>,
     entities_query: Query<Entity>,
@@ -26,7 +26,9 @@ pub fn send_metrics(
             .and_then(|diagnostic| diagnostic.smoothed())
     };
     let active_layers = layer_query.iter().count() as u32;
-    let active_universes = dmx_universes.universe_ids().count() as u32;
+    // One per composed wire frame (concrete transport and wire universe), matching what the
+    // output drivers transmit this engine frame.
+    let active_universes = output_frames.len() as u32;
 
     let metrics = DeskMetrics {
         fps: diagnostics

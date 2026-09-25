@@ -347,6 +347,16 @@ pub struct ResolvedOutputDestinations {
     pub destinations: Vec<OutputDestination>,
 }
 
+/// Component storing the console-space DMX address of one parameter.
+///
+/// Mirrors [`ConsoleDmxAddresses::parameters`]. `None` when no active console binding
+/// covers the parameter.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Component)]
+pub struct ResolvedConsoleDestination {
+    /// Console universe and first address of the parameter, when console-bound.
+    pub address: Option<ConsoleDmxAddress>,
+}
+
 /// Console DMX address mapping for a fixture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -357,9 +367,34 @@ pub struct ConsoleDmxAddress {
     pub address: u16,
 }
 
-/// Resource mapping fixture UIDs to their console DMX addresses.
+/// Resource mapping fixtures and parameters to their console DMX addresses.
 #[derive(Debug, Default, Clone, Resource)]
 pub struct ConsoleDmxAddresses {
-    /// Map of fixture UID to console address.
+    /// Map of fixture UID to the first console address of its bound footprint.
     pub addresses: HashMap<Uuid, ConsoleDmxAddress>,
+    /// Map of parameter entity to its first console address.
+    ///
+    /// Only parameters selected by the winning console binding's element/parameter filter
+    /// occupy console channels, laid out contiguously in DMX order.
+    pub parameters: HashMap<Entity, ConsoleDmxAddress>,
+}
+
+impl ConsoleDmxAddresses {
+    /// Clears fixture and parameter console addresses.
+    pub fn clear(&mut self) {
+        self.addresses.clear();
+        self.parameters.clear();
+    }
+
+    /// Returns the sorted, deduplicated console universes occupied by bound parameters.
+    pub fn universes(&self) -> Vec<u16> {
+        let mut universes: Vec<u16> = self
+            .parameters
+            .values()
+            .map(|address| address.universe)
+            .collect();
+        universes.sort_unstable();
+        universes.dedup();
+        universes
+    }
 }

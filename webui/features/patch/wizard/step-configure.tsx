@@ -19,6 +19,7 @@ import {
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { normalizeFixtureUid } from "../../../lib/binding-utils";
+import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
 import {
   computeFixtureChannelCount,
   fetchFixtureProfile,
@@ -223,11 +224,17 @@ export function StepConfigure() {
     collectConsolePatchOccupancy($bindings(), $fixtures()),
   );
 
-  const universeIds = createMemo(() =>
-    $dmxData()
+  /**
+   * Lists active console-space universe numbers for console DMX assignment defaults,
+   * falling back to console universe 1 when nothing is patched to the console yet.
+   */
+  const universeIds = createMemo(() => {
+    const ids = $dmxData()
+      .filter((universe) => universe.transport === CONSOLE_TRANSPORT)
       .map((universe) => universe.universe_id)
-      .sort((a, b) => a - b),
-  );
+      .sort((a, b) => a - b);
+    return ids.length > 0 ? ids : [1];
+  });
 
   const selectedUniverseId = createMemo(() => state().universeId);
 
