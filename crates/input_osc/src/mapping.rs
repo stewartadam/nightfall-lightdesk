@@ -9,7 +9,7 @@
 //! OSC mapping storage and lookup.
 
 use bevy_ecs::prelude::*;
-use nightfall_actions::{ActionInputKind, ActionReference, SourceEdge, SourceSignal};
+use nightfall_actions::{ActionInputKind, ActionReference, SourceSignal};
 use uuid::Uuid;
 
 use crate::command::{OscLastEvent, OscMapping, OscType};
@@ -42,7 +42,7 @@ impl OscMappings {
     ///
     /// Mappings with identical match criteria address the same control, which fires at most
     /// one action per edge, so any such mapping that would fire from the same edge is removed
-    /// (see [`nightfall_actions::SourceEdge::overlaps`]). `input_kind` reports the input kind
+    /// (see [`nightfall_actions::ControlBehavior::overlaps`]). `input_kind` reports the input kind
     /// of a bound action. An existing mapping with the same ID keeps its list position.
     pub fn upsert(
         &mut self,
@@ -57,9 +57,11 @@ impl OscMappings {
             .filter(|existing| {
                 existing.id != mapping.id
                     && same_criteria(existing, &mapping)
-                    && mapping
-                        .edge
-                        .overlaps(kind, existing.edge, input_kind(&existing.action))
+                    && mapping.behavior.overlaps(
+                        kind,
+                        existing.behavior,
+                        input_kind(&existing.action),
+                    )
             })
             .map(|existing| existing.id)
             .collect::<Vec<_>>();
@@ -134,16 +136,16 @@ impl OscMapping {
     }
 
     /// Returns whether messages matched by this mapping can drive an action input kind.
-    ///
-    /// A release binding also needs messages that report the control being let go.
     pub fn can_drive(&self, kind: ActionInputKind) -> bool {
-        let reports_edges =
-            self.release_value.is_some() || (self.arg_value.is_none() && self.arg_index.is_some());
-        self.edge.accepts(kind)
-            && match self.edge {
-                SourceEdge::Press => reports_edges || SourceSignal::Pulse.can_drive(kind),
-                SourceEdge::Release => reports_edges,
-            }
+        self.reports_release() || SourceSignal::Pulse.can_drive(kind)
+    }
+
+    /// Returns whether matched messages report the control being released.
+    ///
+    /// Mappings with a released value, or that read an argument without matching a value,
+    /// report button edges or levels; value-matched mappings without one are pulses.
+    pub fn reports_release(&self) -> bool {
+        self.release_value.is_some() || (self.arg_value.is_none() && self.arg_index.is_some())
     }
 }
 
@@ -218,6 +220,7 @@ fn normalize_mapping(mut mapping: OscMapping) -> OscMapping {
 #[cfg(test)]
 mod tests {
     use nightfall_actions::ActionReference;
+    use nightfall_actions::ControlBehavior;
     use serde_json::json;
 
     use super::*;
@@ -249,7 +252,7 @@ mod tests {
             arg_index: None,
             arg_value: None,
             release_value: None,
-            edge: SourceEdge::Press,
+            behavior: ControlBehavior::Press,
             action: ActionReference::new("test.start", json!({ "id": 5 })),
         }]);
 
@@ -269,7 +272,7 @@ mod tests {
             arg_index: None,
             arg_value: Some("42".to_string()),
             release_value: None,
-            edge: SourceEdge::Press,
+            behavior: ControlBehavior::Press,
             action: ActionReference::new("test.go", json!({ "id": 7 })),
         }]);
 
@@ -290,7 +293,7 @@ mod tests {
             arg_index: Some(1),
             arg_value: Some("go".to_string()),
             release_value: None,
-            edge: SourceEdge::Press,
+            behavior: ControlBehavior::Press,
             action: ActionReference::new("test.eval", json!({ "command": "clip 1 go" })),
         }]);
 
@@ -316,7 +319,7 @@ mod tests {
             arg_index: None,
             arg_value: Some("   ".to_string()),
             release_value: None,
-            edge: SourceEdge::Press,
+            behavior: ControlBehavior::Press,
             action: ActionReference::new("test.start", json!({ "id": 9 })),
         }]);
 
@@ -327,7 +330,7 @@ mod tests {
     }
 
     /// Builds a button mapping that reports `1` as pressed and `0` as released.
-    fn button_mapping(id: u128, edge: SourceEdge, action: &str) -> OscMapping {
+    fn button_mapping(id: u128, behavior: ControlBehavior, action: &str) -> OscMapping {
         OscMapping {
             id: Uuid::from_u128(id),
             source: None,
@@ -335,7 +338,7 @@ mod tests {
             arg_index: Some(0),
             arg_value: Some("1".to_string()),
             release_value: Some("0".to_string()),
-            edge,
+            behavior,
             action: ActionReference::new(action, json!({})),
         }
     }
@@ -343,7 +346,7 @@ mod tests {
     /// Verifies pressed and released values turn matching messages into button edges.
     #[test]
     fn release_values_report_button_edges() {
-        let mapping = button_mapping(1, SourceEdge::Press, "test.hold");
+        let mapping = button_mapping(1, ControlBehavior::Press, "test.hold");
 
         assert_eq!(
             mapping.signal(&test_event(vec![OscType::Int(1)])),
@@ -353,19 +356,15 @@ mod tests {
             mapping.signal(&test_event(vec![OscType::Int(0)])),
             SourceSignal::Button(false)
         );
-        assert!(mapping.can_drive(ActionInputKind::Momentary));
+        assert!(mapping.reports_release());
+        assert!(mapping.can_drive(ActionInputKind::Absolute));
         let pulse_only = OscMapping {
             release_value: None,
             ..mapping
         };
-        assert!(!pulse_only.can_drive(ActionInputKind::Momentary));
-        assert!(
-            !OscMapping {
-                edge: SourceEdge::Release,
-                ..pulse_only
-            }
-            .can_drive(ActionInputKind::Trigger)
-        );
+        assert!(!pulse_only.reports_release());
+        assert!(!pulse_only.can_drive(ActionInputKind::Absolute));
+        assert!(pulse_only.can_drive(ActionInputKind::Trigger));
     }
 
     /// Verifies a button keeps press and release trigger bindings side by side.
@@ -373,9 +372,12 @@ mod tests {
     fn press_and_release_bindings_share_a_button() {
         let triggers = |_: &ActionReference| Some(ActionInputKind::Trigger);
         let mut mappings = OscMappings::new();
-        mappings.upsert(button_mapping(1, SourceEdge::Press, "test.start"), triggers);
+        mappings.upsert(
+            button_mapping(1, ControlBehavior::Press, "test.start"),
+            triggers,
+        );
         let displaced = mappings.upsert(
-            button_mapping(2, SourceEdge::Release, "test.stop"),
+            button_mapping(2, ControlBehavior::Release, "test.stop"),
             triggers,
         );
 

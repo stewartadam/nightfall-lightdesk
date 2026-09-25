@@ -15,9 +15,12 @@ use bevy_ecs::prelude::{Resource, World};
 use serde::de::DeserializeOwned;
 
 use crate::descriptor::{ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind};
+use crate::flash::{FLASH_LEVEL, FlashStates};
 use crate::invocation::{
-    ActionInvocation, ActionReference, ClientActionInvocation, InvocationDispatch, InvocationError,
+    ActionInput, ActionInvocation, ActionReference, ClientActionInvocation, InvocationDispatch,
+    InvocationError,
 };
+use crate::source::ControlBehavior;
 
 /// ID prefix reserved for actions hosted by connected Web UI clients.
 pub const CLIENT_ACTION_PREFIX: &str = "ui.";
@@ -32,6 +35,10 @@ type CapabilityResolver = Box<
     dyn Fn(&ActionReference) -> Result<Box<dyn Any + Send + Sync>, InvocationError> + Send + Sync,
 >;
 
+/// Reads the current normalized level an absolute action drives, for restoring after a flash.
+type FlashLevelReader =
+    Box<dyn Fn(&World, &ActionReference) -> Result<Option<f32>, InvocationError> + Send + Sync>;
+
 /// One deterministic interpretation of an action, keyed by its output type.
 struct RegisteredCapability {
     name: &'static str,
@@ -43,6 +50,7 @@ struct RegisteredAction {
     descriptor: ActionDescriptor,
     invoker: RegisteredInvoker,
     capabilities: HashMap<TypeId, RegisteredCapability>,
+    flash_level: Option<FlashLevelReader>,
 }
 
 /// App-wide registry of action descriptors and domain-owned invokers.
@@ -67,6 +75,56 @@ fn decode_arguments<A: DeserializeOwned>(action: &ActionReference) -> Result<A, 
             ),
         )
     })
+}
+
+/// Lists the controller binding behaviors a registered action supports.
+///
+/// Triggers fire on press or release, and on Hold when they declare a release counterpart.
+/// Absolute actions follow faders directly, and Flash when their level can be read back.
+fn supported_behaviors(action: &RegisteredAction) -> Vec<ControlBehavior> {
+    match action.descriptor.input {
+        ActionInputKind::Trigger => {
+            let mut behaviors = vec![ControlBehavior::Press, ControlBehavior::Release];
+            if action.descriptor.hold_release.is_some() {
+                behaviors.push(ControlBehavior::Hold);
+            }
+            behaviors
+        }
+        ActionInputKind::Momentary => vec![ControlBehavior::Hold],
+        ActionInputKind::Absolute => {
+            let mut behaviors = vec![ControlBehavior::Press];
+            if action.flash_level.is_some() {
+                behaviors.push(ControlBehavior::Flash);
+            }
+            behaviors
+        }
+    }
+}
+
+/// Returns the level a flash press or release drives an absolute action to.
+///
+/// A press captures the current level and returns full; a release returns the captured
+/// level, or `None` while other flashes hold the target or after the level was moved.
+fn flash_level(
+    world: &mut World,
+    registered: &RegisteredAction,
+    invocation: &ActionInvocation,
+    pressed: bool,
+) -> Result<Option<f32>, InvocationError> {
+    let reader = registered.flash_level.as_ref().ok_or_else(|| {
+        InvocationError::new(
+            "action.flash_unsupported",
+            format!("Action '{}' cannot flash", registered.descriptor.label),
+        )
+    })?;
+    let current = reader(world, &invocation.action)?;
+    let mut flashes = world.get_resource_or_insert_with(FlashStates::default);
+    if pressed {
+        flashes.press(&invocation.action, current);
+        Ok(Some(FLASH_LEVEL))
+    } else {
+        Ok(flashes.release(&invocation.action, current))
+    }
 }
 
 impl ActionRegistry {
@@ -102,6 +160,7 @@ impl ActionRegistry {
                 descriptor,
                 invoker: Box::new(registered_invoker),
                 capabilities: HashMap::new(),
+                flash_level: None,
             },
         );
     }
@@ -199,6 +258,7 @@ impl ActionRegistry {
                 ActionCatalogEntry {
                     descriptor: action.descriptor.clone(),
                     capabilities,
+                    behaviors: supported_behaviors(action),
                 }
             })
             .collect()
@@ -227,14 +287,78 @@ impl ActionRegistry {
             return Ok(InvocationDispatch::Accepted);
         }
         let registered = self.registered(&invocation.action.id)?;
-        let Some(input) = invocation.input.resolve_for(registered.descriptor.input)? else {
-            return Ok(InvocationDispatch::Ignored);
+        let input = match (registered.descriptor.input, invocation.input) {
+            (ActionInputKind::Absolute, ActionInput::Press | ActionInput::Release) => {
+                let Some(level) = flash_level(
+                    world,
+                    registered,
+                    invocation,
+                    invocation.input == ActionInput::Press,
+                )?
+                else {
+                    return Ok(InvocationDispatch::Ignored);
+                };
+                ActionInput::Scalar(level)
+            }
+            (kind, input) => match input.resolve_for(kind)? {
+                Some(input) => input,
+                None => return Ok(InvocationDispatch::Ignored),
+            },
         };
         let resolved = ActionInvocation {
             input,
             ..invocation.clone()
         };
         (registered.invoker)(world, &resolved)
+    }
+
+    /// Registers how to read the current normalized level of an absolute action.
+    ///
+    /// Enables the Flash behavior: pressing pushes the action to full and releasing restores
+    /// the level read on press.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the action ID is unknown or the action is not absolute.
+    pub fn register_flash_level<A, F>(&mut self, action_id: &str, reader: F)
+    where
+        A: DeserializeOwned + 'static,
+        F: Fn(&World, A) -> Result<Option<f32>, InvocationError> + Send + Sync + 'static,
+    {
+        let registered = self
+            .actions
+            .get_mut(&ActionId::new(action_id))
+            .unwrap_or_else(|| panic!("action '{action_id}' must be registered before its level"));
+        assert_eq!(
+            registered.descriptor.input,
+            ActionInputKind::Absolute,
+            "flash level for '{action_id}' requires an absolute action"
+        );
+        registered.flash_level = Some(Box::new(move |world, action| {
+            reader(world, decode_arguments::<A>(action)?)
+        }));
+    }
+
+    /// Returns the controller binding behaviors an action supports.
+    ///
+    /// Client-hosted `ui.*` actions fire on press or release; unknown actions support none.
+    pub fn behaviors(&self, id: &ActionId) -> Vec<ControlBehavior> {
+        if is_client_action(id) {
+            return vec![ControlBehavior::Press, ControlBehavior::Release];
+        }
+        self.actions
+            .get(id)
+            .map(supported_behaviors)
+            .unwrap_or_default()
+    }
+
+    /// Returns the action a Hold binding invokes on release, with the bound arguments.
+    pub fn hold_release_action(&self, action: &ActionReference) -> Option<ActionReference> {
+        let counterpart = self.get(&action.id)?.hold_release.clone()?;
+        Some(ActionReference {
+            id: counterpart,
+            arguments: action.arguments.clone(),
+        })
     }
 
     /// Validates that a stored binding can invoke its action before it is persisted.
@@ -274,6 +398,34 @@ impl ActionRegistry {
                     "This control cannot drive '{}', which needs {:?} input",
                     descriptor.label, descriptor.input
                 ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Validates that a controller binding's behavior suits its action and control.
+    ///
+    /// The action must support the behavior, and every behavior other than Press needs a
+    /// control that reports being released.
+    pub fn validate_behavior(
+        &self,
+        action: &ActionReference,
+        behavior: ControlBehavior,
+        reports_release: bool,
+    ) -> Result<(), InvocationError> {
+        if !self.behaviors(&action.id).contains(&behavior) {
+            let label = self
+                .get(&action.id)
+                .map_or(action.id.as_str(), |descriptor| descriptor.label.as_str());
+            return Err(InvocationError::new(
+                "action.behavior_unsupported",
+                format!("'{label}' does not support the {behavior:?} behavior"),
+            ));
+        }
+        if behavior.needs_release() && !reports_release {
+            return Err(InvocationError::new(
+                "action.release_unreported",
+                format!("{behavior:?} needs a control that reports being released"),
             ));
         }
         Ok(())

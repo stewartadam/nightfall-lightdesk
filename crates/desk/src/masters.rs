@@ -146,6 +146,14 @@ impl Master {
         }
     }
 
+    /// Converts a stored level back into the control position that produces it.
+    pub fn control_percent_from_level(kind: MasterKind, level_percent: f32) -> f32 {
+        match kind {
+            MasterKind::InhibitiveIntensity => level_percent.clamp(0.0, 100.0),
+            MasterKind::PlaybackRate => (level_percent / 2.0).clamp(0.0, 100.0),
+        }
+    }
+
     /// Returns whether this master should affect output in the current frame.
     pub fn is_active(&self) -> bool {
         match self.mode {

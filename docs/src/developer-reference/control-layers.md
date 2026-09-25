@@ -23,9 +23,6 @@ separate execution path. A domain plugin registers an action with
   The command is registered under `CommandOrigin::Automation` and queued through
   `PendingCommandBuffer`, so it receives the same undo capture, lifecycle
   tracking, and result reporting as a command sent by the Web UI.
-- `register_momentary_command_action` lowers the press and the release of a held
-  control to separate tracked commands, such as `clip.hold` starting a clip on press
-  and stopping it on release.
 - `register_update_action` lowers absolute input (a normalized `0.0..=1.0`
   value) to an update message. Continuous hardware input is live performance
   state and is never undoable: a physical fader cannot follow an undo.
@@ -51,13 +48,25 @@ Parameter kinds (`Clip`, `Master`, `Control`, `Timeline`, `Cue`, `Panel`,
 `Integer`, `Number`, `Text`) tell clients which picker to render and which UI
 target a click can capture.
 
-### Control edges
+### Controller behaviors
 
-MIDI and OSC mappings choose the `SourceEdge` that fires a trigger action. A control
-holds either one binding whose action consumes both edges (a momentary or absolute
-action), or up to one trigger binding per edge: a pad can start one action on press and
-another on release. OSC buttons report edges when their mapping names both the pressed
-value (`arg_value`) and the released value (`release_value`).
+Each MIDI or OSC mapping has a `ControlBehavior` that decides how the control's
+presses and releases invoke its action:
+
+- `Press` fires a trigger on press, and lets faders drive absolute actions directly.
+- `Release` fires a trigger when the control is let go.
+- `Hold` invokes the action on press and its release counterpart on release, with the
+  same arguments. Domains declare the counterpart with
+  `ActionDescriptor::with_hold_release`, such as `clip.start` with `clip.stop`.
+- `Flash` pushes an absolute action to full while held and restores the previous level
+  on release. Domains enable it with `register_flash_level`. Stacked flashes restore
+  after the last release, and a level moved during the flash wins.
+
+Behaviors never decide undo: that follows the command each invoked action lowers to.
+A control holds one binding reacting to both edges, or one Press and one Release
+trigger binding. The action catalog lists each action's supported behaviors. OSC
+buttons report releases when their mapping names both the pressed value (`arg_value`)
+and the released value (`release_value`).
 
 ### Capabilities
 

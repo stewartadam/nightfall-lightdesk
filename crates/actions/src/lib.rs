@@ -15,6 +15,7 @@
 mod command;
 mod descriptor;
 mod eval;
+mod flash;
 mod invocation;
 mod lowering;
 mod registry;
@@ -45,7 +46,7 @@ use nightfall_engine::prelude::{
     register_command_deserializer, register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
-pub use source::{SourceEdge, SourceEdgeStates, SourceSignal};
+pub use source::{BindingTarget, ControlBehavior, SourceEdgeStates, SourceSignal};
 
 /// Plugin that installs the generic registered-action invocation stage.
 pub struct ActionsPlugin;
@@ -383,45 +384,73 @@ mod tests {
         );
     }
 
-    /// Verifies momentary command actions lower press and release to separate tracked commands.
+    /// Level read back by the test flash registration.
+    #[derive(bevy_ecs::prelude::Resource)]
+    struct TestLevel(f32);
+
+    /// Verifies flashing pushes an absolute action to full and restores the level read on press.
     #[test]
-    fn momentary_command_action_submits_press_and_release_commands() {
+    fn flash_pushes_to_full_and_restores_on_release() {
         let mut app = action_app();
-        app.register_momentary_command_action::<TestArguments, TestCommand, _>(
-            ActionDescriptor::new("test.hold", "Test hold", "Tests")
-                .with_input(ActionInputKind::Momentary),
-            |_world, arguments, pressed| {
-                Ok(TestCommand(if pressed {
-                    arguments.value
-                } else {
-                    arguments.value + 100
-                }))
-            },
-        );
-        let action = ActionReference::new("test.hold", json!({ "value": 3 }));
+        app.insert_resource(TestLevel(0.4));
+        app.register_update_action::<TestArguments, TestApplied, _>(
+            ActionDescriptor::new("test.level", "Test level", "Tests")
+                .with_input(ActionInputKind::Absolute),
+            |_world, _arguments, value| Ok(TestApplied(value)),
+        )
+        .register_flash_level::<TestArguments, _>("test.level", |world, _arguments| {
+            Ok(Some(world.resource::<TestLevel>().0))
+        });
+        let action = ActionReference::new("test.level", json!({ "value": 1 }));
 
         for input in [ActionInput::Press, ActionInput::Release] {
-            let outcome = invoke(
+            invoke(
                 &mut app,
                 ActionInvocation::new(action.clone(), ActionSurface::Midi, input),
             );
-            assert!(matches!(outcome, InvocationOutcome::Submitted { .. }));
         }
 
-        let commands = app
-            .world_mut()
-            .resource_mut::<PendingCommandBuffer>()
-            .drain()
-            .iter()
-            .map(|envelope| {
-                envelope
-                    .payload
-                    .as_any()
-                    .downcast_ref::<TestCommand>()
-                    .cloned()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(commands, vec![Some(TestCommand(3)), Some(TestCommand(103))]);
+        assert_eq!(applied(&mut app), vec![TestApplied(1.0), TestApplied(0.4)]);
+        let registry = app.world().resource::<ActionRegistry>();
+        assert_eq!(
+            registry.behaviors(&ActionId::new("test.level")),
+            vec![ControlBehavior::Press, ControlBehavior::Flash]
+        );
+    }
+
+    /// Verifies triggers with a release counterpart support Hold and resolve the counterpart.
+    #[test]
+    fn hold_release_counterpart_keeps_the_bound_arguments() {
+        let mut app = action_app();
+        for (id, release) in [("test.start", Some("test.stop")), ("test.stop", None)] {
+            let mut descriptor = ActionDescriptor::new(id, id, "Tests");
+            if let Some(release) = release {
+                descriptor = descriptor.with_hold_release(release);
+            }
+            app.register_command_action::<TestArguments, TestCommand, _>(
+                descriptor,
+                |_world, arguments| Ok(TestCommand(arguments.value)),
+            );
+        }
+        let registry = app.world().resource::<ActionRegistry>();
+        let start = ActionReference::new("test.start", json!({ "value": 3 }));
+
+        assert_eq!(
+            registry.hold_release_action(&start),
+            Some(ActionReference::new("test.stop", json!({ "value": 3 })))
+        );
+        assert_eq!(
+            registry.behaviors(&start.id),
+            vec![
+                ControlBehavior::Press,
+                ControlBehavior::Release,
+                ControlBehavior::Hold
+            ]
+        );
+        assert_eq!(
+            registry.behaviors(&ActionId::new("test.stop")),
+            vec![ControlBehavior::Press, ControlBehavior::Release]
+        );
     }
 
     /// Verifies update actions write untracked updates carrying the clamped normalized value.

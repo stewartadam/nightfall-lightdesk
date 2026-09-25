@@ -10,6 +10,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::source::ControlBehavior;
+
 /// Stable identifier for an action exposed through automation surfaces.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -175,6 +177,10 @@ pub struct ActionDescriptor {
     pub input: ActionInputKind,
     /// Persisted arguments the action accepts.
     pub parameters: Vec<ActionParameter>,
+    /// Action invoked with the same arguments when a Hold binding is released, such as
+    /// `clip.stop` for `clip.start`.
+    #[serde(default)]
+    pub hold_release: Option<ActionId>,
 }
 
 impl ActionDescriptor {
@@ -191,6 +197,7 @@ impl ActionDescriptor {
             description: None,
             input: ActionInputKind::Trigger,
             parameters: Vec::new(),
+            hold_release: None,
         }
     }
 
@@ -211,6 +218,12 @@ impl ActionDescriptor {
         self.parameters.push(parameter);
         self
     }
+
+    /// Declares the action a Hold binding invokes with the same arguments on release.
+    pub fn with_hold_release(mut self, action_id: impl Into<String>) -> Self {
+        self.hold_release = Some(ActionId::new(action_id));
+        self
+    }
 }
 
 /// Descriptor plus the names of optional capabilities the owning domain registered.
@@ -221,4 +234,6 @@ pub struct ActionCatalogEntry {
     pub descriptor: ActionDescriptor,
     /// Stable names of deterministic capabilities, such as timeline planning.
     pub capabilities: Vec<String>,
+    /// Controller binding behaviors the action supports.
+    pub behaviors: Vec<ControlBehavior>,
 }
