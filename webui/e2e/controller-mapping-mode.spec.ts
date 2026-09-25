@@ -213,6 +213,87 @@ test("touching a control then clicking a target binds it and the binding drives 
     .toBe(true);
 });
 
+test("binding a button's press and release holds a master on only while pressed", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page))?.mode.type)
+    .toBe("Toggle");
+
+  // One touch of a button sending 1 on press and 0 on release records both values.
+  await page.getByRole("button", { name: "Controller mapping mode" }).click();
+  const banner = page.locator("[data-mapping-mode-banner]");
+  // The backend publishes at most one last event per frame, so let the press arrive first.
+  await sendOsc(port, "/e2e/map/button", [1]);
+  await expect(banner).toContainText("OSC /e2e/map/button");
+  await sendOsc(port, "/e2e/map/button", [0]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.oscLastEvent.get()?.args[0]?.data,
+      ),
+    )
+    .toBe(0);
+  await expect(banner).toContainText("bind its press");
+  const toggleOverlay = page.getByRole("button", {
+    name: "Map toggle Global Master",
+  });
+  await toggleOverlay.click();
+
+  await banner.getByRole("button", { name: "Bind release" }).click();
+  await expect(banner).toContainText("bind its release");
+  await toggleOverlay.click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.oscMappings.get().map((mapping: any) => ({
+          action: mapping.action.id,
+          arg_value: mapping.arg_value,
+          release_value: mapping.release_value,
+          edge: mapping.edge,
+        })),
+      ),
+    )
+    .toEqual([
+      {
+        action: "master.toggle",
+        arg_value: "1",
+        release_value: "0",
+        edge: "Press",
+      },
+      {
+        action: "master.toggle",
+        arg_value: "1",
+        release_value: "0",
+        edge: "Release",
+      },
+    ]);
+  await page.screenshot({
+    path: test.info().outputPath("controller-mapping-release.png"),
+  });
+  await page.keyboard.press("Escape");
+
+  // Pressing turns the master on and releasing turns it back off.
+  await sendOsc(port, "/e2e/map/button", [1]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .toBe(true);
+  await sendOsc(port, "/e2e/map/button", [0]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .toBe(false);
+});
+
 test("fader slots with an assigned master offer both mapping targets", async ({
   backendSlot,
   page,

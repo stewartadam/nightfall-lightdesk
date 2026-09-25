@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { Button } from "../../../components/ui/visual-language/button";
 import DataGrid, {
@@ -44,12 +44,14 @@ import {
   oscListenerStatus,
   oscMappings,
   oscSources,
+  pushToast,
 } from "../../../state/appStores";
 import {
   ActionInputKind,
   type ActionReference,
   type OscMapping,
   type OscType,
+  SourceEdge,
 } from "../../../types";
 import {
   ActionPicker,
@@ -58,7 +60,15 @@ import {
   useActionTargetNames,
   useBindableActionCatalog,
 } from "../../actions";
-import { oscMappingFromEvent } from "../model/controller-mapping-builders";
+import { EdgeSelect } from "../components/edge-select";
+import {
+  formatSourceEdge,
+  type OscGesture,
+  oscMappingFromGesture,
+  oscMappingReportsRelease,
+  parseSourceEdge,
+  trackOscGesture,
+} from "../model/controller-mapping-builders";
 import {
   deleteOscMapping,
   upsertOscMapping,
@@ -106,6 +116,20 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
     width: 120,
     filter: { value: (row) => row.mapping.arg_value ?? "" },
     ...columnVisibilityMeta("Binding", "Arg Match"),
+  },
+  {
+    title: "Release Match",
+    id: "release_value",
+    width: 120,
+    filter: { value: (row) => row.mapping.release_value ?? "" },
+    ...columnVisibilityMeta("Binding", "Release Match"),
+  },
+  {
+    title: "Fires On",
+    id: "edge",
+    width: 90,
+    filter: { value: (row) => formatSourceEdge(row.mapping.edge) },
+    ...columnVisibilityMeta("Binding", "Fires On"),
   },
   {
     title: "Action",
@@ -185,6 +209,15 @@ function editedMapping(
     }
     case "arg_value":
       return { ...mapping, arg_value: trimmed === "" ? undefined : trimmed };
+    case "release_value":
+      return {
+        ...mapping,
+        release_value: trimmed === "" ? undefined : trimmed,
+      };
+    case "edge": {
+      const edge = parseSourceEdge(value);
+      return edge === undefined ? undefined : { ...mapping, edge };
+    }
     default:
       return undefined;
   }
@@ -200,6 +233,16 @@ export default function OscInputPanel(props: OscInputPanelProps) {
   const [lastEventAction, setLastEventAction] = createSignal<
     ActionReference | undefined
   >();
+  const [lastEventEdge, setLastEventEdge] = createSignal(SourceEdge.Press);
+  const initialEvent = oscLastEvent.get();
+  const [gesture, setGesture] = createSignal<OscGesture | undefined>(
+    initialEvent ? { event: initialEvent } : undefined,
+  );
+  // Every received message extends the touch, even when it repeats the previous one.
+  const unsubscribeGesture = oscLastEvent.listen((event) => {
+    if (event) setGesture((current) => trackOscGesture(current, event));
+  });
+  onCleanup(unsubscribeGesture);
   const panelId = props.id;
 
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -279,6 +322,20 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               displayData: rowData.arg_value ?? "",
               data: rowData.arg_value ?? "",
             };
+          case "release_value":
+            return {
+              kind: GridCellKind.Text,
+              allowOverlay: true,
+              displayData: rowData.release_value ?? "",
+              data: rowData.release_value ?? "",
+            };
+          case "edge":
+            return {
+              kind: GridCellKind.Text,
+              allowOverlay: true,
+              displayData: formatSourceEdge(rowData.edge),
+              data: formatSourceEdge(rowData.edge),
+            };
           case "action": {
             const actionStr = formatActionReference(
               rowData.action,
@@ -350,18 +407,28 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     for (const id of ids) void deleteOscMapping(id);
   };
 
-  /** Binds the last received OSC address to the action chosen beside it. */
+  /** Binds the chosen edge of the last touched OSC control to the action chosen beside it. */
   const applyLastEvent = () => {
-    const event = $oscLastEvent();
+    const touch = gesture();
     const action = lastEventAction();
-    if (!event || !action) return;
-    void upsertOscMapping(
-      oscMappingFromEvent(
-        event,
-        action,
-        actionInputKind($actionCatalog(), action),
-      ),
+    if (!touch || !action) return;
+    const mapping = oscMappingFromGesture(
+      touch,
+      action,
+      actionInputKind($actionCatalog(), action),
+      lastEventEdge(),
     );
+    if (
+      mapping.edge === SourceEdge.Release &&
+      !oscMappingReportsRelease(mapping)
+    ) {
+      pushToast(
+        "info",
+        "Press and release the OSC control so its release can be recorded.",
+      );
+      return;
+    }
+    void upsertOscMapping(mapping);
   };
 
   return (
@@ -422,6 +489,10 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                   includeUiActions
                   onChange={setLastEventAction}
                   onIncomplete={() => setLastEventAction(undefined)}
+                />
+                <EdgeSelect
+                  value={lastEventEdge()}
+                  onChange={setLastEventEdge}
                 />
                 <Button
                   size="compact"

@@ -48,6 +48,7 @@ import {
   ActionInputKind,
   type ActionReference,
   type MidiMapping,
+  SourceEdge,
 } from "../../../types";
 import {
   ActionPicker,
@@ -55,10 +56,13 @@ import {
   useActionTargetNames,
   useBindableActionCatalog,
 } from "../../actions";
+import { EdgeSelect } from "../components/edge-select";
 import {
+  formatSourceEdge,
   midiMappingFromEvent,
   midiSourceLabel,
   midiSourceNumber,
+  parseSourceEdge,
   withMidiChannel,
   withMidiNumber,
 } from "../model/controller-mapping-builders";
@@ -117,6 +121,13 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
     ...columnVisibilityMeta("Binding", "Number"),
   },
   {
+    title: "Fires On",
+    id: "edge",
+    width: 90,
+    filter: { value: (row) => formatSourceEdge(row.mapping.edge) },
+    ...columnVisibilityMeta("Binding", "Fires On"),
+  },
+  {
     title: "Action",
     id: "action",
     width: 240,
@@ -135,6 +146,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   const [lastEventAction, setLastEventAction] = createSignal<
     ActionReference | undefined
   >();
+  const [lastEventEdge, setLastEventEdge] = createSignal(SourceEdge.Press);
   const panelId = props.id;
 
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -222,6 +234,13 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
               allowOverlay: true,
             };
           }
+          case "edge":
+            return {
+              kind: GridCellKind.Text,
+              data: formatSourceEdge(mapping.edge),
+              displayData: formatSourceEdge(mapping.edge),
+              allowOverlay: true,
+            };
           case "action": {
             const label = formatActionReference(
               mapping.action,
@@ -277,12 +296,12 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     for (const id of ids) void deleteMidiMapping(id);
   };
 
-  /** Binds the control that sent the last MIDI message to the chosen action. */
+  /** Binds the chosen edge of the control that sent the last MIDI message to the chosen action. */
   const applyLastEvent = () => {
     const event = $midiLastEvent();
     const action = lastEventAction();
     if (!event || !action) return;
-    const mapping = midiMappingFromEvent(event, action);
+    const mapping = midiMappingFromEvent(event, action, lastEventEdge());
     if (mapping) void upsertMidiMapping(mapping);
   };
 
@@ -344,6 +363,10 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                       includeUiActions
                       onChange={setLastEventAction}
                       onIncomplete={() => setLastEventAction(undefined)}
+                    />
+                    <EdgeSelect
+                      value={lastEventEdge()}
+                      onChange={setLastEventEdge}
                     />
                     <Button
                       size="compact"
@@ -475,6 +498,11 @@ function editedMapping(
         return undefined;
       }
       return { ...mapping, source: withMidiNumber(mapping.source, number) };
+    }
+    case "edge": {
+      if (value.kind !== GridCellKind.Text) return undefined;
+      const edge = parseSourceEdge(String(value.data ?? ""));
+      return edge === undefined ? undefined : { ...mapping, edge };
     }
     default:
       return undefined;

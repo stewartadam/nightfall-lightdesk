@@ -13,12 +13,15 @@ import { useUiAction } from "../../../components/providers/command-registry";
 import { Button } from "../../../components/ui/visual-language/button";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { midiLastEvent, oscLastEvent } from "../../../state/appStores";
+import * as types from "../../../types";
 import { midiSourceLabel } from "../model/controller-mapping-builders";
 import {
   $mappingMode,
-  armSource,
+  armMidiSource,
+  armOscSource,
   describeArmedSource,
   exitMappingMode,
+  setMappingEdge,
   toggleMappingMode,
 } from "../model/mapping-mode";
 
@@ -34,11 +37,10 @@ export function MappingModeController() {
   // Subscribe to the raw stores: every received message is a new value, even when it
   // repeats the previous control, so change notifications must not be deduplicated.
   const unsubscribeMidi = midiLastEvent.listen((event) => {
-    if (event?.source)
-      armSource({ kind: "midi", event: structuredClone(event) });
+    if (event?.source) armMidiSource(structuredClone(event));
   });
   const unsubscribeOsc = oscLastEvent.listen((event) => {
-    if (event) armSource({ kind: "osc", event: structuredClone(event) });
+    if (event) armOscSource(structuredClone(event));
   });
   onCleanup(() => {
     unsubscribeMidi();
@@ -72,6 +74,8 @@ export function MappingModeController() {
 /** Shows mapping progress while mapping mode is active. */
 export function MappingModeBanner() {
   const $mode = useStore($mappingMode);
+  /** Returns whether the next click binds the armed control's release. */
+  const onRelease = () => $mode().edge === types.SourceEdge.Release;
   return (
     <Show when={$mode().active}>
       <div
@@ -88,14 +92,31 @@ export function MappingModeBanner() {
               <>
                 Controller mapping:{" "}
                 {describeArmedSource(armed(), midiSourceLabel)} — click a
-                highlighted control to bind it.
+                highlighted control to bind its{" "}
+                {onRelease() ? "release" : "press"}.
               </>
             )}
           </Show>
         </span>
-        <Button size="compact" type="button" onClick={exitMappingMode}>
-          Done
-        </Button>
+        <div class="flex items-center gap-2">
+          <Button
+            size="compact"
+            type="button"
+            variant={onRelease() ? "primary" : undefined}
+            aria-pressed={onRelease()}
+            title="Bind the next click to the control's release, such as stopping what its press started"
+            onClick={() =>
+              setMappingEdge(
+                onRelease() ? types.SourceEdge.Press : types.SourceEdge.Release,
+              )
+            }
+          >
+            Bind release
+          </Button>
+          <Button size="compact" type="button" onClick={exitMappingMode}>
+            Done
+          </Button>
+        </div>
       </div>
     </Show>
   );

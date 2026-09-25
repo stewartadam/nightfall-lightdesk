@@ -7,7 +7,11 @@
  */
 
 import { atom } from "nanostores";
-import type * as types from "../../../types";
+import * as types from "../../../types";
+import {
+  type OscGesture,
+  trackOscGesture,
+} from "./controller-mapping-builders";
 
 /** A hardware or network control captured while mapping mode waits for a UI target. */
 export type ArmedSource =
@@ -17,12 +21,10 @@ export type ArmedSource =
       /** Message that armed the source. */
       event: types.MidiLastEvent;
     }
-  | {
-      /** OSC address identified from the last received message. */
+  | ({
+      /** OSC address identified from the touch in progress. */
       kind: "osc";
-      /** Message that armed the source. */
-      event: types.OscLastEvent;
-    };
+    } & OscGesture);
 
 /** Controller mapping mode state shared by the toolbar, banner, and mappable controls. */
 export interface MappingModeState {
@@ -30,19 +32,24 @@ export interface MappingModeState {
   active: boolean;
   /** Control that the next click binds, once one has been touched. */
   armed?: ArmedSource;
+  /** Edge of the armed control that the next click binds. */
+  edge: types.SourceEdge;
 }
 
 /** Current controller mapping mode state. */
-export const $mappingMode = atom<MappingModeState>({ active: false });
+export const $mappingMode = atom<MappingModeState>({
+  active: false,
+  edge: types.SourceEdge.Press,
+});
 
 /** Enters mapping mode and waits for the next control to be touched. */
 export function enterMappingMode(): void {
-  $mappingMode.set({ active: true });
+  $mappingMode.set({ active: true, edge: types.SourceEdge.Press });
 }
 
 /** Leaves mapping mode, restoring normal control behavior. */
 export function exitMappingMode(): void {
-  $mappingMode.set({ active: false });
+  $mappingMode.set({ active: false, edge: types.SourceEdge.Press });
 }
 
 /** Toggles mapping mode on or off. */
@@ -54,11 +61,32 @@ export function toggleMappingMode(): void {
   }
 }
 
-/** Records the control that the next mappable click binds, when mapping mode is active. */
-export function armSource(source: ArmedSource): void {
+/** Records a MIDI control that the next mappable click binds, when mapping mode is active. */
+export function armMidiSource(event: types.MidiLastEvent): void {
   const state = $mappingMode.get();
   if (!state.active) return;
-  $mappingMode.set({ active: true, armed: source });
+  $mappingMode.set({ ...state, armed: { kind: "midi", event } });
+}
+
+/**
+ * Folds an OSC message into the armed touch, when mapping mode is active.
+ *
+ * Messages on the armed address extend the touch with its release value; other addresses
+ * arm a new control.
+ */
+export function armOscSource(event: types.OscLastEvent): void {
+  const state = $mappingMode.get();
+  if (!state.active) return;
+  const current = state.armed?.kind === "osc" ? state.armed : undefined;
+  $mappingMode.set({
+    ...state,
+    armed: { kind: "osc", ...trackOscGesture(current, event) },
+  });
+}
+
+/** Chooses which edge of the armed control the next mappable click binds. */
+export function setMappingEdge(edge: types.SourceEdge): void {
+  $mappingMode.set({ ...$mappingMode.get(), edge });
 }
 
 /** Describes an armed source for status text. */
