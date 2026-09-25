@@ -133,19 +133,8 @@ fn fixture_element_indices_in_dmx_order(
         return Vec::new();
     };
 
-    if fixture.layout == Some(crate::fixture::FixtureLayout::RgbStrobeBar) {
-        return (25..=48)
-            .rev()
-            .chain(49..=72)
-            .chain((1..=24).rev())
-            .collect();
-    }
-
-    if fixture.layout == Some(crate::fixture::FixtureLayout::RotatingWashBeam) {
-        return std::iter::once(1)
-            .chain((2..=13).rev())
-            .chain(14..=37)
-            .collect();
+    if let Some(order) = fixture.layout.and_then(FixtureLayout::dmx_element_order) {
+        return order;
     }
 
     match data_provider.element_count(fixture_uid) {

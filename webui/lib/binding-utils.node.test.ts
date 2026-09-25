@@ -7,9 +7,15 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import * as types from "../types/index";
-import { buildFixturePatchMapFromBindings } from "./binding-utils";
+import {
+  buildFixturePatchMapFromBindings,
+  type FixturePatchChannel,
+  fixtureElementIdsInDmxOrder,
+} from "./binding-utils";
 
 /**
  * Builds parameter metadata for binding utility tests.
@@ -176,6 +182,15 @@ function makeRgbFixture(uid: string, id: number): types.Fixture {
   };
 }
 
+/** Builds the coarse Red/Green/Blue patch channels of an RGB element starting at `start`. */
+function rgbChannels(start: number): FixturePatchChannel[] {
+  return [0, 1, 2].map((parameterIndex) => ({
+    parameterIndex,
+    address: start + parameterIndex,
+    width: 1,
+  }));
+}
+
 /** Builds a fixture→console binding for consecutive fixtures at one console address. */
 function consoleBinding(
   uids: string[],
@@ -211,10 +226,10 @@ test("buildFixturePatchMapFromBindings lays console-bound fixtures out in consol
   const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
 
   assert.deepEqual(patchMap.a["1"], [
-    { universe: 2, address: 121, transport: null },
+    { universe: 2, address: 121, transport: null, channels: rgbChannels(121) },
   ]);
   assert.deepEqual(patchMap.b["1"], [
-    { universe: 2, address: 124, transport: null },
+    { universe: 2, address: 124, transport: null, channels: rgbChannels(124) },
   ]);
 });
 
@@ -247,11 +262,12 @@ test("buildFixturePatchMapFromBindings remaps console passthrough to wire number
   const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
 
   assert.deepEqual(patchMap.a["1"], [
-    { universe: 2, address: 121, transport: null },
+    { universe: 2, address: 121, transport: null, channels: rgbChannels(121) },
     {
       universe: 10,
       address: 121,
       transport: { type: "Sacn", data: { mode: { type: "Multicast" } } },
+      channels: rgbChannels(121),
     },
   ]);
 });
@@ -271,7 +287,7 @@ test("buildFixturePatchMapFromBindings applies the highest-priority console bind
   const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
 
   assert.deepEqual(patchMap.a["1"], [
-    { universe: 3, address: 1, transport: null },
+    { universe: 3, address: 1, transport: null, channels: rgbChannels(1) },
   ]);
 });
 
@@ -350,11 +366,208 @@ test("buildFixturePatchMapFromBindings honors element filters on console binding
 
   assert.equal(patchMap.a["1"], undefined);
   assert.deepEqual(patchMap.a["2"], [
-    { universe: 1, address: 1, transport: null },
-    { universe: 7, address: 1, transport: sacn },
+    { universe: 1, address: 1, transport: null, channels: rgbChannels(1) },
+    { universe: 7, address: 1, transport: sacn, channels: rgbChannels(1) },
   ]);
   assert.deepEqual(patchMap.b["2"], [
-    { universe: 1, address: 4, transport: null },
-    { universe: 7, address: 4, transport: sacn },
+    { universe: 1, address: 4, transport: null, channels: rgbChannels(4) },
+    { universe: 7, address: 4, transport: sacn, channels: rgbChannels(4) },
   ]);
+});
+
+/**
+ * Verifies a parameter-filtered console binding patches only the selected parameter: an
+ * RGB element bound for Red at console 1.1 claims address 1 alone, so the next fixture
+ * starts at 2 and addresses 2/3 are not labelled Green/Blue of the first fixture. The
+ * passthrough window carries exactly those channels onto the wire.
+ */
+test("buildFixturePatchMapFromBindings patches only the filtered parameter", () => {
+  const fixtures = {
+    a: makeRgbFixture("a", 1),
+    b: makeRgbFixture("b", 2),
+  };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      {
+        ...consoleBinding(["a", "b"], 1, 1),
+        source: { type: "Fixture", data: { uids: ["a", "b"], param: "green" } },
+      },
+      {
+        source: { type: "Console", data: { universe: { start: 1, end: 1 } } },
+        target: {
+          type: "Transport",
+          data: { target: "sacn", universe: { start: 4, end: 4 }, address: 11 },
+        },
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const sacn: types.OutputTransport = {
+    type: "Sacn",
+    data: { mode: { type: "Multicast" } },
+  };
+  const green = (address: number) => [{ parameterIndex: 1, address, width: 1 }];
+
+  assert.deepEqual(patchMap.a["1"], [
+    { universe: 1, address: 1, transport: null, channels: green(1) },
+    { universe: 4, address: 11, transport: sacn, channels: green(11) },
+  ]);
+  assert.deepEqual(patchMap.b["1"], [
+    { universe: 1, address: 2, transport: null, channels: green(2) },
+    { universe: 4, address: 12, transport: sacn, channels: green(12) },
+  ]);
+});
+
+/**
+ * Verifies a higher-priority parameter-filtered console binding moves only that parameter,
+ * leaving the element's other parameters at the lower-priority binding's addresses, as the
+ * engine's per-parameter console layout does.
+ */
+test("buildFixturePatchMapFromBindings replaces console addresses per parameter", () => {
+  const fixtures = { a: makeRgbFixture("a", 1) };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      consoleBinding(["a"], 1, 1),
+      {
+        ...consoleBinding(["a"], 2, 50),
+        source: { type: "Fixture", data: { uids: ["a"], param: "Red" } },
+        priority: 5,
+      },
+    ],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+
+  assert.deepEqual(patchMap.a["1"], [
+    {
+      universe: 1,
+      address: 2,
+      transport: null,
+      channels: rgbChannels(1).slice(1),
+    },
+    {
+      universe: 2,
+      address: 50,
+      transport: null,
+      channels: [{ parameterIndex: 0, address: 50, width: 1 }],
+    },
+  ]);
+});
+
+/** Loads the wiring-order golden file shared with the engine's `FixtureLayout` tests. */
+function goldenDmxElementOrder(): Record<string, number[]> {
+  const root = process.env.NIGHTFALL_REPO_ROOT;
+  assert.ok(root, "NIGHTFALL_REPO_ROOT is required");
+  return JSON.parse(
+    readFileSync(
+      join(
+        root,
+        "crates/fixtures/tests/data/fixture_layout_dmx_element_order.json",
+      ),
+      "utf8",
+    ),
+  );
+}
+
+/** Builds a fixture with `count` single-intensity elements and an optional layout. */
+function makeSegmentedFixture(
+  uid: string,
+  count: number,
+  layout?: types.FixtureLayout,
+): types.Fixture {
+  return {
+    identifiers: { id: 1, uid, label: "Segmented" },
+    make: "Test",
+    model: "Segmented",
+    mode: `${count}ch`,
+    layout,
+    elements: Array.from({ length: count }, (_, index) => ({
+      label: `Segment ${index + 1}`,
+      parameters: [makeParam({ type: "Intensity" })],
+    })),
+  };
+}
+
+/**
+ * Pins the web UI's element wiring order to the golden file the engine's
+ * `FixtureLayout::dmx_element_order` test also checks, and verifies layouts absent from it
+ * keep declaration order.
+ */
+test("fixtureElementIdsInDmxOrder matches the engine's wiring-order golden file", () => {
+  const golden = goldenDmxElementOrder();
+  for (const layout of Object.values(types.FixtureLayout)) {
+    const expected = golden[layout];
+    const count = expected ? Math.max(...expected) : 4;
+    const order = fixtureElementIdsInDmxOrder(
+      makeSegmentedFixture("f", count, layout),
+    );
+    assert.deepEqual(
+      order,
+      expected ?? [1, 2, 3, 4],
+      `wiring order for ${layout}`,
+    );
+  }
+  assert.deepEqual(
+    fixtureElementIdsInDmxOrder(makeSegmentedFixture("f", 3)),
+    [1, 2, 3],
+  );
+});
+
+/**
+ * Verifies whole-fixture console and transport patches place RGB strobe bar and rotating
+ * wash beam elements at the addresses of their hardware wiring order rather than their
+ * logical element order.
+ */
+test("buildFixturePatchMapFromBindings lays wired layouts out in DMX order", () => {
+  const golden = goldenDmxElementOrder();
+  for (const layout of [
+    types.FixtureLayout.RgbStrobeBar,
+    types.FixtureLayout.RotatingWashBeam,
+  ]) {
+    const order = golden[layout];
+    const fixtures = {
+      a: makeSegmentedFixture("a", Math.max(...order), layout),
+    };
+    const snapshot: types.BindingsSnapshot = {
+      input: [],
+      disabled: [],
+      output: [
+        consoleBinding(["a"], 1, 1),
+        {
+          source: { type: "Fixture", data: { uids: ["a"] } },
+          target: {
+            type: "Transport",
+            data: {
+              target: "sacn",
+              universe: { start: 3, end: 3 },
+              address: 101,
+            },
+          },
+          priority: 0,
+          clone: false,
+        },
+      ],
+    };
+
+    const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+
+    for (const [position, elementId] of order.entries()) {
+      const entries = patchMap.a[String(elementId)];
+      assert.deepEqual(
+        entries.map((entry) => [entry.universe, entry.address]),
+        [
+          [3, 101 + position],
+          [1, 1 + position],
+        ],
+        `${layout} element ${elementId}`,
+      );
+    }
+  }
 });

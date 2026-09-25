@@ -82,3 +82,35 @@ pub enum FixtureLayout {
     /// Ten rotating RGBW segments without decorative strips.
     LinearWashBar,
 }
+
+impl FixtureLayout {
+    /// Returns the 1-based element IDs in the order the hardware consumes DMX channels,
+    /// or `None` when elements are wired in declaration order.
+    ///
+    /// Bindings that patch a whole fixture assign channels to elements in this order, so a
+    /// layout whose physical wiring differs from its logical element order (left-to-right
+    /// rendering) lists the wiring sequence here. The web UI mirrors this table in
+    /// `webui/lib/binding-utils.ts`; both sides are pinned by
+    /// `crates/fixtures/tests/data/fixture_layout_dmx_element_order.json`.
+    pub fn dmx_element_order(self) -> Option<Vec<u32>> {
+        match self {
+            FixtureLayout::RgbStrobeBar => Some(
+                (25..=48)
+                    .rev()
+                    .chain(49..=72)
+                    .chain((1..=24).rev())
+                    .collect(),
+            ),
+            FixtureLayout::RotatingWashBeam => Some(
+                std::iter::once(1)
+                    .chain((2..=13).rev())
+                    .chain(14..=37)
+                    .collect(),
+            ),
+            FixtureLayout::LedBar
+            | FixtureLayout::MovingHead
+            | FixtureLayout::StrobeMatrix
+            | FixtureLayout::LinearWashBar => None,
+        }
+    }
+}

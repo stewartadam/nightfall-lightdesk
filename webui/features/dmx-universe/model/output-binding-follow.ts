@@ -11,7 +11,6 @@ import {
   type FixturePatchEntry,
   type FixturePatchMap,
 } from "../../../lib/binding-utils";
-import { getResolutionChannelWidth } from "../../../lib/dmx";
 import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
 import {
   defaultNetworkDmxOutputs,
@@ -200,17 +199,24 @@ export function findInputBindingIdForOutputChannel(
   return null;
 }
 
-/** Calculates the number of physical DMX channels used by one fixture element. */
-function elementChannelWidth(fixture: types.Fixture, elementId: number) {
-  const element = fixture.elements[elementId - 1];
-  if (!element) return 0;
-  return element.parameters.reduce(
-    (width, parameter) =>
-      parameter.attribute.type === "VirtualIntensity"
-        ? width
-        : width + getResolutionChannelWidth(parameter.resolution),
-    0,
+/** Returns whether a patch location writes one DMX address through any of its channels. */
+function patchWritesAddress(patch: FixturePatchEntry, address: number) {
+  return patch.channels.some(
+    (channel) =>
+      address >= channel.address &&
+      address <= channel.address + channel.width - 1,
   );
+}
+
+/**
+ * Ranks output bindings by the order the frame composer lets them win a wire channel:
+ * direct fixture→transport output overlays console→transport windows, so it ranks first.
+ */
+function outputBindingPrecedenceTier(binding: types.OutputBinding): number {
+  return binding.source.type === "Fixture" &&
+    binding.target.type === "Transport"
+    ? 0
+    : 1;
 }
 
 /** Returns a key identifying one element patch location across patch maps. */
@@ -241,8 +247,10 @@ function patchLocationKeys(patchMap: FixturePatchMap): Set<string> {
 /**
  * Finds the output binding row driving one output channel of the selected space.
  *
- * Candidate rows are checked from highest to lowest effective priority (later rows win
- * ties, as in the engine). A row only matches when the location it patches is also part
+ * Candidate rows are checked in the frame composer's precedence: direct fixture→transport
+ * rows first (their output overlays console→transport windows on the wire), then the rest
+ * from highest to lowest effective priority (later rows win ties, as in the engine). A row
+ * only matches when it writes the channel itself and the location it patches is also part
  * of the effective patch map built from the full binding set, so rows overridden by a
  * Fixture→Disabled row, a disabled binding, or a higher-priority console binding are
  * never followed.
@@ -270,7 +278,11 @@ export function findOutputBindingIdForChannel(
   const candidates = snapshot.output
     .map((binding, index) => ({ binding, index }))
     .sort(
-      (a, b) => b.binding.priority - a.binding.priority || b.index - a.index,
+      (a, b) =>
+        outputBindingPrecedenceTier(a.binding) -
+          outputBindingPrecedenceTier(b.binding) ||
+        b.binding.priority - a.binding.priority ||
+        b.index - a.index,
     );
 
   for (const { binding, index } of candidates) {
@@ -295,21 +307,13 @@ export function findOutputBindingIdForChannel(
       targets.usbDmxOutputs,
     );
     for (const [fixtureUid, patchesByElement] of Object.entries(patchMap)) {
-      const fixture = fixtures[fixtureUid];
-      if (!fixture) continue;
       for (const [elementId, patches] of Object.entries(patchesByElement)) {
-        const width = elementChannelWidth(
-          fixture,
-          Number.parseInt(elementId, 10),
-        );
-        if (width <= 0) continue;
         for (const patch of patches) {
           if (isConsolePassthrough && patch.transport === null) continue;
           if (
             patch.universe === selectedUniverse &&
             outputTransportMatchesSelection(patch.transport, selection) &&
-            outputAddress >= patch.address &&
-            outputAddress <= patch.address + width - 1 &&
+            patchWritesAddress(patch, outputAddress) &&
             effectiveLocations.has(
               patchLocationKey(fixtureUid, elementId, patch),
             )
