@@ -138,8 +138,9 @@ test("color wheel slots filter a white lamp", () => {
   near(open.red, 1, "open red");
   near(open.green, 1, "open green");
 
+  // The red filter passes its measured 21% of white light.
   const red = extractVisualizerDmx({ Intensity: 255, Color1: 20 }, element);
-  near(red.red, 1, "red slot red");
+  near(red.red, 0.21, "red slot red");
   near(red.green, 0, "red slot green");
   near(red.blue, 0, "red slot blue");
 });

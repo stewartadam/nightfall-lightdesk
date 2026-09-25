@@ -643,7 +643,7 @@ export function rgbToHsv(color: types.ColorPathRgb): ColorPathHsv {
 }
 
 /** Converts HSV coordinates into a normalized RGB color. */
-function hsvToRgb(hsv: ColorPathHsv): types.ColorPathRgb {
+export function hsvToRgb(hsv: ColorPathHsv): types.ColorPathRgb {
   const hue = ((hsv.hue % 360) + 360) % 360;
   const saturation = clamp(hsv.saturation, 0, 1);
   const value = clamp(hsv.value, 0, 1);

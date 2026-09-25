@@ -25,6 +25,13 @@ import {
   evaluateFixtureChannels,
   fixtureDimmerLevel,
 } from "./channel-evaluation";
+import {
+  applyPhysicalColor,
+  collectPhysical,
+  definesSourceColor,
+  type PhysicalState,
+  resetPhysicalState,
+} from "./gdtf-physical";
 
 /** Visualizer-friendly parameter state */
 export interface VisualizerDmx {
@@ -47,8 +54,14 @@ export interface VisualizerDmx {
   /** Continuous tilt rotation speed in degrees per second; 0 when not spinning. */
   tiltRotation: number;
   zoom: number;
+  /** Beam angle in degrees from the profile's zoom function, when it states one. */
+  zoomDegrees?: number;
+  /** Iris aperture as a fraction of the open beam, when the element has an iris. */
+  iris?: number;
   tiltSpeed: number;
   strobeShutter: number;
+  /** Strobe frequency in hertz from the profile, while a strobe function is active. */
+  strobeHz?: number;
   /** 1-based index into the element's gobo images (see `elementGoboMedia`), or 0 for none. */
   gobo: number;
 }
@@ -291,16 +304,21 @@ export function strobeShutterFrequencyHz(strobeShutter: number): number {
   );
 }
 
-/** Returns the on/off intensity scale for a strobe shutter at a render time. */
+/**
+ * Returns the on/off intensity scale for a strobe shutter at a render time.
+ * `strobeHz`, when the profile states the frequency, replaces the
+ * visualizer's 1-20 Hz mapping of the normalized rate.
+ */
 export function strobeShutterOutputScale(
   strobeShutter: number | undefined,
   timeSeconds: number,
+  strobeHz?: number,
 ): number {
   if (strobeShutter === undefined || strobeShutter <= 0) {
     return 1;
   }
 
-  const frequencyHz = strobeShutterFrequencyHz(strobeShutter);
+  const frequencyHz = strobeHz ?? strobeShutterFrequencyHz(strobeShutter);
   const phase = (timeSeconds * frequencyHz) % 1;
   return phase < 0.5 ? 1 : 0;
 }
@@ -310,8 +328,11 @@ export function applyStrobeShutterIntensity(
   intensity: number,
   strobeShutter: number | undefined,
   timeSeconds: number,
+  strobeHz?: number,
 ): number {
-  return intensity * strobeShutterOutputScale(strobeShutter, timeSeconds);
+  return (
+    intensity * strobeShutterOutputScale(strobeShutter, timeSeconds, strobeHz)
+  );
 }
 
 /**
@@ -363,6 +384,7 @@ function visualizerDmxFromChannels(
   let filterBlue = 1;
   let hasFilter = false;
   let declaresIntensityControl = elementDeclaresIntensityControl(element);
+  const physical = resetPhysicalState(physicalState);
 
   for (const channel of channels) {
     if (!channel) continue;
@@ -374,6 +396,7 @@ function visualizerDmxFromChannels(
       declaresIntensityControl = false;
       continue;
     }
+    if (collectPhysical(physical, channel)) continue;
 
     const normalized =
       attrType === "Pan" || attrType === "Tilt"
@@ -396,10 +419,12 @@ function visualizerDmxFromChannels(
     }
     const slot = channel.set;
     if (slot?.color) {
+      // A filter passes its measured share of white light (Y of 100).
       const filter = cieDisplayColor(slot.color);
-      filterRed *= filter.r;
-      filterGreen *= filter.g;
-      filterBlue *= filter.b;
+      const transmission = Math.min(1, Math.max(0, slot.color.Y / 100));
+      filterRed *= filter.r * transmission;
+      filterGreen *= filter.g * transmission;
+      filterBlue *= filter.b * transmission;
       hasFilter = true;
     }
     if (slot?.media) {
@@ -455,12 +480,25 @@ function visualizerDmxFromChannels(
   dmx.red = Math.min(1, baseRed + addRed);
   dmx.green = Math.min(1, baseGreen + addGreen);
   dmx.blue = Math.min(1, baseBlue + addBlue);
+  const filtersSource =
+    hasFilter ||
+    physical.kelvin !== undefined ||
+    physical.cyan + physical.magenta + physical.yellow > 0;
+  if (
+    filtersSource &&
+    !definesSourceColor(physical) &&
+    dmx.red + dmx.green + dmx.blue <= 0
+  ) {
+    // Filters act on the source; a lamp without additive color is white.
+    dmx.red = 1;
+    dmx.green = 1;
+    dmx.blue = 1;
+  }
+  applyPhysicalColor(physical, dmx);
   if (hasFilter) {
-    // A wheel filters the source; a lamp without additive color is white.
-    const unlit = dmx.red + dmx.green + dmx.blue <= 0;
-    dmx.red = (unlit ? 1 : dmx.red) * filterRed;
-    dmx.green = (unlit ? 1 : dmx.green) * filterGreen;
-    dmx.blue = (unlit ? 1 : dmx.blue) * filterBlue;
+    dmx.red *= filterRed;
+    dmx.green *= filterGreen;
+    dmx.blue *= filterBlue;
   }
   if (!hasIntensity && !declaresIntensityControl) {
     const peak = Math.max(dmx.red, dmx.green, dmx.blue);
@@ -471,9 +509,22 @@ function visualizerDmxFromChannels(
     }
     dmx.intensity = peak * (fixtureIntensity ?? 1);
   }
+  dmx.intensity *= physical.transmission;
+  dmx.frost = Math.max(dmx.frost, physical.frost ?? 0);
+  dmx.strobeHz = dmx.strobeShutter > 0 ? physical.strobeHz : undefined;
+  dmx.iris = physical.iris;
+  dmx.zoomDegrees = physical.zoomDegrees;
 
   return dmx;
 }
+
+/** Physical state reused by every extraction in the render loop. */
+const physicalState: PhysicalState = resetPhysicalState({
+  cyan: 0,
+  magenta: 0,
+  yellow: 0,
+  transmission: 1,
+});
 
 /** Visualizer values of one element, keyed by its label. */
 export type LabelledElementDmx = [label: string, dmx: Record<string, number>];
@@ -583,6 +634,9 @@ function elementDmxData(
   if (elementDmx.StrobeShutter !== undefined) {
     elementDmx.strobeShutter = dmx.strobeShutter;
   }
+  if (dmx.strobeHz !== undefined) elementDmx.strobeHz = dmx.strobeHz;
+  if (dmx.iris !== undefined) elementDmx.iris = dmx.iris;
+  if (dmx.zoomDegrees !== undefined) elementDmx.zoomDegrees = dmx.zoomDegrees;
 
   if (elementDmx.Pan !== undefined && dmx.pan !== undefined) {
     elementDmx.pan = dmx.pan;

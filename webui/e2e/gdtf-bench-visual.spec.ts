@@ -551,7 +551,10 @@ test("Sharpy color wheel slot tints the emitter", async ({
           .getObjectByName(`Fixture_${uid}`);
         const emitter = root.getObjectByName("Beam_emitter");
         const { r, g, b } = emitter.material.color;
-        return Math.max(r, g, b) - Math.min(r, g, b) > 0.3;
+        // Filters keep their measured luminance, so compare saturation
+        // rather than absolute channel spread.
+        const peak = Math.max(r, g, b);
+        return peak > 0 && (peak - Math.min(r, g, b)) / peak > 0.3;
       }, uid),
     )
     .toBe(true);

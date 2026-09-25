@@ -34,7 +34,7 @@ import {
   isLowQualityBeamMaterial,
   updateBeamMaterial,
 } from "./beam-material";
-import { beamConeAngleDegrees } from "./beam-zoom";
+import { renderableConeAngleDegrees } from "./beam-zoom";
 
 const log = getLogger(import.meta.url);
 
@@ -242,6 +242,10 @@ export class BeamManager {
     options?: {
       beamSpec?: BeamSpec;
       zoom?: number;
+      /** Beam angle in degrees stated by the profile, replacing `zoom`. */
+      zoomDegrees?: number;
+      /** Iris aperture as a fraction of the open beam. */
+      iris?: number;
       frost?: number;
       /** URL of the gobo image shaping the beam; undefined for an open beam. */
       goboUrl?: string;
@@ -255,11 +259,13 @@ export class BeamManager {
     const zoom = options?.zoom ?? 0.5;
     const frost = options?.frost ?? 0;
 
-    const coneAngleDeg = beamConeAngleDegrees(
-      beamSpec.beamAngle,
-      beamSpec.fieldAngle,
-      zoom,
-    );
+    const coneAngleDeg =
+      renderableConeAngleDegrees(
+        beamSpec.beamAngle,
+        beamSpec.fieldAngle,
+        zoom,
+        options?.zoomDegrees,
+      ) * (options?.iris ?? 1);
     const halfAngleRad = (coneAngleDeg * Math.PI) / 360;
 
     // Calculate beam origin world position and direction
