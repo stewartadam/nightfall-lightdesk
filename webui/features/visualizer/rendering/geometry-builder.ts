@@ -12,12 +12,10 @@
  *
  * Supports:
  * - Loading GLB meshes from GDTF archives
- * - Loading GLB models from bundled assets for standard primitive types
- * - Creating primitive shape fallbacks
+ * - Creating dimensioned primitive shape fallbacks
  * - Rendering emitters at Beam geometry positions
  */
 
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   BoxGeometry,
   CylinderGeometry,
@@ -32,110 +30,18 @@ import {
   SphereGeometry,
   Vector3,
 } from "three/webgpu";
-import { getLogger } from "../../../lib/logger";
 import type {
   FixtureGeometry,
   GeometryModel,
   GeometryNode,
-  PrimitiveType,
 } from "../../../types";
 import type { EmitterData, FixtureInstance } from "../model/types";
 import { createGdtfJoints } from "./gdtf-joints";
 import { loadMesh } from "./mesh-loader";
 
-const log = getLogger(import.meta.url);
-
-/**
- * Asset paths for GDTF primitive type models.
- * These GLB files are bundled with the app and used when:
- * - The GDTF specifies a known primitive type (Base, Head, Yoke, etc.)
- * - No custom mesh file is provided in the GDTF
- */
-const PRIMITIVE_ASSET_PATHS: Partial<Record<PrimitiveType, string>> = {
-  base: "/assets/visualizer/models/Base.glb",
-  base11: "/assets/visualizer/models/Base.glb",
-  yoke: "/assets/visualizer/models/Yoke.glb",
-  head: "/assets/visualizer/models/Head.glb",
-  scanner: "/assets/visualizer/models/Scanner.glb",
-  scanner11: "/assets/visualizer/models/Scanner.glb",
-  conventional: "/assets/visualizer/models/Conventional.glb",
-  conventional11: "/assets/visualizer/models/Conventional.glb",
-};
-
-/** Shared GLTF loader for asset models */
-const gltfLoader = new GLTFLoader();
-
-/** Cache for loaded asset models: primitiveType -> Promise<Group> */
-const assetModelCache = new Map<string, Promise<Group>>();
-
-/**
- * Loads and clones the GLB model for a primitive fixture type, returning null when no asset exists.
- */
-async function loadAssetModel(
-  primitiveType: PrimitiveType,
-): Promise<Group | null> {
-  const assetPath = PRIMITIVE_ASSET_PATHS[primitiveType];
-  if (!assetPath) return null;
-
-  // Check cache
-  if (assetModelCache.has(primitiveType)) {
-    try {
-      const cached = await assetModelCache.get(primitiveType);
-      return cached?.clone() ?? null;
-    } catch {
-      assetModelCache.delete(primitiveType);
-    }
-  }
-
-  // Load model
-  const loadPromise = new Promise<Group>((resolve, reject) => {
-    gltfLoader.load(
-      assetPath,
-      (gltf) => {
-        // Apply standard fixture material
-        gltf.scene.traverse((child) => {
-          if ((child as Mesh).isMesh) {
-            const mesh = child as Mesh;
-            if (Array.isArray(mesh.material)) {
-              for (const mat of mesh.material) {
-                mat.dispose();
-              }
-            } else if (mesh.material) {
-              mesh.material.dispose();
-            }
-            mesh.material = new MeshStandardMaterial({
-              color: 0x3a3a3a,
-              metalness: 0.6,
-              roughness: 0.4,
-            });
-            mesh.castShadow = false;
-            mesh.receiveShadow = false;
-          }
-        });
-        resolve(gltf.scene);
-      },
-      undefined,
-      (error) => {
-        log.warn(`Failed to load asset model for ${primitiveType}:`, error);
-        reject(error);
-      },
-    );
-  });
-
-  assetModelCache.set(primitiveType, loadPromise);
-
-  try {
-    const loaded = await loadPromise;
-    return loaded.clone();
-  } catch {
-    assetModelCache.delete(primitiveType);
-    return null;
-  }
-}
-
 /**
  * Create a primitive mesh based on GDTF PrimitiveType.
- * Used as fallback when GLB/3DS mesh is not available and no asset model exists.
+ * Used as fallback when the model has no GLB/3DS mesh in the archive.
  */
 function createPrimitiveMesh(model: GeometryModel): Mesh {
   // Model dimensions are metres; the geometry tree is built in millimetres.
@@ -185,8 +91,7 @@ function createPrimitiveMesh(model: GeometryModel): Mesh {
       );
       break;
 
-    // These primitive types have bundled GLB models - use box as temporary fallback
-    // The GLB will be loaded asynchronously and replace this
+    // Fixture-part primitives render as boxes of their declared dimensions.
     case "base":
     case "base11":
     case "conventional":
@@ -373,11 +278,8 @@ export function buildGeometryTree(
       primitiveMesh.name = `${node.name}_primitive`;
       obj.add(primitiveMesh);
 
-      // Determine which mesh to load:
-      // 1. If GDTF provides a mesh file, load from GDTF archive
-      // 2. Otherwise, try to load bundled asset model for the primitive type
+      // Replace the primitive with the archive mesh when the model has one.
       const meshFileName = node.model.meshFile;
-      const primitiveType = node.model.primitiveType;
 
       if (meshFileName && geometry.gdtfPath) {
         // Load mesh from GDTF archive
@@ -388,23 +290,6 @@ export function buildGeometryTree(
             }
           },
         );
-      } else if (PRIMITIVE_ASSET_PATHS[primitiveType]) {
-        // Load bundled asset model for this primitive type
-        loadAssetModel(primitiveType).then((meshGroup) => {
-          if (meshGroup) {
-            // Scale the asset model to match GDTF model dimensions
-            // Asset models are normalized, we need to scale them to match
-            // the GDTF-specified dimensions
-            const model = node.model!;
-            // Compute a uniform scale based on the model dimensions
-            // We use the largest dimension to avoid distortion
-            const maxDim = Math.max(model.width, model.length, model.height);
-            if (maxDim > 0) {
-              meshGroup.scale.setScalar(maxDim * 1000);
-            }
-            replacePrimitiveWithMesh(obj, node.name, meshGroup);
-          }
-        });
       }
     }
   }
