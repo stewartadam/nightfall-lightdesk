@@ -49,7 +49,14 @@ pub mod prelude {
 }
 
 /// Plugin for handling MIDI input
-pub struct InputMidiPlugin;
+#[derive(Default)]
+pub struct InputMidiPlugin {
+    /// Name of the only MIDI input port to connect to, or `None` to connect to every port.
+    ///
+    /// The MIDI service is process-wide, so the most recently built plugin decides for every
+    /// world in the process.
+    pub input_port: Option<String>,
+}
 
 impl Plugin for InputMidiPlugin {
     fn build(&self, app: &mut App) {
@@ -59,6 +66,7 @@ impl Plugin for InputMidiPlugin {
             "InputMidiPlugin requires ActionsPlugin (provides registered action invocation)"
         );
         let midi_service = service::process_midi_input_service();
+        midi_service.set_input_port(self.input_port.clone());
         let _ = midi_service.ensure_started();
         let midi_client = midi_service.client();
         let midi_rx = midi_client.subscribe().unwrap_or_else(|| {

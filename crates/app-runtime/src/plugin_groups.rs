@@ -99,12 +99,14 @@ pub struct InputPlugins {
     pub network_input_enabled: bool,
     /// Address used by the OSC input listener.
     pub osc_bind_addr: std::net::SocketAddr,
+    /// MIDI input port to connect to exclusively, or `None` to connect to every port.
+    pub midi_input_port: Option<String>,
 }
 
 impl PluginGroup for InputPlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
-            .maybe_midi_input()
+            .maybe_midi_input(self.midi_input_port)
             .maybe_osc_input(self.osc_bind_addr)
             .maybe_artnet_input(self.network_input_enabled)
             .maybe_sacn_input(self.network_input_enabled)

@@ -154,10 +154,13 @@ pub(crate) struct MidiInputWorker {
     topology_change_rx: Option<std::sync::mpsc::Receiver<()>>,
     last_discovery_error: Option<String>,
     connections: Vec<ConnectedMidiInput<midir::MidiInputConnection<()>>>,
+    /// Name of the only port to connect to, or `None` to connect to every discovered port.
+    input_port: Option<String>,
 }
 
 impl MidiInputWorker {
-    pub(crate) fn spawn() -> Option<Self> {
+    /// Starts a worker that connects to `input_port` only, or to every port when `None`.
+    pub(crate) fn spawn(input_port: Option<String>) -> Option<Self> {
         let (event_tx, _) = tokio::sync::broadcast::channel(1024);
         let mut worker = Self {
             event_tx,
@@ -166,6 +169,7 @@ impl MidiInputWorker {
             topology_change_rx: nightfall_coremidi_hotplug::spawn_device_update_listener(),
             last_discovery_error: None,
             connections: Vec::new(),
+            input_port,
         };
         worker.refresh();
         tracing::info!("Connected to {} MIDI device(s)", worker.connections.len());
@@ -213,7 +217,10 @@ impl MidiInputWorker {
             .discovery_input
             .as_ref()
             .map(discover_ports)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|port| port_allowed(self.input_port.as_deref(), &port.name))
+            .collect();
         let event_tx = self.event_tx.clone();
         let changed = refresh_connections(&mut self.connections, discovered_ports, |port, name| {
             connect_to_port(&port, name, &event_tx)
@@ -245,6 +252,11 @@ fn topology_changed(topology_change_rx: &Option<std::sync::mpsc::Receiver<()>>) 
         }
         changed
     })
+}
+
+/// Returns whether a port may be connected under an optional exclusive port name.
+fn port_allowed(input_port: Option<&str>, port_name: &str) -> bool {
+    input_port.is_none_or(|input_port| input_port == port_name)
 }
 
 fn discover_ports(midi_in: &midir::MidiInput) -> Vec<MidiDeviceInfo> {
@@ -381,6 +393,7 @@ fn connect_to_port(
 pub struct MidiInputService {
     slot: WorkerSlot<MidiInputWorker>,
     client: MidiInputClient,
+    input_port: Mutex<Option<String>>,
 }
 
 impl MidiInputService {
@@ -388,13 +401,33 @@ impl MidiInputService {
         Self {
             slot: WorkerSlot::new(),
             client: MidiInputClient::default(),
+            input_port: Mutex::new(None),
         }
+    }
+
+    /// Restricts MIDI input to the named port, or to every port when `None`.
+    ///
+    /// A running worker drops connections to other ports on its next refresh.
+    pub fn set_input_port(&self, input_port: Option<String>) {
+        if let Ok(mut current) = self.input_port.lock() {
+            current.clone_from(&input_port);
+        }
+        self.slot.with_worker(|worker| {
+            if let Some(worker) = worker {
+                worker.input_port = input_port;
+            }
+        });
     }
 
     /// Ensure a process-lifetime MIDI worker is running.
     pub fn ensure_started(&self) -> bool {
+        let input_port = self
+            .input_port
+            .lock()
+            .map(|input_port| input_port.clone())
+            .unwrap_or_default();
         let has_worker = self.slot.ensure(
-            MidiInputWorker::spawn,
+            || MidiInputWorker::spawn(input_port),
             |worker| worker.shutdown(),
             |worker| worker.is_alive(),
         );
@@ -608,5 +641,15 @@ mod tests {
         assert_eq!(connected_device_names(&connections), vec!["controller"]);
         assert_eq!(connections[0].id, "fresh-port");
         assert_eq!(connections[0]._connection, TestConnection("fresh-port"));
+    }
+
+    /// Verifies an exclusive input port admits only the port with exactly that name, and no
+    /// exclusive port admits every port.
+    #[test]
+    fn port_allowed_matches_only_the_exclusive_port_name() {
+        assert!(port_allowed(None, "Any Controller"));
+        assert!(port_allowed(Some("E2E Pad"), "E2E Pad"));
+        assert!(!port_allowed(Some("E2E Pad"), "E2E Pad 2"));
+        assert!(!port_allowed(Some("E2E Pad"), "Other Controller"));
     }
 }
