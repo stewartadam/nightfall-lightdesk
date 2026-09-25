@@ -38,6 +38,14 @@ export interface VisualizerDmx {
   uv: number;
   pan?: number;
   tilt?: number;
+  /** Pan angle in degrees from the profile's physical range, when it declares one. */
+  panDegrees?: number;
+  /** Tilt angle in degrees from the profile's physical range, when it declares one. */
+  tiltDegrees?: number;
+  /** Continuous pan rotation speed in degrees per second; 0 when not spinning. */
+  panRotation: number;
+  /** Continuous tilt rotation speed in degrees per second; 0 when not spinning. */
+  tiltRotation: number;
   zoom: number;
   tiltSpeed: number;
   strobeShutter: number;
@@ -50,6 +58,43 @@ export const STROBE_SHUTTER_MAX_HZ = 20;
 const DEFAULT_TILT_SPEED_NORMALIZED = 3 / 13;
 const DEFAULT_PAN_RANGE_DEG = 540;
 const DEFAULT_TILT_RANGE_DEG = 270;
+
+/**
+ * Profile function attributes whose physical value drives movement:
+ * positions in degrees and continuous rotation in degrees per second.
+ */
+const MOVEMENT_FUNCTIONS: Record<
+  string,
+  "panDegrees" | "tiltDegrees" | "panRotation" | "tiltRotation"
+> = {
+  Pan: "panDegrees",
+  Tilt: "tiltDegrees",
+  PanRotate: "panRotation",
+  TiltRotate: "tiltRotation",
+};
+
+/** Smallest physical span, in degrees, taken as a position function's real range. */
+const MIN_POSITION_SPAN_DEG = 1;
+
+/**
+ * Returns true when a position channel's physical value is a usable angle:
+ * its active channel set or, failing that, its function states an angular
+ * range. Profiles that leave both empty or at GDTF's 0-1 default fall back
+ * to the normalized position instead of moving through at most one degree.
+ */
+function statesAngles(channel: EvaluatedChannel): boolean {
+  const set = channel.set;
+  if (set?.physical_from !== undefined && set.physical_to !== undefined) {
+    return (
+      Math.abs(set.physical_to - set.physical_from) > MIN_POSITION_SPAN_DEG
+    );
+  }
+  const fn = channel.function;
+  return (
+    fn !== undefined &&
+    Math.abs(fn.physical_to - fn.physical_from) > MIN_POSITION_SPAN_DEG
+  );
+}
 
 const TILT_SPEED_LABELS = new Set([
   "Tilt Speed",
@@ -78,6 +123,8 @@ function getDmxFromPool(): VisualizerDmx {
       frost: 0,
       prism: 0,
       uv: 0,
+      panRotation: 0,
+      tiltRotation: 0,
       zoom: 0.5,
       tiltSpeed: DEFAULT_TILT_SPEED_NORMALIZED,
       strobeShutter: 0,
@@ -96,6 +143,10 @@ function getDmxFromPool(): VisualizerDmx {
   dmx.uv = 0;
   dmx.pan = undefined;
   dmx.tilt = undefined;
+  dmx.panDegrees = undefined;
+  dmx.tiltDegrees = undefined;
+  dmx.panRotation = 0;
+  dmx.tiltRotation = 0;
   dmx.zoom = 0.5;
   dmx.tiltSpeed = DEFAULT_TILT_SPEED_NORMALIZED;
   dmx.strobeShutter = 0;
@@ -358,6 +409,16 @@ function visualizerDmxFromChannels(
       dmx.strobeShutter = profileStrobeRate(channel.function, channel.dmx);
       continue;
     }
+    const movement = channel.function
+      ? MOVEMENT_FUNCTIONS[channel.function.attribute]
+      : undefined;
+    if (movement === "panRotation" || movement === "tiltRotation") {
+      dmx[movement] = channel.physical;
+      continue;
+    }
+    if (movement && statesAngles(channel)) {
+      dmx[movement] = channel.physical;
+    }
 
     if (attrType === "Custom") {
       if (TILT_SPEED_LABELS.has(param.attribute.data.label)) {
@@ -529,6 +590,10 @@ function elementDmxData(
   if (elementDmx.Tilt !== undefined && dmx.tilt !== undefined) {
     elementDmx.tilt = dmx.tilt;
   }
+  if (dmx.panDegrees !== undefined) elementDmx.panDegrees = dmx.panDegrees;
+  if (dmx.tiltDegrees !== undefined) elementDmx.tiltDegrees = dmx.tiltDegrees;
+  if (dmx.panRotation !== 0) elementDmx.panRotation = dmx.panRotation;
+  if (dmx.tiltRotation !== 0) elementDmx.tiltRotation = dmx.tiltRotation;
   if (elementDmx.Zoom !== undefined) {
     elementDmx.zoom = dmx.zoom;
   }

@@ -306,6 +306,67 @@ test("joint speed limiting follows the injected clock", () => {
   assert.ok(Math.abs(MathUtils.radToDeg(tiltJoint.currentRad[0]) - 90) < 1e-6);
 });
 
+/** Verifies physical angles win over the normalized fallback range. */
+test("joints follow physical degrees before normalized values", () => {
+  const instance = pose(movingHead(), {
+    Head: { tilt: tilt(10), tiltDegrees: 90 },
+  });
+  assertVector(beamDirection(instance, "Beam"), [0, 0, -1], "tilted 90°");
+});
+
+/** Verifies joints bound to an element without input keep their last pose. */
+test("joints without element input hold their pose", () => {
+  const instance = pose(movingHead(), { Head: { tiltDegrees: 90 } });
+  updateGdtfJoints(instance.joints ?? [], new Map(), 0, null);
+  instance.group.updateMatrixWorld(true);
+  assertVector(beamDirection(instance, "Beam"), [0, 0, -1], "still tilted");
+});
+
+/**
+ * Verifies continuous rotation spins at its physical speed regardless of
+ * position, and that stopping returns to the position the shorter way.
+ */
+test("continuous rotation spins and returns along the shorter turn", () => {
+  const instance = buildGeometryTree("fixture", movingHead());
+  const joints = instance.joints ?? [];
+  const panJoint = joints.find((joint) => joint.axes.includes(AxisType.Pan));
+  assert.ok(panJoint);
+  const degrees = () => MathUtils.radToDeg(panJoint.currentRad[0]);
+  const near = (expected: number, message: string) =>
+    assert.ok(
+      Math.abs(degrees() - expected) < 1e-6,
+      `${message}: ${degrees()}`,
+    );
+
+  const spin = new Map([["Head", { panDegrees: 0, panRotation: 120 }]]);
+  updateGdtfJoints(joints, spin, 0, 180);
+  updateGdtfJoints(joints, spin, 1000, 180);
+  near(120, "spun");
+  updateGdtfJoints(joints, spin, 4000, 180);
+  near(120, "a full turn later");
+
+  // Seen from 350°, the spun 120° is 480°: 130° back rather than 230° on.
+  const stop = new Map([["Head", { panDegrees: 350 }]]);
+  updateGdtfJoints(joints, stop, 4100, 180);
+  near(480 - 18, "returning");
+  updateGdtfJoints(joints, stop, 6000, 180);
+  near(350, "settled");
+});
+
+/** Verifies ordinary position moves travel the full mechanical range, not the shorter turn. */
+test("position moves beyond half a turn keep their travel", () => {
+  const instance = buildGeometryTree("fixture", movingHead());
+  const joints = instance.joints ?? [];
+  const panJoint = joints.find((joint) => joint.axes.includes(AxisType.Pan));
+  assert.ok(panJoint);
+  updateGdtfJoints(joints, new Map([["Head", { panDegrees: -300 }]]), 0, 180);
+  updateGdtfJoints(joints, new Map([["Head", { panDegrees: 180 }]]), 1000, 180);
+  assert.ok(
+    Math.abs(MathUtils.radToDeg(panJoint.currentRad[0]) - -120) < 1e-6,
+    "moving forwards from -300° through 0°",
+  );
+});
+
 /** Verifies glTF meshes are converted from Y-up metres to the Z-up millimetre tree and lose stray cameras. */
 test("glTF meshes are normalized into GDTF space", () => {
   const scene = new Group();
@@ -336,6 +397,7 @@ test("one node can carry both pan and tilt", () => {
     [
       node("Head", GeometryType.Axis, {
         axes: [AxisType.Pan, AxisType.Tilt],
+        controlledElement: "Head",
         transform: transform([0, 0, -0.2]),
       }),
       0,
