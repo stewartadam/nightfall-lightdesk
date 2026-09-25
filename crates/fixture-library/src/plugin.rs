@@ -11,9 +11,11 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
+use nightfall_fixtures::library::commands::{
+    finish_fixture_library_commands, register_fixture_library_commands,
+};
 use nightfall_websocket::WebsocketPlugin;
 
-use crate::commands::FixtureLibraryCommand;
 use crate::manager::FixtureLibraryManager;
 use crate::watcher::{FixtureLibraryEvent, FixtureLibraryWatcher};
 
@@ -35,12 +37,7 @@ impl Plugin for FixtureLibraryPlugin {
         app.add_message::<FixtureLibraryEvent>();
 
         // Register fixture library commands with the engine
-        register_ingress_command::<FixtureLibraryCommand>(app);
-        app.add_message::<crate::websocket::FixtureLibraryCommandResult>();
-        register_command_deserializer::<FixtureLibraryCommand>(
-            app,
-            crate::websocket::deserialize_fixture_library_command,
-        );
+        register_fixture_library_commands(app);
 
         // Register HTTP routes for mesh serving
         app.world_mut()
@@ -82,7 +79,7 @@ impl Plugin for FixtureLibraryPlugin {
             Update,
             (
                 crate::websocket::handle_fixture_library_commands,
-                crate::websocket::finish_fixture_library_commands,
+                finish_fixture_library_commands,
             )
                 .chain()
                 .in_set(EventHandling),

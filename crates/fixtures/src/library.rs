@@ -12,7 +12,14 @@
 //! of exact make/model identifiers. User-imported GDTF and OFL definitions are
 //! scanned and converted by the separate `nightfall-fixture-library` crate; this
 //! module intentionally does not duplicate that general profile system.
+//!
+//! The fixture-library command contract and fixture instantiation also live here so
+//! runtimes without the file-backed library (the embedded browser demo) can still
+//! serve the built-in catalog through the same commands.
 
+pub mod catalog;
+pub mod commands;
+pub mod instantiate;
 mod moving_heads;
 mod pixel_bars;
 mod strobes;
