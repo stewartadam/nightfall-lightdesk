@@ -13,6 +13,7 @@ import {
   type BeamLightSample,
   buildBeamLightProxies,
   MAX_PROXIES_PER_FIXTURE,
+  PROXY_COVERAGE_THROW,
 } from "./beam-light-proxies";
 
 const DOWN = new Vector3(0, -1, 0);
@@ -146,4 +147,40 @@ test("unlit beams produce no proxies", () => {
     buildBeamLightProxies([pixel(0, [1, 0, 0], { intensity: 0 })]),
     [],
   );
+});
+
+/** Verifies a dim emitter facing away from brighter groups keeps a proxy of its own under the per-fixture cap. */
+test("a dim opposed emitter keeps its own proxy when groups exceed the cap", () => {
+  const up = new Vector3(0, 1, 0);
+  const down = Array.from({ length: 40 }, (_, index) =>
+    pixel(index * 0.05, [1, 1, 1], { intensity: 50 }),
+  );
+  const upward = [0.1, 0.6, 1.1, 1.6].map((x) =>
+    pixel(x, [0, 0, 1], { direction: up, intensity: 1, beamId: `up:${x}` }),
+  );
+  const proxies = buildBeamLightProxies([...down, ...upward]);
+  assert.equal(proxies.length, MAX_PROXIES_PER_FIXTURE);
+  const upProxy = proxies.find((proxy) => proxy.direction.y > 0.9);
+  assert.ok(upProxy, "an upward proxy remains");
+  assert.equal(upProxy.beamCount, upward.length);
+  for (const proxy of proxies) {
+    if (proxy !== upProxy) assert.ok(proxy.direction.y < -0.9);
+  }
+});
+
+/** Verifies a merged proxy's cone reaches the footprints of members whose origins lie far apart. */
+test("merged cones cover members spread along a long fixture", () => {
+  const halfAngle = 0.1;
+  const samples = [
+    pixel(0, [1, 1, 1], { halfAngle }),
+    pixel(1.2, [1, 1, 1], { halfAngle }),
+    pixel(5, [1, 1, 1], { halfAngle }),
+  ];
+  const proxy = buildBeamLightProxies(samples).find(
+    (entry) => entry.beamCount === 2,
+  );
+  assert.ok(proxy, "the two nearby emitters share a proxy");
+  const reach = Math.tan(proxy.halfAngle) * PROXY_COVERAGE_THROW;
+  const needed = 0.6 + Math.tan(halfAngle) * PROXY_COVERAGE_THROW;
+  assert.ok(reach >= needed - 1e-9, `reach ${reach} covers ${needed}`);
 });

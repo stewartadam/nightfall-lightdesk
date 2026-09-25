@@ -32,6 +32,13 @@ export const MAX_PROXIES_PER_FIXTURE = 4;
 /** Beams within this angle of a group's brightest beam share its proxy. */
 const DIRECTION_GROUP_COS = Math.cos(Math.PI / 3);
 
+/**
+ * Distance, in meters, at which a merged proxy's cone covers the footprints
+ * of members whose origins sit to the side of the proxy's origin. Surfaces
+ * much closer than this may still see the edge of a wide group unlit.
+ */
+export const PROXY_COVERAGE_THROW = 4;
+
 /** Widest cone a proxy may use, just under the spot light limit of 90°. */
 const MAX_PROXY_HALF_ANGLE = Math.PI / 2 - 0.05;
 
@@ -176,8 +183,13 @@ function directionGroups(beams: BeamLightSample[]): BeamLightSample[][] {
 }
 
 /**
- * Keeps a fixture's brightest {@link MAX_PROXIES_PER_FIXTURE} groups and
- * folds each remaining group into the kept group facing most nearly its way.
+ * Limits a fixture to {@link MAX_PROXIES_PER_FIXTURE} groups.
+ *
+ * The brightest group of each distinct direction is kept first, so a dim
+ * emitter facing away from brighter ones still lights the surfaces it faces;
+ * remaining slots go to the brightest other groups. Each dropped group is
+ * folded into the nearest kept group facing its way, or, when every distinct
+ * direction already has a slot, into the kept group facing most nearly its way.
  */
 function capGroups(
   groups: { key: string; beams: BeamLightSample[] }[],
@@ -188,22 +200,46 @@ function capGroups(
       ...group,
       intensity: group.beams.reduce((sum, beam) => sum + beam.intensity, 0),
       direction: group.beams[0].direction,
+      centroid: group.beams
+        .reduce((sum, beam) => sum.add(beam.position), new Vector3())
+        .divideScalar(group.beams.length),
     }))
     .sort((a, b) => b.intensity - a.intensity);
-  const kept = ranked.slice(0, MAX_PROXIES_PER_FIXTURE);
-  for (const extra of ranked.slice(MAX_PROXIES_PER_FIXTURE)) {
-    let target = kept[0];
-    for (const candidate of kept) {
-      if (
-        candidate.direction.dot(extra.direction) >
-        target.direction.dot(extra.direction)
-      ) {
-        target = candidate;
-      }
+
+  const kept = new Set<(typeof ranked)[number]>();
+  for (const group of ranked) {
+    if (kept.size >= MAX_PROXIES_PER_FIXTURE) break;
+    const directionCovered = [...kept].some(
+      (candidate) =>
+        candidate.direction.dot(group.direction) >= DIRECTION_GROUP_COS,
+    );
+    if (!directionCovered) kept.add(group);
+  }
+  for (const group of ranked) {
+    if (kept.size >= MAX_PROXIES_PER_FIXTURE) break;
+    kept.add(group);
+  }
+
+  const keptList = ranked.filter((group) => kept.has(group));
+  for (const extra of ranked) {
+    if (kept.has(extra)) continue;
+    const aligned = keptList.filter(
+      (candidate) =>
+        candidate.direction.dot(extra.direction) >= DIRECTION_GROUP_COS,
+    );
+    let target = aligned[0] ?? keptList[0];
+    for (const candidate of aligned.length > 0 ? aligned : keptList) {
+      const better =
+        aligned.length > 0
+          ? candidate.centroid.distanceTo(extra.centroid) <
+            target.centroid.distanceTo(extra.centroid)
+          : candidate.direction.dot(extra.direction) >
+            target.direction.dot(extra.direction);
+      if (better) target = candidate;
     }
     target.beams = [...target.beams, ...extra.beams];
   }
-  return kept.map(({ key, beams }) => ({ key, beams }));
+  return keptList.map(({ key, beams }) => ({ key, beams }));
 }
 
 /** Combines a group of beams into one proxy. */
@@ -229,12 +265,22 @@ function proxyFor(key: string, beams: BeamLightSample[]): BeamLightProxy {
   if (direction.length() < 0.5 * intensity) direction.copy(brightest.direction);
   direction.normalize();
 
+  // Cover each member's cone from the proxy's origin: its direction offset
+  // widens the angle, and so does its origin's sideways distance from the
+  // proxy, taken at the reference throw.
   let halfAngle = 0;
+  const lateral = new Vector3();
   for (const beam of beams) {
     const offset = Math.acos(
       Math.min(1, Math.max(-1, beam.direction.dot(direction))),
     );
-    halfAngle = Math.max(halfAngle, beam.halfAngle + offset);
+    const angular = Math.min(MAX_PROXY_HALF_ANGLE, beam.halfAngle + offset);
+    lateral.subVectors(beam.position, position);
+    lateral.addScaledVector(direction, -lateral.dot(direction));
+    const covering = Math.atan(
+      Math.tan(angular) + lateral.length() / PROXY_COVERAGE_THROW,
+    );
+    halfAngle = Math.max(halfAngle, covering);
   }
 
   return {
