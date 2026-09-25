@@ -78,6 +78,7 @@ pub mod prelude {
         SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
         TimeDisplayPreference, TimelinePlacementPreference,
     };
+    pub use crate::systems::relations::apply_virtual_relations;
     pub use crate::systems::vdim::{
         DEFAULT_GAMMA, VDIM_AFFECTED_ATTRIBUTES, apply_vdim, gamma_correct,
     };
@@ -333,10 +334,14 @@ impl Plugin for DeskPlugin {
                 .before(Compositing),
         );
 
-        // apply virtual dimmer scaling after compositing
+        // apply virtual dimmer scaling and virtual relation masters after compositing
         app.add_systems(
             Update,
-            (masters::apply_master_inhibition, systems::vdim::apply_vdim)
+            (
+                masters::apply_master_inhibition,
+                systems::vdim::apply_vdim,
+                systems::relations::apply_virtual_relations,
+            )
                 .chain()
                 .in_set(VdimProcessing),
         );

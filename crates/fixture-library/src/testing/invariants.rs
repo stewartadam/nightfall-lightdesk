@@ -80,6 +80,13 @@ pub enum InvariantViolation {
         /// Unbound axis.
         axis: AxisType,
     },
+    /// A mode master or relation names a parameter the fixture does not have.
+    DanglingElementParameterRef {
+        /// Element label of the linking parameter.
+        element: String,
+        /// Missing reference.
+        reference: ElementParameterRef,
+    },
 }
 
 /// Checks all invariants and returns every violation found.
@@ -88,9 +95,48 @@ pub fn check_invariants(
     geometry: Option<&FixtureGeometry>,
 ) -> Vec<InvariantViolation> {
     let mut violations = check_wire_invariants(fixture);
+    violations.extend(check_parameter_refs(fixture));
     if let Some(geometry) = geometry {
         violations.extend(check_geometry(geometry));
         violations.extend(check_bindings(fixture, geometry));
+    }
+    violations
+}
+
+/// Checks that every mode master and relation names an existing parameter.
+pub fn check_parameter_refs(fixture: &Fixture) -> Vec<InvariantViolation> {
+    let exists = |reference: &ElementParameterRef| {
+        fixture
+            .elements
+            .get(reference.element as usize)
+            .is_some_and(|element| {
+                element
+                    .parameters
+                    .iter()
+                    .any(|parameter| parameter.attribute == reference.attribute)
+            })
+    };
+    let mut violations = Vec::new();
+    for element in &fixture.elements {
+        for function in element
+            .parameters
+            .iter()
+            .flat_map(|parameter| &parameter.functions)
+        {
+            let references = function
+                .mode_master
+                .iter()
+                .map(|condition| &condition.master)
+                .chain(function.relations.iter().map(|relation| &relation.master));
+            for reference in references {
+                if !exists(reference) {
+                    violations.push(InvariantViolation::DanglingElementParameterRef {
+                        element: element.label.clone(),
+                        reference: reference.clone(),
+                    });
+                }
+            }
+        }
     }
     violations
 }

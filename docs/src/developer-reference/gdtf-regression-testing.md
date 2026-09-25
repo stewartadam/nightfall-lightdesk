@@ -62,6 +62,11 @@ floor lighting differ between identical runs. Record baselines with
 `--update-snapshots`, review every image, and commit them per platform. Only
 macOS baselines are committed so far.
 
+`webui/e2e/gdtf-bench-evaluation.spec.ts` uses the same bench directory to
+check channel semantics numerically: console output of relation followers
+(virtual dimmer chains) and the emitter colors the visualizer derives from
+it. Shared bench setup lives in `webui/e2e/gdtf-bench-support.ts`.
+
 ## Corpus sweep
 
 ```sh
