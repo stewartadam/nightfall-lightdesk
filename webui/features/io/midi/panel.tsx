@@ -42,6 +42,7 @@ import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   midiDevices,
   midiLastEvent,
+  midiMappingDiagnostics,
   midiMappings,
 } from "../../../state/appStores";
 import {
@@ -49,6 +50,7 @@ import {
   type ActionReference,
   ActionSurface,
   ControlBehavior,
+  type InvocationError,
   type MidiMapping,
 } from "../../../types";
 import {
@@ -73,6 +75,11 @@ import {
   deleteMidiMapping,
   upsertMidiMapping,
 } from "../model/controller-mappings";
+import {
+  diagnosticsByMapping,
+  mappingStatusCell,
+  mappingStatusText,
+} from "../model/mapping-diagnostics";
 
 /** Input kinds a MIDI control can drive: notes as buttons, controllers as faders or buttons. */
 const MIDI_INPUT_KINDS = [
@@ -86,6 +93,8 @@ export interface MidiInputPanelProps extends BasePanelComponentProps {}
 interface MidiMappingRow {
   mapping: MidiMapping;
   index: number;
+  /** Why the mapping cannot currently invoke its action, when the backend diagnosed it. */
+  error?: InvocationError;
 }
 
 const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
@@ -95,6 +104,13 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
     width: 150,
     filter: { value: (row) => row.mapping.device_name },
     ...alwaysVisibleColumnMeta("Identity", "Device"),
+  },
+  {
+    title: "Status",
+    id: "status",
+    width: 200,
+    filter: { value: (row) => mappingStatusText(row.error) },
+    ...columnVisibilityMeta("Binding", "Status"),
   },
   {
     title: "Control",
@@ -144,6 +160,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   const $midiDevices = useStore(midiDevices);
   const $midiMappings = useStore(midiMappings);
   const $midiLastEvent = useStore(midiLastEvent);
+  const $midiMappingDiagnostics = useStore(midiMappingDiagnostics);
   const $actionCatalog = useBindableActionCatalog();
   const targetNames = useActionTargetNames();
   const [lastEventAction, setLastEventAction] = createSignal<
@@ -173,9 +190,15 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   const displayColumns = createMemo(() => {
     return filterVisibleColumns(columns, panelId);
   });
-  const mappingRows = createMemo<MidiMappingRow[]>(() =>
-    $midiMappings().map((mapping, index) => ({ mapping, index })),
-  );
+  /** Pairs each mapping with its backend diagnostic, if it cannot currently run. */
+  const mappingRows = createMemo<MidiMappingRow[]>(() => {
+    const errorFor = diagnosticsByMapping($midiMappingDiagnostics());
+    return $midiMappings().map((mapping, index) => ({
+      mapping,
+      index,
+      error: errorFor(mapping.id),
+    }));
+  });
   const filterColumns = createMemo(() => filterColumnsFromMetadata(columns));
   const { clearSelection } = createRowSelectionHelpers(selection, setSelection);
   /** Returns MIDI mapping rows targeted by row markers, active cells, or cell ranges. */
@@ -270,6 +293,8 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
               readonly: true,
             };
           }
+          case "status":
+            return mappingStatusCell(row.error);
           default:
             return {
               kind: GridCellKind.Loading,

@@ -114,6 +114,40 @@ so a binding that stops working is never silent:
   short-lived warnings. When a failure finished a client command, that toast
   replaces the generic command failure toast.
 
+### Stored binding validation
+
+Bindings are stored `ActionReference`s, so they can outlive what they point at. The
+registry validates them on demand, never on each invocation (invokers resolve their
+targets themselves):
+
+- `ActionRegistry::validate_reference` checks that the action is registered, that the
+  surface may invoke it, and `validate_arguments`: required arguments are present,
+  `Integer` and `Number` arguments lie in their declared range, and the arguments decode
+  into the owning domain's typed argument struct.
+- `ActionRegistry::validate_target` checks that the objects the arguments address exist.
+  The domain that owns an object kind registers one read-only validator per
+  `ActionParameterKind` with `register_action_target_validator`: desk for `Clip` and
+  `Master`, timeline for `Timeline` and `Cue`. Kinds without a validator are accepted.
+- Domains call `invalidate_action_targets_when` with a cheap change-detection run
+  condition over the state their validators read. It marks the `ActionTargets` resource
+  changed in the `ActionTargetTracking` set, after command handling and before client
+  output.
+
+MIDI and OSC keep invalid mappings stored, so they recover when their target returns, and
+publish `MidiMappingDiagnostics` and `OscMappingDiagnostics`: one `BindingDiagnostic`
+(mapping ID and `InvocationError`) per mapping that cannot run. Diagnostics are recomputed
+only when `bindings_need_diagnosis` sees the mappings, the registry, or `ActionTargets`
+change, and are sent when the result differs and on resync. The MIDI and OSC panels show
+them in each row's Status column.
+
+Timeline commands that store actions (`StoreTimeline`, `CreateTimeline`, and
+`InsertRecordedActions`) fail when an action is unregistered, not allowed on the timeline
+surface, has invalid arguments, or cannot be planned by its timeline capability.
+`StoreTimeline` only validates actions that are new or changed, so timelines loaded from
+older showfiles stay editable; missing targets are not rejected. When a stored action's
+plan fails at playback, `ActionKind::resolve` logs one warning per reference and runs it
+as a live action without seek support.
+
 ### Capabilities
 
 Optional, deterministic interpretations of an action are registered as

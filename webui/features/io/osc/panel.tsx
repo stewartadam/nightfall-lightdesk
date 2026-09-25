@@ -42,6 +42,7 @@ import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   oscLastEvent,
   oscListenerStatus,
+  oscMappingDiagnostics,
   oscMappings,
   oscSources,
   pushToast,
@@ -51,6 +52,7 @@ import {
   type ActionReference,
   ActionSurface,
   ControlBehavior,
+  type InvocationError,
   type OscMapping,
   type OscType,
 } from "../../../types";
@@ -76,6 +78,11 @@ import {
   deleteOscMapping,
   upsertOscMapping,
 } from "../model/controller-mappings";
+import {
+  diagnosticsByMapping,
+  mappingStatusCell,
+  mappingStatusText,
+} from "../model/mapping-diagnostics";
 
 /** Input kinds an OSC message can drive: pulses and booleans as buttons, numbers as faders. */
 const OSC_INPUT_KINDS = [
@@ -89,6 +96,8 @@ export interface OscInputPanelProps extends BasePanelComponentProps {}
 interface OscMappingRow {
   mapping: OscMapping;
   index: number;
+  /** Why the mapping cannot currently invoke its action, when the backend diagnosed it. */
+  error?: InvocationError;
 }
 
 const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
@@ -98,6 +107,13 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
     width: 160,
     filter: { value: (row) => row.mapping.source ?? "*" },
     ...alwaysVisibleColumnMeta("Identity", "Source"),
+  },
+  {
+    title: "Status",
+    id: "status",
+    width: 200,
+    filter: { value: (row) => mappingStatusText(row.error) },
+    ...columnVisibilityMeta("Binding", "Status"),
   },
   {
     title: "Address",
@@ -229,6 +245,7 @@ function editedMapping(
 export default function OscInputPanel(props: OscInputPanelProps) {
   const $oscSources = useStore(oscSources);
   const $oscMappings = useStore(oscMappings);
+  const $oscMappingDiagnostics = useStore(oscMappingDiagnostics);
   const $oscLastEvent = useStore(oscLastEvent);
   const $oscListenerStatus = useStore(oscListenerStatus);
   const $actionCatalog = useBindableActionCatalog();
@@ -269,9 +286,15 @@ export default function OscInputPanel(props: OscInputPanelProps) {
   const displayColumns = createMemo(() => {
     return filterVisibleColumns(columns, panelId);
   });
-  const mappingRows = createMemo<OscMappingRow[]>(() =>
-    $oscMappings().map((mapping, index) => ({ mapping, index })),
-  );
+  /** Pairs each mapping with its backend diagnostic, if it cannot currently run. */
+  const mappingRows = createMemo<OscMappingRow[]>(() => {
+    const errorFor = diagnosticsByMapping($oscMappingDiagnostics());
+    return $oscMappings().map((mapping, index) => ({
+      mapping,
+      index,
+      error: errorFor(mapping.id),
+    }));
+  });
   const filterColumns = createMemo(() => filterColumnsFromMetadata(columns));
   const { clearSelection } = createRowSelectionHelpers(selection, setSelection);
   /** Returns OSC mapping rows targeted by row markers, active cells, or cell ranges. */
@@ -365,6 +388,8 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               data: actionStr,
             };
           }
+          case "status":
+            return mappingStatusCell(row.error);
           default:
             return {
               kind: GridCellKind.Loading,

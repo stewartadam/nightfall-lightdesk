@@ -17,10 +17,12 @@ import {
   applyIoSettingsSnapshot,
   applyMidiDeviceListSnapshot,
   applyMidiLastEventSnapshot,
+  applyMidiMappingDiagnosticsSnapshot,
   applyMidiMappingsSnapshot,
   applyNetworkInterfaceStatusSnapshot,
   applyOscLastEventSnapshot,
   applyOscListenerStatusSnapshot,
+  applyOscMappingDiagnosticsSnapshot,
   applyOscMappingsSnapshot,
   applyOscSourcesSnapshot,
   applySettingsSnapshot,
@@ -73,6 +75,10 @@ export function registerSettingsSnapshotHandlers(
     applyMidiMappingsSnapshot(message.data);
   });
 
+  registry.register("MidiMappingDiagnostics", (message) => {
+    applyMidiMappingDiagnosticsSnapshot(message.data);
+  });
+
   registry.register("MidiLastEvent", (message) => {
     applyMidiLastEventSnapshot(message.data);
   });
@@ -83,6 +89,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("OscMappings", (message) => {
     applyOscMappingsSnapshot(message.data);
+  });
+
+  registry.register("OscMappingDiagnostics", (message) => {
+    applyOscMappingDiagnosticsSnapshot(message.data);
   });
 
   registry.register("OscLastEvent", (message) => {
