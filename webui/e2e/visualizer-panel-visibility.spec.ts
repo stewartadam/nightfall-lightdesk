@@ -459,9 +459,12 @@ for (const offscreenCanvas of [true, false]) {
       { panelId: VISUALIZER_PANEL_ID, camera },
     );
 
+    // Choose the preset the way Settings does, which also drops the URL override.
     await page.evaluate(async () => {
-      const settings = await import("/features/visualizer/state/settings.ts");
-      settings.visualizerQualityPreset.set("high");
+      const { setVisualizerQuality } = await import(
+        "/features/visualizer/context/visualizer-context.tsx"
+      );
+      setVisualizerQuality("high");
     });
 
     await expect
