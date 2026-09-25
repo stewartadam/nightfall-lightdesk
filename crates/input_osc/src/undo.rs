@@ -11,7 +11,7 @@
 use nightfall_actions::{ActionRegistry, capture_binding_edit};
 use nightfall_undo::prelude::*;
 
-use crate::command::OscCommand;
+use crate::command::{OscCommand, OscMapping};
 use crate::mapping::OscMappings;
 
 impl Undoable for OscCommand {
@@ -21,8 +21,9 @@ impl Undoable for OscCommand {
             Self::UpsertMapping(mapping) => {
                 let registry = ctx.world.get_resource::<ActionRegistry>()?;
                 capture_binding_edit::<OscMappings>(ctx.world, self.description(), |mappings| {
-                    let displaced =
-                        mappings.upsert(mapping.clone(), |action| registry.input_kind(&action.id));
+                    let displaced = mappings.upsert(OscMapping::clone(mapping), |action| {
+                        registry.input_kind(&action.id)
+                    });
                     Some(
                         displaced
                             .iter()
@@ -133,6 +134,7 @@ mod tests {
             arg_index: None,
             arg_value: None,
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.trigger", serde_json::json!({ "n": id })),
         }
@@ -162,9 +164,10 @@ mod tests {
     fn upsert_with_displacement_undoes_and_redoes_in_order() {
         let mut app = seeded_app();
 
-        let CommandOutcome::Succeeded { output } =
-            run(&mut app, OscCommand::UpsertMapping(control(4, "/b")))
-        else {
+        let CommandOutcome::Succeeded { output } = run(
+            &mut app,
+            OscCommand::UpsertMapping(Box::new(control(4, "/b"))),
+        ) else {
             panic!("upsert should succeed");
         };
         assert_eq!(
@@ -199,7 +202,10 @@ mod tests {
     fn upsert_edit_in_place_undoes_in_order() {
         let mut app = seeded_app();
 
-        run(&mut app, OscCommand::UpsertMapping(control(1, "/c")));
+        run(
+            &mut app,
+            OscCommand::UpsertMapping(Box::new(control(1, "/c"))),
+        );
         assert_eq!(stored_ids(&app), vec![1, 2]);
 
         run(&mut app, UndoCommand::Undo {});
@@ -228,7 +234,10 @@ mod tests {
     #[test]
     fn undo_refuses_when_mapping_changed_since() {
         let mut app = seeded_app();
-        run(&mut app, OscCommand::UpsertMapping(control(4, "/b")));
+        run(
+            &mut app,
+            OscCommand::UpsertMapping(Box::new(control(4, "/b"))),
+        );
         let changed = vec![control(1, "/a"), control(3, "/c"), control(4, "/d")];
         app.world_mut()
             .resource_mut::<OscMappings>()

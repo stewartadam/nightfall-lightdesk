@@ -10,6 +10,7 @@ import {
   appendInvocationFailure,
   describeInvocationFailure,
 } from "../features/actions/model/invocation-failures";
+import { normalizeFixtureUid } from "../lib/binding-utils";
 import { markCommandFailurePresented } from "../lib/command-failure-toasts";
 import {
   replaceStoredLayoutsFromShowfile,
@@ -126,9 +127,26 @@ export function applyMidiDeviceListSnapshot(devices: types.MidiDevice[]): void {
   setStoreAction(midiDevices, "Receive MidiDeviceList", devices);
 }
 
+/**
+ * Returns mappings with their IDs as unhyphenated UUID strings.
+ *
+ * The binary transport delivers mapping IDs as UUID bytes, which do not survive the JSON
+ * cloning used when mappings are edited and sent back, so they are stored as strings.
+ */
+function withStringMappingIds<M extends { id: string }>(mappings: M[]): M[] {
+  return mappings.map((mapping) => ({
+    ...mapping,
+    id: normalizeFixtureUid(mapping.id),
+  }));
+}
+
 /** Applies the current MIDI mapping list to the MIDI store. */
 export function applyMidiMappingsSnapshot(mappings: types.MidiMapping[]): void {
-  setStoreAction(midiMappings, "Receive MidiMappings", mappings);
+  setStoreAction(
+    midiMappings,
+    "Receive MidiMappings",
+    withStringMappingIds(mappings),
+  );
 }
 
 /** Applies the backend's diagnostics of MIDI mappings that cannot invoke their action. */
@@ -214,7 +232,11 @@ export function applyOscSourcesSnapshot(sources: types.OscSource[]): void {
 
 /** Applies the current OSC mapping list to the OSC store. */
 export function applyOscMappingsSnapshot(mappings: types.OscMapping[]): void {
-  setStoreAction(oscMappings, "Receive OscMappings", mappings);
+  setStoreAction(
+    oscMappings,
+    "Receive OscMappings",
+    withStringMappingIds(mappings),
+  );
 }
 
 /** Applies the backend's diagnostics of OSC mappings that cannot invoke their action. */

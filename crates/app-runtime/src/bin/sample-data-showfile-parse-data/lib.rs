@@ -336,6 +336,7 @@ fn add_input_mappings(world: &mut World) {
             arg_index: Some(0),
             arg_value: None,
             release_value: None,
+            range: None,
             behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(2),
         }]);

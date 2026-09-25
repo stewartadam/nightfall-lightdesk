@@ -2415,6 +2415,7 @@ fn seed_world(world: &mut World) {
             arg_index: Some(1),
             arg_value: None,
             release_value: None,
+            range: None,
             behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(2),
         }]);
