@@ -14,7 +14,7 @@ import {
 } from "../../../components/ui/form-controls";
 import { RangeSlider } from "../../../components/ui/range-slider";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
-import type { FlowWaveform, WaveformKind } from "../../../types";
+import { type FlowWaveform, WaveformKind } from "../../../types";
 import { WaveformCanvas } from "./waveform-canvas";
 import { WaveformPresets } from "./waveform-presets";
 
@@ -57,6 +57,15 @@ export function WaveformEditor(props: WaveformEditorProps) {
   const isDisabled = (field: keyof NonNullable<typeof props.disabledFields>) =>
     props.disabledFields?.[field] ?? false;
 
+  /** Applies the selected shape and resets an editable square duty cycle. */
+  const selectKind = (kind: WaveformKind) => {
+    if (isDisabled("kind")) return;
+    props.onKindChange(kind);
+    if (kind === WaveformKind.Square && !isDisabled("dutyCycle")) {
+      props.onWaveformChange({ duty_cycle: 0.5 });
+    }
+  };
+
   return (
     <div class="waveform-editor flex flex-col gap-3 p-3 bg-neutral-800/50 rounded-lg">
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -69,7 +78,7 @@ export function WaveformEditor(props: WaveformEditorProps) {
           <WaveformPresets
             attribute={props.title ?? "Waveform"}
             currentKind={props.waveform.kind}
-            onSelect={props.onKindChange}
+            onSelect={selectKind}
           />
         </div>
       </div>
