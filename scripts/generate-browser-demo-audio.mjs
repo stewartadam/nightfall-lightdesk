@@ -6,21 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
-import { createSampleWav } from "./browser-demo-audio.mjs";
+import { writeTimelineAudio } from "./browser-demo-audio.mjs";
 
-const showfilePath = resolve(
-  "webui/public/nightfall-demo.nightfall-show/showfile.json",
-);
-const showfile = JSON.parse(readFileSync(showfilePath, "utf8"));
-const audioPath = showfile.timelines?.[0]?.audio_path;
-if (typeof audioPath !== "string" || !audioPath) {
-  throw new Error("Browser demo showfile does not reference timeline audio");
+const written = writeTimelineAudio({
+  showfilePath: resolve(
+    "webui/public/nightfall-demo.nightfall-show/showfile.json",
+  ),
+  sampleAudioDir: resolve("crates/app/assets/sample-audio"),
+});
+for (const { path, source } of written) {
+  process.stdout.write(`${path} (${source})\n`);
 }
-const outputPath = resolve(dirname(showfilePath), audioPath);
-
-mkdirSync(dirname(outputPath), { recursive: true });
-writeFileSync(outputPath, createSampleWav());
-process.stdout.write(`${outputPath}\n`);
