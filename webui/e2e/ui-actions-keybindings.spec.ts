@@ -210,7 +210,8 @@ test("built-in shortcuts can be disabled and re-enabled", async ({
   await openApp(page, backendSlot.backendPort);
   await page.locator("main#app").click({ position: { x: 900, y: 600 } });
   await page.keyboard.press("ControlOrMeta+Shift+KeyP");
-  await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeVisible();
+  // The palette input handles Escape, so wait for it to take focus before closing.
+  await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeHidden();
 
@@ -317,6 +318,10 @@ test("OSC mappings to UI actions run on opted-in clients only", async ({
 
   // Bind an OSC button to a palette entry in mapping mode.
   await page.getByRole("button", { name: "Controller mapping mode" }).click();
+  // Touches only arm once the backend confirms mapping mode and pauses controller actions.
+  await expect(
+    page.locator("[data-mapping-mode-banner] [data-mapping-pause]"),
+  ).toHaveText("MIDI and OSC actions are paused.");
   await sendOscPulse(port, "/e2e/ui/osc-panel");
   await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
     "OSC /e2e/ui/osc-panel",
@@ -335,6 +340,16 @@ test("OSC mappings to UI actions run on opted-in clients only", async ({
     .toEqual(["ui.panel-OscInput"]);
   expect(await isPanelOpen(page, "OSC Input")).toBe(false);
   await page.getByRole("button", { name: "Done" }).click();
+  // Controller actions stay paused until the backend confirms no client is mapping.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).appStores.controllerMappingMode.get()
+            .mapping_clients as number,
+      ),
+    )
+    .toBe(0);
 
   await sendOscPulse(port, "/e2e/ui/osc-panel");
   await expect.poll(() => isPanelOpen(page, "OSC Input")).toBe(true);
