@@ -237,3 +237,76 @@ test("buildFixturePatchMapFromBindings places explicit profile slots", () => {
   assert.equal(patchMap[uid]["2"][0].address, 102);
   assert.equal(patchMap[nextUid]["1"][0].address, 108);
 });
+
+/** Verifies a break-2 binding places only that break's parameters from its own address. */
+test("buildFixturePatchMapFromBindings places additional dmx breaks", () => {
+  const uid = "breakuid";
+  const fixture: types.Fixture = {
+    identifiers: { id: 1, uid, label: "Lamp" },
+    make: "Test",
+    model: "Test",
+    mode: "Test",
+    elements: [
+      {
+        label: "Main",
+        parameters: [
+          makeExplicitParam({ type: "Intensity" }, [1]),
+          {
+            ...makeExplicitParam({ type: "Red" }, [2]),
+            dmx_slots: {
+              type: "Explicit",
+              data: { dmx_break: 2, offsets: [2] },
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const transport = (address: number): types.OutputTarget => ({
+    type: "Transport",
+    data: { target: "sacn", universe: { start: 1, end: 1 }, address },
+  });
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      {
+        source: { type: "Fixture", data: { uids: [uid] } },
+        target: transport(10),
+        priority: 0,
+        clone: false,
+      },
+      {
+        source: { type: "FixtureBreak", data: { uids: [uid], dmx_break: 2 } },
+        target: transport(200),
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, {
+    [uid]: fixture,
+  });
+
+  assert.deepEqual(patchMap[uid]["1"][0].parameterAddresses, [[10], []]);
+  assert.deepEqual(patchMap[uid]["1"][1].parameterAddresses, [[], [201]]);
+
+  const disabled = buildFixturePatchMapFromBindings(
+    {
+      ...snapshot,
+      disabled: [
+        {
+          type: "Output",
+          data: {
+            source: { type: "Fixture", data: { uids: [uid] } },
+            priority: 0,
+            clone: false,
+          },
+        },
+      ],
+    },
+    { [uid]: fixture },
+  );
+  assert.equal(disabled[uid], undefined);
+});

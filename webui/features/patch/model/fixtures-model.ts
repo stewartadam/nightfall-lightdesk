@@ -81,12 +81,15 @@ export function fixtureUidsFromInputTarget(
 }
 
 /**
- * Extracts normalized fixture UIDs from fixture-based output binding sources.
+ * Extracts normalized fixture UIDs from fixture-based output binding sources,
+ * including additional DMX break sources.
  */
 export function fixtureUidsFromOutputSource(
   source: types.OutputSource,
 ): Set<string> {
-  if (source.type !== "Fixture") return new Set();
+  if (source.type !== "Fixture" && source.type !== "FixtureBreak") {
+    return new Set();
+  }
   return new Set(source.data.uids.map((uid) => normalizeFixtureUid(uid)));
 }
 

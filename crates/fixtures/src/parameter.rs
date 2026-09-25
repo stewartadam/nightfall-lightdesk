@@ -182,17 +182,17 @@ impl Default for ParameterMetadata {
 }
 
 impl ParameterMetadata {
-    /// Returns whether this parameter writes bytes to its fixture's primary DMX footprint.
+    /// Returns the DMX break this parameter writes bytes to, or `None` for virtual parameters.
     ///
-    /// Virtual parameters and parameters on additional DMX breaks do not.
-    pub fn occupies_primary_footprint(&self) -> bool {
+    /// Sequential parameters always belong to the primary break 1.
+    pub fn dmx_break(&self) -> Option<u16> {
         if self.attribute == Attribute::VirtualIntensity {
-            return false;
+            return None;
         }
         match &self.dmx_slots {
-            DmxSlots::Sequential => true,
-            DmxSlots::Explicit { dmx_break, .. } => *dmx_break == 1,
-            DmxSlots::Virtual => false,
+            DmxSlots::Sequential => Some(1),
+            DmxSlots::Explicit { dmx_break, .. } => Some(*dmx_break),
+            DmxSlots::Virtual => None,
         }
     }
 

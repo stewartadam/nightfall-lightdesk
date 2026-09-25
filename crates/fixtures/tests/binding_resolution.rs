@@ -1439,6 +1439,42 @@ fn resolve_output_bindings_rebases_element_selection() {
     assert_eq!(output_addresses(app.world(), dim2), vec![23]);
 }
 
+/// Verifies a break-2 binding patches only that break's parameters from its own start address.
+#[test]
+fn resolve_output_bindings_patches_secondary_dmx_break() {
+    let mut app = output_app();
+    let uid = Uuid::new_v4();
+    let [tilt1, dim1, _, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
+    app.world_mut()
+        .get_mut::<Parameter>(dim2)
+        .expect("dimmer parameter")
+        .metadata
+        .dmx_slots = DmxSlots::Explicit {
+        dmx_break: 2,
+        offsets: vec![3],
+    };
+    let mut break_binding = sacn_binding(vec![uid], 201);
+    break_binding.source = OutputSource::FixtureBreak {
+        uids: vec![uid],
+        dmx_break: 2,
+    };
+    app.world_mut().resource_mut::<OutputBindings>().bindings =
+        vec![sacn_binding(vec![uid], 101), break_binding];
+
+    app.add_systems(Update, resolve_output_bindings);
+    app.update();
+
+    assert_eq!(output_addresses(app.world(), tilt1), vec![101, 106]);
+    assert_eq!(output_addresses(app.world(), dim1), vec![103]);
+    let dim2_destinations = &app
+        .world()
+        .get::<ResolvedOutputDestinations>(dim2)
+        .expect("break-2 destinations")
+        .destinations;
+    assert_eq!(dim2_destinations.len(), 1);
+    assert_eq!(dim2_destinations[0].addresses, vec![203]);
+}
+
 /// Verifies rendered console bytes land on the explicit slots, most significant byte first.
 #[test]
 fn dmx_universes_writes_bytes_to_explicit_slots() {

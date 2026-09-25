@@ -1222,6 +1222,36 @@ fn test_patch_binding_transport_to_console_conversion() {
     }
 }
 
+/// Verifies `break N` converts to a whole-fixture break endpoint, and that
+/// break 1 or an element-qualified break is rejected.
+#[test]
+fn test_patch_binding_fixture_break_conversion() {
+    let ast = generate_ast("patch fix 12 break 2 @ artnet:2.1")
+        .expect("Failed to parse fixture break patch");
+    let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
+    match commands[0].as_any().downcast_ref::<FixtureCommand>() {
+        Some(FixtureCommand::PatchBinding { source, .. }) => assert_eq!(
+            *source,
+            BindingEndpoint::FixtureBreak {
+                ids: vec![12],
+                dmx_break: 2,
+            }
+        ),
+        other => panic!("Expected PatchBinding command, got {:?}", other),
+    }
+
+    for input in [
+        "patch fix 12 break 1 @ artnet:2.1",
+        "patch fix 12.1 break 2 @ artnet:2.1",
+    ] {
+        let ast = generate_ast(input).expect("Failed to parse fixture break patch");
+        assert!(
+            FixtureAstConverter::convert(&ast).is_err(),
+            "{input} should be rejected"
+        );
+    }
+}
+
 #[test]
 fn test_patch_binding_transport_to_transport_compact_syntax_conversion() {
     let ast = generate_ast("patch sacn@sacn").expect("Failed to parse 'patch sacn@sacn'");

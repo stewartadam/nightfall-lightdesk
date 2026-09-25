@@ -58,6 +58,13 @@ const MAGIC_PANEL: BenchFixture = {
   model: "MagicPanel FX",
   mode: "Extended",
 };
+/** Moving head whose pixel ring and liquid effect sit on DMX breaks 2 and 3. */
+const ARGO_6_FX: BenchFixture = {
+  file: "Ayrton@Argo_6_FX@V1.6_Corrected_Atttribute_Names.gdtf",
+  make: "Ayrton",
+  model: "Argo 6 FX",
+  mode: "Extended_Pixel_2_+_Liquid",
+};
 const STATIC_BENCH: BenchFixture[] = [
   {
     file: "Martin_Professional@MAC_Aura@20230201NoMeas.gdtf",
@@ -596,4 +603,53 @@ test("Sharpy gobo slot shapes the beam", async ({
     )
     .toBe(1);
   await attachCanvas(page, "sharpy-gobo", testInfo);
+});
+
+/** Verifies each DMX break of a multi-break profile is patched from its own start address. */
+test("Argo 6 FX patches its pixel and liquid breaks", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await installBenchFixture(page, backendSlot.dataDir, ARGO_6_FX, 1);
+  await attachCanvas(page, "argo-body", testInfo);
+
+  // Head on universe 1, pixel ring (76 ch) on 2, liquid layer (510 ch) on 3.
+  await submitCommand(page, "patch fix 1 @ sacn:1.1");
+  await submitCommand(page, "patch fix 1 break 2 @ sacn:2.1");
+  await submitCommand(page, "patch fix 1 break 3 @ sacn:3.1");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.bindings.get().output.map((binding: any) => {
+          const dmxBreak =
+            binding.source.type === "FixtureBreak"
+              ? binding.source.data.dmx_break
+              : 1;
+          const { universe, address } = binding.target.data;
+          return `${dmxBreak}@${universe.start}.${address}`;
+        }),
+      ),
+    )
+    .toEqual(["1@1.1", "2@2.1", "3@3.1"]);
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  await page.getByPlaceholder("Type a command or search...").fill("Open Patch");
+  await page.keyboard.press("Enter");
+  const panel = page.locator('[data-panel-kind="patch"]:visible');
+  await expect(panel).toHaveCount(1);
+  await page.evaluate(() =>
+    (window as any).appStores.dockApi.get().activePanel.api.maximize(),
+  );
+  await panel
+    .getByRole("tablist", { name: "Patch views" })
+    .getByRole("tab", { name: "DMX I/O" })
+    .click();
+  await expect(panel.getByText("Fixture 1 break 2")).toBeVisible();
+  await expect(panel.getByText("Fixture 1 break 3")).toBeVisible();
+  const path = testInfo.outputPath("argo-breaks.png");
+  await panel.screenshot({ path });
+  await testInfo.attach("argo-breaks", {
+    path,
+    contentType: "image/png",
+  });
 });

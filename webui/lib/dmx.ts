@@ -46,35 +46,37 @@ export type FixtureWireLayout = {
 };
 
 /**
- * Returns whether a parameter writes bytes to its fixture's primary DMX footprint.
- * Virtual parameters and parameters on additional DMX breaks do not.
+ * Returns the DMX break a parameter writes bytes to, or null for virtual parameters.
+ * Sequential parameters always belong to the primary break 1.
  */
-export function occupiesPrimaryFootprint(
+export function parameterDmxBreak(
   parameter: types.ParameterMetadata,
-): boolean {
-  if (parameter.attribute.type === "VirtualIntensity") return false;
+): number | null {
+  if (parameter.attribute.type === "VirtualIntensity") return null;
   const slots = parameter.dmx_slots;
-  if (!slots || slots.type === "Sequential") return true;
-  if (slots.type === "Explicit") return slots.data.dmx_break === 1;
-  return false;
+  if (!slots || slots.type === "Sequential") return 1;
+  if (slots.type === "Explicit") return slots.data.dmx_break;
+  return null;
 }
 
 /**
  * Lays out a fixture's parameters the same way the engine's `WireLayout` does.
  *
- * Sequential parameters pack after the highest slot used so far; explicit
- * parameters use their declared 1-based offsets. When the selection is partial
- * (one element or one parameter), slots are rebased so the first selected byte
- * lands on the patch address.
+ * Only parameters on `dmxBreak` (default 1) are laid out; each break has its
+ * own start address. Sequential parameters pack after the highest slot used
+ * so far; explicit parameters use their declared 1-based offsets. When the
+ * selection is partial (one element or one parameter), slots are rebased so
+ * the first selected byte lands on the patch address.
  */
 export function fixtureWireLayout(
   fixture: types.Fixture,
   options: {
     elementId?: number;
     includeParameter?: (parameter: types.ParameterMetadata) => boolean;
+    dmxBreak?: number;
   } = {},
 ): FixtureWireLayout {
-  const { elementId, includeParameter } = options;
+  const { elementId, includeParameter, dmxBreak = 1 } = options;
   const elementIndices =
     elementId && elementId > 0
       ? [elementId - 1].filter((index) => index < fixture.elements.length)
@@ -85,7 +87,7 @@ export function fixtureWireLayout(
   for (const elementIndex of elementIndices) {
     const element = fixture.elements[elementIndex];
     element.parameters.forEach((parameter, parameterIndex) => {
-      if (!occupiesPrimaryFootprint(parameter)) return;
+      if (parameterDmxBreak(parameter) !== dmxBreak) return;
       if (includeParameter && !includeParameter(parameter)) return;
       const width = getResolutionChannelWidth(parameter.resolution);
       let slots: number[];

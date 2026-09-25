@@ -301,6 +301,14 @@ export function toOutputSourceEndpoint(
         },
       };
     }
+    case "FixtureBreak": {
+      const ids = toFixtureIds(source.data.uids, fixtureMap);
+      if (!ids) return null;
+      return {
+        type: "FixtureBreak",
+        data: { ids, dmx_break: source.data.dmx_break },
+      };
+    }
   }
 }
 
@@ -454,6 +462,8 @@ export function formatOutputSource(
         source.data.element,
         source.data.param,
       );
+    case "FixtureBreak":
+      return `${formatFixtureEndpoint(source.data.uids, fixtureMap)} break ${source.data.dmx_break}`;
     case "Console": {
       const universeAddress = formatUniverseAddress(
         source.data.universe,
