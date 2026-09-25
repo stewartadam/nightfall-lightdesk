@@ -349,3 +349,66 @@ fn relations_follow_the_mode_master_selected_function() {
     assert_eq!(output(10.0), 0, "dimmed in the related mode");
     assert_eq!(output(200.0), 255, "unrelated mode is not dimmed");
 }
+
+/// Verifies a follower's function is selected from its mode master's value
+/// after the relations the master follows: a virtual control channel that
+/// follows a dimmer at zero selects the related mode even though its own
+/// programmed value selects the unrelated one.
+#[test]
+fn mode_masters_are_read_after_their_own_relations() {
+    let control = Attribute::Custom {
+        label: "Control".to_string(),
+    };
+    let under_mode = |from: u32, to: u32, relations: Vec<FunctionRelation>| ParameterFunction {
+        name: format!("Mode {from}"),
+        attribute: "ColorAdd_R".to_string(),
+        dmx_to: 255,
+        physical_to: 1.0,
+        mode_master: Some(ModeMasterCondition {
+            master: ElementParameterRef {
+                element: 1,
+                attribute: control.clone(),
+            },
+            dmx_from: from,
+            dmx_to: to,
+        }),
+        relations,
+        ..Default::default()
+    };
+    let output = |group: f32| {
+        slot_one_output(vec![
+            Channel {
+                metadata: param(Attribute::Intensity, DmxSlots::Virtual, Vec::new()),
+                value: group,
+            },
+            Channel {
+                metadata: param(
+                    control.clone(),
+                    DmxSlots::Virtual,
+                    vec![intensity_of(0, RelationKind::Multiply)],
+                ),
+                value: 200.0,
+            },
+            Channel {
+                metadata: param(Attribute::Intensity, DmxSlots::Virtual, Vec::new()),
+                value: 0.0,
+            },
+            Channel {
+                metadata: ParameterMetadata {
+                    functions: vec![
+                        under_mode(0, 127, vec![intensity_of(2, RelationKind::Multiply)]),
+                        under_mode(128, 255, Vec::new()),
+                    ],
+                    ..param(Attribute::Red, red_slot(), Vec::new())
+                },
+                value: 255.0,
+            },
+        ])
+    };
+    assert_eq!(output(255.0), 255, "the control keeps the unrelated mode");
+    assert_eq!(
+        output(0.0),
+        0,
+        "the scaled control selects the related mode"
+    );
+}
