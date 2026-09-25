@@ -391,3 +391,50 @@ test("fixture library properties reset selected mode for new fixtures", async ({
     "5 channel",
   );
 });
+
+/**
+ * Verifies two library revisions of one make/model render as separate rows
+ * that the Revision column tells apart.
+ */
+test("fixture library lists each revision of a model with its revision label", async ({
+  page,
+}, testInfo) => {
+  await openApp(page);
+  await page.evaluate(() => {
+    (window as any).appStores.fixtureLibrary.set([
+      {
+        make: "E2E Lighting",
+        model: "Revised",
+        modes: ["Default"],
+        source_format: "GDTF",
+        asset_etag: "bbbbbbbb22222222",
+      },
+      {
+        make: "E2E Lighting",
+        model: "Revised",
+        modes: ["Default", "Extended"],
+        source_format: "GDTF",
+        asset_etag: "aaaaaaaa11111111",
+      },
+    ]);
+  });
+  await addPanel(page, {
+    id: "panel-FixtureLibrary-revisions",
+    component: "FixtureLibrary",
+    title: "Fixture Library",
+    params: { initialPanelId: "panel-FixtureLibrary-revisions" },
+  });
+
+  const grid = gridContaining(page, "Revised");
+  await expect(grid.getByText("aaaaaaaa", { exact: true })).toBeVisible();
+  await expect(grid.getByText("bbbbbbbb", { exact: true })).toBeVisible();
+  await expect(
+    grid.getByText("Default, Extended", { exact: true }),
+  ).toBeVisible();
+  const path = testInfo.outputPath("fixture-library-revisions.png");
+  await grid.screenshot({ path });
+  await testInfo.attach("fixture-library-revisions", {
+    path,
+    contentType: "image/png",
+  });
+});

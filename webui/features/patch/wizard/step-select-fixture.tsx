@@ -10,7 +10,10 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
 import { Table, TableScroll } from "../../../components/ui/table";
-import { libraryDefinitionId } from "../../../lib/fixture-service";
+import {
+  libraryDefinitionId,
+  libraryRevisionLabel,
+} from "../../../lib/fixture-service";
 import { fixtureLibrary } from "../../../state/appStores";
 import type { AvailableFixtureInfo } from "../../../types";
 import { LibraryFixturePreview } from "../../fixture-library";
@@ -106,6 +109,9 @@ export function StepSelectFixture() {
                   <th scope="col" class="text-left">
                     Format
                   </th>
+                  <th scope="col" class="text-left">
+                    Revision
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -126,6 +132,7 @@ export function StepSelectFixture() {
                         <td>{fixture.model}</td>
                         <td>{fixture.modes.length}</td>
                         <td>{fixture.source_format}</td>
+                        <td>{libraryRevisionLabel(fixture.asset_etag)}</td>
                       </tr>
                     );
                   }}
