@@ -84,8 +84,9 @@ pub mod prelude {
     };
     pub use crate::input_apply::{ParameterAssertion, ParameterAssertionSource};
     pub use crate::parameter::{
-        CieColor, DmxSlots, MergeStrategy, Parameter, ParameterFunction, ParameterFunctionSet,
-        ParameterMetadata, ParameterValues,
+        CieColor, DmxSlots, ElementParameterRef, FunctionRelation, MergeStrategy,
+        ModeMasterCondition, Parameter, ParameterFunction, ParameterFunctionSet, ParameterMetadata,
+        ParameterValues, ProfilePoint, RelationKind, evaluate_profile,
     };
     pub use crate::physical::{BeamType, FixturePhysical};
     pub use crate::placement::FixturePlacement;

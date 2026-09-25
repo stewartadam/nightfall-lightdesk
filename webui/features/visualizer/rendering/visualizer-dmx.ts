@@ -12,13 +12,19 @@
  */
 
 import { cieChromaticityToFullBrightnessRgb } from "../../../lib/color-path-preview";
-import { getResolutionChannelWidth } from "../../../lib/dmx";
 import {
   type CieColor,
   type FixtureElement,
   type ParameterFunction,
   ParameterValuePolarity,
 } from "../../../types";
+import {
+  attributeOutputKey,
+  type EvaluatedChannel,
+  evaluateElementChannels,
+  evaluateFixtureChannels,
+  fixtureDimmerLevel,
+} from "./channel-evaluation";
 
 /** Visualizer-friendly parameter state */
 export interface VisualizerDmx {
@@ -205,27 +211,6 @@ function cieDisplayColor(color: CieColor): ColorContribution {
   return cached;
 }
 
-/**
- * Returns the profile function active at a parameter's output value, with
- * the DMX integer that value encodes.
- */
-function activeFunction(
-  param: FixtureElement["parameters"][number],
-  value: number,
-): { function: ParameterFunction; dmx: number } | undefined {
-  if (!param.functions?.length) return undefined;
-  const range = param.max - param.min;
-  const normalized = range > 0 ? (value - param.min) / range : 0;
-  const width = getResolutionChannelWidth(param.resolution);
-  const dmx = Math.round(
-    Math.min(1, Math.max(0, normalized)) * (2 ** (8 * width) - 1),
-  );
-  const found = param.functions.find(
-    (candidate) => dmx >= candidate.dmx_from && dmx <= candidate.dmx_to,
-  );
-  return found ? { function: found, dmx } : undefined;
-}
-
 /** Smallest strobe rate that still strobes; zero means an open shutter. */
 const MIN_PROFILE_STROBE_RATE = 1e-3;
 
@@ -280,6 +265,9 @@ export function applyStrobeShutterIntensity(
 
 /**
  * Extract normalized DMX values from ParameterState output for a single element.
+ *
+ * The element is evaluated on its own, so mode masters and relations naming
+ * other elements are ignored; renderers use {@link extractFixtureDmxData}.
  * Uses object pooling to avoid allocations in hot path.
  * @param output The output record from ParameterState (attribute name -> value)
  * @param element Element metadata containing parameter definitions
@@ -289,6 +277,27 @@ export function extractVisualizerDmx(
   output: Record<string, number>,
   element: FixtureElement,
   fixtureIntensity: number | undefined = undefined,
+): VisualizerDmx {
+  return visualizerDmxFromChannels(
+    evaluateElementChannels(element, output),
+    element,
+    fixtureIntensity,
+  );
+}
+
+/**
+ * Derives visualizer values for one element from its evaluated channels.
+ *
+ * An intensity channel that masters emitter channels of its own element
+ * reaches them through relations, so it does not also dim the element. Elements
+ * without an effective intensity take their brightness from the brightest
+ * color component, with colors rescaled so brightness is not applied twice,
+ * scaled by the fixture-level dimmer when one is given.
+ */
+function visualizerDmxFromChannels(
+  channels: (EvaluatedChannel | undefined)[],
+  element: FixtureElement,
+  fixtureIntensity: number | undefined,
 ): VisualizerDmx {
   const dmx = getDmxFromPool();
   let baseRed = 0;
@@ -302,25 +311,29 @@ export function extractVisualizerDmx(
   let filterGreen = 1;
   let filterBlue = 1;
   let hasFilter = false;
-  const declaresIntensityControl = elementDeclaresIntensityControl(element);
+  let declaresIntensityControl = elementDeclaresIntensityControl(element);
 
-  for (const param of element.parameters) {
+  for (const channel of channels) {
+    if (!channel) continue;
+    const param = channel.parameter;
     const attrType = param.attribute.type;
     const prop = ATTR_TO_PROP[attrType];
     const color = ATTR_TO_COLOR[attrType];
+    if (prop === "intensity" && channel.mastersOwnEmitters) {
+      declaresIntensityControl = false;
+      continue;
+    }
 
-    const value = attributeOutputValue(output, param.attribute);
-    if (value === undefined || param.max <= 0) continue;
     const normalized =
-      param.value_polarity === ParameterValuePolarity.Signed &&
-      (attrType === "Pan" || attrType === "Tilt")
-        ? normalizeSignedPositionOutput(value, attrType)
-        : normalizeParameterOutput(value, param);
+      attrType === "Pan" || attrType === "Tilt"
+        ? param.value_polarity === ParameterValuePolarity.Signed
+          ? normalizeSignedPositionOutput(channel.value, attrType)
+          : normalizeParameterOutput(channel.value, param)
+        : channel.level;
 
     // Profile colors take precedence over attribute-name approximations.
-    const active = activeFunction(param, value);
-    if (active?.function.emitter_color) {
-      const emitter = cieDisplayColor(active.function.emitter_color);
+    if (channel.function?.emitter_color) {
+      const emitter = cieDisplayColor(channel.function.emitter_color);
       addRed += emitter.r * normalized;
       addGreen += emitter.g * normalized;
       addBlue += emitter.b * normalized;
@@ -330,9 +343,7 @@ export function extractVisualizerDmx(
       }
       continue;
     }
-    const slot = active?.function.sets?.find(
-      (set) => active.dmx >= set.dmx_from && active.dmx <= set.dmx_to,
-    );
+    const slot = channel.set;
     if (slot?.color) {
       const filter = cieDisplayColor(slot.color);
       filterRed *= filter.r;
@@ -343,8 +354,8 @@ export function extractVisualizerDmx(
     if (slot?.media) {
       dmx.gobo = elementGoboMedia(element).indexOf(slot.media) + 1;
     }
-    if (prop === "strobeShutter" && active) {
-      dmx.strobeShutter = profileStrobeRate(active.function, active.dmx);
+    if (prop === "strobeShutter" && channel.function) {
+      dmx.strobeShutter = profileStrobeRate(channel.function, channel.dmx);
       continue;
     }
 
@@ -391,14 +402,44 @@ export function extractVisualizerDmx(
     dmx.blue = (unlit ? 1 : dmx.blue) * filterBlue;
   }
   if (!hasIntensity && !declaresIntensityControl) {
-    if (fixtureIntensity !== undefined) {
-      dmx.intensity = fixtureIntensity;
-      return dmx;
+    const peak = Math.max(dmx.red, dmx.green, dmx.blue);
+    if (peak > 0) {
+      dmx.red /= peak;
+      dmx.green /= peak;
+      dmx.blue /= peak;
     }
-    dmx.intensity = Math.max(dmx.red, dmx.green, dmx.blue);
+    dmx.intensity = peak * (fixtureIntensity ?? 1);
   }
 
   return dmx;
+}
+
+/** Visualizer values of one element, keyed by its label. */
+export type LabelledElementDmx = [label: string, dmx: Record<string, number>];
+
+/**
+ * Extracts visualizer values for every element of a fixture that has output.
+ *
+ * Channels are evaluated together so mode masters and relations can name
+ * other elements. Dimmers that master no relation dim the elements that
+ * have no dimmer of their own (see {@link fixtureDimmerLevel}).
+ */
+export function extractFixtureDmxData(
+  elements: FixtureElement[],
+  outputs: (Record<string, number> | undefined)[],
+): LabelledElementDmx[] {
+  const channels = evaluateFixtureChannels(elements, outputs);
+  const fixtureIntensity = fixtureDimmerLevel(elements, channels);
+  const result: LabelledElementDmx[] = [];
+  for (let i = 0; i < elements.length; i++) {
+    const output = outputs[i];
+    if (!output) continue;
+    result.push([
+      elements[i].label,
+      elementDmxData(channels[i], output, elements[i], fixtureIntensity),
+    ]);
+  }
+  return result;
 }
 
 /** Returns true when an element contains a real or virtual dimmer attribute. */
@@ -411,38 +452,17 @@ export function elementDeclaresIntensityControl(
 }
 
 /**
- * Derives the fixture-level dimmer from element outputs when any element declares intensity control.
+ * Derives the fixture-level dimmer from element outputs: the level of the
+ * dimmers that master no relation, or undefined when the fixture has none.
  */
 export function fixtureIntensityValueFromOutputs(
-  elementOutputs: Record<string, number>[],
+  elementOutputs: (Record<string, number> | undefined)[],
   elements: FixtureElement[],
 ): number | undefined {
-  let fixtureDeclaresIntensity = false;
-  let fixtureIntensity = 0;
-
-  for (let i = 0; i < elements.length; i++) {
-    const element = elements[i];
-    if (!elementDeclaresIntensityControl(element)) continue;
-
-    fixtureDeclaresIntensity = true;
-    const output = elementOutputs[i];
-    if (!output) continue;
-
-    for (const param of element.parameters) {
-      if (!["Intensity", "VirtualIntensity"].includes(param.attribute.type)) {
-        continue;
-      }
-
-      const value = attributeOutputValue(output, param.attribute);
-      if (value === undefined || param.max <= 0) continue;
-      fixtureIntensity = Math.max(
-        fixtureIntensity,
-        normalizeParameterOutput(value, param),
-      );
-    }
-  }
-
-  return fixtureDeclaresIntensity ? fixtureIntensity : undefined;
+  return fixtureDimmerLevel(
+    elements,
+    evaluateFixtureChannels(elements, elementOutputs),
+  );
 }
 
 /**
@@ -457,6 +477,24 @@ export function extractElementDmxData(
   element: FixtureElement,
   fixtureIntensity: number | undefined = undefined,
 ): Record<string, number> {
+  return elementDmxData(
+    evaluateElementChannels(element, output),
+    output,
+    element,
+    fixtureIntensity,
+  );
+}
+
+/**
+ * Builds an element's visualizer record: every parameter's normalized value
+ * by attribute key, plus the derived aliases from its evaluated channels.
+ */
+function elementDmxData(
+  channels: (EvaluatedChannel | undefined)[],
+  output: Record<string, number>,
+  element: FixtureElement,
+  fixtureIntensity: number | undefined,
+): Record<string, number> {
   const elementDmx: Record<string, number> = {};
 
   for (const param of element.parameters) {
@@ -470,7 +508,7 @@ export function extractElementDmxData(
         : normalizeParameterOutput(value, param);
   }
 
-  const dmx = extractVisualizerDmx(output, element, fixtureIntensity);
+  const dmx = visualizerDmxFromChannels(channels, element, fixtureIntensity);
   elementDmx.red = dmx.red;
   elementDmx.green = dmx.green;
   elementDmx.blue = dmx.blue;
@@ -496,15 +534,6 @@ export function extractElementDmxData(
   }
 
   return elementDmx;
-}
-
-/**
- * Resolve the output key used by parameter state records for an attribute.
- */
-function attributeOutputKey(
-  attribute: FixtureElement["parameters"][number]["attribute"],
-): string {
-  return attribute.type === "Custom" ? attribute.data.label : attribute.type;
 }
 
 /**

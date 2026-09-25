@@ -44,11 +44,7 @@ import {
   zoomCameraToGroups,
 } from "../renderer";
 import { SceneManager } from "../scene-manager";
-import {
-  extractElementDmxData,
-  fixtureIntensityValueFromOutputs,
-  resetDmxPool,
-} from "../visualizer-dmx";
+import { extractFixtureDmxData, resetDmxPool } from "../visualizer-dmx";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
   CameraState,
@@ -419,22 +415,9 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
       if (!elementOutputs) continue;
 
       // Build element DMX map using element labels as keys
-      const elementDmx = new Map<string, ElementDmxData>();
-      const fixtureIntensity = fixtureIntensityValueFromOutputs(
-        elementOutputs,
-        fixture.elements,
+      const elementDmx = new Map<string, ElementDmxData>(
+        extractFixtureDmxData(fixture.elements, elementOutputs),
       );
-
-      for (let i = 0; i < fixture.elements.length; i++) {
-        const element = fixture.elements[i];
-        const output = elementOutputs[i];
-        if (!output) continue;
-
-        elementDmx.set(
-          element.label,
-          extractElementDmxData(output, element, fixtureIntensity),
-        );
-      }
 
       if (elementDmx.size > 0) {
         this.setElementDmx(uid, elementDmx);

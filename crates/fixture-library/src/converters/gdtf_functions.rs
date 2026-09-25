@@ -18,7 +18,9 @@ use gdtf::physical_descriptions::EmitterOptic;
 use gdtf::values::{ColorCie, DmxValue};
 use gdtf::wheel::WheelSlotOptic;
 use nightfall_dmx::prelude::DmxValueResolution;
-use nightfall_fixtures::prelude::{CieColor, ParameterFunction, ParameterFunctionSet};
+use nightfall_fixtures::prelude::{
+    CieColor, ParameterFunction, ParameterFunctionSet, ProfilePoint,
+};
 use nightfall_fixtures::wire_layout::dmx_max;
 
 /// DMX values a parameter declares beyond its byte placement.
@@ -33,7 +35,7 @@ pub(super) struct ChannelSemantics {
 }
 
 /// Converts a GDTF DMX value to the parameter's resolution.
-fn scaled(value: DmxValue, resolution: DmxValueResolution) -> u32 {
+pub(super) fn scaled(value: DmxValue, resolution: DmxValueResolution) -> u32 {
     let bytes = resolution.channel_width() as u8;
     value.to(bytes).min(dmx_max(resolution) as u64) as u32
 }
@@ -69,28 +71,100 @@ fn ranges(starts: &[u32], last: u32) -> Vec<(u32, u32)> {
         .collect()
 }
 
+/// Returns a logical channel's functions in ascending DMX order, the order
+/// of [`ChannelSemantics::functions`].
+pub(super) fn ordered_functions(
+    logical: &LogicalChannel,
+    resolution: DmxValueResolution,
+) -> Vec<&ChannelFunction> {
+    let mut functions: Vec<&ChannelFunction> = logical.channel_functions.iter().collect();
+    functions.sort_by_key(|function| scaled(function.dmx_from, resolution));
+    functions
+}
+
+/// Returns each function's inclusive DMX range.
+///
+/// A function ends just before the next higher start of a function that can
+/// be active at the same time: one under the same mode master condition, or
+/// either of the two having no condition. Functions under different
+/// conditions are alternatives for the same DMX values, so they do not end
+/// each other, while an unconditional function gives way to every function
+/// that starts after it.
+fn function_ranges(
+    functions: &[&ChannelFunction],
+    resolution: DmxValueResolution,
+) -> Vec<(u32, u32)> {
+    let max = dmx_max(resolution);
+    let condition = |function: &ChannelFunction| {
+        function
+            .mode_master
+            .as_ref()
+            .map(|master| (master.node.to_string(), master.from.to(4), master.to.to(4)))
+    };
+    let conditions: Vec<_> = functions
+        .iter()
+        .map(|function| condition(function))
+        .collect();
+    let starts: Vec<u32> = functions
+        .iter()
+        .map(|function| scaled(function.dmx_from, resolution))
+        .collect();
+    (0..functions.len())
+        .map(|index| {
+            let from = starts[index];
+            let to = (0..functions.len())
+                .filter(|other| {
+                    starts[*other] > from
+                        && (conditions[*other].is_none()
+                            || conditions[index].is_none()
+                            || conditions[*other] == conditions[index])
+                })
+                .map(|other| starts[other] - 1)
+                .min()
+                .unwrap_or(max);
+            (from, to)
+        })
+        .collect()
+}
+
+/// Converts a DMX profile's points, or returns an empty (linear) curve.
+fn profile_points(fixture_type: &FixtureType, function: &ChannelFunction) -> Vec<ProfilePoint> {
+    let Some(profile) = function.dmx_profile(fixture_type) else {
+        return Vec::new();
+    };
+    let mut points: Vec<ProfilePoint> = profile
+        .points
+        .iter()
+        .map(|point| ProfilePoint {
+            dmx_percent: point.dmx_percentage as f32,
+            cfc0: point.cfc0 as f32,
+            cfc1: point.cfc1 as f32,
+            cfc2: point.cfc2 as f32,
+            cfc3: point.cfc3 as f32,
+        })
+        .collect();
+    points.sort_by(|a, b| a.dmx_percent.total_cmp(&b.dmx_percent));
+    points
+}
+
 /// Converts a logical channel's functions and the channel's default and highlight.
 ///
 /// The default comes from the channel's initial function, or the first
-/// function when none is named. Virtual channels keep their functions for
-/// display but have no DMX default or highlight to output.
+/// function when none is named. Virtual channels keep their default and
+/// highlight too: they reach the output through the relations they master,
+/// so a highlighted pixel needs its virtual dimmer raised. Mode master
+/// conditions and relations name other channels, so they are linked after
+/// all parameters exist.
 pub(super) fn channel_semantics(
     fixture_type: &FixtureType,
     channel: &DmxChannel,
     logical: &LogicalChannel,
     resolution: DmxValueResolution,
 ) -> ChannelSemantics {
-    let max = dmx_max(resolution);
-    let mut functions: Vec<&ChannelFunction> = logical.channel_functions.iter().collect();
-    functions.sort_by_key(|function| scaled(function.dmx_from, resolution));
-    let starts: Vec<u32> = functions
-        .iter()
-        .map(|function| scaled(function.dmx_from, resolution))
-        .collect();
-
+    let functions = ordered_functions(logical, resolution);
     let converted = functions
         .iter()
-        .zip(ranges(&starts, max))
+        .zip(function_ranges(&functions, resolution))
         .map(|(function, (dmx_from, dmx_to))| {
             let mut sets: Vec<_> = function
                 .channel_sets
@@ -137,27 +211,25 @@ pub(super) fn channel_semantics(
                             media: slot
                                 .and_then(|slot| slot.media_name.clone())
                                 .filter(|media| !media.is_empty()),
+                            physical_from: set.physical_from.map(|value| value as f32),
+                            physical_to: set.physical_to.map(|value| value as f32),
                         }
                     })
                     .collect(),
+                profile: profile_points(fixture_type, function),
+                ..Default::default()
             }
         })
         .collect();
 
-    let is_virtual = channel.offset.is_none();
     let default_function = channel
         .initial_function()
         .map(|(_, function)| function)
         .or_else(|| logical.channel_functions.first());
     ChannelSemantics {
         functions: converted,
-        default_dmx: default_function
-            .filter(|_| !is_virtual)
-            .map(|function| scaled(function.default, resolution)),
-        highlight_dmx: channel
-            .highlight
-            .filter(|_| !is_virtual)
-            .map(|value| scaled(value, resolution)),
+        default_dmx: default_function.map(|function| scaled(function.default, resolution)),
+        highlight_dmx: channel.highlight.map(|value| scaled(value, resolution)),
     }
 }
 
@@ -240,15 +312,19 @@ mod tests {
         assert!(values.default_value.abs() < 0.01, "tilt rests centred");
     }
 
-    /// Verifies virtual channels keep functions but declare no DMX default or highlight.
+    /// Verifies virtual channels keep their functions, default and highlight,
+    /// which reach the output through the relations they master.
     #[test]
-    fn virtual_channels_have_no_dmx_default() {
+    fn virtual_channels_keep_default_and_highlight() {
         let dimmer = parameter(
             ChannelSpec::virtual_channel("Base", "Dimmer")
-                .function(FunctionSpec::new("Dimmer").default_dmx(255)),
+                .highlight(255)
+                .function(FunctionSpec::new("Dimmer").default_dmx(128)),
         );
         assert_eq!(dimmer.functions.len(), 1);
-        assert_eq!(dimmer.default_dmx, None);
+        assert_eq!(dimmer.dmx_slots, DmxSlots::Virtual);
+        assert_eq!(dimmer.default_dmx, Some(128));
+        assert_eq!(dimmer.highlight_dmx, Some(255));
     }
 
     /// Verifies additive functions carry their linked emitter's measured color.

@@ -8,7 +8,7 @@
 
 //! GDTF to Fixture conversion
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use gdtf::geometry::Geometry;
 use nightfall::prelude::Identifiers;
@@ -16,6 +16,7 @@ use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
 use uuid::Uuid;
 
+use super::gdtf_links::Placement;
 use super::gdtf_resolve::{GdtfDiagnostic, ResolvedChannel, ResolvedMode};
 use crate::converters::apply_position_physical_range;
 use crate::gdtf_metadata::GdtfMetadata;
@@ -104,11 +105,21 @@ pub fn convert_gdtf_mode(
         });
     };
 
-    let built = build_elements(&resolved, fixture_type);
+    let mut built = build_elements(&resolved, fixture_type);
+    super::gdtf_links::link_functions(
+        &resolved,
+        dmx_mode,
+        &mut built.elements,
+        super::gdtf_links::LinkTargets {
+            placements: &built.placements,
+            slot_owners: &built.slot_owners,
+        },
+        &mut built.diagnostics,
+    );
     let physical = extract_physical_properties(&resolved);
     let geometry = build_geometry_tree(
         &resolved,
-        &built.converted,
+        &built.placements,
         fixture_type,
         &mut gdtf.resources,
         metadata,
@@ -172,8 +183,10 @@ fn build_fixture(
 struct BuiltElements {
     /// Elements in first-channel order.
     elements: Vec<FixtureElement>,
-    /// Per resolved channel, whether it produced a parameter.
-    converted: Vec<bool>,
+    /// Per resolved channel, the parameter it produced.
+    placements: Vec<Placement>,
+    /// Per resolved channel demoted for sharing slots, the channel that owns them.
+    slot_owners: Vec<Option<usize>>,
     /// Channels dropped or demoted while building.
     diagnostics: Vec<GdtfDiagnostic>,
 }
@@ -182,16 +195,18 @@ struct BuiltElements {
 ///
 /// Channels whose slots cannot be represented are dropped with a diagnostic.
 /// A channel reusing slots of an earlier one becomes a virtual parameter, so
-/// two parameters never write the same byte.
+/// two parameters never write the same byte; the earlier channel is recorded
+/// as the owner that links to the demoted copy resolve to.
 fn build_elements(
     resolved: &ResolvedMode<'_>,
     fixture_type: &gdtf::fixture_type::FixtureType,
 ) -> BuiltElements {
     let mut element_by_instance: HashMap<usize, usize> = HashMap::new();
     let mut elements: Vec<FixtureElement> = Vec::new();
-    let mut converted = vec![false; resolved.channels.len()];
+    let mut placements = vec![None; resolved.channels.len()];
+    let mut slot_owners = vec![None; resolved.channels.len()];
     let mut diagnostics = Vec::new();
-    let mut used_slots: HashSet<(u16, u16)> = HashSet::new();
+    let mut used_slots: HashMap<(u16, u16), usize> = HashMap::new();
     for (index, channel) in resolved.channels.iter().enumerate() {
         let instance = &resolved.instances[channel.instance].name;
         let Some(mut parameter) = convert_channel_to_parameter(channel, fixture_type) else {
@@ -204,22 +219,22 @@ fn build_elements(
             continue;
         };
         if let DmxSlots::Explicit { dmx_break, offsets } = &parameter.dmx_slots {
-            if offsets
+            if let Some(owner) = offsets
                 .iter()
-                .any(|slot| used_slots.contains(&(*dmx_break, *slot)))
+                .find_map(|slot| used_slots.get(&(*dmx_break, *slot)))
             {
                 diagnostics.push(GdtfDiagnostic::SharedSlots {
                     instance: instance.clone(),
                     offsets: offsets.clone(),
                 });
+                slot_owners[index] = Some(*owner);
                 parameter.dmx_slots = DmxSlots::Virtual;
                 parameter.default_dmx = None;
                 parameter.highlight_dmx = None;
             } else {
-                used_slots.extend(offsets.iter().map(|slot| (*dmx_break, *slot)));
+                used_slots.extend(offsets.iter().map(|slot| ((*dmx_break, *slot), index)));
             }
         }
-        converted[index] = true;
         let element = *element_by_instance
             .entry(channel.instance)
             .or_insert_with(|| {
@@ -229,11 +244,13 @@ fn build_elements(
                 });
                 elements.len() - 1
             });
+        placements[index] = Some((element, elements[element].parameters.len()));
         elements[element].parameters.push(parameter);
     }
     BuiltElements {
         elements,
-        converted,
+        placements,
+        slot_owners,
         diagnostics,
     }
 }
@@ -475,13 +492,13 @@ fn extract_physical_properties(resolved: &ResolvedMode<'_>) -> Option<FixturePhy
 ///
 /// A beam is controlled by the nearest ancestor-or-self instance that has an
 /// emitter (dimmer or color) channel.
-fn emitter_owners(resolved: &ResolvedMode<'_>, converted: &[bool]) -> Vec<Option<String>> {
+fn emitter_owners(resolved: &ResolvedMode<'_>, placements: &[Placement]) -> Vec<Option<String>> {
     let mut has_emitter = vec![false; resolved.instances.len()];
     for (channel, _) in resolved
         .channels
         .iter()
-        .zip(converted)
-        .filter(|(_, converted)| **converted)
+        .zip(placements)
+        .filter(|(_, placement)| placement.is_some())
     {
         if channel
             .channel
@@ -507,11 +524,11 @@ fn emitter_owners(resolved: &ResolvedMode<'_>, converted: &[bool]) -> Vec<Option
 
 /// Builds the visualization geometry tree from resolved instances.
 ///
-/// `converted` flags which resolved channels produced parameters; only those
-/// can own beams or drive joints.
+/// `placements` records which resolved channels produced parameters; only
+/// those can own beams or drive joints.
 fn build_geometry_tree(
     resolved: &ResolvedMode<'_>,
-    converted: &[bool],
+    placements: &[Placement],
     fixture_type: &gdtf::fixture_type::FixtureType,
     resources: &mut gdtf::ResourceMap,
     metadata: &GdtfMetadata,
@@ -521,8 +538,8 @@ fn build_geometry_tree(
         .iter()
         .filter_map(|m| m.name.as_ref().map(|n| (n.as_ref(), m)))
         .collect();
-    let owners = emitter_owners(resolved, converted);
-    let mut axes = joint_axes(resolved, converted);
+    let owners = emitter_owners(resolved, placements);
+    let mut axes = joint_axes(resolved, placements);
     let mut mesh_resources = HashMap::new();
 
     let nodes = resolved
@@ -601,13 +618,13 @@ fn geometry_type(geometry: &Geometry) -> GeometryType {
 /// geometry is the joint regardless of its tag (`<Axis>` or plain
 /// `<Geometry>`) or its name. An instance carrying both pan and tilt becomes
 /// a two-axis joint with pan applied first.
-fn joint_axes(resolved: &ResolvedMode<'_>, converted: &[bool]) -> Vec<Vec<AxisType>> {
+fn joint_axes(resolved: &ResolvedMode<'_>, placements: &[Placement]) -> Vec<Vec<AxisType>> {
     let mut axes = vec![Vec::new(); resolved.instances.len()];
     for (channel, _) in resolved
         .channels
         .iter()
-        .zip(converted)
-        .filter(|(_, converted)| **converted)
+        .zip(placements)
+        .filter(|(_, placement)| placement.is_some())
     {
         let Some(logical) = channel.channel.logical_channels.first() else {
             continue;

@@ -23,7 +23,7 @@ use nightfall_io::OutputTransport;
 use web_time::Instant;
 
 use crate::prelude::*;
-use crate::wire_layout::{dmx_max, split_dmx_value};
+use crate::wire_layout::split_dmx_value;
 
 /// Default timeout before an input universe is treated as stale.
 pub const DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS: u32 = 2000;
@@ -392,18 +392,7 @@ impl ConsoleDmxUniverses {
 
 /// Converts a parameter's physical output value to a DMX integer at its resolution.
 pub fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
-    let physical_value = parameter.get_raw_value();
-    let min = parameter.metadata.logical_min();
-    let max = parameter.metadata.logical_max();
-    let range = max - min;
-
-    let normalized = if range > 0.0 {
-        ((physical_value - min) / range).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-
-    (normalized * dmx_max(parameter.metadata.resolution) as ParameterDmxValue).round() as u32
+    parameter.metadata.dmx_value(parameter.values.current_value)
 }
 
 /// Writes a parameter's bytes to the console universe at the destination's byte addresses.

@@ -65,11 +65,7 @@ import {
   updateOrbitTargetIndicator,
 } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
-import {
-  extractElementDmxData,
-  fixtureIntensityValueFromOutputs,
-  resetDmxPool,
-} from "../visualizer-dmx";
+import { extractFixtureDmxData, resetDmxPool } from "../visualizer-dmx";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
   CameraState,
@@ -441,22 +437,8 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
         if (!elementOutputs) continue;
 
         // Build element DMX map using element labels as keys
-        const elementDmx: Array<[string, ElementDmxData]> = [];
-        const fixtureIntensity = fixtureIntensityValueFromOutputs(
-          elementOutputs,
-          fixture.elements,
-        );
-
-        for (let i = 0; i < fixture.elements.length; i++) {
-          const element = fixture.elements[i];
-          const output = elementOutputs[i];
-          if (!output) continue;
-
-          elementDmx.push([
-            element.label,
-            extractElementDmxData(output, element, fixtureIntensity),
-          ]);
-        }
+        const elementDmx: Array<[string, ElementDmxData]> =
+          extractFixtureDmxData(fixture.elements, elementOutputs);
 
         if (elementDmx.length > 0) dmxBatch.push([uid, elementDmx]);
       }

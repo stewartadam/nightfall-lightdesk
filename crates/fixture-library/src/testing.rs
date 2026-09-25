@@ -171,6 +171,19 @@ pub struct ChannelSetSpec {
     pub dmx_from: u32,
     /// Optional wheel slot index (1-based).
     pub wheel_slot_index: Option<i32>,
+    /// Physical range overriding the function's, when set.
+    pub physical: Option<(f64, f64)>,
+}
+
+/// A `ModeMaster` link on a channel function.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModeMasterSpec {
+    /// Linked DMX channel (`Geometry_Attribute`) or channel function node.
+    pub node: String,
+    /// First master DMX value, in the master's one-byte resolution.
+    pub from: u32,
+    /// Last master DMX value, in the master's one-byte resolution.
+    pub to: u32,
 }
 
 /// A `<ChannelFunction>` inside a logical channel.
@@ -194,6 +207,10 @@ pub struct FunctionSpec {
     pub emitter: Option<String>,
     /// Channel sets within the function.
     pub sets: Vec<ChannelSetSpec>,
+    /// Optional mode master condition.
+    pub mode_master: Option<ModeMasterSpec>,
+    /// Optional DMX profile name.
+    pub dmx_profile: Option<String>,
 }
 
 impl FunctionSpec {
@@ -209,7 +226,36 @@ impl FunctionSpec {
             wheel: None,
             emitter: None,
             sets: Vec::new(),
+            mode_master: None,
+            dmx_profile: None,
         }
+    }
+
+    /// Activates the function only while `node` outputs a one-byte DMX value in `from..=to`.
+    pub fn mode_master(mut self, node: &str, from: u32, to: u32) -> Self {
+        self.mode_master = Some(ModeMasterSpec {
+            node: node.to_string(),
+            from,
+            to,
+        });
+        self
+    }
+
+    /// Links a DMX profile by name.
+    pub fn dmx_profile(mut self, profile: &str) -> Self {
+        self.dmx_profile = Some(profile.to_string());
+        self
+    }
+
+    /// Appends a channel set with its own physical range.
+    pub fn physical_set(mut self, name: &str, dmx_from: u32, from: f64, to: f64) -> Self {
+        self.sets.push(ChannelSetSpec {
+            name: name.to_string(),
+            dmx_from,
+            wheel_slot_index: None,
+            physical: Some((from, to)),
+        });
+        self
     }
 
     /// Sets the function name.
@@ -255,6 +301,7 @@ impl FunctionSpec {
             name: name.to_string(),
             dmx_from,
             wheel_slot_index,
+            physical: None,
         });
         self
     }
@@ -351,6 +398,8 @@ pub struct ModeSpec {
     pub geometry: String,
     /// Channels in declaration order.
     pub channels: Vec<ChannelSpec>,
+    /// Relations as `(master channel, follower function node, type)`.
+    pub relations: Vec<(String, String, String)>,
 }
 
 impl ModeSpec {
@@ -360,12 +409,24 @@ impl ModeSpec {
             name: name.to_string(),
             geometry: geometry.to_string(),
             channels: Vec::new(),
+            relations: Vec::new(),
         }
     }
 
     /// Appends a channel.
     pub fn channel(mut self, channel: ChannelSpec) -> Self {
         self.channels.push(channel);
+        self
+    }
+
+    /// Appends a relation from a master DMX channel to a follower channel
+    /// function node, of type `"Multiply"` or `"Override"`.
+    pub fn relation(mut self, master: &str, follower: &str, relation_type: &str) -> Self {
+        self.relations.push((
+            master.to_string(),
+            follower.to_string(),
+            relation_type.to_string(),
+        ));
         self
     }
 }
@@ -402,9 +463,16 @@ pub struct GdtfBuilder {
     extra_files: Vec<(String, Vec<u8>)>,
     emitters: Vec<(String, [f64; 3])>,
     wheels: Vec<WheelSpec>,
+    dmx_profiles: Vec<(String, Vec<[f64; 5]>)>,
 }
 
 impl GdtfBuilder {
+    /// Adds a DMX profile whose points are `[DMXPercentage, CFC0, CFC1, CFC2, CFC3]`.
+    pub fn dmx_profile(mut self, name: &str, points: &[[f64; 5]]) -> Self {
+        self.dmx_profiles.push((name.to_string(), points.to_vec()));
+        self
+    }
+
     /// Creates a builder for a fixture type with the given long name.
     pub fn new(manufacturer: &str, name: &str) -> Self {
         Self {
@@ -417,6 +485,7 @@ impl GdtfBuilder {
             extra_files: Vec::new(),
             emitters: Vec::new(),
             wheels: Vec::new(),
+            dmx_profiles: Vec::new(),
         }
     }
 
@@ -507,7 +576,18 @@ impl GdtfBuilder {
                 escape(name)
             );
         }
-        xml.push_str("</Emitters>\n</PhysicalDescriptions>\n<Models>\n");
+        xml.push_str("</Emitters>\n<DMXProfiles>\n");
+        for (name, points) in &self.dmx_profiles {
+            let _ = writeln!(xml, "<DMXProfile Name=\"{}\">", escape(name));
+            for [percent, cfc0, cfc1, cfc2, cfc3] in points {
+                let _ = writeln!(
+                    xml,
+                    "<Point DMXPercentage=\"{percent}\" CFC0=\"{cfc0}\" CFC1=\"{cfc1}\" CFC2=\"{cfc2}\" CFC3=\"{cfc3}\"/>"
+                );
+            }
+            xml.push_str("</DMXProfile>\n");
+        }
+        xml.push_str("</DMXProfiles>\n</PhysicalDescriptions>\n<Models>\n");
         for model in &self.models {
             let _ = writeln!(
                 xml,
@@ -666,7 +746,17 @@ fn write_mode(xml: &mut String, mode: &ModeSpec) {
     for channel in &mode.channels {
         write_channel(xml, channel);
     }
-    xml.push_str("</DMXChannels>\n<Relations/>\n<FTMacros/>\n</DMXMode>\n");
+    xml.push_str("</DMXChannels>\n<Relations>\n");
+    for (index, (master, follower, relation_type)) in mode.relations.iter().enumerate() {
+        let _ = writeln!(
+            xml,
+            "<Relation Name=\"Relation {index}\" Master=\"{}\" Follower=\"{}\" Type=\"{}\"/>",
+            escape(master),
+            escape(follower),
+            escape(relation_type),
+        );
+    }
+    xml.push_str("</Relations>\n<FTMacros/>\n</DMXMode>\n");
 }
 
 /// Writes a DMX channel with its single logical channel and functions.
@@ -717,9 +807,26 @@ fn write_channel(xml: &mut String, channel: &ChannelSpec) {
             .as_ref()
             .map(|emitter| format!(" Emitter=\"{}\"", escape(emitter)))
             .unwrap_or_default();
+        let mode_master = function
+            .mode_master
+            .as_ref()
+            .map(|master| {
+                format!(
+                    " ModeMaster=\"{}\" ModeFrom=\"{}\" ModeTo=\"{}\"",
+                    escape(&master.node),
+                    dmx_value(master.from, 1),
+                    dmx_value(master.to, 1),
+                )
+            })
+            .unwrap_or_default();
+        let profile = function
+            .dmx_profile
+            .as_ref()
+            .map(|profile| format!(" DMXProfile=\"{}\"", escape(profile)))
+            .unwrap_or_default();
         let _ = write!(
             xml,
-            "<ChannelFunction Name=\"{}\" Attribute=\"{}\" DMXFrom=\"{}\" Default=\"{}\" PhysicalFrom=\"{}\" PhysicalTo=\"{}\"{wheel}{emitter}",
+            "<ChannelFunction Name=\"{}\" Attribute=\"{}\" DMXFrom=\"{}\" Default=\"{}\" PhysicalFrom=\"{}\" PhysicalTo=\"{}\"{wheel}{emitter}{mode_master}{profile}",
             escape(&function.name),
             escape(&function.attribute),
             dmx_value(function.dmx_from, bytes),
@@ -737,9 +844,13 @@ fn write_channel(xml: &mut String, channel: &ChannelSpec) {
                 .wheel_slot_index
                 .map(|index| format!(" WheelSlotIndex=\"{index}\""))
                 .unwrap_or_default();
+            let physical = set
+                .physical
+                .map(|(from, to)| format!(" PhysicalFrom=\"{from}\" PhysicalTo=\"{to}\""))
+                .unwrap_or_default();
             let _ = writeln!(
                 xml,
-                "<ChannelSet Name=\"{}\" DMXFrom=\"{}\"{slot}/>",
+                "<ChannelSet Name=\"{}\" DMXFrom=\"{}\"{slot}{physical}/>",
                 escape(&set.name),
                 dmx_value(set.dmx_from, bytes),
             );

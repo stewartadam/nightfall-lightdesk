@@ -59,7 +59,7 @@ pub struct CieColor {
 }
 
 /// A named DMX sub-range within a parameter function, e.g. one gobo or color slot.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct ParameterFunctionSet {
     /// Display name, e.g. "Open" or "Gobo 3".
@@ -77,13 +77,98 @@ pub struct ParameterFunctionSet {
     /// Image of the selected wheel slot (e.g. a gobo), as its archive media name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<String>,
+    /// Physical value at `dmx_from` when the set overrides its function's scale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical_from: Option<f32>,
+    /// Physical value at `dmx_to` when the set overrides its function's scale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical_to: Option<f32>,
+}
+
+/// Another parameter of the same fixture, by element position and attribute.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ElementParameterRef {
+    /// 0-based index into the fixture's elements.
+    pub element: u32,
+    /// Attribute of the referenced parameter within that element.
+    pub attribute: Attribute,
+}
+
+/// Activates a function only while another parameter outputs a DMX value in range.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ModeMasterCondition {
+    /// Parameter whose DMX value selects the mode.
+    pub master: ElementParameterRef,
+    /// First master DMX value activating the function, at the master's resolution.
+    pub dmx_from: u32,
+    /// Last master DMX value activating the function, inclusive.
+    pub dmx_to: u32,
+}
+
+/// How a relation's master combines with its follower function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum RelationKind {
+    /// The follower's level is scaled by the master's level.
+    Multiply,
+    /// The follower's level is replaced by the master's level.
+    Override,
+}
+
+/// A master parameter that modifies a function's output level.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct FunctionRelation {
+    /// Master parameter.
+    pub master: ElementParameterRef,
+    /// How the master combines with the function.
+    pub kind: RelationKind,
+}
+
+/// One segment start of a piecewise cubic DMX-to-physical curve.
+///
+/// From `dmx_percent` up to the next point, the physical percentage is
+/// `cfc0 + cfc1·d + cfc2·d² + cfc3·d³`, where `d` is the DMX percentage past
+/// `dmx_percent`. Percentages are of the function's DMX and physical spans.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ProfilePoint {
+    /// DMX percentage (0-100) where the segment starts.
+    pub dmx_percent: f32,
+    /// Constant coefficient.
+    pub cfc0: f32,
+    /// Linear coefficient.
+    pub cfc1: f32,
+    /// Quadratic coefficient.
+    pub cfc2: f32,
+    /// Cubic coefficient.
+    pub cfc3: f32,
+}
+
+/// Evaluates a DMX profile at a DMX percentage (0-100), returning a physical percentage.
+///
+/// Positions before the first point use the first segment. An empty profile
+/// is linear.
+pub fn evaluate_profile(points: &[ProfilePoint], dmx_percent: f32) -> f32 {
+    let Some(point) = points
+        .iter()
+        .rev()
+        .find(|point| point.dmx_percent <= dmx_percent)
+        .or_else(|| points.first())
+    else {
+        return dmx_percent;
+    };
+    let d = dmx_percent - point.dmx_percent;
+    point.cfc0 + d * (point.cfc1 + d * (point.cfc2 + d * point.cfc3))
 }
 
 /// A DMX range of a parameter with one meaning, e.g. a GDTF channel function.
 ///
 /// A single DMX channel can select a gobo in one range and rotate it in
 /// another; each range keeps its own attribute and physical scale.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct ParameterFunction {
     /// Function name.
@@ -107,6 +192,16 @@ pub struct ParameterFunction {
     /// Named sub-ranges in ascending DMX order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sets: Vec<ParameterFunctionSet>,
+    /// Condition under which this function applies. Functions with different
+    /// conditions may overlap in DMX range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode_master: Option<ModeMasterCondition>,
+    /// Masters that modify this function's level.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<FunctionRelation>,
+    /// DMX-to-physical curve; empty means linear.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profile: Vec<ProfilePoint>,
 }
 
 /// Metadata for a parameter.
@@ -216,6 +311,34 @@ impl ParameterMetadata {
         } else {
             value
         }
+    }
+
+    /// Returns the physical output value for a logical `value`: applies the
+    /// calibration offset, clamps to the logical range and applies inversion.
+    pub fn raw_value(&self, value: ParameterDmxValue) -> ParameterDmxValue {
+        let min = self.logical_min();
+        let max = self.logical_max();
+        let offset = self.offset.resolve_as_dmx_offset(min, max);
+        let value = (value + offset).clamp(min, max);
+        if self.is_inverted {
+            min + max - value
+        } else {
+            value
+        }
+    }
+
+    /// Returns the DMX integer at this parameter's resolution that a logical
+    /// `value` outputs, the forward mapping of [`Self::logical_value_from_dmx`].
+    pub fn dmx_value(&self, value: ParameterDmxValue) -> u32 {
+        let min = self.logical_min();
+        let range = self.logical_max() - min;
+        let normalized = if range > 0.0 {
+            ((self.raw_value(value) - min) / range).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (normalized * crate::wire_layout::dmx_max(self.resolution) as ParameterDmxValue).round()
+            as u32
     }
 
     /// Returns the minimum logical value operators should use for this parameter.
@@ -417,15 +540,7 @@ impl Parameter {
     /// Applies the calibration offset and clamps to valid range.
     /// Use this for actual DMX output where offsets should be applied.
     pub fn get_raw_value(&self) -> ParameterDmxValue {
-        let min = self.metadata.logical_min();
-        let max = self.metadata.logical_max();
-        let offset = self.metadata.offset.resolve_as_dmx_offset(min, max);
-        let value = (self.values.current_value + offset).clamp(min, max);
-        if self.metadata.is_inverted {
-            min + max - value
-        } else {
-            value
-        }
+        self.metadata.raw_value(self.values.current_value)
     }
 
     /// Sets the effective output value, honoring parameter metadata settings
@@ -716,6 +831,25 @@ mod tests {
         assert_eq!((plain.default_value, plain.highlight_value), (0.0, 255.0));
     }
 
+    /// Verifies profiles evaluate each point's cubic from its own start, and
+    /// that an empty profile is linear.
+    #[test]
+    fn profiles_evaluate_piecewise_cubics() {
+        let point = |dmx_percent, cfc0, cfc1| ProfilePoint {
+            dmx_percent,
+            cfc0,
+            cfc1,
+            cfc2: 0.0,
+            cfc3: 0.0,
+        };
+        // Flat at 0% until half-way, then rising to 100%.
+        let profile = [point(0.0, 0.0, 0.0), point(50.0, 0.0, 2.0)];
+        assert_eq!(evaluate_profile(&profile, 25.0), 0.0);
+        assert_eq!(evaluate_profile(&profile, 75.0), 50.0);
+        assert_eq!(evaluate_profile(&profile, 100.0), 100.0);
+        assert_eq!(evaluate_profile(&[], 40.0), 40.0);
+    }
+
     /// Verifies function lookup finds the range containing a DMX value.
     #[test]
     fn function_at_finds_containing_range() {
@@ -726,9 +860,7 @@ mod tests {
             dmx_to,
             physical_from: 0.0,
             physical_to: 1.0,
-            wheel: None,
-            emitter_color: None,
-            sets: Vec::new(),
+            ..Default::default()
         };
         let metadata = ParameterMetadata {
             functions: vec![
