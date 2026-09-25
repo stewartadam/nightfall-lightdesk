@@ -61,10 +61,13 @@ pub fn deserialize_osc_command(
     let command: OscCommand =
         serde_json::from_value(json).map_err(|e| format!("Failed to parse OscCommand: {e}"))?;
 
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
+    world
+        .resource_mut::<PendingCommandBuffer>()
+        .push(PayloadEnvelope::with_context(
+            command_id,
+            undo_id,
+            Box::new(command),
+        ));
 
     Ok(())
 }
@@ -178,15 +181,13 @@ fn send_listener_status(status: &OscRuntimeStatus, broadcaster: &ClientEventSink
 
 #[cfg(test)]
 mod tests {
-    use bevy_ecs::message::Messages;
-
     use super::*;
 
+    /// Verifies OSC commands queue through the pending buffer so undo can capture them.
     #[test]
-    fn deserialize_osc_command_writes_semantic_envelope() {
+    fn deserialize_osc_command_queues_for_undo_capture() {
         let mut world = World::new();
-        world.insert_resource(Messages::<CommandEnvelope<OscCommand>>::default());
-        world.init_resource::<CommandTracker>();
+        world.init_resource::<PendingCommandBuffer>();
 
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
@@ -201,15 +202,13 @@ mod tests {
         )
         .expect("osc command should deserialize");
 
-        let messages: Vec<_> = world
-            .resource_mut::<Messages<CommandEnvelope<OscCommand>>>()
-            .drain()
-            .collect();
+        let messages = world.resource_mut::<PendingCommandBuffer>().drain();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].command_id, command_id);
         assert_eq!(messages[0].undo_id, undo_id);
-        assert!(
-            matches!(messages[0].command, OscCommand::DeleteMapping(id) if id == uuid::Uuid::from_u128(4))
-        );
+        assert!(matches!(
+            messages[0].payload.as_any().downcast_ref::<OscCommand>(),
+            Some(OscCommand::DeleteMapping(id)) if *id == uuid::Uuid::from_u128(4)
+        ));
     }
 }

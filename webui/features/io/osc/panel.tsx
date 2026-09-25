@@ -75,6 +75,7 @@ import {
   trackOscGesture,
 } from "../model/controller-mapping-builders";
 import {
+  announceReplacedMappings,
   deleteOscMapping,
   upsertOscMapping,
 } from "../model/controller-mappings";
@@ -420,7 +421,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
       const mapping = visibleRows[targetRow]?.mapping;
       if (!mapping) continue;
       const edited = editedMapping(mapping, colId, value);
-      if (edited) void upsertOscMapping(edited);
+      if (edited) void upsertOscMapping(edited).then(announceReplacedMappings);
     }
   };
 
@@ -434,7 +435,11 @@ export default function OscInputPanel(props: OscInputPanelProps) {
   /** Replaces the action of the selected mapping. */
   const updateSelectedAction = (action: ActionReference) => {
     const row = selectedMapping();
-    if (row) void upsertOscMapping({ ...row.mapping, action });
+    if (row) {
+      void upsertOscMapping({ ...row.mapping, action }).then(
+        announceReplacedMappings,
+      );
+    }
   };
 
   /** Deletes every selected mapping by ID. */
@@ -468,7 +473,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
       );
       return;
     }
-    void upsertOscMapping(mapping);
+    void upsertOscMapping(mapping).then(announceReplacedMappings);
   };
 
   return (
