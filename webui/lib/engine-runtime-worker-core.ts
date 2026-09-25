@@ -22,10 +22,12 @@
  */
 
 import { decode } from "cborg";
+import type { OutboundParameterState } from "../types";
 import type {
   EngineRuntimeConfig,
   EngineRuntimeWorkerRequest,
 } from "./engine-runtime-protocol";
+import { packParameterState } from "./parameter-state-transfer";
 import { RollingTimingSamples } from "./rolling-timing-samples";
 
 /** Optional demo adapter; native workers do not import its WASM implementation. */
@@ -255,10 +257,21 @@ export function startEngineRuntimeWorker(
     }
     latestDroppableByType.clear();
 
-    self.postMessage({
-      type: "messageBatch",
-      messages,
+    const transfers: ArrayBuffer[] = [];
+    const wireMessages = messages.map((message) => {
+      if (message.messageType !== "ParameterState") return message;
+      const snapshot = message.data as { data: OutboundParameterState[] };
+      const packedParameters = packParameterState(snapshot.data);
+      transfers.push(packedParameters.values.buffer as ArrayBuffer);
+      return { ...message, data: undefined, packedParameters };
     });
+    self.postMessage(
+      {
+        type: "messageBatch",
+        messages: wireMessages,
+      },
+      { transfer: transfers },
+    );
   }
 
   /** Removes transport heartbeat samples that never received a response. */
