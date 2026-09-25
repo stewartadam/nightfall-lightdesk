@@ -151,6 +151,42 @@ async function editCellText(cell: Locator, value: string) {
 }
 
 /**
+ * Records awaited command submissions and answers them as succeeded.
+ *
+ * Mapping edits are backend commands and store-seeded apps have no backend, so the tests
+ * assert on what the panel submits.
+ */
+async function captureSubmittedCommands(page: Page) {
+  await page.evaluate(async () => {
+    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const submitted: unknown[] = [];
+    (window as any).__tanstackSubmittedCommands = submitted;
+    (engineRuntime as any).sendCommandAndAwait = async (payload: unknown) => {
+      submitted.push(payload);
+      return { outcome: { type: "Succeeded", data: {} } };
+    };
+  });
+}
+
+/** Returns the mapping carried by the latest UpsertMapping submitted to a command module. */
+async function latestUpsertedMapping(
+  page: Page,
+  module: "MidiCommand" | "OscCommand",
+): Promise<any> {
+  return page.evaluate(
+    (module) =>
+      ((window as any).__tanstackSubmittedCommands ?? [])
+        .filter(
+          (message: any) =>
+            message.module === module &&
+            message.command?.type === "UpsertMapping",
+        )
+        .at(-1)?.command.data,
+    module,
+  );
+}
+
+/**
  * Seeds mapping-related stores for migrated panel tests.
  */
 async function seedMappingStores(page: Page) {
@@ -158,34 +194,39 @@ async function seedMappingStores(page: Page) {
     const stores = (window as any).appStores;
     stores.midiMappings.set([
       {
+        id: "00000000000000000000000000000001",
         device_name: "E2E Controller",
-        channel: 144,
-        note: 60,
-        velocity: 127,
-        action: { id: "clip.start", arguments: { clip: 1 } },
+        source: { type: "Note", data: { channel: 0, note: 60 } },
+        edge: "Press",
+        action: { id: "clip.start", arguments: { clip: "1" } },
       },
       {
+        id: "00000000000000000000000000000002",
         device_name: "E2E Controller",
-        channel: 144,
-        note: 61,
-        velocity: undefined,
-        action: { id: "clip.stop", arguments: { clip: 1 } },
+        source: { type: "Note", data: { channel: 0, note: 61 } },
+        edge: "Release",
+        action: { id: "clip.stop", arguments: { clip: "1" } },
       },
     ]);
     stores.oscMappings.set([
       {
+        id: "00000000000000000000000000000003",
         source: "127.0.0.1:9000",
         address: "/e2e/go",
         arg_index: 0,
         arg_value: "1",
-        action: { type: "GoClip", data: 1 },
+        release_value: "0",
+        edge: "Press",
+        action: { id: "clip.go", arguments: { clip: "1" } },
       },
       {
+        id: "00000000000000000000000000000004",
         source: "127.0.0.1:9000",
         address: "/e2e/stop",
         arg_index: 0,
         arg_value: "0",
-        action: { id: "clip.stop", arguments: { clip: 1 } },
+        edge: "Press",
+        action: { id: "clip.stop", arguments: { clip: "1" } },
       },
     ]);
   });
@@ -390,6 +431,7 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
 }) => {
   await openTanStackApp(page);
   await seedMappingStores(page);
+  await captureSubmittedCommands(page);
 
   await addPanel(page, {
     id: "panel-MidiInput-tanstack-e2e",
@@ -409,12 +451,13 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
   await expect(
     page.getByRole("button", { name: /Delete/ }).last(),
   ).toContainText("2");
-  await editCellText(midiGrid.locator("#tanstack-cell-2-0"), "64");
+  await editCellText(midiGrid.locator("#tanstack-cell-0-0"), "E2E Pad");
   await expect
-    .poll(() =>
-      page.evaluate(() => (window as any).appStores.midiMappings.get()[0].note),
+    .poll(
+      async () =>
+        (await latestUpsertedMapping(page, "MidiCommand"))?.device_name,
     )
-    .toBe(64);
+    .toBe("E2E Pad");
 
   await addPanel(page, {
     id: "panel-OscInput-tanstack-e2e",
@@ -434,10 +477,8 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
   ).toContainText("2");
   await editCellText(oscGrid.locator("#tanstack-cell-1-0"), "/e2e/stop");
   await expect
-    .poll(() =>
-      page.evaluate(
-        () => (window as any).appStores.oscMappings.get()[0].address,
-      ),
+    .poll(
+      async () => (await latestUpsertedMapping(page, "OscCommand"))?.address,
     )
     .toBe("/e2e/stop");
 });
