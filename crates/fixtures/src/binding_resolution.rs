@@ -23,6 +23,9 @@ use nightfall_io::prelude::{
 };
 use uuid::Uuid;
 
+use crate::output_frames::{
+    ChannelWindow, ConsoleWindowRoute, OutputBindingRoute, OutputFrameKey, OutputRouting,
+};
 use crate::prelude::*;
 
 const DEFAULT_UNIVERSE_MAX: u16 = 512;
@@ -331,6 +334,11 @@ fn output_protocol_for_transport(transport: &OutputTransport) -> BindingTranspor
 }
 
 /// Rebuild `ConsoleDmxAddresses` from output bindings and fixtures when inputs change.
+///
+/// Fixture→console bindings apply in priority order; a later binding replaces earlier
+/// addresses for the parameters it selects. Each binding lays out only the parameters
+/// selected by its element/parameter filter, placed by the selection's wire layout in DMX
+/// order (explicit footprint slots and gaps included).
 pub fn derive_console_addresses(
     output_bindings: Res<OutputBindings>,
     disabled_bindings: Res<DisabledBindings>,
@@ -360,7 +368,7 @@ pub fn derive_console_addresses(
         }
     }
 
-    console_addresses.addresses.clear();
+    console_addresses.clear();
 
     let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
         output_bindings.bindings.iter().enumerate().collect();
@@ -426,8 +434,19 @@ pub fn derive_console_addresses(
                 },
             );
 
+            let footprint = params.footprint();
+            for param in params.parameters {
+                console_addresses.parameters.insert(
+                    param.target,
+                    ConsoleParameterAddress {
+                        universe: target_universe,
+                        addresses: offset_slots(&param.slots, running_address),
+                    },
+                );
+            }
+
             if !binding.clone {
-                running_address = running_address.saturating_add(params.footprint());
+                running_address = running_address.saturating_add(footprint);
             }
         }
     }
@@ -765,44 +784,29 @@ fn resolve_input_targets(
         }
         InputTarget::Console { universe, address } => {
             let base_address = address.unwrap_or(1);
-            let universe_match = |value: u16| range_contains(*universe, value);
-            let mut fixtures: Vec<(Uuid, ConsoleDmxAddress)> = console_addresses
-                .addresses
-                .iter()
-                .filter(|(_, address)| universe_match(address.universe))
-                .map(|(uid, addr)| (*uid, *addr))
-                .collect();
-
-            fixtures.sort_by_key(|(_, address)| (address.universe, address.address));
-
-            let mut targets = Vec::new();
-
-            for (uid, console_address) in fixtures {
-                if console_address.universe != target_universe {
-                    continue;
-                }
-                if console_address.address < base_address {
-                    continue;
-                }
-
-                let params = collect_fixture_parameters(
-                    data_provider,
-                    param_query,
-                    uid,
-                    None,
-                    None,
-                    1,
-                    false,
-                );
-                let base_offset = console_address.address - base_address;
-                for param in params.parameters {
-                    targets.push(ResolvedInputTarget {
-                        entity: param.target,
-                        offsets: offset_slots(&param.slots, base_offset),
-                    });
-                }
+            if !range_contains(*universe, target_universe) {
+                return Vec::new();
             }
-
+            let mut targets: Vec<ResolvedInputTarget> = console_addresses
+                .parameters
+                .iter()
+                .filter(|(_, console_address)| {
+                    console_address.universe == target_universe
+                        && console_address
+                            .addresses
+                            .iter()
+                            .all(|address| *address >= base_address)
+                })
+                .map(|(entity, console_address)| ResolvedInputTarget {
+                    entity: *entity,
+                    offsets: console_address
+                        .addresses
+                        .iter()
+                        .map(|address| address - base_address)
+                        .collect(),
+                })
+                .collect();
+            targets.sort_by_key(|target| (target.offsets.iter().min().copied(), target.entity));
             targets
         }
         InputTarget::Transport { .. } => Vec::new(),
@@ -816,7 +820,13 @@ type ResolvedParameterOutputs<'a> = (
     Option<&'a mut ResolvedConsoleDestination>,
 );
 
-/// Resolve output bindings into per-parameter transport destinations and console addresses.
+/// Resolve output bindings into per-parameter destinations and the wire output routing plan.
+///
+/// Fixture→transport bindings become per-parameter [`ResolvedOutputDestinations`] feeding
+/// direct output buffers; console→transport bindings become console window routes. Each
+/// parameter's console address is mirrored into [`ResolvedConsoleDestination`]. On rebuild,
+/// fixture-owned console and output buffer values are cleared so moved, removed, or
+/// disabled bindings leave no ghost values behind.
 pub fn resolve_output_bindings(
     output_bindings: Res<OutputBindings>,
     disabled_bindings: Res<DisabledBindings>,
@@ -827,6 +837,8 @@ pub fn resolve_output_bindings(
     param_query: Query<InstanceRef<Parameter>>,
     param_entities: Query<Entity, With<Parameter>>,
     mut destinations_query: Query<ResolvedParameterOutputs, With<Parameter>>,
+    mut routing: ResMut<OutputRouting>,
+    mut universes: ResMut<ConsoleDmxUniverses>,
     mut commands: Commands,
 ) {
     let should_rebuild = output_bindings.is_changed()
@@ -855,6 +867,7 @@ pub fn resolve_output_bindings(
     }
 
     let mut destinations: HashMap<Entity, Vec<OutputDestination>> = HashMap::new();
+    let mut routes: HashMap<OutputFrameKey, OutputBindingRoute> = HashMap::new();
 
     let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
         output_bindings.bindings.iter().enumerate().collect();
@@ -956,15 +969,12 @@ pub fn resolve_output_bindings(
                 else {
                     continue;
                 };
+                if matches!(output_transport, OutputTransport::Disabled) {
+                    continue;
+                }
                 let source_universes = expand_range(*universe);
                 let source_universes = if source_universes.is_empty() {
-                    let mut universes: Vec<u16> = console_addresses
-                        .addresses
-                        .values()
-                        .map(|addr| addr.universe)
-                        .collect();
-                    universes.sort_unstable();
-                    universes.dedup();
+                    let universes = console_addresses.universes();
                     if universes.is_empty() {
                         vec![1]
                     } else {
@@ -981,66 +991,39 @@ pub fn resolve_output_bindings(
                     target_universes
                 };
 
-                let source_base_address = address.unwrap_or(1);
-                let target_base_address = target_address.unwrap_or(1);
-
-                let mut fixtures_by_universe: HashMap<u16, Vec<(Uuid, ConsoleDmxAddress)>> =
-                    HashMap::new();
-                for (uid, addr) in &console_addresses.addresses {
-                    fixtures_by_universe
-                        .entry(addr.universe)
-                        .or_default()
-                        .push((*uid, *addr));
-                }
-
+                let window = ChannelWindow {
+                    source_address: address.unwrap_or(1),
+                    target_address: target_address.unwrap_or(1),
+                };
                 for (source_index, source_universe) in source_universes.iter().enumerate() {
-                    let target_universe_value =
+                    let wire_universe =
                         map_universe_by_index(&source_universes, &target_universes, source_index);
-
-                    let fixtures = fixtures_by_universe
-                        .get(source_universe)
-                        .cloned()
-                        .unwrap_or_default();
-                    for (uid, console_addr) in fixtures {
-                        if console_addr.address < source_base_address {
-                            continue;
-                        }
-
-                        let params = collect_fixture_parameters(
-                            &data_provider,
-                            &param_query,
-                            uid,
-                            None,
-                            None,
-                            1,
-                            false,
-                        );
-                        let fixture_address = target_base_address
-                            .saturating_add(console_addr.address - source_base_address);
-                        for param in params.parameters {
-                            destinations
-                                .entry(param.target)
-                                .or_default()
-                                .push(OutputDestination {
-                                    transport: output_transport.clone(),
-                                    universe: target_universe_value,
-                                    addresses: offset_slots(&param.slots, fixture_address),
-                                });
-                        }
-                    }
+                    routes
+                        .entry((output_transport.clone(), wire_universe))
+                        .or_default()
+                        .console_windows
+                        .push(ConsoleWindowRoute {
+                            console_universe: *source_universe,
+                            window,
+                        });
                 }
             }
             _ => {}
         }
     }
 
-    let mut console_destinations =
-        resolve_console_parameter_addresses(&console_addresses, &data_provider, &param_query);
-
     for entity in &param_entities {
         let entry = destinations.remove(&entity).unwrap_or_default();
+        for destination in &entry {
+            if !matches!(destination.transport, OutputTransport::Disabled) {
+                routes
+                    .entry((destination.transport.clone(), destination.universe))
+                    .or_default()
+                    .direct = true;
+            }
+        }
         let console_destination = ResolvedConsoleDestination {
-            address: console_destinations.remove(&entity),
+            address: console_addresses.parameters.get(&entity).cloned(),
         };
         let Ok((destinations_component, console_component)) = destinations_query.get_mut(entity)
         else {
@@ -1064,31 +1047,7 @@ pub fn resolve_output_bindings(
             }
         }
     }
-}
 
-/// Maps each console-bound parameter entity to its console-space DMX address.
-///
-/// Parameters are placed by the fixture's wire layout starting at its console address, so
-/// explicit footprint slots and gaps land on the same console channels that console input
-/// targets decode from.
-fn resolve_console_parameter_addresses(
-    console_addresses: &ConsoleDmxAddresses,
-    data_provider: &FixtureDataProviderExt,
-    param_query: &Query<InstanceRef<Parameter>>,
-) -> HashMap<Entity, ConsoleParameterAddress> {
-    let mut resolved = HashMap::new();
-    for (uid, console_address) in &console_addresses.addresses {
-        let params =
-            collect_fixture_parameters(data_provider, param_query, *uid, None, None, 1, false);
-        for param in params.parameters {
-            resolved.insert(
-                param.target,
-                ConsoleParameterAddress {
-                    universe: console_address.universe,
-                    addresses: offset_slots(&param.slots, console_address.address),
-                },
-            );
-        }
-    }
-    resolved
+    routing.set_output_routes(routes);
+    universes.clear_output_binding_values();
 }

@@ -441,6 +441,8 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
         ];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -500,6 +502,8 @@ fn resolve_output_bindings_uses_generic_rgb_strobe_bar_hardware_dmx_order() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -541,6 +545,8 @@ fn resolve_output_bindings_uses_rotating_wash_beam_hardware_dmx_order() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -589,6 +595,8 @@ fn resolve_output_bindings_uses_moving_spot_hardware_dmx_order() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -630,6 +638,8 @@ fn resolve_output_bindings_supports_floating_fixtures() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -861,6 +871,20 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
             ConsoleDmxAddress {
                 universe: 3,
                 address: 1,
+            },
+        );
+        console_addresses.parameters.insert(
+            param_a,
+            ConsoleParameterAddress {
+                universe: 1,
+                addresses: vec![1],
+            },
+        );
+        console_addresses.parameters.insert(
+            param_b,
+            ConsoleParameterAddress {
+                universe: 3,
+                addresses: vec![1],
             },
         );
     }
@@ -1108,6 +1132,8 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -1193,6 +1219,8 @@ fn resolve_output_bindings_resolves_named_usb_targets() {
         }];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -1256,6 +1284,8 @@ fn resolve_output_bindings_applies_disabled_filter_from_target_disabled() {
         ];
     }
 
+    app.init_resource::<OutputRouting>();
+    app.init_resource::<ConsoleDmxUniverses>();
     app.add_systems(Update, resolve_output_bindings);
     app.update();
 
@@ -1354,6 +1384,7 @@ fn output_app() -> App {
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
+    app.init_resource::<OutputRouting>();
     app
 }
 
@@ -1476,7 +1507,7 @@ fn resolve_output_bindings_patches_secondary_dmx_break() {
     assert_eq!(dim2_destinations[0].addresses, vec![203]);
 }
 
-/// Verifies rendered console bytes land on the explicit slots, most significant byte first.
+/// Verifies rendered wire bytes land on the explicit slots, most significant byte first.
 #[test]
 fn dmx_universes_writes_bytes_to_explicit_slots() {
     let mut app = output_app();
@@ -1502,10 +1533,16 @@ fn dmx_universes_writes_bytes_to_explicit_slots() {
     app.update();
 
     let universes = app.world().resource::<ConsoleDmxUniverses>();
-    assert_eq!(universes.get_value(1, 1), Some(0x12));
-    assert_eq!(universes.get_value(1, 6), Some(0x34));
-    assert_eq!(universes.get_value(1, 3), Some(200));
-    assert_eq!(universes.get_value(1, 2), Some(0));
+    let wire = universes.get_output_universe(
+        &OutputTransport::Sacn {
+            mode: SacnDelivery::Multicast,
+        },
+        1,
+    );
+    assert_eq!(wire[0], 0x12);
+    assert_eq!(wire[5], 0x34);
+    assert_eq!(wire[2], 200);
+    assert_eq!(wire[1], 0);
 }
 
 /// Verifies input bindings decode explicit slots into per-byte source offsets.

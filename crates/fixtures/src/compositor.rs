@@ -23,10 +23,12 @@ use nightfall_fixture_model::prelude::*;
 use nightfall_instances::{PlaybackAction, PlaybackScope};
 
 use crate::prelude::{
-    ConsoleDmxUniverses, DmxAction, FixtureCommand, InputDmxUniverses, OutputDestination,
-    Parameter, ParameterAssertion, ParameterAssertionSource, ResolvedInputBindings,
-    ResolvedInputDestination, ResolvedInputSource, ResolvedOutputDestinations,
+    ConsoleChannelOrigin, ConsoleDmxUniverses, DmxAction, FixtureCommand, InputDmxUniverses,
+    Parameter, ParameterAssertion, ParameterAssertionSource, ResolvedConsoleDestination,
+    ResolvedInputBindings, ResolvedInputDestination, ResolvedInputSource,
+    ResolvedOutputDestinations,
 };
+use crate::universe::parameter_dmx_bytes;
 use crate::wire_layout::combine_dmx_bytes;
 
 /// Priority for the transport input assertion layer.
@@ -236,7 +238,22 @@ fn resolved_input_destination_contains_parameter(
     }
 }
 
+/// Parameter data used to map console-space `ch U/A` channels onto parameters.
+type ManualChannelQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        InstanceRef<'static, Parameter>,
+        Option<&'static ResolvedConsoleDestination>,
+        Option<&'static ResolvedOutputDestinations>,
+    ),
+>;
+
 /// Materialize manual DMX channel commands into the manual assertion layer.
+///
+/// `ch U/A` addresses console space. Console-bound parameters match by their console
+/// address; parameters without a console address (direct fixture→transport patches) match
+/// by their wire universe and address instead, so directly patched fixtures stay addressable.
 pub fn update_manual_assertion_layer(
     mut set_events: MessageReader<CommandEnvelope<FixtureCommand>>,
     mut clear_events: MessageReader<EngineActionEnvelope<crate::undo::ClearDmxChannels>>,
@@ -244,7 +261,7 @@ pub fn update_manual_assertion_layer(
     mut dmx_actions: MessageReader<EngineActionEnvelope<DmxAction>>,
     mut responder: CommandResponder,
     universes: Res<ConsoleDmxUniverses>,
-    destinations_query: Query<(InstanceRef<Parameter>, Option<&ResolvedOutputDestinations>)>,
+    destinations_query: ManualChannelQuery,
     mut layer_query: Query<&mut Layer, With<ManualAssertionLayer>>,
 ) {
     let Ok(mut layer) = layer_query.single_mut() else {
@@ -310,18 +327,21 @@ pub fn update_manual_assertion_layer(
     }
 }
 
+/// Asserts every parameter covering a manual console channel at the value its channels now
+/// encode.
 fn set_manual_assertion_from_channel(
     channel: &DmxChannelRef,
     universes: &ConsoleDmxUniverses,
-    destinations_query: &Query<(InstanceRef<Parameter>, Option<&ResolvedOutputDestinations>)>,
+    destinations_query: &ManualChannelQuery,
     layer: &mut Layer,
 ) {
-    for (parameter, destinations) in destinations_query.iter() {
-        let Some(destination) = matching_destination(channel, destinations) else {
+    for (parameter, console_destination, destinations) in destinations_query.iter() {
+        let Some(addresses) = manual_channel_addresses(channel, console_destination, destinations)
+        else {
             continue;
         };
 
-        let dmx_value = dmx_value_from_universe(universes, destination);
+        let dmx_value = manual_dmx_value(universes, channel.universe, addresses, &parameter);
         let value = dmx_value_to_parameter_value(dmx_value, &parameter.metadata);
         layer.absolute.insert(
             parameter.instance(),
@@ -333,37 +353,71 @@ fn set_manual_assertion_from_channel(
 /// Remove manual assertions for parameters mapped to the selected DMX channel.
 fn remove_manual_assertion_for_channel(
     channel: &DmxChannelRef,
-    destinations_query: &Query<(InstanceRef<Parameter>, Option<&ResolvedOutputDestinations>)>,
+    destinations_query: &ManualChannelQuery,
     layer: &mut Layer,
 ) {
-    for (parameter, destinations) in destinations_query.iter() {
-        if matching_destination(channel, destinations).is_some() {
+    for (parameter, console_destination, destinations) in destinations_query.iter() {
+        if manual_channel_addresses(channel, console_destination, destinations).is_some() {
             layer.absolute.remove(parameter.instance());
             layer.relative.remove(parameter.instance());
         }
     }
 }
 
-/// Finds the destination whose bytes include the selected console channel.
-fn matching_destination<'a>(
+/// Returns the byte addresses of a parameter, most significant first, when one of its bytes
+/// sits on a manual channel.
+///
+/// Console-bound parameters are matched only in console space. Parameters without a console
+/// address fall back to their wire destinations, treating `ch U/A` as the wire universe and
+/// address of the direct patch. Bytes are matched individually, so parameters placed at
+/// explicit, non-contiguous footprint slots are found by any of their channels.
+fn manual_channel_addresses<'a>(
     channel: &DmxChannelRef,
+    console_destination: Option<&'a ResolvedConsoleDestination>,
     destinations: Option<&'a ResolvedOutputDestinations>,
-) -> Option<&'a OutputDestination> {
-    destinations?.destinations.iter().find(|destination| {
-        destination.universe == channel.universe && destination.addresses.contains(&channel.address)
-    })
+) -> Option<&'a [u16]> {
+    let covers = |universe: u16, addresses: &[u16]| {
+        universe == channel.universe && addresses.contains(&channel.address)
+    };
+
+    if let Some(console_address) = console_destination.and_then(|console| console.address.as_ref())
+    {
+        return covers(console_address.universe, &console_address.addresses)
+            .then_some(console_address.addresses.as_slice());
+    }
+
+    destinations?
+        .destinations
+        .iter()
+        .find(|destination| covers(destination.universe, &destination.addresses))
+        .map(|destination| destination.addresses.as_slice())
 }
 
-/// Reads a destination's bytes from the console universe and combines them into a DMX integer.
-fn dmx_value_from_universe(
+/// Decodes the DMX value a parameter's channels encode after a manual console write.
+///
+/// Channels written by `ch` (manual origin) in console universe `universe_id` supply their
+/// console value; the remaining channels keep the parameter's current output bytes, so a
+/// coarse-only write leaves the fine channel where it was.
+fn manual_dmx_value(
     universes: &ConsoleDmxUniverses,
-    destination: &OutputDestination,
+    universe_id: u16,
+    addresses: &[u16],
+    parameter: &Parameter,
 ) -> u32 {
-    combine_dmx_bytes(destination.addresses.iter().map(|address| {
-        universes
-            .get_value(destination.universe, *address)
-            .unwrap_or(0)
-    }))
+    let current = parameter_dmx_bytes(parameter);
+    combine_dmx_bytes(
+        addresses
+            .iter()
+            .zip(current)
+            .map(
+                |(address, current_byte)| match universes.get_origin(universe_id, *address) {
+                    Some(ConsoleChannelOrigin::ManualCommand) => universes
+                        .get_value(universe_id, *address)
+                        .unwrap_or(current_byte),
+                    _ => current_byte,
+                },
+            ),
+    )
 }
 
 /// Maps a DMX integer to the parameter's logical value range.

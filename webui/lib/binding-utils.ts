@@ -27,9 +27,11 @@ export type FixturePatchEntry = {
   transport: types.OutputTransport | null;
 };
 
-type ConsoleAddress = {
-  universe: number;
-  address: number;
+/** Console-space patch location of one fixture element selected by a console binding. */
+type ConsoleElementAddress = {
+  uid: string;
+  elementId: number;
+  entry: FixturePatchEntry;
 };
 
 export type FixturePatchMap = Record<
@@ -314,18 +316,8 @@ export function buildFixturePatchMapFromBindings(
     fixtures,
     disabledSources,
   );
-  for (const [uid, consoleAddress] of consoleAddresses) {
-    const fixture = fixtures[uid];
-    if (!fixture) continue;
-    pushLayoutEntries(
-      patchMap,
-      uid,
-      fixture,
-      fixtureWireLayout(fixture),
-      consoleAddress.universe,
-      null,
-      (slot) => consoleAddress.address + slot,
-    );
+  for (const location of consoleAddresses.values()) {
+    pushPatchEntry(patchMap, location.uid, location.elementId, location.entry);
   }
 
   for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
@@ -351,7 +343,10 @@ export function buildFixturePatchMapFromBindings(
     let sourceUniverses = expandRange(sourceData.universe);
     if (sourceUniverses.length === 0) {
       const consoleUniverses = new Set(
-        Array.from(consoleAddresses.values(), (address) => address.universe),
+        Array.from(
+          consoleAddresses.values(),
+          (location) => location.entry.universe,
+        ),
       );
       sourceUniverses =
         consoleUniverses.size > 0
@@ -372,23 +367,21 @@ export function buildFixturePatchMapFromBindings(
         targetUniverses,
         index,
       );
-      for (const [uid, consoleAddress] of consoleAddresses) {
-        if (consoleAddress.universe !== sourceUniverse) continue;
-        if (consoleAddress.address < sourceBaseAddress) continue;
+      for (const location of consoleAddresses.values()) {
+        const { entry } = location;
+        if (entry.universe !== sourceUniverse) continue;
+        if (entry.address < sourceBaseAddress) continue;
 
-        const fixture = fixtures[uid];
-        if (!fixture) continue;
-        const fixtureAddress =
-          targetBaseAddress + (consoleAddress.address - sourceBaseAddress);
-        pushLayoutEntries(
-          patchMap,
-          uid,
-          fixture,
-          fixtureWireLayout(fixture),
-          targetUniverse,
-          outputTransport,
-          (slot) => fixtureAddress + slot,
-        );
+        const remap = (address: number) =>
+          targetBaseAddress + (address - sourceBaseAddress);
+        pushPatchEntry(patchMap, location.uid, location.elementId, {
+          universe: targetUniverse,
+          address: remap(entry.address),
+          parameterAddresses: entry.parameterAddresses.map((addresses) =>
+            addresses.map(remap),
+          ),
+          transport: outputTransport,
+        });
       }
     }
   }
@@ -432,6 +425,43 @@ function pushLayoutEntries(
   transport: types.OutputTransport | null,
   addressOf: (slot: number) => number,
 ): void {
+  const entries = layoutElementEntries(
+    fixture,
+    layout,
+    universe,
+    transport,
+    addressOf,
+  );
+  for (const [elementIndex, entry] of entries) {
+    pushPatchEntry(patchMap, uid, elementIndex + 1, entry);
+  }
+}
+
+/** Appends one element patch location, creating the fixture and element buckets on demand. */
+function pushPatchEntry(
+  patchMap: FixturePatchMap,
+  uid: string,
+  elementId: number,
+  entry: FixturePatchEntry,
+): void {
+  patchMap[uid] ??= {};
+  const key = String(elementId);
+  patchMap[uid][key] ??= [];
+  patchMap[uid][key].push(entry);
+}
+
+/**
+ * Groups a fixture's laid-out parameters into one patch entry per element (keyed by
+ * zero-based element index), placing each byte at the address `addressOf` returns for its
+ * footprint slot.
+ */
+function layoutElementEntries(
+  fixture: types.Fixture,
+  layout: FixtureWireLayout,
+  universe: number,
+  transport: types.OutputTransport | null,
+  addressOf: (slot: number) => number,
+): Map<number, FixturePatchEntry> {
   const entries = new Map<number, FixturePatchEntry>();
   for (const placed of layout.parameters) {
     const addresses = placed.slots.map(addressOf);
@@ -450,13 +480,7 @@ function pushLayoutEntries(
     entry.parameterAddresses[placed.parameterIndex] = addresses;
     entry.address = Math.min(entry.address, ...addresses);
   }
-
-  for (const [elementIndex, entry] of entries) {
-    patchMap[uid] ??= {};
-    const elementId = String(elementIndex + 1);
-    patchMap[uid][elementId] ??= [];
-    patchMap[uid][elementId].push(entry);
-  }
+  return entries;
 }
 
 /** Orders output bindings by ascending priority, keeping insertion order for ties. */
@@ -472,18 +496,21 @@ function sortOutputBindingsByPriority(
 }
 
 /**
- * Resolves each fixture's console-space start address from fixture→console bindings.
+ * Resolves the console-space start address of each fixture element selected by
+ * fixture→console bindings, keyed by `uid:elementId`.
  *
  * Mirrors the engine's console address derivation: bindings apply in priority order with
- * later bindings replacing earlier ones, disabled sources are skipped, and non-clone
- * bindings lay fixtures out contiguously, restarting at the base address per universe.
+ * later bindings replacing earlier ones for the elements they select, disabled sources are
+ * skipped, and each binding lays out only the elements/parameters its filter selects.
+ * Non-clone bindings place fixtures contiguously by that filtered footprint, restarting at
+ * the base address per universe.
  */
 function resolveConsoleAddresses(
   snapshot: types.BindingsSnapshot,
   fixtures: Record<string, types.Fixture>,
   disabledSources: types.OutputSource[],
-): Map<string, ConsoleAddress> {
-  const addresses = new Map<string, ConsoleAddress>();
+): Map<string, ConsoleElementAddress> {
+  const addresses = new Map<string, ConsoleElementAddress>();
 
   for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
     if (binding.target.type !== "Console") continue;
@@ -518,7 +545,18 @@ function resolveConsoleAddresses(
       const layout = bindingWireLayout(fixture, sourceData);
       if (layout.footprint === 0) continue;
 
-      addresses.set(uid, { universe, address: runningAddress });
+      const fixtureAddress = runningAddress;
+      const entries = layoutElementEntries(
+        fixture,
+        layout,
+        universe,
+        null,
+        (slot) => fixtureAddress + slot,
+      );
+      for (const [elementIndex, entry] of entries) {
+        const elementId = elementIndex + 1;
+        addresses.set(`${uid}:${elementId}`, { uid, elementId, entry });
+      }
       if (!binding.clone) {
         runningAddress += layout.footprint;
       }

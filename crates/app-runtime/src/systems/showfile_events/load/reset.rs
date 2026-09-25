@@ -38,7 +38,7 @@ pub(super) fn reset_showfile_state(
     console_dmx_addresses: Option<&mut ConsoleDmxAddresses>,
     console_dmx_universes: Option<&mut ConsoleDmxUniverses>,
     input_dmx_universes: Option<&mut InputDmxUniverses>,
-    universe_transport_map: Option<&mut UniverseTransportMap>,
+    output_routing: Option<&mut OutputRouting>,
     instance_index: Option<&mut InstanceIndex>,
     final_layer_attributed_assertions: Option<&mut FinalLayerAttributedAssertions>,
     pending_commands: &mut PendingCommandBuffer,
@@ -97,7 +97,7 @@ pub(super) fn reset_showfile_state(
         resolved_input_bindings.bindings.clear();
     }
     if let Some(console_dmx_addresses) = console_dmx_addresses {
-        console_dmx_addresses.addresses.clear();
+        console_dmx_addresses.clear();
     }
     if let Some(console_dmx_universes) = console_dmx_universes {
         console_dmx_universes.clear();
@@ -105,8 +105,8 @@ pub(super) fn reset_showfile_state(
     if let Some(input_dmx_universes) = input_dmx_universes {
         input_dmx_universes.clear();
     }
-    if let Some(universe_transport_map) = universe_transport_map {
-        universe_transport_map.clear();
+    if let Some(output_routing) = output_routing {
+        output_routing.clear();
     }
 
     global_variables.clear();

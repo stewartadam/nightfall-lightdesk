@@ -404,8 +404,8 @@ pub struct ResolvedOutputDestinations {
 
 /// Component storing the console-space DMX address of one parameter.
 ///
-/// Derived from the owning fixture's [`ConsoleDmxAddress`] and the parameter's slots within
-/// the fixture's wire layout. `None` when the fixture has no active console binding.
+/// Mirrors [`ConsoleDmxAddresses::parameters`]. `None` when no active console binding
+/// covers the parameter.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Component)]
 pub struct ResolvedConsoleDestination {
     /// Console universe and per-byte addresses of the parameter, when console-bound.
@@ -431,9 +431,34 @@ pub struct ConsoleDmxAddress {
     pub address: u16,
 }
 
-/// Resource mapping fixture UIDs to their console DMX addresses.
+/// Resource mapping fixtures and parameters to their console DMX addresses.
 #[derive(Debug, Default, Clone, Resource)]
 pub struct ConsoleDmxAddresses {
-    /// Map of fixture UID to console address.
+    /// Map of fixture UID to the first console address of its bound footprint.
     pub addresses: HashMap<Uuid, ConsoleDmxAddress>,
+    /// Map of parameter entity to the console addresses of its bytes.
+    ///
+    /// Only parameters selected by the winning console binding's element/parameter filter
+    /// occupy console channels, placed by the selection's wire layout in DMX order.
+    pub parameters: HashMap<Entity, ConsoleParameterAddress>,
+}
+
+impl ConsoleDmxAddresses {
+    /// Clears fixture and parameter console addresses.
+    pub fn clear(&mut self) {
+        self.addresses.clear();
+        self.parameters.clear();
+    }
+
+    /// Returns the sorted, deduplicated console universes occupied by bound parameters.
+    pub fn universes(&self) -> Vec<u16> {
+        let mut universes: Vec<u16> = self
+            .parameters
+            .values()
+            .map(|address| address.universe)
+            .collect();
+        universes.sort_unstable();
+        universes.dedup();
+        universes
+    }
 }

@@ -90,7 +90,7 @@ impl Plugin for OutputSacnPlugin {
         app.add_systems(
             Update,
             output_sacn::output
-                .after(nightfall_fixtures::universe::dmx_universes)
+                .after(nightfall_fixtures::output_frames::compose_output_frames)
                 .in_set(DmxOutput),
         );
     }
