@@ -1387,9 +1387,7 @@ function dispatchMessage(raw: AnyWsMessage) {
       if (correlationKey) {
         const showfileUpdate = settledCommand.resultMetadata;
         if (showfileUpdate && result.outcome.type === "Succeeded") {
-          persistCurrentShowfileName(showfileUpdate.name, {
-            bumpRevision: showfileUpdate.bumpRevision,
-          });
+          persistCurrentShowfileName(showfileUpdate.name);
         }
         if (!flattenRetry) {
           const displayCorrelationKey =
@@ -2554,7 +2552,6 @@ function rejectPendingCommandWaiters(error: Error): void {
 
 interface PendingCurrentShowfileName {
   name: string;
-  bumpRevision: boolean;
 }
 
 const pendingCurrentShowfileNames = new Map<
@@ -2583,7 +2580,7 @@ function currentShowfileNameFromCommand(
   switch (command?.type) {
     case "NewShowfile":
     case "LoadShowfile":
-      return { name: "default", bumpRevision: true };
+      return { name: "default" };
     case "NewNamedShowfile":
       return command.data &&
         typeof command.data === "object" &&
@@ -2591,7 +2588,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.name === "string"
         ? {
             name: normalizedShowfileName(command.data.name),
-            bumpRevision: true,
           }
         : null;
     case "LoadNamedShowfile":
@@ -2599,7 +2595,6 @@ function currentShowfileNameFromCommand(
       return typeof command.data === "string"
         ? {
             name: normalizedShowfileName(command.data),
-            bumpRevision: true,
           }
         : null;
     case "LoadShowfileRevision":
@@ -2609,7 +2604,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.showfileName === "string"
         ? {
             name: normalizedShowfileName(command.data.showfileName),
-            bumpRevision: true,
           }
         : null;
     case "SaveNamedShowfile":
@@ -2619,7 +2613,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.name === "string"
         ? {
             name: normalizedShowfileName(command.data.name),
-            bumpRevision: false,
           }
         : null;
     default:

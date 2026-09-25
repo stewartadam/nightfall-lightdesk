@@ -41,7 +41,10 @@ export function applyConfirmedShowfileChange(
 ): void {
   const changed = lastConfirmedShowfileChangeId !== changeId;
   lastConfirmedShowfileChangeId = changeId;
-  persistCurrentShowfileName(name, { bumpRevision: changed });
+  persistCurrentShowfileName(name);
+  if (changed) {
+    currentShowfileRevision.set(currentShowfileRevision.get() + 1);
+  }
 }
 
 /**
@@ -59,13 +62,9 @@ export function normalizedShowfileName(
  */
 export function persistCurrentShowfileName(
   name: string | null | undefined,
-  options: { bumpRevision?: boolean } = {},
 ): void {
   const showfileName = normalizedShowfileName(name);
   currentShowfileName.set(showfileName);
-  if (options.bumpRevision) {
-    currentShowfileRevision.set(currentShowfileRevision.get() + 1);
-  }
   try {
     localStorage.setItem(CURRENT_SHOWFILE_STORAGE_KEY, showfileName);
   } catch (error) {

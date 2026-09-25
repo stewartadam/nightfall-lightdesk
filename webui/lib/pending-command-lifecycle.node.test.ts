@@ -14,16 +14,13 @@ import { settlePendingCommand } from "./pending-command-lifecycle";
 test("terminal command result settles waiter and metadata", () => {
   const state = {
     waiters: new Map([["command-1", "waiter"]]),
-    resultMetadata: new Map([
-      ["command-1", { name: "sample.nightfall-show", bumpRevision: true }],
-    ]),
+    resultMetadata: new Map([["command-1", { name: "sample.nightfall-show" }]]),
   };
 
   const result = settlePendingCommand(state, "command-1");
   assert.equal(result.waiter, "waiter");
   assert.deepEqual(result.resultMetadata, {
     name: "sample.nightfall-show",
-    bumpRevision: true,
   });
   assert.equal(state.waiters.has("command-1"), false);
   assert.equal(state.resultMetadata.has("command-1"), false);
