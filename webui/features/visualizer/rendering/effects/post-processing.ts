@@ -220,6 +220,8 @@ export function createPostProcessing(
     programmerValueObjects?: Object3D[];
     activeSpanObjects?: Object3D[];
     configOverrides?: Partial<PostProcessingConfig>;
+    /** Scene-pass MSAA sample count; `0` renders single-sampled for coverage comparisons. */
+    sceneSamples?: number;
   },
 ): PostProcessingState {
   const replacedRendererHooks = {
@@ -242,7 +244,9 @@ export function createPostProcessing(
   };
 
   // Preserve subpixel emitter coverage while keeping the atmospheric integration single-sampled.
-  const scenePass = pass(scene, camera, { samples: 4 });
+  const scenePass = pass(scene, camera, {
+    samples: options?.sceneSamples ?? 4,
+  });
   scenePass.getTexture("output").name = "scene";
   const scenePassColor = scenePass.getTextureNode("output");
   const opticalContext = createOpticalRenderContext(
