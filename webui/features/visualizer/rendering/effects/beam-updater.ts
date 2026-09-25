@@ -23,6 +23,10 @@ import type { BeamManager } from "./beam-manager";
 export interface BeamColorData extends EmitterColor {
   zoom?: number;
   frost?: number;
+  /** Beam angle in degrees stated by the profile's zoom function. */
+  zoomDegrees?: number;
+  /** Iris aperture as a fraction of the open beam. */
+  iris?: number;
 }
 
 /**
@@ -103,6 +107,8 @@ export class BeamUpdater {
           const gdtfPath = instance.geometry?.gdtfPath;
           this.beamManager.updateBeam(beamId, beamColor, {
             zoom: beamColor.zoom,
+            zoomDegrees: beamColor.zoomDegrees,
+            iris: beamColor.iris,
             frost: beamColor.frost,
             goboUrl:
               goboMedia && gdtfPath

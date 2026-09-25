@@ -43,32 +43,35 @@ import {
 
 const log = createLogger("visualizer:scene-manager");
 
-/** Returns the strongest fixture-level strobe shutter value in an element map. */
+/** An element's strobe rate and, when the profile states it, frequency. */
+type StrobeState = { strobeShutter?: number; strobeHz?: number };
+
+/** Returns the element with the strongest strobe in an element map, if any strobes. */
 function getFixtureStrobeShutter(
-  elementDmx: Map<string, { strobeShutter?: number }>,
-): number | undefined {
-  let strobeShutter: number | undefined;
+  elementDmx: Map<string, StrobeState>,
+): StrobeState | undefined {
+  let strongest: StrobeState | undefined;
   for (const dmx of elementDmx.values()) {
     if (dmx.strobeShutter === undefined || dmx.strobeShutter <= 0) continue;
-    strobeShutter =
-      strobeShutter === undefined
-        ? dmx.strobeShutter
-        : Math.max(strobeShutter, dmx.strobeShutter);
+    if ((strongest?.strobeShutter ?? 0) < dmx.strobeShutter) strongest = dmx;
   }
-  return strobeShutter;
+  return strongest;
 }
 
 /** Applies element-local or fixture-level strobe shutter timing to intensity. */
 function strobeAdjustedIntensity(
   intensity: number,
-  elementStrobeShutter: number | undefined,
-  fixtureStrobeShutter: number | undefined,
+  elementStrobe: StrobeState,
+  fixtureStrobe: StrobeState | undefined,
   timeSeconds: number,
 ): number {
+  const strobe =
+    elementStrobe.strobeShutter !== undefined ? elementStrobe : fixtureStrobe;
   return applyStrobeShutterIntensity(
     intensity,
-    elementStrobeShutter ?? fixtureStrobeShutter,
+    strobe?.strobeShutter,
     timeSeconds,
+    strobe?.strobeHz,
   );
 }
 
@@ -461,7 +464,7 @@ export class SceneManager {
     for (const [key, dmx] of elementDmx) {
       const intensity = strobeAdjustedIntensity(
         dmx.intensity ?? 0,
-        dmx.strobeShutter,
+        dmx,
         fixtureStrobeShutter,
         nowSeconds,
       );
@@ -581,7 +584,7 @@ export class SceneManager {
             blue: dmx.blue,
             intensity: strobeAdjustedIntensity(
               dmx.intensity,
-              dmx.strobeShutter,
+              dmx,
               fixtureStrobeShutter,
               nowSeconds,
             ),
@@ -624,7 +627,7 @@ export class SceneManager {
             blue: dmx.blue,
             intensity: strobeAdjustedIntensity(
               dmx.intensity,
-              dmx.strobeShutter,
+              dmx,
               fixtureStrobeShutter,
               nowSeconds,
             ),
