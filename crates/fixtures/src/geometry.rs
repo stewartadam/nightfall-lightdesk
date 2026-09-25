@@ -215,6 +215,10 @@ pub struct FixtureGeometry {
     /// Path to source GDTF file for mesh loading.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gdtf_path: Option<String>,
+    /// Content fingerprint of the source archive; versions resource URLs so
+    /// a revised archive at the same path is not served from stale caches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_revision: Option<String>,
 }
 
 /// Trait for providing geometry data for fixtures.

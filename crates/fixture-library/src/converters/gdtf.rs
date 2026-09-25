@@ -577,6 +577,7 @@ fn build_geometry_tree(
         roots: vec![0],
         mesh_resources,
         gdtf_path: Some(metadata.file_path.to_string_lossy().to_string()),
+        gdtf_revision: None,
     }
 }
 
