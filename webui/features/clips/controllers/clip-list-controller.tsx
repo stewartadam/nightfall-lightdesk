@@ -425,6 +425,7 @@ export function ClipListController(props: ClipListControllerProps) {
       />
 
       <ClipEditorDialogs
+        overwriteConflict={crud.overwriteConflict}
         createOpen={crud.isCreateModalOpen()}
         createInitialId={crud.createInitialId()}
         createInitialLabel={crud.createInitialLabel()}

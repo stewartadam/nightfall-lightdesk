@@ -69,12 +69,15 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
     setIsCreateModalOpen(true);
   };
 
-  /** Builds and stores a new clip from the create dialog payload. */
-  const submitCreate = (payload: { id: number; label: string }) => {
+  /** Stores a fresh clip configuration, preserving identity when overwriting. */
+  const createClip = (
+    payload: { id: number; label: string },
+    uid: string = crypto.randomUUID(),
+  ) => {
     storeClip({
       identifiers: {
         id: payload.id,
-        uid: crypto.randomUUID(),
+        uid,
         label: payload.label,
       },
       source: undefined,
@@ -85,6 +88,30 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
       },
     });
     setIsCreateModalOpen(false);
+  };
+
+  /** Describes the current conflicting owner and the consequences of overwriting it. */
+  const overwriteConflict = (id: number) => {
+    const existing = Object.values(options.clips()).find(
+      ([clip]) => clip.identifiers.id === id,
+    )?.[0];
+    return existing
+      ? {
+          key: existing.identifiers.uid,
+          message: `Clip ${id}: ${existing.identifiers.label} already exists. Hold Alt and click Overwrite to replace it. Its source, priority, and playback options will reset; existing references will still point to this clip.`,
+        }
+      : undefined;
+  };
+
+  /** Rechecks the authorized owner before storing a fresh configuration with its identity. */
+  const submitCreate = (payload: {
+    id: number;
+    label: string;
+    overwriteKey?: string;
+  }) => {
+    const owner = overwriteConflict(payload.id);
+    if (owner?.key !== payload.overwriteKey) return;
+    createClip(payload, owner?.key);
   };
 
   /** Opens the edit dialog for the single selected clip. */
@@ -176,6 +203,7 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
   };
 
   return {
+    overwriteConflict,
     createInitialId,
     createInitialLabel,
     editInitialId,
