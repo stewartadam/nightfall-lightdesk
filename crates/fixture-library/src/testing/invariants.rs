@@ -73,6 +73,13 @@ pub enum InvariantViolation {
         /// Element label.
         element: String,
     },
+    /// A pan or tilt parameter does not drive a node with the matching axis.
+    PositionWithoutJoint {
+        /// Element label.
+        element: String,
+        /// Unbound axis.
+        axis: AxisType,
+    },
 }
 
 /// Checks all invariants and returns every violation found.
@@ -80,7 +87,7 @@ pub fn check_invariants(
     fixture: &Fixture,
     geometry: Option<&FixtureGeometry>,
 ) -> Vec<InvariantViolation> {
-    let mut violations = check_wire(fixture);
+    let mut violations = check_wire_invariants(fixture);
     if let Some(geometry) = geometry {
         violations.extend(check_geometry(geometry));
         violations.extend(check_bindings(fixture, geometry));
@@ -89,7 +96,7 @@ pub fn check_invariants(
 }
 
 /// Checks that parameters never share bytes and the footprint fits a universe.
-fn check_wire(fixture: &Fixture) -> Vec<InvariantViolation> {
+pub fn check_wire_invariants(fixture: &Fixture) -> Vec<InvariantViolation> {
     let mut violations = Vec::new();
     let layout = WireLayout::new(fixture.elements.iter().flat_map(|element| {
         element
@@ -220,11 +227,29 @@ fn check_bindings(fixture: &Fixture, geometry: &FixtureGeometry) -> Vec<Invarian
         }
     }
 
+    let joints: HashSet<(&str, AxisType)> = geometry
+        .nodes
+        .iter()
+        .filter_map(|node| Some((node.controlled_element.as_deref()?, node.axis?)))
+        .collect();
     for element in &fixture.elements {
         if !node_names.contains(element.label.as_str()) {
             violations.push(InvariantViolation::ElementWithoutGeometry {
                 element: element.label.clone(),
             });
+        }
+        for parameter in &element.parameters {
+            let axis = match parameter.attribute {
+                nightfall_dmx::prelude::Attribute::Pan => AxisType::Pan,
+                nightfall_dmx::prelude::Attribute::Tilt => AxisType::Tilt,
+                _ => continue,
+            };
+            if !joints.contains(&(element.label.as_str(), axis)) {
+                violations.push(InvariantViolation::PositionWithoutJoint {
+                    element: element.label.clone(),
+                    axis,
+                });
+            }
         }
     }
     violations
@@ -320,6 +345,26 @@ mod tests {
             })
         );
         assert!(violations.contains(&InvariantViolation::BrokenLink { node: 3 }));
+    }
+
+    /// Verifies a geometry carrying both pan and tilt reports the axis it cannot represent.
+    #[test]
+    fn pan_and_tilt_on_one_node_leaves_tilt_unbound() {
+        let builder = GdtfBuilder::new("Test", "Shared")
+            .geometry(GeometrySpec::generic("Base").child(GeometrySpec::axis("Joint")))
+            .mode(
+                ModeSpec::new("Mode", "Base")
+                    .channel(ChannelSpec::new("Joint", "Pan", &[1]))
+                    .channel(ChannelSpec::new("Joint", "Tilt", &[2])),
+            );
+        let (fixture, geometry) = convert(&builder);
+        assert_eq!(
+            check_invariants(&fixture, geometry.as_ref()),
+            vec![InvariantViolation::PositionWithoutJoint {
+                element: "Joint".to_string(),
+                axis: AxisType::Tilt,
+            }]
+        );
     }
 
     /// Verifies a child listed under two parents is not accepted as a tree.

@@ -440,6 +440,7 @@ fn build_geometry_tree(
         .filter_map(|m| m.name.as_ref().map(|n| (n.as_ref(), m)))
         .collect();
     let owners = emitter_owners(resolved);
+    let axes = joint_axes(resolved);
     let mut mesh_resources = HashMap::new();
 
     let nodes = resolved
@@ -447,7 +448,8 @@ fn build_geometry_tree(
         .iter()
         .enumerate()
         .map(|(index, instance)| {
-            let (geometry_type, axis) = geometry_kind(instance.geometry, &instance.name);
+            let geometry_type = geometry_type(instance.geometry);
+            let axis = axes[index];
             let model = instance
                 .model
                 .and_then(|name| models.get(name))
@@ -476,8 +478,11 @@ fn build_geometry_tree(
                     .iter()
                     .map(|child| *child as u32)
                     .collect(),
-                controlled_element: match geometry_type {
-                    GeometryType::Beam => owners[index].clone(),
+                // Beams follow the element that sets their light; joints follow
+                // the element whose pan or tilt channel names them.
+                controlled_element: match (geometry_type, axis) {
+                    (GeometryType::Beam, _) => owners[index].clone(),
+                    (_, Some(_)) => Some(instance.name.clone()),
                     _ => None,
                 },
             }
@@ -492,28 +497,40 @@ fn build_geometry_tree(
     }
 }
 
-/// Maps a GDTF geometry variant to a node type and, for axes, a name-inferred axis type.
-fn geometry_kind(geometry: &Geometry, name: &str) -> (GeometryType, Option<AxisType>) {
+/// Maps a GDTF geometry variant to a visualization node type.
+fn geometry_type(geometry: &Geometry) -> GeometryType {
     match geometry {
-        Geometry::Axis(_) => {
-            let name_lower = name.to_lowercase();
-            let axis_type = if name_lower.contains("yoke") || name_lower.contains("pan") {
-                Some(AxisType::Pan)
-            } else if name_lower.contains("head") || name_lower.contains("tilt") {
-                Some(AxisType::Tilt)
-            } else {
-                None
-            };
-            (GeometryType::Axis, axis_type)
-        }
-        Geometry::Beam(_) => (GeometryType::Beam, None),
-        Geometry::Reference(_) => (GeometryType::Reference, None),
-        Geometry::FilterBeam(_) => (GeometryType::FilterBeam, None),
-        Geometry::FilterColor(_) => (GeometryType::FilterColor, None),
-        Geometry::FilterGobo(_) => (GeometryType::FilterGobo, None),
-        Geometry::Display(_) => (GeometryType::Display, None),
-        _ => (GeometryType::Generic, None),
+        Geometry::Axis(_) => GeometryType::Axis,
+        Geometry::Beam(_) => GeometryType::Beam,
+        Geometry::Reference(_) => GeometryType::Reference,
+        Geometry::FilterBeam(_) => GeometryType::FilterBeam,
+        Geometry::FilterColor(_) => GeometryType::FilterColor,
+        Geometry::FilterGobo(_) => GeometryType::FilterGobo,
+        Geometry::Display(_) => GeometryType::Display,
+        _ => GeometryType::Generic,
     }
+}
+
+/// Returns the joint each instance becomes when a pan or tilt channel names it.
+///
+/// GDTF places a movement channel on the geometry it moves, so the channel's
+/// geometry is the joint regardless of its tag (`<Axis>` or plain
+/// `<Geometry>`) or its name. When one instance carries both pan and tilt,
+/// the first declared channel wins.
+fn joint_axes(resolved: &ResolvedMode<'_>) -> Vec<Option<AxisType>> {
+    let mut axes = vec![None; resolved.instances.len()];
+    for channel in &resolved.channels {
+        let Some(logical) = channel.channel.logical_channels.first() else {
+            continue;
+        };
+        let axis = match map_gdtf_attribute_to_nightfall(&logical.attribute) {
+            Some(Attribute::Pan) => AxisType::Pan,
+            Some(Attribute::Tilt) => AxisType::Tilt,
+            _ => continue,
+        };
+        axes[channel.instance].get_or_insert(axis);
+    }
+    axes
 }
 
 /// Convert GDTF position matrix to column-major Transform for Three.js.

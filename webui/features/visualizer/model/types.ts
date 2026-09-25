@@ -18,6 +18,7 @@ import type {
   SceneObjectProperties,
   SceneObjectType,
 } from "../../../types";
+import type { GdtfJoint } from "../rendering/gdtf-joints";
 
 /**
  * Fixture data prepared for rendering.
@@ -71,6 +72,8 @@ export interface FixtureInstance {
   nodeObjects: Map<string, Object3D>;
   /** Map of beam node names to their emitter data */
   emitters: Map<string, EmitterData>;
+  /** Articulated GDTF joints bound to element pan/tilt, when the geometry has any */
+  joints?: GdtfJoint[];
 }
 
 /**
