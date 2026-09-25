@@ -18,7 +18,9 @@ use std::time::{Duration, Instant};
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
-    ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, SourceEdgeStates, SourceSignal,
+    ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, BindingDiagnostic,
+    InvocationError, SourceEdgeStates, SourceSignal, bindings_need_diagnosis,
+    collect_binding_diagnostics,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -28,7 +30,7 @@ pub mod mapping;
 mod service;
 mod websocket;
 
-use command::{MidiCommand, MidiLastEvent, MidiSource};
+use command::{MidiCommand, MidiLastEvent, MidiMapping, MidiSource};
 use mapping::MidiMappings;
 use service::MidiInputEvent;
 
@@ -37,10 +39,10 @@ const MIDI_DEVICE_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Prelude for ergonomic imports
 pub mod prelude {
-    pub use crate::InputMidiPlugin;
     pub use crate::command::{MidiCommand, MidiLastEvent, MidiMapping, MidiSource};
     pub use crate::mapping::MidiMappings;
     pub use crate::websocket::MidiDevice;
+    pub use crate::{InputMidiPlugin, MidiMappingDiagnostics};
 }
 
 /// Plugin for handling MIDI input
@@ -90,8 +92,17 @@ impl Plugin for InputMidiPlugin {
         );
 
         app.add_systems(Update, handle_midi_crud.in_set(EventHandling));
+        app.init_resource::<MidiMappingDiagnostics>();
 
-        app.add_systems(Render, websocket::send_midi_state.in_set(ClientOutput));
+        app.add_systems(
+            Render,
+            (
+                refresh_midi_mapping_diagnostics.run_if(bindings_need_diagnosis::<MidiMappings>),
+                websocket::send_midi_state,
+            )
+                .chain()
+                .in_set(ClientOutput),
+        );
 
         app.add_systems(
             Update,
@@ -224,6 +235,47 @@ fn handle_midi_events(
     }
 }
 
+/// Mappings that cannot currently invoke their action, in mapping order.
+///
+/// Invalid mappings stay stored; these diagnostics tell the operator which ones will fail.
+#[derive(Resource, Default, Debug, PartialEq)]
+pub struct MidiMappingDiagnostics(pub Vec<BindingDiagnostic>);
+
+/// Validates one stored MIDI mapping against the registry and the current world.
+///
+/// Checks the action, its arguments, the mapping's behavior, and that its targets exist.
+/// MIDI controls drive every input kind and report releases.
+fn diagnose_midi_mapping(
+    registry: &ActionRegistry,
+    world: &World,
+    mapping: &MidiMapping,
+) -> Result<(), InvocationError> {
+    registry
+        .validate_binding(&mapping.action, ActionSurface::Midi, |_| true)
+        .and_then(|()| registry.validate_behavior(&mapping.action, mapping.behavior, true))
+        .and_then(|()| registry.validate_target(world, &mapping.action))
+}
+
+/// Recomputes MIDI mapping diagnostics after mappings, registrations, or targets changed.
+///
+/// The diagnostics resource is only written when the result differs, so clients are
+/// notified only when a mapping becomes invalid or recovers.
+fn refresh_midi_mapping_diagnostics(world: &mut World) {
+    let diagnostics = {
+        let registry = world.resource::<ActionRegistry>();
+        collect_binding_diagnostics(
+            world
+                .resource::<MidiMappings>()
+                .mappings()
+                .iter()
+                .map(|mapping| (mapping.id, diagnose_midi_mapping(registry, world, mapping))),
+        )
+    };
+    world
+        .resource_mut::<MidiMappingDiagnostics>()
+        .set_if_neq(MidiMappingDiagnostics(diagnostics));
+}
+
 /// System that applies MIDI mapping edits and reports their terminal outcomes.
 fn handle_midi_crud(
     mut events: MessageReader<CommandEnvelope<MidiCommand>>,
@@ -281,8 +333,8 @@ fn handle_midi_crud(
 #[cfg(test)]
 mod tests {
     use bevy_ecs::message::Messages;
-    use nightfall_actions::ActionInput;
     use nightfall_actions::ActionInputKind;
+    use nightfall_actions::{ActionInput, ActionTargetTracking};
 
     use super::*;
     use crate::command::MidiMapping;
@@ -405,6 +457,104 @@ mod tests {
             behavior: nightfall_actions::ControlBehavior::Press,
             action: nightfall_actions::ActionReference::new("test.trigger", serde_json::json!({})),
         }
+    }
+
+    /// Clip UIDs known to the diagnostics test, standing in for the clip domain.
+    #[derive(Resource, Default)]
+    struct KnownClips(Vec<uuid::Uuid>);
+
+    /// Extends the MIDI command app with a clip action, its target validator, and diagnostics.
+    fn midi_diagnostics_app() -> App {
+        use nightfall_actions::{
+            ActionAppExt, ActionDescriptor, ActionParameter, ActionParameterKind, ActionTargets,
+        };
+
+        let mut app = midi_command_app();
+        app.init_resource::<ActionTargets>();
+        app.init_resource::<KnownClips>();
+        app.init_resource::<MidiMappingDiagnostics>();
+        app.register_action::<serde::de::IgnoredAny, _>(
+            ActionDescriptor::new("test.clip", "Test clip", "Tests").with_parameter(
+                ActionParameter::required("clip", "Clip", ActionParameterKind::Clip),
+            ),
+            |_world, _arguments, _invocation| {
+                Ok(nightfall_actions::InvocationDispatch::succeeded())
+            },
+        )
+        .register_action_target_validator::<uuid::Uuid, _>(
+            ActionParameterKind::Clip,
+            |world, uid| {
+                if world.resource::<KnownClips>().0.contains(&uid) {
+                    Ok(())
+                } else {
+                    Err(InvocationError::new("clip.not_found", "Clip does not exist"))
+                }
+            },
+        )
+        .invalidate_action_targets_when(resource_changed::<KnownClips>);
+        app.add_systems(
+            Update,
+            refresh_midi_mapping_diagnostics
+                .run_if(bindings_need_diagnosis::<MidiMappings>)
+                .after(ActionTargetTracking)
+                .after(handle_midi_crud),
+        );
+        app
+    }
+
+    /// Verifies a mapping to a missing target is stored, diagnosed, and recovers with its target.
+    #[test]
+    fn mapping_to_missing_target_is_kept_and_diagnosed() {
+        let mut app = midi_diagnostics_app();
+        let clip = uuid::Uuid::from_u128(5);
+        let mapping = MidiMapping {
+            action: nightfall_actions::ActionReference::new(
+                "test.clip",
+                serde_json::json!({ "clip": clip }),
+            ),
+            ..note_mapping(1, 60)
+        };
+        submit_command(&mut app, MidiCommand::UpsertMapping(mapping));
+        app.update();
+
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Succeeded { .. }
+        ));
+        assert_eq!(app.world().resource::<MidiMappings>().mappings().len(), 1);
+        let diagnostics = &app.world().resource::<MidiMappingDiagnostics>().0;
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].binding_id, uuid::Uuid::from_u128(1));
+        assert_eq!(diagnostics[0].error.code, "clip.not_found");
+
+        app.world_mut().resource_mut::<KnownClips>().0.push(clip);
+        app.update();
+
+        assert!(
+            app.world()
+                .resource::<MidiMappingDiagnostics>()
+                .0
+                .is_empty()
+        );
+    }
+
+    /// Verifies a mapping whose action was never registered is diagnosed rather than dropped.
+    #[test]
+    fn loaded_mapping_to_unregistered_action_is_diagnosed() {
+        let mut app = midi_diagnostics_app();
+        let mapping = MidiMapping {
+            action: nightfall_actions::ActionReference::new("gone.action", serde_json::json!({})),
+            ..note_mapping(2, 61)
+        };
+        app.world_mut()
+            .resource_mut::<MidiMappings>()
+            .set_mappings(vec![mapping]);
+        app.update();
+
+        let diagnostics = &app.world().resource::<MidiMappingDiagnostics>().0;
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].error.code, "action.not_registered");
+        assert_eq!(app.world().resource::<MidiMappings>().mappings().len(), 1);
     }
 
     /// Verifies upserting a mapping on a bound control replaces it and reports the displaced ID.

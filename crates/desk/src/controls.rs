@@ -420,6 +420,16 @@ impl Controls {
         controls
     }
 
+    /// Returns how many control slots the bank has; valid control indices are `1..=count`.
+    pub fn slot_count(&self) -> usize {
+        self.slots.len()
+    }
+
+    /// Returns whether a 1-based control index addresses a slot, whether or not it is assigned.
+    pub fn contains(&self, control_index: u32) -> bool {
+        self.slot(control_index).is_some()
+    }
+
     fn slot(&self, control_index: u32) -> Option<&Control> {
         let zero_based = usize::try_from(control_index.checked_sub(1)?).ok()?;
         self.slots.get(zero_based)

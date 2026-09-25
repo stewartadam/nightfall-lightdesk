@@ -14,6 +14,7 @@ use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionParameter, ActionParameterKind, ActionReference,
     ActionSurface, InvocationError,
 };
+use nightfall_cues::prelude::Cue;
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{TimelinePlaybackActionKind, TimelinePlaybackActionPlan};
 use nightfall_timecode::TimecodeCommand;
@@ -161,8 +162,43 @@ pub fn timeline_transport_action(action_id: &str, timeline: Uuid) -> ActionRefer
         .expect("timeline action arguments should serialize")
 }
 
+/// Registers how stored bindings check that their timeline and cue targets exist.
+///
+/// Binding diagnostics are recomputed when timeline or cue definitions change.
+fn register_timeline_target_validators(app: &mut App) {
+    app.register_action_target_validator::<Uuid, _>(ActionParameterKind::Timeline, |world, uid| {
+        if world
+            .get_resource::<DataProvider<Timeline>>()
+            .is_some_and(|timelines| timelines.get(uid).is_ok())
+        {
+            return Ok(());
+        }
+        Err(InvocationError::new(
+            "timeline.not_found",
+            format!("Timeline with UID {uid} does not exist"),
+        )
+        .with_details(serde_json::json!({ "timeline": uid })))
+    })
+    .register_action_target_validator::<Uuid, _>(ActionParameterKind::Cue, |world, uid| {
+        if world
+            .get_resource::<DataProvider<Cue>>()
+            .is_some_and(|cues| cues.get(uid).is_ok())
+        {
+            return Ok(());
+        }
+        Err(InvocationError::new(
+            "cue.not_found",
+            format!("Cue with UID {uid} does not exist"),
+        )
+        .with_details(serde_json::json!({ "cue": uid })))
+    })
+    .invalidate_action_targets_when(resource_exists_and_changed::<DataProvider<Timeline>>)
+    .invalidate_action_targets_when(resource_exists_and_changed::<DataProvider<Cue>>);
+}
+
 /// Registers the bindable timeline transport actions.
 pub fn register_timeline_actions(app: &mut App) {
+    register_timeline_target_validators(app);
     register_fire_cue_action(app);
     let transports: [(&str, &str, fn(u32) -> TimelineCommand); 3] = [
         (
