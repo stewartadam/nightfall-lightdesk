@@ -6,26 +6,33 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { Page, TestInfo } from "@playwright/test";
 import type { PhysicalUnit } from "../types";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
-/** Crowded clusters must retain both late sources and the energy of genuinely overlapping beams. */
-test("crowded optical clusters preserve all contributing sources", async ({
-  page,
-}, testInfo) => {
+/**
+ * Crowded clusters must retain both late sources and the energy of genuinely overlapping
+ * beams through the bounded full-cluster fallback, on either backend.
+ */
+async function crowdedClusters(
+  page: Page,
+  testInfo: TestInfo,
+  forceWebGL: boolean,
+) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
   await page.goto("/e2e/fixtures/optics.html");
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async (forceWebGL) => {
     const THREE = await import("/e2e/fixtures/three-api.ts");
     const { OpticalSurfaceLight, OpticalSurfaceLighting } = await import(
       "/features/visualizer/rendering/effects/optical-surface-lighting.ts"
     );
     const renderer = new THREE.WebGPURenderer({
       canvas: document.querySelector("canvas")!,
+      forceWebGL,
     });
     renderer.setSize(400, 400);
     await renderer.init();
@@ -97,7 +104,7 @@ test("crowded optical clusters preserve all contributing sources", async ({
       wall.material.dispose();
       renderer.dispose();
     }
-  });
+  }, forceWebGL);
   await testInfo.attach("crowded-clusters.json", {
     body: JSON.stringify({
       crowded: result.crowded.blue,
@@ -118,7 +125,17 @@ test("crowded optical clusters preserve all contributing sources", async ({
   expect(
     Math.abs(result.overlap.blue / result.reference.blue - 1),
   ).toBeLessThan(0.02);
-});
+}
+
+/** Default-backend coverage of crowded clusters. */
+test("crowded optical clusters preserve all contributing sources", async ({
+  page,
+}, testInfo) => crowdedClusters(page, testInfo, false));
+
+/** WebGL fallback coverage of crowded clusters. */
+test("crowded optical clusters preserve all contributing sources (WebGL)", async ({
+  page,
+}, testInfo) => crowdedClusters(page, testInfo, true));
 
 for (const forceWebGL of [false, true]) {
   /** Clustered sources illuminate real geometry only inside their optical projection on both backends. */

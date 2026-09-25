@@ -26,8 +26,17 @@ export class SurfaceLightBudget {
   private readonly selectedGeneration = new WeakMap<PointLight, number>();
   private generation = 0;
 
-  /** Allocates ranking storage once for the renderer's fixed GPU light capacity. */
-  constructor(private readonly capacity: number) {
+  /**
+   * Allocates ranking storage once for the renderer's fixed GPU light capacity.
+   * `losesTie(left, right)` decides equal priorities; by default the older source wins.
+   */
+  constructor(
+    private readonly capacity: number,
+    private readonly losesTie: (
+      left: PointLight,
+      right: PointLight,
+    ) => boolean = (left, right) => left.id > right.id,
+  ) {
     this.scores = new Float64Array(capacity);
   }
 
@@ -121,7 +130,7 @@ export class SurfaceLightBudget {
     );
   }
 
-  /** Equal priorities consistently favor the older source instead of scene traversal order. */
+  /** Equal priorities are decided by a stable tie-break instead of scene traversal order. */
   private worse(
     leftScore: number,
     left: PointLight,
@@ -129,7 +138,8 @@ export class SurfaceLightBudget {
     right: PointLight,
   ): boolean {
     return (
-      leftScore < rightScore || (leftScore === rightScore && left.id > right.id)
+      leftScore < rightScore ||
+      (leftScore === rightScore && this.losesTie(left, right))
     );
   }
 }

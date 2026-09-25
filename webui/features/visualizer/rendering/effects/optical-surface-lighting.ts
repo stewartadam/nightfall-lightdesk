@@ -57,6 +57,11 @@ import { SurfaceLightBudget } from "./surface-light-budget";
 
 /** Profile marker for ordinary point lights, which skip optical aperture attenuation. */
 const PLAIN_LIGHT = -1;
+/**
+ * Sources an overflowing cluster evaluates beyond its own full list. Together with the
+ * list capacity this bounds per-fragment light iterations regardless of scene light count.
+ */
+export const FULL_CLUSTER_PRIORITY_LIGHTS = 64;
 
 /** A clusterable source whose intensity is area-normalized flux in scene units, shared with the atmosphere. */
 export class OpticalSurfaceLight extends PointLight {
@@ -96,7 +101,6 @@ interface ClusterRuntime {
   _cameraFar: Node<"float">;
   zSlices: number;
   _lightSortOrder: number[];
-  _lightsCount: Node<"int">;
   getTile(index: Node<"int">): Node<"int">;
   updateProgram(renderer: unknown): void;
   updateLightsTexture(camera: Camera): void;
@@ -157,6 +161,14 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
   private readonly atlasColumns = uniform(4);
   private readonly pointCandidates: PointLight[] = [];
   private readonly lightBudget: SurfaceLightBudget;
+  /** Extra sources an overflowing cluster may evaluate, bounding its per-fragment loop. */
+  private readonly priorityCapacity: number;
+  private readonly priorityBudget: SurfaceLightBudget;
+  private readonly priorityLights: PointLight[] = [];
+  private readonly priorityData: Float32Array;
+  private readonly priorityTexture: DataTexture;
+  private readonly sortedIndex = new Map<PointLight, number>();
+  private texturesChanged = false;
   omittedPointLights = 0;
   renderedOmittedPointLights = 0;
 
@@ -196,9 +208,29 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
       FloatType,
     );
     this.apertureTexture.generateMipmaps = false;
+    this.priorityCapacity = Math.min(FULL_CLUSTER_PRIORITY_LIGHTS, maxLights);
+    // Full cluster lists hold the earliest depth-sorted sources, so equally important
+    // later sources are the ones the list is most likely to have dropped.
+    this.priorityBudget = new SurfaceLightBudget(
+      this.priorityCapacity,
+      (left, right) =>
+        (this.sortedIndex.get(left) ?? 0) < (this.sortedIndex.get(right) ?? 0),
+    );
+    this.priorityData = new Float32Array(this.priorityCapacity * 4);
+    this.priorityTexture = new DataTexture(
+      this.priorityData,
+      this.priorityCapacity,
+      1,
+      RGBAFormat,
+      FloatType,
+    );
+    this.priorityTexture.generateMipmaps = false;
   }
 
-  /** Mirrors the addon's depth-sorted light order so each cluster index finds the correct aperture. */
+  /**
+   * Mirrors the addon's depth-sorted light order so each cluster index finds the correct aperture,
+   * and ranks the full-cluster priority list. Textures upload only when their contents change.
+   */
   updateLightsTexture(camera: Camera): void {
     this.renderedOmittedPointLights = this.omittedPointLights;
     if (this.omittedPointLights > 0)
@@ -211,40 +243,120 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     clusterPrototype.updateLightsTexture.call(this, camera);
     const order = (this as unknown as ClusterRuntime)._lightSortOrder;
     const stride = this.maxLights * 4;
-    this.apertureData.fill(0);
-    for (
-      let index = 0;
-      index < Math.min(this.clusteredLights.length, this.maxLights);
-      index++
-    ) {
+    const count = Math.min(this.clusteredLights.length, this.maxLights);
+    this.texturesChanged = false;
+    // Rows beyond the current light count are never indexed, so they need no clearing.
+    for (let index = 0; index < count; index++) {
       const light = this.clusteredLights[order[index]];
       const offset = index * 4;
-      const data = this.apertureData;
       if (!(light instanceof OpticalSurfaceLight)) {
-        data[stride * 3 + offset + 3] = PLAIN_LIGHT;
+        this.write(this.apertureData, stride * 3 + offset + 3, PLAIN_LIGHT);
         continue;
       }
-      light.apertureRight.toArray(data, offset);
-      data[offset + 3] = light.optics.radius;
-      light.apertureUp.toArray(data, stride + offset);
-      data[stride + offset + 3] = light.optics.slopeX;
-      light.apertureForward.toArray(data, stride * 2 + offset);
-      data[stride * 2 + offset + 3] = light.optics.slopeY;
-      data[stride * 3 + offset] = light.optics.distributionPower;
-      data[stride * 3 + offset + 1] =
-        light.optics.shape === "rectangle" ? 1 : 0;
-      data[stride * 3 + offset + 2] = light.beamLength;
-      data[stride * 3 + offset + 3] = light.shadowKey;
-      data[stride * 4 + offset] = light.secondaryColor.r * light.intensity;
-      data[stride * 4 + offset + 1] = light.secondaryColor.g * light.intensity;
-      data[stride * 4 + offset + 2] = light.secondaryColor.b * light.intensity;
-      data[stride * 4 + offset + 3] = light.splitColor ? 1 : 0;
-      data[stride * 5 + offset] = light.goboSlot;
-      data[stride * 5 + offset + 1] = light.goboRotation;
-      data[stride * 5 + offset + 2] = light.focusDistance;
-      data[stride * 5 + offset + 3] = light.frost;
+      this.writeVector(this.apertureData, offset, light.apertureRight);
+      this.write(this.apertureData, offset + 3, light.optics.radius);
+      this.writeVector(this.apertureData, stride + offset, light.apertureUp);
+      this.write(this.apertureData, stride + offset + 3, light.optics.slopeX);
+      this.writeVector(
+        this.apertureData,
+        stride * 2 + offset,
+        light.apertureForward,
+      );
+      this.write(
+        this.apertureData,
+        stride * 2 + offset + 3,
+        light.optics.slopeY,
+      );
+      this.write4(
+        this.apertureData,
+        stride * 3 + offset,
+        light.optics.distributionPower,
+        light.optics.shape === "rectangle" ? 1 : 0,
+        light.beamLength,
+        light.shadowKey,
+      );
+      this.write4(
+        this.apertureData,
+        stride * 4 + offset,
+        light.secondaryColor.r * light.intensity,
+        light.secondaryColor.g * light.intensity,
+        light.secondaryColor.b * light.intensity,
+        light.splitColor ? 1 : 0,
+      );
+      this.write4(
+        this.apertureData,
+        stride * 5 + offset,
+        light.goboSlot,
+        light.goboRotation,
+        light.focusDistance,
+        light.frost,
+      );
     }
-    this.apertureTexture.needsUpdate = true;
+    if (this.texturesChanged) this.apertureTexture.needsUpdate = true;
+    this.updatePriorityLights(camera, order, count);
+  }
+
+  /**
+   * Lists the most important sources, as 1-based depth-sorted indices, for fragments whose
+   * cluster list overflowed. Only overflowing clusters read it, and those need more lights
+   * than a full list holds, so smaller scenes keep it empty.
+   */
+  private updatePriorityLights(
+    camera: Camera,
+    order: readonly number[],
+    count: number,
+  ): void {
+    this.texturesChanged = false;
+    let selected = 0;
+    if (count > this.maxLightsPerCluster) {
+      this.sortedIndex.clear();
+      for (let index = 0; index < count; index++)
+        this.sortedIndex.set(this.clusteredLights[order[index]], index);
+      this.priorityBudget.select(
+        this.clusteredLights,
+        camera,
+        this.priorityLights,
+      );
+      for (const light of this.priorityLights)
+        this.write(
+          this.priorityData,
+          selected++ * 4,
+          this.sortedIndex.get(light)! + 1,
+        );
+    }
+    for (let index = selected; index < this.priorityCapacity; index++)
+      this.write(this.priorityData, index * 4, 0);
+    if (this.texturesChanged) this.priorityTexture.needsUpdate = true;
+  }
+
+  /** Stores one float and records whether the GPU copy became stale. */
+  private write(data: Float32Array, index: number, value: number): void {
+    const rounded = Math.fround(value);
+    if (data[index] === rounded) return;
+    data[index] = rounded;
+    this.texturesChanged = true;
+  }
+
+  /** Stores a vector's components in the first three channels of a texel. */
+  private writeVector(data: Float32Array, index: number, vector: Vector3) {
+    this.write(data, index, vector.x);
+    this.write(data, index + 1, vector.y);
+    this.write(data, index + 2, vector.z);
+  }
+
+  /** Stores all four channels of one texel. */
+  private write4(
+    data: Float32Array,
+    index: number,
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+  ): void {
+    this.write(data, index, x);
+    this.write(data, index + 1, y);
+    this.write(data, index + 2, z);
+    this.write(data, index + 3, w);
   }
 
   /** Attenuates each clustered source before Three evaluates the receiving surface's BRDF. */
@@ -316,7 +428,11 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     };
   }
 
-  /** Uses compact cluster lists normally, falling back to the bounded source set when a list is full. */
+  /**
+   * Uses compact cluster lists normally. When a list is full, the fragment also evaluates the
+   * ranked priority sources the list could not hold, so per-fragment work stays bounded by
+   * the list capacity plus FULL_CLUSTER_PRIORITY_LIGHTS instead of the whole light set.
+   */
   override setupLights(
     ...[builder, lightNodes]: Parameters<LightsNode["setupLights"]>
   ): void {
@@ -335,57 +451,64 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     context.context.reflectedLight.directSpecular.toStack();
     LightsNode.prototype.setupLights.call(this, builder, lightNodes);
     Fn(() => {
-      const full = runtime
-        .getTile(int(this.maxLightsPerCluster - 1))
-        .notEqual(0);
-      Loop(this.maxLights, ({ i }) => {
+      const listSize = this.maxLightsPerCluster;
+      // Cluster lists hold ascending 1-based sorted indices and end at the first 0 unless full,
+      // so priority entries are only reached after a full list, with its last entry recorded.
+      const lastListed = int(0).toVar();
+      Loop(listSize + this.priorityCapacity, ({ i }) => {
         const lightIndex = int(0).toVar();
-        If(full, () => {
-          If(i.greaterThanEqual(runtime._lightsCount), () => {
-            Break();
-          });
-          lightIndex.assign(i.add(1));
-        }).Else(() => {
-          // This branch never indexes beyond the fixed cluster allocation.
-          If(i.greaterThanEqual(this.maxLightsPerCluster), () => {
-            Break();
-          });
+        If(i.lessThan(listSize), () => {
           lightIndex.assign(runtime.getTile(i));
           If(lightIndex.equal(0), () => {
             Break();
           });
+          lastListed.assign(lightIndex);
+        }).Else(() => {
+          const candidate = int(
+            textureLoad(this.priorityTexture, ivec2(i.sub(listSize), 0)).x,
+          );
+          If(candidate.equal(0), () => {
+            Break();
+          });
+          // Lower indices were either listed or cannot reach this cluster.
+          If(candidate.greaterThan(lastListed), () => {
+            lightIndex.assign(candidate);
+          });
         });
-        const { color, decay, viewPosition, distance, cutoffDistance } =
-          this.getLightData(lightIndex.sub(1));
-        const lightVector = viewPosition.sub(positionView);
-        If(
-          distance
-            .equal(0)
-            .or(
-              dot(lightVector, lightVector).lessThanEqual(
-                distance.mul(distance),
+        If(lightIndex.greaterThan(0), () => {
+          const { color, decay, viewPosition, distance, cutoffDistance } =
+            this.getLightData(lightIndex.sub(1));
+          const lightVector = viewPosition.sub(positionView);
+          If(
+            distance
+              .equal(0)
+              .or(
+                dot(lightVector, lightVector).lessThanEqual(
+                  distance.mul(distance),
+                ),
               ),
-            ),
-          () => {
-            context.lightsNode.setupDirectLight(
-              builder,
-              this,
-              directOpticalPointLight({
-                color,
-                lightVector,
-                cutoffDistance: cutoffDistance ?? distance,
-                decayExponent: decay,
-              }),
-            );
-          },
-        );
+            () => {
+              context.lightsNode.setupDirectLight(
+                builder,
+                this,
+                directOpticalPointLight({
+                  color,
+                  lightVector,
+                  cutoffDistance: cutoffDistance ?? distance,
+                  decayExponent: decay,
+                }),
+              );
+            },
+          );
+        });
       });
     }, "void")();
   }
 
-  /** Releases the additional optical texture when the renderer's scene lighting is disposed. */
+  /** Releases the additional optical textures when the renderer's scene lighting is disposed. */
   disposeApertures(): void {
     this.apertureTexture.dispose();
+    this.priorityTexture.dispose();
   }
 }
 
