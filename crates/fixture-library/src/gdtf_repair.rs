@@ -27,18 +27,46 @@ use quick_xml::{Reader, Writer};
 /// Name of the archive entry holding the fixture description.
 const DESCRIPTION_ENTRY: &str = "description.xml";
 
+/// Archive entries a repaired archive is rebuilt with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RepairedContents {
+    /// Every entry, so models, wheel images and other resources stay readable.
+    WithResources,
+    /// Only the repaired description, for callers that never read resources.
+    DescriptionOnly,
+}
+
 /// Opens a GDTF archive, repairing known authoring faults if strict parsing fails.
 ///
 /// Returns the parsed file and a description of every repair applied (empty
 /// when the archive parsed as published). When the repaired archive still
 /// fails to parse, the original parser error is returned with the repaired one.
+/// A repaired archive is rebuilt in memory with all of its resources.
 pub fn open_gdtf(path: &Path) -> Result<(gdtf::GdtfFile, Vec<String>), String> {
+    open_gdtf_with(path, RepairedContents::WithResources)
+}
+
+/// Opens a GDTF archive for its description only, repairing faults like [`open_gdtf`].
+///
+/// When repair is needed, the rebuilt in-memory archive holds only the
+/// repaired description, so scanning large archives does not copy their
+/// models and images into memory. Resources of the returned file are only
+/// readable when the archive parsed without repair.
+pub fn open_gdtf_description(path: &Path) -> Result<(gdtf::GdtfFile, Vec<String>), String> {
+    open_gdtf_with(path, RepairedContents::DescriptionOnly)
+}
+
+/// Opens a GDTF archive, repairing its description into an archive holding `contents` if needed.
+fn open_gdtf_with(
+    path: &Path,
+    contents: RepairedContents,
+) -> Result<(gdtf::GdtfFile, Vec<String>), String> {
     let file = File::open(path).map_err(|error| error.to_string())?;
     let original = match gdtf::GdtfFile::new(file) {
         Ok(parsed) => return Ok((parsed, Vec::new())),
         Err(error) => error.to_string(),
     };
-    let Some((archive, repairs)) = repaired_archive(path) else {
+    let Some((archive, repairs)) = repaired_archive(path, contents) else {
         return Err(format!("{original} (no applicable repairs)"));
     };
     match gdtf::GdtfFile::new(Cursor::new(archive)) {
@@ -55,7 +83,9 @@ pub fn open_gdtf(path: &Path) -> Result<(gdtf::GdtfFile, Vec<String>), String> {
 }
 
 /// Rebuilds an archive with a repaired description, or `None` when nothing needed repair.
-fn repaired_archive(path: &Path) -> Option<(Vec<u8>, Vec<String>)> {
+///
+/// Other entries are raw-copied only for [`RepairedContents::WithResources`].
+fn repaired_archive(path: &Path, contents: RepairedContents) -> Option<(Vec<u8>, Vec<String>)> {
     let mut source = zip::ZipArchive::new(File::open(path).ok()?).ok()?;
     let mut description = String::new();
     source
@@ -69,7 +99,11 @@ fn repaired_archive(path: &Path) -> Option<(Vec<u8>, Vec<String>)> {
     }
 
     let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    for index in 0..source.len() {
+    let copied_entries = match contents {
+        RepairedContents::WithResources => source.len(),
+        RepairedContents::DescriptionOnly => 0,
+    };
+    for index in 0..copied_entries {
         let entry = source.by_index_raw(index).ok()?;
         if entry.name() == DESCRIPTION_ENTRY {
             continue;
@@ -304,9 +338,9 @@ mod tests {
         assert!(repaired.contains(r#"Name="Ok""#));
     }
 
-    /// Verifies an archive rejected by strict parsing opens after repair, from a rebuilt archive.
-    #[test]
-    fn opens_rejected_archive_after_repair() {
+    /// Writes an archive whose description strict parsing rejects (a
+    /// FeatureGroup without `Pretty`), plus `resources`, and returns its path.
+    fn faulty_archive(dir: &Path, resources: &[(&str, &[u8])]) -> std::path::PathBuf {
         let description = crate::testing::GdtfBuilder::new("Test", "Faulty")
             .description_xml()
             .replace(
@@ -320,14 +354,69 @@ mod tests {
         archive
             .write_all(description.as_bytes())
             .expect("write description");
+        for (name, content) in resources {
+            archive
+                .start_file(*name, zip::write::SimpleFileOptions::default())
+                .expect("start resource");
+            archive.write_all(content).expect("write resource");
+        }
         let bytes = archive.finish().expect("finish archive").into_inner();
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("faulty.gdtf");
+        assert!(gdtf::GdtfFile::new(Cursor::new(bytes.clone())).is_err());
+        let path = dir.join("faulty.gdtf");
         std::fs::write(&path, &bytes).expect("write archive");
+        path
+    }
 
-        assert!(gdtf::GdtfFile::new(Cursor::new(bytes)).is_err());
+    /// Returns the entry names of an in-memory archive.
+    fn entry_names(archive: Vec<u8>) -> Vec<String> {
+        let archive = zip::ZipArchive::new(Cursor::new(archive)).expect("rebuilt archive");
+        archive.file_names().map(str::to_string).collect()
+    }
+
+    /// Verifies an archive rejected by strict parsing opens after repair, from a rebuilt archive.
+    #[test]
+    fn opens_rejected_archive_after_repair() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = faulty_archive(dir.path(), &[]);
         let (_, repairs) = open_gdtf(&path).expect("repaired archive opens");
         assert_eq!(repairs, vec!["filled missing FeatureGroup@Pretty"]);
+    }
+
+    /// Verifies description-only repair skips resource entries, so scanning a
+    /// large repairable archive does not copy its media into memory, while a
+    /// full repair keeps them readable.
+    #[test]
+    fn description_only_repair_omits_resources() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let media = vec![0u8; 64 * 1024];
+        let path = faulty_archive(dir.path(), &[("models/gltf/Body.glb", &media)]);
+
+        let (description_only, _) =
+            repaired_archive(&path, RepairedContents::DescriptionOnly).expect("repairable");
+        assert_eq!(entry_names(description_only), vec![DESCRIPTION_ENTRY]);
+        let (complete, _) =
+            repaired_archive(&path, RepairedContents::WithResources).expect("repairable");
+        let mut names = entry_names(complete);
+        names.sort();
+        assert_eq!(names, vec![DESCRIPTION_ENTRY, "models/gltf/Body.glb"]);
+
+        let (_, repairs) = open_gdtf_description(&path).expect("description opens");
+        assert_eq!(repairs, vec!["filled missing FeatureGroup@Pretty"]);
+    }
+
+    /// Verifies entity-escaped attribute values stay escaped when a
+    /// description is rewritten, so the repaired XML remains well-formed.
+    #[test]
+    fn repair_preserves_escaped_attribute_values() {
+        let xml = r#"<GDTF><FixtureType Name="Spot &quot;XL&quot; &amp; &lt;Pro&gt;"/><FeatureGroup Name="Dimmer"/></GDTF>"#;
+        let (repaired, repairs) = repair_description(xml).expect("well-formed");
+        assert_eq!(repairs, vec!["filled missing FeatureGroup@Pretty"]);
+        assert!(
+            repaired.contains(r#"Name="Spot &quot;XL&quot; &amp; &lt;Pro&gt;""#),
+            "{repaired}"
+        );
+        let (reparsed, _) = repair_description(&repaired).expect("repaired XML is well-formed");
+        assert_eq!(reparsed, repaired);
     }
 
     /// Verifies braced gamut points become a whitespace-separated list of triples.
