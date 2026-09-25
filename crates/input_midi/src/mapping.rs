@@ -9,6 +9,7 @@
 //! MIDI mapping storage and lookup
 
 use bevy_ecs::prelude::*;
+use nightfall_actions::{ActionInputKind, ActionReference};
 use uuid::Uuid;
 
 use crate::command::{MidiMapping, MidiSource};
@@ -39,9 +40,16 @@ impl MidiMappings {
 
     /// Creates or replaces a mapping and returns the IDs of other mappings it displaced.
     ///
-    /// A control drives at most one action, so any other mapping on the same device and
-    /// control is removed. An existing mapping with the same ID keeps its list position.
-    pub fn upsert(&mut self, mapping: MidiMapping) -> Vec<Uuid> {
+    /// A control fires at most one action per edge, so other mappings on the same device and
+    /// control are removed when they would fire from the same edge (see
+    /// [`nightfall_actions::SourceEdge::overlaps`]). `input_kind` reports the input kind of a bound action. An
+    /// existing mapping with the same ID keeps its list position.
+    pub fn upsert(
+        &mut self,
+        mapping: MidiMapping,
+        input_kind: impl Fn(&ActionReference) -> Option<ActionInputKind>,
+    ) -> Vec<Uuid> {
+        let kind = input_kind(&mapping.action);
         let displaced = self
             .mappings
             .iter()
@@ -49,6 +57,9 @@ impl MidiMappings {
                 existing.id != mapping.id
                     && existing.device_name == mapping.device_name
                     && existing.source == mapping.source
+                    && mapping
+                        .edge
+                        .overlaps(kind, existing.edge, input_kind(&existing.action))
             })
             .map(|existing| existing.id)
             .collect::<Vec<_>>();
@@ -72,20 +83,25 @@ impl MidiMappings {
         self.mappings.len() != before
     }
 
-    /// Looks up the mapping bound to one control on a device.
-    pub fn lookup(&self, device: &str, source: MidiSource) -> Option<&MidiMapping> {
+    /// Returns the mappings bound to one control on a device, at most one per edge.
+    pub fn lookup(&self, device: &str, source: MidiSource) -> impl Iterator<Item = &MidiMapping> {
         self.mappings
             .iter()
-            .find(|mapping| mapping.device_name == device && mapping.source == source)
+            .filter(move |mapping| mapping.device_name == device && mapping.source == source)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use nightfall_actions::ActionReference;
+    use nightfall_actions::SourceEdge;
     use serde_json::json;
 
     use super::*;
+
+    /// Reports every bound action as a trigger.
+    fn triggers(_: &ActionReference) -> Option<ActionInputKind> {
+        Some(ActionInputKind::Trigger)
+    }
 
     /// Builds a note mapping with a deterministic ID.
     fn note_mapping(id: u128, device: &str, note: u8, action: &str) -> MidiMapping {
@@ -93,6 +109,7 @@ mod tests {
             id: Uuid::from_u128(id),
             device_name: device.to_string(),
             source: MidiSource::Note { channel: 0, note },
+            edge: SourceEdge::Press,
             action: ActionReference::new(action, json!({})),
         }
     }
@@ -101,7 +118,7 @@ mod tests {
     #[test]
     fn lookup_matches_device_and_control() {
         let mut mappings = MidiMappings::new();
-        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"));
+        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
 
         assert!(
             mappings
@@ -112,6 +129,7 @@ mod tests {
                         note: 60
                     }
                 )
+                .next()
                 .is_some()
         );
         assert!(
@@ -123,6 +141,7 @@ mod tests {
                         note: 60
                     }
                 )
+                .next()
                 .is_none()
         );
         assert!(
@@ -134,6 +153,7 @@ mod tests {
                         controller: 60
                     }
                 )
+                .next()
                 .is_none()
         );
     }
@@ -142,10 +162,10 @@ mod tests {
     #[test]
     fn upsert_replaces_other_mappings_on_the_same_control() {
         let mut mappings = MidiMappings::new();
-        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"));
-        mappings.upsert(note_mapping(2, "Device A", 61, "test.b"));
+        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
+        mappings.upsert(note_mapping(2, "Device A", 61, "test.b"), triggers);
 
-        let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.c"));
+        let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.c"), triggers);
 
         assert_eq!(displaced, vec![Uuid::from_u128(1)]);
         assert_eq!(
@@ -162,14 +182,43 @@ mod tests {
     #[test]
     fn upsert_edits_existing_mapping_in_place() {
         let mut mappings = MidiMappings::new();
-        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"));
-        mappings.upsert(note_mapping(2, "Device A", 61, "test.b"));
+        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
+        mappings.upsert(note_mapping(2, "Device A", 61, "test.b"), triggers);
 
-        let displaced = mappings.upsert(note_mapping(1, "Device A", 62, "test.c"));
+        let displaced = mappings.upsert(note_mapping(1, "Device A", 62, "test.c"), triggers);
 
         assert!(displaced.is_empty());
         assert_eq!(mappings.mappings()[0].action.id.as_str(), "test.c");
         assert!(mappings.delete(Uuid::from_u128(1)));
         assert!(!mappings.delete(Uuid::from_u128(1)));
+    }
+
+    /// Verifies one control keeps a press and a release trigger, and a held action takes over both.
+    #[test]
+    fn press_and_release_bindings_share_a_control_until_an_action_uses_both() {
+        let input_kind = |action: &ActionReference| {
+            Some(if action.id.as_str() == "test.hold" {
+                ActionInputKind::Momentary
+            } else {
+                ActionInputKind::Trigger
+            })
+        };
+        let mut mappings = MidiMappings::new();
+        mappings.upsert(note_mapping(1, "Device A", 60, "test.start"), input_kind);
+        let release = MidiMapping {
+            edge: SourceEdge::Release,
+            ..note_mapping(2, "Device A", 60, "test.stop")
+        };
+
+        assert!(mappings.upsert(release, input_kind).is_empty());
+        let pad = MidiSource::Note {
+            channel: 0,
+            note: 60,
+        };
+        assert_eq!(mappings.lookup("Device A", pad).count(), 2);
+
+        let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.hold"), input_kind);
+        assert_eq!(displaced, vec![Uuid::from_u128(1), Uuid::from_u128(2)]);
+        assert_eq!(mappings.lookup("Device A", pad).count(), 1);
     }
 }

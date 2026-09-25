@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::Resource;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::descriptor::ActionInputKind;
@@ -43,6 +44,51 @@ impl SourceSignal {
     }
 }
 
+/// Edge of a button-like control that fires a binding's trigger action.
+///
+/// A control holds either one binding whose action consumes both edges (a momentary or
+/// absolute action), or up to one trigger binding per edge, so a pad can start one action
+/// on press and another on release.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum SourceEdge {
+    /// Fire when the control is pressed. Actions consuming both edges bind here.
+    #[default]
+    Press,
+    /// Fire a trigger action when the control is released.
+    Release,
+}
+
+impl SourceEdge {
+    /// Returns whether a binding on this edge can drive an action input kind.
+    ///
+    /// Release bindings only fire triggers; momentary and absolute actions already receive
+    /// the release through their press binding.
+    pub fn accepts(self, kind: ActionInputKind) -> bool {
+        self == Self::Press || kind == ActionInputKind::Trigger
+    }
+
+    /// Returns whether two bindings on the same control would fire from the same edge.
+    ///
+    /// `None` input kinds are client-hosted or unknown actions, which fire as triggers.
+    pub fn overlaps(
+        self,
+        kind: Option<ActionInputKind>,
+        other: Self,
+        other_kind: Option<ActionInputKind>,
+    ) -> bool {
+        let uses_both_edges = |kind: Option<ActionInputKind>| {
+            kind.is_some_and(|kind| kind != ActionInputKind::Trigger)
+        };
+        self == other || uses_both_edges(kind) || uses_both_edges(other_kind)
+    }
+
+    /// Returns whether serialization can omit this edge because it is the default.
+    pub fn is_press(&self) -> bool {
+        *self == Self::Press
+    }
+}
+
 /// Per-binding press state used to turn continuous levels into button edges.
 ///
 /// Button-style hardware often reports levels (a MIDI controller sending 127 then 0, or an
@@ -57,9 +103,25 @@ pub struct SourceEdgeStates {
 impl SourceEdgeStates {
     /// Converts one signal from the binding identified by `binding` to action input.
     ///
-    /// Returns `None` when the signal has no effect for the action's input kind, such as a
-    /// level that stays on the same side of the press threshold.
+    /// Returns `None` when the signal has no effect for the binding, such as a level that
+    /// stays on the same side of the press threshold, or a press reaching a release binding.
+    /// A release binding fires its trigger action when the control is let go.
     pub fn adapt(
+        &mut self,
+        binding: Uuid,
+        kind: ActionInputKind,
+        edge: SourceEdge,
+        signal: SourceSignal,
+    ) -> Option<ActionInput> {
+        let input = self.adapt_signal(binding, kind, signal)?;
+        match edge {
+            SourceEdge::Press => Some(input),
+            SourceEdge::Release => (input == ActionInput::Release).then_some(ActionInput::Trigger),
+        }
+    }
+
+    /// Converts one signal to the input an action consuming `kind` expects on a press binding.
+    fn adapt_signal(
         &mut self,
         binding: Uuid,
         kind: ActionInputKind,
@@ -112,7 +174,12 @@ mod tests {
         let binding = Uuid::from_u128(1);
 
         assert_eq!(
-            states.adapt(binding, ActionInputKind::Absolute, SourceSignal::Level(0.3)),
+            states.adapt(
+                binding,
+                ActionInputKind::Absolute,
+                SourceEdge::Press,
+                SourceSignal::Level(0.3)
+            ),
             Some(ActionInput::Scalar(0.3))
         );
     }
@@ -126,6 +193,7 @@ mod tests {
             states.adapt(
                 binding,
                 ActionInputKind::Trigger,
+                SourceEdge::Press,
                 SourceSignal::Level(value),
             )
         };
@@ -144,11 +212,21 @@ mod tests {
         let binding = Uuid::from_u128(3);
 
         assert_eq!(
-            states.adapt(binding, ActionInputKind::Trigger, SourceSignal::Pulse),
+            states.adapt(
+                binding,
+                ActionInputKind::Trigger,
+                SourceEdge::Press,
+                SourceSignal::Pulse
+            ),
             Some(ActionInput::Trigger)
         );
         assert_eq!(
-            states.adapt(binding, ActionInputKind::Absolute, SourceSignal::Pulse),
+            states.adapt(
+                binding,
+                ActionInputKind::Absolute,
+                SourceEdge::Press,
+                SourceSignal::Pulse
+            ),
             None
         );
         assert!(!SourceSignal::Pulse.can_drive(ActionInputKind::Momentary));
@@ -164,6 +242,7 @@ mod tests {
             states.adapt(
                 binding,
                 ActionInputKind::Momentary,
+                SourceEdge::Press,
                 SourceSignal::Button(false)
             ),
             Some(ActionInput::Release)
@@ -172,9 +251,55 @@ mod tests {
             states.adapt(
                 binding,
                 ActionInputKind::Absolute,
+                SourceEdge::Press,
                 SourceSignal::Button(true)
             ),
             Some(ActionInput::Scalar(1.0))
         );
+    }
+
+    /// Verifies release bindings fire their trigger when a button or level is let go.
+    #[test]
+    fn release_bindings_fire_triggers_on_release() {
+        let mut states = SourceEdgeStates::default();
+        let button = Uuid::from_u128(5);
+        let level = Uuid::from_u128(6);
+        let release = |states: &mut SourceEdgeStates, binding, signal| {
+            states.adapt(
+                binding,
+                ActionInputKind::Trigger,
+                SourceEdge::Release,
+                signal,
+            )
+        };
+
+        assert_eq!(
+            release(&mut states, button, SourceSignal::Button(true)),
+            None
+        );
+        assert_eq!(
+            release(&mut states, button, SourceSignal::Button(false)),
+            Some(ActionInput::Trigger)
+        );
+        assert_eq!(release(&mut states, level, SourceSignal::Level(1.0)), None);
+        assert_eq!(
+            release(&mut states, level, SourceSignal::Level(0.0)),
+            Some(ActionInput::Trigger)
+        );
+        assert_eq!(release(&mut states, button, SourceSignal::Pulse), None);
+    }
+
+    /// Verifies a control holds one binding per edge unless an action consumes both edges.
+    #[test]
+    fn bindings_overlap_on_the_same_edge_or_when_consuming_both() {
+        let trigger = Some(ActionInputKind::Trigger);
+        let momentary = Some(ActionInputKind::Momentary);
+
+        assert!(!SourceEdge::Press.overlaps(trigger, SourceEdge::Release, trigger));
+        assert!(!SourceEdge::Press.overlaps(None, SourceEdge::Release, trigger));
+        assert!(SourceEdge::Press.overlaps(trigger, SourceEdge::Press, None));
+        assert!(SourceEdge::Press.overlaps(momentary, SourceEdge::Release, trigger));
+        assert!(SourceEdge::Release.accepts(ActionInputKind::Trigger));
+        assert!(!SourceEdge::Release.accepts(ActionInputKind::Momentary));
     }
 }

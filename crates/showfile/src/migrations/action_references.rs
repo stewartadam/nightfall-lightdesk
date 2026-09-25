@@ -16,7 +16,8 @@ use uuid::Uuid;
 /// Converts timeline actions and controller mappings to bindable action references.
 ///
 /// - Timeline `ActionKind` variants become the equivalent registered action reference.
-/// - MIDI mappings gain a stable ID and a typed source decoded from their status byte.
+/// - MIDI mappings gain a stable ID, a typed source decoded from their status byte, and the
+///   edge they fired on.
 /// - OSC mappings gain a stable ID.
 /// - Action references drop the retired `control.set-external` ID and `target` clip argument.
 pub(super) fn migrate_v18_to_v19(showfile: &mut Value) {
@@ -46,17 +47,15 @@ pub(super) fn migrate_v18_to_v19(showfile: &mut Value) {
                 tracing::warn!(mapping = %legacy, "Dropping MIDI mapping with an unmappable status byte");
                 return false;
             }
-            // v19 binds one action per control, so the first legacy mapping on a control wins,
-            // matching the order lookups used.
-            let control = json!([mapping["device_name"], mapping["source"]]).to_string();
+            // v19 binds one action per control edge, so the first legacy mapping on an edge
+            // wins, matching the order lookups used.
+            let control =
+                json!([mapping["device_name"], mapping["source"], mapping["edge"]]).to_string();
             if !bound_controls.insert(control) {
                 tracing::warn!(mapping = %legacy, "Dropping MIDI mapping that duplicates an earlier mapping on the same control");
                 return false;
             }
-            if legacy["channel"].as_u64().is_some_and(|status| status & 0xF0 == 0x80) {
-                tracing::warn!(mapping = %legacy, "Note-off MIDI mapping now responds to the note's press and release");
-            }
-            if !legacy["velocity"].is_null() {
+            if legacy["velocity"].as_u64().is_some_and(|velocity| velocity > 0) {
                 tracing::warn!(mapping = %legacy, "Dropping velocity filter from MIDI mapping");
             }
             true
@@ -190,15 +189,29 @@ fn migrate_midi_mapping(mapping: &mut Value, migrate_reference: &impl Fn(&mut Va
     let Some(midi_source) = legacy_midi_source(mapping) else {
         return false;
     };
+    let edge = legacy_midi_edge(mapping);
     for field in ["channel", "note", "velocity"] {
         mapping.remove(field);
     }
     mapping.insert("id".into(), json!(Uuid::new_v4()));
     mapping.insert("source".into(), midi_source);
+    mapping.insert("edge".into(), json!(edge));
     if let Some(reference) = mapping.get_mut("action") {
         migrate_reference(reference);
     }
     true
+}
+
+/// Returns the serialized `SourceEdge` a v17 mapping fired on.
+///
+/// Note-off statuses and note-on with an exact velocity of zero matched only releases.
+fn legacy_midi_edge(mapping: &Map<String, Value>) -> &'static str {
+    let status = mapping.get("channel").and_then(Value::as_u64).unwrap_or(0);
+    let velocity = mapping.get("velocity").and_then(Value::as_u64);
+    match (status & 0xF0, velocity) {
+        (0x80, _) | (0x90, Some(0)) => "Release",
+        _ => "Press",
+    }
 }
 
 /// Decodes a v18 mapping's status and data bytes into a serialized `MidiSource`.
@@ -247,6 +260,8 @@ mod tests {
                  "action": {"id": "clip.go", "arguments": {}}},
                 {"device_name": "Grid", "channel": 0x82, "note": 60, "velocity": null,
                  "action": {"id": "clip.stop", "arguments": {"target": {"type": "Uid", "data": "aa"}}}},
+                {"device_name": "Grid", "channel": 0x92, "note": 60, "velocity": 0,
+                 "action": {"id": "clip.start", "arguments": {"target": {"type": "Uid", "data": "aa"}}}},
             ],
             "oscMappings": [
                 {"source": null, "address": "/fader", "arg_index": null, "arg_value": null,
@@ -290,14 +305,15 @@ mod tests {
 
     /// MIDI mappings decode their status byte into a typed source.
     ///
-    /// Unmappable statuses are dropped, and a later mapping on an already bound control (here a
-    /// note-off beside a note-on) is dropped so the first binding keeps its behavior.
+    /// Note-off and zero-velocity note-on mappings become release bindings. Unmappable statuses
+    /// are dropped, and so is a later mapping on an already bound control edge (here a
+    /// zero-velocity note-on after a note-off), so the first binding keeps its behavior.
     #[test]
     fn midi_mappings_gain_ids_and_typed_sources() {
         let mut showfile = v18_showfile();
         migrate_v18_to_v19(&mut showfile);
         let mappings = showfile["midiMappings"].as_array().unwrap();
-        assert_eq!(mappings.len(), 3);
+        assert_eq!(mappings.len(), 4);
         for mapping in mappings {
             assert!(mapping["id"].as_str().unwrap().parse::<Uuid>().is_ok());
             assert!(mapping.get("channel").is_none() && mapping.get("velocity").is_none());
@@ -322,6 +338,10 @@ mod tests {
             mappings[2]["source"],
             json!({"type": "PitchBend", "data": {"channel": 3}})
         );
+        assert_eq!(mappings[1]["edge"], json!("Press"));
+        assert_eq!(mappings[3]["source"], mappings[1]["source"]);
+        assert_eq!(mappings[3]["edge"], json!("Release"));
+        assert_eq!(mappings[3]["action"]["id"], json!("clip.stop"));
     }
 
     /// OSC mappings gain IDs, and level mappings name the argument v18 read implicitly.
