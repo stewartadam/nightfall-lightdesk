@@ -810,7 +810,13 @@ fn resolve_input_targets(
     }
 }
 
-/// Resolve output bindings into per-parameter output destinations.
+/// Resolved per-parameter output components rewritten by [`resolve_output_bindings`].
+type ResolvedParameterOutputs<'a> = (
+    Option<&'a mut ResolvedOutputDestinations>,
+    Option<&'a mut ResolvedConsoleDestination>,
+);
+
+/// Resolve output bindings into per-parameter transport destinations and console addresses.
 pub fn resolve_output_bindings(
     output_bindings: Res<OutputBindings>,
     disabled_bindings: Res<DisabledBindings>,
@@ -820,10 +826,7 @@ pub fn resolve_output_bindings(
     usb_outputs: Res<UsbDmxOutputTargets>,
     param_query: Query<InstanceRef<Parameter>>,
     param_entities: Query<Entity, With<Parameter>>,
-    mut destinations_query: Query<
-        (Entity, Option<&mut ResolvedOutputDestinations>),
-        With<Parameter>,
-    >,
+    mut destinations_query: Query<ResolvedParameterOutputs, With<Parameter>>,
     mut commands: Commands,
 ) {
     let should_rebuild = output_bindings.is_changed()
@@ -1031,14 +1034,61 @@ pub fn resolve_output_bindings(
         }
     }
 
+    let mut console_destinations =
+        resolve_console_parameter_addresses(&console_addresses, &data_provider, &param_query);
+
     for entity in &param_entities {
         let entry = destinations.remove(&entity).unwrap_or_default();
-        if let Ok((_, Some(mut destinations_component))) = destinations_query.get_mut(entity) {
-            destinations_component.destinations = entry;
+        let console_destination = ResolvedConsoleDestination {
+            address: console_destinations.remove(&entity),
+        };
+        let Ok((destinations_component, console_component)) = destinations_query.get_mut(entity)
+        else {
             continue;
+        };
+
+        match destinations_component {
+            Some(mut component) => component.destinations = entry,
+            None => {
+                commands.entity(entity).insert(ResolvedOutputDestinations {
+                    destinations: entry,
+                });
+            }
         }
-        commands.entity(entity).insert(ResolvedOutputDestinations {
-            destinations: entry,
-        });
+        match console_component {
+            Some(mut component) => {
+                component.set_if_neq(console_destination);
+            }
+            None => {
+                commands.entity(entity).insert(console_destination);
+            }
+        }
     }
+}
+
+/// Maps each console-bound parameter entity to its console-space DMX address.
+///
+/// Parameters are placed by the fixture's wire layout starting at its console address, so
+/// explicit footprint slots and gaps land on the same console channels that console input
+/// targets decode from.
+fn resolve_console_parameter_addresses(
+    console_addresses: &ConsoleDmxAddresses,
+    data_provider: &FixtureDataProviderExt,
+    param_query: &Query<InstanceRef<Parameter>>,
+) -> HashMap<Entity, ConsoleParameterAddress> {
+    let mut resolved = HashMap::new();
+    for (uid, console_address) in &console_addresses.addresses {
+        let params =
+            collect_fixture_parameters(data_provider, param_query, *uid, None, None, 1, false);
+        for param in params.parameters {
+            resolved.insert(
+                param.target,
+                ConsoleParameterAddress {
+                    universe: console_address.universe,
+                    addresses: offset_slots(&param.slots, console_address.address),
+                },
+            );
+        }
+    }
+    resolved
 }

@@ -402,6 +402,25 @@ pub struct ResolvedOutputDestinations {
     pub destinations: Vec<OutputDestination>,
 }
 
+/// Component storing the console-space DMX address of one parameter.
+///
+/// Derived from the owning fixture's [`ConsoleDmxAddress`] and the parameter's slots within
+/// the fixture's wire layout. `None` when the fixture has no active console binding.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Component)]
+pub struct ResolvedConsoleDestination {
+    /// Console universe and per-byte addresses of the parameter, when console-bound.
+    pub address: Option<ConsoleParameterAddress>,
+}
+
+/// Console-space placement of one parameter's bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsoleParameterAddress {
+    /// Console universe.
+    pub universe: u16,
+    /// 1-indexed console address of every byte, most significant first.
+    pub addresses: Vec<u16>,
+}
+
 /// Console DMX address mapping for a fixture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
