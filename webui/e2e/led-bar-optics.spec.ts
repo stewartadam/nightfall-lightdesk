@@ -31,6 +31,10 @@ for (const geometryDriven of [false, true]) {
         await import(
           "/features/visualizer/rendering/fixture-renderers/renderer-registry.ts"
         );
+      const { resolveQualityProfile } = await import(
+        "/features/visualizer/rendering/quality-profile.ts"
+      );
+      const high = resolveQualityProfile("high");
       const { disposeLedBar } = await import(
         "/features/visualizer/rendering/fixture-renderers/led-bar-renderer.ts"
       );
@@ -90,12 +94,14 @@ for (const geometryDriven of [false, true]) {
               roots: elements.map((_, i) => i),
             },
             elements,
+            undefined,
+            high,
           )
         : buildFixtureWithoutGeometry(
             "owned-bar",
             elements,
             BeamType.Wash,
-            "high",
+            high,
             FixtureLayout.LedBar,
             {
               beamType: BeamType.Wash,

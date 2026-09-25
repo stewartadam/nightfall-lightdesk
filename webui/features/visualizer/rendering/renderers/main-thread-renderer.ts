@@ -29,6 +29,7 @@ import {
   setProgrammerValueOutlineSelectedObjects,
 } from "../effects/post-processing";
 import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
+import { resolveQualityProfile } from "../quality-profile";
 import {
   cancelControlsInteraction,
   DEFAULT_CAMERA_POSITION,
@@ -83,18 +84,13 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   async init(config: VisualizerInitConfig): Promise<void> {
     const canvas = config.canvas as HTMLCanvasElement;
 
-    // Initialize renderer using existing initRenderer function
+    const profile = resolveQualityProfile(config.beamQuality);
     this.rendererState = await initRenderer(
       canvas,
-      config.beamQuality,
+      profile,
       config.initialCameraState,
     );
-
-    // Create scene manager
-    this.sceneManager = new SceneManager(
-      this.rendererState.scene,
-      config.beamQuality,
-    );
+    this.sceneManager = new SceneManager(this.rendererState.scene, profile);
     if (this.rendererState.postProcessing) {
       setOutlineSelectedObjects(
         this.rendererState.postProcessing,

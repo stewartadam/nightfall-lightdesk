@@ -49,6 +49,7 @@ import {
   Vector3,
   type WebGPURenderer,
 } from "three/webgpu";
+import type { QualityProfile } from "../quality-profile";
 import type { ResolvedEmitterOptics } from "./emitter-optics";
 import { GoboAtlas } from "./gobo-atlas";
 import { sampleGoboProjection } from "./gobo-projection";
@@ -522,13 +523,18 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
 
 /** Installs clustered optical surface sources while retaining Three's ambient and directional lighting. */
 export class OpticalSurfaceLighting extends Lighting {
-  /** Lower presets retain projected illumination without compiling or preparing shadow maps. */
-  constructor(private readonly shadowsEnabled = true) {
-    super();
-  }
-  readonly goboAtlas = new GoboAtlas();
-  readonly shadows = new OpticalShadowPool();
+  /** Shared mask atlas, allocated only when the quality profile projects gobos. */
+  readonly goboAtlas?: GoboAtlas;
+  /** Shadow maps, allocated only when the quality profile renders optical shadows. */
+  readonly shadows?: OpticalShadowPool;
   private readonly nodes = new Set<OpticalClusteredLightsNode>();
+
+  /** Lower presets keep projected illumination without allocating or compiling masks and shadow maps. */
+  constructor(profile: Pick<QualityProfile, "gobos" | "shadows">) {
+    super();
+    if (profile.gobos) this.goboAtlas = new GoboAtlas();
+    if (profile.shadows) this.shadows = new OpticalShadowPool();
+  }
 
   /** Reports the largest active scene light overflow without adding counts from separate render passes. */
   get omittedPointLights(): number {
@@ -551,8 +557,8 @@ export class OpticalSurfaceLighting extends Lighting {
     const node = new OpticalClusteredLightsNode(
       1024,
       64,
-      this.shadowsEnabled ? this.goboAtlas : undefined,
-      this.shadowsEnabled ? this.shadows : undefined,
+      this.goboAtlas,
+      this.shadows,
     );
     node.setLights(lights);
     this.nodes.add(node);
@@ -563,7 +569,7 @@ export class OpticalSurfaceLighting extends Lighting {
   dispose(): void {
     for (const node of this.nodes) node.disposeApertures();
     this.nodes.clear();
-    this.goboAtlas.dispose();
-    this.shadows.dispose();
+    this.goboAtlas?.dispose();
+    this.shadows?.dispose();
   }
 }

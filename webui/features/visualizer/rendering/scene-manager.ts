@@ -21,7 +21,6 @@ import {
   SelectionHighlighter,
 } from "../model/selection-utils";
 import type { RenderableFixture, RenderableSceneObject } from "../model/types";
-import type { VisualizerQualityPreset } from "../state/settings";
 import { BeamManager, BeamUpdater } from "./effects";
 import { FixtureColorState } from "./fixture-color-state";
 import { FixtureManager } from "./fixture-manager";
@@ -34,6 +33,7 @@ import {
   updateEmitterColors,
   updateGdtfPanTilt,
 } from "./geometry-builder";
+import type { QualityProfile } from "./quality-profile";
 import type {
   FixtureElementDmxMap,
   VisualizerScreenPoint,
@@ -114,10 +114,11 @@ export class SceneManager {
     FixtureColorState
   >();
 
-  constructor(scene: Scene, beamQuality: VisualizerQualityPreset = "high") {
-    this.fixtureManager = new FixtureManager(scene, beamQuality);
+  /** Builds every scene subsystem with the renderer's resolved quality profile. */
+  constructor(scene: Scene, profile: QualityProfile) {
+    this.fixtureManager = new FixtureManager(scene, profile);
     this.sceneObjectManager = new SceneObjectManager(scene);
-    this.beamManager = new BeamManager(scene, beamQuality);
+    this.beamManager = new BeamManager(scene);
     this.beamUpdater = new BeamUpdater(this.beamManager);
     this.selectionHighlighter = new SelectionHighlighter(
       this.fixtureManager.getAllFixtureInstances(),

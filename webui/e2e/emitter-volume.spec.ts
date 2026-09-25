@@ -306,7 +306,7 @@ for (const forceWebGL of [false, true]) {
       const maskContext = maskCanvas.getContext("2d")!;
       maskContext.fillStyle = "black";
       maskContext.fillRect(0, 0, 32, 32);
-      const blockedSlot = batch.goboAtlas.load(
+      const blockedSlot = batch.goboAtlas!.load(
         maskCanvas.toDataURL("image/png"),
       );
       const deadline = performance.now() + 10000;
@@ -325,7 +325,7 @@ for (const forceWebGL of [false, true]) {
       const goboBlocked = await capture();
       maskContext.fillStyle = "white";
       for (let x = 0; x < 32; x += 4) maskContext.fillRect(x, 0, 2, 32);
-      const stripes = batch.goboAtlas.load(maskCanvas.toDataURL("image/png"));
+      const stripes = batch.goboAtlas!.load(maskCanvas.toDataURL("image/png"));
       const focusDeadline = performance.now() + 10000;
       while (stripes.status === "loading" && performance.now() < focusDeadline)
         await new Promise((resolve) => setTimeout(resolve, 10));

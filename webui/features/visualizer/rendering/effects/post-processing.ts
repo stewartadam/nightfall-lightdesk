@@ -28,7 +28,7 @@ import {
   vec2,
   vec4,
 } from "three/tsl";
-import type { Camera, Object3D } from "three/webgpu";
+import type { Camera, Node, Object3D } from "three/webgpu";
 import {
   NodeMaterial,
   QuadMesh,
@@ -37,7 +37,7 @@ import {
   UnsignedByteType,
   type WebGPURenderer,
 } from "three/webgpu";
-import type { VisualizerQualityPreset } from "../../state/settings";
+import { type QualityProfile, resolveQualityProfile } from "../quality-profile";
 import { AtmosphereBudget, type GpuBudgetSample } from "./atmosphere-budget";
 import { createOpticalRenderContext } from "./optical-render-context";
 import { OpticalSurfaceLighting } from "./optical-surface-lighting";
@@ -119,24 +119,28 @@ export const defaultPostProcessingConfig: PostProcessingConfig = {
   activeSpanOutlineHiddenColor: "#9ca3af",
 };
 
+/** Atmosphere resolution used by profiles that do not adapt it to GPU headroom. */
+const FIXED_ATMOSPHERE_RESOLUTION_SCALE = 0.5;
+
 /** State for post-processing effects */
 export interface PostProcessingState {
-  quality: VisualizerQualityPreset;
+  profile: QualityProfile;
   renderer: WebGPURenderer;
   scene: Scene;
   camera: Camera;
   shadowBudget: ShadowRefreshBudget;
   /** Only selected cell proxies participate in scene projection and outline depth passes. */
   visibleOutlineProxies: Set<Object3D>;
-  surfaceLighting?: OpticalSurfaceLighting;
+  surfaceLighting: OpticalSurfaceLighting;
   atmosphereBudget: AtmosphereBudget;
   volumePass: ReturnType<typeof pass>;
   postProcessing: RenderPipeline;
   scenePass: ReturnType<typeof pass>;
-  /** High-quality display conversion precedes edge filtering to preserve HDR coverage. */
+  /** Display conversion precedes FXAA edge filtering to preserve HDR coverage. */
   displayPass?: ReturnType<typeof pass>;
   displayMaterial?: NodeMaterial;
-  bloomPass: ReturnType<typeof bloom>;
+  /** Present only when the quality profile blooms. */
+  bloomPass?: ReturnType<typeof bloom>;
   outlinePass: ReturnType<typeof outline>;
   editSelectionOutlinePass: ReturnType<typeof outline>;
   programmerValueOutlinePass: ReturnType<typeof outline>;
@@ -145,62 +149,25 @@ export interface PostProcessingState {
 }
 
 /**
- * Create post-processing pipeline with bloom effect.
+ * Creates the bloom pass over the lit scene with a bright pass that integrates each
+ * pixel's footprint, so thin HDR emitters cannot fall between reduced-resolution samples.
  */
-export function createPostProcessing(
-  renderer: WebGPURenderer,
-  scene: Scene,
-  camera: Camera,
-  options?: {
-    quality?: VisualizerQualityPreset;
-    selectedObjects?: Object3D[];
-    editSelectionObjects?: Object3D[];
-    programmerValueObjects?: Object3D[];
-    activeSpanObjects?: Object3D[];
-    configOverrides?: Partial<PostProcessingConfig>;
-  },
-): PostProcessingState {
-  /** Outline passes install their own draw callback; the beauty pass skips invisible selection proxies. */
-  renderer.setRenderObjectFunction(
-    (...args: Parameters<WebGPURenderer["renderObject"]>) => {
-      if (args[0].userData.visualizerOutlineOnly === true) return;
-      renderer.renderObject(...args);
-    },
-  );
-  const quality = options?.quality ?? "high";
-  const surfaceLighting = new OpticalSurfaceLighting(quality === "high");
-  if (surfaceLighting) renderer.lighting = surfaceLighting;
-  const config = {
-    ...defaultPostProcessingConfig,
-    ...options?.configOverrides,
-  };
-
-  // Preserve subpixel emitter coverage while keeping the atmospheric integration single-sampled.
-  const scenePass = pass(scene, camera, { samples: 4 });
-  scenePass.getTexture("output").name = "scene";
-  const scenePassColor = scenePass.getTextureNode("output");
-  const opticalContext = createOpticalRenderContext(
-    scene,
-    scenePass.getViewZNode(),
-    surfaceLighting !== undefined,
-    surfaceLighting?.goboAtlas,
-    surfaceLighting?.shadows,
-    quality,
-  );
-  const volumePass = pass(opticalContext.scene, camera, {
-    samples: 0,
-  }).setResolutionScale(0.5);
-  volumePass.getTexture("output").name = "atmosphere";
-  const litColor = scenePassColor.add(volumePass.getTextureNode("output"));
-
-  // Create bloom pass
+function createBloomPass(
+  litColor: Node<"vec4">,
+  sceneColor: ReturnType<ReturnType<typeof pass>["getTextureNode"]>,
+  volumePass: ReturnType<typeof pass>,
+  config: PostProcessingConfig,
+): ReturnType<typeof bloom> {
   const bloomPass = bloom(
     litColor,
     config.bloomStrength,
     config.bloomRadius,
     config.bloomThreshold,
   );
-  /** Integrates the bright-pass footprint so thin HDR emitters cannot fall between reduced-resolution samples. */
+  const atmosphereColor = volumePass.getTextureNode("output");
+  // BloomNode hands this function its input evaluated at the current UV only. Integrating
+  // the footprint needs samples at offset UVs, and the input is a sum of two passes rather
+  // than one samplable texture, so both source textures are resampled here directly.
   bloomPass.highPassFn = Fn(
     ({
       threshold,
@@ -213,9 +180,9 @@ export function createPostProcessing(
         for (const x of [-0.25, 0.25]) {
           const sampleUV = coordinates.add(footprint.mul(vec2(x, y)));
           filtered.addAssign(
-            scenePassColor
+            sceneColor
               .sample(sampleUV)
-              .add(volumePass.getTextureNode("output").sample(sampleUV))
+              .add(atmosphereColor.sample(sampleUV))
               .mul(0.25),
           );
         }
@@ -231,6 +198,63 @@ export function createPostProcessing(
       );
     },
   );
+  return bloomPass;
+}
+
+/**
+ * Create the post-processing pipeline for a quality profile: the scene and atmosphere
+ * passes, optional bloom and FXAA display conversion, and the selection outlines.
+ */
+export function createPostProcessing(
+  renderer: WebGPURenderer,
+  scene: Scene,
+  camera: Camera,
+  options?: {
+    profile?: QualityProfile;
+    selectedObjects?: Object3D[];
+    editSelectionObjects?: Object3D[];
+    programmerValueObjects?: Object3D[];
+    activeSpanObjects?: Object3D[];
+    configOverrides?: Partial<PostProcessingConfig>;
+  },
+): PostProcessingState {
+  /** Outline passes install their own draw callback; the beauty pass skips invisible selection proxies. */
+  renderer.setRenderObjectFunction(
+    (...args: Parameters<WebGPURenderer["renderObject"]>) => {
+      if (args[0].userData.visualizerOutlineOnly === true) return;
+      renderer.renderObject(...args);
+    },
+  );
+  const profile = options?.profile ?? resolveQualityProfile("high");
+  const surfaceLighting = new OpticalSurfaceLighting(profile);
+  renderer.lighting = surfaceLighting;
+  const config = {
+    ...defaultPostProcessingConfig,
+    ...options?.configOverrides,
+  };
+
+  // Preserve subpixel emitter coverage while keeping the atmospheric integration single-sampled.
+  const scenePass = pass(scene, camera, { samples: 4 });
+  scenePass.getTexture("output").name = "scene";
+  const scenePassColor = scenePass.getTextureNode("output");
+  const opticalContext = createOpticalRenderContext(
+    scene,
+    scenePass.getViewZNode(),
+    {
+      profile,
+      surfaceLighting: true,
+      goboAtlas: surfaceLighting.goboAtlas,
+      shadows: surfaceLighting.shadows,
+    },
+  );
+  const volumePass = pass(opticalContext.scene, camera, {
+    samples: 0,
+  }).setResolutionScale(FIXED_ATMOSPHERE_RESOLUTION_SCALE);
+  volumePass.getTexture("output").name = "atmosphere";
+  const litColor = scenePassColor.add(volumePass.getTextureNode("output"));
+  const bloomPass = profile.bloom
+    ? createBloomPass(litColor, scenePassColor, volumePass, config)
+    : undefined;
 
   // Create separate outline passes for programmer, edit, and active-span state.
   const outlinePass = outline(scene, camera, {
@@ -285,14 +309,14 @@ export function createPostProcessing(
   // Create post-processing with combined output.
   const postProcessing = new RenderPipeline(renderer);
   postProcessing.outputNode = litColor
-    .add(quality === "high" ? bloomPass : float(0))
+    .add(bloomPass ?? float(0))
     .add(selectionOutlineColor)
     .add(editSelectionOutlineColor)
     .add(programmerValueOutlineColor)
     .add(activeSpanOutlineColor);
   let displayPass: ReturnType<typeof pass> | undefined;
   let displayMaterial: NodeMaterial | undefined;
-  if (quality === "high") {
+  if (profile.fxaa) {
     displayMaterial = new NodeMaterial();
     displayMaterial.fragmentNode = renderOutput(
       postProcessing.outputNode,
@@ -312,7 +336,7 @@ export function createPostProcessing(
   }
 
   const state: PostProcessingState = {
-    quality,
+    profile,
     renderer,
     scene,
     camera,
@@ -399,16 +423,23 @@ export function updateBloomConfig(
   state: PostProcessingState,
   config: Partial<PostProcessingConfig>,
 ): void {
-  if (config.bloomStrength !== undefined) {
+  if (state.bloomPass && config.bloomStrength !== undefined) {
     state.bloomPass.strength.value = config.bloomStrength;
   }
-  if (config.bloomRadius !== undefined) {
+  if (state.bloomPass && config.bloomRadius !== undefined) {
     state.bloomPass.radius.value = config.bloomRadius;
   }
   // Note: threshold is set at creation time and can't be updated dynamically
   // in the current Three.js bloom implementation
 
   Object.assign(state.config, config);
+}
+
+/** Allocates and compiles GPU work the profile needs before the first frame, such as shadow maps. */
+export async function preparePostProcessing(
+  state: PostProcessingState,
+): Promise<void> {
+  await state.surfaceLighting.shadows?.prepare(state.renderer);
 }
 
 /**
@@ -421,24 +452,22 @@ export function renderWithPostProcessing(
 ): void {
   const started = performance.now();
   const scale = state.atmosphereBudget.update(gpu, started);
-  const beamScale = state.quality === "high" ? scale : 0.5;
-  if (state.volumePass.getResolutionScale() !== beamScale)
-    state.volumePass.setResolutionScale(beamScale);
+  const atmosphereScale = state.profile.adaptiveAtmosphereResolution
+    ? scale
+    : FIXED_ATMOSPHERE_RESOLUTION_SCALE;
+  if (state.volumePass.getResolutionScale() !== atmosphereScale)
+    state.volumePass.setResolutionScale(atmosphereScale);
   // Preserve native-resolution geometry; only the soft effects trade pixels for GPU headroom.
-  if (state.bloomPass.getResolutionScale() !== scale)
+  if (state.bloomPass && state.bloomPass.getResolutionScale() !== scale)
     state.bloomPass.setResolutionScale(scale);
-  const allowShadowRefresh = state.shadowBudget.canRefresh(
-    gpu,
-    updateMs,
-    started,
-  );
-  if (state.quality === "high")
-    state.surfaceLighting?.shadows.update(
+  const shadows = state.surfaceLighting.shadows;
+  if (shadows)
+    shadows.update(
       state.renderer,
       state.scene,
       state.camera,
       started,
-      allowShadowRefresh,
+      state.shadowBudget.canRefresh(gpu, updateMs, started),
       state.shadowBudget.refreshIntervalMs,
     );
   state.postProcessing.render();
@@ -450,12 +479,12 @@ export function disposePostProcessing(
   state: PostProcessingState | null | undefined,
 ): void {
   if (!state) return;
-  state.surfaceLighting?.dispose();
+  state.surfaceLighting.dispose();
   state.outlinePass.dispose();
   state.editSelectionOutlinePass.dispose();
   state.programmerValueOutlinePass.dispose();
   state.activeSpanOutlinePass.dispose();
-  state.bloomPass.dispose();
+  state.bloomPass?.dispose();
   state.volumePass.dispose();
   state.scenePass.dispose();
   state.displayPass?.dispose();

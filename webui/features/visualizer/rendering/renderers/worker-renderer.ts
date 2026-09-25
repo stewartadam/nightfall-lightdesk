@@ -39,6 +39,7 @@ import {
   createPostProcessing,
   disposePostProcessing,
   type PostProcessingState,
+  preparePostProcessing,
   renderWithPostProcessing,
   setActiveSpanOutlineSelectedObjects,
   setEditSelectionOutlineSelectedObjects,
@@ -49,6 +50,7 @@ import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
 import { consumeDueFrame } from "../frame-rate-limiter";
 import { GpuFrameTimer, type TimestampRenderer } from "../gpu-frame-timer";
 import { LatestFrameMailbox } from "../latest-frame-mailbox";
+import { resolveQualityProfile } from "../quality-profile";
 import {
   cancelControlsInteraction,
   createCamera,
@@ -619,15 +621,15 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     this.setCameraRotationMode(this.cameraRotationMode);
     this.setOrbitTargetIndicatorEnabled(this.orbitTargetIndicatorEnabled);
 
+    const profile = resolveQualityProfile(config.beamQuality);
     this.postProcessing = createPostProcessing(
       this.renderer,
       this.scene,
       this.camera,
-      { quality: config.beamQuality },
+      { profile },
     );
-    if (config.beamQuality === "high")
-      await this.postProcessing.surfaceLighting?.shadows.prepare(this.renderer);
-    this.sceneManager = new SceneManager(this.scene, config.beamQuality);
+    await preparePostProcessing(this.postProcessing);
+    this.sceneManager = new SceneManager(this.scene, profile);
     this.initDebugOverlays();
     setOutlineSelectedObjects(
       this.postProcessing,

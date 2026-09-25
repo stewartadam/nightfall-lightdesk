@@ -92,6 +92,7 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
       camera.position.set(center.x, center.y, center.z + 2);
       camera.lookAt(center);
       const pipeline = createPostProcessing(renderer, scene, camera);
+      const bloomPass = pipeline.bloomPass!;
       /** Captures the production tone-mapped pipeline after GPU submission completes. */
       const capture = async () => {
         await new Promise<void>((resolve) => {
@@ -114,7 +115,7 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
           image: canvas.toDataURL(),
         };
       };
-      pipeline.bloomPass.strength.value = 0;
+      bloomPass.strength.value = 0;
       const faces = await capture();
       // Force sustained GPU overload without depending on the test machine's speed.
       const start = performance.now() - 10_000;
@@ -135,7 +136,7 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
       const scales = {
         scene: pipeline.scenePass.getResolutionScale(),
         fog: pipeline.volumePass.getResolutionScale(),
-        glow: pipeline.bloomPass.getResolutionScale(),
+        glow: bloomPass.getResolutionScale(),
         sceneWidth: (
           pipeline.scenePass.getTexture("output").image as { width: number }
         ).width,
@@ -143,7 +144,7 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
           pipeline.scenePass.getTexture("output").image as { height: number }
         ).height,
       };
-      pipeline.bloomPass.strength.value = pipeline.config.bloomStrength;
+      bloomPass.strength.value = pipeline.config.bloomStrength;
       const glow = await capture();
       let haloPixels = 0;
       for (let i = 0; i < faces.pixels.length; i += 4) {

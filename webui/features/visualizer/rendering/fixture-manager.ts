@@ -14,13 +14,13 @@
 import { Euler, MathUtils, Quaternion, type Scene } from "three/webgpu";
 import { createLogger } from "../../../lib/logger";
 import type { RenderableFixture } from "../model/types";
-import type { VisualizerQualityPreset } from "../state/settings";
 import {
   buildFixtureWithoutGeometry,
   buildFixtureWithRenderer,
   disposeFixtureWithRenderer,
   type ExtendedFixtureInstance,
 } from "./fixture-renderers";
+import type { QualityProfile } from "./quality-profile";
 
 const log = createLogger("visualizer:fixture-manager");
 
@@ -29,18 +29,17 @@ const log = createLogger("visualizer:fixture-manager");
  * It synchronizes reactive fixture data from stores with Three.js objects.
  */
 export class FixtureManager {
-  private scene: Scene;
-  private beamQuality: VisualizerQualityPreset;
   private fixtureInstances: Map<string, ExtendedFixtureInstance> = new Map();
   /** Maps fixture UID -> element label -> element index (0-based) */
   private elementLabelMaps: Map<string, Map<string, number>> = new Map();
   /** Maps fixture UID -> ordered element labels (for strobe panel updates) */
   private elementLabelLists: Map<string, string[]> = new Map();
 
-  constructor(scene: Scene, beamQuality: VisualizerQualityPreset = "high") {
-    this.scene = scene;
-    this.beamQuality = beamQuality;
-  }
+  /** Builds fixtures into `scene` with the renderer's resolved quality profile. */
+  constructor(
+    private readonly scene: Scene,
+    private readonly profile: QualityProfile,
+  ) {}
 
   /**
    * Synchronize fixtures in the scene with the provided fixture data.
@@ -116,7 +115,7 @@ export class FixtureManager {
         fixture.geometry,
         fixture.elements,
         fixture.beamType,
-        this.beamQuality,
+        this.profile,
         fixture.layout,
         fixture.physical,
       );
@@ -126,7 +125,7 @@ export class FixtureManager {
         fixture.uid,
         fixture.elements,
         fixture.beamType,
-        this.beamQuality,
+        this.profile,
         fixture.layout,
         fixture.physical,
       );

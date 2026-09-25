@@ -36,7 +36,7 @@ async function crowdedClusters(
     });
     renderer.setSize(400, 400);
     await renderer.init();
-    const lighting = new OpticalSurfaceLighting();
+    const lighting = new OpticalSurfaceLighting({ gobos: true, shadows: true });
     renderer.lighting = lighting;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0);
@@ -177,8 +177,7 @@ for (const forceWebGL of [false, true]) {
       camera.position.z = 4;
       const pipeline = createPostProcessing(renderer, scene, camera);
       const lighting = pipeline.surfaceLighting;
-      if (!lighting)
-        throw new Error("Production optical lighting is unavailable");
+      const goboAtlas = lighting.goboAtlas!;
       const wall = new THREE.Mesh(
         new THREE.PlaneGeometry(8, 6),
         new THREE.MeshStandardNodeMaterial({ color: 0xffffff, roughness: 1 }),
@@ -253,7 +252,7 @@ for (const forceWebGL of [false, true]) {
       const maskContext = maskCanvas.getContext("2d")!;
       maskContext.fillStyle = "black";
       maskContext.fillRect(0, 0, 256, 256);
-      const mask = lighting.goboAtlas.load(maskCanvas.toDataURL("image/png"));
+      const mask = goboAtlas.load(maskCanvas.toDataURL("image/png"));
       while (mask.status === "loading")
         await new Promise((resolve) => setTimeout(resolve, 10));
       if (mask.status !== "ready")
@@ -262,9 +261,7 @@ for (const forceWebGL of [false, true]) {
       const blocked = await capture();
       maskContext.fillStyle = "white";
       maskContext.fillRect(0, 0, 128, 256);
-      const halfMask = lighting.goboAtlas.load(
-        maskCanvas.toDataURL("image/png"),
-      );
+      const halfMask = goboAtlas.load(maskCanvas.toDataURL("image/png"));
       while (halfMask.status === "loading")
         await new Promise((resolve) => setTimeout(resolve, 10));
       if (halfMask.status !== "ready")
@@ -368,12 +365,12 @@ for (const forceWebGL of [false, true]) {
       opticalState.update(opticalValues, 2);
       red.goboRotation = opticalState.goboRotation;
       const reindexed = await capture();
-      red.goboSlot = lighting.goboAtlas.stacks.update("surface", [
+      red.goboSlot = goboAtlas.stacks.update("surface", [
         { slot: mask.index, rotation: 0 },
         { slot: halfMask.index, rotation: 0 },
       ]);
       const stackBlocked = await capture();
-      red.goboSlot = lighting.goboAtlas.stacks.update("surface", [
+      red.goboSlot = goboAtlas.stacks.update("surface", [
         { slot: halfMask.index, rotation: 0 },
         { slot: halfMask.index, rotation: Math.PI },
       ]);

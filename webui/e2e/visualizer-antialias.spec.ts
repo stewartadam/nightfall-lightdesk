@@ -57,8 +57,11 @@ for (const forceWebGL of [false, true]) {
             );
             const row = new FilteredEmitterRow(60, 1 / 60, 0.01, 0.02, 0.03);
             scene.add(row.mesh);
+            const { resolveQualityProfile } = await import(
+              "/features/visualizer/rendering/quality-profile.ts"
+            );
             const pipeline = createPostProcessing(renderer, scene, camera, {
-              quality,
+              profile: resolveQualityProfile(quality),
               configOverrides: { bloomStrength: 0 },
             });
             const filtered =
@@ -266,9 +269,8 @@ for (const forceWebGL of [false, true]) {
           scene.background = new T.Color(0);
           const camera = new T.PerspectiveCamera(45, 1.5, 0.1, 100);
           camera.position.set(0, 0, 4);
-          const pipeline = createPostProcessing(renderer, scene, camera, {
-            quality: "high",
-          });
+          const pipeline = createPostProcessing(renderer, scene, camera);
+          const bloomPass = pipeline.bloomPass!;
           const batch = new EmitterVolumeBatch(scene);
           const geometry = new T.BoxGeometry(0.01, 0.02, 0.03);
           const material = new T.MeshBasicMaterial({
@@ -323,7 +325,7 @@ for (const forceWebGL of [false, true]) {
           const output = [];
           for (const scale of [0.5, 0.25]) {
             pipeline.volumePass.setResolutionScale(scale);
-            pipeline.bloomPass.setResolutionScale(scale);
+            bloomPass.setResolutionScale(scale);
             originalBloom.setResolutionScale(scale);
             for (const stage of [
               "scene",
@@ -349,7 +351,7 @@ for (const forceWebGL of [false, true]) {
                 stage === "no-tone-mapping"
                   ? pipeline.scenePass.getTextureNode("output")
                   : stage === "bloom"
-                    ? pipeline.bloomPass
+                    ? bloomPass
                     : stage === "atmosphere"
                       ? pipeline.volumePass.getTextureNode("output")
                       : original;
@@ -511,8 +513,11 @@ for (const quality of ["low", "medium"] as const) {
           camera.position.set(4, 2, 4);
           camera.lookAt(0, 0, -8);
           scene.add(camera);
+          const { resolveQualityProfile } = await import(
+            "/features/visualizer/rendering/quality-profile.ts"
+          );
           const pipeline = createPostProcessing(renderer, scene, camera, {
-            quality,
+            profile: resolveQualityProfile(quality),
           });
           const batch = new EmitterVolumeBatch(scene);
           batch.update(
@@ -638,8 +643,11 @@ for (const forceWebGL of [false, true]) {
         }
         cells.rotation.z = 0.13;
         scene.add(cells);
+        const { resolveQualityProfile } = await import(
+          "/features/visualizer/rendering/quality-profile.ts"
+        );
         const pipeline = createPostProcessing(renderer, scene, camera, {
-          quality: "medium",
+          profile: resolveQualityProfile("medium"),
         });
         if (!multisampled)
           Object.assign(pipeline.scenePass, { options: { samples: 0 } });

@@ -37,6 +37,7 @@ import {
   Matrix4,
   MaxEquation,
   MeshBasicNodeMaterial,
+  type Node,
   type Object3D,
   OneFactor,
   Quaternion,
@@ -44,6 +45,11 @@ import {
   Vector3,
 } from "three/webgpu";
 import type { EmitterColor } from "../geometry-builder";
+import {
+  type BeamStyle,
+  type QualityProfile,
+  resolveQualityProfile,
+} from "../quality-profile";
 import type { GoboStage } from "./emitter-optical-state";
 import type { ResolvedEmitterOptics } from "./emitter-optics";
 import {
@@ -75,6 +81,78 @@ const RECORD_SIZE = Object.values(ATTRIBUTE_SIZES).reduce(
   0,
 );
 
+/** Scales the schematic cone's DMX drive color into a legible, unexposed display color. */
+const SCHEMATIC_CONE_DRIVE_GAIN = 0.18;
+/** Scales area-normalized radiance on shaded cones to roughly match volumetric haze brightness. */
+const SHADED_CONE_RADIANCE_GAIN = 0.12;
+/** Distance, in meters, over which shaded cones lose three quarters of their brightness. */
+const SHADED_CONE_FALLOFF_DISTANCE = 5;
+/** Exponent easing shaded cones in from the aperture so the source end stays bright. */
+const SHADED_CONE_AXIAL_EXPONENT = 1.5;
+/** Surface-to-view alignment beyond which shaded cones reach full opacity, hiding silhouettes. */
+const SHADED_CONE_FACING_FADE = 0.9;
+/** Peak opacity of shaded cone surfaces. */
+const SHADED_CONE_OPACITY = 0.6;
+
+/** Builds the cheap cone material used by presets that do not ray-march haze. */
+function createConeMaterial(
+  style: Exclude<BeamStyle, { kind: "volumetric" }>,
+  viewDepth: Node<"float"> | undefined,
+): MeshBasicNodeMaterial {
+  const material = new MeshBasicNodeMaterial({
+    transparent: true,
+    depthWrite: false,
+  });
+  if (style.kind === "schematic-cone") {
+    // A schematic union: overlapping apertures must not accumulate into haze.
+    material.blending = CustomBlending;
+    material.blendEquation = MaxEquation;
+    material.blendSrc = OneFactor;
+    material.blendDst = OneFactor;
+    material.colorNode = attribute<"vec3">("volumeDrive", "vec3").mul(
+      SCHEMATIC_CONE_DRIVE_GAIN,
+    );
+    material.opacityNode = float(1);
+  } else {
+    material.blending = AdditiveBlending;
+    material.colorNode = attribute<"vec3">("volumeRadiance", "vec3").mul(
+      SHADED_CONE_RADIANCE_GAIN,
+    );
+    const axial = float(1).sub(uv().y);
+    const distance = axial.mul(attribute<"vec3">("volumeShape", "vec3").y);
+    const facing = abs(
+      dot(normalize(cameraPosition.sub(positionWorld)), normalWorld),
+    );
+    const attenuation = pow(
+      float(SHADED_CONE_FALLOFF_DISTANCE).div(
+        distance.add(SHADED_CONE_FALLOFF_DISTANCE),
+      ),
+      2,
+    );
+    material.opacityNode = pow(uv().y, SHADED_CONE_AXIAL_EXPONENT)
+      .mul(smoothstep(0, SHADED_CONE_FACING_FADE, facing))
+      .mul(attenuation)
+      .mul(SHADED_CONE_OPACITY);
+    material.side = DoubleSide;
+    // Additive front/back faces can share one draw without transparency sorting.
+    material.forceSinglePass = true;
+  }
+  if (viewDepth) {
+    const opacity = material.opacityNode;
+    /** Clips cheap beams against the multisampled rig without multisampling beam overdraw. */
+    material.opacityNode = Fn(() => {
+      const opaqueDepth = float(viewDepth).context({
+        getUV: () => screenUV,
+      });
+      If(positionView.z.lessThan(opaqueDepth), () => {
+        Discard();
+      });
+      return opacity;
+    })();
+  }
+  return material;
+}
+
 /** Packs arbitrary apertures into one draw with shared geometry and material. */
 export class EmitterVolumeBatch {
   private readonly target: Scene;
@@ -83,8 +161,9 @@ export class EmitterVolumeBatch {
   private readonly surfaceLights = new Map<string, OpticalSurfaceLight>();
   private readonly material;
   private readonly volume;
-  private readonly coneSegments: number;
-  readonly goboAtlas: GoboAtlas;
+  private readonly beamStyle: BeamStyle;
+  /** Mask atlas, present only when the quality profile projects gobos. */
+  readonly goboAtlas?: GoboAtlas;
   private readonly ownsGoboAtlas: boolean;
   private mesh!: InstancedMesh;
   private attributes!: Record<AttributeName, InterleavedBufferAttribute>;
@@ -108,81 +187,43 @@ export class EmitterVolumeBatch {
   private readonly basisRight = new Vector3();
   private readonly basisUp = new Vector3();
 
-  /** Allocates one scene-local batch; capacity grows only when fixture topology changes. */
+  /** Capabilities of the pipeline drawing this batch; High when no pipeline owns the scene. */
+  readonly profile: QualityProfile;
+
+  /**
+   * Allocates one scene-local batch drawn in the scene's atmospheric pass when a pipeline
+   * owns one; capacity grows only when fixture topology changes.
+   */
   constructor(scene: Scene) {
     const context = getOpticalRenderContext(scene);
-    this.coneSegments = context?.quality === "medium" ? 48 : 12;
-    this.goboAtlas = context?.goboAtlas ?? new GoboAtlas();
-    this.ownsGoboAtlas = !context?.goboAtlas;
+    const profile = context?.profile ?? resolveQualityProfile("high");
+    this.profile = profile;
+    this.beamStyle = profile.beamStyle;
+    this.goboAtlas = profile.gobos
+      ? (context?.goboAtlas ?? new GoboAtlas())
+      : undefined;
+    this.ownsGoboAtlas = !!this.goboAtlas && !context?.goboAtlas;
     this.surfaceScene = context?.surfaceScene;
-    this.shadows = context?.shadows;
+    this.shadows = profile.shadows ? context?.shadows : undefined;
     this.target = context?.scene ?? scene;
-    this.volume =
-      context && context.quality !== "high"
-        ? undefined
-        : createEmitterVolumeMaterial({
-            instanced: true,
-            viewDepth: context?.viewDepth,
-            goboTexture: this.goboAtlas.texture,
-            goboStacks: this.goboAtlas.stacks.texture,
-            shadows: this.shadows,
-          });
-    if (this.volume) {
+    if (this.beamStyle.kind === "volumetric") {
+      this.volume = createEmitterVolumeMaterial({
+        instanced: true,
+        viewDepth: context?.viewDepth,
+        goboTexture: this.goboAtlas?.texture,
+        goboStacks: this.goboAtlas?.stacks.texture,
+        shadows: this.shadows,
+      });
       this.material = this.volume.material;
     } else {
-      const material = new MeshBasicNodeMaterial({
-        transparent: true,
-        depthWrite: false,
-        blending: AdditiveBlending,
-      });
-      // Low is a schematic union: overlapping apertures must not accumulate into haze.
-      material.blending = CustomBlending;
-      material.blendEquation = MaxEquation;
-      material.blendSrc = OneFactor;
-      material.blendDst = OneFactor;
-      material.colorNode = attribute<"vec3">("volumeDrive", "vec3").mul(0.18);
-      material.opacityNode = float(1);
-      if (context?.quality === "medium") {
-        material.blending = AdditiveBlending;
-        material.colorNode = attribute<"vec3">("volumeRadiance", "vec3").mul(
-          0.12,
-        );
-        // Shaded cone surfaces approximate scattering without ray marching or a fog pass.
-        const axial = float(1).sub(uv().y);
-        const distance = axial.mul(attribute<"vec3">("volumeShape", "vec3").y);
-        const facing = abs(
-          dot(normalize(cameraPosition.sub(positionWorld)), normalWorld),
-        );
-        const attenuation = pow(float(5).div(distance.add(5)), 2);
-        material.opacityNode = pow(uv().y, 1.5)
-          .mul(smoothstep(0, 0.9, facing))
-          .mul(attenuation)
-          .mul(0.6);
-        material.side = DoubleSide;
-        // Additive front/back faces can share one draw without transparency sorting.
-        material.forceSinglePass = true;
-      }
-      if (context) {
-        const opacity = material.opacityNode;
-        /** Clips cheap beams against the multisampled rig without multisampling beam overdraw. */
-        material.opacityNode = Fn(() => {
-          const opaqueDepth = float(context.viewDepth).context({
-            getUV: () => screenUV,
-          });
-          If(positionView.z.lessThan(opaqueDepth), () => {
-            Discard();
-          });
-          return opacity;
-        })();
-      }
-      this.material = material;
+      this.material = createConeMaterial(this.beamStyle, context?.viewDepth);
     }
     this.resize(256);
   }
 
   /** Reserves the largest declared split during fixture setup, before DMX can enable it. */
   reserve(id: string, facets: number): void {
-    this.goboAtlas.stacks.reserve(id);
+    this.goboAtlas?.stacks.reserve(id);
     let keys = this.groups.get(id);
     if (!keys) {
       keys = [];
@@ -218,7 +259,7 @@ export class EmitterVolumeBatch {
     const count = facets?.length || 1;
     this.reserve(id, count);
     if (gobos) {
-      goboSlot = this.goboAtlas.stacks.update(id, gobos);
+      goboSlot = this.goboAtlas?.stacks.update(id, gobos) ?? 0;
       goboRotation = 0;
     }
     const keys = this.groups.get(id)!;
@@ -451,7 +492,7 @@ export class EmitterVolumeBatch {
 
   /** Removes an inactive aperture and compacts its slot without moving other scene objects. */
   remove(id: string): void {
-    this.goboAtlas.stacks.deactivate(id);
+    this.goboAtlas?.stacks.deactivate(id);
     const keys = this.groups.get(id);
     if (keys) for (const key of keys) this.removeInstance(key);
     else this.removeInstance(id);
@@ -497,7 +538,7 @@ export class EmitterVolumeBatch {
         this.remove(id);
         this.reservedCount -= this.groups.get(id)!.length;
         this.groups.delete(id);
-        this.goboAtlas.stacks.release(id);
+        this.goboAtlas?.stacks.release(id);
         for (const [key, light] of this.surfaceLights) {
           if (key === id || key.startsWith(`${id}\0`)) {
             light.removeFromParent();
@@ -517,7 +558,7 @@ export class EmitterVolumeBatch {
     }
     this.surfaceLights.clear();
     this.slots.clear();
-    for (const id of this.groups.keys()) this.goboAtlas.stacks.release(id);
+    for (const id of this.groups.keys()) this.goboAtlas?.stacks.release(id);
     this.groups.clear();
     this.reservedCount = 0;
     this.ids.length = 0;
@@ -530,18 +571,19 @@ export class EmitterVolumeBatch {
     this.mesh.geometry.dispose();
     this.mesh.dispose();
     this.material.dispose();
-    if (this.ownsGoboAtlas) this.goboAtlas.dispose();
+    if (this.ownsGoboAtlas) this.goboAtlas?.dispose();
     this.clear();
   }
 
   /** Reallocates instance buffers geometrically rather than once per additional fixture. */
   private resize(capacity: number): void {
     const previous = this.mesh;
-    const geometry = this.volume
-      ? new BoxGeometry(1, 1, 1)
-      : new ConeGeometry(0.25, 1, this.coneSegments, 1, true).rotateX(
-          Math.PI / 2,
-        );
+    const geometry =
+      this.beamStyle.kind === "volumetric"
+        ? new BoxGeometry(1, 1, 1)
+        : new ConeGeometry(0.25, 1, this.beamStyle.segments, 1, true).rotateX(
+            Math.PI / 2,
+          );
     const attributes = {} as Record<AttributeName, InterleavedBufferAttribute>;
     const records = new InstancedInterleavedBuffer(
       new Float32Array(capacity * RECORD_SIZE),
@@ -573,7 +615,7 @@ export class EmitterVolumeBatch {
     this.dirty = true;
     /** Uploads all changed emitter records once for the submitted frame. */
     mesh.onBeforeRender = () => {
-      if (this.volume)
+      if (this.volume && this.goboAtlas)
         this.volume.atlasColumns.value = this.goboAtlas.tilesPerRow;
       if (!this.dirty) return;
       this.records.needsUpdate = true;

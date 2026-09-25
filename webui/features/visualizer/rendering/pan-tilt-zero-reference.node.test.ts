@@ -59,6 +59,7 @@ import {
   updateStrobePanelColors,
 } from "./fixture-renderers/strobe-renderer";
 import { updateGdtfPanTilt } from "./geometry-builder";
+import { resolveQualityProfile } from "./quality-profile";
 import {
   applyStrobeShutterIntensity,
   extractElementDmxData,
@@ -67,6 +68,9 @@ import {
   strobeShutterFrequencyHz,
   strobeShutterOutputScale,
 } from "./visualizer-dmx";
+
+const HIGH = resolveQualityProfile("high");
+const LOW = resolveQualityProfile("low");
 
 /**
  * Asserts that numeric values match within the tolerance used by geometry comparisons.
@@ -963,7 +967,7 @@ test("renderer registry prefers explicit Generic renderers over GDTF geometry", 
     geometry,
     controlFirstStrobeElements(),
     undefined,
-    "high",
+    HIGH,
     FixtureLayout.StrobeMatrix,
   );
   assert.equal(matrix.rendererType, "strobe-panel");
@@ -975,7 +979,7 @@ test("renderer registry prefers explicit Generic renderers over GDTF geometry", 
     geometry,
     rgbStrobeBarElements(),
     undefined,
-    "high",
+    HIGH,
     FixtureLayout.RgbStrobeBar,
   );
   assert.equal(bar.rendererType, "strobe-panel");
@@ -986,7 +990,7 @@ test("renderer registry prefers explicit Generic renderers over GDTF geometry", 
     geometry,
     rotatingWashBeamElements(),
     undefined,
-    "high",
+    HIGH,
     FixtureLayout.RotatingWashBeam,
   );
   assert.equal(wash.rendererType, "rotating-wash-beam");
@@ -997,7 +1001,7 @@ test("renderer registry prefers explicit Generic renderers over GDTF geometry", 
     geometry,
     [{ label: "Main", parameters: [] }],
     undefined,
-    "high",
+    HIGH,
     FixtureLayout.MovingHead,
   );
   assert.equal(spot.rendererType, "moving-head");
@@ -1671,9 +1675,11 @@ test("explicit layouts select renderers without fixture names", () => {
 /** Source photometry overrides fallback values and rebuilds only when the physical definition changes. */
 test("moving heads publish resolved output to the shared atmospheric batch", () => {
   const scene = new Scene();
-  const context = createOpticalRenderContext(scene, float(-100), true);
-  const manager = new FixtureManager(scene, "high");
-  const beams = new BeamManager(scene, "high");
+  const context = createOpticalRenderContext(scene, float(-100), {
+    surfaceLighting: true,
+  });
+  const manager = new FixtureManager(scene, HIGH);
+  const beams = new BeamManager(scene);
   const updater = new BeamUpdater(beams);
   const fixture: RenderableFixture = {
     uid: "shared-head",
@@ -1720,9 +1726,11 @@ test("moving heads publish resolved output to the shared atmospheric batch", () 
 /** Imported parent controls and wheel media survive the moving-head adapter and reach beam rendering. */
 test("moving-head layout preserves inherited optical controls", () => {
   const scene = new Scene();
-  const context = createOpticalRenderContext(scene, float(-100), true);
-  const manager = new FixtureManager(scene, "high");
-  const beams = new BeamManager(scene, "high");
+  const context = createOpticalRenderContext(scene, float(-100), {
+    surfaceLighting: true,
+  });
+  const manager = new FixtureManager(scene, HIGH);
+  const beams = new BeamManager(scene);
   const updater = new BeamUpdater(beams);
   const geometry: FixtureGeometry = {
     gdtfPath: "imported.gdtf",
@@ -1863,9 +1871,11 @@ test("moving-head layout preserves inherited optical controls", () => {
 /** Independent wash apertures share a draw while decorative strip pixels remain surface emitters. */
 test("rotating wash routes each lens independently to shared atmosphere", () => {
   const scene = new Scene();
-  const context = createOpticalRenderContext(scene, float(-100), true);
-  const manager = new FixtureManager(scene, "high");
-  const beams = new BeamManager(scene, "high");
+  const context = createOpticalRenderContext(scene, float(-100), {
+    surfaceLighting: true,
+  });
+  const manager = new FixtureManager(scene, HIGH);
+  const beams = new BeamManager(scene);
   const updater = new BeamUpdater(beams);
   const elements = rotatingWashBeamElements();
   const fixture: RenderableFixture = {
@@ -1915,7 +1925,7 @@ test("rotating wash routes each lens independently to shared atmosphere", () => 
 
 /** Source photometry overrides fallback values and rebuilds only when the physical definition changes. */
 test("fixture photometry reaches built-in moving heads and updates without changing placement", () => {
-  const manager = new FixtureManager(new Scene(), "low");
+  const manager = new FixtureManager(new Scene(), LOW);
   const physical = {
     beamType: BeamType.Spot,
     beamAngle: 8,
@@ -1961,7 +1971,7 @@ test("fixture photometry reaches built-in moving heads and updates without chang
 
 /** Ensures editing layout rebuilds a fixture once, while renaming preserves its renderer. */
 test("fixture manager rebuilds changed layouts and preserves renamed layouts", () => {
-  const manager = new FixtureManager(new Scene(), "low");
+  const manager = new FixtureManager(new Scene(), LOW);
   const fixture: RenderableFixture = {
     uid: "editable-layout",
     fixtureId: 1,

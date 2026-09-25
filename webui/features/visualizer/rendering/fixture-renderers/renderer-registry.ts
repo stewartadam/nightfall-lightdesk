@@ -24,12 +24,8 @@ import type {
   FixturePhysical,
 } from "../../../../types";
 import type { FixtureInstance } from "../../model/types";
-import type { VisualizerQualityPreset } from "../../state/settings";
-import {
-  EMITTER_RADIANCE,
-  UNBLOOMED_EMITTER_RADIANCE,
-} from "../emitter-radiance";
 import { buildGeometryTree, disposeFixtureInstance } from "../geometry-builder";
+import type { QualityProfile } from "../quality-profile";
 import {
   buildSimpleLedBar,
   disposeLedBar,
@@ -108,25 +104,21 @@ export function detectRendererType(layout?: FixtureLayout): RendererType {
   }
 }
 
-/** Scales HDR emitter faces so presets rendered without bloom keep them readable. */
-function emitterDisplayGain(quality: VisualizerQualityPreset): number {
-  return quality === "high" ? 1 : UNBLOOMED_EMITTER_RADIANCE / EMITTER_RADIANCE;
-}
-
 /**
- * Build a fixture instance using the appropriate renderer.
+ * Build a fixture instance using the appropriate renderer, applying the quality profile's
+ * emitter display gain to luminous faces.
  */
 export function buildFixtureWithRenderer(
   fixtureUid: string,
   geometry: FixtureGeometry,
   elements: FixtureElement[],
-  beamType?: BeamType,
-  beamQuality: VisualizerQualityPreset = "high",
+  beamType: BeamType | undefined,
+  profile: QualityProfile,
   layout?: FixtureLayout,
   physical?: FixturePhysical,
 ): ExtendedFixtureInstance {
   const rendererType = detectRendererType(layout);
-  const displayGain = emitterDisplayGain(beamQuality);
+  const displayGain = profile.emitterDisplayGain;
 
   switch (rendererType) {
     case "led-bar": {
@@ -201,18 +193,19 @@ export function buildFixtureWithRenderer(
 }
 
 /**
- * Build a fixture without GDTF geometry using element data.
+ * Build a fixture without GDTF geometry using element data, applying the quality profile's
+ * emitter display gain to luminous faces.
  * Returns null if no appropriate renderer is available.
  */
 export function buildFixtureWithoutGeometry(
   fixtureUid: string,
   elements: FixtureElement[],
-  beamType?: BeamType,
-  beamQuality: VisualizerQualityPreset = "high",
+  beamType: BeamType | undefined,
+  profile: QualityProfile,
   layout?: FixtureLayout,
   physical?: FixturePhysical,
 ): ExtendedFixtureInstance | null {
-  const displayGain = emitterDisplayGain(beamQuality);
+  const displayGain = profile.emitterDisplayGain;
   if (layout === "rgb-strobe-bar") {
     const instance = buildRgbStrobeBarFixture(
       fixtureUid,

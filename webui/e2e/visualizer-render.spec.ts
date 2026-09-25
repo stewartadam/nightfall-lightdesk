@@ -491,7 +491,7 @@ for (const worker of [false, true]) {
               );
               const context = getOpticalRenderContext(scene);
               return {
-                quality: context?.quality,
+                quality: context?.profile.preset,
                 cones: !!context?.scene.getObjectByName("EmitterBeams"),
                 volumes: !!context?.scene.getObjectByName("EmitterVolumes"),
               };
@@ -957,7 +957,7 @@ test("low quality spot and wash comparison", async ({ page }, testInfo) => {
         );
         const context = getOpticalRenderContext(scene)!;
         return {
-          quality: context.quality,
+          quality: context.profile.preset,
           count: (context.scene.getObjectByName("EmitterBeams") as any)?.count,
         };
       }),
@@ -1944,16 +1944,18 @@ async function rotatingWashBeamOpticalStats(
       atmosphericDraws: 0,
     };
 
+    // Shadow keys link atmospheric instances to lights; presets without shadow maps leave them 0.
     const lightIds = new Set<number>();
     scene.traverse((object: any) => {
       if (
         object.name.startsWith(`OpticalSurface:${uid}:`) &&
         object.visible &&
         object.intensity > 0.01
-      )
+      ) {
+        stats.opticalBeamCount++;
         lightIds.add(object.shadowKey);
+      }
     });
-    stats.opticalBeamCount = lightIds.size;
     const { getOpticalRenderContext } = await import(
       "/features/visualizer/rendering/effects/optical-render-context.ts"
     );

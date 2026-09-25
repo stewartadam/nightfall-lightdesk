@@ -40,6 +40,7 @@ test("300 active optical sources sustain frame pacing", async ({
       );
       const {
         createPostProcessing,
+        preparePostProcessing,
         renderWithPostProcessing,
         disposePostProcessing,
       } = await import(
@@ -72,7 +73,7 @@ test("300 active optical sources sustain frame pacing", async ({
       wall.position.set(0, 2, -15);
       scene.add(wall);
       const pipeline = createPostProcessing(renderer, scene, camera);
-      await pipeline.surfaceLighting?.shadows.prepare(renderer);
+      await preparePostProcessing(pipeline);
       const batch = new EmitterVolumeBatch(scene);
       const optics = {
         shape: "round" as const,

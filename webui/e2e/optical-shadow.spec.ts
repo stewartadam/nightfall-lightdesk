@@ -36,9 +36,12 @@ for (const forceWebGL of [false, true]) {
       });
       renderer.setSize(320, 320);
       await renderer.init();
-      const lighting = new OpticalSurfaceLighting();
+      const lighting = new OpticalSurfaceLighting({
+        gobos: true,
+        shadows: true,
+      });
       renderer.lighting = lighting;
-      const pool = lighting.shadows;
+      const pool = lighting.shadows!;
       await pool.prepare(renderer);
       const scene = new T.Scene();
       const camera = new T.PerspectiveCamera(60, 1, 0.1, 20);
@@ -242,9 +245,12 @@ for (const forceWebGL of [false, true]) {
         renderer.dispose();
         return null;
       }
-      const lighting = new OpticalSurfaceLighting();
+      const lighting = new OpticalSurfaceLighting({
+        gobos: true,
+        shadows: true,
+      });
       renderer.lighting = lighting;
-      const pool = lighting.shadows;
+      const pool = lighting.shadows!;
       await pool.prepare(renderer);
       const scene = new T.Scene();
       const camera = new T.PerspectiveCamera(60, 1, 0.1, 20);

@@ -63,19 +63,19 @@ test("batch gobo diagnostics clear on blackout, fixture removal and disposal", (
       masks,
     );
   activate();
-  assert.equal(batch.goboAtlas.stacks.reducedStacks, 1);
+  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 1);
   batch.remove("fixture:head");
-  assert.equal(batch.goboAtlas.stacks.reducedStacks, 0);
+  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 0);
   activate();
-  assert.equal(batch.goboAtlas.stacks.reducedStacks, 1);
+  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 1);
   batch.sync(new Map());
-  assert.equal(batch.goboAtlas.stacks.reducedStacks, 0);
+  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 0);
   activate();
   batch.clear();
-  assert.equal(batch.goboAtlas.stacks.reducedStacks, 0);
+  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 0);
   activate();
   batch.dispose();
-  assert.equal(batch.goboAtlas.stacks.reducedStacks, 0);
+  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 0);
 });
 
 /** Stack addresses survive growth, growth releases the undersized GPU storage, released rows are reused, and open masks consume no sampling budget. */

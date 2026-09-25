@@ -31,7 +31,10 @@ for (const forceWebGL of [false, true]) {
       });
       renderer.setSize(400, 400);
       await renderer.init();
-      const lighting = new OpticalSurfaceLighting();
+      const lighting = new OpticalSurfaceLighting({
+        gobos: true,
+        shadows: true,
+      });
       renderer.lighting = lighting;
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0);

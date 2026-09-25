@@ -19,6 +19,7 @@ import {
   Scene,
   Vector3,
 } from "three/webgpu";
+import { resolveQualityProfile } from "../quality-profile";
 import { EmitterVolumeBatch } from "./emitter-volume-batch";
 import { createOpticalRenderContext } from "./optical-render-context";
 import { OpticalShadowPool } from "./optical-shadow-pool";
@@ -26,7 +27,22 @@ import {
   FULL_CLUSTER_PRIORITY_LIGHTS,
   OpticalClusteredLightsNode,
   OpticalSurfaceLight,
+  OpticalSurfaceLighting,
 } from "./optical-surface-lighting";
+
+/** Lower presets must not pay for a mask atlas or shadow maps they never sample. */
+test("surface lighting allocates masks and shadow maps only for profiles that use them", () => {
+  for (const preset of ["low", "medium"] as const) {
+    const lighting = new OpticalSurfaceLighting(resolveQualityProfile(preset));
+    assert.equal(lighting.goboAtlas, undefined, preset);
+    assert.equal(lighting.shadows, undefined, preset);
+    lighting.dispose();
+  }
+  const high = new OpticalSurfaceLighting(resolveQualityProfile("high"));
+  assert.ok(high.goboAtlas);
+  assert.ok(high.shadows);
+  high.dispose();
+});
 
 /** Excess point sources must not overflow GPU storage or expand the material's analytic light loop. */
 test("cluster capacity preserves non-point lighting and resets overflow on removal", () => {
@@ -49,7 +65,7 @@ test("cluster capacity preserves non-point lighting and resets overflow on remov
 /** Cluster spheres must retain wide, sheared and translated prism fields through the full throw. */
 test("surface bounds contain transformed prism field corners", () => {
   const scene = new Scene();
-  createOpticalRenderContext(scene, float(-100), true);
+  createOpticalRenderContext(scene, float(-100), { surfaceLighting: true });
   const batch = new EmitterVolumeBatch(scene);
   const aperture = new Object3D();
   const optics = {
@@ -111,7 +127,7 @@ test("surface bounds contain transformed prism field corners", () => {
 /** Surface sources share emitter pose and live optics, survive blackout for reuse, and release with the batch. */
 test("atmospheric emitters own matching reusable surface lights", () => {
   const scene = new Scene();
-  createOpticalRenderContext(scene, float(-100), true);
+  createOpticalRenderContext(scene, float(-100), { surfaceLighting: true });
   const batch = new EmitterVolumeBatch(scene);
   const aperture = new Object3D();
   aperture.position.set(1, 2, 3);
@@ -152,7 +168,10 @@ test("atmospheric emitters own matching reusable surface lights", () => {
 test("atmospheric instances carry the pool's small shadow key", () => {
   const scene = new Scene();
   const pool = new OpticalShadowPool();
-  createOpticalRenderContext(scene, float(-100), true, undefined, pool);
+  createOpticalRenderContext(scene, float(-100), {
+    surfaceLighting: true,
+    shadows: pool,
+  });
   const batch = new EmitterVolumeBatch(scene);
   const optics = {
     shape: "round" as const,

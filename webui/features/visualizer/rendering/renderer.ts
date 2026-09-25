@@ -43,11 +43,11 @@ import {
   saveCameraState,
 } from "../model/camera-state";
 import { setupInspectorParams } from "../model/inspector-params";
-import type { VisualizerQualityPreset } from "../state/settings";
 import {
   createPostProcessing,
   disposePostProcessing,
   type PostProcessingState,
+  preparePostProcessing,
   renderWithPostProcessing,
 } from "./effects/post-processing";
 import { consumeDueFrame } from "./frame-rate-limiter";
@@ -57,6 +57,7 @@ import {
   readInspectorGpuSample,
   type TimestampRenderer,
 } from "./gpu-frame-timer";
+import { type QualityProfile, resolveQualityProfile } from "./quality-profile";
 import type { CameraState } from "./renderers/renderer-api";
 import {
   createSceneEnvironment,
@@ -183,7 +184,7 @@ export interface RendererState extends CoreRendererState {
  */
 export async function initRenderer(
   canvas: HTMLCanvasElement,
-  quality: VisualizerQualityPreset = "high",
+  profile: QualityProfile = resolveQualityProfile("high"),
   initialCameraState?: CameraState,
 ): Promise<RendererState> {
   // Create WebGPU renderer (falls back to WebGL if WebGPU unavailable)
@@ -255,10 +256,9 @@ export async function initRenderer(
   // Setup post-processing with bloom
   await renderer.init();
   const postProcessing = createPostProcessing(renderer, scene, camera, {
-    quality,
+    profile,
   });
-  if (quality === "high")
-    await postProcessing.surfaceLighting?.shadows.prepare(renderer);
+  await preparePostProcessing(postProcessing);
 
   // Setup inspector parameters
   const updateInspector = inspector
