@@ -14,9 +14,7 @@ use moonshine_kind::prelude::*;
 use nightfall::command_types::DmxChannelRef;
 use nightfall::prelude::{ObjectRef, ObjectType, Priority};
 use nightfall_compositor::types::{Layer, ObjectRefMarker, ParameterMap, ParameterRef};
-use nightfall_dmx::prelude::{
-    ChannelDmxValue, DmxValueResolution, ParameterDmxValue, ParameterValue,
-};
+use nightfall_dmx::prelude::{ParameterDmxValue, ParameterValue};
 use nightfall_engine::LayerGeneration;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandResponder, EngineActionEnvelope,
@@ -24,10 +22,11 @@ use nightfall_engine::prelude::{
 use nightfall_instances::{PlaybackAction, PlaybackScope};
 
 use crate::prelude::{
-    ConsoleDmxUniverses, DmxAction, FixtureCommand, InputDmxUniverses, Parameter,
-    ParameterAssertion, ParameterAssertionSource, ResolvedInputBindings, ResolvedInputDestination,
-    ResolvedInputSource, ResolvedOutputDestinations,
+    ConsoleDmxUniverses, DmxAction, FixtureCommand, InputDmxUniverses, OutputDestination,
+    Parameter, ParameterAssertion, ParameterAssertionSource, ResolvedInputBindings,
+    ResolvedInputDestination, ResolvedInputSource, ResolvedOutputDestinations,
 };
+use crate::wire_layout::{combine_dmx_bytes, dmx_max};
 
 /// Priority for the transport input assertion layer.
 pub const TRANSPORT_INPUT_LAYER_PRIORITY: Priority = Priority(-128);
@@ -317,13 +316,11 @@ fn set_manual_assertion_from_channel(
     layer: &mut Layer,
 ) {
     for (parameter, destinations) in destinations_query.iter() {
-        let Some((universe, address)) = matching_destination(channel, &parameter, destinations)
-        else {
+        let Some(destination) = matching_destination(channel, destinations) else {
             continue;
         };
 
-        let dmx_value =
-            dmx_value_from_universe(universes, universe, address, &parameter.metadata.resolution);
+        let dmx_value = dmx_value_from_universe(universes, destination);
         let value = dmx_value_to_parameter_value(dmx_value, &parameter.metadata);
         layer.absolute.insert(
             parameter.instance(),
@@ -339,72 +336,41 @@ fn remove_manual_assertion_for_channel(
     layer: &mut Layer,
 ) {
     for (parameter, destinations) in destinations_query.iter() {
-        if matching_destination(channel, &parameter, destinations).is_some() {
+        if matching_destination(channel, destinations).is_some() {
             layer.absolute.remove(parameter.instance());
             layer.relative.remove(parameter.instance());
         }
     }
 }
 
-fn matching_destination(
+/// Finds the destination whose bytes include the selected console channel.
+fn matching_destination<'a>(
     channel: &DmxChannelRef,
-    parameter: &InstanceRef<Parameter>,
-    destinations: Option<&ResolvedOutputDestinations>,
-) -> Option<(u16, u16)> {
-    let destinations = destinations?;
-    let channel_width = parameter.metadata.resolution.channel_width();
-
-    destinations.destinations.iter().find_map(|destination| {
-        if destination.universe != channel.universe {
-            return None;
-        }
-        if channel.address < destination.address
-            || channel.address >= destination.address + channel_width
-        {
-            return None;
-        }
-        Some((destination.universe, destination.address))
+    destinations: Option<&'a ResolvedOutputDestinations>,
+) -> Option<&'a OutputDestination> {
+    destinations?.destinations.iter().find(|destination| {
+        destination.universe == channel.universe && destination.addresses.contains(&channel.address)
     })
 }
 
+/// Reads a destination's bytes from the console universe and combines them into a DMX integer.
 fn dmx_value_from_universe(
     universes: &ConsoleDmxUniverses,
-    universe_id: u16,
-    address: u16,
-    resolution: &DmxValueResolution,
+    destination: &OutputDestination,
 ) -> u32 {
-    let read = |offset: u16| -> ChannelDmxValue {
+    combine_dmx_bytes(destination.addresses.iter().map(|address| {
         universes
-            .get_value(universe_id, address.saturating_add(offset))
+            .get_value(destination.universe, *address)
             .unwrap_or(0)
-    };
-
-    match resolution {
-        DmxValueResolution::Coarse => read(0) as u32,
-        DmxValueResolution::Fine => ((read(0) as u32) << 8) | read(1) as u32,
-        DmxValueResolution::UltraFine => {
-            ((read(0) as u32) << 16) | ((read(1) as u32) << 8) | read(2) as u32
-        }
-        DmxValueResolution::Uber => {
-            ((read(0) as u32) << 24)
-                | ((read(1) as u32) << 16)
-                | ((read(2) as u32) << 8)
-                | read(3) as u32
-        }
-    }
+    }))
 }
 
+/// Maps a DMX integer to the parameter's logical value range.
 fn dmx_value_to_parameter_value(
     dmx_value: u32,
     metadata: &crate::prelude::ParameterMetadata,
 ) -> ParameterDmxValue {
-    let dmx_max = match metadata.resolution {
-        DmxValueResolution::Coarse => 255.0,
-        DmxValueResolution::Fine => 65535.0,
-        DmxValueResolution::UltraFine => 16777215.0,
-        DmxValueResolution::Uber => u32::MAX as ParameterDmxValue,
-    };
-
+    let dmx_max = dmx_max(metadata.resolution) as ParameterDmxValue;
     let normalized = (dmx_value as ParameterDmxValue / dmx_max).clamp(0.0, 1.0);
     let min = metadata.logical_min();
     let max = metadata.logical_max();
@@ -413,7 +379,9 @@ fn dmx_value_to_parameter_value(
 
 #[cfg(test)]
 mod tests {
-    use nightfall_dmx::prelude::{Attribute, ParameterUnit, ParameterValuePolarity};
+    use nightfall_dmx::prelude::{
+        Attribute, DmxValueResolution, ParameterUnit, ParameterValuePolarity,
+    };
     use nightfall_io::BindingTransport;
 
     use super::*;
@@ -472,7 +440,7 @@ mod tests {
                 destination: ResolvedInputDestination::Fixture {
                     targets: vec![ResolvedInputTarget {
                         entity: kept_parameter.entity(),
-                        offset: 0,
+                        offsets: vec![0],
                     }],
                 },
             }],

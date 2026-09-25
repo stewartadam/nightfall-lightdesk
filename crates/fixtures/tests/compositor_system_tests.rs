@@ -75,6 +75,7 @@ fn spawn_test_parameter(app: &mut App, default_value: f32, current_value: f32) -
     app.world_mut()
         .spawn(Parameter {
             metadata: ParameterMetadata {
+                dmx_slots: Default::default(),
                 resolution: DmxValueResolution::Coarse,
                 attribute: Attribute::Intensity,
                 native_unit: Attribute::Intensity.native_unit(),
@@ -571,6 +572,7 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
 
     let fixture_uid = uuid::Uuid::new_v4();
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Intensity,
         native_unit: Attribute::Intensity.native_unit(),
@@ -677,6 +679,7 @@ fn test_compositor_merges_layers_by_priority() {
 
     // Create a parameter with LTP (Latest Takes Precedence) merge strategy
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Red,
         native_unit: Attribute::Red.native_unit(),
@@ -771,6 +774,7 @@ fn compositor_uses_layer_compositing_context_for_release_elapsed() {
         .world_mut()
         .spawn(Parameter {
             metadata: ParameterMetadata {
+                dmx_slots: Default::default(),
                 resolution: DmxValueResolution::Coarse,
                 attribute: Attribute::Intensity,
                 native_unit: Attribute::Intensity.native_unit(),
@@ -835,6 +839,7 @@ fn test_compositor_same_priority_htp_highest_value_wins() {
 
     // Create a parameter with HTP (Highest Takes Precedence) merge strategy
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Intensity,
         native_unit: Attribute::Intensity.native_unit(),
@@ -928,6 +933,7 @@ fn test_compositor_same_priority_ltp_activation_order_wins() {
 
     // Create a parameter with LTP (Latest Takes Precedence) merge strategy
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Red,
         native_unit: Attribute::Red.native_unit(),
@@ -1022,6 +1028,7 @@ fn test_compositor_priority_takes_precedence_over_htp() {
 
     // Create a parameter with HTP merge strategy
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Intensity,
         native_unit: Attribute::Intensity.native_unit(),
@@ -1114,6 +1121,7 @@ fn test_compositor_priority_takes_precedence_over_ltp() {
 
     // Create a parameter with LTP merge strategy
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Red,
         native_unit: Attribute::Red.native_unit(),
@@ -1205,6 +1213,7 @@ fn test_compositor_handles_ltp_merge_strategy() {
 
     // Create a parameter with LTP (Latest Takes Precedence) merge strategy
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Red,
         native_unit: Attribute::Red.native_unit(),
@@ -1310,6 +1319,7 @@ fn test_compositor_resets_to_default_after_layer_removal() {
     app.init_resource::<FinalLayerAttributedAssertions>();
 
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Red,
         native_unit: Attribute::Red.native_unit(),
@@ -1404,6 +1414,7 @@ fn test_compositor_resets_inverted_parameter_to_logical_default() {
     app.init_resource::<FinalLayerAttributedAssertions>();
 
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Red,
         native_unit: Attribute::Red.native_unit(),
@@ -1488,7 +1499,7 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
                 destinations: vec![OutputDestination {
                     transport: OutputTransport::Disabled,
                     universe: 5,
-                    address: 13,
+                    addresses: vec![13],
                 }],
             },
         ))

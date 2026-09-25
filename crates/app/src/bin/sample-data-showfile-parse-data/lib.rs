@@ -240,6 +240,7 @@ fn parameter_metadata(
     use_grandmaster: bool,
 ) -> ParameterMetadata {
     ParameterMetadata {
+        dmx_slots: Default::default(),
         attribute: attribute.clone(),
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),

@@ -14,9 +14,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
 use nightfall_compositor::types::Layer;
-use nightfall_dmx::prelude::{
-    DmxValueResolution, MAX_CHANNELS_PER_UNIVERSE, ParameterDmxValue, ParameterValue,
-};
+use nightfall_dmx::prelude::{MAX_CHANNELS_PER_UNIVERSE, ParameterDmxValue, ParameterValue};
 use nightfall_engine::LayerGeneration;
 use nightfall_io::BindingTransport;
 use nightfall_io::{AcceptedDmxFrame, DmxInputSet};
@@ -24,6 +22,7 @@ use web_time::Instant;
 
 use crate::compositor::apply_parameter_assertions;
 use crate::prelude::*;
+use crate::wire_layout::{combine_dmx_bytes, dmx_max};
 
 /// Registers same-update consumption of frames accepted by IO adapters.
 pub struct TransportInputPlugin;
@@ -223,8 +222,7 @@ fn apply_parameter_targets(
             continue;
         };
 
-        let source_address = source_base_address.saturating_add(target.offset);
-        let dmx_value = dmx_value_from_frame(data, source_address, parameter.metadata.resolution);
+        let dmx_value = dmx_value_from_frame(data, source_base_address, &target.offsets);
         let parameter_value = dmx_value_to_parameter_value(dmx_value, &parameter.metadata);
         assertions.push(ParameterAssertion {
             parameter: parameter.instance(),
@@ -303,37 +301,25 @@ fn apply_console_input_mapping(
     }
 }
 
-/// Reads a DMX value from a frame at the given address using the requested byte resolution.
+/// Reads a DMX value from a frame, combining the bytes at `base_address + offset` for each offset.
 ///
-/// Address `0` is treated as invalid and returns `0.0`. Missing bytes at frame edges
+/// Base address `0` is treated as invalid and returns `0.0`. Missing bytes at frame edges
 /// are treated as `0`.
 fn dmx_value_from_frame(
     data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
-    address: u16,
-    resolution: DmxValueResolution,
+    base_address: u16,
+    offsets: &[u16],
 ) -> ParameterDmxValue {
-    if address == 0 {
+    if base_address == 0 {
         return 0.0;
     }
 
-    let base_idx = (address - 1) as usize;
-    let read_byte = |idx: usize| -> u32 { data.get(idx).copied().unwrap_or(0) as u32 };
-
-    let combined = match resolution {
-        DmxValueResolution::Coarse => read_byte(base_idx),
-        DmxValueResolution::Fine => (read_byte(base_idx) << 8) | read_byte(base_idx + 1),
-        DmxValueResolution::UltraFine => {
-            (read_byte(base_idx) << 16) | (read_byte(base_idx + 1) << 8) | read_byte(base_idx + 2)
-        }
-        DmxValueResolution::Uber => {
-            (read_byte(base_idx) << 24)
-                | (read_byte(base_idx + 1) << 16)
-                | (read_byte(base_idx + 2) << 8)
-                | read_byte(base_idx + 3)
-        }
-    };
-
-    combined as ParameterDmxValue
+    let base_idx = (base_address - 1) as usize;
+    combine_dmx_bytes(
+        offsets
+            .iter()
+            .map(|offset| data.get(base_idx + *offset as usize).copied().unwrap_or(0)),
+    ) as ParameterDmxValue
 }
 
 /// Converts a raw DMX value into a percent-based absolute parameter value.
@@ -341,17 +327,7 @@ fn dmx_value_to_parameter_value(
     dmx_value: ParameterDmxValue,
     metadata: &ParameterMetadata,
 ) -> ParameterValue {
-    let dmx_max: ParameterDmxValue = match metadata.resolution {
-        DmxValueResolution::Coarse => 255.0,
-        DmxValueResolution::Fine => 65535.0,
-        DmxValueResolution::UltraFine => 16777215.0,
-        DmxValueResolution::Uber => u32::MAX as ParameterDmxValue,
-    };
-
-    if dmx_max <= 0.0 {
-        return ParameterValue::AbsolutePercent { value: 0.0.into() };
-    }
-
+    let dmx_max = dmx_max(metadata.resolution) as ParameterDmxValue;
     let normalized = (dmx_value / dmx_max).clamp(0.0, 1.0);
     let min = metadata.logical_min();
     let max = metadata.logical_max();
@@ -362,7 +338,7 @@ fn dmx_value_to_parameter_value(
 
 #[cfg(test)]
 mod tests {
-    use nightfall_dmx::prelude::{Attribute, ParameterValuePolarity};
+    use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValuePolarity};
 
     use super::*;
 

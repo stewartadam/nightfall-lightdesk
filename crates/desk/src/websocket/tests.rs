@@ -60,6 +60,7 @@ fn spawn_parameter(
         .world_mut()
         .spawn(Parameter {
             metadata: ParameterMetadata {
+                dmx_slots: Default::default(),
                 resolution: DmxValueResolution::Coarse,
                 native_unit: attribute.native_unit(),
                 value_polarity: attribute.value_polarity(),

@@ -56,22 +56,6 @@ export function getAttributeName(attr: Attribute): string {
   return attr.type;
 }
 
-/** Calculate DMX channel width from resolution */
-export function getChannelWidth(resolution: string): number {
-  switch (resolution) {
-    case "Coarse":
-      return 1;
-    case "Fine":
-      return 2;
-    case "UltraFine":
-      return 3;
-    case "Uber":
-      return 4;
-    default:
-      return 1;
-  }
-}
-
 export function normalizeSelectedTransport(
   transport: string,
 ): "sacn" | "artnet" | "udmx" | "console" | null {

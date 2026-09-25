@@ -19,6 +19,7 @@ import {
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { normalizeFixtureUid } from "../../../lib/binding-utils";
+import { fixtureWireLayout } from "../../../lib/dmx";
 import {
   computeFixtureChannelCount,
   fetchFixtureProfile,
@@ -97,37 +98,13 @@ function computeSourceWidth(
   paramName?: string,
 ): number {
   const normalizedParam = paramName ? normalizeParamName(paramName) : undefined;
-  let total = 0;
-
-  const elements =
-    elementId && elementId > 0
-      ? [fixture.elements[elementId - 1]].filter(
-          (element): element is types.FixtureElement => Boolean(element),
-        )
-      : fixture.elements;
-
-  for (const element of elements) {
-    for (const param of element.parameters) {
-      if (param.attribute.type === "VirtualIntensity") continue;
-      if (
-        normalizedParam &&
-        normalizeParamName(attributeName(param.attribute)) !== normalizedParam
-      ) {
-        continue;
-      }
-
-      total +=
-        param.resolution === "Fine"
-          ? 2
-          : param.resolution === "UltraFine"
-            ? 3
-            : param.resolution === "Uber"
-              ? 4
-              : 1;
-    }
-  }
-
-  return total;
+  return fixtureWireLayout(fixture, {
+    elementId,
+    includeParameter: normalizedParam
+      ? (param) =>
+          normalizeParamName(attributeName(param.attribute)) === normalizedParam
+      : undefined,
+  }).footprint;
 }
 
 function collectConsolePatchOccupancy(

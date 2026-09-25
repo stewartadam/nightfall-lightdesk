@@ -26,6 +26,7 @@ fn create_test_parameter(
     let entity = world
         .spawn(Parameter {
             metadata: ParameterMetadata {
+                dmx_slots: Default::default(),
                 resolution: DmxValueResolution::Coarse,
                 native_unit: attribute.native_unit(),
                 value_polarity: attribute.value_polarity(),
