@@ -111,17 +111,19 @@ async function openOwnedTimelineAudioApp(
     const timeline = stores.timelines.get()[uid];
     const api = stores.dockApi.get();
     const panelId = `e2e-timeline-${uid}`;
-    api.addPanel({
+    const panel = api.addPanel({
       id: panelId,
       component: "Timeline",
       title: `Timeline ${timeline.identifiers.id}`,
       params: { initialTimelineUid: uid },
-      position: {
-        referencePanel: "panel-FixtureGrid",
-        direction: "within",
-      },
     });
-    api.getPanel(panelId)?.focus();
+    api.addFloatingGroup(panel, {
+      x: 40,
+      y: 80,
+      width: 900,
+      height: 600,
+    });
+    panel.focus();
   }, timelineUid);
 
   return timelineUid;
@@ -185,6 +187,10 @@ test("drops audio onto a timeline and serves it from the showfile resource root"
     const stores = (window as any).appStores;
     return stores.timelines.get()[uid].audio_path as string;
   }, timelineUid);
+  await expect(surface.locator(".waveform-container")).toHaveAttribute(
+    "data-waveform-state",
+    "decoded",
+  );
   const response = await page.request.get(
     `/api/showfiles/current/${storedAudioPath}`,
   );
