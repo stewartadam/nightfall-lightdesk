@@ -19,7 +19,7 @@ test("fixture color reuse clears missing DMX without mutating input", () => {
     green: 0.5,
     intensity: 0.8,
     Control: 1,
-    "optical:Gobo": 1,
+    Gobo: 1,
   };
   const colors = state.update(
     new Map<string, Record<string, number>>([
@@ -31,7 +31,7 @@ test("fixture color reuse clears missing DMX without mutating input", () => {
   );
   const head = colors.get("Head")!;
   assert.equal(head.Control, 1);
-  assert.equal(head["optical:Gobo"], 1);
+  assert.equal(head.Gobo, 1);
   const second = { blue: 1, intensity: 0.5 };
   assert.equal(state.update(new Map([["Head", second]]), undefined, 1), colors);
   assert.equal(colors.get("Head"), head);
@@ -40,14 +40,14 @@ test("fixture color reuse clears missing DMX without mutating input", () => {
   assert.equal(head.blue, 1);
   assert.equal(head.intensity, 0.5);
   assert.equal(head.Control, undefined);
-  assert.equal(head["optical:Gobo"], undefined);
+  assert.equal(head.Gobo, undefined);
   assert.equal(colors.has("Base"), false);
   assert.deepEqual(first, {
     red: 1,
     green: 0.5,
     intensity: 0.8,
     Control: 1,
-    "optical:Gobo": 1,
+    Gobo: 1,
   });
   assert.deepEqual(second, { blue: 1, intensity: 0.5 });
 });

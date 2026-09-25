@@ -2090,8 +2090,8 @@ test("moving-head layout preserves inherited optical controls", () => {
     green: 1,
     blue: 1,
     intensity: 1,
-    "optical:Zoom": 0,
-    "optical:Gobo": 1,
+    Zoom: 0,
+    Gobo: 1,
   };
   const colors = new Map([["Head", values]]);
   state.update(colors);
@@ -2108,7 +2108,7 @@ test("moving-head layout preserves inherited optical controls", () => {
     .children[0] as import("three/webgpu").InstancedMesh;
   const optics = draw.geometry.getAttribute("volumeOptics");
   const narrow = optics.getX(0);
-  values["optical:Zoom"] = 1;
+  values.Zoom = 1;
   updater.updateFixtureBeam(fixture.uid, instance, colors);
   assert.ok(optics.getX(0) > narrow * 2);
   manager.syncFixtures([]);

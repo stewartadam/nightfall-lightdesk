@@ -347,14 +347,11 @@ for (const forceWebGL of [false, true]) {
             green: number;
             blue: number;
             intensity: number;
-            "optical:GoboRot": number;
+            GoboRot: number;
           }
       >([
         ["Base", modeValues],
-        [
-          "Head",
-          { red: 1, green: 1, blue: 1, intensity: 1, "optical:GoboRot": 1 },
-        ],
+        ["Head", { red: 1, green: 1, blue: 1, intensity: 1, GoboRot: 1 }],
       ]);
       opticalState.update(opticalValues, 0);
       red.goboSlot = halfMask.index;

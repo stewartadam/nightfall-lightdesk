@@ -53,6 +53,23 @@ test("unchanged DMX snapshots retain owned records and refresh on new output", (
   assert.equal(cell.red, 0.8);
 });
 
+/** Optical controls travel once under their output key, without a duplicated prefixed alias. */
+test("element DMX carries optical controls once under their output key", () => {
+  const gobo = element().parameters[0];
+  const dmx = extractElementDmxData(
+    { Gobo: 128 },
+    {
+      label: "Head",
+      parameters: [{ ...gobo, attribute: { type: "Gobo" }, max: 255 }],
+    },
+  );
+  assert.ok(Math.abs(dmx.Gobo - 128 / 255) < 1e-9);
+  assert.deepEqual(
+    Object.keys(dmx).filter((key) => key.includes(":")),
+    [],
+  );
+});
+
 /** The revision advances only on rebuilds, letting the worker proxy skip posting unchanged snapshots. */
 test("DMX snapshot revision changes only when output or definitions change", () => {
   const cache = new FixtureDmxSnapshot();

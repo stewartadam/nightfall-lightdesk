@@ -19,7 +19,6 @@ import {
 
 /** Visualizer-friendly parameter state */
 export interface VisualizerDmx {
-  [key: string]: number | undefined;
   intensity: number;
   red: number;
   green: number;
@@ -76,7 +75,6 @@ function getDmxFromPool(): VisualizerDmx {
     });
   }
   const dmx = dmxPool[dmxPoolIndex++];
-  for (const key in dmx) if (key.startsWith("optical:")) dmx[key] = undefined;
   // Reset to defaults
   dmx.intensity = 0;
   dmx.red = 0;
@@ -239,13 +237,9 @@ export function extractVisualizerDmx(
       (attrType === "Pan" || attrType === "Tilt")
         ? normalizeSignedPositionOutput(value, attrType)
         : normalizeParameterOutput(value, param);
-    const opticalKey = attributeOutputKey(param.attribute);
-    if (normalizedAttributes) normalizedAttributes[opticalKey] = normalized;
-    if (/^(Gobo|Prism|Focus|Zoom|Frost|Iris|Shaper)/.test(opticalKey)) {
-      dmx[`optical:${opticalKey}`] = normalized;
-      if (normalizedAttributes)
-        normalizedAttributes[`optical:${opticalKey}`] = normalized;
-    }
+    // Optical channels read their normalized control by this same output key.
+    if (normalizedAttributes)
+      normalizedAttributes[attributeOutputKey(param.attribute)] = normalized;
     if (attrType === "Custom") {
       if (TILT_SPEED_LABELS.has(param.attribute.data.label)) {
         dmx.tiltSpeed = normalized;

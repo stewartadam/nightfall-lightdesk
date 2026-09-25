@@ -194,9 +194,10 @@ export class EmitterOpticalState {
       const values = colors.get(channel.geometry) as
         | (EmitterColor & Record<string, number | undefined>)
         | undefined;
+      // Element DMX carries each parameter once, under its output key.
       evaluateOpticalChannel(
         channel,
-        values?.[`optical:${channel.parameterKey}`],
+        values?.[channel.parameterKey],
         state,
         colors,
       );

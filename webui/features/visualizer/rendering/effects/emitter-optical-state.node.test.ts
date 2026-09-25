@@ -72,14 +72,14 @@ test("inherited zoom evaluates percentage profiles and clears inactive functions
     green: 1,
     blue: 1,
     intensity: 1,
-    "optical:Control": 0.4,
+    Control: 0.4,
   };
   state.update(new Map([["Head", values]]));
   assert.equal(state.zoomDegrees, 25);
-  values["optical:Control"] = 0.8;
+  values.Control = 0.8;
   state.update(new Map([["Head", values]]));
   assert.equal(state.zoomDegrees, 45);
-  values["optical:Control"] = 0.9;
+  values.Control = 0.9;
   state.update(new Map([["Head", values]]));
   assert.equal(state.zoomDegrees, undefined);
   state.update(new Map());
@@ -156,10 +156,10 @@ test("gobo stages preserve separate wheel selection and rotation", () => {
           green: 1,
           blue: 1,
           intensity: 1,
-          "optical:Gobo1": 1,
-          "optical:Gobo2": 1,
-          "optical:Gobo1Pos": 0,
-          "optical:Gobo2Pos": 1,
+          Gobo1: 1,
+          Gobo2: 1,
+          Gobo1Pos: 0,
+          Gobo2Pos: 1,
         },
       ],
     ]),
@@ -240,8 +240,8 @@ test("prism reduction follows active DMX combinations", () => {
     green: 1,
     blue: 1,
     intensity: 1,
-    "optical:Prism1": 1,
-    "optical:Prism2": 0,
+    Prism1: 1,
+    Prism2: 0,
   };
   const colors = new Map([["Head", values]]);
   assert.equal(state.prismCapacityExceeded, true);
@@ -249,7 +249,7 @@ test("prism reduction follows active DMX combinations", () => {
   state.update(colors);
   assert.equal(state.prismReduced, false);
   assert.equal(state.prism?.length, 33);
-  values["optical:Prism2"] = 1;
+  values.Prism2 = 1;
   state.update(colors);
   assert.equal(state.prismReduced, true);
   assert.equal(state.prism?.length, 1024);
@@ -330,8 +330,8 @@ test("two active prism wheels compose instead of overwriting", () => {
     green: 1,
     blue: 1,
     intensity: 1,
-    "optical:Prism1": 1,
-    "optical:Prism2": 1,
+    Prism1: 1,
+    Prism2: 1,
   };
   const colors = new Map([["Head", values]]);
   assert.equal(state.maxFacetCount, 6);
@@ -348,10 +348,10 @@ test("two active prism wheels compose instead of overwriting", () => {
     ],
   );
   const result = state.prism;
-  values["optical:Prism2"] = 0;
+  values.Prism2 = 0;
   state.update(colors);
   assert.equal(state.prism?.length, 2);
-  values["optical:Prism2"] = 1;
+  values.Prism2 = 1;
   state.update(colors);
   assert.equal(state.prism, result);
   assert.equal(state.prism?.length, 6);
@@ -399,7 +399,7 @@ test("separate index and speed channels share only their wheel rotation", () => 
       green: 1,
       blue: 1,
       intensity: 1,
-      "optical:1Pos": 1,
+      "1Pos": 1,
     };
     const colors = new Map([["Head", values]]);
     /** Reads the active projection family without exposing private angle storage. */
@@ -407,12 +407,12 @@ test("separate index and speed channels share only their wheel rotation", () => 
       family === "Gobo" ? state.goboRotation : state.prismRotation;
     state.update(colors, 0);
     assert.equal(angle(), Math.PI / 2);
-    delete values["optical:1Pos"];
-    values["optical:2Pos"] = 1;
+    delete values["1Pos"];
+    values["2Pos"] = 1;
     state.update(colors, 1);
     assert.equal(angle(), Math.PI);
-    delete values["optical:2Pos"];
-    values["optical:1PosRotate"] = 1;
+    delete values["2Pos"];
+    values["1PosRotate"] = 1;
     state.update(colors, 2);
     assert.equal(angle(), Math.PI);
     state.update(colors, 3);
@@ -499,7 +499,7 @@ test("profiled focus drives the physical focal plane", () => {
         green: 1,
         blue: 1,
         intensity: 1,
-        "optical:FocusDistance": 0.5,
+        FocusDistance: 0.5,
       },
     ],
   ]);
@@ -543,7 +543,7 @@ test("focus distance preserves physical units and clears missing input", () => {
       },
     );
     const colors = new Map([
-      ["Head", { red: 1, green: 1, blue: 1, intensity: 1, "optical:Focus": 1 }],
+      ["Head", { red: 1, green: 1, blue: 1, intensity: 1, Focus: 1 }],
     ]);
     state.update(colors);
     assert.equal(
@@ -601,7 +601,7 @@ test("indexed and continuous optical rotation have distinct physical semantics",
       green: 1,
       blue: 1,
       intensity: 1,
-      "optical:Rotation": 0,
+      Rotation: 0,
     };
     const colors = new Map([["Head", values]]);
     /** Reads the selected family without coupling the test to private channel state. */
@@ -609,15 +609,15 @@ test("indexed and continuous optical rotation have distinct physical semantics",
       prefix.startsWith("Gobo") ? state.goboRotation : state.prismRotation;
     state.update(colors, 10);
     assert.equal(angle(), Math.PI / 2);
-    values["optical:Rotation"] = 1;
+    values.Rotation = 1;
     state.update(colors, 10.5);
     assert.equal(angle(), Math.PI);
-    values["optical:Rotation"] = 128 / 255;
+    values.Rotation = 128 / 255;
     state.update(colors, 11);
     assert.equal(angle(), Math.PI / 2);
     state.update(colors, 5);
     assert.equal(angle(), Math.PI / 2);
-    values["optical:Rotation"] = 0;
+    values.Rotation = 0;
     state.update(colors, 6);
     assert.equal(angle(), Math.PI / 2);
   }
@@ -688,7 +688,7 @@ test("prism DMX selects source facets and resets to an unsplit aperture", () => 
     green: 1,
     blue: 1,
     intensity: 1,
-    "optical:Prism1": 1,
+    Prism1: 1,
   };
   const colors = new Map([["Head", values]]);
   state.update(colors);
@@ -697,10 +697,10 @@ test("prism DMX selects source facets and resets to an unsplit aperture", () => 
     compiled?.map((facet) => facet.x),
     [-2, 0, 2],
   );
-  values["optical:Prism1"] = 0;
+  values.Prism1 = 0;
   state.update(colors);
   assert.equal(state.prism, undefined);
-  values["optical:Prism1"] = 1;
+  values.Prism1 = 1;
   state.update(colors);
   assert.equal(state.prism, compiled);
   colors.clear();
@@ -765,11 +765,11 @@ test("emitter optical state selects imported wheel masks and restores open slots
       return { index: 7, status: "ready" };
     },
   );
-  const values = { red: 1, green: 1, blue: 1, intensity: 1, "optical:Gobo": 1 };
+  const values = { red: 1, green: 1, blue: 1, intensity: 1, Gobo: 1 };
   const colors = new Map([["Head", values]]);
   state.update(colors);
   assert.equal(state.goboSlot, 7);
-  values["optical:Gobo"] = 0;
+  values.Gobo = 0;
   state.update(colors);
   assert.equal(state.goboSlot, 0);
   assert.equal(loads, 1);
