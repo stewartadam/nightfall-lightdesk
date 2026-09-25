@@ -378,3 +378,43 @@ fn virtual_dimmers_respond_to_masters_once_per_path() {
     );
     assert!(!grandmaster(&physical_root, "Pixel"), "follower does not");
 }
+
+/// Verifies a root virtual dimmer gives up master response only when a
+/// physical dimmer's geometry covers the channels it masters, so a separate
+/// light path such as a decorative ring keeps responding to masters.
+#[test]
+fn root_virtual_dimmers_on_a_separate_path_keep_master_response() {
+    let builder = GdtfBuilder::new("Test", "Ringed")
+        .geometry(
+            GeometrySpec::generic("Head")
+                .child(GeometrySpec::beam("Beam").child(GeometrySpec::beam("Cell")))
+                .child(GeometrySpec::beam("Ring")),
+        )
+        .mode(
+            ModeSpec::new("Mode", "Head")
+                .channel(ChannelSpec::new("Beam", "Dimmer", &[1]))
+                .channel(ChannelSpec::virtual_channel("Cell", "Dimmer"))
+                .channel(ChannelSpec::new("Cell", "ColorAdd_R", &[2]))
+                .channel(ChannelSpec::virtual_channel("Ring", "Dimmer"))
+                .channel(ChannelSpec::new("Ring", "ColorAdd_R", &[3]))
+                .relation(
+                    "Cell_Dimmer",
+                    "Cell_ColorAdd_R.ColorAdd_R.ColorAdd_R",
+                    "Multiply",
+                )
+                .relation(
+                    "Ring_Dimmer",
+                    "Ring_ColorAdd_R.ColorAdd_R.ColorAdd_R",
+                    "Multiply",
+                ),
+        );
+    let (fixture, _) = convert(&builder);
+    let grandmaster =
+        |element: &str| parameter(&fixture, element, &Attribute::Intensity).use_grandmaster;
+    assert!(grandmaster("Beam"), "physical dimmer responds");
+    assert!(
+        !grandmaster("Cell"),
+        "the beam dimmer already scales the cell below it"
+    );
+    assert!(grandmaster("Ring"), "the ring is outside the beam dimmer");
+}

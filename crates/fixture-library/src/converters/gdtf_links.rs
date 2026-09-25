@@ -89,7 +89,7 @@ pub(super) fn link_functions(
             target.relations = relations;
         }
     }
-    set_virtual_dimmer_master_response(elements);
+    set_virtual_dimmer_master_response(resolved, elements, targets.placements);
 }
 
 /// Returns the relations whose follower is `function` of resolved channel `index`.
@@ -155,30 +155,74 @@ fn link(
 /// once.
 ///
 /// A virtual dimmer that follows another dimmer receives the master through
-/// it, and in a fixture with a physical dimmer the master already scales the
-/// fixture's own output. Virtual dimmers at the root of a chain in fixtures
-/// without a physical dimmer keep responding.
-fn set_virtual_dimmer_master_response(elements: &mut [FixtureElement]) {
-    let has_physical_dimmer = elements.iter().any(|element| {
-        element.parameters.iter().any(|parameter| {
-            parameter.attribute == Attribute::Intensity && parameter.dmx_slots != DmxSlots::Virtual
-        })
-    });
-    for parameter in elements
-        .iter_mut()
-        .flat_map(|element| element.parameters.iter_mut())
-        .filter(|parameter| {
-            parameter.attribute == Attribute::Intensity && parameter.dmx_slots == DmxSlots::Virtual
-        })
-    {
-        let follows = parameter
+/// it. A virtual dimmer at the root of a chain gives up its master response
+/// only when a physical dimmer covers every channel it masters: each
+/// follower controls the physical dimmer's geometry or one below it, whose
+/// output the master already scales through that dimmer. Root virtual
+/// dimmers driving a separate light path keep responding.
+fn set_virtual_dimmer_master_response(
+    resolved: &ResolvedMode<'_>,
+    elements: &mut [FixtureElement],
+    placements: &[Placement],
+) {
+    let parameter_of = |index: usize| {
+        placements[index].map(|(element, parameter)| &elements[element].parameters[parameter])
+    };
+    let is_dimmer = |parameter: &ParameterMetadata, is_virtual: bool| {
+        parameter.attribute == Attribute::Intensity
+            && (parameter.dmx_slots == DmxSlots::Virtual) == is_virtual
+    };
+    let physical_dimmers: Vec<usize> = (0..placements.len())
+        .filter(|index| parameter_of(*index).is_some_and(|parameter| is_dimmer(parameter, false)))
+        .map(|index| resolved.channels[index].instance)
+        .collect();
+    let covered = |index: usize| {
+        let instance = resolved.channels[index].instance;
+        physical_dimmers
+            .iter()
+            .any(|dimmer| is_within(resolved, instance, *dimmer))
+    };
+    let mut silenced = Vec::new();
+    for &(element, position) in placements.iter().flatten() {
+        let dimmer = &elements[element].parameters[position];
+        if !is_dimmer(dimmer, true) {
+            continue;
+        }
+        let follows = dimmer
             .functions
             .iter()
             .any(|function| !function.relations.is_empty());
-        if follows || has_physical_dimmer {
-            parameter.use_grandmaster = false;
+        let reference = ElementParameterRef {
+            element: element as u32,
+            attribute: dimmer.attribute.clone(),
+        };
+        let path_is_covered = !physical_dimmers.is_empty()
+            && (0..placements.len())
+                .filter(|follower| {
+                    parameter_of(*follower).is_some_and(|parameter| {
+                        parameter
+                            .functions
+                            .iter()
+                            .flat_map(|function| &function.relations)
+                            .any(|relation| relation.master == reference)
+                    })
+                })
+                .all(covered);
+        if follows || path_is_covered {
+            silenced.push((element, position));
         }
     }
+    for (element, position) in silenced {
+        elements[element].parameters[position].use_grandmaster = false;
+    }
+}
+
+/// Returns true when geometry instance `instance` is `ancestor` or lies below it.
+fn is_within(resolved: &ResolvedMode<'_>, instance: usize, ancestor: usize) -> bool {
+    std::iter::successors(Some(instance), |current| {
+        resolved.instances[*current].parent
+    })
+    .any(|current| current == ancestor)
 }
 
 /// Records an unresolved link once.
