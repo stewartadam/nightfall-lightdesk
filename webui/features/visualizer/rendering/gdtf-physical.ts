@@ -100,6 +100,37 @@ function isFraction(channel: EvaluatedChannel): boolean {
   return physicalSpan(channel) <= 1;
 }
 
+/**
+ * Returns an iris function's aperture as a fraction of the open beam.
+ *
+ * Irises open at the low end of their DMX range. A range that falls with
+ * DMX (1 → 0.16) states the aperture itself; a range that rises, including
+ * GDTF's 0-1 default, is read as how far the iris has closed.
+ */
+function irisAperture(channel: EvaluatedChannel): number {
+  const fn = channel.function;
+  if (fn && isFraction(channel) && fn.physical_to < fn.physical_from) {
+    return channel.physical;
+  }
+  return 1 - channel.level;
+}
+
+/**
+ * Returns the share of light a plain (non-strobe) shutter function passes.
+ *
+ * A constant physical value states it outright (1 open, 0 closed). A
+ * function whose range varies, such as GDTF's 0-1 default, gives no reliable
+ * transmission, so it is closed only when its name or active set says so.
+ */
+function shutterTransmission(channel: EvaluatedChannel): number {
+  const fn = channel.function;
+  if (!fn) return 1;
+  if (fn.physical_from === fn.physical_to) {
+    return Math.min(1, Math.max(0, fn.physical_from));
+  }
+  return /closed/i.test(`${fn.name} ${channel.set?.name ?? ""}`) ? 0 : 1;
+}
+
 /** Returns a physical value in Kelvin, or undefined when it is not one. */
 function kelvinOf(channel: EvaluatedChannel): number | undefined {
   return channel.physical >= 1000 ? channel.physical : undefined;
@@ -169,10 +200,7 @@ export function collectPhysical(
       state.yellow = level;
       return true;
     case "Iris":
-      state.iris = Math.max(
-        MIN_IRIS_APERTURE,
-        isFraction(channel) ? channel.physical : 1 - level,
-      );
+      state.iris = Math.max(MIN_IRIS_APERTURE, irisAperture(channel));
       return true;
     case "Zoom":
       if (physicalSpan(channel) > 1) state.zoomDegrees = channel.physical;
@@ -183,8 +211,7 @@ export function collectPhysical(
     return false;
   }
   if (/^Shutter\d+$/.test(attribute)) {
-    // Plain shutter functions state how much light passes: 1 open, 0 closed.
-    state.transmission *= Math.min(1, Math.max(0, channel.physical));
+    state.transmission *= shutterTransmission(channel);
     return false;
   }
   if (/^Shutter\d+Strobe/.test(attribute) && !isFraction(channel)) {
