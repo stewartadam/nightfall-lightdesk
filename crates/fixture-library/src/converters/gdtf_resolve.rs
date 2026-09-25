@@ -151,6 +151,8 @@ pub struct ResolvedMode<'a> {
     /// Non-fatal problems found while resolving.
     pub diagnostics: Vec<GdtfDiagnostic>,
     scopes: Vec<ReferenceScope>,
+    /// Names already given to instances, for constant-time duplicate checks.
+    instance_names: HashSet<String>,
 }
 
 impl<'a> ResolvedMode<'a> {
@@ -161,6 +163,7 @@ impl<'a> ResolvedMode<'a> {
             channels: Vec::new(),
             diagnostics: Vec::new(),
             scopes: Vec::new(),
+            instance_names: HashSet::new(),
         };
 
         let root_name = mode.geometry.as_ref().map(|name| name.to_string());
@@ -239,7 +242,7 @@ impl<'a> ResolvedMode<'a> {
             Some(scope) => format!("{}/{geometry_name}", self.scopes[scope].name),
             None => geometry_name,
         });
-        let duplicate = self.instances.iter().any(|instance| instance.name == name);
+        let duplicate = !self.instance_names.insert(name.clone());
         if duplicate {
             let diagnostic = GdtfDiagnostic::DuplicateGeometryName { name: name.clone() };
             if !self.diagnostics.contains(&diagnostic) {
@@ -288,11 +291,6 @@ impl<'a> ResolvedMode<'a> {
     /// itself (children `Cell`, `Cell`, `Cell #2` become `Cell`, `Cell #3`,
     /// `Cell #2`).
     fn rename_duplicates(&mut self) {
-        let mut taken: HashSet<String> = self
-            .instances
-            .iter()
-            .map(|instance| instance.name.clone())
-            .collect();
         for index in 0..self.instances.len() {
             if !self.instances[index].duplicate {
                 continue;
@@ -300,9 +298,9 @@ impl<'a> ResolvedMode<'a> {
             let base = self.instances[index].name.clone();
             let name = (2..)
                 .map(|suffix| format!("{base} #{suffix}"))
-                .find(|candidate| !taken.contains(candidate))
+                .find(|candidate| !self.instance_names.contains(candidate))
                 .expect("suffixes are unbounded");
-            taken.insert(name.clone());
+            self.instance_names.insert(name.clone());
             self.instances[index].name = name;
         }
     }

@@ -177,6 +177,11 @@ export function PatchWizard() {
       (fixture) => libraryDefinitionId(fixture) === fixtureDefinitionId,
     );
   });
+  /** Human-readable name of the selected library fixture for the version-conflict prompt. */
+  const versionConflictFixtureName = () => {
+    const info = selectedLibraryFixtureInfo();
+    return info ? `${info.make} ${info.model}` : "this fixture";
+  };
   const selectedLibraryFixture = createMemo(() => {
     const s = state();
     if (!s.fixtureDefinitionId || !s.fixtureMode) return null;
@@ -447,7 +452,7 @@ export function PatchWizard() {
       <DeleteConfirmModal
         isOpen={isVersionConflictModalOpen()}
         title="Version Mismatch Detected"
-        message={`This showfile already contains fixture IDs ${versionConflictFixtureIds().join(", ")} with a different ${state().fixtureDefinitionId ?? "fixture"} version. Proceeding will update those fixtures to the library version before adding the new fixture(s).`}
+        message={`This showfile already contains fixture IDs ${versionConflictFixtureIds().join(", ")} with a different version of ${versionConflictFixtureName()}. Proceeding will update those fixtures to the library version before adding the new fixture(s).`}
         confirmLabel="Proceed and Update"
         onCancel={closeVersionConflictModal}
         onConfirm={() => {

@@ -415,6 +415,15 @@ export function libraryDefinitionId(info: {
 }
 
 /**
+ * Returns a short label telling library revisions of one make/model apart:
+ * the leading characters of the content fingerprint, like an abbreviated
+ * commit hash, or "built-in" for definitions shipped with the app.
+ */
+export function libraryRevisionLabel(assetEtag: string): string {
+  return assetEtag.startsWith("builtin:") ? "built-in" : assetEtag.slice(0, 8);
+}
+
+/**
  * Create a fixture from the library and wait for completion.
  * Returns a promise that resolves when the fixture is created.
  * Use this when you need to perform follow-up operations like patching.

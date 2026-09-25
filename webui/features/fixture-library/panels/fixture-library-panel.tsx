@@ -54,6 +54,10 @@ import {
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
 import { engineRuntime } from "../../../lib/engine-runtime";
+import {
+  libraryDefinitionId,
+  libraryRevisionLabel,
+} from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { fixtureLibrary } from "../../../state/appStores";
@@ -178,12 +182,13 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   const sortedFixtures = createMemo(() => {
     const rawFixtures = $fixtureLibrary();
 
-    // Sort by make, then model
-    return [...rawFixtures].sort((a, b) => {
-      const makeCompare = a.make.localeCompare(b.make);
-      if (makeCompare !== 0) return makeCompare;
-      return a.model.localeCompare(b.model);
-    });
+    // Sort by make, then model, then revision so revisions keep a stable order
+    return [...rawFixtures].sort(
+      (a, b) =>
+        a.make.localeCompare(b.make) ||
+        a.model.localeCompare(b.model) ||
+        a.asset_etag.localeCompare(b.asset_etag),
+    );
   });
 
   // Column definitions for data grid
@@ -217,6 +222,12 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       width: 100,
       ...columnVisibilityMeta("Metadata", "Source"),
     },
+    {
+      title: "Revision",
+      id: "revision",
+      width: 90,
+      ...columnVisibilityMeta("Metadata", "Revision"),
+    },
   ];
 
   const filterColumns = createMemo(() => filterColumnsFromMetadata(columns));
@@ -249,7 +260,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     createKeyedDataGridCellProvider({
       rows: fixtures(),
       columns: displayColumns(),
-      rowKey: (fixture) => `${fixture.make}:${fixture.model}`,
+      rowKey: libraryDefinitionId,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row: fixture, column }): GridCell => {
         const colId = String(column.id);
@@ -262,6 +273,8 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
             return makeSafeTextCell(fixture.modes.join(", "));
           case "source":
             return makeSafeTextCell(fixture.source_format);
+          case "revision":
+            return makeSafeTextCell(libraryRevisionLabel(fixture.asset_etag));
           default:
             return makeSafeTextCell("");
         }
