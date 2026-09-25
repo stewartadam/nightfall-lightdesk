@@ -1000,6 +1000,188 @@ test("clearing a tilted strobe panel removes rendered LED pixels", async ({
   expect(clearedRed.count).toBe(0);
 });
 
+/** A built-in fixture per specialized renderer and the meshes its selection outline may cover. */
+type SelectionOutlineCase = {
+  title: string;
+  fixture: OwnedBackendFixture;
+  /** Command arguments (after the fixture target) that light its emitters. */
+  light: string;
+  /** Element selector appended to `fix <id>` when only some elements take the light values. */
+  lightElements?: string;
+  /** Unique names of the structural meshes left eligible for the outline. */
+  outlined: string[];
+};
+
+/** Structural meshes shared by rotating wash-beam and linear wash-bar layouts. */
+const WASH_BEAM_STRUCTURE = [
+  "BaseRail",
+  "EndCap",
+  "Housing",
+  "LeftPivotBoss",
+  "LeftPivotSupport",
+  "RightPivotBoss",
+  "RightPivotSupport",
+];
+
+const SELECTION_OUTLINE_CASES: SelectionOutlineCase[] = [
+  {
+    title: "moving head",
+    fixture: {
+      id: 701,
+      label: "Outline Moving Head",
+      make: "Generic",
+      model: "Moving Head Spot 16ch",
+      mode: "Spot",
+      update_existing_ids: [],
+      update_existing_only: false,
+      placement: {
+        position: { x: 0, y: 3, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+      },
+    },
+    light: "int @ 100",
+    outlined: ["Base", "HeadBody", "LeftArm", "RightArm"],
+  },
+  {
+    title: "LED bar",
+    fixture: {
+      id: 702,
+      label: "Outline LED Bar",
+      make: "Generic",
+      model: "100-segment LED Bar",
+      mode: "RGB",
+      update_existing_ids: [],
+      update_existing_only: false,
+      placement: {
+        position: { x: 0, y: 2, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+      },
+    },
+    light: "red @ 100",
+    outlined: ["Housing"],
+  },
+  {
+    title: "strobe matrix",
+    fixture: { ...OWNED_TILTED_STROBE, id: 703, label: "Outline Strobe" },
+    light: "red @ 100",
+    outlined: ["Base", "Face", "LeftArm", "RightArm"],
+  },
+  {
+    title: "RGB strobe bar",
+    fixture: { ...OWNED_RGB_STROBE_BAR, id: 704, label: "Outline RGB Bar" },
+    light: "white @ 100",
+    outlined: ["Housing"],
+  },
+  {
+    title: "rotating wash beam",
+    fixture: { ...OWNED_WASH_BEAM, id: 705, label: "Outline Wash Beam" },
+    light: "int @ 100 red @ 100",
+    lightElements: ".(14>25)",
+    outlined: WASH_BEAM_STRUCTURE,
+  },
+  {
+    title: "linear wash bar",
+    fixture: {
+      id: 706,
+      label: "Outline Linear Wash Bar",
+      make: "Generic",
+      model: "10-segment Rotating RGBW Bar",
+      mode: "RGBW",
+      update_existing_ids: [],
+      update_existing_only: false,
+      placement: {
+        position: { x: 0, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+      },
+    },
+    light: "int @ 100 red @ 100",
+    outlined: WASH_BEAM_STRUCTURE,
+  },
+];
+
+/**
+ * Returns the sorted unique names of meshes in a fixture group that the
+ * selection outline may cover, and how many light meshes are flagged out.
+ */
+async function selectionOutlineMeshes(
+  page: Page,
+  fixtureUid: string,
+): Promise<{ outlined: string[]; excluded: number }> {
+  return page.evaluate((uid) => {
+    const root = (window as any).visualizerApi
+      .getScene()
+      .getObjectByName(`Fixture_${uid}`);
+    const outlined = new Set<string>();
+    let excluded = 0;
+    root?.traverse((child: any) => {
+      if (!child.isMesh) return;
+      if (child.userData.excludeFromSelection === true) excluded++;
+      else outlined.add(child.name);
+    });
+    return { outlined: [...outlined].sort(), excluded };
+  }, fixtureUid);
+}
+
+for (const outlineCase of SELECTION_OUTLINE_CASES) {
+  /**
+   * Verifies a selected, lit fixture on a specialized renderer outlines only
+   * its structural meshes; beams, lenses, pixels and footprints stay flagged
+   * out. The capture is attached for visual review of the outline.
+   */
+  test(`${outlineCase.title} selection outline excludes its light meshes`, async ({
+    page,
+  }, testInfo) => {
+    await page.goto("/?visualizer:offscreenCanvas=false");
+    await waitForVisualizerReady(page);
+    await expect(page.locator(inputSelector)).toBeVisible();
+    await waitForMainThreadVisualizerApi(page);
+    const { id } = outlineCase.fixture;
+    const fixtureUid = await installOwnedBackendFixture(
+      page,
+      outlineCase.fixture,
+    );
+    await waitForFixtureStoreHydration(page);
+
+    await submitCommand(
+      page,
+      `fix ${id}${outlineCase.lightElements ?? ""} ${outlineCase.light}`,
+    );
+    await submitCommand(page, `fix ${id}`);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (uid) =>
+            (
+              (window as any).appStores.programmerSelection.get() as string[]
+            ).includes(uid),
+          fixtureUid,
+        ),
+      )
+      .toBe(true);
+
+    await expect
+      .poll(() => selectionOutlineMeshes(page, fixtureUid))
+      .toEqual({
+        outlined: outlineCase.outlined,
+        excluded: expect.any(Number),
+      });
+    expect(
+      (await selectionOutlineMeshes(page, fixtureUid)).excluded,
+    ).toBeGreaterThan(0);
+
+    await page.evaluate(() => (window as any).visualizerApi.zoomToSelection());
+    await page.waitForTimeout(500);
+    const canvasBox = await largestVisibleCanvasBox(page);
+    const path = testInfo.outputPath("selection-outline.png");
+    await page.screenshot({ clip: canvasBox, path });
+    await testInfo.attach("selection-outline", {
+      path,
+      contentType: "image/png",
+    });
+    await submitCommand(page, "clear");
+  });
+}
+
 /**
  * Collects browser page errors emitted during visualizer render tests.
  */
