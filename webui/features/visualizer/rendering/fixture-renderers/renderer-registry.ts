@@ -25,6 +25,7 @@ import type {
 } from "../../../../types";
 import type { FixtureInstance } from "../../model/types";
 import { buildGeometryTree, disposeFixtureInstance } from "../geometry-builder";
+import { elementGoboMedia } from "../visualizer-dmx";
 import {
   buildSimpleLedBar,
   disposeLedBar,
@@ -79,6 +80,8 @@ export type ExtendedFixtureInstance = FixtureInstance & {
   elementLabels?: string[];
   /** GDTF geometry data for pan/tilt axis lookups */
   geometry?: FixtureGeometry;
+  /** Gobo image names per element label, indexed by `EmitterColor.gobo - 1` */
+  goboMedia?: Map<string, string[]>;
 };
 
 /**
@@ -176,6 +179,9 @@ export function buildFixtureWithRenderer(
         beamType,
         elementLabels: elements.map((element) => element.label),
         geometry,
+        goboMedia: new Map(
+          elements.map((element) => [element.label, elementGoboMedia(element)]),
+        ),
       };
     }
   }

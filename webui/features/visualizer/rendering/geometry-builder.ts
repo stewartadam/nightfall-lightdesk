@@ -492,6 +492,8 @@ export interface EmitterColor {
   zoom?: number;
   /** Frost amount (0-1, 0 = clear, 1 = full frost) */
   frost?: number;
+  /** 1-based index into the element's gobo images, or 0/undefined for an open beam */
+  gobo?: number;
 }
 
 /**

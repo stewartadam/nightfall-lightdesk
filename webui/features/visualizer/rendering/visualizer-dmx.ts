@@ -35,6 +35,8 @@ export interface VisualizerDmx {
   zoom: number;
   tiltSpeed: number;
   strobeShutter: number;
+  /** 1-based index into the element's gobo images (see `elementGoboMedia`), or 0 for none. */
+  gobo: number;
 }
 
 export const STROBE_SHUTTER_MIN_HZ = 1;
@@ -73,6 +75,7 @@ function getDmxFromPool(): VisualizerDmx {
       zoom: 0.5,
       tiltSpeed: DEFAULT_TILT_SPEED_NORMALIZED,
       strobeShutter: 0,
+      gobo: 0,
     });
   }
   const dmx = dmxPool[dmxPoolIndex++];
@@ -90,6 +93,7 @@ function getDmxFromPool(): VisualizerDmx {
   dmx.zoom = 0.5;
   dmx.tiltSpeed = DEFAULT_TILT_SPEED_NORMALIZED;
   dmx.strobeShutter = 0;
+  dmx.gobo = 0;
   return dmx;
 }
 
@@ -159,6 +163,31 @@ function normalizeSignedPositionOutput(
     return value / DEFAULT_TILT_RANGE_DEG;
   }
   return value;
+}
+
+/** Gobo image lists per element, computed once per element object. */
+const elementGoboMediaCache = new WeakMap<FixtureElement, string[]>();
+
+/**
+ * Returns the distinct wheel slot images an element's parameters can select,
+ * in parameter/function/set order. Renderers and DMX extraction share this
+ * ordering so a numeric gobo index identifies the same image on both sides.
+ */
+export function elementGoboMedia(element: FixtureElement): string[] {
+  let media = elementGoboMediaCache.get(element);
+  if (!media) {
+    const names = new Set<string>();
+    for (const parameter of element.parameters) {
+      for (const fn of parameter.functions ?? []) {
+        for (const set of fn.sets ?? []) {
+          if (set.media) names.add(set.media);
+        }
+      }
+    }
+    media = [...names];
+    elementGoboMediaCache.set(element, media);
+  }
+  return media;
 }
 
 /** Display colors of profile CIE colors, keyed by chromaticity. */
@@ -290,6 +319,9 @@ export function extractVisualizerDmx(
       filterGreen *= filter.g;
       filterBlue *= filter.b;
       hasFilter = true;
+    }
+    if (slot?.media) {
+      dmx.gobo = elementGoboMedia(element).indexOf(slot.media) + 1;
     }
 
     if (attrType === "Custom") {
@@ -424,6 +456,7 @@ export function extractElementDmxData(
   elementDmx.prism = dmx.prism;
   elementDmx.uv = dmx.uv;
   elementDmx.tiltSpeed = dmx.tiltSpeed;
+  elementDmx.gobo = dmx.gobo;
   if (elementDmx.StrobeShutter !== undefined) {
     elementDmx.strobeShutter = dmx.strobeShutter;
   }
