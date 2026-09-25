@@ -11,6 +11,7 @@ import test from "node:test";
 import type * as types from "../../../types";
 import {
   type ActionTargetNames,
+  actionReferenceAllowsSurface,
   actionReferencesEqual,
   actionsAccepting,
   buildActionReference,
@@ -18,15 +19,26 @@ import {
   hasRequiredArguments,
 } from "./action-catalog";
 
-/** Builds a catalog entry with the given ID, input kind, and parameters. */
+/** Every action surface, the default set an action may be invoked from. */
+const ALL_SURFACES = [
+  "timeline",
+  "midi",
+  "osc",
+  "commandPalette",
+  "keyboard",
+  "websocket",
+] as types.ActionSurface[];
+
+/** Builds a catalog entry with the given ID, input kind, parameters, and allowed surfaces. */
 function entry(
   id: string,
   label: string,
   input: types.ActionInputKind,
   parameters: types.ActionParameter[] = [],
+  surfaces: types.ActionSurface[] = ALL_SURFACES,
 ): types.ActionCatalogEntry {
   return {
-    descriptor: { id, label, category: "Tests", input, parameters },
+    descriptor: { id, label, category: "Tests", input, parameters, surfaces },
     capabilities: [],
     behaviors: [],
   };
@@ -88,9 +100,11 @@ test("formatActionReference keeps unknown action IDs visible", () => {
 
 test("actionsAccepting filters by input kind", () => {
   assert.deepEqual(
-    actionsAccepting(catalog, ["trigger" as types.ActionInputKind]).map(
-      (candidate) => candidate.descriptor.id,
-    ),
+    actionsAccepting(
+      catalog,
+      ["trigger" as types.ActionInputKind],
+      "midi" as types.ActionSurface,
+    ).map((candidate) => candidate.descriptor.id),
     ["programmer.clear", "clip.go"].sort((left, right) =>
       catalog
         .find((candidate) => candidate.descriptor.id === left)!
@@ -99,6 +113,64 @@ test("actionsAccepting filters by input kind", () => {
             .descriptor.label,
         ),
     ),
+  );
+});
+
+/** Verifies pickers only offer actions allowed on the surface being bound. */
+test("actionsAccepting hides actions restricted to other surfaces", () => {
+  const restricted = [
+    ...catalog,
+    entry(
+      "timeline.fire-cue",
+      "Fire cue",
+      "trigger" as types.ActionInputKind,
+      [],
+      ["timeline" as types.ActionSurface],
+    ),
+  ];
+  /** Lists the trigger action IDs a surface may bind. */
+  const offered = (surface: string) =>
+    actionsAccepting(
+      restricted,
+      ["trigger" as types.ActionInputKind],
+      surface as types.ActionSurface,
+    ).map((candidate) => candidate.descriptor.id);
+
+  assert.ok(offered("timeline").includes("timeline.fire-cue"));
+  for (const surface of ["midi", "osc", "keyboard", "commandPalette"]) {
+    assert.ok(!offered(surface).includes("timeline.fire-cue"), surface);
+    assert.ok(offered(surface).includes("clip.go"), surface);
+  }
+});
+
+/** Verifies unknown references are left to the backend while restricted ones are refused. */
+test("actionReferenceAllowsSurface checks catalog restrictions", () => {
+  const restricted = [
+    entry(
+      "timeline.fire-cue",
+      "Fire cue",
+      "trigger" as types.ActionInputKind,
+      [],
+      ["timeline" as types.ActionSurface],
+    ),
+  ];
+  const midi = "midi" as types.ActionSurface;
+
+  assert.equal(
+    actionReferenceAllowsSurface(
+      restricted,
+      { id: "timeline.fire-cue", arguments: {} },
+      midi,
+    ),
+    false,
+  );
+  assert.equal(
+    actionReferenceAllowsSurface(
+      restricted,
+      { id: "ui.panel-Masters", arguments: {} },
+      midi,
+    ),
+    true,
   );
 });
 

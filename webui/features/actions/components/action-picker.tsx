@@ -38,6 +38,8 @@ export interface ActionPickerProps {
   value?: types.ActionReference;
   /** Input kinds the binding source can produce; other actions are hidden. */
   inputKinds: readonly types.ActionInputKind[];
+  /** Surface the binding invokes from; actions restricted to other surfaces are hidden. */
+  surface: types.ActionSurface;
   /** Receives a complete action reference whenever the selection is valid. */
   onChange: (action: types.ActionReference) => void;
   /**
@@ -83,16 +85,29 @@ export function ActionPicker(props: ActionPickerProps): JSX.Element {
     ),
   );
 
-  /** Returns selectable actions grouped by category for the source's input kinds. */
+  /** Returns selectable actions grouped by category for the source's surface and input kinds. */
   const groups = createMemo(() => {
     const grouped = new Map<string, types.ActionCatalogEntry[]>();
-    for (const entry of actionsAccepting($catalog(), props.inputKinds)) {
+    for (const entry of actionsAccepting(
+      $catalog(),
+      props.inputKinds,
+      props.surface,
+    )) {
       const list = grouped.get(entry.descriptor.category) ?? [];
       list.push(entry);
       grouped.set(entry.descriptor.category, list);
     }
     return [...grouped.entries()];
   });
+
+  /**
+   * Returns whether an action is among the selectable options, so bound actions that are
+   * unregistered or restricted to other surfaces still show as unavailable.
+   */
+  const isOffered = (id: string) =>
+    groups().some(([, entries]) =>
+      entries.some((entry) => entry.descriptor.id === id),
+    );
 
   /** Returns the descriptor for the selected action, if it is still registered. */
   const descriptor = createMemo(
@@ -202,7 +217,7 @@ export function ActionPicker(props: ActionPickerProps): JSX.Element {
         onChange={(event) => selectAction(event.currentTarget.value)}
       >
         <option value="">Select action</option>
-        <Show when={props.value && !descriptor()}>
+        <Show when={props.value && !isOffered(props.value.id)}>
           <option value={props.value?.id}>
             {props.value?.id} (unavailable)
           </option>
