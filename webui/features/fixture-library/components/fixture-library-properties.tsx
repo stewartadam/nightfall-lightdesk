@@ -24,6 +24,7 @@ import {
   Show,
 } from "solid-js";
 import { fixtureWireLayout } from "../../../lib/dmx";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
 import { fixtureProfile } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -146,13 +147,7 @@ function profileMatchesSelection(
   fixture: types.AvailableFixtureInfo | null,
   mode: string | undefined,
 ): boolean {
-  if (!profile || !fixture) return false;
-  if (
-    profile.info.make !== fixture.make ||
-    profile.info.model !== fixture.model
-  ) {
-    return false;
-  }
+  if (!profileMatchesRevision(profile, fixture)) return false;
   if (!mode) return true;
   if (profile.fixture) {
     return profile.fixture.mode === mode;
@@ -237,6 +232,7 @@ export default function FixtureLibraryProperties(
                 make={fixture().make}
                 model={fixture().model}
                 mode={selectedMode()}
+                assetEtag={fixture().asset_etag}
               />
             </div>
 

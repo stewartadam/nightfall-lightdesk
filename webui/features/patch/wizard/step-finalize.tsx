@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, Show } from "solid-js";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import {
   computeFixtureChannelCount,
   libraryDefinitionId,
@@ -33,12 +34,7 @@ export function StepFinalize() {
     const profile = $fixtureProfile();
     const fixture = selectedFixture();
     // Compute channel count from profile fixture metadata if it matches
-    if (
-      profile?.fixture &&
-      fixture &&
-      profile.info.make === fixture.make &&
-      profile.info.model === fixture.model
-    ) {
+    if (profileMatchesRevision(profile, fixture) && profile.fixture) {
       return computeFixtureChannelCount(profile.fixture);
     }
     return null;
@@ -175,6 +171,7 @@ export function StepFinalize() {
               make={selectedFixture()!.make}
               model={selectedFixture()!.model}
               mode={state().fixtureMode ?? undefined}
+              assetEtag={selectedFixture()!.asset_etag}
             />
           </Show>
         </div>

@@ -10,6 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Button } from "../../../components/ui/visual-language/button";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import {
   computeFixtureChannelCount,
   libraryDefinitionId,
@@ -35,12 +36,7 @@ export function StepSelectMode() {
   const channelCount = createMemo(() => {
     const profile = $fixtureProfile();
     const fixture = selectedFixture();
-    if (
-      !profile?.fixture ||
-      !fixture ||
-      profile.info.make !== fixture.make ||
-      profile.info.model !== fixture.model
-    ) {
+    if (!profileMatchesRevision(profile, fixture) || !profile.fixture) {
       return null;
     }
     return computeFixtureChannelCount(profile.fixture);
@@ -124,6 +120,7 @@ export function StepSelectMode() {
               make={selectedFixture()!.make}
               model={selectedFixture()!.model}
               mode={state().fixtureMode ?? undefined}
+              assetEtag={selectedFixture()!.asset_etag}
             />
           </Show>
         </div>
