@@ -22,11 +22,22 @@ export class FixtureDmxSnapshot {
   private parameters?: ParameterOutputSnapshot;
   private fixtures?: FixtureDefinitions;
   private readonly values = new Map<string, FixtureElementDmxMap>();
+  private revisionCounter = 0;
+
+  /**
+   * Increments whenever {@link read} rebuilds the records. The returned map is
+   * reused in place, so consumers that forward it elsewhere compare revisions
+   * rather than map identity to detect new engine output.
+   */
+  get revision(): number {
+    return this.revisionCounter;
+  }
 
   /** Returns owned DMX records until either the engine output or fixture definitions are replaced. */
   read(parameters: ParameterOutputSnapshot, fixtures: FixtureDefinitions) {
     if (parameters === this.parameters && fixtures === this.fixtures)
       return this.values;
+    this.revisionCounter++;
     this.parameters = parameters;
     this.fixtures = fixtures;
     this.values.clear();

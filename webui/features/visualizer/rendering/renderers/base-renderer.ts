@@ -132,7 +132,7 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
    */
   setElementDmxBatch(batch: FixtureDmxBatch): void {
     for (const [fixtureUid, elements] of batch) {
-      this.setElementDmx(fixtureUid, new Map(elements));
+      this.setElementDmx(fixtureUid, elements);
     }
   }
 

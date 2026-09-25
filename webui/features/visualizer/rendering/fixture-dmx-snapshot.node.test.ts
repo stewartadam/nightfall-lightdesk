@@ -53,6 +53,26 @@ test("unchanged DMX snapshots retain owned records and refresh on new output", (
   assert.equal(cell.red, 0.8);
 });
 
+/** The revision advances only on rebuilds, letting the worker proxy skip posting unchanged snapshots. */
+test("DMX snapshot revision changes only when output or definitions change", () => {
+  const cache = new FixtureDmxSnapshot();
+  const fixtures = { bar: { elements: [element()] } };
+  const outputs = new Map([["bar", [{ Red: 0.8 }]]]);
+  const initial = cache.revision;
+  const first = cache.read(outputs, fixtures);
+  const afterFirst = cache.revision;
+  assert.notEqual(afterFirst, initial);
+  assert.equal(cache.read(outputs, fixtures), first);
+  assert.equal(cache.revision, afterFirst);
+  cache.read(new Map([["bar", [{ Red: 0.2 }]]]), fixtures);
+  assert.notEqual(cache.revision, afterFirst);
+  const afterOutput = cache.revision;
+  cache.read(new Map([["bar", [{ Red: 0.2 }]]]), {
+    bar: { elements: [element()] },
+  });
+  assert.notEqual(cache.revision, afterOutput);
+});
+
 /** Definition replacements and missing fixtures/outputs cannot preserve obsolete cache entries. */
 test("DMX snapshots invalidate on definition replacement and removed output", () => {
   const cache = new FixtureDmxSnapshot();
