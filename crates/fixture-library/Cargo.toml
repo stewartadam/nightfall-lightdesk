@@ -12,6 +12,7 @@ base64.workspace = true
 gdtf = { git = "https://github.com/stewartadam/gdtf-rs.git", branch = "update-deps" }
 notify.workspace = true
 open-fixture-library = { path = "../open-fixture-library" }
+quick-xml = "0.41"
 nightfall = { path = "../common" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
@@ -22,18 +23,17 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
-zip = { version = "8.6", default-features = false, features = ["deflate"], optional = true }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [features]
 # Exposes the synthetic GDTF archive builder to other crates' tests.
-test-support = ["dep:zip"]
+test-support = []
 
 [dev-dependencies]
 async-channel.workspace = true
 sha2 = "0.10"
 tempfile.workspace = true
 tokio.workspace = true
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
