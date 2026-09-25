@@ -21,6 +21,7 @@ import {
   type Component,
   createEffect,
   createSignal,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -47,6 +48,7 @@ import {
   VisualizerContextProvider,
 } from "../context/visualizer-context";
 import type { VisualizerCanvasApi } from "../controllers/visualizer-canvas-api";
+import type { CameraState } from "../rendering/renderers/renderer-api";
 import {
   registerVisualizerDebugApi,
   setActiveVisualizerDebugApiPanel,
@@ -65,6 +67,33 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
   let visualizerApi: VisualizerCanvasApi | null = null;
   const [visualizerHandle, setVisualizerHandle] =
     createSignal<VisualizerCanvasApi>();
+  /** Quality the mounted renderer was built with; trails `quality` while the outgoing camera is captured. */
+  const [mountedQuality, setMountedQuality] = createSignal(quality());
+  let inheritedCameraState: CameraState | undefined;
+
+  /** Captures the outgoing renderer's camera pose, then remounts the canvas at the new quality. */
+  createEffect(
+    on(
+      quality,
+      (next) => {
+        if (next === mountedQuality()) return;
+        const outgoing = visualizerApi;
+        void (async () => {
+          inheritedCameraState = outgoing
+            ? await outgoing.getCameraState().catch((error: unknown) => {
+                log.warn("Could not capture camera before quality change", {
+                  error,
+                });
+                return undefined;
+              })
+            : undefined;
+          // A newer quality change supersedes this one and performs its own remount.
+          if (quality() === next) setMountedQuality(next);
+        })();
+      },
+      { defer: true },
+    ),
+  );
   let containerRef: HTMLDivElement | undefined;
   const panelId = props.initialPanelId ?? props.id;
   const visualizerContext = createVisualizerContextValue({ panelId });
@@ -156,14 +185,16 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
         <VisualizerToolToolbar />
         <VisualizerErrorBoundary>
           <div class="min-h-0 flex-1">
-            <Show when={quality()} keyed>
+            <Show when={mountedQuality()} keyed>
               {(_preset) => (
                 <VisualizerCanvas
                   class="h-full w-full"
                   forceMainThread={!isOffscreenCanvasEnabled()}
+                  initialCameraState={inheritedCameraState}
                   apiRef={(api) => {
                     visualizerApi = api;
-                    setVisualizerHandle(api);
+                    setVisualizerHandle(api ?? undefined);
+                    if (!api) return;
                     syncVisualizerVisibility();
                     if (isDockviewVisible()) {
                       setActiveVisualizerDebugApiPanel(panelId);

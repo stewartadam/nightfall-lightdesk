@@ -16,7 +16,10 @@
 import * as Comlink from "comlink";
 import { visualizerQualityPreset } from "../state/settings";
 import { MainThreadRenderer } from "./renderers/main-thread-renderer";
-import type { IVisualizerRenderer } from "./renderers/renderer-api";
+import type {
+  CameraState,
+  IVisualizerRenderer,
+} from "./renderers/renderer-api";
 import {
   type VisualizerWorkerApi,
   WorkerRendererProxy,
@@ -28,6 +31,8 @@ import {
 export interface CreateRendererOptions {
   /** Force main thread rendering even if OffscreenCanvas is available */
   forceMainThread?: boolean;
+  /** Camera pose to start from instead of the persisted camera state. */
+  initialCameraState?: CameraState;
 }
 
 interface VisualizerRendererInitializationTestWindow extends Window {
@@ -97,6 +102,7 @@ export async function createVisualizerRenderer(
     width,
     height,
     devicePixelRatio: window.devicePixelRatio,
+    initialCameraState: options.initialCameraState,
     beamQuality: visualizerQualityPreset.get(),
   });
 

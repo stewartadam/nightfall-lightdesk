@@ -81,7 +81,10 @@ import { useMoveToolInteraction } from "../interactions/use-move-tool-interactio
 import { useRotateToolInteraction } from "../interactions/use-rotate-tool-interaction";
 import { useSelectionToolInteraction } from "../interactions/use-selection-tool-interaction";
 import { createPointerModeRouter } from "../interactions/use-visualizer-pointer-mode-router";
-import type { VisualizerScreenPoint } from "../rendering/renderers/renderer-api";
+import type {
+  CameraState,
+  VisualizerScreenPoint,
+} from "../rendering/renderers/renderer-api";
 import { useFixtures } from "../services/use-fixtures";
 import { useSceneObjects } from "../services/use-scene-objects";
 import { useVisualizerRendererLifecycle } from "../services/use-visualizer-renderer-lifecycle";
@@ -98,10 +101,12 @@ const log = getLogger(import.meta.url);
 export interface VisualizerCanvasProps {
   /** CSS class name */
   class?: string;
-  /** Callback to receive the canvas API */
-  apiRef?: (api: VisualizerCanvasApi) => void;
+  /** Receives the canvas API once the renderer is ready, then `null` when it is disposed. */
+  apiRef?: (api: VisualizerCanvasApi | null) => void;
   /** Force main thread rendering even if OffscreenCanvas is available */
   forceMainThread?: boolean;
+  /** Camera pose inherited from a renderer this canvas replaces. */
+  initialCameraState?: CameraState;
 }
 
 type Axis = "x" | "y" | "z";
@@ -239,6 +244,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     canvasRef: () => canvasRef,
     containerRef: () => containerRef,
     forceMainThread: props.forceMainThread,
+    initialCameraState: props.initialCameraState,
     getToolMode,
     getSelection: $programmerSelection,
     onStats: (stats) =>

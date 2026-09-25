@@ -84,7 +84,11 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     const canvas = config.canvas as HTMLCanvasElement;
 
     // Initialize renderer using existing initRenderer function
-    this.rendererState = await initRenderer(canvas, config.beamQuality);
+    this.rendererState = await initRenderer(
+      canvas,
+      config.beamQuality,
+      config.initialCameraState,
+    );
 
     // Create scene manager
     this.sceneManager = new SceneManager(

@@ -87,7 +87,7 @@ export interface VisualizerInitConfig {
   devicePixelRatio: number;
   /** Proxy ID for event forwarding (worker mode only) */
   proxyId?: number;
-  /** Initial camera state (loaded from localStorage by main thread) */
+  /** Initial camera pose; renderers fall back to the persisted camera state when absent. */
   initialCameraState?: CameraState;
   /** Beam render quality selected by visualizer runtime settings. */
   beamQuality: VisualizerBeamQuality;

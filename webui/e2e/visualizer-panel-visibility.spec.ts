@@ -294,3 +294,143 @@ test("disposes a worker initialized after its visualizer panel closes", async ({
     contentType: "image/png",
   });
 });
+
+for (const offscreenCanvas of [true, false]) {
+  const mode = offscreenCanvas ? "worker" : "main-thread";
+
+  /**
+   * Verifies a quality change remounts the renderer with the live camera pose,
+   * republishes the debug API for the new renderer, and leaves the replaced
+   * API inert so visibility changes cannot reach the disposed renderer.
+   */
+  test(`quality change keeps the camera and retires the old ${mode} renderer`, async ({
+    page,
+  }, testInfo) => {
+    await page.addInitScript(() => {
+      const NativeWorker = window.Worker;
+      const state = { created: 0, terminated: 0 };
+      (window as any).__visualizerQualityRemountTest = state;
+      /** Counts visualizer renderer workers and their explicit termination. */
+      class TrackingWorker extends NativeWorker {
+        private readonly isVisualizerWorker: boolean;
+
+        /** Records creation of visualizer renderer workers. */
+        constructor(scriptURL: string | URL, options?: WorkerOptions) {
+          super(scriptURL, options);
+          this.isVisualizerWorker =
+            String(scriptURL).includes("worker-renderer");
+          if (this.isVisualizerWorker) state.created += 1;
+        }
+
+        /** Records renderer disposal before terminating the worker. */
+        override terminate(): void {
+          if (this.isVisualizerWorker) state.terminated += 1;
+          super.terminate();
+        }
+      }
+      window.Worker = TrackingWorker;
+      window.localStorage.clear();
+    });
+    await page.goto(
+      `/?e2e=1&visualizer:offscreenCanvas=${offscreenCanvas}&visualizer:beamQuality=low`,
+    );
+    await waitForDockviewApp(page);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (panelId) =>
+            (window as any).visualizerApis?.[panelId]?.isUsingWorker(),
+          VISUALIZER_PANEL_ID,
+        ),
+      )
+      .toBe(offscreenCanvas);
+
+    const camera = {
+      position: { x: -6.5, y: 3.25, z: 7.75 },
+      target: { x: 1.5, y: 0.5, z: -2 },
+    };
+    await page.evaluate(
+      ({ panelId, camera }) => {
+        const api = (window as any).visualizerApis[panelId];
+        (window as any).__replacedVisualizerApi = api;
+        api.setCameraState(camera);
+      },
+      { panelId: VISUALIZER_PANEL_ID, camera },
+    );
+
+    await page.evaluate(async () => {
+      const settings = await import("/features/visualizer/state/settings.ts");
+      settings.visualizerQualityPreset.set("high");
+    });
+
+    await expect
+      .poll(() =>
+        page.evaluate((panelId) => {
+          const api = (window as any).visualizerApis?.[panelId];
+          return (
+            Boolean(api) && api !== (window as any).__replacedVisualizerApi
+          );
+        }, VISUALIZER_PANEL_ID),
+      )
+      .toBe(true);
+
+    /** Rounds camera coordinates so float transport noise cannot fail the comparison. */
+    const readCamera = () =>
+      page.evaluate(async (panelId) => {
+        const state = await (window as any).visualizerApis[
+          panelId
+        ].getCameraState();
+        const round = (v: { x: number; y: number; z: number }) => ({
+          x: Math.round(v.x * 100) / 100,
+          y: Math.round(v.y * 100) / 100,
+          z: Math.round(v.z * 100) / 100,
+        });
+        return { position: round(state.position), target: round(state.target) };
+      }, VISUALIZER_PANEL_ID);
+    await expect.poll(readCamera).toEqual(camera);
+
+    // The replaced handle must be inert: no renderer, no restarted loops.
+    const replaced = await page.evaluate(() => {
+      const api = (window as any).__replacedVisualizerApi;
+      api.pause();
+      api.resume();
+      return { paused: api.isPaused(), scene: api.getScene() === undefined };
+    });
+    expect(replaced).toEqual({ paused: true, scene: true });
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (panelId) => (window as any).visualizerApis[panelId].isPaused(),
+          VISUALIZER_PANEL_ID,
+        ),
+      )
+      .toBe(false);
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as any).appStores.visualizerStats.get()),
+      )
+      .toMatchObject({ renderMode: mode });
+    if (offscreenCanvas) {
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const state = (window as any).__visualizerQualityRemountTest;
+            return { created: state.created, terminated: state.terminated };
+          }),
+        )
+        .toEqual({ created: 2, terminated: 1 });
+    }
+
+    const screenshotPath = testInfo.outputPath(`quality-remount-${mode}.png`);
+    await page
+      .locator(
+        `[data-component="Visualizer"][data-panel-id="${VISUALIZER_PANEL_ID}"]:visible`,
+      )
+      .screenshot({ path: screenshotPath });
+    await testInfo.attach(`quality-remount-${mode}`, {
+      path: screenshotPath,
+      contentType: "image/png",
+    });
+  });
+}

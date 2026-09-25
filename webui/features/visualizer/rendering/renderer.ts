@@ -29,6 +29,7 @@ import {
   isVisualizerInspectorEnabled,
   type VisualizerBeamQuality,
 } from "../../../lib/feature-flags";
+import { getLogger } from "../../../lib/logger";
 import {
   cancelControlsInteraction,
   createControls,
@@ -58,6 +59,7 @@ import {
   readInspectorGpuSample,
   type TimestampRenderer,
 } from "./gpu-frame-timer";
+import type { CameraState } from "./renderers/renderer-api";
 import {
   createSceneEnvironment,
   type SceneEnvironment,
@@ -76,6 +78,15 @@ export {
   setControlsRotationMode,
   zoomCameraToGroups,
 };
+
+const log = getLogger(import.meta.url);
+
+/**
+ * Upper bound on waiting for in-flight GPU timestamp readback during disposal.
+ * Device loss can leave a buffer mapping unresolved forever, so teardown must
+ * proceed without it after this deadline.
+ */
+export const GPU_READBACK_DISPOSAL_TIMEOUT_MS = 2000;
 
 /**
  * Frame timing state for framerate limiting.
@@ -175,6 +186,7 @@ export interface RendererState extends CoreRendererState {
 export async function initRenderer(
   canvas: HTMLCanvasElement,
   quality: VisualizerBeamQuality = "high",
+  initialCameraState?: CameraState,
 ): Promise<RendererState> {
   // Create WebGPU renderer (falls back to WebGL if WebGPU unavailable)
   const renderer = createRenderer({
@@ -207,8 +219,8 @@ export async function initRenderer(
   // Create orbit controls with configurable rotation mode and dolly-through zoom
   const controls = createControls(camera, canvas);
 
-  // Load saved camera state or use defaults
-  const savedState = loadCameraState();
+  // A replaced renderer hands over its live pose; otherwise restore the persisted one.
+  const savedState = initialCameraState ?? loadCameraState();
   if (savedState) {
     camera.position.set(
       savedState.position.x,
@@ -417,19 +429,44 @@ export function handleResize(
 }
 
 /**
- * Dispose all renderer resources.
+ * Waits for scheduled GPU timestamp readback so mapped query buffers are not
+ * destroyed mid-map, but gives up after {@link GPU_READBACK_DISPOSAL_TIMEOUT_MS}
+ * so a lost device cannot block the rest of teardown. Rejections propagate.
  */
-export async function disposeRenderer(state: RendererState): Promise<void> {
-  stopRenderLoop(state);
-  try {
-    // The addon's declaration omits this public method. Its scheduled query
-    // readback must finish before the renderer destroys the mapped buffers.
+async function drainTimestampReadback(state: RendererState): Promise<void> {
+  const readback = (async () => {
+    // `resolveTimestamp` is public on Three's RendererInspector but missing
+    // from the addon's type declarations (see scripts/three-timestamp-query.node.test.mjs).
     if (state.inspector) {
       await (
         state.inspector as unknown as { resolveTimestamp(): Promise<void> }
       ).resolveTimestamp();
     }
     await state.gpuTimer?.dispose();
+  })();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      log.warn(
+        `GPU timestamp readback did not settle within ${GPU_READBACK_DISPOSAL_TIMEOUT_MS}ms; disposing without it`,
+      );
+      resolve();
+    }, GPU_READBACK_DISPOSAL_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([readback, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Dispose all renderer resources.
+ */
+export async function disposeRenderer(state: RendererState): Promise<void> {
+  stopRenderLoop(state);
+  try {
+    await drainTimestampReadback(state);
   } finally {
     state.renderer.inspector = new InspectorBase();
     disposeControlsBehavior(state.controls);
