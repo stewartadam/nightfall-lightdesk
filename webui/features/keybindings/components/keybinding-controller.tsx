@@ -9,8 +9,13 @@
 import { createEffect, onCleanup } from "solid-js";
 import { executeUiAction } from "../../../components/providers/command-registry";
 import { isInputField } from "../../../lib/keyboard-shortcut-targets";
+import {
+  addShortcutPreemptor,
+  setDisabledShortcuts,
+} from "../../../lib/keyboardShortcuts";
 import { clientActionInvocation } from "../../../state/appStores";
 import {
+  $disabledBuiltInShortcuts,
   $keybindings,
   $recordingKeybinding,
   $respondToControllerUiActions,
@@ -37,18 +42,22 @@ function typesIntoInput(event: KeyboardEvent): boolean {
  * Runs the user keybinding matching a key press ahead of built-in shortcuts.
  *
  * User bindings shadow built-in shortcuts on the same key without unregistering them, so
- * removing a binding restores the built-in behavior immediately.
+ * removing a binding restores the built-in behavior immediately. The settings UI asks for
+ * confirmation before creating such a binding. Returns true when a binding claimed the press;
+ * held-key repeats of a bound key are claimed without invoking the action again.
  */
-function handleKeybinding(event: KeyboardEvent): void {
-  if (event.repeat || event.isComposing || $recordingKeybinding.get()) return;
-  if (typesIntoInput(event)) return;
+function handleKeybinding(event: KeyboardEvent): boolean {
+  if (event.isComposing || $recordingKeybinding.get()) return false;
+  if (typesIntoInput(event)) return false;
   const key = keyFromEvent(event);
-  if (!key) return;
+  if (!key) return false;
   const binding = $keybindings.get().find((binding) => binding.key === key);
-  if (!binding) return;
+  if (!binding) return false;
   event.preventDefault();
-  event.stopImmediatePropagation();
-  invokeBoundAction(binding.action, { source: "keybinding", event });
+  if (!event.repeat) {
+    invokeBoundAction(binding.action, { source: "keybinding", event });
+  }
+  return true;
 }
 
 /**
@@ -57,10 +66,17 @@ function handleKeybinding(event: KeyboardEvent): void {
  * Mounted once by the application shell.
  */
 export function KeybindingController() {
-  window.addEventListener("keydown", handleKeybinding, { capture: true });
-  onCleanup(() =>
-    window.removeEventListener("keydown", handleKeybinding, { capture: true }),
-  );
+  onCleanup(addShortcutPreemptor(handleKeybinding));
+
+  /** Keeps the shortcut dispatcher's disabled list in step with the persisted one. */
+  createEffect(() => {
+    const unsubscribe =
+      $disabledBuiltInShortcuts.subscribe(setDisabledShortcuts);
+    onCleanup(() => {
+      unsubscribe();
+      setDisabledShortcuts([]);
+    });
+  });
 
   /** Runs forwarded `ui.*` actions when this client opted in to controller UI actions. */
   createEffect(() => {

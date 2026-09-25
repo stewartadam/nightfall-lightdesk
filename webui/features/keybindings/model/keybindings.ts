@@ -16,6 +16,12 @@ import { bestEffortPersistentAtom } from "../../../lib/best-effort-persistent-at
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import type * as types from "../../../types";
+import {
+  type BuiltInShortcutRef,
+  decodeDisabledBuiltInShortcuts,
+  withBuiltInShortcutDisabled,
+  withBuiltInShortcutEnabled,
+} from "./shortcut-conflicts";
 
 const log = getLogger(import.meta.url);
 
@@ -55,6 +61,30 @@ export const $keybindings = bestEffortPersistentAtom<Keybinding[]>(
     onSetError: (error) => log.warn("Could not persist keybindings", error),
   },
 );
+
+/** Built-in shortcuts the user turned off in this browser, which no longer fire. */
+export const $disabledBuiltInShortcuts = bestEffortPersistentAtom<
+  BuiltInShortcutRef[]
+>("nightfall.keybindings.disabledBuiltIns", [], {
+  decode: decodeDisabledBuiltInShortcuts,
+  encode: JSON.stringify,
+  onSetError: (error) =>
+    log.warn("Could not persist disabled built-in shortcuts", error),
+});
+
+/** Turns off a built-in shortcut so pressing its key no longer runs it. */
+export function disableBuiltInShortcut(shortcut: BuiltInShortcutRef): void {
+  $disabledBuiltInShortcuts.set(
+    withBuiltInShortcutDisabled($disabledBuiltInShortcuts.get(), shortcut),
+  );
+}
+
+/** Turns a previously disabled built-in shortcut back on. */
+export function enableBuiltInShortcut(shortcut: BuiltInShortcutRef): void {
+  $disabledBuiltInShortcuts.set(
+    withBuiltInShortcutEnabled($disabledBuiltInShortcuts.get(), shortcut),
+  );
+}
 
 /**
  * Whether this client runs `ui.*` actions invoked by MIDI or OSC mappings.
@@ -108,7 +138,11 @@ export function formatKey(key: string): string {
     .join(" + ");
 }
 
-/** Adds or replaces a keybinding; any other binding for the same key is removed. */
+/**
+ * Adds or replaces a keybinding; any other binding for the same key is removed.
+ *
+ * Callers confirm the replacement with the user first, using `findKeybindingConflicts`.
+ */
 export function saveKeybinding(binding: Keybinding): void {
   $keybindings.set([
     ...$keybindings
