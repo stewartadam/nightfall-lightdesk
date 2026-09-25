@@ -129,13 +129,11 @@ test("300 active optical sources sustain frame pacing", async ({
                 const source = sources[i];
                 source.parent.rotation.y =
                   Math.sin(frame / 120 + i / 20) * 0.08;
-                batch.update(
-                  source.id,
-                  source.parent,
+                batch.update(source.id, source.parent, {
                   optics,
-                  source.color,
-                  20,
-                );
+                  color: source.color,
+                  length: 20,
+                });
               }
               const updateMs = performance.now() - started;
               timer.begin(timedRenderer);

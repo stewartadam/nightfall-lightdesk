@@ -10,10 +10,46 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type BeamOptics, BeamType } from "../../../../types";
 import {
+  emitterDistributionArea,
+  type ResolvedEmitterOptics,
   resolveEmitterOptics,
-  sampleEmitterDistribution,
-  sampleEmitterIlluminance,
 } from "./emitter-optics";
+
+/** CPU reference of the shaders' relative irradiance at an emitter-local point. */
+function sampleEmitterDistribution(
+  optics: ResolvedEmitterOptics,
+  x: number,
+  y: number,
+  distance: number,
+): number {
+  if (distance < 0) return 0;
+  const u = x / (optics.radius + distance * optics.slopeX);
+  const v = y / (optics.radius + distance * optics.slopeY);
+  const radius =
+    optics.shape === "rectangle"
+      ? Math.max(Math.abs(u), Math.abs(v))
+      : Math.hypot(u, v);
+  if (radius > 2) return 0;
+  return Math.exp(-Math.log(10) * radius ** optics.distributionPower);
+}
+
+/** CPU reference of flux per square metre on a plane perpendicular to the beam axis. */
+function sampleEmitterIlluminance(
+  optics: ResolvedEmitterOptics,
+  x: number,
+  y: number,
+  distance: number,
+): number {
+  if (distance < 0) return 0;
+  const width = optics.radius + distance * optics.slopeX;
+  const height = optics.radius + distance * optics.slopeY;
+  return (
+    (optics.lumens * sampleEmitterDistribution(optics, x, y, distance)) /
+    (emitterDistributionArea(optics.shape, optics.distributionPower) *
+      width *
+      height)
+  );
+}
 
 /** Creates independent source metadata with a 4-degree beam and 8-degree field. */
 function aperture(): BeamOptics {

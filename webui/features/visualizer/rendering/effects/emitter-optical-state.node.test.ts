@@ -402,21 +402,24 @@ test("separate index and speed channels share only their wheel rotation", () => 
       "1Pos": 1,
     };
     const colors = new Map([["Head", values]]);
-    /** Reads the active projection family without exposing private angle storage. */
-    const angle = () =>
-      family === "Gobo" ? state.goboRotation : state.prismRotation;
+    /**
+     * Reads the rotation projected for a wheel: gobo wheels keep one mask stage each,
+     * while prism stages publish a single combined rotation.
+     */
+    const angle = (wheel: number) =>
+      family === "Gobo" ? state.gobos[wheel].rotation : state.prismRotation;
     state.update(colors, 0);
-    assert.equal(angle(), Math.PI / 2);
+    assert.equal(angle(0), Math.PI / 2);
     delete values["1Pos"];
     values["2Pos"] = 1;
     state.update(colors, 1);
-    assert.equal(angle(), Math.PI);
+    assert.equal(angle(1), Math.PI);
     delete values["2Pos"];
     values["1PosRotate"] = 1;
     state.update(colors, 2);
-    assert.equal(angle(), Math.PI);
+    assert.equal(angle(0), Math.PI);
     state.update(colors, 3);
-    assert.equal(angle(), Math.PI * 1.5);
+    assert.equal(angle(0), Math.PI * 1.5);
   }
 });
 
@@ -448,7 +451,7 @@ test("unreferenced wheels do not load images or reserve split beams", () => {
   );
   assert.equal(state.maxFacetCount, 1);
   state.update(new Map());
-  assert.equal(state.goboSlot, 0);
+  assert.ok(state.gobos.every((stage) => stage.slot === 0));
   assert.equal(state.prism, undefined);
 });
 
@@ -606,7 +609,7 @@ test("indexed and continuous optical rotation have distinct physical semantics",
     const colors = new Map([["Head", values]]);
     /** Reads the selected family without coupling the test to private channel state. */
     const angle = () =>
-      prefix.startsWith("Gobo") ? state.goboRotation : state.prismRotation;
+      prefix.startsWith("Gobo") ? state.gobos[0].rotation : state.prismRotation;
     state.update(colors, 10);
     assert.equal(angle(), Math.PI / 2);
     values.Rotation = 1;
@@ -768,9 +771,9 @@ test("emitter optical state selects imported wheel masks and restores open slots
   const values = { red: 1, green: 1, blue: 1, intensity: 1, Gobo: 1 };
   const colors = new Map([["Head", values]]);
   state.update(colors);
-  assert.equal(state.goboSlot, 7);
+  assert.equal(state.gobos[0].slot, 7);
   values.Gobo = 0;
   state.update(colors);
-  assert.equal(state.goboSlot, 0);
+  assert.equal(state.gobos[0].slot, 0);
   assert.equal(loads, 1);
 });

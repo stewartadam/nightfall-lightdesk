@@ -284,7 +284,7 @@ export function updateRotatingWashBeamColors(
     data.controlElementLabel,
   );
   const masterIntensity = control?.intensity ?? 1;
-  const zoom = control?.zoom ?? 0.5;
+  const zoom = control?.zoom;
   const zoomDegrees = control?.zoomDegrees;
   const frost = control?.frost ?? 0;
   const tilt = control?.tilt ?? 0;
@@ -505,7 +505,7 @@ function updateBeamEmitter(
   beam: WashBeamEmitterData,
   colorData: EmitterColorData | undefined,
   masterIntensity: number,
-  zoom: number,
+  zoom: number | undefined,
   zoomDegrees: number | undefined,
   frost: number,
 ): void {

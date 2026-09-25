@@ -286,16 +286,17 @@ test("fixture DMX selects indexed and rotating gobo modes across geometries", ()
         },
       ],
     ]);
+  const [gobo] = state.gobos;
   state.update(colors(32895), 10);
-  approx(state.goboRotation, Math.PI / 2);
+  approx(gobo.rotation, Math.PI / 2);
   state.update(colors(32896), 10.5);
-  approx(state.goboRotation, Math.PI);
+  approx(gobo.rotation, Math.PI);
   const missingMaster = colors(0);
   missingMaster.delete("Base");
   state.update(missingMaster, 11);
-  assert.equal(state.goboRotation, 0);
+  assert.equal(gobo.rotation, 0);
   state.update(colors(0), 12);
-  approx(state.goboRotation, Math.PI / 2);
+  approx(gobo.rotation, Math.PI / 2);
 });
 
 /**
@@ -1848,7 +1849,7 @@ test("moving-head layout preserves inherited optical controls", () => {
   };
   const colors = new Map([["Head", values]]);
   state.update(colors);
-  assert.equal(state.goboSlot, 7);
+  assert.equal(state.gobos[0].slot, 7);
   // Avoid starting a network fetch in this node-only rendering regression.
   emitter.gdtfPath = undefined;
   updater.syncWithFixtures(manager.getAllFixtureInstances());

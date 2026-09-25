@@ -8,8 +8,6 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Object3D, Scene } from "three/webgpu";
-import { EmitterVolumeBatch } from "./emitter-volume-batch";
 import { GoboStackTable, MAX_GOBO_STAGES } from "./gobo-stack-table";
 
 /** Static masks and emitters with no active masks do not schedule redundant GPU texture uploads. */
@@ -27,55 +25,6 @@ test("unchanged mask stacks leave the texture upload version stable", () => {
   table.update("mask", masks);
   assert.ok(table.texture.version > version);
   table.dispose();
-});
-
-/** Render lifecycle transitions clear active approximation without losing prepared masks on reactivation. */
-test("batch gobo diagnostics clear on blackout, fixture removal and disposal", () => {
-  const batch = new EmitterVolumeBatch(new Scene());
-  const parent = new Object3D();
-  const masks = Array.from({ length: MAX_GOBO_STAGES + 1 }, () => ({
-    slot: 1,
-    rotation: 0,
-  }));
-  const optics = {
-    shape: "round" as const,
-    radius: 0.02,
-    slopeX: 0.1,
-    slopeY: 0.1,
-    halfPowerRatio: 0.5,
-    distributionPower: 4,
-    lumens: 1000,
-  };
-  /** Activates the same prepared optical emitter to exercise reusable batch state. */
-  const activate = () =>
-    batch.update(
-      "fixture:head",
-      parent,
-      optics,
-      { red: 1, green: 1, blue: 1, intensity: 1 },
-      30,
-      1,
-      0,
-      0,
-      undefined,
-      0,
-      0,
-      masks,
-    );
-  activate();
-  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 1);
-  batch.remove("fixture:head");
-  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 0);
-  activate();
-  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 1);
-  batch.sync(new Map());
-  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 0);
-  activate();
-  batch.clear();
-  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 0);
-  activate();
-  batch.dispose();
-  assert.equal(batch.goboAtlas!.stacks.reducedStacks, 0);
 });
 
 /** Stack addresses survive growth, growth releases the undersized GPU storage, released rows are reused, and open masks consume no sampling budget. */

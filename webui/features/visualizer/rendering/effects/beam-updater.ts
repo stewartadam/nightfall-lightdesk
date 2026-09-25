@@ -12,8 +12,10 @@
  */
 
 import type { EmitterData } from "../../model/types";
+import { VISIBLE_INTENSITY_THRESHOLD } from "../emitter-radiance";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
+import { apertureId } from "./aperture-id";
 import type { BeamManager } from "./beam-manager";
 import { EmitterOpticalState } from "./emitter-optical-state";
 
@@ -26,6 +28,12 @@ export interface BeamColorData extends EmitterColor {
   frost?: number;
 }
 
+/** A projecting emitter's batch identifier and compiled optical controls. */
+interface Aperture {
+  id: string;
+  controls: EmitterOpticalState;
+}
+
 /**
  * BeamUpdater handles beam synchronization for fixtures.
  * Shared between SceneManager (main thread) and worker mode.
@@ -34,16 +42,15 @@ export class BeamUpdater {
   private beamManager: BeamManager;
   private enabled = true;
   private readonly reducedPrisms = new Set<EmitterData>();
+  /** Per-emitter state built once at sync, so playback allocates no identifiers or controls. */
+  private readonly apertures = new WeakMap<EmitterData, Aperture>();
 
   /** Counts illuminated emitters whose current prism split exceeds the prepared rendering budget. */
   get reducedPrismEmitters(): number {
     return this.reducedPrisms.size;
   }
-  private readonly opticalStates = new WeakMap<
-    EmitterData,
-    EmitterOpticalState
-  >();
 
+  /** Publishes apertures through the scene's beam manager. */
   constructor(beamManager: BeamManager) {
     this.beamManager = beamManager;
   }
@@ -55,7 +62,7 @@ export class BeamUpdater {
     this.enabled = enabled;
     if (!enabled) {
       this.reducedPrisms.clear();
-      this.beamManager.dispose();
+      this.beamManager.clear();
     }
   }
 
@@ -76,21 +83,30 @@ export class BeamUpdater {
     for (const [uid, fixture] of fixtures)
       for (const [name, emitter] of fixture.emitters) {
         live.add(emitter);
-        if (!this.opticalStates.has(emitter))
-          this.opticalStates.set(
-            emitter,
-            new EmitterOpticalState(emitter, (path, media) =>
-              this.beamManager.loadGobo(path, media),
-            ),
-          );
-        if (emitter.optics)
-          this.beamManager.reserveOpticalBeam(
-            `${uid}:${name}`,
-            this.opticalStates.get(emitter)!.maxFacetCount,
-          );
+        if (!emitter.optics) continue;
+        const aperture = this.aperture(uid, name, emitter);
+        this.beamManager.reserveOpticalBeam(
+          aperture.id,
+          aperture.controls.maxFacetCount,
+        );
       }
     for (const emitter of this.reducedPrisms)
       if (!live.has(emitter)) this.reducedPrisms.delete(emitter);
+  }
+
+  /** Returns an emitter's aperture state, compiling its optical controls on first use. */
+  private aperture(uid: string, name: string, emitter: EmitterData): Aperture {
+    let aperture = this.apertures.get(emitter);
+    if (!aperture) {
+      aperture = {
+        id: apertureId(uid, name),
+        controls: new EmitterOpticalState(emitter, (path, media) =>
+          this.beamManager.loadGobo(path, media),
+        ),
+      };
+      this.apertures.set(emitter, aperture);
+    }
+    return aperture;
   }
 
   /**
@@ -114,29 +130,24 @@ export class BeamUpdater {
         this.reducedPrisms.delete(emitter);
         continue;
       }
-      const beamId = `${uid}:${emitterName}`;
+      const { id, controls } = this.aperture(uid, emitterName, emitter);
       const beamColor =
         emitter.beamColor ?? elementColors.get(emitter.controlledElement);
-      const opticalState = this.opticalStates.get(emitter);
-      opticalState?.update(elementColors);
-      if (opticalState?.prismReduced && beamColor && beamColor.intensity > 0.01)
-        this.reducedPrisms.add(emitter);
+      controls.update(elementColors);
+      const lit =
+        beamColor !== undefined &&
+        beamColor.intensity > VISIBLE_INTENSITY_THRESHOLD;
+      if (lit && controls.prismReduced) this.reducedPrisms.add(emitter);
       else this.reducedPrisms.delete(emitter);
-      if (beamColor && beamColor.intensity > 0.01)
+      if (lit)
         this.beamManager.updateOpticalBeam(
-          beamId,
+          id,
           emitter.nodeGroup,
           emitter.optics,
           beamColor,
-          opticalState?.zoomDegrees ?? beamColor.zoomDegrees,
-          opticalState?.goboSlot,
-          opticalState?.goboRotation,
-          opticalState?.prism,
-          opticalState?.prismRotation,
-          opticalState?.focusDistance,
-          opticalState?.gobos,
+          controls,
         );
-      else this.beamManager.removeOpticalBeam(beamId);
+      else this.beamManager.removeOpticalBeam(id);
     }
   }
 
@@ -145,6 +156,6 @@ export class BeamUpdater {
    */
   dispose(): void {
     this.reducedPrisms.clear();
-    this.beamManager.destroy();
+    this.beamManager.dispose();
   }
 }

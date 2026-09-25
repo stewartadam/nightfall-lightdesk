@@ -67,9 +67,42 @@ export interface ResolvedEmitterOptics {
   lumens: number;
 }
 
+/** Widest full beam angle, in degrees, an aperture may project. */
+const MAX_BEAM_ANGLE_DEGREES = 170;
+/** Beam angle assumed when imported photometry omits or corrupts it. */
+const DEFAULT_BEAM_ANGLE_DEGREES = 15;
+
 /** Sanitizes optional imported values without allowing NaN into GPU buffers. */
 function finite(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isFinite(value) ? value : fallback;
+}
+
+/** Clamps a full cone angle to the projectable range, replacing non-finite input with a fallback. */
+function beamAngle(degrees: number | undefined, fallback: number): number {
+  return Math.max(
+    0,
+    Math.min(MAX_BEAM_ANGLE_DEGREES, finite(degrees, fallback)),
+  );
+}
+
+/** Half-width added per meter of propagation by a full cone angle. */
+function coneSlope(degrees: number): number {
+  return Math.tan((degrees * Math.PI) / 360);
+}
+
+/**
+ * Scales an aperture's native spread to a zoomed full beam angle. Missing, non-finite or
+ * degenerate angles keep the native spread instead of producing NaN or infinite slopes.
+ */
+export function emitterZoomScale(
+  physical: BeamOptics["physical"],
+  zoomAngleDegrees: number | undefined,
+): number {
+  const native = beamAngle(physical.beamAngle, DEFAULT_BEAM_ANGLE_DEGREES);
+  const nativeSlope = coneSlope(native);
+  return nativeSlope > 1e-6
+    ? coneSlope(beamAngle(zoomAngleDegrees, native)) / nativeSlope
+    : 1;
 }
 
 /** Resolves one emitting aperture; a Glow aperture contributes only its visible lens. */
@@ -79,19 +112,14 @@ export function resolveEmitterOptics(
 ): ResolvedEmitterOptics | undefined {
   const physical = optics.physical;
   if (physical.beamType === BeamType.Glow) return undefined;
-  const beamAngle = Math.max(0, Math.min(170, finite(physical.beamAngle, 15)));
+  const nativeAngle = beamAngle(physical.beamAngle, DEFAULT_BEAM_ANGLE_DEGREES);
   const fieldAngle = Math.max(
-    beamAngle,
-    Math.min(170, finite(physical.fieldAngle, beamAngle)),
+    nativeAngle,
+    beamAngle(physical.fieldAngle, nativeAngle),
   );
-  const beamSlope = Math.tan((beamAngle * Math.PI) / 360);
-  const fieldSlope = Math.tan((fieldAngle * Math.PI) / 360);
-  const zoomSlope = Math.tan(
-    (Math.max(0, Math.min(170, finite(zoomAngleDegrees, beamAngle))) *
-      Math.PI) /
-      360,
-  );
-  const zoomScale = beamSlope > 1e-6 ? zoomSlope / beamSlope : 1;
+  const beamSlope = coneSlope(nativeAngle);
+  const fieldSlope = coneSlope(fieldAngle);
+  const zoomScale = emitterZoomScale(physical, zoomAngleDegrees);
   const halfPowerRatio =
     fieldSlope > 1e-6
       ? Math.max(0.001, Math.min(0.999, beamSlope / fieldSlope))
@@ -117,40 +145,4 @@ export function resolveEmitterOptics(
     ),
     lumens: Math.max(0, finite(physical.lumens, 1000)),
   };
-}
-
-/** Evaluates the relative irradiance of the resolved distribution at an emitter-local point. */
-export function sampleEmitterDistribution(
-  optics: ResolvedEmitterOptics,
-  x: number,
-  y: number,
-  distance: number,
-): number {
-  if (distance < 0) return 0;
-  const u = x / (optics.radius + distance * optics.slopeX);
-  const v = y / (optics.radius + distance * optics.slopeY);
-  const radius =
-    optics.shape === "rectangle"
-      ? Math.max(Math.abs(u), Math.abs(v))
-      : Math.hypot(u, v);
-  if (radius > 2) return 0;
-  return Math.exp(-Math.log(10) * radius ** optics.distributionPower);
-}
-
-/** Evaluates flux per square metre on a plane perpendicular to the beam axis, before filters or haze losses. */
-export function sampleEmitterIlluminance(
-  optics: ResolvedEmitterOptics,
-  x: number,
-  y: number,
-  distance: number,
-): number {
-  if (distance < 0) return 0;
-  const width = optics.radius + distance * optics.slopeX;
-  const height = optics.radius + distance * optics.slopeY;
-  return (
-    (optics.lumens * sampleEmitterDistribution(optics, x, y, distance)) /
-    (emitterDistributionArea(optics.shape, optics.distributionPower) *
-      width *
-      height)
-  );
 }

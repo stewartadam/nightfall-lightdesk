@@ -296,10 +296,8 @@ for (const forceWebGL of [false, true]) {
             anchor.position.set(x, y, 0);
             anchor.rotation.x = -Math.PI / 2;
             anchor.updateMatrixWorld(true);
-            batch.update(
-              String(i),
-              anchor,
-              {
+            batch.update(String(i), anchor, {
+              optics: {
                 shape: "round",
                 radius: 0.005,
                 slopeX: 1,
@@ -308,8 +306,8 @@ for (const forceWebGL of [false, true]) {
                 distributionPower: 2,
                 lumens: 20,
               },
-              { red: 1, green: 0.5, blue: 0.1, intensity: 1 },
-            );
+              color: { red: 1, green: 0.5, blue: 0.1, intensity: 1 },
+            });
           }
           scene.add(cells);
           const original = pipeline.postProcessing.outputNode;
@@ -520,10 +518,8 @@ for (const quality of ["low", "medium"] as const) {
             profile: resolveQualityProfile(quality),
           });
           const batch = new EmitterVolumeBatch(scene);
-          batch.update(
-            "beam",
-            new T.Object3D(),
-            {
+          batch.update("beam", new T.Object3D(), {
+            optics: {
               shape: "round",
               radius: 0.02,
               slopeX: 0.08,
@@ -532,8 +528,8 @@ for (const quality of ["low", "medium"] as const) {
               distributionPower: 4,
               lumens: 1000,
             },
-            { red: 1, green: 0, blue: 0, intensity: 0.5 },
-          );
+            color: { red: 1, green: 0, blue: 0, intensity: 0.5 },
+          });
           /** Reads the complete beam image after its GPU commands have been submitted. */
           const capture = async () => {
             await new Promise<void>((resolve) => {
@@ -557,10 +553,8 @@ for (const quality of ["low", "medium"] as const) {
             return red;
           };
           const lit = await capture();
-          batch.update(
-            "overlapping-beam",
-            new T.Object3D(),
-            {
+          batch.update("overlapping-beam", new T.Object3D(), {
+            optics: {
               shape: "round",
               radius: 0.02,
               slopeX: 0.08,
@@ -569,8 +563,8 @@ for (const quality of ["low", "medium"] as const) {
               distributionPower: 4,
               lumens: 1000,
             },
-            { red: 1, green: 0, blue: 0, intensity: 0.5 },
-          );
+            color: { red: 1, green: 0, blue: 0, intensity: 0.5 },
+          });
           const overlapping = await capture();
           const wall = new T.Mesh(
             new T.PlaneGeometry(2, 2),

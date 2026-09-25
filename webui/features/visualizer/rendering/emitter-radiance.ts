@@ -14,3 +14,6 @@ export const EMITTER_RADIANCE = 16;
  * clip to flat white instead of spreading its excess energy into glow.
  */
 export const UNBLOOMED_EMITTER_RADIANCE = 2;
+
+/** Normalized emitter intensity at or below which a source is treated as dark. */
+export const VISIBLE_INTENSITY_THRESHOLD = 0.01;

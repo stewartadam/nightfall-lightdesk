@@ -50,11 +50,12 @@ import {
   type QualityProfile,
   resolveQualityProfile,
 } from "../quality-profile";
+import { parseApertureId } from "./aperture-id";
 import type { GoboStage } from "./emitter-optical-state";
-import type { ResolvedEmitterOptics } from "./emitter-optics";
 import {
   emitterDistributionArea,
   LUMENS_PER_SCENE_UNIT,
+  type ResolvedEmitterOptics,
 } from "./emitter-optics";
 import { createEmitterVolumeMaterial } from "./emitter-volume-material";
 import { GoboAtlas } from "./gobo-atlas";
@@ -80,6 +81,29 @@ const RECORD_SIZE = Object.values(ATTRIBUTE_SIZES).reduce(
   (sum, size) => sum + size,
   0,
 );
+
+/** Axial extent, in meters, of each drawn beam and its surface light. */
+export const DEFAULT_BEAM_LENGTH = 30;
+/** Fractional widening of a beam's spread at full frost. */
+const FROST_SPREAD = 0.5;
+/** Distribution exponent full frost softens a beam toward: a plain Gaussian falloff. */
+const FROSTED_DISTRIBUTION_POWER = 2;
+
+/** One frame of an aperture's published optical state; its pose comes from the parent object. */
+export interface ApertureUpdate {
+  optics: ResolvedEmitterOptics;
+  color: EmitterColor;
+  /** Multiplier on the aperture's slopes from the current zoom angle; defaults to 1. */
+  zoomScale?: number;
+  /** Axial extent in meters; defaults to DEFAULT_BEAM_LENGTH. */
+  length?: number;
+  /** Masks applied to every facet; omitted when the profile does not project gobos. */
+  gobos?: readonly GoboStage[];
+  /** Prism facets; omitted or empty for an unsplit beam. */
+  facets?: readonly PrismProjection[];
+  prismRotation?: number;
+  focusDistance?: number;
+}
 
 /** Scales the schematic cone's DMX drive color into a legible, unexposed display color. */
 const SCHEMATIC_CONE_DRIVE_GAIN = 0.18;
@@ -170,7 +194,9 @@ export class EmitterVolumeBatch {
   private records!: InstancedInterleavedBuffer;
   private capacity = 0;
   private readonly slots = new Map<string, number>();
-  private readonly ids: string[] = [];
+  /** Instance key drawn by each slot, kept dense so the instanced draw covers only live slots. */
+  private readonly slotKeys: string[] = [];
+  /** Instance keys reserved per aperture: the aperture ID for its first facet, then one per extra facet. */
   private readonly groups = new Map<string, string[]>();
   private reservedCount = 0;
   private dirty = false;
@@ -208,7 +234,6 @@ export class EmitterVolumeBatch {
     this.target = context?.scene ?? scene;
     if (this.beamStyle.kind === "volumetric") {
       this.volume = createEmitterVolumeMaterial({
-        instanced: true,
         viewDepth: context?.viewDepth,
         goboTexture: this.goboAtlas?.texture,
         goboStacks: this.goboAtlas?.stacks.texture,
@@ -241,27 +266,17 @@ export class EmitterVolumeBatch {
     }
   }
 
-  /** Updates one aperture without allocating a mesh, material, or light source. */
-  update(
-    id: string,
-    parent: Object3D,
-    optics: ResolvedEmitterOptics,
-    color: EmitterColor,
-    length = 30,
-    zoomScale = 1,
-    goboSlot = 0,
-    goboRotation = 0,
-    facets?: readonly PrismProjection[],
-    prismRotation = 0,
-    focusDistance = 0,
-    gobos?: readonly GoboStage[],
-  ): void {
-    const count = facets?.length || 1;
+  /**
+   * Updates one aperture, posed by `parent`, without allocating a mesh, material, or light
+   * source. A prism publishes one instance per facet; every facet shares the gobo stack.
+   */
+  update(id: string, parent: Object3D, aperture: ApertureUpdate): void {
+    const count = aperture.facets?.length || 1;
     this.reserve(id, count);
-    if (gobos) {
-      goboSlot = this.goboAtlas?.stacks.update(id, gobos) ?? 0;
-      goboRotation = 0;
-    }
+    const patternAddress =
+      aperture.gobos && this.goboAtlas
+        ? this.goboAtlas.stacks.update(id, aperture.gobos)
+        : 0;
     const keys = this.groups.get(id)!;
     parent.updateWorldMatrix(true, false);
     parent.matrixWorld.decompose(
@@ -272,61 +287,58 @@ export class EmitterVolumeBatch {
     this.basisRight.set(1, 0, 0).applyQuaternion(this.orientation);
     this.basisUp.set(0, 1, 0).applyQuaternion(this.orientation);
     this.forward.set(0, 0, -1).applyQuaternion(this.orientation);
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count; i++)
       this.updateInstance(
         keys[i],
-        optics,
-        color,
-        length,
-        zoomScale,
-        goboSlot,
-        goboRotation,
-        facets?.[i],
-        prismRotation,
+        aperture,
+        aperture.facets?.[i],
         count,
-        focusDistance,
+        patternAddress,
       );
-    }
     for (let i = count; i < keys.length; i++) this.removeInstance(keys[i]);
   }
 
-  /** Publishes a facet using affine ray coordinates, retaining the source aperture's mask. */
+  /**
+   * Publishes a facet using affine ray coordinates, retaining the source aperture's mask.
+   * `patternAddress` is the aperture's gobo stack address, or 0 for an open aperture.
+   */
   private updateInstance(
-    id: string,
-    optics: ResolvedEmitterOptics,
-    color: EmitterColor,
-    length = 30,
-    zoomScale = 1,
-    goboSlot = 0,
-    goboRotation = 0,
-    facet?: PrismProjection,
-    prismRotation = 0,
-    facetCount = 1,
-    focusDistance = 0,
+    key: string,
+    aperture: ApertureUpdate,
+    facet: PrismProjection | undefined,
+    facetCount: number,
+    patternAddress: number,
   ): void {
-    let slot = this.slots.get(id);
+    const { optics, color } = aperture;
+    const length = aperture.length ?? DEFAULT_BEAM_LENGTH;
+    const zoomScale = aperture.zoomScale ?? 1;
+    const prismRotation = aperture.prismRotation ?? 0;
+    const focusDistance = aperture.focusDistance ?? 0;
+    let slot = this.slots.get(key);
     if (slot === undefined) {
-      slot = this.ids.length;
+      slot = this.slotKeys.length;
       if (slot === this.capacity) this.resize(this.capacity * 2);
-      this.slots.set(id, slot);
-      this.ids.push(id);
-      this.mesh.count = this.ids.length;
+      this.slots.set(key, slot);
+      this.slotKeys.push(key);
+      this.mesh.count = this.slotKeys.length;
     }
     const frost = Number.isFinite(color.frost)
       ? Math.max(0, Math.min(1, color.frost!))
       : 0;
+    // Stacked masks carry their own rotations, so the pattern's rotation channel stays 0.
     this.attributes.volumePattern.setXYZW(
       slot,
-      goboSlot,
-      goboRotation,
+      patternAddress,
+      0,
       focusDistance,
       frost,
     );
     this.origin.copy(this.worldOrigin);
     this.right.copy(this.basisRight);
     this.up.copy(this.basisUp);
-    const sx = optics.slopeX * zoomScale * (1 + frost * 0.5);
-    const sy = optics.slopeY * zoomScale * (1 + frost * 0.5);
+    const spread = 1 + frost * FROST_SPREAD;
+    const sx = optics.slopeX * zoomScale * spread;
+    const sy = optics.slopeY * zoomScale * spread;
     let a = 1,
       b = 0,
       c = 0,
@@ -405,7 +417,8 @@ export class EmitterVolumeBatch {
       sy,
       optics.radius,
       optics.distributionPower +
-        (Math.min(2, optics.distributionPower) - optics.distributionPower) *
+        (Math.min(FROSTED_DISTRIBUTION_POWER, optics.distributionPower) -
+          optics.distributionPower) *
           frost,
     );
     const intensity =
@@ -443,11 +456,11 @@ export class EmitterVolumeBatch {
       0,
     );
     if (this.surfaceScene) {
-      let light = this.surfaceLights.get(id);
+      let light = this.surfaceLights.get(key);
       if (!light) {
         light = new OpticalSurfaceLight({ ...optics });
-        light.name = `OpticalSurface:${id}`;
-        this.surfaceLights.set(id, light);
+        light.name = `OpticalSurface:${key}`;
+        this.surfaceLights.set(key, light);
         this.surfaceScene.add(light);
         this.shadows?.register(light);
       }
@@ -483,8 +496,8 @@ export class EmitterVolumeBatch {
       );
       light.splitColor = color.secondaryRed !== undefined;
       light.frost = frost;
-      light.goboSlot = goboSlot;
-      light.goboRotation = goboRotation;
+      light.goboSlot = patternAddress;
+      light.goboRotation = 0;
       light.focusDistance = focusDistance;
     }
     this.dirty = true;
@@ -499,15 +512,15 @@ export class EmitterVolumeBatch {
   }
 
   /** Compacts one facet's GPU record while retaining reusable group identifiers. */
-  private removeInstance(id: string): void {
-    const light = this.surfaceLights.get(id);
+  private removeInstance(key: string): void {
+    const light = this.surfaceLights.get(key);
     if (light) light.visible = false;
-    const slot = this.slots.get(id);
+    const slot = this.slots.get(key);
     if (slot === undefined) return;
-    const last = this.ids.length - 1;
+    const last = this.slotKeys.length - 1;
     if (slot !== last) {
-      const moved = this.ids[last];
-      this.ids[slot] = moved;
+      const moved = this.slotKeys[last];
+      this.slotKeys[slot] = moved;
       this.slots.set(moved, slot);
       this.records.array.copyWithin(
         slot * RECORD_SIZE,
@@ -517,35 +530,35 @@ export class EmitterVolumeBatch {
       this.mesh.getMatrixAt(last, this.matrix);
       this.mesh.setMatrixAt(slot, this.matrix);
     }
-    this.ids.pop();
-    this.slots.delete(id);
-    this.mesh.count = this.ids.length;
+    this.slotKeys.pop();
+    this.slots.delete(key);
+    this.mesh.count = this.slotKeys.length;
     this.dirty = true;
   }
 
-  /** Drops obsolete apertures when fixture modes or geometry are rebuilt. */
+  /**
+   * Drops obsolete apertures when fixture modes or geometry are rebuilt, releasing each
+   * group's facets and surface lights through its own key list.
+   */
   sync(
     fixtures: ReadonlyMap<
       string,
       { emitters: ReadonlyMap<string, { optics?: unknown }> }
     >,
   ): void {
-    for (const id of this.groups.keys()) {
-      const separator = id.indexOf(":");
-      const fixture = fixtures.get(id.slice(0, separator));
-      const emitter = fixture?.emitters.get(id.slice(separator + 1));
-      if (!emitter?.optics) {
-        this.remove(id);
-        this.reservedCount -= this.groups.get(id)!.length;
-        this.groups.delete(id);
-        this.goboAtlas?.stacks.release(id);
-        for (const [key, light] of this.surfaceLights) {
-          if (key === id || key.startsWith(`${id}\0`)) {
-            light.removeFromParent();
-            this.shadows?.unregister(light);
-            this.surfaceLights.delete(key);
-          }
-        }
+    for (const [id, keys] of this.groups) {
+      const { fixtureUid, emitterName } = parseApertureId(id);
+      if (fixtures.get(fixtureUid)?.emitters.get(emitterName)?.optics) continue;
+      this.remove(id);
+      this.reservedCount -= keys.length;
+      this.groups.delete(id);
+      this.goboAtlas?.stacks.release(id);
+      for (const key of keys) {
+        const light = this.surfaceLights.get(key);
+        if (!light) continue;
+        light.removeFromParent();
+        this.shadows?.unregister(light);
+        this.surfaceLights.delete(key);
       }
     }
   }
@@ -561,7 +574,7 @@ export class EmitterVolumeBatch {
     for (const id of this.groups.keys()) this.goboAtlas?.stacks.release(id);
     this.groups.clear();
     this.reservedCount = 0;
-    this.ids.length = 0;
+    this.slotKeys.length = 0;
     this.mesh.count = 0;
   }
 
@@ -599,7 +612,7 @@ export class EmitterVolumeBatch {
     }
     const mesh = new InstancedMesh(geometry, this.material, capacity);
     mesh.name = this.volume ? "EmitterVolumes" : "EmitterBeams";
-    mesh.count = this.ids.length;
+    mesh.count = this.slotKeys.length;
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     if (previous) {

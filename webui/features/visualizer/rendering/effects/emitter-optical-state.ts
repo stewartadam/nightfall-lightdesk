@@ -27,10 +27,33 @@ export interface GoboStage {
   rotation: number;
 }
 
+/** Optical controls an aperture publishes each frame, independent of its pose and color. */
+export interface ApertureControls {
+  /** Full beam angle selected by a degree-valued zoom channel, when present. */
+  readonly zoomDegrees: number | undefined;
+  /** Every mask stage in the optical path, in wheel order. */
+  readonly gobos: readonly GoboStage[];
+  /** Facets of the selected prism split, or undefined when the beam is not split. */
+  readonly prism: readonly PrismProjection[] | undefined;
+  readonly prismRotation: number;
+  /** Distance to the focal plane in meters; 0 keeps masks at their default focus. */
+  readonly focusDistance: number;
+}
+
+/** Controls of an aperture without optical channels: an unsplit, unmasked, unzoomed beam. */
+export const OPEN_APERTURE: ApertureControls = {
+  zoomDegrees: undefined,
+  gobos: [],
+  prism: undefined,
+  prismRotation: 0,
+  focusDistance: 0,
+};
+
+/** Upper bound on prepared prism facets per aperture, however many prism stages multiply. */
+const MAX_PREPARED_FACETS = 1024;
+
 /** Compiles inherited controls and image handles once, then updates only numeric optical state. */
-export class EmitterOpticalState {
-  goboSlot = 0;
-  goboRotation = 0;
+export class EmitterOpticalState implements ApertureControls {
   readonly gobos: GoboStage[] = [];
   private readonly goboFunctions = new Map<OpticalFunction, GoboStage>();
   prism: readonly PrismProjection[] | undefined;
@@ -146,15 +169,15 @@ export class EmitterOpticalState {
       this.prismStages.push(entry.stage);
       capacity *= entry.capacity;
     }
-    this.prismCapacityExceeded = capacity > 1024;
+    this.prismCapacityExceeded = capacity > MAX_PREPARED_FACETS;
     if (this.prismStages.length > 1 || this.prismCapacityExceeded) {
-      this.maxFacetCount = Math.min(capacity, 1024);
+      this.maxFacetCount = Math.min(capacity, MAX_PREPARED_FACETS);
       let preparedCounts = new Set([1]);
       for (const entry of stages.values()) {
         const next = new Set<number>();
         for (const prior of preparedCounts)
           for (const count of entry.counts)
-            next.add(Math.min(1024, prior * count));
+            next.add(Math.min(MAX_PREPARED_FACETS, prior * count));
         preparedCounts = next;
       }
       this.prismStack = new PrismStack(
@@ -175,8 +198,6 @@ export class EmitterOpticalState {
         ? 0
         : Math.max(0, seconds - this.lastTime);
     if (Number.isFinite(seconds)) this.lastTime = seconds;
-    this.goboSlot = 0;
-    this.goboRotation = 0;
     for (const stage of this.gobos) {
       stage.slot = 0;
       stage.rotation = 0;
@@ -223,19 +244,17 @@ export class EmitterOpticalState {
         state.wheelSlot !== undefined
       ) {
         const slot = this.wheels.get(state.wheel)?.[state.wheelSlot - 1];
-        this.goboSlot = slot?.status === "ready" ? slot.index : 0;
-        this.goboFunctions.get(state.function!)!.slot = this.goboSlot;
+        this.goboFunctions.get(state.function!)!.slot =
+          slot?.status === "ready" ? slot.index : 0;
       } else if (/^Gobo\d*Pos$/.test(attribute)) {
         const rotation = control.rotations.get(state.function!)!;
         rotation.angle = (state.physical! * Math.PI) / 180;
-        this.goboRotation = rotation.angle;
         this.goboFunctions.get(state.function!)!.rotation = rotation.angle;
       } else if (/^Gobo\d*PosRotate$/.test(attribute)) {
         const rotation = control.rotations.get(state.function!)!;
         rotation.angle =
           (rotation.angle + (state.physical! * delta * Math.PI) / 180) %
           (Math.PI * 2);
-        this.goboRotation = rotation.angle;
         this.goboFunctions.get(state.function!)!.rotation = rotation.angle;
       } else if (
         /^Prism\d*$/.test(attribute) &&

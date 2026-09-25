@@ -9,8 +9,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BeamType } from "../../../../types";
-import { beamConeAngleDegrees } from "./beam-zoom";
-import { resolveEmitterOptics } from "./emitter-optics";
+import { beamConeAngleDegrees, DEFAULT_NORMALIZED_ZOOM } from "./beam-zoom";
+import { emitterZoomScale, resolveEmitterOptics } from "./emitter-optics";
 
 /** Degree-valued zoom travel must not double as a broad field contour at the focused endpoint. */
 test("linear aperture arrays stay thin at full zoom and spread at wide zoom", () => {
@@ -38,4 +38,25 @@ test("beam cone angle narrows as zoom increases", () => {
 test("beam cone angle clamps zoom to the physical range", () => {
   assert.equal(beamConeAngleDegrees(8, 40, -1), 40);
   assert.equal(beamConeAngleDegrees(8, 40, 2), 8);
+});
+
+/** Corrupt zoom output must fall back to the default cone rather than propagate NaN into optics. */
+test("beam cone angle treats missing and non-finite zoom as the default", () => {
+  const fallback = beamConeAngleDegrees(8, 40, DEFAULT_NORMALIZED_ZOOM);
+  for (const zoom of [undefined, NaN, Infinity, -Infinity])
+    assert.equal(beamConeAngleDegrees(8, 40, zoom), fallback);
+});
+
+/** Zoom slopes stay finite for degenerate, missing and out-of-range angles. */
+test("emitter zoom scale clamps angles and ignores non-finite zoom", () => {
+  const physical = { beamType: BeamType.Spot, beamAngle: 10, fieldAngle: 20 };
+  assert.equal(emitterZoomScale(physical, undefined), 1);
+  assert.equal(emitterZoomScale(physical, NaN), 1);
+  assert.equal(emitterZoomScale(physical, 10), 1);
+  assert.ok(emitterZoomScale(physical, 20) > 2);
+  assert.equal(
+    emitterZoomScale(physical, 500),
+    emitterZoomScale(physical, 170),
+  );
+  assert.equal(emitterZoomScale({ ...physical, beamAngle: 0 }, 30), 1);
 });

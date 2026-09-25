@@ -352,18 +352,18 @@ for (const forceWebGL of [false, true]) {
       ]);
       opticalState.update(opticalValues, 0);
       red.goboSlot = halfMask.index;
-      red.goboRotation = opticalState.goboRotation;
+      red.goboRotation = opticalState.gobos[0].rotation;
       const half = await capture();
       red.focusDistance = 0.2;
       const defocused = await capture();
       red.focusDistance = 0;
       modeValues.Control = 1;
       opticalState.update(opticalValues, 1);
-      red.goboRotation = opticalState.goboRotation;
+      red.goboRotation = opticalState.gobos[0].rotation;
       const rotated = await capture();
       modeValues.Control = 0;
       opticalState.update(opticalValues, 2);
-      red.goboRotation = opticalState.goboRotation;
+      red.goboRotation = opticalState.gobos[0].rotation;
       const reindexed = await capture();
       red.goboSlot = goboAtlas.stacks.update("surface", [
         { slot: mask.index, rotation: 0 },

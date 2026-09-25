@@ -16,12 +16,14 @@ import { getBackendUrl } from "../../../../lib/api";
 import type { BeamOptics } from "../../../../types";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
-import type { QualityProfile } from "../quality-profile";
-import type { GoboStage } from "./emitter-optical-state";
-import { resolveEmitterOptics } from "./emitter-optics";
+import type { ApertureControls } from "./emitter-optical-state";
+import {
+  emitterZoomScale,
+  type ResolvedEmitterOptics,
+  resolveEmitterOptics,
+} from "./emitter-optics";
 import { EmitterVolumeBatch } from "./emitter-volume-batch";
 import type { GoboAtlasSlot } from "./gobo-atlas";
-import type { PrismProjection } from "./prism-optics";
 
 /** Slot returned for gobo media the active quality profile never projects. */
 const UNPROJECTED_GOBO: GoboAtlasSlot = { index: 0, status: "failed" };
@@ -31,14 +33,10 @@ const UNPROJECTED_GOBO: GoboAtlasSlot = { index: 0, status: "failed" };
  */
 export class BeamManager {
   private readonly volumeBatch: EmitterVolumeBatch;
-
-  /** Reports illuminated emitters whose active masks exceed the shader sampling budget. */
-  get reducedGoboEmitters(): number {
-    return this.volumeBatch.goboAtlas?.stacks.reducedStacks ?? 0;
-  }
+  /** Resolved distributions per imported optics record; Glow apertures resolve to undefined. */
   private readonly resolvedOptics = new WeakMap<
     BeamOptics,
-    ReturnType<typeof resolveEmitterOptics>
+    ResolvedEmitterOptics | undefined
   >();
 
   /** Creates the scene's shared batch, which adopts the quality profile of the scene's pipeline. */
@@ -46,9 +44,9 @@ export class BeamManager {
     this.volumeBatch = new EmitterVolumeBatch(scene);
   }
 
-  /** Capabilities of the pipeline drawing this scene's apertures. */
-  private get profile(): QualityProfile {
-    return this.volumeBatch.profile;
+  /** Reports illuminated emitters whose active masks exceed the shader sampling budget. */
+  get reducedGoboEmitters(): number {
+    return this.volumeBatch.goboAtlas?.stacks.reducedStacks ?? 0;
   }
 
   /** Resolves a source image once during fixture setup, including non-ASCII archive paths. */
@@ -69,50 +67,48 @@ export class BeamManager {
 
   /** Allocates imported prism capacity while fixture geometry is being synchronized. */
   reserveOpticalBeam(id: string, maxFacetCount: number): void {
-    this.volumeBatch.reserve(id, this.profile.prismFacets ? maxFacetCount : 1);
+    this.volumeBatch.reserve(
+      id,
+      this.volumeBatch.profile.prismFacets ? maxFacetCount : 1,
+    );
   }
 
-  /** Publishes one imported aperture to the shared atmospheric draw. */
+  /**
+   * Publishes one imported aperture to the shared atmospheric draw. A degree-valued zoom
+   * channel takes precedence over the zoom angle the fixture renderer published with its color.
+   */
   updateOpticalBeam(
     id: string,
     parent: Object3D,
     optics: BeamOptics,
     color: EmitterColor,
-    zoomDegrees?: number,
-    goboSlot = 0,
-    goboRotation = 0,
-    facets?: readonly PrismProjection[],
-    prismRotation = 0,
-    focusDistance = 0,
-    gobos?: readonly GoboStage[],
+    controls: ApertureControls,
   ): void {
+    const resolved = this.resolve(optics);
+    if (!resolved) {
+      this.volumeBatch.remove(id);
+      return;
+    }
+    const { profile } = this.volumeBatch;
+    this.volumeBatch.update(id, parent, {
+      optics: resolved,
+      color,
+      zoomScale: emitterZoomScale(
+        optics.physical,
+        controls.zoomDegrees ?? color.zoomDegrees,
+      ),
+      gobos: profile.gobos ? controls.gobos : undefined,
+      facets: profile.prismFacets ? controls.prism : undefined,
+      prismRotation: controls.prismRotation,
+      focusDistance: controls.focusDistance,
+    });
+  }
+
+  /** Resolves an optics record once and reuses it for every later frame. */
+  private resolve(optics: BeamOptics): ResolvedEmitterOptics | undefined {
     if (!this.resolvedOptics.has(optics))
       this.resolvedOptics.set(optics, resolveEmitterOptics(optics));
-    const resolved = this.resolvedOptics.get(optics);
-    const baseSlope = Math.tan((optics.physical.beamAngle * Math.PI) / 360);
-    const zoomScale =
-      zoomDegrees !== undefined &&
-      Number.isFinite(zoomDegrees) &&
-      baseSlope > 1e-6
-        ? Math.tan((Math.max(0, Math.min(170, zoomDegrees)) * Math.PI) / 360) /
-          baseSlope
-        : 1;
-    if (resolved)
-      this.volumeBatch.update(
-        id,
-        parent,
-        resolved,
-        color,
-        30,
-        zoomScale,
-        this.profile.gobos ? goboSlot : 0,
-        goboRotation,
-        this.profile.prismFacets ? facets : undefined,
-        prismRotation,
-        focusDistance,
-        this.profile.gobos ? gobos : undefined,
-      );
-    else this.volumeBatch.remove(id);
+    return this.resolvedOptics.get(optics);
   }
 
   /** Removes an aperture immediately on blackout rather than retaining stale scattering. */
@@ -128,16 +124,13 @@ export class BeamManager {
     this.volumeBatch.sync(fixtures);
   }
 
-  /**
-   * Dispose all beams.
-   */
-  dispose(): void {
+  /** Hides every aperture while keeping the shared batch's GPU buffers for reuse. */
+  clear(): void {
     this.volumeBatch.clear();
   }
 
-  /** Releases shared GPU resources when the owning scene is destroyed. */
-  destroy(): void {
-    this.dispose();
+  /** Releases the shared batch's GPU resources when the owning scene is destroyed. */
+  dispose(): void {
     this.volumeBatch.dispose();
   }
 }

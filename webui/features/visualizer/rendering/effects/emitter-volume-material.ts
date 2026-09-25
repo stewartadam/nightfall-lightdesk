@@ -38,62 +38,67 @@ import {
   type DataTexture,
   MeshBasicNodeMaterial,
   type Node,
-  Vector3,
-  Vector4,
 } from "three/webgpu";
-import type { ResolvedEmitterOptics } from "./emitter-optics";
 import { sampleGoboProjection } from "./gobo-projection";
 import type { OpticalShadowPool } from "./optical-shadow-pool";
 
-/** Optical uniforms shared by the volume's CPU pose update and GPU integration. */
+/** Samples along each view ray through the aperture's frustum; bounds per-fragment cost. */
+const RAY_MARCH_STEPS = 12;
+/** Single-scattering coefficient of the uniform stage haze, per meter. */
+const HAZE_SCATTERING = 0.045;
+/** Display exposure that strengthens scattering without changing beam spread or source flux. */
+const SCATTERING_DISPLAY_EXPOSURE = 3;
+
+/** Per-aperture values the integrator reads for the fragment's aperture. */
+export interface EmitterVolumeInputs {
+  origin: Node<"vec3">;
+  right: Node<"vec3">;
+  up: Node<"vec3">;
+  forward: Node<"vec3">;
+  /** Slope X, slope Y, aperture radius and distribution power. */
+  optics: Node<"vec4">;
+  radiance: Node<"vec3">;
+  /** Secondary split-color radiance, with w enabling the split. */
+  secondary: Node<"vec4">;
+  rectangular: Node<"float">;
+  beamLength: Node<"float">;
+  /** Shadow key selecting the aperture's optical shadow map, 0 for none. */
+  sourceId: Node<"float">;
+  /** Gobo address, gobo rotation, focus distance and frost. */
+  pattern: Node<"vec4">;
+}
+
+/** Reads each aperture from the emitter batch's interleaved instance attributes. */
+function instancedInputs(): EmitterVolumeInputs {
+  const shape = attribute<"vec3">("volumeShape", "vec3");
+  return {
+    origin: attribute<"vec3">("volumeOrigin", "vec3"),
+    right: attribute<"vec3">("volumeRight", "vec3"),
+    up: attribute<"vec3">("volumeUp", "vec3"),
+    forward: attribute<"vec3">("volumeForward", "vec3"),
+    optics: attribute<"vec4">("volumeOptics", "vec4"),
+    radiance: attribute<"vec3">("volumeRadiance", "vec3"),
+    secondary: attribute<"vec4">("volumeSecondary", "vec4"),
+    rectangular: shape.x,
+    beamLength: shape.y,
+    sourceId: shape.z,
+    pattern: attribute<"vec4">("volumePattern", "vec4"),
+  };
+}
+
+/** Ray-marched single scattering for each aperture drawn by the material's mesh. */
 export function createEmitterVolumeMaterial(
   options: {
-    instanced?: boolean;
+    /** Aperture values; defaults to the emitter batch's instance attributes. */
+    inputs?: EmitterVolumeInputs;
     viewDepth?: Node<"float">;
     goboTexture?: DataTexture;
     goboStacks?: DataTexture;
     shadows?: OpticalShadowPool;
   } = {},
 ) {
-  const origin = uniform(new Vector3());
-  const right = uniform(new Vector3(1, 0, 0));
-  const up = uniform(new Vector3(0, 1, 0));
-  const forward = uniform(new Vector3(0, 0, -1));
-  const optics = uniform(new Vector4(0.1, 0.1, 0.01, 4));
-  const radiance = uniform(new Vector3());
-  const secondary = uniform(new Vector4());
-  const rectangular = uniform(0);
-  const beamLength = uniform(30);
-  const sourceId = uniform(0);
-  const pattern = uniform(new Vector4());
   const atlasColumns = uniform(4);
-  const inputs = options.instanced
-    ? {
-        origin: attribute<"vec3">("volumeOrigin", "vec3"),
-        right: attribute<"vec3">("volumeRight", "vec3"),
-        up: attribute<"vec3">("volumeUp", "vec3"),
-        forward: attribute<"vec3">("volumeForward", "vec3"),
-        optics: attribute<"vec4">("volumeOptics", "vec4"),
-        radiance: attribute<"vec3">("volumeRadiance", "vec3"),
-        secondary: attribute<"vec4">("volumeSecondary", "vec4"),
-        rectangular: attribute<"vec3">("volumeShape", "vec3").x,
-        beamLength: attribute<"vec3">("volumeShape", "vec3").y,
-        sourceId: attribute<"vec3">("volumeShape", "vec3").z,
-        pattern: attribute<"vec4">("volumePattern", "vec4"),
-      }
-    : {
-        origin,
-        right,
-        up,
-        forward,
-        optics,
-        radiance,
-        secondary,
-        rectangular,
-        beamLength,
-        sourceId,
-        pattern,
-      };
+  const inputs = options.inputs ?? instancedInputs();
   const material = new MeshBasicNodeMaterial({
     transparent: true,
     blending: AdditiveBlending,
@@ -170,9 +175,9 @@ export function createEmitterVolumeMaterial(
     If(leave.lessThanEqual(enter), () => {
       Discard();
     });
-    const stepLength = leave.sub(enter).div(12);
+    const stepLength = leave.sub(enter).div(RAY_MARCH_STEPS);
     const integral = vec3(0).toVar();
-    Loop(12, ({ i }) => {
+    Loop(RAY_MARCH_STEPS, ({ i }) => {
       const t = enter.add(float(i).add(0.5).mul(stepLength));
       const point = localOrigin.add(localRay.mul(t));
       const width = optics.xy.mul(max(point.z, 0)).add(optics.z);
@@ -224,41 +229,15 @@ export function createEmitterVolumeMaterial(
     const phase = float(0.35).add(
       pow(max(dot(ray.negate(), forward), 0), 8).mul(1.65),
     );
-    // Display exposure strengthens scattering without changing beam spread or source flux.
-    return vec4(integral.mul(phase).mul(0.045 * 3), 1);
+    return vec4(
+      integral.mul(phase).mul(HAZE_SCATTERING * SCATTERING_DISPLAY_EXPOSURE),
+      1,
+    );
   })();
 
-  return {
-    material,
-    pattern,
-    atlasColumns,
-    origin,
-    right,
-    up,
-    forward,
-    optics,
-    radiance,
-    secondary,
-    rectangular,
-    beamLength,
-    sourceId,
-  };
+  return { material, atlasColumns };
 }
 
 export type EmitterVolumeMaterial = ReturnType<
   typeof createEmitterVolumeMaterial
 >;
-
-/** Uploads one resolved distribution without recompiling the material. */
-export function updateEmitterVolumeOptics(
-  volume: EmitterVolumeMaterial,
-  optics: ResolvedEmitterOptics,
-): void {
-  volume.optics.value.set(
-    optics.slopeX,
-    optics.slopeY,
-    optics.radius,
-    optics.distributionPower,
-  );
-  volume.rectangular.value = optics.shape === "rectangle" ? 1 : 0;
-}

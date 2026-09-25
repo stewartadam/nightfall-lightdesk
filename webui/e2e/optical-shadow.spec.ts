@@ -136,11 +136,11 @@ for (const forceWebGL of [false, true]) {
       blocker.visible = false;
       pool.unregister(source);
       const removed = await capture();
-      const { createEmitterVolumeMaterial } = await import(
-        "/features/visualizer/rendering/effects/emitter-volume-material.ts"
+      const { createUniformEmitterVolume } = await import(
+        "/e2e/fixtures/emitter-volume-uniforms.ts"
       );
       pool.register(source);
-      const volume = createEmitterVolumeMaterial({ shadows: pool });
+      const volume = createUniformEmitterVolume({ shadows: pool });
       volume.optics.value.set(0.15, 0.15, 0.01, 4);
       volume.radiance.value.set(10, 10, 10);
       volume.beamLength.value = 8;

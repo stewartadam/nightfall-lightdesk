@@ -123,7 +123,7 @@ for (const forceWebGL of [false, true]) {
       const blue = { red: 0, green: 0, blue: 1, intensity: 0.1 };
       for (let i = 0; i < 300; i++) {
         parent.position.x = ((i % 60) - 29.5) * 0.025;
-        batch.update(`fixture:${i}`, parent, optics, blue);
+        batch.update(`fixture:${i}`, parent, { optics, color: blue });
       }
       /** Captures channel sums after the pipeline has submitted fresh instance data. */
       const capture = async () => {
@@ -158,21 +158,17 @@ for (const forceWebGL of [false, true]) {
       const draws = context.scene.children.length;
       for (let i = 0; i < 300; i++) batch.remove(`fixture:${i}`);
       parent.position.x = 0;
-      batch.update("fixture:red", parent, optics, {
-        red: 1,
-        green: 0,
-        blue: 0,
-        intensity: 10,
-      });
+      const red = { red: 1, green: 0, blue: 0, intensity: 10 };
+      batch.update("fixture:red", parent, { optics, color: red });
       const updated = await capture();
-      batch.update("fixture:red", parent, optics, {
-        red: 1,
-        green: 0,
-        blue: 0,
-        secondaryRed: 0,
-        secondaryGreen: 0,
-        secondaryBlue: 1,
-        intensity: 10,
+      batch.update("fixture:red", parent, {
+        optics,
+        color: {
+          ...red,
+          secondaryRed: 0,
+          secondaryGreen: 0,
+          secondaryBlue: 1,
+        },
       });
       const splitColor = await capture();
       const { compilePrismFacet } = await import(
@@ -185,17 +181,7 @@ for (const forceWebGL of [false, true]) {
             colorCie: [0.3127, 0.329, 100],
           })!,
       );
-      batch.update(
-        "fixture:red",
-        parent,
-        optics,
-        { red: 1, green: 0, blue: 0, intensity: 10 },
-        30,
-        1,
-        0,
-        0,
-        facets,
-      );
+      batch.update("fixture:red", parent, { optics, color: red, facets });
       const split = await capture();
       const splitCount = (
         context.scene.children[0] as InstanceType<typeof THREE.InstancedMesh>
@@ -282,18 +268,12 @@ for (const forceWebGL of [false, true]) {
         ]),
       );
       batch.reserve("fixture:red", stackState.maxFacetCount);
-      batch.update(
-        "fixture:red",
-        parent,
+      batch.update("fixture:red", parent, {
         optics,
-        { red: 1, green: 0, blue: 0, intensity: 10 },
-        30,
-        1,
-        0,
-        0,
-        stackState.prism,
-        stackState.prismRotation,
-      );
+        color: red,
+        facets: stackState.prism,
+        prismRotation: stackState.prismRotation,
+      });
       const stacked = await capture();
       const stackedCount = (
         context.scene.children[0] as InstanceType<typeof THREE.InstancedMesh>
@@ -313,15 +293,11 @@ for (const forceWebGL of [false, true]) {
       while (blockedSlot.status === "loading" && performance.now() < deadline)
         await new Promise((resolve) => setTimeout(resolve, 10));
       if (blockedSlot.status !== "ready") throw new Error("Gobo did not load");
-      batch.update(
-        "fixture:red",
-        parent,
+      batch.update("fixture:red", parent, {
         optics,
-        { red: 1, green: 0, blue: 0, intensity: 10 },
-        30,
-        1,
-        blockedSlot.index,
-      );
+        color: red,
+        gobos: [{ slot: blockedSlot.index, rotation: 0 }],
+      });
       const goboBlocked = await capture();
       maskContext.fillStyle = "white";
       for (let x = 0; x < 32; x += 4) maskContext.fillRect(x, 0, 2, 32);
@@ -331,90 +307,53 @@ for (const forceWebGL of [false, true]) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       if (stripes.status !== "ready")
         throw new Error("Focus gobo did not load");
-      batch.update(
-        "fixture:red",
-        parent,
+      const striped = [{ slot: stripes.index, rotation: 0 }];
+      batch.update("fixture:red", parent, {
         optics,
-        { red: 1, green: 0, blue: 0, intensity: 10 },
-        30,
-        1,
-        stripes.index,
-      );
+        color: red,
+        gobos: striped,
+      });
       const sharp = await capture();
       prismCopy.getContext("2d")!.drawImage(renderer.domElement, 0, 0);
       const sharpImage = prismCopy.toDataURL("image/png");
-      batch.update(
-        "fixture:red",
-        parent,
+      batch.update("fixture:red", parent, {
         optics,
-        { red: 1, green: 0, blue: 0, intensity: 10 },
-        30,
-        1,
-        0,
-        0,
-        undefined,
-        0,
-        0,
-        [
+        color: red,
+        gobos: [
           { slot: blockedSlot.index, rotation: 0 },
           { slot: stripes.index, rotation: Math.PI / 2 },
         ],
-      );
+      });
       const stackedGoboBlocked = await capture();
-      batch.update(
-        "fixture:red",
-        parent,
+      batch.update("fixture:red", parent, {
         optics,
-        { red: 1, green: 0, blue: 0, intensity: 10 },
-        30,
-        1,
-        0,
-        0,
-        undefined,
-        0,
-        0,
-        [
+        color: red,
+        gobos: [
           { slot: stripes.index, rotation: 0 },
           { slot: stripes.index, rotation: Math.PI / 2 },
         ],
-      );
+      });
       const crossedGobos = await capture();
       prismCopy.getContext("2d")!.drawImage(renderer.domElement, 0, 0);
       const crossedGobosImage = prismCopy.toDataURL("image/png");
-      batch.update(
-        "fixture:red",
-        parent,
+      batch.update("fixture:red", parent, {
         optics,
-        { red: 1, green: 0, blue: 0, intensity: 10 },
-        30,
-        1,
-        stripes.index,
-        0,
-        undefined,
-        0,
-        0.1,
-      );
+        color: red,
+        gobos: striped,
+        focusDistance: 0.1,
+      });
       const defocused = await capture();
       prismCopy.getContext("2d")!.drawImage(renderer.domElement, 0, 0);
       const defocusedImage = prismCopy.toDataURL("image/png");
-      batch.update(
-        "fixture:red",
-        parent,
+      batch.update("fixture:red", parent, {
         optics,
-        { red: 1, green: 0, blue: 0, intensity: 10, frost: 1 },
-        30,
-        1,
-        stripes.index,
-      );
+        color: { ...red, frost: 1 },
+        gobos: striped,
+      });
       const frosted = await capture();
       prismCopy.getContext("2d")!.drawImage(renderer.domElement, 0, 0);
       const frostedImage = prismCopy.toDataURL("image/png");
-      batch.update("fixture:red", parent, optics, {
-        red: 1,
-        green: 0,
-        blue: 0,
-        intensity: 10,
-      });
+      batch.update("fixture:red", parent, { optics, color: red });
       const wall = new THREE.Mesh(
         new THREE.PlaneGeometry(100, 100),
         new THREE.MeshBasicNodeMaterial({ color: 0 }),
@@ -428,12 +367,7 @@ for (const forceWebGL of [false, true]) {
       wall.visible = false;
       batch.clear();
       const blackout = await capture();
-      batch.update("fixture:red", parent, optics, {
-        red: 1,
-        green: 0,
-        blue: 0,
-        intensity: 10,
-      });
+      batch.update("fixture:red", parent, { optics, color: red });
       await capture();
       (window as any).__disposeBatch = () => {
         batch.dispose();
@@ -555,10 +489,9 @@ test("resolved rectangular emitter renders a volumetric distribution", async ({
   const shaders = await page.evaluate(async () => {
     const THREE = await import("/e2e/fixtures/three-api.ts");
     const { BeamType } = await import("/types/index.ts");
-    const { createEmitterVolumeMaterial, updateEmitterVolumeOptics } =
-      await import(
-        "/features/visualizer/rendering/effects/emitter-volume-material.ts"
-      );
+    const { createUniformEmitterVolume } = await import(
+      "/e2e/fixtures/emitter-volume-uniforms.ts"
+    );
     const { resolveEmitterOptics } = await import(
       "/features/visualizer/rendering/effects/emitter-optics.ts"
     );
@@ -582,8 +515,8 @@ test("resolved rectangular emitter renders a volumetric distribution", async ({
         lumens: 1000,
       },
     })!;
-    const volume = createEmitterVolumeMaterial();
-    updateEmitterVolumeOptics(volume, optics);
+    const volume = createUniformEmitterVolume();
+    volume.setOptics(optics);
     volume.radiance.value.set(0.2, 0.7, 1);
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),

@@ -37,6 +37,7 @@ import { BeamType } from "../../../../types";
 import { bindEmitterOpticalChannels } from "../../model/optical-bindings";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 import { beamConeAngleDegrees } from "../effects/beam-zoom";
+import { VISIBLE_INTENSITY_THRESHOLD } from "../emitter-radiance";
 
 /** Moving head constants */
 const HEAD_OFFSET_Y = 0.32;
@@ -134,7 +135,7 @@ function resolveMovingHeadBeamColor(
     return colorWheelColor;
   }
 
-  if (dmx.intensity > 0.01) {
+  if (dmx.intensity > VISIBLE_INTENSITY_THRESHOLD) {
     return { primary: { red: 1, green: 1, blue: 1 } };
   }
 
@@ -372,7 +373,6 @@ export function updateMovingHeadColors(
   // Extract values with defaults
   const pan = dmx.pan ?? 0;
   const tilt = dmx.tilt ?? 0;
-  const zoom = dmx.zoom ?? 0.5;
   const frost = dmx.frost ?? 0;
   const intensity = dmx.intensity;
   const beamColor = resolveMovingHeadBeamColor(dmx);
@@ -424,7 +424,7 @@ export function updateMovingHeadColors(
 
   const coneAngleDeg =
     dmx.zoomDegrees ??
-    beamConeAngleDegrees(data.beamAngleDeg, data.fieldAngleDeg, zoom);
+    beamConeAngleDegrees(data.beamAngleDeg, data.fieldAngleDeg, dmx.zoom);
 
   const color = new Color(
     beamColor.primary.red,
@@ -456,7 +456,7 @@ export function updateMovingHeadColors(
     : undefined;
 
   // Update lens emissive color
-  const isVisible = intensity > 0.01;
+  const isVisible = intensity > VISIBLE_INTENSITY_THRESHOLD;
   const lensMaterial = (instance.emitters.get("MainEmitter")?.mesh as Mesh)
     ?.material;
   if (lensMaterial instanceof MeshBasicMaterial) {
