@@ -34,7 +34,7 @@ import {
   isLowQualityBeamMaterial,
   updateBeamMaterial,
 } from "./beam-material";
-import { beamConeAngleDegrees } from "./beam-zoom";
+import { renderableConeAngleDegrees } from "./beam-zoom";
 
 const log = getLogger(import.meta.url);
 
@@ -260,9 +260,12 @@ export class BeamManager {
     const frost = options?.frost ?? 0;
 
     const coneAngleDeg =
-      (options?.zoomDegrees ??
-        beamConeAngleDegrees(beamSpec.beamAngle, beamSpec.fieldAngle, zoom)) *
-      (options?.iris ?? 1);
+      renderableConeAngleDegrees(
+        beamSpec.beamAngle,
+        beamSpec.fieldAngle,
+        zoom,
+        options?.zoomDegrees,
+      ) * (options?.iris ?? 1);
     const halfAngleRad = (coneAngleDeg * Math.PI) / 360;
 
     // Calculate beam origin world position and direction
