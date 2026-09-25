@@ -150,6 +150,7 @@ export function sendAddPatchBinding(
   target: types.BindingEndpoint,
   priority: number,
   clone: boolean,
+  batchId?: string,
 ) {
   const command: types.FixtureCommand = {
     type: "PatchBinding",
@@ -161,10 +162,9 @@ export function sendAddPatchBinding(
     },
   };
 
-  engineRuntime.sendCommand({
-    module: "FixtureCommand",
-    command,
-  });
+  engineRuntime.sendCommand(
+    commandEnvelope("FixtureCommand", command, batchId),
+  );
 
   log.info("Requested patch binding add");
 }
@@ -438,6 +438,43 @@ export async function createFixtureFromLibrary(
 
   log.info(
     `Created fixture from library: ${make} ${model} (${mode}) with ID ${id}`,
+  );
+
+  return result;
+}
+
+/**
+ * Creates several instances of one library fixture mode in a single engine command and
+ * waits for completion. The engine converts the profile once and stores either every
+ * instance or none, so callers can patch the whole batch after one round trip.
+ */
+export async function createFixturesFromLibrary(
+  make: string,
+  model: string,
+  mode: string,
+  fixtures: types.LibraryFixtureInstance[],
+  updateExistingIds?: number[],
+): Promise<types.CommandResult> {
+  const command: FixtureLibraryCommand = {
+    type: "CreateFixturesFromLibrary",
+    data: {
+      make,
+      model,
+      mode,
+      fixtures,
+      update_existing_ids: updateExistingIds?.length
+        ? updateExistingIds
+        : undefined,
+    },
+  };
+
+  const result = await engineRuntime.sendCommandAndAwait({
+    module: "FixtureLibraryCommand",
+    command,
+  });
+
+  log.info(
+    `Created ${fixtures.length} fixture(s) from library: ${make} ${model} (${mode})`,
   );
 
   return result;

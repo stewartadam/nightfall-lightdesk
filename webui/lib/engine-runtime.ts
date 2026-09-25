@@ -1816,6 +1816,13 @@ function handleFixtureLibraryCommand(command: types.FixtureLibraryCommand) {
       break;
     }
 
+    case "CreateFixturesFromLibrary": {
+      log.trace(
+        `CreateFixturesFromLibrary acknowledged for ${command.data.fixtures.length} ${command.data.make} ${command.data.model}`,
+      );
+      break;
+    }
+
     case "GetFixtureProfile": {
       // Server echoes this back - response comes via separate message
       log.trace("GetFixtureProfile acknowledged");

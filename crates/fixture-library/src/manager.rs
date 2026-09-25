@@ -10,9 +10,11 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use bevy_ecs::prelude::*;
 use nightfall_fixtures::prelude::{Fixture, FixtureGeometry};
+use uuid::Uuid;
 
 use crate::gdtf_metadata::GdtfMetadata;
 use crate::{FixtureLibraryError, Result};
@@ -62,6 +64,32 @@ impl FixtureProfile {
     }
 }
 
+/// Identifies one converted fixture definition by make, model, and mode.
+type ConversionKey = (String, String, String);
+
+/// A file-backed profile converted once for a mode and reused as an instance template.
+#[derive(Debug)]
+struct ConvertedFixture {
+    /// Fixture template whose identifiers are replaced for each created instance.
+    fixture: Fixture,
+    /// Geometry derived from the source file, when the format provides one.
+    geometry: Option<FixtureGeometry>,
+}
+
+/// Memoized results derived from the current index's source files.
+///
+/// Converting a GDTF profile unzips and parses the archive and probes its meshes, and
+/// fingerprinting a profile reads the whole file. Patching many copies of one fixture
+/// and republishing geometry for every patched fixture would otherwise repeat that work
+/// per instance. Clones of the manager share one cache; rescanning replaces it.
+#[derive(Default)]
+struct DerivedProfileCache {
+    /// Successful conversions keyed by make, model, and mode.
+    conversions: RwLock<HashMap<ConversionKey, Arc<ConvertedFixture>>>,
+    /// Content fingerprints keyed by source file path.
+    source_versions: RwLock<HashMap<PathBuf, String>>,
+}
+
 /// Fixture library manager
 ///
 /// Manages a collection of fixture definitions from GDTF and OFL files.
@@ -73,6 +101,8 @@ pub struct FixtureLibraryManager {
     library_path: PathBuf,
     /// Optional package library overlaid on installed profiles.
     showfile_directory: Option<PathBuf>,
+    /// Conversions and fingerprints derived from the indexed source files.
+    derived: Arc<DerivedProfileCache>,
 }
 
 impl FixtureLibraryManager {
@@ -88,6 +118,7 @@ impl FixtureLibraryManager {
             fixtures: HashMap::new(),
             library_path,
             showfile_directory: None,
+            derived: Arc::default(),
         };
 
         // Create library directory if it doesn't exist
@@ -114,6 +145,7 @@ impl FixtureLibraryManager {
             fixtures: HashMap::new(),
             library_path,
             showfile_directory,
+            derived: Arc::default(),
         };
         manager.scan()?;
         Ok(manager)
@@ -144,6 +176,8 @@ impl FixtureLibraryManager {
     /// Scan the library directory for fixtures
     pub fn scan(&mut self) -> Result<()> {
         self.fixtures.clear();
+        // Replace rather than clear so clones holding the previous index keep a consistent cache.
+        self.derived = Arc::default();
         self.insert_builtin_profiles();
 
         let scanner = crate::scanner::FixtureScanner::new(&self.library_path);
@@ -195,33 +229,75 @@ impl FixtureLibraryManager {
                     model: model.to_string(),
                 })?;
 
-        match &profile.source {
+        if matches!(profile.source, FixtureSource::BuiltIn { .. }) {
+            if !profile.mode_names().iter().any(|name| name == mode) {
+                return Err(FixtureLibraryError::ModeNotFound {
+                    make: make.to_string(),
+                    model: model.to_string(),
+                    mode: mode.to_string(),
+                });
+            }
+
+            return nightfall_fixtures::library::create_fixture_from_library(id, make, model, mode)
+                .map(|mut fixture| {
+                    fixture.mode = mode.to_string();
+                    (fixture, None)
+                })
+                .ok_or_else(|| FixtureLibraryError::NotFound {
+                    make: make.to_string(),
+                    model: model.to_string(),
+                });
+        }
+
+        let converted = self.converted_fixture(profile, mode)?;
+        let mut fixture = converted.fixture.clone();
+        fixture.identifiers.id = id;
+        fixture.identifiers.uid = Uuid::new_v4();
+        Ok((fixture, converted.geometry.clone()))
+    }
+
+    /// Returns the cached conversion of a file-backed profile, converting it on first use.
+    ///
+    /// Only successful conversions are cached so a transient read failure is retried.
+    fn converted_fixture(
+        &self,
+        profile: &FixtureProfile,
+        mode: &str,
+    ) -> Result<Arc<ConvertedFixture>> {
+        let key = (
+            profile.make.clone(),
+            profile.model.clone(),
+            mode.to_string(),
+        );
+        if let Some(converted) = self
+            .derived
+            .conversions
+            .read()
+            .ok()
+            .and_then(|conversions| conversions.get(&key).cloned())
+        {
+            return Ok(converted);
+        }
+
+        let (fixture, geometry) = match &profile.source {
             FixtureSource::Gdtf(metadata) => {
-                crate::converters::gdtf::convert_gdtf_to_fixture(metadata, mode, id)
+                crate::converters::gdtf::convert_gdtf_to_fixture(metadata, mode, 0)?
             }
             FixtureSource::Ofl(ofl) => {
-                crate::converters::ofl::convert_ofl_to_fixture(ofl, mode, id)
+                crate::converters::ofl::convert_ofl_to_fixture(ofl, mode, 0)?
             }
             FixtureSource::BuiltIn { .. } => {
-                if !profile.mode_names().iter().any(|name| name == mode) {
-                    return Err(FixtureLibraryError::ModeNotFound {
-                        make: make.to_string(),
-                        model: model.to_string(),
-                        mode: mode.to_string(),
-                    });
-                }
-
-                nightfall_fixtures::library::create_fixture_from_library(id, make, model, mode)
-                    .map(|mut fixture| {
-                        fixture.mode = mode.to_string();
-                        (fixture, None)
-                    })
-                    .ok_or_else(|| FixtureLibraryError::NotFound {
-                        make: make.to_string(),
-                        model: model.to_string(),
-                    })
+                return Err(FixtureLibraryError::Conversion(format!(
+                    "Built-in fixture {} {} has no source file to convert",
+                    profile.make, profile.model
+                )));
             }
+        };
+        let converted = Arc::new(ConvertedFixture { fixture, geometry });
+        if let Ok(mut conversions) = self.derived.conversions.write() {
+            conversions.insert(key, converted.clone());
         }
+        Ok(converted)
     }
 
     /// Get geometry for a fixture from the library.
@@ -230,14 +306,35 @@ impl FixtureLibraryManager {
     /// Returns `None` if the fixture source doesn't have geometry (e.g., OFL) or if not found.
     pub fn get_geometry(&self, make: &str, model: &str, mode: &str) -> Option<FixtureGeometry> {
         let profile = self.find_fixture(make, model)?;
-
-        match &profile.source {
-            FixtureSource::Gdtf(metadata) => {
-                crate::converters::gdtf::get_gdtf_geometry(metadata, mode).ok()
-            }
-            FixtureSource::Ofl(_) => None, // OFL doesn't have geometry
-            FixtureSource::BuiltIn { .. } => None,
+        if !matches!(profile.source, FixtureSource::Gdtf(_)) {
+            return None;
         }
+        self.converted_fixture(profile, mode)
+            .ok()
+            .and_then(|converted| converted.geometry.clone())
+    }
+
+    /// Returns the deterministic version fingerprint for one fixture profile.
+    ///
+    /// File-backed fingerprints are computed once per source file until the next rescan.
+    pub fn profile_asset_etag(&self, profile: &FixtureProfile) -> Result<String> {
+        if let FixtureSource::BuiltIn { asset_etag, .. } = &profile.source {
+            return Ok(asset_etag.clone());
+        }
+        if let Some(version) = self
+            .derived
+            .source_versions
+            .read()
+            .ok()
+            .and_then(|versions| versions.get(&profile.file_path).cloned())
+        {
+            return Ok(version);
+        }
+        let version = fixture_source_version(&profile.file_path)?;
+        if let Ok(mut versions) = self.derived.source_versions.write() {
+            versions.insert(profile.file_path.clone(), version.clone());
+        }
+        Ok(version)
     }
 
     /// Get the number of fixtures in the library
@@ -450,5 +547,90 @@ fn fnv1a64_hex(bytes: &[u8]) -> String {
 impl Default for FixtureLibraryManager {
     fn default() -> Self {
         Self::new().expect("Failed to create fixture library manager")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::test_support::{TEST_GDTF_MAKE, TEST_GDTF_MODE, TEST_GDTF_MODEL, write_test_gdtf};
+
+    /// Creates a manager indexing one test GDTF archive and returns the archive path.
+    fn gdtf_library(temp_dir: &TempDir) -> (FixtureLibraryManager, PathBuf) {
+        let path = temp_dir.path().join("test.gdtf");
+        write_test_gdtf(&path);
+        let manager = FixtureLibraryManager::with_path(temp_dir.path().to_path_buf())
+            .expect("fixture library should initialize");
+        (manager, path)
+    }
+
+    /// Verifies repeated instances reuse one conversion and fingerprint, even once the source
+    /// is unreadable, while each instance still receives its own identifiers.
+    #[test]
+    fn repeated_gdtf_instances_reuse_one_conversion() {
+        let temp_dir = TempDir::new().expect("temporary library directory should exist");
+        let (manager, path) = gdtf_library(&temp_dir);
+        let profile = manager
+            .find_fixture(TEST_GDTF_MAKE, TEST_GDTF_MODEL)
+            .expect("test GDTF should be indexed")
+            .clone();
+
+        let (first, first_geometry) = manager
+            .create_fixture(TEST_GDTF_MAKE, TEST_GDTF_MODEL, TEST_GDTF_MODE, 1)
+            .expect("GDTF fixture should convert");
+        let first_etag = manager
+            .profile_asset_etag(&profile)
+            .expect("GDTF fixture should fingerprint");
+        std::fs::remove_file(&path).expect("test GDTF should be removable");
+
+        let (second, second_geometry) = manager
+            .create_fixture(TEST_GDTF_MAKE, TEST_GDTF_MODEL, TEST_GDTF_MODE, 2)
+            .expect("cached conversion should not reread the source");
+        assert_eq!(first.identifiers.id, 1);
+        assert_eq!(second.identifiers.id, 2);
+        assert_ne!(first.identifiers.uid, second.identifiers.uid);
+        assert_eq!(first.elements.len(), second.elements.len());
+        assert_eq!(first.elements[0].parameters.len(), 1);
+        assert!(first_geometry.is_some());
+        assert_eq!(first_geometry, second_geometry);
+        assert_eq!(
+            manager.get_geometry(TEST_GDTF_MAKE, TEST_GDTF_MODEL, TEST_GDTF_MODE),
+            first_geometry
+        );
+        assert_eq!(
+            manager
+                .profile_asset_etag(&profile)
+                .expect("cached fingerprint should not reread the source"),
+            first_etag
+        );
+    }
+
+    /// Verifies a rescan discards cached conversions without disturbing clones of the old index.
+    #[test]
+    fn rescan_discards_cached_conversions() {
+        let temp_dir = TempDir::new().expect("temporary library directory should exist");
+        let (mut manager, path) = gdtf_library(&temp_dir);
+        manager
+            .create_fixture(TEST_GDTF_MAKE, TEST_GDTF_MODEL, TEST_GDTF_MODE, 1)
+            .expect("GDTF fixture should convert");
+        let previous_index = manager.clone();
+
+        std::fs::remove_file(&path).expect("test GDTF should be removable");
+        manager.scan().expect("rescan should succeed");
+
+        assert!(
+            manager
+                .find_fixture(TEST_GDTF_MAKE, TEST_GDTF_MODEL)
+                .is_none()
+        );
+        assert!(
+            previous_index
+                .get_geometry(TEST_GDTF_MAKE, TEST_GDTF_MODEL, TEST_GDTF_MODE)
+                .is_some(),
+            "clones of the previous index keep their own consistent cache"
+        );
+        assert!(manager.derived.conversions.read().unwrap().is_empty());
     }
 }
