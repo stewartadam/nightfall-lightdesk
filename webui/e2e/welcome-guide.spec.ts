@@ -1948,10 +1948,16 @@ test("waveform lesson edits, saves, and plays fx3", async ({
   await expectStep(page, "Save your version of fx3", { target: true });
   await page.locator('[data-guide-target="fx-save"]').click();
   await expectStep(page, "Close the FX Editor", { target: true });
-  await page
-    .locator('[aria-label^="FX 3: fx3"] .dv-default-tab-action')
-    .filter({ visible: true })
-    .click();
+  const closeTab = page.locator(
+    '.dv-default-tab[aria-label^="FX 3: fx3"] .dv-default-tab-action',
+  );
+  const closeBox = await closeTab.boundingBox();
+  const highlightBox = await page.locator(".nf-guide-highlight").boundingBox();
+  expect(closeBox).not.toBeNull();
+  expect(highlightBox?.x).toBeCloseTo(closeBox!.x - 4, 0);
+  expect(highlightBox?.y).toBeCloseTo(closeBox!.y - 4, 0);
+  await page.screenshot({ path: testInfo.outputPath("close-editor.png") });
+  await closeTab.click();
   await expectStep(page, "Play your saved fx3");
   const clipList = guide.getByRole("button", {
     name: "Open Clips",

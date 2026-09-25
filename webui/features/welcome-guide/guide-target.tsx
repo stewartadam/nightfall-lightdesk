@@ -90,6 +90,9 @@ export function GuideTarget(props: GuideTargetProps) {
           if (modal && !modal.contains(element)) return false;
           if (element.closest('[inert], [aria-hidden="true"], [disabled]'))
             return false;
+          // A hidden child passes the hit test below through its visible ancestor.
+          if (!element.checkVisibility({ visibilityProperty: true }))
+            return false;
           const rect = element.getBoundingClientRect();
           if (
             rect.width <= 0 ||

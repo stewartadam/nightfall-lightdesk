@@ -1111,7 +1111,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "close-editor",
         title: "Close the FX Editor",
-        target: '[aria-label^="FX 3: fx3"] .dv-default-tab-action',
+        target:
+          '.dv-default-tab[aria-label^="FX 3: fx3"] .dv-default-tab-action',
         observe: { type: "panel-closed", component: "FxEditor" },
         content: [
           {
