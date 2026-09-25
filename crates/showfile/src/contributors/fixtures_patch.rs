@@ -18,7 +18,6 @@ use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
 
-use super::snapshot_values::initial_parameter_values;
 use super::{ShowfileContribution, ShowfileLoadContributor, ShowfileSaveContributor};
 use crate::{BindingsSnapshot, ShowfileLoadDomain, ShowfileLoadPhase};
 
@@ -146,7 +145,7 @@ impl<'a> FixturesPatchLoadContributor<'a> {
                 for parameter_metadata in &element.parameters {
                     let parameter_cmds = commands.spawn_instance(Parameter {
                         metadata: parameter_metadata.clone(),
-                        values: initial_parameter_values(parameter_metadata),
+                        values: ParameterValues::from_metadata(parameter_metadata),
                     });
                     let parameter_entity = parameter_cmds.instance();
 

@@ -241,6 +241,9 @@ fn parameter_metadata(
 ) -> ParameterMetadata {
     ParameterMetadata {
         dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
         attribute: attribute.clone(),
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
