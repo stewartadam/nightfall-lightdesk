@@ -73,6 +73,11 @@ pub enum GdtfDiagnostic {
         /// Resolved 1-based slots.
         offsets: Vec<i64>,
     },
+    /// A mode master or relation names a channel that produced no parameter; the link was dropped.
+    UnresolvedLink {
+        /// Link as written in the file.
+        link: String,
+    },
     /// A channel reuses slots of an earlier channel; it was kept as a virtual (non-output) parameter.
     SharedSlots {
         /// Instance of the later channel.
@@ -366,6 +371,35 @@ impl<'a> ResolvedMode<'a> {
         );
         active_templates.pop();
         index
+    }
+
+    /// Returns the resolved instance of `target` that a link from channel `from` refers to.
+    ///
+    /// A mode master or relation names a DMX channel definition, which a
+    /// geometry reference may instantiate several times. The link resolves to
+    /// the instance sharing the deepest reference scope with `from`, so a
+    /// link inside a template stays within the same reference, while a link
+    /// to a channel outside all references reaches its single instance.
+    pub fn linked_channel(&self, from: usize, target: &DmxChannel) -> Option<usize> {
+        let from_scopes = self.scope_chain(self.instances[self.channels[from].instance].scope);
+        self.channels
+            .iter()
+            .enumerate()
+            .filter(|(_, channel)| std::ptr::eq(channel.channel, target))
+            .max_by_key(|(index, channel)| {
+                let shared = self
+                    .scope_chain(self.instances[channel.instance].scope)
+                    .iter()
+                    .filter(|scope| from_scopes.contains(scope))
+                    .count();
+                (shared, std::cmp::Reverse(*index))
+            })
+            .map(|(index, _)| index)
+    }
+
+    /// Returns a scope and all its enclosing scopes, innermost first.
+    fn scope_chain(&self, scope: Option<usize>) -> Vec<usize> {
+        std::iter::successors(scope, |index| self.scopes[*index].parent).collect()
     }
 
     /// Binds every mode channel to the instances of its geometry and applies reference offsets.

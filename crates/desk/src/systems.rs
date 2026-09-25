@@ -8,10 +8,13 @@
 
 pub mod event_handlers;
 pub mod instance_controls;
+pub mod relations;
 pub mod scheduled_commands;
 pub mod stale_inputs;
 pub mod vdim;
 
 pub mod prelude {
-    pub use super::{event_handlers, instance_controls, scheduled_commands, stale_inputs, vdim};
+    pub use super::{
+        event_handlers, instance_controls, relations, scheduled_commands, stale_inputs, vdim,
+    };
 }

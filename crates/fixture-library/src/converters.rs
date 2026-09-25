@@ -17,6 +17,9 @@ mod gdtf_bench_tests;
 mod gdtf_functions;
 #[cfg(test)]
 mod gdtf_joint_tests;
+#[cfg(test)]
+mod gdtf_link_tests;
+mod gdtf_links;
 pub mod gdtf_resolve;
 #[cfg(test)]
 mod gdtf_sweep_tests;
