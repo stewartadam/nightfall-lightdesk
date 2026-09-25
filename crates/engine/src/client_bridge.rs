@@ -139,11 +139,33 @@ impl ClientEventSink {
     }
 }
 
+/// Identifies one attached client session for state owned by that session.
+///
+/// Host adapters assign identities and stamp them on the commands each session submits,
+/// then report [`ClientDisconnected`] when the session ends so session-owned state such as
+/// controller mapping mode can be released.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ClientConnectionId(pub u64);
+
+impl ClientConnectionId {
+    /// The single client of an embedded browser runtime, which never disconnects.
+    pub const EMBEDDED: Self = Self(0);
+}
+
+/// A host adapter reported that one client session ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Message)]
+pub struct ClientDisconnected(pub ClientConnectionId);
+
+/// Wraps the channel on which host adapters report ended client sessions.
+#[derive(Resource)]
+struct ClientDisconnectReceiver(Receiver<ClientConnectionId>);
+
 /// Host-owned handles for submitting ingress and receiving encoded engine events.
 #[derive(Resource)]
 pub struct ClientBridgeHost {
     command_tx: Sender<CommandJsonEnvelope>,
     update_tx: Sender<UpdateJsonEnvelope>,
+    disconnect_tx: Sender<ClientConnectionId>,
     output_rx: Option<Receiver<Vec<u8>>>,
 }
 
@@ -156,6 +178,11 @@ impl ClientBridgeHost {
     /// Clone the sender used to submit high-frequency untracked updates.
     pub fn update_sender(&self) -> Sender<UpdateJsonEnvelope> {
         self.update_tx.clone()
+    }
+
+    /// Clone the sender used to report that a client session ended.
+    pub fn disconnect_sender(&self) -> Sender<ClientConnectionId> {
+        self.disconnect_tx.clone()
     }
 
     /// Take exclusive ownership of the encoded engine event receiver.
@@ -182,18 +209,23 @@ impl Plugin for ClientBridgePlugin {
         let (command_tx, command_rx) = async_channel::unbounded();
         let (update_tx, update_rx) = async_channel::unbounded();
         let (output_tx, output_rx) = async_channel::unbounded();
+        let (disconnect_tx, disconnect_rx) = async_channel::unbounded();
 
+        app.add_message::<ClientDisconnected>();
         app.insert_resource(ClientEventSink::new(output_tx));
+        app.insert_resource(ClientDisconnectReceiver(disconnect_rx));
         app.insert_resource(CommandJsonEnvelopeReceiver(command_rx));
         app.insert_resource(UpdateJsonEnvelopeReceiver(update_rx));
         app.insert_resource(ClientBridgeHost {
             command_tx,
             update_tx,
+            disconnect_tx,
             output_rx: Some(output_rx),
         });
         app.add_systems(
             Update,
             (
+                process_client_disconnects,
                 process_json_envelopes,
                 process_update_json_envelopes,
                 forward_command_notices,
@@ -202,6 +234,22 @@ impl Plugin for ClientBridgePlugin {
                 .chain()
                 .in_set(InputHandling),
         );
+    }
+}
+
+/// Turns sessions reported ended by the host adapter into [`ClientDisconnected`] messages.
+///
+/// Runs before command ingress drains its channel. A host sends a session's commands before
+/// reporting its disconnect, so every command the session sent is ingested no later than the
+/// frame reporting its disconnect, and handlers that apply commands before disconnect cleanup
+/// never leave state owned by an ended session behind.
+fn process_client_disconnects(
+    receiver: Res<ClientDisconnectReceiver>,
+    mut disconnects: MessageWriter<ClientDisconnected>,
+) {
+    while let Ok(connection) = receiver.0.try_recv() {
+        tracing::debug!(connection = connection.0, "client_disconnected");
+        disconnects.write(ClientDisconnected(connection));
     }
 }
 
@@ -342,6 +390,9 @@ pub struct CommandJsonEnvelope {
     pub module: String,
     /// The raw command JSON to be deserialized by the plugin
     pub command: Value,
+    /// Client session that submitted the command, stamped by the host adapter.
+    #[serde(skip)]
+    pub connection: Option<ClientConnectionId>,
 }
 
 impl CommandJsonEnvelope {
@@ -536,6 +587,7 @@ mod client_bridge_tests {
                 undo_id: None,
                 module: "MissingCommand".to_string(),
                 command: serde_json::json!({}),
+                connection: None,
             })
             .unwrap();
 

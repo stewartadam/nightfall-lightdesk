@@ -113,6 +113,7 @@ fn start_axum_task(
         client_event_rx,
         client_bridge.command_sender(),
         client_bridge.update_sender(),
+        client_bridge.disconnect_sender(),
         plugin_routes,
         stateful_plugin_routes,
     );

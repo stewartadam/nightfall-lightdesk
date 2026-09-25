@@ -21,10 +21,13 @@ import {
   actionCatalog,
   actionInvocationFailures,
   clientActionInvocation,
+  controllerMappingMode,
+  midiControlTouches,
   midiDevices,
   midiLastEvent,
   midiMappingDiagnostics,
   midiMappings,
+  oscControlTouches,
   oscLastEvent,
   oscListenerStatus,
   oscMappingDiagnostics,
@@ -144,6 +147,23 @@ export function applyMidiLastEventSnapshot(
   event: types.MidiLastEvent | null,
 ): void {
   setStoreAction(midiLastEvent, "Receive MidiLastEvent", event);
+}
+
+/** Publishes one frame of MIDI controls touched while controller mapping mode is active. */
+export function applyMidiControlTouched(touches: types.MidiLastEvent[]): void {
+  setStoreAction(midiControlTouches, "Receive MidiControlTouched", touches);
+}
+
+/** Publishes one frame of OSC messages received while controller mapping mode is active. */
+export function applyOscControlTouched(touches: types.OscLastEvent[]): void {
+  setStoreAction(oscControlTouches, "Receive OscControlTouched", touches);
+}
+
+/** Applies how many clients are mapping controllers, which pauses MIDI and OSC actions. */
+export function applyControllerMappingModeSnapshot(
+  state: types.ControllerMappingModeState,
+): void {
+  setStoreAction(controllerMappingMode, "Receive ControllerMappingMode", state);
 }
 
 /** Publishes one forwarded client action invocation to local listeners. */

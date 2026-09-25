@@ -84,6 +84,10 @@ pub struct AxumAppState {
     pub command_json_tx: ClientSender<CommandJsonEnvelope>,
     /// Channel for sending untracked JSON update envelopes from Axum.
     pub update_json_tx: ClientSender<UpdateJsonEnvelope>,
+    /// Channel reporting ended sessions so the engine can release state they owned.
+    pub disconnect_tx: ClientSender<ClientConnectionId>,
+    /// Source of session identities, starting after [`ClientConnectionId::EMBEDDED`].
+    pub next_connection_id: Arc<AtomicU64>,
     /// Maintains references the message channels of connected client
     pub clients: Arc<Mutex<Vec<ConnectedClient>>>,
     /// Admission generation used to reject remote upgrades from retired listeners.
@@ -140,6 +144,7 @@ async fn client_ws(mut socket: WebSocket, state: AxumAppState, local: bool, gene
     let clients = state.clients.clone();
     let command_json_tx = state.command_json_tx.clone();
     let update_json_tx = state.update_json_tx.clone();
+    let connection = ClientConnectionId(state.next_connection_id.fetch_add(1, Ordering::Relaxed));
 
     // Register client and then drop reference to the guard
     // Required to that this async fn is Send-compatible
@@ -176,7 +181,8 @@ async fn client_ws(mut socket: WebSocket, state: AxumAppState, local: bool, gene
             while let Some(Ok(msg)) = ws_receiver.next().await {
                 if let Message::Text(text) = msg {
                     match serde_json::from_str::<InboundWebsocketText>(&text) {
-                        Ok(InboundWebsocketText::Command(json_envelope)) => {
+                        Ok(InboundWebsocketText::Command(mut json_envelope)) => {
+                            json_envelope.connection = Some(connection);
                             tracing::trace!(
                                 "Parsed command envelope from websocket (module={})",
                                 json_envelope.module
@@ -217,8 +223,12 @@ async fn client_ws(mut socket: WebSocket, state: AxumAppState, local: bool, gene
 
     supervise_client_tasks(send_task, recv_task, cancellation_rx).await;
 
-    let mut guard = clients.lock().unwrap();
-    guard.retain(|c| !c.sender.same_channel(&tx));
+    {
+        let mut guard = clients.lock().unwrap();
+        guard.retain(|c| !c.sender.same_channel(&tx));
+    }
+    tracing::debug!(connection = connection.0, "WebSocket client disconnected");
+    let _ = state.disconnect_tx.send(connection).await;
 }
 
 /// Cancels both socket directions on revocation even when either task is blocked on I/O.
@@ -318,6 +328,7 @@ pub(crate) fn create_axum_task(
     ws_broadcast_rx: ClientReceiver<Vec<u8>>,
     command_json_tx: ClientSender<CommandJsonEnvelope>,
     update_json_tx: ClientSender<UpdateJsonEnvelope>,
+    disconnect_tx: ClientSender<ClientConnectionId>,
     plugin_routes: Router,
     stateful_plugin_routes: Router<AxumAppState>,
 ) -> tokio::task::JoinHandle<()> {
@@ -332,6 +343,8 @@ pub(crate) fn create_axum_task(
     let state = AxumAppState {
         command_json_tx,
         update_json_tx,
+        disconnect_tx,
+        next_connection_id: Arc::new(AtomicU64::new(ClientConnectionId::EMBEDDED.0 + 1)),
         clients: clients.clone(),
         remote_generation: remote_generation.clone(),
     };
@@ -502,6 +515,7 @@ mod tests {
         let (_broadcast_tx, broadcast_rx) = async_channel::unbounded();
         let (command_tx, _command_rx) = async_channel::unbounded();
         let (update_tx, _update_rx) = async_channel::unbounded();
+        let (disconnect_tx, _disconnect_rx) = async_channel::unbounded();
         let directory = tempfile::tempdir().unwrap();
         let task = create_axum_task(
             crate::external_control::ListenerTaskConfig {
@@ -514,6 +528,7 @@ mod tests {
             broadcast_rx,
             command_tx,
             update_tx,
+            disconnect_tx,
             Router::new(),
             Router::new(),
         );
@@ -578,6 +593,87 @@ mod tests {
             .unwrap();
         assert!(status.borrow().error.is_none());
         assert!(tokio::net::TcpStream::connect(local).await.is_ok());
+        shutdown.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    /// Verifies each session's commands carry its identity and its disconnect is reported.
+    #[tokio::test]
+    async fn sessions_stamp_commands_and_report_disconnect() {
+        use nightfall_io::{ExternalControlSettings, ExternalControlState};
+
+        use crate::external_control::ListenerRequest;
+        let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = reservation.local_addr().unwrap().port();
+        drop(reservation);
+        let local = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        let (_requests, request_rx) = tokio::sync::watch::channel(ListenerRequest {
+            settings: ExternalControlSettings::default(),
+            addresses: vec![local],
+            error: None,
+        });
+        let (status_tx, mut status) = tokio::sync::watch::channel(ExternalControlState::default());
+        let (shutdown, shutdown_rx) = tokio::sync::broadcast::channel(1);
+        let (_broadcast_tx, broadcast_rx) = async_channel::unbounded();
+        let (command_tx, command_rx) = async_channel::unbounded();
+        let (update_tx, _update_rx) = async_channel::unbounded();
+        let (disconnect_tx, disconnect_rx) = async_channel::unbounded();
+        let task = create_axum_task(
+            crate::external_control::ListenerTaskConfig {
+                port,
+                requests: request_rx,
+                status: status_tx,
+                settings_path: None,
+            },
+            shutdown_rx,
+            broadcast_rx,
+            command_tx,
+            update_tx,
+            disconnect_tx,
+            Router::new(),
+            Router::new(),
+        );
+        tokio::time::timeout(Duration::from_secs(5), status.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{local}/ws"))
+            .await
+            .unwrap();
+        let _version = client.next().await.unwrap().unwrap();
+        let command_id = CommandId::new();
+        client
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                serde_json::json!({
+                    "command_id": command_id.to_string(),
+                    "module": "ActionCommand",
+                    "command": { "type": "EnterControllerMappingMode" }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        let envelope = tokio::time::timeout(Duration::from_secs(5), command_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(envelope.command_id, command_id);
+        let connection = envelope
+            .connection
+            .expect("websocket commands should carry their session");
+        assert_ne!(connection, ClientConnectionId::EMBEDDED);
+
+        client.close(None).await.unwrap();
+        let disconnected = tokio::time::timeout(Duration::from_secs(5), disconnect_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(disconnected, connection);
+
         shutdown.send(()).unwrap();
         tokio::time::timeout(Duration::from_secs(5), task)
             .await

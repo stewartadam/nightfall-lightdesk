@@ -434,6 +434,22 @@ export const oscMappings = atom<types.OscMapping[]>([]);
 export const oscMappingDiagnostics = atom<types.BindingDiagnostic[]>([]);
 export const oscLastEvent = atom<types.OscLastEvent | null>(null);
 export const oscListenerStatus = atom<types.OscListenerStatus | null>(null);
+/**
+ * MIDI controls the backend reported touched in one frame while mapping mode is active.
+ *
+ * Unlike `midiLastEvent`, every batch is delivered, so mapping mode arms from these.
+ */
+export const midiControlTouches = atom<types.MidiLastEvent[]>([]);
+/**
+ * OSC messages the backend reported in one frame while mapping mode is active.
+ *
+ * Unlike `oscLastEvent`, every batch is delivered, so mapping mode arms from these.
+ */
+export const oscControlTouches = atom<types.OscLastEvent[]>([]);
+/** How many clients are mapping controllers; MIDI and OSC actions pause while non-zero. */
+export const controllerMappingMode = atom<types.ControllerMappingModeState>({
+  mapping_clients: 0,
+});
 
 // DMX Universe data for raw channel visualization (input + output)
 export type DmxUniverseMap = types.OutboundDmxUniverse[];
@@ -1077,6 +1093,9 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     oscMappingDiagnostics,
     oscLastEvent,
     oscListenerStatus,
+    midiControlTouches,
+    oscControlTouches,
+    controllerMappingMode,
     consoleScrollback,
     clearConsoleScrollback,
     notificationHistory,

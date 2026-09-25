@@ -19,8 +19,8 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
     ActionInvocation, ActionRegistry, ActionSurface, ActionTargetTracking, ActionsPlugin,
-    BindingDiagnostic, InvocationError, SourceEdgeStates, SourceSignal, bindings_need_diagnosis,
-    collect_binding_diagnostics,
+    BindingDiagnostic, ControllerMappingMode, InvocationError, SourceEdgeStates, SourceSignal,
+    bindings_need_diagnosis, collect_binding_diagnostics,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -67,6 +67,7 @@ impl Plugin for InputMidiPlugin {
         app.insert_resource(MidiEventReceiver(midi_rx));
         app.init_resource::<MidiMappings>();
         app.init_resource::<LastMidiEvent>();
+        app.init_resource::<MidiControlTouches>();
 
         // Register command type and deserializer
         register_ingress_command::<MidiCommand>(app);
@@ -127,6 +128,32 @@ struct MidiEventReceiver(UnboundedReceiver<RawMidiEvent>);
 #[derive(Resource, Default)]
 pub struct LastMidiEvent(pub Option<MidiLastEvent>);
 
+/// Most controls one frame reports as touched while controller mapping mode is active.
+const MAX_TOUCHES_PER_FRAME: usize = 64;
+
+/// Controls touched this frame while controller mapping mode is active.
+///
+/// Published reliably so a mapping client can arm the touched control even when the
+/// droppable last-event telemetry is coalesced or dropped under load. Each control appears
+/// once per frame, carrying its most recent message.
+#[derive(Resource, Default, Debug)]
+pub(crate) struct MidiControlTouches(pub(crate) Vec<MidiLastEvent>);
+
+impl MidiControlTouches {
+    /// Records one message from a mappable control, replacing its earlier message this frame.
+    fn record(&mut self, event: &MidiLastEvent) {
+        if let Some(existing) = self
+            .0
+            .iter_mut()
+            .find(|touch| touch.device == event.device && touch.source == event.source)
+        {
+            *existing = event.clone();
+        } else if self.0.len() < MAX_TOUCHES_PER_FRAME {
+            self.0.push(event.clone());
+        }
+    }
+}
+
 /// Classified MIDI control activity consumed by mapping dispatch.
 #[derive(Clone, Debug, Message)]
 struct MidiInput {
@@ -139,9 +166,14 @@ struct MidiInput {
 }
 
 /// System that polls the MIDI event channel and writes events to the ECS event stream
+///
+/// While controller mapping mode is active, messages from mappable controls are also
+/// recorded as touches for reliable delivery to mapping clients.
 fn midi_event_system(
     mut midi_rx: ResMut<MidiEventReceiver>,
     mut last_event: ResMut<LastMidiEvent>,
+    mapping_mode: Res<ControllerMappingMode>,
+    mut touches: ResMut<MidiControlTouches>,
     mut event_writer: MessageWriter<MidiInput>,
 ) {
     while let Ok(raw_event) = midi_rx.0.try_recv() {
@@ -162,6 +194,10 @@ fn midi_event_system(
             velocity: raw_event.velocity,
             source: classified.map(|(source, _)| source),
         };
+
+        if mapping_mode.is_active() && midi_last_event.source.is_some() {
+            touches.record(&midi_last_event);
+        }
 
         // Update the last event resource for UI display
         last_event.0 = Some(midi_last_event.clone());
@@ -201,13 +237,17 @@ fn refresh_midi_devices(
 ///
 /// The control's raw signal is adapted to the bound action's input kind and behavior, so a
 /// note can fire a trigger and a level-reporting controller button fires once per press.
+/// While controller mapping mode is active, input is suppressed as described by
+/// [`SourceEdgeStates`]: nothing new fires, but releases completing live presses still do.
 fn handle_midi_events(
     mut events: MessageReader<MidiInput>,
     mappings: Res<MidiMappings>,
     registry: Res<ActionRegistry>,
+    mapping_mode: Res<ControllerMappingMode>,
     mut edges: ResMut<SourceEdgeStates>,
     mut invocations: MessageWriter<ActionInvocation>,
 ) {
+    let suppressed = mapping_mode.is_active();
     for event in events.read() {
         for mapping in mappings.lookup(&event.device, event.source) {
             tracing::debug!(?event, action = ?mapping.action, "MIDI mapping matched");
@@ -217,6 +257,7 @@ fn handle_midi_events(
                 &mapping.action,
                 mapping.behavior,
                 event.signal,
+                suppressed,
             ) else {
                 continue;
             };
@@ -337,6 +378,8 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<MidiMappings>();
         app.init_resource::<SourceEdgeStates>();
+        app.init_resource::<ControllerMappingMode>();
+        app.init_resource::<MidiControlTouches>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<ActionRegistry>();
         for descriptor in [
@@ -719,6 +762,137 @@ mod tests {
                 ("test.stop".to_string(), ActionInput::Trigger),
             ]
         );
+    }
+
+    /// Extends the MIDI command app with event dispatch and mappings on note 60.
+    fn midi_dispatch_app(mappings: Vec<MidiMapping>) -> App {
+        let mut app = midi_command_app();
+        app.add_message::<MidiInput>();
+        app.add_message::<ActionInvocation>();
+        app.add_systems(Update, handle_midi_events);
+        let mut stored = app.world_mut().resource_mut::<MidiMappings>();
+        for mapping in mappings {
+            stored.upsert(mapping, |_| Some(ActionInputKind::Trigger));
+        }
+        app
+    }
+
+    /// Sends note messages on note 60 and returns the actions they invoked, in order.
+    fn play_notes(app: &mut App, messages: &[(u8, u8)]) -> Vec<(String, ActionInput)> {
+        for &(status, velocity) in messages {
+            let (source, signal) =
+                MidiSource::classify(status, 60, velocity).expect("note should classify");
+            app.world_mut().write_message(MidiInput {
+                device: "Pad".to_string(),
+                source,
+                signal,
+            });
+        }
+        app.update();
+        app.world_mut()
+            .resource_mut::<Messages<ActionInvocation>>()
+            .drain()
+            .map(|invocation| (invocation.action.id.as_str().to_string(), invocation.input))
+            .collect()
+    }
+
+    /// Sets whether one client holds controller mapping mode.
+    fn set_mapping_mode(app: &mut App, active: bool) {
+        let mut mode = app.world_mut().resource_mut::<ControllerMappingMode>();
+        let client = ClientConnectionId(1);
+        if active {
+            mode.enter(client);
+        } else {
+            mode.leave(client);
+        }
+    }
+
+    /// Builds a Release-behavior mapping on note 60 bound to the test release action.
+    fn release_mapping(id: u128) -> MidiMapping {
+        MidiMapping {
+            behavior: nightfall_actions::ControlBehavior::Release,
+            action: nightfall_actions::ActionReference::new("test.trigger", serde_json::json!({})),
+            ..note_mapping(id, 60)
+        }
+    }
+
+    /// Verifies mapped notes fire nothing while controller mapping mode is active.
+    #[test]
+    fn mapping_mode_suppresses_midi_actions() {
+        let mut app = midi_dispatch_app(vec![note_mapping(1, 60)]);
+        set_mapping_mode(&mut app, true);
+
+        assert!(play_notes(&mut app, &[(0x90, 100), (0x80, 0)]).is_empty());
+
+        set_mapping_mode(&mut app, false);
+        assert_eq!(
+            play_notes(&mut app, &[(0x90, 100)]),
+            vec![("test.trigger".to_string(), ActionInput::Press)]
+        );
+    }
+
+    /// Verifies a release after leaving mapping mode is swallowed when its press was mapped.
+    #[test]
+    fn release_after_mapping_mode_does_not_fire_release_binding() {
+        let mut app = midi_dispatch_app(vec![release_mapping(2)]);
+        set_mapping_mode(&mut app, true);
+        assert!(play_notes(&mut app, &[(0x90, 100)]).is_empty());
+
+        set_mapping_mode(&mut app, false);
+        assert!(play_notes(&mut app, &[(0x80, 0)]).is_empty());
+        assert_eq!(
+            play_notes(&mut app, &[(0x90, 100), (0x80, 0)]),
+            vec![("test.trigger".to_string(), ActionInput::Trigger)]
+        );
+    }
+
+    /// Verifies a Hold pressed before mapping mode still runs its counterpart on release.
+    #[test]
+    fn hold_pressed_before_mapping_mode_releases_during_it() {
+        let mut app = midi_dispatch_app(vec![MidiMapping {
+            behavior: nightfall_actions::ControlBehavior::Hold,
+            action: nightfall_actions::ActionReference::new("test.start", serde_json::json!({})),
+            ..note_mapping(3, 60)
+        }]);
+        assert_eq!(
+            play_notes(&mut app, &[(0x90, 100)]),
+            vec![("test.start".to_string(), ActionInput::Trigger)]
+        );
+
+        set_mapping_mode(&mut app, true);
+        assert_eq!(
+            play_notes(&mut app, &[(0x80, 0)]),
+            vec![("test.stop".to_string(), ActionInput::Trigger)]
+        );
+    }
+
+    /// Verifies touches are recorded only while mapping mode is active, once per control.
+    #[test]
+    fn touches_are_recorded_only_in_mapping_mode() {
+        let mut app = midi_command_app();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app.insert_resource(MidiEventReceiver(rx));
+        app.init_resource::<LastMidiEvent>();
+        app.add_message::<MidiInput>();
+        app.add_systems(Update, midi_event_system);
+        let note = |velocity| MidiInputEvent {
+            device: "Pad".to_string(),
+            channel: 0x90,
+            note: 60,
+            velocity,
+        };
+
+        tx.send(note(100)).unwrap();
+        app.update();
+        assert!(app.world().resource::<MidiControlTouches>().0.is_empty());
+
+        set_mapping_mode(&mut app, true);
+        tx.send(note(100)).unwrap();
+        tx.send(note(0)).unwrap();
+        app.update();
+        let touches = &app.world().resource::<MidiControlTouches>().0;
+        assert_eq!(touches.len(), 1);
+        assert_eq!(touches[0].velocity, 0);
     }
 
     /// Verifies Hold bindings are rejected for actions without a release counterpart.

@@ -25,8 +25,8 @@ use nightfall_cues::prelude::CuePlugin;
 use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::EnginePlugin;
 use nightfall_engine::prelude::{
-    AppState, ClientBridgeHost, ClientBridgePlugin, CommandJsonEnvelope, DataProvider,
-    RuntimeCapabilities, UpdateJsonEnvelope,
+    AppState, ClientBridgeHost, ClientBridgePlugin, ClientConnectionId, CommandJsonEnvelope,
+    DataProvider, RuntimeCapabilities, UpdateJsonEnvelope,
 };
 use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
@@ -253,7 +253,10 @@ impl BrowserEngine {
     }
 
     /// Queue one parsed command envelope without entering an async executor.
-    fn enqueue_command_core(&self, envelope: CommandJsonEnvelope) -> Result<(), String> {
+    ///
+    /// Commands are attributed to the runtime's single embedded client session.
+    fn enqueue_command_core(&self, mut envelope: CommandJsonEnvelope) -> Result<(), String> {
+        envelope.connection = Some(ClientConnectionId::EMBEDDED);
         self.command_tx
             .try_send(envelope)
             .map_err(|error| format!("Unable to enqueue browser command: {error}"))

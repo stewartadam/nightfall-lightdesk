@@ -13,13 +13,16 @@ import {
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
   applyClientActionInvocation,
+  applyControllerMappingModeSnapshot,
   applyExternalControlStateSnapshot,
   applyIoSettingsSnapshot,
+  applyMidiControlTouched,
   applyMidiDeviceListSnapshot,
   applyMidiLastEventSnapshot,
   applyMidiMappingDiagnosticsSnapshot,
   applyMidiMappingsSnapshot,
   applyNetworkInterfaceStatusSnapshot,
+  applyOscControlTouched,
   applyOscLastEventSnapshot,
   applyOscListenerStatusSnapshot,
   applyOscMappingDiagnosticsSnapshot,
@@ -104,6 +107,18 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("ClientActionInvocation", (message) => {
     applyClientActionInvocation(message.data);
+  });
+
+  registry.register("MidiControlTouched", (message) => {
+    applyMidiControlTouched(message.data);
+  });
+
+  registry.register("OscControlTouched", (message) => {
+    applyOscControlTouched(message.data);
+  });
+
+  registry.register("ControllerMappingMode", (message) => {
+    applyControllerMappingModeSnapshot(message.data);
   });
 
   registry.register("ActionInvocationFailed", (message) => {

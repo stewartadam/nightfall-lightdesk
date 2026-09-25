@@ -16,8 +16,8 @@ use thiserror::Error;
 use web_time::Instant;
 
 use crate::prelude::{
-    CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin, CommandOutcome,
-    CommandOutput, CommandResult, NoticeLevel, ReplyTarget, UndoId,
+    ClientConnectionId, CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin,
+    CommandOutcome, CommandOutput, CommandResult, NoticeLevel, ReplyTarget, UndoId,
 };
 
 /// Context retained while one accepted command is active.
@@ -31,6 +31,8 @@ pub struct ActiveCommand {
     pub reply_target: ReplyTarget,
     /// Monotonic time at which lifecycle tracking began for diagnostics.
     pub started_at: Instant,
+    /// Client session that submitted the command, when a host adapter identified one.
+    pub connection: Option<ClientConnectionId>,
     /// Number of operation outcomes required before the command can finish.
     expected_completions: usize,
     /// Operation outcomes already received for this command.
@@ -134,6 +136,7 @@ impl CommandTracker {
                 origin,
                 reply_target,
                 started_at: Instant::now(),
+                connection: None,
                 expected_completions: 1,
                 received_completions: 0,
                 successful_completions: 0,
@@ -157,6 +160,23 @@ impl CommandTracker {
     /// Returns active command context for workflow diagnostics.
     pub fn active_command(&self, command_id: CommandId) -> Option<&ActiveCommand> {
         self.active.get(&command_id)
+    }
+
+    /// Records which client session submitted an active command.
+    ///
+    /// Ingress adapters call this right after registration so handlers of session-owned
+    /// state can tell which client a command came from.
+    pub fn attach_connection(&mut self, command_id: CommandId, connection: ClientConnectionId) {
+        if let Some(command) = self.active.get_mut(&command_id) {
+            command.connection = Some(connection);
+        }
+    }
+
+    /// Returns the client session that submitted an active command, if one was identified.
+    pub fn connection(&self, command_id: CommandId) -> Option<ClientConnectionId> {
+        self.active
+            .get(&command_id)
+            .and_then(|command| command.connection)
     }
 
     /// Sets how many delegated operation outcomes complete one accepted command.
@@ -382,6 +402,11 @@ impl CommandResponder<'_> {
     /// Returns whether a command is currently awaiting a terminal outcome.
     pub fn is_active(&self, command_id: CommandId) -> bool {
         self.tracker.is_active(command_id)
+    }
+
+    /// Returns the client session that submitted an active command, if one was identified.
+    pub fn connection(&self, command_id: CommandId) -> Option<ClientConnectionId> {
+        self.tracker.connection(command_id)
     }
 
     /// Declares how many delegated outcomes must be joined before completion.
