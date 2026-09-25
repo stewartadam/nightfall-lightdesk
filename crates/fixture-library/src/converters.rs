@@ -12,6 +12,7 @@ use nightfall_dmx::prelude::{Attribute, ParameterUnit};
 use nightfall_fixtures::prelude::ParameterMetadata;
 
 pub mod gdtf;
+pub mod gdtf_resolve;
 #[cfg(test)]
 mod gdtf_wire_tests;
 pub mod ofl;
