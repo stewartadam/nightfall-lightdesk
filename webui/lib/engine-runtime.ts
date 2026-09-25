@@ -2708,7 +2708,7 @@ export const engineRuntime = {
               type: "ResyncState",
             } as types.EngineCommand,
           });
-          // Every runtime serves at least the built-in fixture profiles.
+          // Native backends and the embedded demo both serve fixture profiles.
           this.sendCommand({
             module: "FixtureLibraryCommand",
             command: {

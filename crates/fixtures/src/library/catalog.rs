@@ -9,14 +9,17 @@
 //! Catalog of compiled built-in fixture profiles offered by every runtime.
 
 use super::commands::AvailableFixtureInfo;
-use super::create_fixture_from_library;
+use super::{moving_heads, normalize_fixture_profile, pixel_bars, strobes};
 use crate::prelude::Fixture;
 
 /// Source-format label reported to clients for compiled built-in profiles.
 pub const BUILTIN_SOURCE_FORMAT: &str = "Built-in";
 
+/// Constructor for one built-in fixture definition from its ID, make, and model.
+type BuiltinFixtureBuilder = fn(u32, &str, &str) -> Fixture;
+
 /// One compiled fixture profile exposed through the patch wizard.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct BuiltinFixtureProfile {
     /// Manufacturer name.
     pub make: &'static str,
@@ -26,6 +29,8 @@ pub struct BuiltinFixtureProfile {
     pub mode: &'static str,
     /// Deterministic version string for the built-in definition.
     pub asset_etag: &'static str,
+    /// Builds the fixture definition this catalog entry describes.
+    build: BuiltinFixtureBuilder,
 }
 
 impl BuiltinFixtureProfile {
@@ -45,6 +50,13 @@ impl BuiltinFixtureProfile {
         }
     }
 
+    /// Builds the normalized fixture definition without validating or recording a mode.
+    pub(super) fn build_fixture(&self, id: u32) -> Fixture {
+        let mut fixture = (self.build)(id, self.make, self.model);
+        normalize_fixture_profile(&mut fixture);
+        fixture
+    }
+
     /// Instantiates this profile as a fixture with the given ID in the requested mode.
     ///
     /// Returns `None` when `mode` is not one of the profile's advertised modes, so
@@ -53,7 +65,7 @@ impl BuiltinFixtureProfile {
         if mode != self.mode {
             return None;
         }
-        let mut fixture = create_fixture_from_library(id, self.make, self.model, mode)?;
+        let mut fixture = self.build_fixture(id);
         fixture.mode = mode.to_string();
         Some(fixture)
     }
@@ -65,61 +77,73 @@ const BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 12] = [
         "100-segment LED Bar",
         "RGB",
         "builtin:generic-100-segment-led-bar:v1",
+        pixel_bars::create_rgb_bar_100,
     ),
     builtin(
         "10-segment Rotating RGBW Bar",
         "RGBW",
         "builtin:generic-10-segment-rotating-rgbw-bar:v1",
+        moving_heads::create_linear_wash_bar,
     ),
     builtin(
         "12-segment RGBW Bar",
         "RGBW",
         "builtin:generic-12-segment-rgbw-bar:v1",
+        pixel_bars::create_rgbw_bar_12,
     ),
     builtin(
         "RGBPixelTape 180ch",
         "RGB",
         "builtin:generic-rgb-pixeltape-180ch:v1",
+        pixel_bars::create_rgb_bar_60,
     ),
     builtin(
         "RGBPixelTape 120ch GRB",
         "GRB",
         "builtin:generic-rgb-pixeltape-120ch-grb:v1",
+        pixel_bars::create_grb_bar_40,
     ),
     builtin(
         "RGBPixelTape 120ch RGB",
         "RGB",
         "builtin:generic-rgb-pixeltape-120ch-rgb:v1",
+        pixel_bars::create_rgb_bar_40,
     ),
     builtin(
         "Strobe Matrix 308ch",
         "Strobe",
         "builtin:generic-strobe-matrix-308ch:v1",
+        strobes::create_strobe_matrix_308,
     ),
     builtin(
         "Strobe Matrix 312ch",
         "Strobe",
         "builtin:generic-strobe-matrix-312ch:v1",
+        strobes::create_strobe_matrix_312,
     ),
     builtin(
         "RGB Strobe Bar 168ch",
         "Strobe",
         "builtin:generic-rgb-strobe-bar-168ch:v1",
+        strobes::create_rgb_strobe_bar_168,
     ),
     builtin(
         "12-segment Rotating Wash Beam",
         "Beam",
         "builtin:generic-12-segment-rotating-wash-beam:v1",
+        moving_heads::create_rotating_wash_beam_194,
     ),
     builtin(
         "Moving Head Spot 16ch",
         "Spot",
         "builtin:generic-moving-head-spot-16ch:v1",
+        moving_heads::create_moving_spot_16ch,
     ),
     builtin(
         "Moving Head RGBW",
         "Spot",
         "builtin:generic-moving-head-rgbw:v1",
+        moving_heads::create_moving_spot,
     ),
 ];
 
@@ -128,12 +152,14 @@ const fn builtin(
     model: &'static str,
     mode: &'static str,
     asset_etag: &'static str,
+    build: BuiltinFixtureBuilder,
 ) -> BuiltinFixtureProfile {
     BuiltinFixtureProfile {
         make: "Generic",
         model,
         mode,
         asset_etag,
+        build,
     }
 }
 

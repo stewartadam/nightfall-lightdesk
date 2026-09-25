@@ -155,6 +155,58 @@ async function readCreatedFixture(page: Page, label: string) {
   }, label);
 }
 
+/** Verifies the demo library lists built-ins without offering file import or deletion. */
+test("embedded demo fixture library hides upload and delete for built-ins", async ({
+  page,
+}, testInfo) => {
+  await openEmbeddedDemo(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.fixtureLibrary.get().length,
+      ),
+    )
+    .toBe(12);
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const referencePanel = api.panels.find(
+      (candidate: any) => candidate.api.location.type === "grid",
+    );
+    const panel =
+      api.getPanel("panel-FixtureLibrary") ??
+      api.addPanel({
+        id: "panel-FixtureLibrary",
+        component: "FixtureLibrary",
+        title: "Fixture Library",
+        params: {},
+        ...(referencePanel
+          ? {
+              position: {
+                referencePanel: referencePanel.id,
+                direction: "within",
+              },
+            }
+          : {}),
+      });
+    panel.api.setActive();
+  });
+  const panel = page.locator('[data-component="FixtureLibrary"]');
+  await expect(panel).toBeVisible();
+  await panel
+    .getByRole("checkbox", { name: "Select row 1", exact: true })
+    .click();
+
+  await expect(
+    panel.getByRole("button", { name: "Upload fixture" }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole("button", { name: /^Delete selected/ }),
+  ).toHaveCount(0);
+  await panel.screenshot({
+    path: testInfo.outputPath("demo-fixture-library-panel.png"),
+  });
+});
+
 /** Verifies the demo lists built-in profiles and patches a working fixture through the wizard. */
 test("embedded demo patches a built-in fixture through the patch wizard", async ({
   page,
