@@ -24,9 +24,6 @@ pub const CLIP_STOP_ACTION_ID: &str = "clip.stop";
 /// Stable action ID for advancing a clip.
 pub const CLIP_GO_ACTION_ID: &str = "clip.go";
 
-/// Stable action ID for running a clip only while a control is held.
-pub const CLIP_HOLD_ACTION_ID: &str = "clip.hold";
-
 /// Stable action ID for moving a sequence clip back one cue.
 pub const CLIP_BACK_ACTION_ID: &str = "clip.back";
 

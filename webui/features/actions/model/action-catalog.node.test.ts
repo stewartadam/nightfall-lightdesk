@@ -27,6 +27,7 @@ function entry(
   return {
     descriptor: { id, label, category: "Tests", input, parameters },
     capabilities: [],
+    behaviors: [],
   };
 }
 

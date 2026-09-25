@@ -18,8 +18,7 @@ use std::time::{Duration, Instant};
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
-    ActionInputKind, ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin,
-    SourceEdgeStates, SourceSignal,
+    ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, SourceEdgeStates, SourceSignal,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -188,8 +187,8 @@ fn refresh_midi_devices(
 
 /// System that invokes the action bound to each MIDI control that sends a message.
 ///
-/// The control's raw signal is adapted to the bound action's input kind, so a note can fire
-/// a trigger and a level-reporting controller button fires once per press.
+/// The control's raw signal is adapted to the bound action's input kind and behavior, so a
+/// note can fire a trigger and a level-reporting controller button fires once per press.
 fn handle_midi_events(
     mut events: MessageReader<MidiInput>,
     mappings: Res<MidiMappings>,
@@ -200,15 +199,17 @@ fn handle_midi_events(
     for event in events.read() {
         for mapping in mappings.lookup(&event.device, event.source) {
             tracing::debug!(?event, action = ?mapping.action, "MIDI mapping matched");
-            // Unknown actions still dispatch so the registry reports them as unregistered.
-            let kind = registry
-                .input_kind(&mapping.action.id)
-                .unwrap_or(ActionInputKind::Trigger);
-            let Some(input) = edges.adapt(mapping.id, kind, mapping.edge, event.signal) else {
+            let Some((action, input)) = edges.resolve(
+                &registry,
+                mapping.id,
+                &mapping.action,
+                mapping.behavior,
+                event.signal,
+            ) else {
                 continue;
             };
             invocations.write(
-                ActionInvocation::new(mapping.action.clone(), ActionSurface::Midi, input)
+                ActionInvocation::new(action, ActionSurface::Midi, input)
                     .with_source(format!("MIDI {}", event.device)),
             );
         }
@@ -226,10 +227,13 @@ fn handle_midi_crud(
     for event in events.read() {
         let result = match &event.command {
             MidiCommand::UpsertMapping(mapping) => {
-                // Every MIDI control can drive every input kind through signal adaptation, but
-                // release bindings only fire triggers.
-                match registry.validate_binding(&mapping.action, |kind| mapping.edge.accepts(kind))
-                {
+                // Every MIDI control can drive every input kind through signal adaptation and
+                // reports releases.
+                match registry
+                    .validate_binding(&mapping.action, |_| true)
+                    .and_then(|()| {
+                        registry.validate_behavior(&mapping.action, mapping.behavior, true)
+                    }) {
                     Ok(()) => {
                         edges.forget(mapping.id);
                         let displaced = mappings
@@ -273,6 +277,7 @@ fn handle_midi_crud(
 mod tests {
     use bevy_ecs::message::Messages;
     use nightfall_actions::ActionInput;
+    use nightfall_actions::ActionInputKind;
 
     use super::*;
     use crate::command::MidiMapping;
@@ -284,23 +289,21 @@ mod tests {
         app.init_resource::<SourceEdgeStates>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<ActionRegistry>();
-        app.world_mut()
-            .resource_mut::<ActionRegistry>()
-            .register::<serde::de::IgnoredAny, _>(
-                nightfall_actions::ActionDescriptor::new("test.trigger", "Test", "Tests"),
-                |_world, _arguments, _invocation| {
-                    Ok(nightfall_actions::InvocationDispatch::succeeded())
-                },
-            );
-        app.world_mut()
-            .resource_mut::<ActionRegistry>()
-            .register::<serde::de::IgnoredAny, _>(
-                nightfall_actions::ActionDescriptor::new("test.hold", "Test hold", "Tests")
-                    .with_input(ActionInputKind::Momentary),
-                |_world, _arguments, _invocation| {
-                    Ok(nightfall_actions::InvocationDispatch::succeeded())
-                },
-            );
+        for descriptor in [
+            nightfall_actions::ActionDescriptor::new("test.trigger", "Test", "Tests"),
+            nightfall_actions::ActionDescriptor::new("test.start", "Start", "Tests")
+                .with_hold_release("test.stop"),
+            nightfall_actions::ActionDescriptor::new("test.stop", "Stop", "Tests"),
+        ] {
+            app.world_mut()
+                .resource_mut::<ActionRegistry>()
+                .register::<serde::de::IgnoredAny, _>(
+                    descriptor,
+                    |_world, _arguments, _invocation| {
+                        Ok(nightfall_actions::InvocationDispatch::succeeded())
+                    },
+                );
+        }
         app.add_message::<CommandEnvelope<MidiCommand>>();
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
@@ -394,7 +397,7 @@ mod tests {
             id: uuid::Uuid::from_u128(id),
             device_name: "Pad".to_string(),
             source: MidiSource::Note { channel: 0, note },
-            edge: nightfall_actions::SourceEdge::Press,
+            behavior: nightfall_actions::ControlBehavior::Press,
             action: nightfall_actions::ActionReference::new("test.trigger", serde_json::json!({})),
         }
     }
@@ -491,7 +494,7 @@ mod tests {
         app.add_message::<ActionInvocation>();
         app.add_systems(Update, handle_midi_events);
         let release = MidiMapping {
-            edge: nightfall_actions::SourceEdge::Release,
+            behavior: nightfall_actions::ControlBehavior::Release,
             action: nightfall_actions::ActionReference::new("test.release", serde_json::json!({})),
             ..note_mapping(2, 60)
         };
@@ -528,13 +531,54 @@ mod tests {
         assert_eq!(fired, expected);
     }
 
-    /// Verifies release bindings reject actions that consume both edges.
+    /// Verifies a Hold binding invokes its action on press and the counterpart on release.
     #[test]
-    fn release_binding_rejects_momentary_action() {
+    fn hold_binding_invokes_counterpart_on_release() {
+        let mut app = midi_command_app();
+        app.add_message::<MidiInput>();
+        app.add_message::<ActionInvocation>();
+        app.add_systems(Update, handle_midi_events);
+        let mapping = MidiMapping {
+            behavior: nightfall_actions::ControlBehavior::Hold,
+            action: nightfall_actions::ActionReference::new("test.start", serde_json::json!({})),
+            ..note_mapping(1, 60)
+        };
+        submit_command(&mut app, MidiCommand::UpsertMapping(mapping));
+        app.update();
+        take_result(&mut app);
+
+        for (status, velocity) in [(0x90, 100), (0x80, 0)] {
+            let (source, signal) =
+                MidiSource::classify(status, 60, velocity).expect("note should classify");
+            app.world_mut().write_message(MidiInput {
+                device: "Pad".to_string(),
+                source,
+                signal,
+            });
+        }
+        app.update();
+
+        let fired = app
+            .world_mut()
+            .resource_mut::<Messages<ActionInvocation>>()
+            .drain()
+            .map(|invocation| (invocation.action.id.as_str().to_string(), invocation.input))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fired,
+            vec![
+                ("test.start".to_string(), ActionInput::Trigger),
+                ("test.stop".to_string(), ActionInput::Trigger),
+            ]
+        );
+    }
+
+    /// Verifies Hold bindings are rejected for actions without a release counterpart.
+    #[test]
+    fn hold_binding_rejects_action_without_counterpart() {
         let mut app = midi_command_app();
         let mapping = MidiMapping {
-            edge: nightfall_actions::SourceEdge::Release,
-            action: nightfall_actions::ActionReference::new("test.hold", serde_json::json!({})),
+            behavior: nightfall_actions::ControlBehavior::Hold,
             ..note_mapping(1, 60)
         };
 
@@ -544,7 +588,7 @@ mod tests {
         assert!(app.world().resource::<MidiMappings>().mappings().is_empty());
         assert!(matches!(
             take_result(&mut app).outcome,
-            CommandOutcome::Failed(CommandError { ref code, .. }) if code == "action.input_incompatible"
+            CommandOutcome::Failed(CommandError { ref code, .. }) if code == "action.behavior_unsupported"
         ));
     }
 

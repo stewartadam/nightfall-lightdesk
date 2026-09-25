@@ -22,7 +22,7 @@ pub(super) fn add_midi_mappings(world: &mut World) {
             channel: 0,
             controller: 36,
         },
-        edge: nightfall_actions::SourceEdge::Press,
+        behavior: nightfall_actions::ControlBehavior::Press,
         action: control_level_action(1),
     }]);
 }
