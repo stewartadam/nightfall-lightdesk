@@ -19,6 +19,7 @@ import {
   type ParameterMetadata,
 } from "../types/index";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { ALWAYS_ATTACH_ARTIFACTS, collectPageErrors } from "./optics-harness";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -429,10 +430,11 @@ test("3D visualizer main-thread renderer paints the canvas", async ({
   await expectVisualizerFpsLabel(page);
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-visualizer-main-thread", {
-    body: screenshot,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-visualizer-main-thread", {
+      body: screenshot,
+      contentType: "image/png",
+    });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 
   expect(pageErrors).not.toContainEqual(
@@ -440,13 +442,51 @@ test("3D visualizer main-thread renderer paints the canvas", async ({
   );
 });
 
+/** Opens the Settings dialog on its Visualizer tab and returns the dialog locator. */
+async function openVisualizerSettings(page: Page) {
+  await page.keyboard.press("ControlOrMeta+,");
+  const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+  await dialog.getByRole("tab", { name: "Visualizer", exact: true }).click();
+  return dialog;
+}
+
+/**
+ * Minimum mean-luma drop (0–255) between Darkness 0 and 100. The unlit stage fills most of
+ * the canvas, so darkening it moves the mean by tens of levels; a missed re-render moves it by none.
+ */
+const DARKNESS_MIN_LUMA_DROP = 5;
+
+/** Largest mean-luma change between consecutive screenshots of a settled, static canvas. */
+const SETTLED_LUMA_DELTA = 0.5;
+
+/** Polls canvas screenshots until two consecutive frames have the same mean luma, then returns it. */
+async function settledCanvasLuma(page: Page): Promise<number> {
+  let previous = Number.NaN;
+  let current = Number.NaN;
+  await expect
+    .poll(
+      async () => {
+        previous = current;
+        current = pngMeanLuma(
+          await page.screenshot({ clip: await largestVisibleCanvasBox(page) }),
+        );
+        return Math.abs(current - previous);
+      },
+      { timeout: 15_000 },
+    )
+    .toBeLessThanOrEqual(SETTLED_LUMA_DELTA);
+  return current;
+}
+
 for (const worker of [false, true]) {
-  /** Switches the running renderer through every preset and checks persistence and visible output. */
-  test(`quality settings replace the ${worker ? "worker" : "main"} renderer live`, async ({
+  const mode = worker ? "worker" : "main";
+
+  /** Switches the running renderer through every preset and checks the rebuilt renderer draws visible output. */
+  test(`quality settings replace the ${mode} renderer live`, async ({
     page,
   }, testInfo) => {
+    const pageErrors = collectPageErrors(page, { consoleErrors: false });
     await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
-    const pageErrors = collectPageErrors(page);
     await waitForVisualizerReady(page);
     if (worker) await waitForWorkerVisualizerApi(page);
     else await waitForMainThreadVisualizerApi(page);
@@ -454,30 +494,24 @@ for (const worker of [false, true]) {
     await waitForFixtureStoreHydration(page);
     await holdRotatingWashBeamImmediateOutput(page, uid);
     for (const preset of ["medium", "low", "high"] as const) {
-      await page.evaluate(() => {
-        (window as any).__previousQualityApi = (window as any).visualizerApi;
-      });
-      await page.keyboard.press("ControlOrMeta+,");
-      const dialog = page.getByRole("dialog", {
-        name: "Settings",
-        exact: true,
-      });
-      await dialog
-        .getByRole("tab", { name: "Visualizer", exact: true })
-        .click();
+      const previousApi = await page.evaluateHandle(
+        () => (window as any).visualizerApi,
+      );
+      const dialog = await openVisualizerSettings(page);
       await dialog
         .getByRole("slider", { name: "Quality preset" })
         .fill(String(["low", "medium", "high"].indexOf(preset)));
       await expect
         .poll(() =>
           page.evaluate(
-            () =>
-              (window as any).visualizerApi !==
-                (window as any).__previousQualityApi &&
-              Boolean((window as any).visualizerApi),
+            (previous) =>
+              Boolean((window as any).visualizerApi) &&
+              (window as any).visualizerApi !== previous,
+            previousApi,
           ),
         )
         .toBe(true);
+      await previousApi.dispose();
       await page.keyboard.press("Escape");
       if (worker) await waitForWorkerVisualizerApi(page);
       else {
@@ -506,47 +540,65 @@ for (const worker of [false, true]) {
       await holdRotatingWashBeamImmediateOutput(page, uid);
       await expectVisualizerFpsLabel(page);
       const screenshot = await page.screenshot({
-        path: testInfo.outputPath(`quality-${preset}.png`),
         clip: await largestVisibleCanvasBox(page),
       });
-      await testInfo.attach(`quality-${preset}`, {
-        body: screenshot,
-        contentType: "image/png",
-      });
-      expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
+      const range = pngLumaRange(screenshot);
+      if (range <= 5)
+        await testInfo.attach(`quality-${preset}.png`, {
+          body: screenshot,
+          contentType: "image/png",
+        });
+      expect(range, `${preset} preset draws visible output`).toBeGreaterThan(5);
     }
-    await page.reload();
+    expect(pageErrors).toEqual([]);
+  });
+
+  /** Darkness re-renders the running renderer darker, and both it and the quality preset survive a reload. */
+  test(`visualizer settings dim the ${mode} renderer and persist`, async ({
+    page,
+  }, testInfo) => {
+    const pageErrors = collectPageErrors(page, { consoleErrors: false });
+    await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
     await waitForVisualizerReady(page);
-    await page.keyboard.press("ControlOrMeta+,");
-    const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
-    await dialog.getByRole("tab", { name: "Visualizer", exact: true }).click();
-    await expect(
-      dialog.getByRole("slider", { name: "Quality preset" }),
-    ).toHaveValue("2");
+    if (worker) await waitForWorkerVisualizerApi(page);
+    else await waitForMainThreadVisualizerApi(page);
+    await expectVisualizerFpsLabel(page);
+    let dialog = await openVisualizerSettings(page);
+    await dialog.getByRole("slider", { name: "Quality preset" }).fill("1");
     await dialog
       .getByRole("slider", { name: "Darkness", exact: true })
       .fill("0");
     await page.keyboard.press("Escape");
-    const bright = await page.screenshot({
-      path: testInfo.outputPath("darkness-0.png"),
-      clip: await largestVisibleCanvasBox(page),
-    });
-    await page.keyboard.press("ControlOrMeta+,");
+    const bright = await settledCanvasLuma(page);
+    dialog = await openVisualizerSettings(page);
     await dialog
       .getByRole("slider", { name: "Darkness", exact: true })
       .fill("100");
     await page.keyboard.press("Escape");
-    const dark = await page.screenshot({
-      path: testInfo.outputPath("darkness-100.png"),
-      clip: await largestVisibleCanvasBox(page),
+    // Worker frames arrive asynchronously, so poll until a re-rendered frame shows the change.
+    let dark = bright;
+    await expect
+      .poll(
+        async () => {
+          const screenshot = await page.screenshot({
+            clip: await largestVisibleCanvasBox(page),
+          });
+          dark = pngMeanLuma(screenshot);
+          return bright - dark;
+        },
+        { message: "Darkness 100 dims the canvas", timeout: 15_000 },
+      )
+      .toBeGreaterThanOrEqual(DARKNESS_MIN_LUMA_DROP);
+    testInfo.annotations.push({
+      type: "mean luma",
+      description: `darkness 0: ${bright.toFixed(1)}, darkness 100: ${dark.toFixed(1)}`,
     });
-    expect(decodePng(bright).data[0]).toBeGreaterThan(
-      decodePng(dark).data[0] + 10,
-    );
     await page.reload();
     await waitForVisualizerReady(page);
-    await page.keyboard.press("ControlOrMeta+,");
-    await dialog.getByRole("tab", { name: "Visualizer", exact: true }).click();
+    dialog = await openVisualizerSettings(page);
+    await expect(
+      dialog.getByRole("slider", { name: "Quality preset" }),
+    ).toHaveValue("1");
     await expect(
       dialog.getByRole("slider", { name: "Darkness", exact: true }),
     ).toHaveValue("100");
@@ -706,10 +758,11 @@ test("rgb strobe bar fixture renders its three emitter groups", async ({
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-rgb-strobe-bar", {
-    body: screenshot,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-rgb-strobe-bar", {
+      body: screenshot,
+      contentType: "image/png",
+    });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 });
 
@@ -873,10 +926,11 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-rotating-wash-beam", {
-    body: screenshot,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-rotating-wash-beam", {
+      body: screenshot,
+      contentType: "image/png",
+    });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
   await holdRotatingWashBeamImmediateOutput(page, fixtureUid);
   await expect
@@ -963,10 +1017,13 @@ test("low quality spot and wash comparison", async ({ page }, testInfo) => {
       }),
     )
     .toEqual({ quality: "low", count: 13 });
-  await page.screenshot({
-    path: testInfo.outputPath("low-spot-wash.png"),
-    clip: await largestVisibleCanvasBox(page),
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("low-spot-wash.png", {
+      body: await page.screenshot({
+        clip: await largestVisibleCanvasBox(page),
+      }),
+      contentType: "image/png",
+    });
   await holdRotatingWashBeamImmediateOutput(page, wash, 1);
   await expect
     .poll(() =>
@@ -982,10 +1039,13 @@ test("low quality spot and wash comparison", async ({ page }, testInfo) => {
       }),
     )
     .toBe(2);
-  await page.screenshot({
-    path: testInfo.outputPath("low-single-wash-emitter.png"),
-    clip: await largestVisibleCanvasBox(page),
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("low-single-wash-emitter.png", {
+      body: await page.screenshot({
+        clip: await largestVisibleCanvasBox(page),
+      }),
+      contentType: "image/png",
+    });
 });
 
 /** Verifies low quality uses batched geometry beams without atmospheric integration. */
@@ -1048,7 +1108,7 @@ test("generic wash beam low-quality setting uses geometry beams", async ({
 /** Verifies the owned Generic wash beam narrows to its minimum degree-valued zoom angle. */
 test("generic wash beam minimum zoom renders a focused beam", async ({
   page,
-}, testInfo) => {
+}) => {
   await page.goto(
     "/?startup:draftRecovery=false&visualizer:offscreenCanvas=false",
   );
@@ -1092,7 +1152,6 @@ test("generic wash beam minimum zoom renders a focused beam", async ({
     .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
     .toMatchObject({ opticalBeamCount: 12, atmosphericBeamCount: 12 });
   const focusedImage = await page.screenshot({
-    path: testInfo.outputPath("focused-wash.png"),
     clip: await largestVisibleCanvasBox(page),
   });
   const pixels = decodePng(focusedImage);
@@ -1154,10 +1213,11 @@ test("generic moving spot fixture renders yoke arms along the x axis at pan zero
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-generic-moving-spot", {
-    body: screenshot,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-generic-moving-spot", {
+      body: screenshot,
+      contentType: "image/png",
+    });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 });
 
@@ -1232,10 +1292,11 @@ test("clearing a tilted strobe panel removes rendered LED pixels", async ({
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const asserted = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-tilted-strobe-asserted", {
-    body: asserted,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-tilted-strobe-asserted", {
+      body: asserted,
+      contentType: "image/png",
+    });
   const searchRegion = {
     x: 0,
     y: Math.floor(canvasBox.height * 0.45),
@@ -1251,10 +1312,11 @@ test("clearing a tilted strobe panel removes rendered LED pixels", async ({
   await page.waitForTimeout(500);
 
   const cleared = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-tilted-strobe-cleared", {
-    body: cleared,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-tilted-strobe-cleared", {
+      body: cleared,
+      contentType: "image/png",
+    });
   const clearedRed = pngRedDominantStats(cleared, {
     x: Math.max(0, bounds.x - 8),
     y: Math.max(0, bounds.y - 8),
@@ -1264,17 +1326,6 @@ test("clearing a tilted strobe panel removes rendered LED pixels", async ({
 
   expect(clearedRed.count).toBe(0);
 });
-
-/**
- * Collects browser page errors emitted during visualizer render tests.
- */
-function collectPageErrors(page: Page): string[] {
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => {
-    pageErrors.push(error.message);
-  });
-  return pageErrors;
-}
 
 /**
  * Submits a command-line command for visualizer scenario setup.
@@ -2296,6 +2347,20 @@ function pngLumaRange(png: Buffer): number {
 }
 
 /**
+ * Computes the mean Rec. 709 luma (0–255) of every decoded PNG pixel.
+ */
+function pngMeanLuma(png: Buffer): number {
+  const decoded = decodePng(png);
+  let total = 0;
+  for (let i = 0; i < decoded.data.length; i += decoded.channels)
+    total +=
+      decoded.data[i] * 0.2126 +
+      decoded.data[i + 1] * 0.7152 +
+      decoded.data[i + 2] * 0.0722;
+  return total / (decoded.width * decoded.height);
+}
+
+/**
  * Counts red-dominant pixels in a decoded PNG region.
  */
 function pngRedDominantStats(
@@ -2555,8 +2620,9 @@ test("generic sample bars render their complete segment layouts", async ({
     )
     .toBe(10);
   const canvasBox = await largestVisibleCanvasBox(page);
-  await testInfo.attach("generic-sample-bars", {
-    body: await page.screenshot({ clip: canvasBox }),
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("generic-sample-bars", {
+      body: await page.screenshot({ clip: canvasBox }),
+      contentType: "image/png",
+    });
 });
