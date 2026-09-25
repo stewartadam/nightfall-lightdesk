@@ -13,6 +13,7 @@ import {
   MeshBasicMaterial,
 } from "three/webgpu";
 
+/** One shared instanced draw and the hidden per-cell meshes whose colors it mirrors. */
 export interface EmitterBatch {
   mesh: InstancedMesh;
   sources: Mesh[];
@@ -52,14 +53,30 @@ export function createEmitterBatches(
     });
 }
 
-/** Copies independent emitter colors into shared GPU buffers without changing their selection proxies. */
+/**
+ * Copies independent emitter colors into shared GPU buffers without changing their selection proxies.
+ * A batch re-uploads only when at least one stored color actually changed.
+ */
 export function updateEmitterBatches(data: {
   emitterBatches: EmitterBatch[];
 }): void {
   for (const { mesh, sources } of data.emitterBatches) {
+    const colors = mesh.instanceColor!;
+    const array = colors.array;
+    let changed = false;
     for (let i = 0; i < sources.length; i++) {
-      mesh.setColorAt(i, (sources[i].material as MeshBasicMaterial).color);
+      const { r, g, b } = (sources[i].material as MeshBasicMaterial).color;
+      const offset = i * 3;
+      // The buffer holds float32 values, so compare after the same rounding.
+      if (
+        array[offset] === Math.fround(r) &&
+        array[offset + 1] === Math.fround(g) &&
+        array[offset + 2] === Math.fround(b)
+      )
+        continue;
+      colors.setXYZ(i, r, g, b);
+      changed = true;
     }
-    mesh.instanceColor!.needsUpdate = true;
+    if (changed) colors.needsUpdate = true;
   }
 }

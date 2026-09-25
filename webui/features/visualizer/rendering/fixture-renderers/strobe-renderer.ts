@@ -21,7 +21,6 @@ import {
   type BufferGeometry,
   type Color,
   Group,
-  type InstancedMesh,
   type Material,
   MathUtils,
   Mesh,
@@ -31,7 +30,11 @@ import {
 import type { FixtureElement } from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 import { EMITTER_RADIANCE } from "../emitter-radiance";
-import { createEmitterBatches, updateEmitterBatches } from "./emitter-batches";
+import {
+  createEmitterBatches,
+  type EmitterBatch,
+  updateEmitterBatches,
+} from "./emitter-batches";
 
 /** Strobe panel dimensions (meters) */
 const STROBE_PANEL_WIDTH = 0.515;
@@ -76,7 +79,7 @@ export interface StrobePanelData {
   pixelMeshes: Mesh[];
   whiteSegmentMeshes: Mesh[];
   /** Shared draws retain independent source meshes for optical state and element outlines. */
-  emitterBatches: { mesh: InstancedMesh; sources: Mesh[] }[];
+  emitterBatches: EmitterBatch[];
   /** Element labels for DMX lookup (index -> label) */
   elementLabels: string[];
   pixelElementLabels: string[];
