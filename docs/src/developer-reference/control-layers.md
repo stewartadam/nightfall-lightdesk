@@ -23,6 +23,9 @@ separate execution path. A domain plugin registers an action with
   The command is registered under `CommandOrigin::Automation` and queued through
   `PendingCommandBuffer`, so it receives the same undo capture, lifecycle
   tracking, and result reporting as a command sent by the Web UI.
+- `register_momentary_command_action` lowers the press and the release of a held
+  control to separate tracked commands, such as `clip.hold` starting a clip on press
+  and stopping it on release.
 - `register_update_action` lowers absolute input (a normalized `0.0..=1.0`
   value) to an update message. Continuous hardware input is live performance
   state and is never undoable: a physical fader cannot follow an undo.
