@@ -39,7 +39,7 @@ pub fn open_gdtf(path: &Path) -> Result<(gdtf::GdtfFile, Vec<String>), String> {
         Err(error) => error.to_string(),
     };
     let Some((archive, repairs)) = repaired_archive(path) else {
-        return Err(original);
+        return Err(format!("{original} (no applicable repairs)"));
     };
     match gdtf::GdtfFile::new(Cursor::new(archive)) {
         Ok(parsed) => {
@@ -94,8 +94,9 @@ pub fn repair_description(xml: &str) -> Option<(String, Vec<String>)> {
     let mut reader = Reader::from_str(xml);
     let mut writer = Writer::new(Vec::new());
     let mut repairs: Vec<String> = Vec::new();
-    // Output names of open elements, so renamed elements close correctly.
-    let mut open: Vec<String> = Vec::new();
+    // Output names of open elements, so renamed elements close correctly,
+    // and whether each was a laser imported as a plain geometry.
+    let mut open: Vec<(String, bool)> = Vec::new();
     // Depth inside a subtree being dropped (0 when not dropping).
     let mut dropping = 0usize;
 
@@ -118,7 +119,10 @@ pub fn repair_description(xml: &str) -> Option<(String, Vec<String>)> {
                     continue;
                 }
                 let repaired = repair_element(&start, &mut repairs)?;
-                open.push(String::from_utf8_lossy(repaired.name().as_ref()).into_owned());
+                open.push((
+                    String::from_utf8_lossy(repaired.name().as_ref()).into_owned(),
+                    start.name().as_ref() == b"Laser",
+                ));
                 writer.write_event(Event::Start(repaired)).ok()?;
             }
             Event::Empty(start) => {
@@ -130,7 +134,7 @@ pub fn repair_description(xml: &str) -> Option<(String, Vec<String>)> {
                 writer.write_event(Event::Empty(repaired)).ok()?;
             }
             Event::End(_) => {
-                let name = open.pop()?;
+                let (name, _) = open.pop()?;
                 writer.write_event(Event::End(BytesEnd::new(name))).ok()?;
             }
             Event::Eof => break,
@@ -142,13 +146,13 @@ pub fn repair_description(xml: &str) -> Option<(String, Vec<String>)> {
 
 /// Returns why an element is dropped with its subtree, or `None` to keep it.
 ///
-/// Drops a laser's protocol list (the laser is imported as a plain geometry)
-/// and channel sets starting at a negative DMX value, which only label ranges.
-fn dropped_element(start: &BytesStart, open: &[String]) -> Option<&'static str> {
+/// Drops a laser's protocols, direct or wrapped (the laser is imported as a
+/// plain geometry, which cannot hold them), and channel sets starting at a
+/// negative DMX value, which only label ranges.
+fn dropped_element(start: &BytesStart, open: &[(String, bool)]) -> Option<&'static str> {
+    let in_laser = open.last().is_some_and(|(_, is_laser)| *is_laser);
     match start.name().as_ref() {
-        b"Protocols" if open.last().is_some_and(|parent| parent == LASER_AS) => {
-            Some("dropped laser protocols")
-        }
+        b"Protocols" | b"Protocol" if in_laser => Some("dropped laser protocols"),
         b"ChannelSet"
             if start.attributes().flatten().any(|attribute| {
                 attribute.key.as_ref() == b"DMXFrom" && attribute.value.starts_with(b"-")
@@ -231,23 +235,29 @@ fn repair_element(start: &BytesStart, repairs: &mut Vec<String>) -> Option<Bytes
     Some(repaired)
 }
 
-/// Returns whether an attribute value is a NaN placeholder such as `-nan(ind)`.
+/// Returns whether an attribute value holds a NaN placeholder the parser rejects.
+///
+/// Matches numeric parts that are exactly a NaN token such as `-nan(ind)`
+/// but do not parse as a float (Rust already accepts `NaN`), so names like
+/// `Nano` and parseable NaNs are left alone.
 fn is_nan(value: &str) -> bool {
-    value.split(',').any(|part| {
-        part.trim()
-            .trim_start_matches(['-', '+'])
-            .to_ascii_lowercase()
-            .starts_with("nan")
+    value.split([',', '{', '}']).any(|part| {
+        let part = part.trim();
+        let token = part.trim_start_matches(['-', '+']).to_ascii_lowercase();
+        let is_nan_token = token == "nan" || (token.starts_with("nan(") && token.ends_with(')'));
+        is_nan_token && part.parse::<f64>().is_err()
     })
 }
 
 /// Converts GDTF's `{x,y,Y}{x,y,Y}` gamut syntax into a whitespace-separated point list.
+///
+/// Whitespace inside a point is removed, since the parser splits the list on it.
 fn gamut_points_list(value: &str) -> String {
     value
         .split(['{', '}'])
-        .map(str::trim)
-        .filter(|point| !point.is_empty() && *point != ",")
-        .map(|point| point.trim_matches(','))
+        .map(|point| point.split_whitespace().collect::<String>())
+        .map(|point| point.trim_matches(',').to_string())
+        .filter(|point| !point.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -337,6 +347,37 @@ mod tests {
         assert_eq!(
             repaired,
             r#"<Geometries><Geometry Name="L" Model="M" Position="{1,0,0,0}"><Geometry Name="Child"/></Geometry></Geometries>"#
+        );
+
+        let direct = r#"<Laser Name="L"><Protocol Name="ILDA"/><Geometry Name="Child"><Protocol Name="Kept"/></Geometry></Laser>"#;
+        let (repaired, _) = repair_description(direct).expect("well-formed");
+        assert_eq!(
+            repaired,
+            r#"<Geometry Name="L"><Geometry Name="Child"><Protocol Name="Kept"/></Geometry></Geometry>"#
+        );
+    }
+
+    /// Verifies names resembling NaN and NaNs the parser accepts are left alone.
+    #[test]
+    fn nan_detection_ignores_names_and_parseable_nans() {
+        assert!(is_nan("-nan(ind)"));
+        assert!(is_nan("0.3,-nan(ind),1"));
+        assert!(is_nan("{-nan(ind),0.3,1}"));
+        assert!(!is_nan("Nano Head"));
+        assert!(!is_nan("nano_gobo"));
+        assert!(!is_nan("NaN"));
+        let xml = r#"<Geometry Name="NanoHead" Model="nan_model"/>"#;
+        let (repaired, repairs) = repair_description(xml).expect("well-formed");
+        assert_eq!(repaired, xml);
+        assert!(repairs.is_empty());
+    }
+
+    /// Verifies whitespace inside braced gamut points is removed so each point stays one token.
+    #[test]
+    fn gamut_points_drop_inner_whitespace() {
+        assert_eq!(
+            gamut_points_list("{0.64, 0.33, 1} {0.3, 0.6, 1}"),
+            "0.64,0.33,1 0.3,0.6,1"
         );
     }
 }
