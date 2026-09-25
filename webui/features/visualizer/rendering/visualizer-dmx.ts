@@ -77,12 +77,23 @@ const MOVEMENT_FUNCTIONS: Record<
 const MIN_POSITION_SPAN_DEG = 1;
 
 /**
- * Returns true when a position function states a usable angular range.
- * Profiles that leave the range empty or at GDTF's 0-1 default fall back to
- * the normalized position instead of moving through at most one degree.
+ * Returns true when a position channel's physical value is a usable angle:
+ * its active channel set or, failing that, its function states an angular
+ * range. Profiles that leave both empty or at GDTF's 0-1 default fall back
+ * to the normalized position instead of moving through at most one degree.
  */
-function statesAngles(fn: ParameterFunction): boolean {
-  return Math.abs(fn.physical_to - fn.physical_from) > MIN_POSITION_SPAN_DEG;
+function statesAngles(channel: EvaluatedChannel): boolean {
+  const set = channel.set;
+  if (set?.physical_from !== undefined && set.physical_to !== undefined) {
+    return (
+      Math.abs(set.physical_to - set.physical_from) > MIN_POSITION_SPAN_DEG
+    );
+  }
+  const fn = channel.function;
+  return (
+    fn !== undefined &&
+    Math.abs(fn.physical_to - fn.physical_from) > MIN_POSITION_SPAN_DEG
+  );
 }
 
 const TILT_SPEED_LABELS = new Set([
@@ -405,7 +416,7 @@ function visualizerDmxFromChannels(
       dmx[movement] = channel.physical;
       continue;
     }
-    if (movement && channel.function && statesAngles(channel.function)) {
+    if (movement && statesAngles(channel)) {
       dmx[movement] = channel.physical;
     }
 

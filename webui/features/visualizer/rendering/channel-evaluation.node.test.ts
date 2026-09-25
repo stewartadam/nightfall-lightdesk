@@ -554,6 +554,32 @@ test("pan functions without an angular range use the normalized position", () =>
   assert.ok((head.pan ?? 0) > 0, "normalized pan still drives the joint");
 });
 
+/**
+ * Verifies a pan function left at GDTF's default range still moves through
+ * the angles its active channel set authors.
+ */
+test("pan channel sets with angles drive the joint in degrees", () => {
+  resetDmxPool();
+  const pan = parameter({ type: "Pan" }, [
+    fn("Pan", 0, 255, {
+      sets: [
+        {
+          name: "Sweep",
+          dmx_from: 0,
+          dmx_to: 255,
+          physical_from: -270,
+          physical_to: 270,
+        },
+      ],
+    }),
+  ]);
+  const [[, head]] = extractFixtureDmxData(
+    [{ label: "Head", parameters: [pan] }],
+    [{ Pan: 255 }],
+  );
+  near(head.panDegrees, 270, "angle from the channel set");
+});
+
 /** Verifies signed parameters convert to DMX around their centre like the engine. */
 test("signed outputs convert to DMX around the logical centre", () => {
   const pan: ParameterMetadata = {
