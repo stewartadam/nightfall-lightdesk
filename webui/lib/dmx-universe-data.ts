@@ -48,6 +48,7 @@ export function normalizeDmxUniverseData(
     channels: universe.channels,
     io_mode: universe.io_mode,
     transport: universe.transport,
+    output_transport: universe.output_transport,
     frame_age_ms: universe.frame_age_ms,
     is_stale: universe.is_stale,
     is_self: universe.is_self,

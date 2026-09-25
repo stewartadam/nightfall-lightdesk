@@ -24,7 +24,10 @@ export type FixturePatchEntry = {
   transport: types.OutputTransport | null;
 };
 
-type ConsoleAddress = {
+/** Console-space start address of one fixture element selected by a console binding. */
+type ConsoleElementAddress = {
+  uid: string;
+  elementId: number;
   universe: number;
   address: number;
 };
@@ -356,15 +359,12 @@ export function buildFixturePatchMapFromBindings(
     layoutCache,
     disabledSources,
   );
-  for (const [uid, consoleAddress] of consoleAddresses) {
-    const layout = collectFixtureLayout(layoutCache[uid]);
-    for (const element of layout.elements) {
-      pushPatchEntry(patchMap, uid, element.elementId, {
-        universe: consoleAddress.universe,
-        address: consoleAddress.address + element.offset,
-        transport: null,
-      });
-    }
+  for (const location of consoleAddresses.values()) {
+    pushPatchEntry(patchMap, location.uid, location.elementId, {
+      universe: location.universe,
+      address: location.address,
+      transport: null,
+    });
   }
 
   for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
@@ -411,20 +411,15 @@ export function buildFixturePatchMapFromBindings(
         targetUniverses,
         index,
       );
-      for (const [uid, consoleAddress] of consoleAddresses) {
-        if (consoleAddress.universe !== sourceUniverse) continue;
-        if (consoleAddress.address < sourceBaseAddress) continue;
+      for (const location of consoleAddresses.values()) {
+        if (location.universe !== sourceUniverse) continue;
+        if (location.address < sourceBaseAddress) continue;
 
-        const fixtureAddress =
-          targetBaseAddress + (consoleAddress.address - sourceBaseAddress);
-        const layout = collectFixtureLayout(layoutCache[uid]);
-        for (const element of layout.elements) {
-          pushPatchEntry(patchMap, uid, element.elementId, {
-            universe: targetUniverse,
-            address: fixtureAddress + element.offset,
-            transport: outputTransport,
-          });
-        }
+        pushPatchEntry(patchMap, location.uid, location.elementId, {
+          universe: targetUniverse,
+          address: targetBaseAddress + (location.address - sourceBaseAddress),
+          transport: outputTransport,
+        });
       }
     }
   }
@@ -458,18 +453,21 @@ function sortOutputBindingsByPriority(
 }
 
 /**
- * Resolves each fixture's console-space start address from fixture→console bindings.
+ * Resolves the console-space start address of each fixture element selected by
+ * fixture→console bindings, keyed by `uid:elementId`.
  *
  * Mirrors the engine's console address derivation: bindings apply in priority order with
- * later bindings replacing earlier ones, disabled sources are skipped, and non-clone
- * bindings lay fixtures out contiguously, restarting at the base address per universe.
+ * later bindings replacing earlier ones for the elements they select, disabled sources are
+ * skipped, and each binding lays out only the elements/parameters its filter selects.
+ * Non-clone bindings place fixtures contiguously by that filtered footprint, restarting at
+ * the base address per universe.
  */
 function resolveConsoleAddresses(
   snapshot: types.BindingsSnapshot,
   layoutCache: Record<string, FixtureLayoutCache>,
   disabledSources: types.OutputSource[],
-): Map<string, ConsoleAddress> {
-  const addresses = new Map<string, ConsoleAddress>();
+): Map<string, ConsoleElementAddress> {
+  const addresses = new Map<string, ConsoleElementAddress>();
 
   for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
     if (binding.source.type !== "Fixture") continue;
@@ -506,7 +504,14 @@ function resolveConsoleAddresses(
       );
       if (layout.totalWidth === 0) continue;
 
-      addresses.set(uid, { universe, address: runningAddress });
+      for (const element of layout.elements) {
+        addresses.set(`${uid}:${element.elementId}`, {
+          uid,
+          elementId: element.elementId,
+          universe,
+          address: runningAddress + element.offset,
+        });
+      }
       if (!binding.clone) {
         runningAddress += layout.totalWidth;
       }

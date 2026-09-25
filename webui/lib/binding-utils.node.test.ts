@@ -28,6 +28,7 @@ function makeParam(attribute: types.Attribute): types.ParameterMetadata {
   };
 }
 
+/** Verifies an element patched by several output bindings keeps one entry per binding. */
 test("buildFixturePatchMapFromBindings keeps multiple output bindings per element", () => {
   const uid = "fixtureuid";
 
@@ -92,6 +93,7 @@ test("buildFixturePatchMapFromBindings keeps multiple output bindings per elemen
   ]);
 });
 
+/** Verifies bindings to custom network DMX targets resolve to their configured transport. */
 test("buildFixturePatchMapFromBindings resolves custom network dmx targets", () => {
   const uid = "fixtureuid";
 
@@ -191,6 +193,10 @@ function consoleBinding(
   };
 }
 
+/**
+ * Verifies consecutive console-bound fixtures are laid out contiguously in console numbering
+ * with a `null` transport.
+ */
 test("buildFixturePatchMapFromBindings lays console-bound fixtures out in console space", () => {
   const fixtures = {
     a: makeRgbFixture("a", 1),
@@ -212,6 +218,10 @@ test("buildFixturePatchMapFromBindings lays console-bound fixtures out in consol
   ]);
 });
 
+/**
+ * Verifies a console→transport passthrough adds a wire-numbered entry for console-bound
+ * fixtures while keeping the console-space entry.
+ */
 test("buildFixturePatchMapFromBindings remaps console passthrough to wire numbering", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
   const snapshot: types.BindingsSnapshot = {
@@ -246,6 +256,7 @@ test("buildFixturePatchMapFromBindings remaps console passthrough to wire number
   ]);
 });
 
+/** Verifies the highest-priority console binding decides a fixture's console address. */
 test("buildFixturePatchMapFromBindings applies the highest-priority console binding", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
   const snapshot: types.BindingsSnapshot = {
@@ -264,6 +275,7 @@ test("buildFixturePatchMapFromBindings applies the highest-priority console bind
   ]);
 });
 
+/** Verifies a Fixture→Disabled binding suppresses console-space entries for the fixture. */
 test("buildFixturePatchMapFromBindings skips console bindings for disabled fixtures", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
   const snapshot: types.BindingsSnapshot = {
@@ -283,4 +295,66 @@ test("buildFixturePatchMapFromBindings skips console bindings for disabled fixtu
   const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
 
   assert.equal(patchMap.a, undefined);
+});
+
+/** Builds a two-element fixture whose elements each occupy three coarse RGB channels. */
+function makeTwoCellFixture(uid: string, id: number): types.Fixture {
+  const cell = makeRgbFixture(uid, id).elements[0];
+  return {
+    ...makeRgbFixture(uid, id),
+    elements: [
+      { ...cell, label: "Cell 1" },
+      { ...cell, label: "Cell 2" },
+    ],
+  };
+}
+
+/**
+ * Verifies element-scoped console bindings lay out only the selected element, so the next
+ * fixture follows at the filtered footprint instead of overlapping, and passthrough remaps
+ * those element addresses onto the wire.
+ */
+test("buildFixturePatchMapFromBindings honors element filters on console bindings", () => {
+  const fixtures = {
+    a: makeTwoCellFixture("a", 1),
+    b: makeTwoCellFixture("b", 2),
+  };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      {
+        ...consoleBinding(["a", "b"], 1, 1),
+        source: { type: "Fixture", data: { uids: ["a", "b"], element: 2 } },
+      },
+      {
+        source: {
+          type: "Console",
+          data: { universe: { start: 1, end: 1 } },
+        },
+        target: {
+          type: "Transport",
+          data: { target: "sacn", universe: { start: 7, end: 7 } },
+        },
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const sacn: types.OutputTransport = {
+    type: "Sacn",
+    data: { mode: { type: "Multicast" } },
+  };
+
+  assert.equal(patchMap.a["1"], undefined);
+  assert.deepEqual(patchMap.a["2"], [
+    { universe: 1, address: 1, transport: null },
+    { universe: 7, address: 1, transport: sacn },
+  ]);
+  assert.deepEqual(patchMap.b["2"], [
+    { universe: 1, address: 4, transport: null },
+    { universe: 7, address: 4, transport: sacn },
+  ]);
 });

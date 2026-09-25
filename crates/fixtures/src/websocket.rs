@@ -36,9 +36,10 @@ use crate::bindings::{
 };
 use crate::fixture::Fixture;
 use crate::geometry::FixtureGeometry;
+use crate::output_frames::{OutputDmxFrames, output_transport_label};
 use crate::prelude::{BeamType, FixtureDataProviderExt, FixturePhysical};
 use crate::universe::InputUniverseStaleTimeout;
-use crate::universe::{ConsoleDmxUniverses, InputDmxUniverses, UniverseTransportMap};
+use crate::universe::{ConsoleDmxUniverses, InputDmxUniverses};
 
 /// Wrapper for serializing fx messages with WsOutbound-compatible format
 #[derive(Serialize)]
@@ -314,9 +315,12 @@ struct OutboundDmxUniverse {
     pub universe_id: u16,
     pub channels: Vec<ChannelDmxValue>,
     pub io_mode: DmxIoMode,
-    /// Numbering space of the universe: `Console` for console-space output universes,
-    /// otherwise the transport family (`sACN`, `Art-Net`, `USB`…) using wire numbering.
+    /// Display label of the numbering space: `Console` for console-space output universes,
+    /// otherwise the transport (`sACN`, `sACN → 10.0.0.4`, `Art-Net`, `USB`…) using wire
+    /// numbering. Input universes carry their input transport family.
     pub transport: Option<String>,
+    /// Concrete output transport of a wire output universe; `None` for console space and input.
+    pub output_transport: Option<OutputTransport>,
     pub frame_age_ms: Option<u32>,
     pub is_stale: Option<bool>,
     pub is_self: Option<bool>,
@@ -466,17 +470,6 @@ const DROPPABLE_INTERVAL_MS: u64 = (1000.0 / 10.0) as u64;
 /// Display label for console-space output universes in the DMX universe panel.
 const CONSOLE_SPACE_LABEL: &str = "Console";
 
-/// Mapping from a transport input universe onto a transport output universe.
-#[derive(Debug, Clone)]
-struct TransportPassthroughMapping {
-    source_transport: BindingTransport,
-    source_universe: u16,
-    source_address: u16,
-    target_transport: OutputTransport,
-    target_universe: u16,
-    target_address: u16,
-}
-
 /// Returns the operator-facing label of a binding (input) transport.
 fn binding_transport_label(transport: BindingTransport) -> &'static str {
     match transport {
@@ -486,193 +479,41 @@ fn binding_transport_label(transport: BindingTransport) -> &'static str {
     }
 }
 
-/// Returns the operator-facing transport family label of an output transport.
-fn output_transport_label(transport: &OutputTransport) -> &'static str {
-    match transport {
-        OutputTransport::Disabled => "Disabled",
-        OutputTransport::Sacn { .. } => "sACN",
-        OutputTransport::Udmx { .. } => "USB",
-        OutputTransport::ArtNet { .. } => "Art-Net",
-    }
-}
-
-/// Orders output universe views: console space first, then transport families.
-fn output_label_rank(label: &str) -> u8 {
-    match label {
-        CONSOLE_SPACE_LABEL => 0,
-        "sACN" => 1,
-        "Art-Net" => 2,
-        "USB" => 3,
-        _ => 4,
-    }
-}
-
 /// Builds the output universe views reported to clients.
 ///
 /// Console-space universes are reported under the `Console` label with console numbering.
-/// Each transport family (sACN, Art-Net, USB…) gets its own view per on-the-wire universe,
-/// mirroring what output drivers send: the transport's output buffer, else the console
-/// universe with the same number, overlaid with transport input passthrough windows.
+/// Every composed wire frame is reported as-is under its concrete transport label (for
+/// example `sACN` or `sACN → 10.0.0.4`) with wire numbering, so the panel shows exactly
+/// the frames the output drivers transmit.
 fn build_output_universes(
     dmx_universes: &ConsoleDmxUniverses,
-    transport_map: &UniverseTransportMap,
-    resolved_input_bindings: &ResolvedInputBindings,
-    input_universes: &InputDmxUniverses,
+    output_frames: &OutputDmxFrames,
 ) -> Vec<OutboundDmxUniverse> {
     let mut console_ids: Vec<u16> = dmx_universes.universe_ids().copied().collect();
     console_ids.sort_unstable();
-    let mut data: Vec<OutboundDmxUniverse> = console_ids
+    let console_views = console_ids
         .into_iter()
-        .map(|universe_id| {
-            output_universe_view(
-                CONSOLE_SPACE_LABEL,
-                universe_id,
-                dmx_universes.get_universe(universe_id).to_vec(),
-            )
-        })
-        .collect();
-
-    let passthrough_mappings: Vec<TransportPassthroughMapping> = resolved_input_bindings
-        .bindings
-        .iter()
-        .filter_map(|binding| {
-            let ResolvedInputSource::Transport {
-                transport,
-                universe,
-                address,
-            } = &binding.source
-            else {
-                return None;
-            };
-            let ResolvedInputDestination::Transport { target } = &binding.destination else {
-                return None;
-            };
-            Some(TransportPassthroughMapping {
-                source_transport: *transport,
-                source_universe: *universe,
-                source_address: *address,
-                target_transport: target.transport.clone(),
-                target_universe: target.universe,
-                target_address: target.address,
-            })
-        })
-        .collect();
-
-    let mut transports_by_view: HashMap<(&'static str, u16), HashSet<&OutputTransport>> =
-        HashMap::new();
-    for universe_id in transport_map.universes() {
-        for transport in transport_map.transports_for_universe(universe_id) {
-            transports_by_view
-                .entry((output_transport_label(transport), universe_id))
-                .or_default()
-                .insert(transport);
-        }
-    }
-    for (transport, universe_id) in dmx_universes.output_universe_keys() {
-        transports_by_view
-            .entry((output_transport_label(transport), universe_id))
-            .or_default()
-            .insert(transport);
-    }
-    for mapping in &passthrough_mappings {
-        transports_by_view
-            .entry((
-                output_transport_label(&mapping.target_transport),
-                mapping.target_universe,
-            ))
-            .or_default()
-            .insert(&mapping.target_transport);
-    }
-
-    let mut views: Vec<_> = transports_by_view.into_iter().collect();
-    views.sort_by_key(|((label, universe_id), _)| (output_label_rank(label), *universe_id));
-
-    for ((label, universe_id), transports) in views {
-        let mut channels = vec![0; nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE];
-        let mut has_channels = false;
-        let uses_console_fallback = dmx_universes.has_universe(universe_id)
-            && transports
-                .iter()
-                .any(|transport| !dmx_universes.has_output_universe(transport, universe_id));
-        if uses_console_fallback {
-            channels.copy_from_slice(&dmx_universes.get_universe(universe_id));
-            has_channels = true;
-        }
-        for transport in transports {
-            has_channels |=
-                dmx_universes.overlay_output_universe(transport, universe_id, &mut channels);
-        }
-
-        for mapping in &passthrough_mappings {
-            if mapping.target_universe != universe_id
-                || output_transport_label(&mapping.target_transport) != label
-            {
-                continue;
-            }
-            let Some(source_channels) = input_universes
-                .iter()
-                .find(|(transport, source_universe, _)| {
-                    *transport == mapping.source_transport
-                        && *source_universe == mapping.source_universe
-                })
-                .map(|(_, _, channels)| channels)
-            else {
-                continue;
-            };
-            overlay_mapped_window(
-                source_channels,
-                mapping.source_address,
-                &mut channels,
-                mapping.target_address,
-            );
-            has_channels = true;
-        }
-
-        if has_channels {
-            data.push(output_universe_view(label, universe_id, channels));
-        }
-    }
-
-    data
-}
-
-/// Creates one output universe view reported under the given display label.
-fn output_universe_view(
-    label: &str,
-    universe_id: u16,
-    channels: Vec<ChannelDmxValue>,
-) -> OutboundDmxUniverse {
-    OutboundDmxUniverse {
-        universe_id,
-        channels,
+        .map(|universe_id| OutboundDmxUniverse {
+            universe_id,
+            channels: dmx_universes.get_universe(universe_id).to_vec(),
+            io_mode: DmxIoMode::Output,
+            transport: Some(CONSOLE_SPACE_LABEL.to_string()),
+            output_transport: None,
+            frame_age_ms: None,
+            is_stale: None,
+            is_self: None,
+        });
+    let wire_views = output_frames.iter().map(|frame| OutboundDmxUniverse {
+        universe_id: frame.universe,
+        channels: frame.channels.to_vec(),
         io_mode: DmxIoMode::Output,
-        transport: Some(label.to_string()),
+        transport: Some(output_transport_label(&frame.transport)),
+        output_transport: Some(frame.transport.clone()),
         frame_age_ms: None,
         is_stale: None,
         is_self: None,
-    }
-}
-
-/// Copies an input window starting at `source_address` onto `target` at `target_address`.
-fn overlay_mapped_window(
-    source: &[ChannelDmxValue],
-    source_address: u16,
-    target: &mut [ChannelDmxValue],
-    target_address: u16,
-) {
-    if source_address == 0 || target_address == 0 {
-        return;
-    }
-
-    let source_start = (source_address - 1) as usize;
-    let target_start = (target_address - 1) as usize;
-    if source_start >= source.len() || target_start >= target.len() {
-        return;
-    }
-
-    let copy_len = (source.len() - source_start).min(target.len() - target_start);
-    target[target_start..(target_start + copy_len)]
-        .copy_from_slice(&source[source_start..(source_start + copy_len)]);
+    });
+    console_views.chain(wire_views).collect()
 }
 
 /// Send DMX universe data for visualization
@@ -680,7 +521,7 @@ pub fn send_dmx_universes(
     dmx_universes: Res<ConsoleDmxUniverses>,
     input_universes: Res<InputDmxUniverses>,
     input_stale_timeout: Res<InputUniverseStaleTimeout>,
-    transport_map: Res<UniverseTransportMap>,
+    output_frames: Res<OutputDmxFrames>,
     resolved_input_bindings: Res<ResolvedInputBindings>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     parameter_query: Query<&crate::parameter::Parameter>,
@@ -701,12 +542,7 @@ pub fn send_dmx_universes(
     let now_instant = Instant::now();
     let stale_after_ms = input_stale_timeout.0.as_millis() as u32;
 
-    let mut data = build_output_universes(
-        &dmx_universes,
-        &transport_map,
-        &resolved_input_bindings,
-        &input_universes,
-    );
+    let mut data = build_output_universes(&dmx_universes, &output_frames);
 
     let transport_rank = |transport: BindingTransport| match transport {
         BindingTransport::Sacn => 0,
@@ -742,6 +578,7 @@ pub fn send_dmx_universes(
             channels,
             io_mode: DmxIoMode::Input,
             transport: Some(binding_transport_label(transport).to_string()),
+            output_transport: None,
             frame_age_ms: Some(frame_age_ms),
             is_stale: Some(frame_age_ms >= stale_after_ms),
             is_self: Some(is_self),
@@ -995,8 +832,9 @@ mod tests {
     use crate::binding_resolution::{derive_console_addresses, resolve_output_bindings};
     use crate::bindings::{ConsoleDmxAddresses, DmxRange, OutputSource, OutputTarget};
     use crate::fixture::FixtureElement;
+    use crate::output_frames::{OutputRouting, compose_output_frames, update_input_routing};
     use crate::parameter::{Parameter, ParameterMetadata, ParameterValues};
-    use crate::universe::{ConsoleChannelOrigin, dmx_universes, update_transport_map};
+    use crate::universe::{ConsoleChannelOrigin, dmx_universes};
 
     /// Builds an app running binding resolution and DMX universe composition.
     fn pipeline_app() -> App {
@@ -1009,15 +847,17 @@ mod tests {
         app.init_resource::<UsbDmxOutputTargets>();
         app.init_resource::<ResolvedInputBindings>();
         app.init_resource::<InputDmxUniverses>();
-        app.init_resource::<UniverseTransportMap>();
+        app.init_resource::<OutputRouting>();
+        app.init_resource::<OutputDmxFrames>();
         app.init_resource::<ConsoleDmxUniverses>();
         app.add_systems(
             Update,
             (
                 derive_console_addresses,
                 resolve_output_bindings,
-                update_transport_map,
+                update_input_routing,
                 dmx_universes,
+                compose_output_frames,
             )
                 .chain(),
         );
@@ -1121,9 +961,7 @@ mod tests {
         let world = app.world();
         build_output_universes(
             world.resource::<ConsoleDmxUniverses>(),
-            world.resource::<UniverseTransportMap>(),
-            world.resource::<ResolvedInputBindings>(),
-            world.resource::<InputDmxUniverses>(),
+            world.resource::<OutputDmxFrames>(),
         )
         .into_iter()
         .map(|view| {
@@ -1241,5 +1079,157 @@ mod tests {
         assert_eq!(view_keys(&views), vec![("Console", 1), ("sACN", 1)]);
         assert_eq!(views[0].2[0..7], [255, 0, 0, 0, 0, 0, 0]);
         assert_eq!(views[1].2[0..7], [0, 0, 0, 0, 10, 20, 30]);
+    }
+
+    /// Returns a console→transport passthrough binding for one console universe.
+    fn console_passthrough(console_universe: u16, wire_universe: u16) -> OutputBinding {
+        OutputBinding {
+            source: OutputSource::Console {
+                universe: Some(DmxRange::single(console_universe)),
+                address: None,
+            },
+            target: transport_target("sacn", wire_universe, 1),
+            priority: 0,
+            clone: false,
+        }
+    }
+
+    /// Console universe 1 routed to sACN 10 never leaks onto sACN 1, even when sACN 1 is
+    /// only fed by a transport input passthrough.
+    #[test]
+    fn routed_console_universe_only_reaches_its_wire_universe() {
+        let mut app = pipeline_app();
+        let uid = Uuid::new_v4();
+        spawn_rgb_fixture(&mut app, uid, 1, [11.0, 22.0, 33.0]);
+        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
+            fixture_binding(uid, console_target(1, 1)),
+            console_passthrough(1, 10),
+        ];
+        let mut input = [0; nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE];
+        input[99] = 77;
+        app.world_mut()
+            .resource_mut::<InputDmxUniverses>()
+            .set_universe(BindingTransport::ArtNet, 4, input, Instant::now());
+        app.world_mut()
+            .resource_mut::<ResolvedInputBindings>()
+            .bindings = vec![crate::bindings::ResolvedInputBinding {
+            source: ResolvedInputSource::Transport {
+                transport: BindingTransport::ArtNet,
+                universe: 4,
+                address: 100,
+            },
+            priority: 0,
+            destination: ResolvedInputDestination::Transport {
+                target: crate::bindings::ResolvedTransportTarget {
+                    target: "sacn".to_string(),
+                    protocol: BindingTransport::Sacn,
+                    transport: OutputTransport::Sacn {
+                        mode: nightfall_io::SacnDelivery::Multicast,
+                    },
+                    universe: 1,
+                    address: 100,
+                },
+            },
+        }];
+
+        let views = output_views(&mut app);
+
+        assert_eq!(
+            view_keys(&views),
+            vec![("Console", 1), ("sACN", 1), ("sACN", 10)]
+        );
+        assert_eq!(views[1].2[0..3], [0, 0, 0], "console 1 leaked onto sACN 1");
+        assert_eq!(views[1].2[99], 77);
+        assert_eq!(views[2].2[0..3], [11, 22, 33]);
+    }
+
+    /// Moving, removing, and deleting console-bound fixtures leaves no ghost console values
+    /// behind, and the routed wire frame follows.
+    #[test]
+    fn console_values_clear_when_bindings_or_fixtures_change() {
+        let mut app = pipeline_app();
+        let uid = Uuid::new_v4();
+        spawn_rgb_fixture(&mut app, uid, 1, [11.0, 22.0, 33.0]);
+        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
+            fixture_binding(uid, console_target(2, 121)),
+            console_passthrough(2, 10),
+        ];
+        let views = output_views(&mut app);
+        assert_eq!(views[0].2[120..123], [11, 22, 33]);
+
+        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
+            fixture_binding(uid, console_target(2, 1)),
+            console_passthrough(2, 10),
+        ];
+        let views = output_views(&mut app);
+        assert_eq!(view_keys(&views), vec![("Console", 2), ("sACN", 10)]);
+        assert_eq!(views[0].2[0..3], [11, 22, 33]);
+        assert_eq!(
+            views[0].2[120..123],
+            [0, 0, 0],
+            "moved binding left ghost values"
+        );
+        assert_eq!(
+            views[1].2[120..123],
+            [0, 0, 0],
+            "ghost values reached the wire"
+        );
+
+        let parameters = app
+            .world_mut()
+            .resource_mut::<FixtureDataProviderExt>()
+            .remove_fixture(&uid)
+            .expect("fixture is removed")
+            .1;
+        for parameter in parameters {
+            app.world_mut().despawn(parameter.entity());
+        }
+        let views = output_views(&mut app);
+        assert!(
+            views.is_empty(),
+            "deleted fixture left views: {:?}",
+            view_keys(&views)
+        );
+    }
+
+    /// Rebinding a direct transport patch to another wire universe drops the old wire view.
+    #[test]
+    fn rebinding_direct_patch_drops_stale_wire_universe() {
+        let mut app = pipeline_app();
+        let uid = Uuid::new_v4();
+        spawn_rgb_fixture(&mut app, uid, 1, [10.0, 20.0, 30.0]);
+        app.world_mut().resource_mut::<OutputBindings>().bindings =
+            vec![fixture_binding(uid, transport_target("sacn", 5, 1))];
+        assert_eq!(view_keys(&output_views(&mut app)), vec![("sACN", 5)]);
+
+        app.world_mut().resource_mut::<OutputBindings>().bindings =
+            vec![fixture_binding(uid, transport_target("sacn", 6, 1))];
+        assert_eq!(view_keys(&output_views(&mut app)), vec![("sACN", 6)]);
+    }
+
+    /// Parameter-scoped console bindings lay out only the selected parameters, so a second
+    /// fixture follows the first without overlapping its channels.
+    #[test]
+    fn parameter_scoped_console_binding_does_not_overlap() {
+        let mut app = pipeline_app();
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        spawn_rgb_fixture(&mut app, first, 1, [11.0, 22.0, 33.0]);
+        spawn_rgb_fixture(&mut app, second, 2, [44.0, 55.0, 66.0]);
+        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![OutputBinding {
+            source: OutputSource::Fixture {
+                uids: vec![first, second],
+                element: None,
+                param: Some("Red".to_string()),
+            },
+            target: console_target(1, 1),
+            priority: 0,
+            clone: false,
+        }];
+
+        let views = output_views(&mut app);
+
+        assert_eq!(view_keys(&views), vec![("Console", 1)]);
+        assert_eq!(views[0].2[0..3], [11, 44, 0]);
     }
 }

@@ -15,6 +15,7 @@ import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { dmxUniverseData } from "../../../state/appStores";
 import { $ioSettings } from "../../../state/settings";
 import { DmxIoMode, InputUniverseVisibilityMode } from "../../../types";
+import { outputSpaceSelection } from "../model/output-binding-follow";
 
 const TRANSPORT_SORT_ORDER = [
   CONSOLE_TRANSPORT,
@@ -66,11 +67,20 @@ export function createDmxUniverseSelectionController() {
     dmxData().filter((universe) => universe.io_mode === DmxIoMode.Input),
   );
 
-  /** Sorts known transports by operator-facing priority, then alphabetically. */
+  /**
+   * Returns the sort rank of a transport label by its family, so concrete labels such as
+   * "sACN → 10.0.0.4" sort with their family; unknown families return -1.
+   */
+  const transportRank = (label: string) =>
+    TRANSPORT_SORT_ORDER.findIndex(
+      (family) => label === family || label.startsWith(`${family} `),
+    );
+
+  /** Sorts transports by operator-facing family priority, then alphabetically. */
   const sortTransports = (a: string, b: string) => {
-    const aIndex = TRANSPORT_SORT_ORDER.indexOf(a);
-    const bIndex = TRANSPORT_SORT_ORDER.indexOf(b);
-    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+    const aIndex = transportRank(a);
+    const bIndex = transportRank(b);
+    if (aIndex === bIndex) return a.localeCompare(b);
     if (aIndex === -1) return 1;
     if (bIndex === -1) return -1;
     return aIndex - bIndex;
@@ -131,6 +141,18 @@ export function createDmxUniverseSelectionController() {
     return universes.filter((universe) => universe.transport === transport);
   });
 
+  /**
+   * Resolves the selected output numbering space: console space, or the concrete output
+   * transport reported by the selected label's universes. `null` outside output mode.
+   */
+  const selectedOutputSpace = createMemo(() => {
+    if (ioMode() !== DmxIoMode.Output) return null;
+    return outputSpaceSelection(
+      selectedOutputTransport(),
+      filteredUniverses()[0]?.output_transport,
+    );
+  });
+
   /** Returns sorted identifiers for the filtered universe set. */
   const universeIds = createMemo(() =>
     filteredUniverses()
@@ -172,6 +194,7 @@ export function createDmxUniverseSelectionController() {
     availableTransports,
     selectedTransport,
     setSelectedTransport,
+    selectedOutputSpace,
     universeIds,
     universeById,
     currentUniverse,

@@ -14,7 +14,6 @@ import {
   type ContextMenuEntry,
   openContextMenu,
 } from "../../../components/providers/context-menu";
-import { buildFixturePatchMapFromBindings } from "../../../lib/binding-utils";
 import {
   networkDmxOutputsFromSettings,
   usbDmxOutputsFromSettings,
@@ -32,11 +31,9 @@ import type * as types from "../../../types";
 import { DmxIoMode } from "../../../types";
 import type { ChannelInfo } from "../model/dmx-universe-model";
 import {
-  getChannelWidth,
-  normalizeSelectedTransport,
-  outputTransportMatchesSelection,
-} from "../model/dmx-universe-model";
-import { findInputBindingIdForOutputChannel } from "../model/output-binding-follow";
+  findInputBindingIdForOutputChannel,
+  findOutputBindingIdForChannel,
+} from "../model/output-binding-follow";
 import type { DmxUniverseSelectionController } from "./dmx-universe-selection-controller";
 
 interface DmxChannelNavigationControllerOptions {
@@ -138,87 +135,34 @@ export function createDmxChannelNavigationController(
     return null;
   };
 
-  /** Calculates the number of physical DMX channels used by one fixture element. */
-  const elementChannelWidth = (fixture: types.Fixture, elementId: number) => {
-    const element = fixture.elements[elementId - 1];
-    if (!element) return 0;
-    return element.parameters.reduce(
-      (width, parameter) =>
-        parameter.attribute.type === "VirtualIntensity"
-          ? width
-          : width + getChannelWidth(parameter.resolution),
-      0,
-    );
-  };
-
   /** Finds the binding row that supplies one visible output channel. */
   const findOutputBindingId = (address: number): string | null => {
     if (options.selection.ioMode() !== DmxIoMode.Output) return null;
     const universeId = options.selection.selectedUniverse();
     if (universeId === null) return null;
-    const transport = normalizeSelectedTransport(
-      options.selection.selectedTransport(),
-    );
+    const space = options.selection.selectedOutputSpace();
     const snapshot = bindingSnapshot();
-    const fixturesByUid = fixtureMap();
-    const inputBindingId = findInputBindingIdForOutputChannel(
-      snapshot,
-      transport,
-      universeId,
-      address,
+    const targets = {
+      networkDmxOutputs: networkDmxOutputs(),
+      usbDmxOutputs: usbDmxOutputs(),
+    };
+    return (
+      findInputBindingIdForOutputChannel(
+        snapshot,
+        space,
+        universeId,
+        address,
+        targets,
+      ) ??
+      findOutputBindingIdForChannel(
+        snapshot,
+        fixtureMap(),
+        space,
+        universeId,
+        address,
+        targets,
+      )
     );
-    if (inputBindingId) return inputBindingId;
-
-    const fixtureConsoleBindings = snapshot.output.filter(
-      (binding) =>
-        binding.source.type === "Fixture" && binding.target.type === "Console",
-    );
-    for (const [bindingIndex, binding] of snapshot.output.entries()) {
-      const isConsolePassthrough =
-        binding.source.type === "Console" &&
-        binding.target.type === "Transport";
-      const isFixtureBinding =
-        binding.source.type === "Fixture" &&
-        (binding.target.type === "Transport" ||
-          binding.target.type === "Console");
-      if (!isConsolePassthrough && !isFixtureBinding) continue;
-      const patchMap = buildFixturePatchMapFromBindings(
-        {
-          input: [],
-          output: isConsolePassthrough
-            ? [...fixtureConsoleBindings, binding]
-            : [binding],
-          disabled: snapshot.disabled,
-        },
-        fixturesByUid,
-        networkDmxOutputs(),
-        usbDmxOutputs(),
-      );
-      for (const [fixtureUid, patchesByElement] of Object.entries(patchMap)) {
-        const fixture = fixturesByUid[fixtureUid];
-        if (!fixture) continue;
-        for (const [elementIdText, patches] of Object.entries(
-          patchesByElement,
-        )) {
-          const width = elementChannelWidth(
-            fixture,
-            Number.parseInt(elementIdText, 10),
-          );
-          if (width <= 0) continue;
-          for (const patch of patches) {
-            if (
-              (!isConsolePassthrough || patch.transport !== null) &&
-              patch.universe === universeId &&
-              outputTransportMatchesSelection(patch.transport, transport) &&
-              address >= patch.address &&
-              address <= patch.address + width - 1
-            )
-              return `output-${bindingIndex}`;
-          }
-        }
-      }
-    }
-    return null;
   };
 
   /** Navigates to the patch binding supplying one output channel. */

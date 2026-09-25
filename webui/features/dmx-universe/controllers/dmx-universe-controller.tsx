@@ -36,9 +36,8 @@ import {
   getAttributeName,
   getChannelWidth,
   normalizeFixtureJumpAttributeSearch,
-  normalizeSelectedTransport,
-  outputTransportMatchesSelection,
 } from "../model/dmx-universe-model";
+import { outputTransportMatchesSelection } from "../model/output-binding-follow";
 import { createDmxChannelNavigationController } from "./dmx-channel-navigation-controller";
 import { createDmxFixtureJumpController } from "./dmx-fixture-jump-controller";
 import { createDmxUniverseSelectionController } from "./dmx-universe-selection-controller";
@@ -64,6 +63,7 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
     availableTransports,
     selectedTransport,
     setSelectedTransport,
+    selectedOutputSpace,
     universeIds,
     universeById,
     currentUniverse,
@@ -89,14 +89,9 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
     ),
   );
 
-  /** Maps the selected output numbering space onto its patch selection key. */
-  const outputSpace = createMemo(() =>
-    normalizeSelectedTransport(selectedTransport()),
-  );
-
   /** Returns whether a patch location belongs to the selected numbering space. */
   const patchInSelectedSpace = (patch: FixturePatchEntry) =>
-    outputTransportMatchesSelection(patch.transport, outputSpace());
+    outputTransportMatchesSelection(patch.transport, selectedOutputSpace());
 
   /** Indexes visible DMX addresses by their patched fixture parameter. */
   const channelToFixture = createMemo(() => {
