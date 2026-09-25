@@ -53,10 +53,14 @@ export interface EvaluatedChannel {
    * set declares one. Without functions, the logical output value.
    */
   physical: number;
-  /** Output level 0-1 after relations with physical masters. */
+  /** Output level 0-1 after the relations the fixture itself applies. */
   level: number;
-  /** Whether this parameter is a relation master of a channel in its own element. */
-  mastersOwnElement: boolean;
+  /**
+   * Whether this parameter is a relation master of an emitter (color)
+   * channel in its own element, whose brightness it sets through that
+   * relation.
+   */
+  mastersOwnEmitters: boolean;
 }
 
 /** A parameter reference resolved to `[element index, parameter index]`. */
@@ -70,28 +74,66 @@ interface CompiledParameter {
   modeMasters: (ResolvedRef | undefined)[];
   /** Relation masters of each function with their kinds. */
   relations: { master: ResolvedRef; kind: RelationKind }[][];
-  /** Whether a function of a parameter in the same element follows this one. */
-  mastersOwnElement: boolean;
+  /** Whether an emitter parameter in the same element follows this one. */
+  mastersOwnEmitters: boolean;
   /** Whether this parameter masters or follows any relation. */
   linked: boolean;
 }
 
-/** Link targets for every parameter of a fixture. */
+/**
+ * Link targets for every parameter of a fixture, with buffers reused by
+ * every evaluation so the render loop does not allocate.
+ */
 interface CompiledFixture {
   /** Per element, per parameter. */
   parameters: CompiledParameter[][];
   /**
-   * Dimmers no relation mentions. A profile states what its linked dimmers
-   * control; an unlinked dimmer is assumed to master the whole fixture.
+   * Physical dimmers no relation mentions. A profile states what its linked
+   * dimmers control; an unlinked dimmer is assumed to master the whole
+   * fixture. Unlinked virtual dimmers never reach the fixture.
    */
   unlinkedDimmers: ResolvedRef[];
+  /** Evaluation result, per element and parameter. */
+  channels: (EvaluatedChannel | undefined)[][];
+  /** Channel objects reused for `channels`. */
+  pool: EvaluatedChannel[][];
+  /** Per element and parameter, whether relations are applied this evaluation. */
+  resolved: Uint8Array[];
 }
+
+/** Attributes whose parameters emit colored light. */
+const EMITTER_ATTRIBUTES = new Set([
+  "Red",
+  "Green",
+  "Blue",
+  "White",
+  "WarmWhite",
+  "CoolWhite",
+  "Amber",
+  "Cyan",
+  "Magenta",
+  "Yellow",
+  "UV",
+]);
 
 /** Returns true for attributes that dim an element. */
 function isDimmer(attribute: Attribute): boolean {
   return (
     attribute.type === "Intensity" || attribute.type === "VirtualIntensity"
   );
+}
+
+/** Returns true for parameters that emit light of their own color. */
+function isEmitter(parameter: ParameterMetadata): boolean {
+  return (
+    EMITTER_ATTRIBUTES.has(parameter.attribute.type) ||
+    Boolean(parameter.functions?.some((fn) => fn.emitter_color))
+  );
+}
+
+/** Returns true for parameters that occupy no DMX slots. */
+function isVirtual(parameter: ParameterMetadata): boolean {
+  return parameter.dmx_slots?.type === "Virtual";
 }
 
 /** Longest chain of relation masters followed before a cycle is assumed. */
@@ -141,33 +183,58 @@ function compile(elements: FixtureElement[], linked: boolean): CompiledFixture {
         key: attributeOutputKey(parameter.attribute),
         modeMasters: functions.map((fn) => resolve(fn.mode_master?.master)),
         relations,
-        mastersOwnElement: false,
+        mastersOwnEmitters: false,
         linked: relations.some((fnRelations) => fnRelations.length > 0),
       };
     }),
   );
   parameters.forEach((element, elementIndex) => {
-    for (const parameter of element) {
+    element.forEach((parameter, parameterIndex) => {
+      const follower = elements[elementIndex].parameters[parameterIndex];
       for (const relation of parameter.relations.flat()) {
         const [masterElement, masterParameter] = relation.master;
         const master = parameters[masterElement][masterParameter];
         master.linked = true;
-        if (masterElement === elementIndex) master.mastersOwnElement = true;
+        if (masterElement === elementIndex && isEmitter(follower)) {
+          master.mastersOwnEmitters = true;
+        }
       }
-    }
+    });
   });
   const unlinkedDimmers: ResolvedRef[] = [];
   elements.forEach((element, elementIndex) => {
     element.parameters.forEach((parameter, parameterIndex) => {
       if (
         isDimmer(parameter.attribute) &&
+        !isVirtual(parameter) &&
         !parameters[elementIndex][parameterIndex].linked
       ) {
         unlinkedDimmers.push([elementIndex, parameterIndex]);
       }
     });
   });
-  return { parameters, unlinkedDimmers };
+  return {
+    parameters,
+    unlinkedDimmers,
+    channels: elements.map((element) =>
+      element.parameters.map(() => undefined),
+    ),
+    pool: elements.map((element, elementIndex) =>
+      element.parameters.map((parameter, parameterIndex) => ({
+        parameter,
+        value: 0,
+        dmx: 0,
+        fraction: 0,
+        physical: 0,
+        level: 0,
+        mastersOwnEmitters:
+          parameters[elementIndex][parameterIndex].mastersOwnEmitters,
+      })),
+    ),
+    resolved: elements.map(
+      (element) => new Uint8Array(element.parameters.length),
+    ),
+  };
 }
 
 /** Returns the lowest logical value of a parameter, matching the engine. */
@@ -260,102 +327,136 @@ function applyFunction(
   channel.level = channel.fraction;
 }
 
-/** Evaluates every parameter of a fixture using precompiled links. */
+/**
+ * Returns the index of the function active at a channel's DMX value: the
+ * first whose range contains it and whose mode master condition holds.
+ */
+function activeFunctionIndex(
+  channel: EvaluatedChannel,
+  modeMasters: (ResolvedRef | undefined)[],
+  channels: (EvaluatedChannel | undefined)[][],
+): number | undefined {
+  const functions = channel.parameter.functions ?? [];
+  for (let index = 0; index < functions.length; index++) {
+    const fn = functions[index];
+    if (channel.dmx < fn.dmx_from || channel.dmx > fn.dmx_to) continue;
+    const condition = fn.mode_master;
+    const masterRef = modeMasters[index];
+    if (!condition || !masterRef) return index;
+    const masterDmx = channels[masterRef[0]]?.[masterRef[1]]?.dmx ?? 0;
+    if (masterDmx >= condition.dmx_from && masterDmx <= condition.dmx_to) {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Applies the relations the fixture itself evaluates to a channel's level
+ * and returns it, resolving masters that follow masters of their own first.
+ *
+ * Relations involving a virtual channel are the console's and are already
+ * part of the output, so only relations between two real channels apply.
+ */
+function resolveLevel(
+  compiled: CompiledFixture,
+  elementIndex: number,
+  parameterIndex: number,
+  depth: number,
+): number {
+  const channel = compiled.channels[elementIndex]?.[parameterIndex];
+  if (!channel) return 0;
+  const resolved = compiled.resolved[elementIndex];
+  if (resolved[parameterIndex] || !channel.function) return channel.level;
+  resolved[parameterIndex] = 1;
+  if (isVirtual(channel.parameter)) return channel.level;
+  const functionIndex = channel.parameter.functions?.indexOf(channel.function);
+  const relations =
+    compiled.parameters[elementIndex][parameterIndex].relations[
+      functionIndex ?? -1
+    ] ?? [];
+  for (const { master: masterRef, kind } of relations) {
+    const master = compiled.channels[masterRef[0]]?.[masterRef[1]];
+    if (!master || isVirtual(master.parameter)) continue;
+    if (depth >= MAX_RELATION_DEPTH) break;
+    const masterLevel = resolveLevel(
+      compiled,
+      masterRef[0],
+      masterRef[1],
+      depth + 1,
+    );
+    channel.level =
+      kind === RelationKind.Multiply
+        ? channel.level * masterLevel
+        : masterLevel;
+  }
+  return channel.level;
+}
+
+/**
+ * Evaluates every parameter of a fixture using precompiled links, filling
+ * the compiled fixture's reused buffers.
+ */
 function evaluate(
   elements: FixtureElement[],
   outputs: (Record<string, number> | undefined)[],
   compiled: CompiledFixture,
 ): (EvaluatedChannel | undefined)[][] {
-  const channels = elements.map((element, elementIndex) =>
-    element.parameters.map((parameter, parameterIndex) => {
-      const output = outputs[elementIndex];
-      const key = compiled.parameters[elementIndex][parameterIndex].key;
+  const { channels, pool } = compiled;
+  for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
+    const output = outputs[elementIndex];
+    const parameters = elements[elementIndex].parameters;
+    compiled.resolved[elementIndex].fill(0);
+    for (let index = 0; index < parameters.length; index++) {
+      const parameter = parameters[index];
       const value =
         parameter.attribute.type === "VirtualIntensity"
           ? (output?.VirtualIntensity ?? output?.Intensity)
-          : output?.[key];
-      if (value === undefined || parameter.max <= 0) return undefined;
-      const channel: EvaluatedChannel = {
-        parameter,
-        value,
-        dmx: Math.round(normalizedOutput(parameter, value) * dmxMax(parameter)),
-        fraction: 0,
-        physical: value,
-        level: 0,
-        mastersOwnElement:
-          compiled.parameters[elementIndex][parameterIndex].mastersOwnElement,
-      };
-      return channel;
-    }),
-  );
-  const at = ([element, parameter]: ResolvedRef) =>
-    channels[element]?.[parameter];
+          : output?.[compiled.parameters[elementIndex][index].key];
+      if (value === undefined || parameter.max <= 0) {
+        channels[elementIndex][index] = undefined;
+        continue;
+      }
+      const channel = pool[elementIndex][index];
+      channel.value = value;
+      channel.dmx = Math.round(
+        normalizedOutput(parameter, value) * dmxMax(parameter),
+      );
+      channels[elementIndex][index] = channel;
+    }
+  }
 
   // Select functions once every DMX value is known, so mode masters in any
   // element can be read.
-  channels.forEach((element, elementIndex) => {
-    element.forEach((channel, parameterIndex) => {
-      if (!channel) return;
-      const modeMasters =
-        compiled.parameters[elementIndex][parameterIndex].modeMasters;
-      const index = channel.parameter.functions?.findIndex((fn, fnIndex) => {
-        if (channel.dmx < fn.dmx_from || channel.dmx > fn.dmx_to) return false;
-        const condition = fn.mode_master;
-        const masterRef = modeMasters[fnIndex];
-        if (!condition || !masterRef) return true;
-        const master = at(masterRef);
-        const masterDmx = master?.dmx ?? 0;
-        return masterDmx >= condition.dmx_from && masterDmx <= condition.dmx_to;
-      });
+  for (let elementIndex = 0; elementIndex < channels.length; elementIndex++) {
+    const element = channels[elementIndex];
+    for (let index = 0; index < element.length; index++) {
+      const channel = element[index];
+      if (!channel) continue;
       applyFunction(
         channel,
-        index === undefined || index < 0 ? undefined : index,
+        activeFunctionIndex(
+          channel,
+          compiled.parameters[elementIndex][index].modeMasters,
+          channels,
+        ),
       );
-    });
-  });
-
-  // Apply relations with physical masters. A master may follow masters of
-  // its own, so levels resolve through the chain, once per channel.
-  const resolved = new Set<EvaluatedChannel>();
-  const resolveLevel = (
-    [elementIndex, parameterIndex]: ResolvedRef,
-    depth: number,
-  ): number => {
-    const channel = channels[elementIndex]?.[parameterIndex];
-    if (!channel) return 0;
-    if (resolved.has(channel) || !channel.function) return channel.level;
-    const functionIndex = channel.parameter.functions?.indexOf(
-      channel.function,
-    );
-    const relations =
-      compiled.parameters[elementIndex][parameterIndex].relations[
-        functionIndex ?? -1
-      ] ?? [];
-    for (const { master: masterRef, kind } of relations) {
-      const master = at(masterRef);
-      if (!master || master.parameter.dmx_slots?.type === "Virtual") continue;
-      if (depth >= MAX_RELATION_DEPTH) break;
-      const masterLevel = resolveLevel(masterRef, depth + 1);
-      channel.level =
-        kind === RelationKind.Multiply
-          ? channel.level * masterLevel
-          : masterLevel;
     }
-    resolved.add(channel);
-    return channel.level;
-  };
-  channels.forEach((element, elementIndex) => {
-    element.forEach((_, parameterIndex) => {
-      resolveLevel([elementIndex, parameterIndex], 0);
-    });
-  });
+  }
+
+  for (let elementIndex = 0; elementIndex < channels.length; elementIndex++) {
+    for (let index = 0; index < channels[elementIndex].length; index++) {
+      resolveLevel(compiled, elementIndex, index, 0);
+    }
+  }
   return channels;
 }
 
 /**
  * Evaluates every parameter of a fixture, following mode masters and
  * relations across its elements. Entries are undefined for parameters
- * without output.
+ * without output. The result is reused by the next evaluation of the same
+ * fixture, so read it before evaluating the fixture again.
  */
 export function evaluateFixtureChannels(
   elements: FixtureElement[],
@@ -377,6 +478,7 @@ function compiledFixture(elements: FixtureElement[]): CompiledFixture {
 /**
  * Evaluates one element's parameters on their own. Links into other
  * elements cannot be followed, so mode masters and relations are ignored.
+ * The result is reused by the next evaluation of the same element.
  */
 export function evaluateElementChannels(
   element: FixtureElement,

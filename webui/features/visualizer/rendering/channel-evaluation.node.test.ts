@@ -267,6 +267,110 @@ test("physical relation chains compose", () => {
   near(channels[2][0]?.level, 0.25, "red × cell × group");
 });
 
+/**
+ * Verifies a real dimmer feeding a virtual pixel dimmer is not applied
+ * again: the console already folded the whole chain into the pixel's output.
+ */
+test("chains through a virtual dimmer are left to the console", () => {
+  const slots: DmxSlots = {
+    type: "Explicit",
+    data: { dmx_break: 1, offsets: [1] },
+  };
+  const follow = (element: number) => ({
+    relations: [
+      {
+        master: { element, attribute: { type: "Intensity" } as Attribute },
+        kind: RelationKind.Multiply,
+      },
+    ],
+  });
+  const elements: FixtureElement[] = [
+    {
+      label: "Body",
+      parameters: [parameter({ type: "Intensity" }, [fn("D", 0, 255)], slots)],
+    },
+    {
+      label: "Pixel",
+      parameters: [
+        parameter({ type: "Intensity" }, [fn("D", 0, 255, follow(0))], {
+          type: "Virtual",
+        }),
+        parameter({ type: "Red" }, [fn("R", 0, 255, follow(1))]),
+      ],
+    },
+  ];
+  // The console output red = 255 × body 0.5.
+  const channels = evaluateFixtureChannels(elements, [
+    { Intensity: 127.5 },
+    { Intensity: 255, Red: 127.5 },
+  ]);
+  near(channels[1][1]?.level, 0.5, "red as output by the console");
+});
+
+/**
+ * Verifies a dimmer that masters a non-emitter channel of its own element
+ * (here the shutter) still dims the element.
+ */
+test("dimmers mastering non-emitter channels still dim their element", () => {
+  resetDmxPool();
+  const elements: FixtureElement[] = [
+    {
+      label: "Head",
+      parameters: [
+        parameter({ type: "Intensity" }, [fn("Dimmer", 0, 255)]),
+        parameter({ type: "StrobeShutter" }, [
+          fn("Shutter1", 0, 255, {
+            relations: [
+              {
+                master: { element: 0, attribute: { type: "Intensity" } },
+                kind: RelationKind.Multiply,
+              },
+            ],
+          }),
+        ]),
+        // An open wheel slot lights the lamp white without additive color.
+        parameter({ type: "Custom", data: { label: "Color1" } }, [
+          fn("Color1", 0, 255, {
+            sets: [
+              {
+                name: "Open",
+                dmx_from: 0,
+                dmx_to: 255,
+                color: { x: 0.3127, y: 0.329, Y: 100 },
+              },
+            ],
+          }),
+        ]),
+      ],
+    },
+  ];
+  const [[, head]] = extractFixtureDmxData(elements, [
+    { Intensity: 0, StrobeShutter: 255, Color1: 0 },
+  ]);
+  near(head.intensity, 0, "dark with the dimmer at 0");
+});
+
+/** Verifies a virtual dimmer no relation mentions does not master the fixture. */
+test("unlinked virtual dimmers do not dim other elements", () => {
+  resetDmxPool();
+  const elements: FixtureElement[] = [
+    {
+      label: "Body",
+      parameters: [
+        parameter({ type: "Intensity" }, [fn("Dimmer", 0, 255)], {
+          type: "Virtual",
+        }),
+      ],
+    },
+    { label: "Pixel", parameters: [parameter({ type: "Red" })] },
+  ];
+  const [, [, pixel]] = extractFixtureDmxData(elements, [
+    { Intensity: 0 },
+    { Red: 255 },
+  ]);
+  near(pixel.intensity, 1, "pixel lit by its own output");
+});
+
 /** Verifies elements without a dimmer take brightness from their color once. */
 test("derived intensity rescales colors instead of squaring brightness", () => {
   resetDmxPool();
