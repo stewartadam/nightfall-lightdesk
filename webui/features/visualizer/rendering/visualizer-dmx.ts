@@ -421,7 +421,7 @@ export type LabelledElementDmx = [label: string, dmx: Record<string, number>];
  * Extracts visualizer values for every element of a fixture that has output.
  *
  * Channels are evaluated together so mode masters and relations can name
- * other elements. Dimmers no relation mentions master the elements that
+ * other elements. Dimmers that master no relation dim the elements that
  * have no dimmer of their own (see {@link fixtureDimmerLevel}).
  */
 export function extractFixtureDmxData(
@@ -453,7 +453,7 @@ export function elementDeclaresIntensityControl(
 
 /**
  * Derives the fixture-level dimmer from element outputs: the level of the
- * dimmers no relation mentions, or undefined when the fixture has none.
+ * dimmers that master no relation, or undefined when the fixture has none.
  */
 export function fixtureIntensityValueFromOutputs(
   elementOutputs: (Record<string, number> | undefined)[],

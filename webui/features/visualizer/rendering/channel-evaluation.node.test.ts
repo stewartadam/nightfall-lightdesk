@@ -371,6 +371,91 @@ test("unlinked virtual dimmers do not dim other elements", () => {
   near(pixel.intensity, 1, "pixel lit by its own output");
 });
 
+/**
+ * Verifies a dimmer an emitter follows in only one of its mode-dependent
+ * functions dims the element while the emitter's function without the
+ * relation is active, and reaches it through the relation otherwise.
+ */
+test("dimmers dim their element when the emitter's active function has no relation", () => {
+  const elements: FixtureElement[] = [
+    { label: "Base", parameters: [parameter(control)] },
+    {
+      label: "Head",
+      parameters: [
+        parameter({ type: "Intensity" }, [fn("Dimmer", 0, 255)]),
+        parameter({ type: "Red" }, [
+          fn("ColorAdd_R", 0, 255, {
+            mode_master: {
+              master: { element: 0, attribute: control },
+              dmx_from: 0,
+              dmx_to: 127,
+            },
+            relations: [
+              {
+                master: { element: 1, attribute: { type: "Intensity" } },
+                kind: RelationKind.Multiply,
+              },
+            ],
+          }),
+          fn("ColorAdd_R", 0, 255, {
+            mode_master: {
+              master: { element: 0, attribute: control },
+              dmx_from: 128,
+              dmx_to: 255,
+            },
+          }),
+        ]),
+      ],
+    },
+  ];
+  const head = (controlValue: number) => {
+    resetDmxPool();
+    const [, [, dmx]] = extractFixtureDmxData(elements, [
+      { Control: controlValue },
+      { Intensity: 51, Red: 255 },
+    ]);
+    return dmx;
+  };
+  near(head(10).intensity, 0.2, "dimmed through the relation");
+  near(head(200).intensity, 0.2, "dimmed as the element's own dimmer");
+  near(head(200).red, 1, "red at full while not following the dimmer");
+});
+
+/**
+ * Verifies a physical body dimmer that only follows a virtual master still
+ * dims pixels that do not follow it: following a channel says nothing about
+ * what the dimmer itself controls.
+ */
+test("body dimmers following a virtual master still master the fixture", () => {
+  resetDmxPool();
+  const elements: FixtureElement[] = [
+    {
+      label: "Body",
+      parameters: [
+        parameter({ type: "VirtualIntensity" }, [fn("Master", 0, 255)], {
+          type: "Virtual",
+        }),
+        parameter({ type: "Intensity" }, [
+          fn("Dimmer", 0, 255, {
+            relations: [
+              {
+                master: { element: 0, attribute: { type: "VirtualIntensity" } },
+                kind: RelationKind.Multiply,
+              },
+            ],
+          }),
+        ]),
+      ],
+    },
+    { label: "Pixel", parameters: [parameter({ type: "Red" })] },
+  ];
+  const [, [, pixel]] = extractFixtureDmxData(elements, [
+    { VirtualIntensity: 255, Intensity: 51 },
+    { Red: 255 },
+  ]);
+  near(pixel.intensity, 0.2, "pixel dimmed by the body dimmer");
+});
+
 /** Verifies elements without a dimmer take brightness from their color once. */
 test("derived intensity rescales colors instead of squaring brightness", () => {
   resetDmxPool();

@@ -57,8 +57,8 @@ export interface EvaluatedChannel {
   level: number;
   /**
    * Whether this parameter is a relation master of an emitter (color)
-   * channel in its own element, whose brightness it sets through that
-   * relation.
+   * channel in its own element through that emitter's active function, so
+   * it sets the emitter's brightness through that relation this evaluation.
    */
   mastersOwnEmitters: boolean;
 }
@@ -74,9 +74,9 @@ interface CompiledParameter {
   modeMasters: (ResolvedRef | undefined)[];
   /** Relation masters of each function with their kinds. */
   relations: { master: ResolvedRef; kind: RelationKind }[][];
-  /** Whether an emitter parameter in the same element follows this one. */
-  mastersOwnEmitters: boolean;
-  /** Whether this parameter masters or follows any relation. */
+  /** Whether this parameter emits light of its own color. */
+  emitter: boolean;
+  /** Whether this parameter is the master of any relation. */
   linked: boolean;
 }
 
@@ -88,9 +88,10 @@ interface CompiledFixture {
   /** Per element, per parameter. */
   parameters: CompiledParameter[][];
   /**
-   * Physical dimmers no relation mentions. A profile states what its linked
-   * dimmers control; an unlinked dimmer is assumed to master the whole
-   * fixture. Unlinked virtual dimmers never reach the fixture.
+   * Physical dimmers that master no relation. A profile states what a
+   * relation master controls; any other dimmer, including one that only
+   * follows another channel, is assumed to master the whole fixture.
+   * Virtual dimmers never reach the fixture.
    */
   unlinkedDimmers: ResolvedRef[];
   /** Evaluation result, per element and parameter. */
@@ -183,24 +184,18 @@ function compile(elements: FixtureElement[], linked: boolean): CompiledFixture {
         key: attributeOutputKey(parameter.attribute),
         modeMasters: functions.map((fn) => resolve(fn.mode_master?.master)),
         relations,
-        mastersOwnEmitters: false,
-        linked: relations.some((fnRelations) => fnRelations.length > 0),
+        emitter: isEmitter(parameter),
+        linked: false,
       };
     }),
   );
-  parameters.forEach((element, elementIndex) => {
-    element.forEach((parameter, parameterIndex) => {
-      const follower = elements[elementIndex].parameters[parameterIndex];
-      for (const relation of parameter.relations.flat()) {
-        const [masterElement, masterParameter] = relation.master;
-        const master = parameters[masterElement][masterParameter];
-        master.linked = true;
-        if (masterElement === elementIndex && isEmitter(follower)) {
-          master.mastersOwnEmitters = true;
-        }
+  for (const element of parameters) {
+    for (const parameter of element) {
+      for (const { master } of parameter.relations.flat()) {
+        parameters[master[0]][master[1]].linked = true;
       }
-    });
-  });
+    }
+  }
   const unlinkedDimmers: ResolvedRef[] = [];
   elements.forEach((element, elementIndex) => {
     element.parameters.forEach((parameter, parameterIndex) => {
@@ -219,16 +214,15 @@ function compile(elements: FixtureElement[], linked: boolean): CompiledFixture {
     channels: elements.map((element) =>
       element.parameters.map(() => undefined),
     ),
-    pool: elements.map((element, elementIndex) =>
-      element.parameters.map((parameter, parameterIndex) => ({
+    pool: elements.map((element) =>
+      element.parameters.map((parameter) => ({
         parameter,
         value: 0,
         dmx: 0,
         fraction: 0,
         physical: 0,
         level: 0,
-        mastersOwnEmitters:
-          parameters[elementIndex][parameterIndex].mastersOwnEmitters,
+        mastersOwnEmitters: false,
       })),
     ),
     resolved: elements.map(
@@ -394,6 +388,22 @@ function resolveLevel(
 }
 
 /**
+ * Flags the same-element masters of an emitter's active-function relations,
+ * so those dimmers reach the emitter through the relation rather than also
+ * dimming the element. Relations of inactive functions are not in effect.
+ */
+function markEmitterMasters(
+  element: (EvaluatedChannel | undefined)[],
+  elementIndex: number,
+  relations: { master: ResolvedRef; kind: RelationKind }[] | undefined,
+): void {
+  for (const { master } of relations ?? []) {
+    const masterChannel = master[0] === elementIndex && element[master[1]];
+    if (masterChannel) masterChannel.mastersOwnEmitters = true;
+  }
+}
+
+/**
  * Evaluates every parameter of a fixture using precompiled links, filling
  * the compiled fixture's reused buffers.
  */
@@ -422,6 +432,7 @@ function evaluate(
       channel.dmx = Math.round(
         normalizedOutput(parameter, value) * dmxMax(parameter),
       );
+      channel.mastersOwnEmitters = false;
       channels[elementIndex][index] = channel;
     }
   }
@@ -433,14 +444,20 @@ function evaluate(
     for (let index = 0; index < element.length; index++) {
       const channel = element[index];
       if (!channel) continue;
-      applyFunction(
+      const compiledParameter = compiled.parameters[elementIndex][index];
+      const functionIndex = activeFunctionIndex(
         channel,
-        activeFunctionIndex(
-          channel,
-          compiled.parameters[elementIndex][index].modeMasters,
-          channels,
-        ),
+        compiledParameter.modeMasters,
+        channels,
       );
+      applyFunction(channel, functionIndex);
+      if (compiledParameter.emitter && functionIndex !== undefined) {
+        markEmitterMasters(
+          element,
+          elementIndex,
+          compiledParameter.relations[functionIndex],
+        );
+      }
     }
   }
 
@@ -493,7 +510,7 @@ export function evaluateElementChannels(
 }
 
 /**
- * Returns the level of the dimmers no relation mentions, which the
+ * Returns the level of the dimmers that master no relation, which the
  * visualizer treats as mastering the whole fixture: the brightest of them,
  * 0 when none has output, or undefined when the fixture has none.
  */
