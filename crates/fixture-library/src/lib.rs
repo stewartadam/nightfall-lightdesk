@@ -25,6 +25,8 @@ pub mod manager;
 pub mod mesh;
 pub mod plugin;
 pub mod scanner;
+#[cfg(test)]
+mod test_support;
 pub mod watcher;
 pub mod websocket;
 

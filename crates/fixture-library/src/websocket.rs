@@ -23,11 +23,9 @@ use serde_json::Value;
 
 use crate::commands::{
     AvailableFixtureInfo, FixtureLibraryCommand, FixtureLibraryEntry, GetFixtureProfileResponse,
-    ListAvailableFixturesResponse,
+    LibraryFixtureInstance, ListAvailableFixturesResponse,
 };
-use crate::manager::{
-    FixtureLibraryManager, FixtureProfile, FixtureSource, fixture_source_version,
-};
+use crate::manager::{FixtureLibraryManager, FixtureProfile, FixtureSource};
 use crate::watcher::FixtureLibraryEvent;
 
 /// Wrapper for serializing fixture-library messages with the WebSocket wire format.
@@ -106,18 +104,51 @@ pub fn handle_fixture_library_commands(
                 label,
                 update_existing_ids,
                 update_existing_only,
-            } => create_fixture_from_library(
-                &mut commands,
-                &library,
-                &mut fixtures,
-                *id,
+            } => {
+                let instances = if *update_existing_only {
+                    Vec::new()
+                } else {
+                    vec![LibraryFixtureInstance {
+                        id: *id,
+                        label: label.clone(),
+                    }]
+                };
+                create_fixtures_from_library(
+                    &mut commands,
+                    &library,
+                    &mut fixtures,
+                    make,
+                    model,
+                    mode,
+                    &instances,
+                    update_existing_ids,
+                )
+            }
+            FixtureLibraryCommand::CreateFixturesFromLibrary {
                 make,
                 model,
                 mode,
-                label.as_deref(),
+                fixtures: instances,
                 update_existing_ids,
-                *update_existing_only,
-            ),
+            } => {
+                if instances.is_empty() {
+                    Err(CommandError::new(
+                        "fixture_library.no_fixtures",
+                        "No fixture instances were provided for creation",
+                    ))
+                } else {
+                    create_fixtures_from_library(
+                        &mut commands,
+                        &library,
+                        &mut fixtures,
+                        make,
+                        model,
+                        mode,
+                        instances,
+                        update_existing_ids,
+                    )
+                }
+            }
             FixtureLibraryCommand::UploadFixture { filename, content } => {
                 upload_fixture(&library, filename, content)
             }
@@ -166,7 +197,7 @@ fn list_available_fixtures(
     let fixtures = library
         .list_fixtures()
         .into_iter()
-        .map(available_fixture_info)
+        .map(|profile| available_fixture_info(library, profile))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| {
             CommandError::new(
@@ -196,7 +227,7 @@ fn get_fixture_profile(
             format!("Fixture {make} {model} does not exist in the library"),
         )
     })?;
-    let info = available_fixture_info(profile).map_err(|error| {
+    let info = available_fixture_info(library, profile).map_err(|error| {
         CommandError::new(
             "fixture_library.metadata_failed",
             format!("Failed to load fixture metadata: {error}"),
@@ -282,30 +313,46 @@ fn delete_fixtures(
     .with_details(serde_json::json!({ "errors": errors })))
 }
 
-/// Prepares, validates, and commits one fixture creation and its requested updates.
+/// Prepares, validates, and commits fixture creations and requested updates atomically.
+///
+/// Every created instance and updated fixture is validated before any is stored, so one
+/// rejected ID leaves the show unchanged. An empty instance list performs updates only.
 #[allow(clippy::too_many_arguments)]
-fn create_fixture_from_library(
+fn create_fixtures_from_library(
     commands: &mut Commands,
     library: &FixtureLibraryManager,
     fixtures: &mut FixtureDataProviderExt,
-    id: u32,
     make: &str,
     model: &str,
     mode: &str,
-    label: Option<&str>,
+    instances: &[LibraryFixtureInstance],
     update_existing_ids: &[u32],
-    update_existing_only: bool,
 ) -> Result<FixtureLibraryCommandSuccess, CommandError> {
-    if update_existing_only && update_existing_ids.is_empty() {
+    if instances.is_empty() && update_existing_ids.is_empty() {
         return Err(CommandError::new(
             "fixture_library.no_update_targets",
             "No existing fixture IDs were provided for fixture update",
         ));
     }
-    if !update_existing_only && fixtures.inner.from_id(id).is_ok() {
+    if let Some(instance) = instances
+        .iter()
+        .find(|instance| fixtures.inner.from_id(instance.id).is_ok())
+    {
         return Err(CommandError::new(
             "fixture_library.fixture_id_in_use",
-            format!("Fixture ID {id} is already in use"),
+            format!("Fixture ID {} is already in use", instance.id),
+        ));
+    }
+    if instances
+        .iter()
+        .map(|instance| instance.id)
+        .collect::<HashSet<_>>()
+        .len()
+        != instances.len()
+    {
+        return Err(CommandError::new(
+            "fixture_library.duplicate_fixture_id",
+            "A fixture ID was specified more than once",
         ));
     }
     if update_existing_ids.iter().collect::<HashSet<_>>().len() != update_existing_ids.len() {
@@ -321,51 +368,59 @@ fn create_fixture_from_library(
             format!("Fixture {make} {model} does not exist in the library"),
         )
     })?;
-    let asset_etag = fixture_profile_asset_etag(profile).map_err(|error| {
+    let asset_etag = profile_asset_etag(library, profile).map_err(|error| {
         CommandError::new(
             "fixture_library.fingerprint_failed",
             format!("Failed to fingerprint fixture source: {error}"),
         )
     })?;
-    let (mut template, _) = library
-        .create_fixture(make, model, mode, id)
-        .map_err(|error| {
-            CommandError::new(
-                "fixture_library.create_failed",
-                format!("Failed to create fixture: {error}"),
-            )
-        })?;
-    if let Some(label) = label {
-        template.identifiers.label = label.to_string();
-    }
-    template.library_asset_etag = Some(asset_etag.clone());
+    let instantiate = |id: u32| {
+        library
+            .create_fixture(make, model, mode, id)
+            .map(|(mut fixture, _)| {
+                fixture.library_asset_etag = Some(asset_etag.clone());
+                fixture
+            })
+            .map_err(|error| {
+                CommandError::new(
+                    "fixture_library.create_failed",
+                    format!("Failed to create fixture: {error}"),
+                )
+            })
+    };
+    let template = instantiate(0)?;
 
     let updates = update_existing_ids
         .iter()
         .map(|update_id| updated_fixture(fixtures, *update_id, &template, &asset_etag))
         .collect::<Result<Vec<_>, _>>()?;
-    for fixture in &updates {
+    let created = instances
+        .iter()
+        .map(|instance| {
+            let mut fixture = instantiate(instance.id)?;
+            if let Some(label) = &instance.label {
+                fixture.identifiers.label = label.clone();
+            }
+            Ok(fixture)
+        })
+        .collect::<Result<Vec<_>, CommandError>>()?;
+    for fixture in updates.iter().chain(&created) {
         fixtures
             .inner
             .validate_add(fixture)
             .map_err(|error| fixture_store_error(fixture.identifiers.id, error.to_string()))?;
     }
-    if !update_existing_only {
-        fixtures
-            .inner
-            .validate_add(&template)
-            .map_err(|error| fixture_store_error(id, error.to_string()))?;
-    }
 
     for fixture in updates {
         replace_fixture(commands, fixtures, fixture)?;
     }
-    if !update_existing_only {
+    for fixture in created {
+        let id = fixture.identifiers.id;
         fixtures
             .inner
-            .add(template.clone())
+            .add(fixture.clone())
             .map_err(|error| fixture_store_error(id, error.to_string()))?;
-        add_fixture_parameters(commands, fixtures, &template);
+        add_fixture_parameters(commands, fixtures, &fixture);
     }
     Ok(FixtureLibraryCommandSuccess::Applied)
 }
@@ -474,7 +529,7 @@ pub fn send_available_fixtures_on_change(
         let fixtures = library
             .list_fixtures()
             .iter()
-            .filter_map(|profile| match available_fixture_info(profile) {
+            .filter_map(|profile| match available_fixture_info(&library, profile) {
                 Ok(info) => Some(info),
                 Err(error) => {
                     tracing::warn!(
@@ -496,7 +551,10 @@ pub fn send_available_fixtures_on_change(
 }
 
 /// Converts a fixture profile into its transport-facing summary.
-fn available_fixture_info(profile: &FixtureProfile) -> Result<AvailableFixtureInfo, String> {
+fn available_fixture_info(
+    library: &FixtureLibraryManager,
+    profile: &FixtureProfile,
+) -> Result<AvailableFixtureInfo, String> {
     Ok(AvailableFixtureInfo {
         make: profile.make.clone(),
         model: profile.model.clone(),
@@ -506,19 +564,18 @@ fn available_fixture_info(profile: &FixtureProfile) -> Result<AvailableFixtureIn
             FixtureSource::Ofl(_) => "OFL".to_string(),
             FixtureSource::BuiltIn { .. } => "Built-in".to_string(),
         },
-        asset_etag: fixture_profile_asset_etag(profile)?,
+        asset_etag: profile_asset_etag(library, profile)?,
     })
 }
 
-/// Returns the deterministic version fingerprint for one fixture profile.
-fn fixture_profile_asset_etag(profile: &FixtureProfile) -> Result<String, String> {
-    match &profile.source {
-        FixtureSource::BuiltIn { asset_etag, .. } => Ok(asset_etag.clone()),
-        FixtureSource::Gdtf(_) | FixtureSource::Ofl(_) => {
-            fixture_source_version(&profile.file_path)
-                .map_err(|error| format!("{} ({})", error, profile.file_path.display()))
-        }
-    }
+/// Returns a profile's cached version fingerprint, naming the source file on failure.
+fn profile_asset_etag(
+    library: &FixtureLibraryManager,
+    profile: &FixtureProfile,
+) -> Result<String, String> {
+    library
+        .profile_asset_etag(profile)
+        .map_err(|error| format!("{} ({})", error, profile.file_path.display()))
 }
 
 #[cfg(test)]
@@ -721,6 +778,113 @@ mod tests {
             CommandOutcome::Failed(CommandError { ref code, .. })
                 if code == "fixture_library.fixture_not_found"
         ));
+    }
+
+    /// Builds a batch creation of the shared test GDTF for the given IDs, labelling each one.
+    fn create_test_gdtf_batch(ids: &[u32]) -> FixtureLibraryCommand {
+        use crate::test_support::{TEST_GDTF_MAKE, TEST_GDTF_MODE, TEST_GDTF_MODEL};
+        FixtureLibraryCommand::CreateFixturesFromLibrary {
+            make: TEST_GDTF_MAKE.to_string(),
+            model: TEST_GDTF_MODEL.to_string(),
+            mode: TEST_GDTF_MODE.to_string(),
+            fixtures: ids
+                .iter()
+                .map(|id| LibraryFixtureInstance {
+                    id: *id,
+                    label: Some(format!("Wash {id}")),
+                })
+                .collect(),
+            update_existing_ids: Vec::new(),
+        }
+    }
+
+    /// Verifies one batch command stores every GDTF instance with its own identity, label,
+    /// fingerprint, and parameter entities before success is published.
+    #[test]
+    fn batch_create_stores_every_instance() {
+        let temp_dir = TempDir::new().expect("temporary library directory should exist");
+        crate::test_support::write_test_gdtf(&temp_dir.path().join("test.gdtf"));
+        let mut app = fixture_library_app(&temp_dir);
+        submit_command(&mut app, create_test_gdtf_batch(&[10, 11, 12]));
+
+        app.update();
+
+        assert_eq!(take_result(&mut app).outcome, CommandOutcome::succeeded());
+        let fixtures = app.world().resource::<FixtureDataProviderExt>();
+        let stored = [10, 11, 12].map(|id| {
+            fixtures
+                .inner
+                .from_id(id)
+                .expect("batch instance should be stored")
+                .clone()
+        });
+        assert_eq!(
+            stored
+                .iter()
+                .map(|fixture| fixture.identifiers.uid)
+                .collect::<HashSet<_>>()
+                .len(),
+            3
+        );
+        for fixture in &stored {
+            assert_eq!(
+                fixture.identifiers.label,
+                format!("Wash {}", fixture.identifiers.id)
+            );
+            assert!(fixture.library_asset_etag.is_some());
+        }
+        let parameters_per_fixture: usize = stored[0]
+            .elements
+            .iter()
+            .map(|element| element.parameters.len())
+            .sum();
+        assert!(parameters_per_fixture > 0);
+        let world = app.world_mut();
+        assert_eq!(
+            world.query::<&Parameter>().iter(world).count(),
+            3 * parameters_per_fixture
+        );
+    }
+
+    /// Verifies a batch containing one occupied ID stores none of its instances.
+    #[test]
+    fn batch_create_with_occupied_id_is_atomic() {
+        let temp_dir = TempDir::new().expect("temporary library directory should exist");
+        crate::test_support::write_test_gdtf(&temp_dir.path().join("test.gdtf"));
+        let mut app = fixture_library_app(&temp_dir);
+        submit_command(&mut app, create_test_gdtf_batch(&[11]));
+        app.update();
+        take_result(&mut app);
+
+        submit_command(&mut app, create_test_gdtf_batch(&[10, 11]));
+        app.update();
+
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. })
+                if code == "fixture_library.fixture_id_in_use"
+        ));
+        let fixtures = app.world().resource::<FixtureDataProviderExt>();
+        assert!(fixtures.inner.from_id(10).is_err());
+    }
+
+    /// Verifies repeated IDs within one batch are rejected before anything is stored.
+    #[test]
+    fn batch_create_rejects_repeated_ids() {
+        let temp_dir = TempDir::new().expect("temporary library directory should exist");
+        crate::test_support::write_test_gdtf(&temp_dir.path().join("test.gdtf"));
+        let mut app = fixture_library_app(&temp_dir);
+        submit_command(&mut app, create_test_gdtf_batch(&[10, 10]));
+
+        app.update();
+
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. })
+                if code == "fixture_library.duplicate_fixture_id"
+        ));
+        let fixtures = app.world().resource::<FixtureDataProviderExt>();
+        assert!(fixtures.inner.from_id(10).is_err());
     }
 
     /// Verifies semantic deserialization preserves command and undo identities.

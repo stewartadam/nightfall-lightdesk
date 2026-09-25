@@ -141,43 +141,6 @@ pub fn convert_gdtf_to_fixture(
     Ok((fixture, geometry))
 }
 
-/// Extract geometry from a GDTF fixture for runtime materialization.
-///
-/// This extracts only the geometry tree without creating a full fixture,
-/// useful for materializing fixtures that were loaded from a showfile.
-pub fn get_gdtf_geometry(metadata: &GdtfMetadata, mode_name: &str) -> Result<FixtureGeometry> {
-    // Re-parse the GDTF file to access full data
-    let mut gdtf = metadata.reparse()?;
-
-    // Get the first fixture type (most GDTF files have only one)
-    let fixture_type = gdtf
-        .description
-        .fixture_types
-        .first()
-        .ok_or_else(|| FixtureLibraryError::Conversion("No fixture types found".to_string()))?;
-
-    // Find the requested DMX mode to get element geometry names
-    let dmx_mode = fixture_type
-        .dmx_modes
-        .iter()
-        .find(|mode| {
-            mode.name
-                .as_ref()
-                .map(|n| n.to_string() == mode_name)
-                .unwrap_or(false)
-        })
-        .ok_or_else(|| FixtureLibraryError::ModeNotFound {
-            make: metadata.manufacturer.clone(),
-            model: metadata.model.clone(),
-            mode: mode_name.to_string(),
-        })?;
-
-    // Extract geometry tree for 3D visualization
-    extract_geometry_tree(fixture_type, dmx_mode, &mut gdtf.resources, metadata).ok_or_else(|| {
-        FixtureLibraryError::Conversion("No geometry found in GDTF file".to_string())
-    })
-}
-
 /// Convert a GDTF logical channel to a parameter
 fn convert_logical_channel_to_parameter(
     logical_channel: &gdtf::dmx_mode::LogicalChannel,

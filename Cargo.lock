@@ -5286,6 +5286,7 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+ "zip",
 ]
 
 [[package]]
