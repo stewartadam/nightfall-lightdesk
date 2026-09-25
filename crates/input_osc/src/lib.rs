@@ -228,10 +228,7 @@ fn handle_osc_crud(
                             &serde_json::json!({ "replaced": displaced }),
                         )
                     }
-                    Err(error) => responder.fail(
-                        event.command_id,
-                        CommandError::new(error.code, error.message),
-                    ),
+                    Err(error) => responder.fail(event.command_id, error.into()),
                 }
             }
             OscCommand::DeleteMapping(id) => {

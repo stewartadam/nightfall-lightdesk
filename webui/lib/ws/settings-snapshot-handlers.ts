@@ -8,6 +8,7 @@
 
 import {
   applyActionCatalogSnapshot,
+  applyActionInvocationFailure,
   applyAvailableAudioDevicesSnapshot,
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
@@ -98,5 +99,9 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("ClientActionInvocation", (message) => {
     applyClientActionInvocation(message.data);
+  });
+
+  registry.register("ActionInvocationFailed", (message) => {
+    applyActionInvocationFailure(message.data);
   });
 }
