@@ -47,6 +47,7 @@ import {
 import {
   ActionInputKind,
   type ActionReference,
+  ActionSurface,
   ControlBehavior,
   type MidiMapping,
 } from "../../../types";
@@ -374,6 +375,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                     <ActionPicker
                       label="Action for last input"
                       inputKinds={MIDI_INPUT_KINDS}
+                      surface={ActionSurface.Midi}
                       includeUiActions
                       onChange={setLastEventAction}
                       onIncomplete={() => setLastEventAction(undefined)}
@@ -449,6 +451,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                 label="Selected mapping action"
                 value={row().mapping.action}
                 inputKinds={MIDI_INPUT_KINDS}
+                surface={ActionSurface.Midi}
                 includeUiActions
                 onChange={updateSelectedAction}
               />

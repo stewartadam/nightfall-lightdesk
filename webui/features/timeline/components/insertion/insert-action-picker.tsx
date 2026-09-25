@@ -32,7 +32,7 @@ import {
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
 import { actionCatalog } from "../../../../state/appStores";
 import type * as types from "../../../../types";
-import { ActionInputKind } from "../../../../types";
+import { ActionInputKind, ActionSurface } from "../../../../types";
 import { ActionPicker, actionsAccepting } from "../../../actions";
 import type {
   ActionTargetOption,
@@ -149,7 +149,11 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
             : "Clip Actions",
       available: hasTargetForAction(action, props.targets),
     })),
-    ...actionsAccepting($catalog(), [ActionInputKind.Trigger])
+    ...actionsAccepting(
+      $catalog(),
+      [ActionInputKind.Trigger],
+      ActionSurface.Timeline,
+    )
       .filter((entry) => !BUILT_IN_ACTION_IDS.has(entry.descriptor.id))
       .map((entry) => ({
         key: `registered:${entry.descriptor.id}`,
@@ -595,6 +599,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
                   : undefined
               }
               inputKinds={[ActionInputKind.Trigger]}
+              surface={ActionSurface.Timeline}
               onChange={setPendingReference}
               onIncomplete={() => setPendingReference(undefined)}
             />

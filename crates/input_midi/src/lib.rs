@@ -238,7 +238,7 @@ fn handle_midi_crud(
                 // Every MIDI control can drive every input kind through signal adaptation and
                 // reports releases.
                 match registry
-                    .validate_binding(&mapping.action, |_| true)
+                    .validate_binding(&mapping.action, ActionSurface::Midi, |_| true)
                     .and_then(|()| {
                         registry.validate_behavior(&mapping.action, mapping.behavior, true)
                     }) {

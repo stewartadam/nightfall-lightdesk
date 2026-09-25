@@ -48,6 +48,25 @@ Parameter kinds (`Clip`, `Master`, `Control`, `Timeline`, `Cue`, `Panel`,
 `Integer`, `Number`, `Text`) tell clients which picker to render and which UI
 target a click can capture.
 
+### Surfaces
+
+Every invocation carries the `ActionSurface` it came from (timeline, MIDI, OSC,
+command palette, keyboard, or websocket). Descriptors list the surfaces allowed
+to bind and invoke the action; all of them by default. Domains restrict an
+action that only makes sense in one context with
+`ActionDescriptor::with_surfaces`, such as `timeline.fire-cue`, whose transient
+playback lasts for the timeline action that placed it and is timeline-only.
+
+The restriction is enforced in three places:
+
+- `ActionRegistry::invoke` rejects invocations from other surfaces with
+  `action.surface_not_allowed` before the domain runs.
+- `ActionRegistry::validate_binding` takes the binding's surface, so MIDI and
+  OSC mapping upserts fail with the same code.
+- The catalog publishes each descriptor's `surfaces`, and Web UI pickers,
+  the command palette, and controller mapping mode only offer actions allowed on
+  the surface being bound.
+
 ### Controller behaviors
 
 Each MIDI or OSC mapping has a `ControlBehavior` that decides how the control's

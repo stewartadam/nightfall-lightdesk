@@ -8,7 +8,7 @@
 
 import { actionCatalog, pushToast } from "../../../state/appStores";
 import * as types from "../../../types";
-import { actionInputKind } from "../../actions";
+import { actionInputKind, actionReferenceAllowsSurface } from "../../actions";
 import { behaviorLabel } from "./binding-behaviors";
 import {
   midiMappingFromEvent,
@@ -24,17 +24,38 @@ import {
   disarmMappingSource,
 } from "./mapping-mode";
 
+/** Returns the action surface a binding from the armed control invokes through. */
+function armedSourceSurface(armed: ArmedSource): types.ActionSurface {
+  return armed.kind === "midi"
+    ? types.ActionSurface.Midi
+    : types.ActionSurface.Osc;
+}
+
+/** Returns whether the armed control's surface may bind the action at all. */
+function armedSourceAllows(
+  armed: ArmedSource,
+  action: types.ActionReference,
+): boolean {
+  return actionReferenceAllowsSurface(
+    actionCatalog.get(),
+    action,
+    armedSourceSurface(armed),
+  );
+}
+
 /**
- * Returns whether an armed control can report the releases a behavior needs.
+ * Returns whether an armed control can bind an action with a behavior.
  *
- * MIDI controls always report releases; OSC controls do when their touch recorded a release
- * value or reads an argument as a level or boolean.
+ * The action must allow the control's surface. MIDI controls always report releases; OSC
+ * controls do when their touch recorded a release value or reads an argument as a level or
+ * boolean.
  */
 export function armedSourceSupports(
   armed: ArmedSource,
   action: types.ActionReference,
   behavior: types.ControlBehavior,
 ): boolean {
+  if (!armedSourceAllows(armed, action)) return false;
   if (behavior === types.ControlBehavior.Press || armed.kind === "midi") {
     return true;
   }
@@ -63,6 +84,13 @@ export async function bindArmedSource(
   const { armed } = $mappingMode.get();
   if (!armed) {
     pushToast("info", "Move a MIDI or OSC control first, then click here.");
+    return false;
+  }
+  if (!armedSourceAllows(armed, action)) {
+    pushToast(
+      "info",
+      `${actionLabel} cannot be bound to a ${armed.kind === "midi" ? "MIDI" : "OSC"} control.`,
+    );
     return false;
   }
   const inputKind = actionInputKind(actionCatalog.get(), action);

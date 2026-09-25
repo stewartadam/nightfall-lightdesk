@@ -9,7 +9,9 @@
 export { ActionPicker } from "./components/action-picker";
 export {
   type ActionTargetNames,
+  actionAllowsSurface,
   actionInputKind,
+  actionReferenceAllowsSurface,
   actionReferencesEqual,
   actionsAccepting,
   buildActionReference,

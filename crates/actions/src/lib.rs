@@ -524,6 +524,98 @@ mod tests {
         assert_eq!(forwarded[0].input, ActionInput::Trigger);
     }
 
+    /// Registers a trigger action restricted to the timeline surface.
+    fn register_timeline_only_action(app: &mut App) {
+        app.register_action::<TestArguments, _>(
+            ActionDescriptor::new("test.timeline", "Timeline-only test", "Tests")
+                .with_surfaces([ActionSurface::Timeline]),
+            |world, arguments, _invocation| {
+                world.write_message(TestApplied(arguments.value as f32));
+                Ok(InvocationDispatch::succeeded())
+            },
+        );
+    }
+
+    /// Verifies a surface-restricted action runs from its allowed surface and is rejected,
+    /// without reaching the domain, from every other surface.
+    #[test]
+    fn restricted_action_rejects_disallowed_surfaces() {
+        let mut app = action_app();
+        register_timeline_only_action(&mut app);
+        let action = ActionReference::new("test.timeline", json!({ "value": 3 }));
+
+        let allowed = invoke(
+            &mut app,
+            ActionInvocation::trigger(action.clone(), ActionSurface::Timeline),
+        );
+        assert_eq!(allowed, InvocationOutcome::Succeeded { output: None });
+        assert_eq!(applied(&mut app), vec![TestApplied(3.0)]);
+
+        for surface in ActionSurface::ALL
+            .into_iter()
+            .filter(|surface| *surface != ActionSurface::Timeline)
+        {
+            let outcome = invoke(&mut app, ActionInvocation::trigger(action.clone(), surface));
+            assert!(
+                matches!(
+                    outcome,
+                    InvocationOutcome::Failed(InvocationError { ref code, .. })
+                        if code == "action.surface_not_allowed"
+                ),
+                "{surface:?} should be rejected, got {outcome:?}"
+            );
+        }
+        assert!(applied(&mut app).is_empty());
+    }
+
+    /// Verifies binding validation rejects surfaces an action does not allow.
+    #[test]
+    fn binding_validation_rejects_disallowed_surfaces() {
+        let mut app = action_app();
+        register_trigger_action(&mut app);
+        register_timeline_only_action(&mut app);
+        let registry = app.world().resource::<ActionRegistry>();
+        let restricted = ActionReference::new("test.timeline", json!({ "value": 1 }));
+        let unrestricted = ActionReference::new("test.apply", json!({ "value": 1 }));
+
+        let error = registry
+            .validate_binding(&restricted, ActionSurface::Midi, |_| true)
+            .expect_err("MIDI binding should be rejected");
+        assert_eq!(error.code, "action.surface_not_allowed");
+        assert!(
+            registry
+                .validate_binding(&restricted, ActionSurface::Timeline, |_| true)
+                .is_ok()
+        );
+        assert!(
+            registry
+                .validate_binding(&unrestricted, ActionSurface::Osc, |_| true)
+                .is_ok()
+        );
+    }
+
+    /// Verifies the catalog publishes each action's allowed surfaces, defaulting to all.
+    #[test]
+    fn catalog_lists_allowed_surfaces() {
+        let mut app = action_app();
+        register_trigger_action(&mut app);
+        register_timeline_only_action(&mut app);
+
+        let catalog = app.world().resource::<ActionRegistry>().catalog();
+        let surfaces = |id: &str| {
+            catalog
+                .iter()
+                .find(|entry| entry.descriptor.id.as_str() == id)
+                .map(|entry| entry.descriptor.surfaces.clone())
+        };
+
+        assert_eq!(surfaces("test.apply"), Some(ActionSurface::ALL.to_vec()));
+        assert_eq!(
+            surfaces("test.timeline"),
+            Some(vec![ActionSurface::Timeline])
+        );
+    }
+
     /// Verifies two domains cannot silently replace one another's stable action ID.
     #[test]
     #[should_panic(expected = "action 'test.apply' is already registered")]
