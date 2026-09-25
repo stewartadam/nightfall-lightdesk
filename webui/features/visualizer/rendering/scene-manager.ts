@@ -91,7 +91,7 @@ export class SceneManager {
   constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
     this.fixtureManager = new FixtureManager(scene, beamQuality);
     this.sceneObjectManager = new SceneObjectManager(scene);
-    this.beamManager = new BeamManager(beamQuality);
+    this.beamManager = new BeamManager(beamQuality, scene);
     this.beamUpdater = new BeamUpdater(this.beamManager);
     this.selectionHighlighter = new SelectionHighlighter(
       this.fixtureManager.getAllFixtureInstances(),
@@ -666,6 +666,7 @@ export class SceneManager {
   dispose(): void {
     this.selectionHighlighter.dispose();
     this.beamUpdater.dispose();
+    this.beamManager.destroy();
     this.fixtureManager.dispose();
     this.sceneObjectManager.dispose();
   }
