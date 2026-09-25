@@ -200,14 +200,14 @@ async function seedMappingStores(page: Page) {
         id: "00000000000000000000000000000001",
         device_name: "E2E Controller",
         source: { type: "Note", data: { channel: 0, note: 60 } },
-        edge: "Press",
+        behavior: "Press",
         action: { id: "clip.start", arguments: { clip: "1" } },
       },
       {
         id: "00000000000000000000000000000002",
         device_name: "E2E Controller",
         source: { type: "Note", data: { channel: 0, note: 61 } },
-        edge: "Release",
+        behavior: "Release",
         action: { id: "clip.stop", arguments: { clip: "1" } },
       },
     ]);
@@ -219,7 +219,7 @@ async function seedMappingStores(page: Page) {
         arg_index: 0,
         arg_value: "1",
         release_value: "0",
-        edge: "Press",
+        behavior: "Press",
         action: { id: "clip.go", arguments: { clip: "1" } },
       },
       {
@@ -228,7 +228,7 @@ async function seedMappingStores(page: Page) {
         address: "/e2e/stop",
         arg_index: 0,
         arg_value: "0",
-        edge: "Press",
+        behavior: "Press",
         action: { id: "clip.stop", arguments: { clip: "1" } },
       },
     ]);

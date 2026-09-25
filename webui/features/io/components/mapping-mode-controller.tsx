@@ -16,7 +16,8 @@ import { midiLastEvent, oscLastEvent } from "../../../state/appStores";
 import { midiSourceLabel } from "../model/controller-mapping-builders";
 import {
   $mappingMode,
-  armSource,
+  armMidiSource,
+  armOscSource,
   describeArmedSource,
   exitMappingMode,
   toggleMappingMode,
@@ -34,11 +35,10 @@ export function MappingModeController() {
   // Subscribe to the raw stores: every received message is a new value, even when it
   // repeats the previous control, so change notifications must not be deduplicated.
   const unsubscribeMidi = midiLastEvent.listen((event) => {
-    if (event?.source)
-      armSource({ kind: "midi", event: structuredClone(event) });
+    if (event?.source) armMidiSource(structuredClone(event));
   });
   const unsubscribeOsc = oscLastEvent.listen((event) => {
-    if (event) armSource({ kind: "osc", event: structuredClone(event) });
+    if (event) armOscSource(structuredClone(event));
   });
   onCleanup(() => {
     unsubscribeMidi();
@@ -82,13 +82,13 @@ export function MappingModeBanner() {
         <span>
           <Show
             when={$mode().armed}
-            fallback="Controller mapping: move a MIDI or OSC control to start."
+            fallback="Controller mapping: move a MIDI or OSC control, then click a highlighted control. Click one without moving a control to review its bindings."
           >
             {(armed) => (
               <>
                 Controller mapping:{" "}
                 {describeArmedSource(armed(), midiSourceLabel)} — click a
-                highlighted control to bind it.
+                highlighted control to choose how it binds.
               </>
             )}
           </Show>

@@ -7,48 +7,86 @@
  */
 
 import { actionCatalog, pushToast } from "../../../state/appStores";
-import type * as types from "../../../types";
+import * as types from "../../../types";
 import { actionInputKind } from "../../actions";
+import { behaviorLabel } from "./binding-behaviors";
 import {
   midiMappingFromEvent,
   midiSourceLabel,
-  oscMappingFromEvent,
+  oscMappingFromGesture,
+  oscMappingReportsRelease,
 } from "./controller-mapping-builders";
 import { upsertMidiMapping, upsertOscMapping } from "./controller-mappings";
-import { $mappingMode, describeArmedSource } from "./mapping-mode";
+import {
+  $mappingMode,
+  type ArmedSource,
+  describeArmedSource,
+  disarmMappingSource,
+} from "./mapping-mode";
 
 /**
- * Binds the armed MIDI or OSC source to an action and reports the result as a toast.
+ * Returns whether an armed control can report the releases a behavior needs.
  *
- * `actionLabel` describes the action in the confirmation. Returns whether a mapping was
- * stored; without an armed source the user is told to move a control first.
+ * MIDI controls always report releases; OSC controls do when their touch recorded a release
+ * value or reads an argument as a level or boolean.
+ */
+export function armedSourceSupports(
+  armed: ArmedSource,
+  action: types.ActionReference,
+  behavior: types.ControlBehavior,
+): boolean {
+  if (behavior === types.ControlBehavior.Press || armed.kind === "midi") {
+    return true;
+  }
+  return oscMappingReportsRelease(
+    oscMappingFromGesture(
+      armed,
+      action,
+      actionInputKind(actionCatalog.get(), action),
+      behavior,
+    ),
+  );
+}
+
+/**
+ * Binds the armed MIDI or OSC control to an action with a behavior.
+ *
+ * `actionLabel` describes the action in the confirmation toast. A stored binding disarms
+ * the control, so the next click cannot silently rebind it. Returns whether a mapping was
+ * stored; without an armed control the user is told to move one first.
  */
 export async function bindArmedSource(
   action: types.ActionReference,
   actionLabel: string,
+  behavior: types.ControlBehavior = types.ControlBehavior.Press,
 ): Promise<boolean> {
-  const armed = $mappingMode.get().armed;
+  const { armed } = $mappingMode.get();
   if (!armed) {
     pushToast("info", "Move a MIDI or OSC control first, then click here.");
     return false;
   }
+  const inputKind = actionInputKind(actionCatalog.get(), action);
   let stored = false;
   if (armed.kind === "osc") {
+    if (!armedSourceSupports(armed, action, behavior)) {
+      pushToast(
+        "info",
+        "Press and release the OSC control so its release can be recorded, then click here.",
+      );
+      return false;
+    }
     stored = await upsertOscMapping(
-      oscMappingFromEvent(
-        armed.event,
-        action,
-        actionInputKind(actionCatalog.get(), action),
-      ),
+      oscMappingFromGesture(armed, action, inputKind, behavior),
     );
   } else {
-    const mapping = midiMappingFromEvent(armed.event, action);
+    const mapping = midiMappingFromEvent(armed.event, action, behavior);
     stored = mapping ? await upsertMidiMapping(mapping) : false;
   }
   if (stored) {
+    disarmMappingSource();
     pushToast(
       "success",
-      `Mapped ${describeArmedSource(armed, midiSourceLabel)} to ${actionLabel}`,
+      `Bound ${describeArmedSource(armed, midiSourceLabel)} → ${actionLabel} · ${behaviorLabel(behavior, inputKind)}`,
     );
   }
   return stored;

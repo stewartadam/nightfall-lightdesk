@@ -216,6 +216,12 @@ test("OSC mappings to UI actions run on opted-in clients only", async ({
     )
     .toEqual(["ui.panel-OscInput"]);
   expect(await isPanelOpen(page, "OSC Input")).toBe(false);
+  // The binding's confirmation toast can cover the banner's Done button.
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Bound OSC /e2e/ui/osc-panel" })
+    .getByRole("button", { name: "Close" })
+    .click();
   await page.getByRole("button", { name: "Done" }).click();
 
   await sendOscPulse(port, "/e2e/ui/osc-panel");
