@@ -157,6 +157,7 @@ export function StepSelectFixture() {
                 make={fixture().make}
                 model={fixture().model}
                 mode={state().fixtureMode ?? undefined}
+                assetEtag={fixture().asset_etag}
               />
             )}
           </Show>

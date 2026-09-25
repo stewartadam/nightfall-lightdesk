@@ -20,6 +20,7 @@ import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import { fixtureWireLayout } from "../../../lib/dmx";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import {
   computeFixtureChannelCount,
   fetchFixtureProfile,
@@ -219,19 +220,19 @@ export function StepConfigure() {
     const fixture = selectedFixture();
     const mode = state().fixtureMode;
     if (fixture && mode) {
-      fetchFixtureProfile(fixture.make, fixture.model, mode);
+      fetchFixtureProfile(
+        fixture.make,
+        fixture.model,
+        mode,
+        fixture.asset_etag,
+      );
     }
   });
 
   const channelCount = createMemo(() => {
     const profile = $fixtureProfile();
     const fixture = selectedFixture();
-    if (
-      profile?.fixture &&
-      fixture &&
-      profile.info.make === fixture.make &&
-      profile.info.model === fixture.model
-    ) {
+    if (profileMatchesRevision(profile, fixture) && profile.fixture) {
       return computeFixtureChannelCount(profile.fixture);
     }
     return null;
