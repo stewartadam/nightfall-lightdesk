@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use bevy_ecs::prelude::*;
+use nightfall_fixtures::library::catalog;
 use nightfall_fixtures::prelude::{Fixture, FixtureGeometry};
 
 use crate::gdtf_metadata::GdtfMetadata;
@@ -211,11 +212,9 @@ impl FixtureLibraryManager {
                     });
                 }
 
-                nightfall_fixtures::library::create_fixture_from_library(id, make, model, mode)
-                    .map(|mut fixture| {
-                        fixture.mode = mode.to_string();
-                        (fixture, None)
-                    })
+                catalog::find_builtin_fixture_profile(make, model)
+                    .and_then(|builtin| builtin.create_fixture(id, mode))
+                    .map(|fixture| (fixture, None))
                     .ok_or_else(|| FixtureLibraryError::NotFound {
                         make: make.to_string(),
                         model: model.to_string(),
@@ -348,92 +347,18 @@ pub fn fixture_source_version(source_path: &Path) -> Result<String> {
 }
 
 /// Return built-in profiles that should be available even when no fixture files are installed.
-fn builtin_fixture_profiles() -> Vec<FixtureProfile> {
-    [
-        (
-            "Generic",
-            "100-segment LED Bar",
-            "RGB",
-            "builtin:generic-100-segment-led-bar:v1",
-        ),
-        (
-            "Generic",
-            "10-segment Rotating RGBW Bar",
-            "RGBW",
-            "builtin:generic-10-segment-rotating-rgbw-bar:v1",
-        ),
-        (
-            "Generic",
-            "12-segment RGBW Bar",
-            "RGBW",
-            "builtin:generic-12-segment-rgbw-bar:v1",
-        ),
-        (
-            "Generic",
-            "RGBPixelTape 180ch",
-            "RGB",
-            "builtin:generic-rgb-pixeltape-180ch:v1",
-        ),
-        (
-            "Generic",
-            "RGBPixelTape 120ch GRB",
-            "GRB",
-            "builtin:generic-rgb-pixeltape-120ch-grb:v1",
-        ),
-        (
-            "Generic",
-            "RGBPixelTape 120ch RGB",
-            "RGB",
-            "builtin:generic-rgb-pixeltape-120ch-rgb:v1",
-        ),
-        (
-            "Generic",
-            "Strobe Matrix 308ch",
-            "Strobe",
-            "builtin:generic-strobe-matrix-308ch:v1",
-        ),
-        (
-            "Generic",
-            "Strobe Matrix 312ch",
-            "Strobe",
-            "builtin:generic-strobe-matrix-312ch:v1",
-        ),
-        (
-            "Generic",
-            "RGB Strobe Bar 168ch",
-            "Strobe",
-            "builtin:generic-rgb-strobe-bar-168ch:v1",
-        ),
-        (
-            "Generic",
-            "12-segment Rotating Wash Beam",
-            "Beam",
-            "builtin:generic-12-segment-rotating-wash-beam:v1",
-        ),
-        (
-            "Generic",
-            "Moving Head Spot 16ch",
-            "Spot",
-            "builtin:generic-moving-head-spot-16ch:v1",
-        ),
-        (
-            "Generic",
-            "Moving Head RGBW",
-            "Spot",
-            "builtin:generic-moving-head-rgbw:v1",
-        ),
-    ]
-    .into_iter()
-    .map(|(make, model, mode, asset_etag)| FixtureProfile {
-        source: FixtureSource::BuiltIn {
-            mode: mode.to_string(),
-            asset_etag: asset_etag.to_string(),
-        },
-        make: make.to_string(),
-        model: model.to_string(),
-        file_path: PathBuf::new(),
-    })
-    .collect()
+fn builtin_fixture_profiles() -> impl Iterator<Item = FixtureProfile> {
+    catalog::builtin_fixture_profiles()
+        .iter()
+        .map(|profile| FixtureProfile {
+            source: FixtureSource::BuiltIn {
+                mode: profile.mode.to_string(),
+                asset_etag: profile.asset_etag.to_string(),
+            },
+            make: profile.make.to_string(),
+            model: profile.model.to_string(),
+            file_path: PathBuf::new(),
+        })
 }
 
 /// Format bytes as a stable FNV-1a hex fingerprint.

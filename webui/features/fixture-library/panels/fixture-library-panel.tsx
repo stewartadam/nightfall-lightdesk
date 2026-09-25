@@ -23,6 +23,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  Show,
 } from "solid-js";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import DataGrid, {
@@ -56,7 +57,7 @@ import {
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
-import { fixtureLibrary } from "../../../state/appStores";
+import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
 import type {
   FixtureLibraryCommand,
   FixtureLibraryEntry,
@@ -79,6 +80,12 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   const panelId = props.initialPanelId ?? props.id;
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $selectedFixture = useStore(fixtureLibrarySelectedFixture);
+  const capabilities = useStore(runtimeCapabilities);
+
+  /** Whether the runtime can import and delete fixture definition files. */
+  const canManageLibrary = createMemo(
+    () => capabilities()?.fixture_library === "Native",
+  );
 
   // Row selection state (for row checkboxes)
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -292,16 +299,18 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
           onFiltersChange={setTableFilters}
         />
         <ColumnVisibilityMenu scope={panelId} columns={columns} />
-        <ToolbarButton label="Upload fixture" onClick={triggerUpload}>
-          <PlusIcon class="size-4" aria-hidden />
-        </ToolbarButton>
-        <input
-          ref={fileInputRef}
-          type="file"
-          class="hidden"
-          accept=".gdtf,.json"
-          onChange={handleFileSelect}
-        />
+        <Show when={canManageLibrary()}>
+          <ToolbarButton label="Upload fixture" onClick={triggerUpload}>
+            <PlusIcon class="size-4" aria-hidden />
+          </ToolbarButton>
+          <input
+            ref={fileInputRef}
+            type="file"
+            class="hidden"
+            accept=".gdtf,.json"
+            onChange={handleFileSelect}
+          />
+        </Show>
       </DataGridToolbar>
 
       {/* Data grid */}

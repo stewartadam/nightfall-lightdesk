@@ -8,11 +8,24 @@
 
 //! Structural regression tests for built-in fixture profiles.
 
+use std::collections::HashSet;
+
+use bevy_ecs::message::Messages;
+use bevy_ecs::prelude::*;
+use bevy_ecs::world::CommandQueue;
 use nightfall_dmx::DmxValueResolution;
 use nightfall_dmx::prelude::{Attribute, ParameterUnit};
+use nightfall_engine::prelude::{CommandEnvelope, CommandError, CommandId, UndoId};
 
+use super::catalog::{
+    BUILTIN_SOURCE_FORMAT, builtin_fixture_profiles, find_builtin_fixture_profile,
+};
+use super::commands::{FixtureLibraryCommand, deserialize_fixture_library_command};
+use super::instantiate::{
+    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixture, initial_parameter_values,
+};
 use super::{create_fixture_from_library, moving_heads, normalize_fixture_profile, strobes};
-use crate::prelude::Fixture;
+use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter, ParameterMetadata};
 
 /// Calculates the non-virtual DMX footprint of a built-in fixture profile.
 fn footprint(fixture: &Fixture) -> u16 {
@@ -351,4 +364,199 @@ fn generic_tilt_fixtures_share_270_degree_tilt_range() {
     assert_eq!(spot_tilt.max, 270.0);
     assert_eq!(strobe_tilt.max, 270.0);
     assert_eq!(wash_tilt.max, 270.0);
+}
+
+/// Verifies every catalog entry is unique and instantiates in its advertised mode.
+#[test]
+fn builtin_catalog_profiles_instantiate_in_their_advertised_mode() {
+    let profiles = builtin_fixture_profiles();
+    assert_eq!(profiles.len(), 12);
+    let keys = profiles
+        .iter()
+        .map(|profile| (profile.make, profile.model))
+        .collect::<HashSet<_>>();
+    assert_eq!(keys.len(), profiles.len(), "catalog keys must be unique");
+
+    for profile in profiles {
+        let fixture = profile
+            .create_fixture(7, profile.mode)
+            .unwrap_or_else(|| panic!("{} should instantiate", profile.model));
+        assert_eq!(fixture.identifiers.id, 7);
+        assert_eq!(fixture.mode, profile.mode);
+        assert!(
+            !fixture.elements.is_empty(),
+            "{} has no elements",
+            profile.model
+        );
+        assert_eq!(
+            find_builtin_fixture_profile(profile.make, profile.model),
+            Some(profile)
+        );
+    }
+}
+
+/// Verifies a built-in profile refuses modes it never advertised.
+#[test]
+fn builtin_profile_rejects_unadvertised_mode() {
+    let profile = find_builtin_fixture_profile("Generic", "Moving Head Spot 16ch")
+        .expect("moving head spot should be cataloged");
+    assert!(profile.create_fixture(1, "Not A Mode").is_none());
+    assert!(find_builtin_fixture_profile("Generic", "Missing").is_none());
+}
+
+/// Verifies the transport summary labels built-ins and carries their version string.
+#[test]
+fn builtin_profile_info_reports_builtin_source() {
+    let profile = find_builtin_fixture_profile("Generic", "Moving Head Spot 16ch")
+        .expect("moving head spot should be cataloged");
+    let info = profile.info();
+    assert_eq!(info.source_format, BUILTIN_SOURCE_FORMAT);
+    assert_eq!(info.modes, vec!["Spot".to_string()]);
+    assert_eq!(info.asset_etag, "builtin:generic-moving-head-spot-16ch:v1");
+}
+
+/// Resolves the moving-head built-in as a library template for creation tests.
+fn moving_head_template(id: u32) -> Result<LibraryFixtureTemplate, CommandError> {
+    let profile = find_builtin_fixture_profile("Generic", "Moving Head Spot 16ch")
+        .expect("moving head spot should be cataloged");
+    Ok(LibraryFixtureTemplate {
+        fixture: profile
+            .create_fixture(id, profile.mode)
+            .expect("moving head spot should instantiate"),
+        asset_etag: profile.asset_etag.to_string(),
+    })
+}
+
+/// Runs one library fixture creation against a standalone store and applies its spawns.
+fn create_in_world(
+    world: &mut World,
+    fixtures: &mut FixtureDataProviderExt,
+    request: LibraryFixtureRequest<'_>,
+) -> Result<(), CommandError> {
+    let mut queue = CommandQueue::default();
+    let result = {
+        let mut commands = Commands::new(&mut queue, world);
+        create_library_fixture(&mut commands, fixtures, request, || {
+            moving_head_template(request.id)
+        })
+    };
+    queue.apply(world);
+    result
+}
+
+/// Verifies creation stores the labelled fixture and spawns one parameter per metadata entry.
+#[test]
+fn create_library_fixture_stores_fixture_and_spawns_parameters() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    create_in_world(
+        &mut world,
+        &mut fixtures,
+        LibraryFixtureRequest {
+            id: 42,
+            label: Some("Spot A"),
+            update_existing_ids: &[],
+            update_existing_only: false,
+        },
+    )
+    .expect("creation should succeed");
+
+    let stored = fixtures
+        .inner
+        .from_id(42)
+        .expect("fixture should be stored")
+        .clone();
+    assert_eq!(stored.identifiers.label, "Spot A");
+    assert_eq!(
+        stored.library_asset_etag.as_deref(),
+        Some("builtin:generic-moving-head-spot-16ch:v1")
+    );
+    let expected = stored
+        .elements
+        .iter()
+        .map(|element| element.parameters.len())
+        .sum::<usize>();
+    let parameters = fixtures.parameter_entities_for_fixture(stored.identifiers.uid);
+    assert_eq!(parameters.len(), expected);
+    assert!(
+        parameters
+            .iter()
+            .all(|parameter| world.get::<Parameter>(parameter.entity()).is_some()),
+        "every indexed parameter should exist as a spawned entity"
+    );
+}
+
+/// Verifies a fixture ID collision fails without mutating stored state.
+#[test]
+fn create_library_fixture_rejects_used_id() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    let request = LibraryFixtureRequest {
+        id: 5,
+        label: None,
+        update_existing_ids: &[],
+        update_existing_only: false,
+    };
+    create_in_world(&mut world, &mut fixtures, request).expect("first creation should succeed");
+
+    let error = create_in_world(&mut world, &mut fixtures, request)
+        .expect_err("duplicate ID should be rejected");
+    assert_eq!(error.code, "fixture_library.fixture_id_in_use");
+    assert_eq!(fixtures.inner.iter().count(), 1);
+}
+
+/// Verifies virtual intensity parameters start at full metadata scale.
+#[test]
+fn initial_parameter_values_sets_virtual_intensity_to_full() {
+    let metadata = ParameterMetadata {
+        attribute: Attribute::VirtualIntensity,
+        max: 512.0,
+        ..Default::default()
+    };
+    let values = initial_parameter_values(&metadata);
+    assert_eq!(values.default_value, 512.0);
+    assert_eq!(values.current_value, 512.0);
+    assert_eq!(values.highlight_value, 512.0);
+}
+
+/// Verifies ordinary parameters keep the standard runtime defaults.
+#[test]
+fn initial_parameter_values_keeps_non_virtual_defaults() {
+    let metadata = ParameterMetadata {
+        attribute: Attribute::White,
+        max: 512.0,
+        ..Default::default()
+    };
+    let values = initial_parameter_values(&metadata);
+    assert_eq!(values.default_value, 0.0);
+    assert_eq!(values.current_value, 0.0);
+    assert_eq!(values.highlight_value, 255.0);
+}
+
+/// Verifies semantic deserialization preserves command and undo identities.
+#[test]
+fn deserialize_fixture_library_command_writes_semantic_envelope() {
+    let mut world = World::new();
+    world.insert_resource(Messages::<CommandEnvelope<FixtureLibraryCommand>>::default());
+    let command_id = CommandId::new();
+    let undo_id = UndoId::new();
+    deserialize_fixture_library_command(
+        &mut world,
+        serde_json::json!({ "type": "RefreshLibrary" }),
+        command_id,
+        undo_id,
+    )
+    .expect("fixture-library command should deserialize");
+
+    let messages = world
+        .resource_mut::<Messages<CommandEnvelope<FixtureLibraryCommand>>>()
+        .drain()
+        .collect::<Vec<_>>();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].command_id, command_id);
+    assert_eq!(messages[0].undo_id, undo_id);
+    assert!(matches!(
+        messages[0].command,
+        FixtureLibraryCommand::RefreshLibrary
+    ));
 }
