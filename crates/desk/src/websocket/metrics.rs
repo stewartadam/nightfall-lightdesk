@@ -26,7 +26,11 @@ pub fn send_metrics(
             .and_then(|diagnostic| diagnostic.smoothed())
     };
     let active_layers = layer_query.iter().count() as u32;
-    let active_universes = dmx_universes.universe_ids().count() as u32;
+    let active_universes = dmx_universes
+        .output_universe_keys()
+        .map(|(_, universe_id)| universe_id)
+        .collect::<std::collections::HashSet<_>>()
+        .len() as u32;
 
     let metrics = DeskMetrics {
         fps: diagnostics

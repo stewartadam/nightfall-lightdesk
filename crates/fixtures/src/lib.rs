@@ -66,8 +66,9 @@ pub mod prelude {
     pub use crate::bindings::{
         ConsoleDmxAddress, ConsoleDmxAddresses, DisabledBinding, DisabledBindings, DmxRange,
         InputBinding, InputBindings, InputSource, InputTarget, OutputBinding, OutputBindings,
-        OutputDestination, OutputSource, OutputTarget, ResolvedConsoleTarget, ResolvedInputBinding,
-        ResolvedInputBindings, ResolvedInputDestination, ResolvedInputSource, ResolvedInputTarget,
+        OutputDestination, OutputSource, OutputTarget, ResolvedConsoleDestination,
+        ResolvedConsoleTarget, ResolvedInputBinding, ResolvedInputBindings,
+        ResolvedInputDestination, ResolvedInputSource, ResolvedInputTarget,
         ResolvedOutputDestinations, ResolvedTransportTarget,
     };
     pub use crate::compositor::{

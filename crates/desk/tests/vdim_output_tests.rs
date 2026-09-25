@@ -18,6 +18,14 @@ use nightfall_fixtures::universe::dmx_universes;
 use nightfall_io::prelude::*;
 use uuid::Uuid;
 
+/// Reads one channel of the multicast sACN universe 1 output buffer.
+fn sacn_output_value(universes: &ConsoleDmxUniverses, address: u16) -> ChannelDmxValue {
+    let transport = OutputTransport::Sacn {
+        mode: SacnDelivery::Multicast,
+    };
+    universes.get_output_universe(&transport, 1)[(address - 1) as usize]
+}
+
 fn param(attribute: Attribute, merge_type: MergeStrategy) -> ParameterMetadata {
     ParameterMetadata {
         native_unit: attribute.native_unit(),
@@ -188,8 +196,8 @@ fn virtual_intensity_scales_higher_priority_color_output() {
         white.values.current_value
     );
 
-    let red_dmx = universes.get_value(1, 1).unwrap();
-    let white_dmx = universes.get_value(1, 2).unwrap();
+    let red_dmx = sacn_output_value(universes, 1);
+    let white_dmx = sacn_output_value(universes, 2);
     assert!(
         red_dmx < 255,
         "expected red DMX output to be scaled below full, got {red_dmx}"
@@ -224,12 +232,12 @@ fn virtual_intensity_scales_higher_priority_color_output() {
         "expected white current value to stay {expected_color}, got {white_after_stable_update}"
     );
     assert_eq!(
-        stable_universes.get_value(1, 1).unwrap(),
+        sacn_output_value(stable_universes, 1),
         red_dmx,
         "expected stable red DMX output to be reused"
     );
     assert_eq!(
-        stable_universes.get_value(1, 2).unwrap(),
+        sacn_output_value(stable_universes, 2),
         white_dmx,
         "expected stable white DMX output to be reused"
     );
@@ -335,7 +343,7 @@ fn virtual_intensity_above_full_is_capped_before_scaling_color_output() {
         "expected over-full virtual intensity to preserve color value instead of amplifying it"
     );
     assert_eq!(
-        universes.get_value(1, 1).unwrap(),
+        sacn_output_value(universes, 1),
         128,
         "expected red DMX output to stay at authored color level"
     );

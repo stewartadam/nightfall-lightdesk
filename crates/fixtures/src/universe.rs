@@ -181,6 +181,36 @@ impl Default for ConsoleUniverse {
     }
 }
 
+/// Returns whether a 1-indexed DMX address lies inside a universe.
+fn is_valid_address(address: u16) -> bool {
+    address != 0 && address as usize <= MAX_CHANNELS_PER_UNIVERSE
+}
+
+/// Writes `values` into consecutive channels of `universe` starting at a 1-indexed `address`.
+///
+/// Channels past the end of the universe are skipped with a warning.
+fn write_channel_window(
+    universe: &mut ConsoleUniverse,
+    universe_id: u16,
+    address: u16,
+    values: &[ChannelDmxValue],
+    origin: ConsoleChannelOrigin,
+) {
+    for (offset, value) in values.iter().enumerate() {
+        let channel = address as usize + offset;
+        if channel == 0 || channel > MAX_CHANNELS_PER_UNIVERSE {
+            tracing::warn!(
+                universe_id,
+                address = channel,
+                "Address is invalid, skipping"
+            );
+            continue;
+        }
+        universe.values[channel - 1] = *value;
+        universe.origins[channel - 1] = Some(origin);
+    }
+}
+
 /// Aggregates transport metadata per universe from resolved output destinations.
 /// A universe may be associated with multiple transports when different address ranges
 /// are routed to different outputs (e.g., 1:0-120 on sACN, 1:121-511 on Art-Net).
@@ -228,6 +258,14 @@ impl UniverseTransportMap {
 }
 
 /// Console DMX universe space with per-channel origin metadata.
+///
+/// Holds two numbering spaces:
+/// - console universes, keyed by console numbering: fixture values at their console
+///   addresses, manual `ch` writes, and input bindings targeting the console;
+/// - output universes, keyed by concrete transport and on-the-wire universe numbering.
+///
+/// Output drivers fall back to the console universe with the same number when a transport
+/// universe has no dedicated output buffer.
 #[derive(Default, Resource)]
 pub struct ConsoleDmxUniverses {
     universes: HashMap<u16, ConsoleUniverse>,
@@ -235,6 +273,76 @@ pub struct ConsoleDmxUniverses {
 }
 
 impl ConsoleDmxUniverses {
+    /// Writes consecutive console channel values starting at a 1-indexed address.
+    ///
+    /// Values that would fall past the end of the universe are dropped with a warning.
+    pub fn set_values(
+        &mut self,
+        universe_id: u16,
+        address: u16,
+        values: &[ChannelDmxValue],
+        origin: ConsoleChannelOrigin,
+    ) {
+        if !is_valid_address(address) {
+            tracing::warn!(universe_id, address, "Address is invalid, skipping");
+            return;
+        }
+        let universe = self.universes.entry(universe_id).or_default();
+        write_channel_window(universe, universe_id, address, values, origin);
+    }
+
+    /// Writes consecutive channel values for one output transport starting at a 1-indexed address.
+    pub fn set_output_values(
+        &mut self,
+        transport: &OutputTransport,
+        universe_id: u16,
+        address: u16,
+        values: &[ChannelDmxValue],
+        origin: ConsoleChannelOrigin,
+    ) {
+        if !is_valid_address(address) {
+            tracing::warn!(universe_id, address, "Address is invalid, skipping");
+            return;
+        }
+        let universe = self
+            .output_universes
+            .entry((transport.clone(), universe_id))
+            .or_default();
+        write_channel_window(universe, universe_id, address, values, origin);
+    }
+
+    /// Copies every written channel of one transport's output buffer onto `target`.
+    ///
+    /// Returns whether the buffer exists. Unwritten channels leave `target` untouched so
+    /// several buffers of the same transport family can be merged into one view.
+    pub fn overlay_output_universe(
+        &self,
+        transport: &OutputTransport,
+        universe_id: u16,
+        target: &mut [ChannelDmxValue],
+    ) -> bool {
+        let Some(universe) = self.output_universes.get(&(transport.clone(), universe_id)) else {
+            return false;
+        };
+        for ((target, value), origin) in target
+            .iter_mut()
+            .zip(universe.values.iter())
+            .zip(universe.origins.iter())
+        {
+            if origin.is_some() {
+                *target = *value;
+            }
+        }
+        true
+    }
+
+    /// Iterates the transport and wire universe number of every output buffer.
+    pub fn output_universe_keys(&self) -> impl Iterator<Item = (&OutputTransport, u16)> {
+        self.output_universes
+            .keys()
+            .map(|(transport, universe_id)| (transport, *universe_id))
+    }
+
     /// Sets a DMX channel value with explicit origin metadata.
     /// Address is 1-indexed (DMX convention).
     pub fn set_value(
@@ -411,84 +519,52 @@ fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
     (normalized * dmx_max as ParameterDmxValue).round() as u32
 }
 
-fn write_parameter_to_console_universe(
-    universes: &mut ConsoleDmxUniverses,
-    transport: Option<&OutputTransport>,
-    universe_id: u16,
-    address: u16,
-    parameter: &Parameter,
-    origin: ConsoleChannelOrigin,
-) {
-    let dmx_value = parameter_to_dmx_value(parameter);
-
-    if parameter.metadata.resolution >= DmxValueResolution::Coarse {
-        let coarse = match parameter.metadata.resolution {
-            DmxValueResolution::Coarse => dmx_value as ChannelDmxValue,
-            DmxValueResolution::Fine => (dmx_value >> 8) as ChannelDmxValue,
-            DmxValueResolution::UltraFine => (dmx_value >> 16) as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 24) as ChannelDmxValue,
-        };
-        universes.set_value(universe_id, address, coarse, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address, coarse, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::Fine {
-        let fine = match parameter.metadata.resolution {
-            DmxValueResolution::Fine => dmx_value as ChannelDmxValue,
-            DmxValueResolution::UltraFine => (dmx_value >> 8) as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 16) as ChannelDmxValue,
-            _ => 0,
-        };
-        universes.set_value(universe_id, address + 1, fine, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address + 1, fine, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::UltraFine {
-        let ultra = match parameter.metadata.resolution {
-            DmxValueResolution::UltraFine => dmx_value as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 8) as ChannelDmxValue,
-            _ => 0,
-        };
-        universes.set_value(universe_id, address + 2, ultra, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address + 2, ultra, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::Uber {
-        universes.set_value(
-            universe_id,
-            address + 3,
-            dmx_value as ChannelDmxValue,
-            origin,
-        );
-        if let Some(transport) = transport {
-            universes.set_output_value(
-                transport.clone(),
-                universe_id,
-                address + 3,
-                dmx_value as ChannelDmxValue,
-                origin,
-            );
-        }
-    }
+/// Encodes a parameter's current value as its big-endian DMX channel bytes.
+///
+/// Returns a fixed buffer plus the number of leading bytes that are meaningful; the slice
+/// `bytes[4 - width..]` holds coarse through finest channel values in DMX order.
+fn parameter_dmx_bytes(parameter: &Parameter) -> ([ChannelDmxValue; 4], usize) {
+    let width = parameter.metadata.resolution.channel_width() as usize;
+    (
+        parameter_to_dmx_value(parameter).to_be_bytes(),
+        width.min(4),
+    )
 }
 
-/// Organizes DMX values from parameters into universes according to resolved destinations.
+/// Writes parameter values into console space and each resolved transport output buffer.
+///
+/// Console-space values are keyed by console universe numbering (from console bindings),
+/// while transport buffers are keyed by on-the-wire universe numbering.
 pub fn dmx_universes(
-    query: Query<(InstanceRef<Parameter>, Option<&ResolvedOutputDestinations>)>,
+    query: Query<(
+        InstanceRef<Parameter>,
+        Option<&ResolvedOutputDestinations>,
+        Option<&ResolvedConsoleDestination>,
+    )>,
     mut universes: ResMut<ConsoleDmxUniverses>,
 ) {
-    for (parameter, destinations) in &query {
-        let Some(destinations) = destinations else {
+    for (parameter, destinations, console_destination) in &query {
+        let console_address = console_destination.and_then(|console| console.address);
+        let destinations = destinations
+            .map(|destinations| destinations.destinations.as_slice())
+            .unwrap_or_default();
+        if console_address.is_none() && destinations.is_empty() {
             continue;
-        };
+        }
 
-        for destination in &destinations.destinations {
+        let (bytes, width) = parameter_dmx_bytes(&parameter);
+        let channels = &bytes[bytes.len() - width..];
+
+        if let Some(console_address) = console_address {
+            universes.set_values(
+                console_address.universe,
+                console_address.address,
+                channels,
+                ConsoleChannelOrigin::OutputBinding,
+            );
+        }
+
+        for destination in destinations {
             if destination.address == 0 {
                 tracing::warn!(
                     attribute = ?parameter.metadata.attribute,
@@ -497,12 +573,11 @@ pub fn dmx_universes(
                 );
             }
 
-            write_parameter_to_console_universe(
-                &mut universes,
-                Some(&destination.transport),
+            universes.set_output_values(
+                &destination.transport,
                 destination.universe,
                 destination.address,
-                &parameter,
+                channels,
                 ConsoleChannelOrigin::OutputBinding,
             );
         }

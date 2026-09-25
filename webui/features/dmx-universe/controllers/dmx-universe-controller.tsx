@@ -8,7 +8,10 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo } from "solid-js";
-import { buildFixturePatchMapFromBindings } from "../../../lib/binding-utils";
+import {
+  buildFixturePatchMapFromBindings,
+  type FixturePatchEntry,
+} from "../../../lib/binding-utils";
 import { fixtureValueTransitionColor } from "../../../lib/datagrid";
 import { fixtureValueSourceState } from "../../../lib/fixture-value-state";
 import { layerHasTransitioningAttribute } from "../../../lib/layer-transition-state";
@@ -33,6 +36,8 @@ import {
   getAttributeName,
   getChannelWidth,
   normalizeFixtureJumpAttributeSearch,
+  normalizeSelectedTransport,
+  outputTransportMatchesSelection,
 } from "../model/dmx-universe-model";
 import { createDmxChannelNavigationController } from "./dmx-channel-navigation-controller";
 import { createDmxFixtureJumpController } from "./dmx-fixture-jump-controller";
@@ -84,24 +89,14 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
     ),
   );
 
-  /** Maps the selected display transport onto binding transport variants. */
-  const transportFilter = createMemo(() => {
-    if (ioMode() !== DmxIoMode.Output) return null;
-    const transport = selectedTransport();
-    if (!transport || transport === "Console") return null;
-    switch (transport) {
-      case "sACN":
-        return "Sacn";
-      case "Art-Net":
-        return "ArtNet";
-      case "USB":
-        return "Udmx";
-      case "Disabled":
-        return "Disabled";
-      default:
-        return null;
-    }
-  });
+  /** Maps the selected output numbering space onto its patch selection key. */
+  const outputSpace = createMemo(() =>
+    normalizeSelectedTransport(selectedTransport()),
+  );
+
+  /** Returns whether a patch location belongs to the selected numbering space. */
+  const patchInSelectedSpace = (patch: FixturePatchEntry) =>
+    outputTransportMatchesSelection(patch.transport, outputSpace());
 
   /** Indexes visible DMX addresses by their patched fixture parameter. */
   const channelToFixture = createMemo(() => {
@@ -110,7 +105,6 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
     const universeId = selectedUniverse();
     if (universeId === null) return map;
-    const transport = transportFilter();
 
     for (const [fixtureUid, patchByElement] of Object.entries(patchData())) {
       const fixture = $fixtures()[fixtureUid];
@@ -125,7 +119,7 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
         for (const patch of patches) {
           if (patch.universe !== universeId) continue;
-          if (transport && patch.transport?.type !== transport) continue;
+          if (!patchInSelectedSpace(patch)) continue;
 
           let currentAddress = patch.address;
 
@@ -174,7 +168,6 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
     if (ioMode() !== DmxIoMode.Output) return [];
     const visibleUniverseIds = new Set(universeIds());
     if (visibleUniverseIds.size === 0) return [];
-    const transport = transportFilter();
     const targets: FixtureJumpTarget[] = [];
     const seenFixtureUniverses = new Set<string>();
     const seenElementUniverses = new Set<string>();
@@ -190,7 +183,7 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
         for (const patch of patches) {
           if (!visibleUniverseIds.has(patch.universe)) continue;
-          if (transport && patch.transport?.type !== transport) continue;
+          if (!patchInSelectedSpace(patch)) continue;
 
           const targetKey = `${fixture.identifiers.id}:${patch.universe}`;
           if (!seenFixtureUniverses.has(targetKey)) {
@@ -252,7 +245,6 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
     const universeId = selectedUniverse();
     if (universeId === null) return channels;
-    const transport = transportFilter();
 
     const selection = $programmerSelection();
     if (selection.length === 0) return channels;
@@ -276,7 +268,7 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
         for (const patch of patches) {
           if (patch.universe !== universeId) continue;
-          if (transport && patch.transport?.type !== transport) continue;
+          if (!patchInSelectedSpace(patch)) continue;
 
           let currentAddress = patch.address;
 

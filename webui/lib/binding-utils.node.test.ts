@@ -153,3 +153,134 @@ test("buildFixturePatchMapFromBindings resolves custom network dmx targets", () 
     },
   });
 });
+
+/** Builds a one-element RGB fixture occupying three coarse channels. */
+function makeRgbFixture(uid: string, id: number): types.Fixture {
+  return {
+    identifiers: { id, uid, label: `Fixture ${id}` },
+    make: "Test",
+    model: "RGB",
+    mode: "3ch",
+    elements: [
+      {
+        label: "Cell",
+        parameters: [
+          makeParam({ type: "Red" }),
+          makeParam({ type: "Green" }),
+          makeParam({ type: "Blue" }),
+        ],
+      },
+    ],
+  };
+}
+
+/** Builds a fixture→console binding for consecutive fixtures at one console address. */
+function consoleBinding(
+  uids: string[],
+  universe: number,
+  address: number,
+): types.OutputBinding {
+  return {
+    source: { type: "Fixture", data: { uids } },
+    target: {
+      type: "Console",
+      data: { universe: { start: universe, end: universe }, address },
+    },
+    priority: 0,
+    clone: false,
+  };
+}
+
+test("buildFixturePatchMapFromBindings lays console-bound fixtures out in console space", () => {
+  const fixtures = {
+    a: makeRgbFixture("a", 1),
+    b: makeRgbFixture("b", 2),
+  };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [consoleBinding(["a", "b"], 2, 121)],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+
+  assert.deepEqual(patchMap.a["1"], [
+    { universe: 2, address: 121, transport: null },
+  ]);
+  assert.deepEqual(patchMap.b["1"], [
+    { universe: 2, address: 124, transport: null },
+  ]);
+});
+
+test("buildFixturePatchMapFromBindings remaps console passthrough to wire numbering", () => {
+  const fixtures = { a: makeRgbFixture("a", 1) };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      consoleBinding(["a"], 2, 121),
+      {
+        source: {
+          type: "Console",
+          data: { universe: { start: 2, end: 2 } },
+        },
+        target: {
+          type: "Transport",
+          data: { target: "sacn", universe: { start: 10, end: 10 } },
+        },
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+
+  assert.deepEqual(patchMap.a["1"], [
+    { universe: 2, address: 121, transport: null },
+    {
+      universe: 10,
+      address: 121,
+      transport: { type: "Sacn", data: { mode: { type: "Multicast" } } },
+    },
+  ]);
+});
+
+test("buildFixturePatchMapFromBindings applies the highest-priority console binding", () => {
+  const fixtures = { a: makeRgbFixture("a", 1) };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      { ...consoleBinding(["a"], 3, 1), priority: 5 },
+      consoleBinding(["a"], 2, 1),
+    ],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+
+  assert.deepEqual(patchMap.a["1"], [
+    { universe: 3, address: 1, transport: null },
+  ]);
+});
+
+test("buildFixturePatchMapFromBindings skips console bindings for disabled fixtures", () => {
+  const fixtures = { a: makeRgbFixture("a", 1) };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      consoleBinding(["a"], 2, 1),
+      {
+        source: { type: "Fixture", data: { uids: ["a"] } },
+        target: { type: "Disabled" },
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+
+  assert.equal(patchMap.a, undefined);
+});

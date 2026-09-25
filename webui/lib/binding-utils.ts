@@ -14,10 +14,19 @@ import {
   outputTransportForOutputTargetId,
 } from "./network-dmx-output-targets";
 
-type FixturePatchEntry = {
+/**
+ * One element's patch location. `transport` is `null` for console-space addresses
+ * (console numbering); otherwise it is the output transport using wire numbering.
+ */
+export type FixturePatchEntry = {
   universe: number;
   address: number;
-  transport?: types.OutputTransport;
+  transport: types.OutputTransport | null;
+};
+
+type ConsoleAddress = {
+  universe: number;
+  address: number;
 };
 
 export type FixturePatchMap = Record<
@@ -329,17 +338,9 @@ export function buildFixturePatchMapFromBindings(
       const fixtureOffset = binding.clone ? 0 : runningAddress - baseAddress;
 
       for (const element of layout.elements) {
-        const elementAddress = baseAddress + fixtureOffset + element.offset;
-        if (!patchMap[uid]) {
-          patchMap[uid] = {};
-        }
-        const elementId = String(element.elementId);
-        if (!patchMap[uid][elementId]) {
-          patchMap[uid][elementId] = [];
-        }
-        patchMap[uid][elementId].push({
+        pushPatchEntry(patchMap, uid, element.elementId, {
           universe: targetUniverse,
-          address: elementAddress,
+          address: baseAddress + fixtureOffset + element.offset,
           transport: outputTransport,
         });
       }
@@ -350,5 +351,167 @@ export function buildFixturePatchMapFromBindings(
     }
   }
 
+  const consoleAddresses = resolveConsoleAddresses(
+    snapshot,
+    layoutCache,
+    disabledSources,
+  );
+  for (const [uid, consoleAddress] of consoleAddresses) {
+    const layout = collectFixtureLayout(layoutCache[uid]);
+    for (const element of layout.elements) {
+      pushPatchEntry(patchMap, uid, element.elementId, {
+        universe: consoleAddress.universe,
+        address: consoleAddress.address + element.offset,
+        transport: null,
+      });
+    }
+  }
+
+  for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
+    if (binding.source.type !== "Console") continue;
+    if (binding.target.type !== "Transport") continue;
+    if (
+      disabledSources.some((source) =>
+        outputSourceMatches(binding.source, source),
+      )
+    ) {
+      continue;
+    }
+
+    const targetData = binding.target.data;
+    const outputTransport = outputTargetIdToTransport(
+      targetData.target,
+      networkDmxOutputs,
+      usbDmxOutputs,
+    );
+    if (!outputTransport) continue;
+
+    const sourceData = binding.source.data;
+    let sourceUniverses = expandRange(sourceData.universe);
+    if (sourceUniverses.length === 0) {
+      const consoleUniverses = new Set(
+        Array.from(consoleAddresses.values(), (address) => address.universe),
+      );
+      sourceUniverses =
+        consoleUniverses.size > 0
+          ? Array.from(consoleUniverses).sort((a, b) => a - b)
+          : [DEFAULT_UNIVERSE];
+    }
+    const explicitTargetUniverses = expandRange(targetData.universe);
+    const targetUniverses =
+      explicitTargetUniverses.length > 0
+        ? explicitTargetUniverses
+        : sourceUniverses;
+    const sourceBaseAddress = sourceData.address ?? DEFAULT_ADDRESS;
+    const targetBaseAddress = targetData.address ?? DEFAULT_ADDRESS;
+
+    for (const [index, sourceUniverse] of sourceUniverses.entries()) {
+      const targetUniverse = mapUniverseByIndex(
+        sourceUniverses,
+        targetUniverses,
+        index,
+      );
+      for (const [uid, consoleAddress] of consoleAddresses) {
+        if (consoleAddress.universe !== sourceUniverse) continue;
+        if (consoleAddress.address < sourceBaseAddress) continue;
+
+        const fixtureAddress =
+          targetBaseAddress + (consoleAddress.address - sourceBaseAddress);
+        const layout = collectFixtureLayout(layoutCache[uid]);
+        for (const element of layout.elements) {
+          pushPatchEntry(patchMap, uid, element.elementId, {
+            universe: targetUniverse,
+            address: fixtureAddress + element.offset,
+            transport: outputTransport,
+          });
+        }
+      }
+    }
+  }
+
   return patchMap;
+}
+
+/** Appends one element patch location, creating the fixture and element buckets on demand. */
+function pushPatchEntry(
+  patchMap: FixturePatchMap,
+  uid: string,
+  elementId: number,
+  entry: FixturePatchEntry,
+): void {
+  patchMap[uid] ??= {};
+  const key = String(elementId);
+  patchMap[uid][key] ??= [];
+  patchMap[uid][key].push(entry);
+}
+
+/** Orders output bindings by ascending priority, keeping insertion order for ties. */
+function sortOutputBindingsByPriority(
+  bindings: types.OutputBinding[],
+): types.OutputBinding[] {
+  return bindings
+    .map((binding, index) => ({ binding, index }))
+    .sort(
+      (a, b) => a.binding.priority - b.binding.priority || a.index - b.index,
+    )
+    .map(({ binding }) => binding);
+}
+
+/**
+ * Resolves each fixture's console-space start address from fixture→console bindings.
+ *
+ * Mirrors the engine's console address derivation: bindings apply in priority order with
+ * later bindings replacing earlier ones, disabled sources are skipped, and non-clone
+ * bindings lay fixtures out contiguously, restarting at the base address per universe.
+ */
+function resolveConsoleAddresses(
+  snapshot: types.BindingsSnapshot,
+  layoutCache: Record<string, FixtureLayoutCache>,
+  disabledSources: types.OutputSource[],
+): Map<string, ConsoleAddress> {
+  const addresses = new Map<string, ConsoleAddress>();
+
+  for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
+    if (binding.source.type !== "Fixture") continue;
+    if (binding.target.type !== "Console") continue;
+    if (
+      disabledSources.some((source) =>
+        outputSourceMatches(binding.source, source),
+      )
+    ) {
+      continue;
+    }
+
+    const targetData = binding.target.data;
+    const explicitUniverses = expandRange(targetData.universe);
+    const universes =
+      explicitUniverses.length > 0 ? explicitUniverses : [DEFAULT_UNIVERSE];
+    const baseAddress = targetData.address ?? DEFAULT_ADDRESS;
+    let runningAddress = baseAddress;
+    let lastUniverse = universes[0];
+
+    const sourceData = binding.source.data;
+    const sourceUids = normalizeFixtureUids(sourceData.uids as unknown[]);
+    for (const [index, uid] of sourceUids.entries()) {
+      const universe = mapUniverseByIndex(universes, universes, index);
+      if (universe !== lastUniverse) {
+        runningAddress = baseAddress;
+        lastUniverse = universe;
+      }
+
+      const layout = collectFixtureLayout(
+        layoutCache[uid],
+        sourceData.element,
+        sourceData.param,
+      );
+      if (layout.totalWidth === 0) continue;
+
+      addresses.set(uid, { universe, address: runningAddress });
+      if (!binding.clone) {
+        runningAddress += layout.totalWidth;
+      }
+    }
+  }
+
+  return addresses;
 }

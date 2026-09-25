@@ -169,16 +169,25 @@ export function createDmxChannelNavigationController(
     );
     if (inputBindingId) return inputBindingId;
 
+    const fixtureConsoleBindings = snapshot.output.filter(
+      (binding) =>
+        binding.source.type === "Fixture" && binding.target.type === "Console",
+    );
     for (const [bindingIndex, binding] of snapshot.output.entries()) {
-      if (
-        binding.source.type !== "Fixture" ||
-        binding.target.type !== "Transport"
-      )
-        continue;
+      const isConsolePassthrough =
+        binding.source.type === "Console" &&
+        binding.target.type === "Transport";
+      const isFixtureBinding =
+        binding.source.type === "Fixture" &&
+        (binding.target.type === "Transport" ||
+          binding.target.type === "Console");
+      if (!isConsolePassthrough && !isFixtureBinding) continue;
       const patchMap = buildFixturePatchMapFromBindings(
         {
           input: [],
-          output: [binding],
+          output: isConsolePassthrough
+            ? [...fixtureConsoleBindings, binding]
+            : [binding],
           disabled: snapshot.disabled,
         },
         fixturesByUid,
@@ -198,6 +207,7 @@ export function createDmxChannelNavigationController(
           if (width <= 0) continue;
           for (const patch of patches) {
             if (
+              (!isConsolePassthrough || patch.transport !== null) &&
               patch.universe === universeId &&
               outputTransportMatchesSelection(patch.transport, transport) &&
               address >= patch.address &&

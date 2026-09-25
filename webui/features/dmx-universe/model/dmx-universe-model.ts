@@ -7,6 +7,7 @@
  */
 
 import { FIXTURE_VALUE_TEXT_COLORS } from "../../../lib/datagrid";
+import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
 import { normalizeAttributeName } from "../../../lib/utils";
 import type * as types from "../../../types";
 import type { Attribute } from "../../../types";
@@ -72,26 +73,43 @@ export function getChannelWidth(resolution: string): number {
   }
 }
 
+/** Binding selection key for a displayed output numbering space. */
+export type OutputSpaceSelection =
+  | "sacn"
+  | "artnet"
+  | "udmx"
+  | "disabled"
+  | "console"
+  | null;
+
+/** Maps a displayed numbering-space label to its binding selection key. */
 export function normalizeSelectedTransport(
   transport: string,
-): "sacn" | "artnet" | "udmx" | "console" | null {
-  if (transport === "Console") return "console";
+): OutputSpaceSelection {
+  if (transport === CONSOLE_TRANSPORT) return "console";
   if (transport === "sACN") return "sacn";
   if (transport === "Art-Net") return "artnet";
   if (transport === "USB") return "udmx";
+  if (transport === "Disabled") return "disabled";
   return null;
 }
 
-/** Returns whether a resolved output transport belongs to the selected family. */
+/**
+ * Returns whether a patch location belongs to the selected numbering space. Console
+ * selection matches console-space locations (`null` transport) only; transport
+ * selections match wire locations of that transport family.
+ */
 export function outputTransportMatchesSelection(
-  transport: types.OutputTransport | undefined,
-  selection: "sacn" | "artnet" | "udmx" | "console" | null,
+  transport: types.OutputTransport | null,
+  selection: OutputSpaceSelection,
 ): boolean {
-  if (selection === null || selection === "console") return true;
+  if (selection === null) return true;
+  if (selection === "console") return transport === null;
   if (!transport) return false;
   if (selection === "sacn") return transport.type === "Sacn";
   if (selection === "artnet") return transport.type === "ArtNet";
   if (selection === "udmx") return transport.type === "Udmx";
+  if (selection === "disabled") return transport.type === "Disabled";
   return false;
 }
 
