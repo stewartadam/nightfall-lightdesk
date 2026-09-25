@@ -82,6 +82,18 @@ impl From<std::io::Error> for MeshExtractionError {
     }
 }
 
+/// Opens a GDTF archive to read its resources, repairing authoring faults as the library does.
+fn open_gdtf_for_resources(gdtf_path: &Path) -> Result<gdtf::GdtfFile, MeshExtractionError> {
+    if !gdtf_path.is_file() {
+        return Err(MeshExtractionError::FileNotFound(
+            gdtf_path.display().to_string(),
+        ));
+    }
+    crate::gdtf_repair::open_gdtf(gdtf_path)
+        .map(|(gdtf_file, _)| gdtf_file)
+        .map_err(MeshExtractionError::ParseError)
+}
+
 /// Extract a mesh from a GDTF file.
 ///
 /// Attempts to load the mesh in GLB format first (preferred), falling back to 3DS format.
@@ -98,11 +110,7 @@ pub fn extract_mesh_from_gdtf(
     gdtf_path: &Path,
     model_name: &str,
 ) -> Result<ExtractedMesh, MeshExtractionError> {
-    let file = std::fs::File::open(gdtf_path)
-        .map_err(|_| MeshExtractionError::FileNotFound(gdtf_path.display().to_string()))?;
-
-    let mut gdtf_file = gdtf::GdtfFile::new(file)
-        .map_err(|e| MeshExtractionError::ParseError(format!("{:?}", e)))?;
+    let mut gdtf_file = open_gdtf_for_resources(gdtf_path)?;
 
     // Try to load GLB format first (preferred)
     if let Ok(mut resource) = gdtf_file.resources.read_model_mesh(
@@ -159,10 +167,7 @@ pub fn extract_wheel_media_from_gdtf(
     gdtf_path: &Path,
     media_name: &str,
 ) -> Result<Vec<u8>, MeshExtractionError> {
-    let file = std::fs::File::open(gdtf_path)
-        .map_err(|_| MeshExtractionError::FileNotFound(gdtf_path.display().to_string()))?;
-    let mut gdtf_file = gdtf::GdtfFile::new(file)
-        .map_err(|e| MeshExtractionError::ParseError(format!("{:?}", e)))?;
+    let mut gdtf_file = open_gdtf_for_resources(gdtf_path)?;
 
     let name = media_name.strip_suffix(".png").unwrap_or(media_name);
     let mut resource = gdtf_file
