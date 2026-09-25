@@ -84,6 +84,7 @@ import {
   mappingStatusCell,
   mappingStatusText,
 } from "../model/mapping-diagnostics";
+import { editOscRange, formatOscRangeEnd } from "../model/osc-value-range";
 
 /** Input kinds an OSC message can drive: pulses and booleans as buttons, numbers as faders. */
 const OSC_INPUT_KINDS = [
@@ -143,6 +144,20 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
     width: 120,
     filter: { value: (row) => row.mapping.release_value ?? "" },
     ...columnVisibilityMeta("Binding", "Release Match"),
+  },
+  {
+    title: "Min",
+    id: "range_min",
+    width: 70,
+    filter: { kind: "number", value: (row) => row.mapping.range?.min },
+    ...columnVisibilityMeta("Binding", "Min"),
+  },
+  {
+    title: "Max",
+    id: "range_max",
+    width: 70,
+    filter: { kind: "number", value: (row) => row.mapping.range?.max },
+    ...columnVisibilityMeta("Binding", "Max"),
   },
   {
     title: "Behavior",
@@ -211,12 +226,15 @@ function parseArgIndex(value: string): number | undefined | null {
   return parsed;
 }
 
-/** Returns a mapping with one text cell edit applied, or undefined for invalid input. */
+/**
+ * Returns a mapping with one text cell edit applied, the reason a value range edit is
+ * invalid, or undefined for other invalid input.
+ */
 function editedMapping(
   mapping: OscMapping,
   columnId: string | undefined,
   value: string,
-): OscMapping | undefined {
+): OscMapping | { error: string } | undefined {
   const trimmed = value.trim();
   switch (columnId) {
     case "source":
@@ -234,6 +252,15 @@ function editedMapping(
         ...mapping,
         release_value: trimmed === "" ? undefined : trimmed,
       };
+    case "range_min":
+    case "range_max": {
+      const edit = editOscRange(
+        mapping.range,
+        columnId === "range_min" ? "min" : "max",
+        value,
+      );
+      return edit.ok ? { ...mapping, range: edit.range } : edit;
+    }
     case "behavior": {
       const behavior = parseBehavior(value);
       return behavior === undefined ? undefined : { ...mapping, behavior };
@@ -368,6 +395,19 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               displayData: rowData.release_value ?? "",
               data: rowData.release_value ?? "",
             };
+          case "range_min":
+          case "range_max": {
+            const text = formatOscRangeEnd(
+              rowData.range,
+              colId === "range_min" ? "min" : "max",
+            );
+            return {
+              kind: GridCellKind.Text,
+              allowOverlay: true,
+              displayData: text,
+              data: text,
+            };
+          }
           case "behavior":
             return {
               kind: GridCellKind.Text,
@@ -421,7 +461,12 @@ export default function OscInputPanel(props: OscInputPanelProps) {
       const mapping = visibleRows[targetRow]?.mapping;
       if (!mapping) continue;
       const edited = editedMapping(mapping, colId, value);
-      if (edited) void upsertOscMapping(edited).then(announceReplacedMappings);
+      if (!edited) continue;
+      if ("error" in edited) {
+        pushToast("error", edited.error);
+        return;
+      }
+      void upsertOscMapping(edited).then(announceReplacedMappings);
     }
   };
 
@@ -565,8 +610,8 @@ export default function OscInputPanel(props: OscInputPanelProps) {
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-300">OSC Mappings</h3>
               <p class="truncate text-xs text-gray-500">
-                Leave Source blank to match any sender. Select one mapping to
-                change its action.
+                Leave Source blank to match any sender, and Min/Max blank to
+                infer fader units. Select one mapping to change its action.
               </p>
             </div>
           }

@@ -9,10 +9,12 @@
 //! OSC mapping storage and lookup.
 
 use bevy_ecs::prelude::*;
-use nightfall_actions::{ActionInputKind, ActionReference, BindingStore, SourceSignal};
+use nightfall_actions::{
+    ActionInputKind, ActionReference, BindingStore, InvocationError, SourceSignal,
+};
 use uuid::Uuid;
 
-use crate::command::{OscLastEvent, OscMapping, OscType};
+use crate::command::{OscLastEvent, OscMapping, OscType, OscValueRange};
 
 /// Resource storing configured OSC mappings.
 #[derive(Resource, Default, Debug, Clone)]
@@ -141,13 +143,32 @@ impl OscMapping {
         };
         match event.args.get(usize::from(arg_index)) {
             Some(OscType::Bool(pressed)) => SourceSignal::Button(*pressed),
-            Some(arg) => arg
-                .as_hardware_fader_percent()
-                .map_or(SourceSignal::Pulse, |percent| {
-                    SourceSignal::Level(percent / 100.0)
-                }),
+            Some(arg) => self
+                .level(arg)
+                .map_or(SourceSignal::Pulse, SourceSignal::Level),
             None => SourceSignal::Pulse,
         }
+    }
+
+    /// Converts a numeric argument into a level in `0..=1`.
+    ///
+    /// A valid explicit range maps linearly between its ends; without one (or with an
+    /// invalid one, which diagnostics report) the argument's units are inferred.
+    fn level(&self, arg: &OscType) -> Option<f32> {
+        match self
+            .range
+            .and_then(|range| range.normalize(arg.as_number()?))
+        {
+            Some(level) => Some(level),
+            None => arg
+                .as_hardware_fader_percent()
+                .map(|percent| percent / 100.0),
+        }
+    }
+
+    /// Checks the mapping's own settings, independent of the action it binds.
+    pub fn validate(&self) -> Result<(), InvocationError> {
+        self.range.as_ref().map_or(Ok(()), OscValueRange::validate)
     }
 
     /// Returns whether messages matched by this mapping can drive an action input kind.
@@ -267,6 +288,7 @@ mod tests {
             arg_index: None,
             arg_value: None,
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.start", json!({ "id": 5 })),
         }]);
@@ -287,6 +309,7 @@ mod tests {
             arg_index: None,
             arg_value: Some("42".to_string()),
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.go", json!({ "id": 7 })),
         }]);
@@ -308,6 +331,7 @@ mod tests {
             arg_index: Some(1),
             arg_value: Some("go".to_string()),
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.eval", json!({ "command": "clip 1 go" })),
         }]);
@@ -334,6 +358,7 @@ mod tests {
             arg_index: None,
             arg_value: Some("   ".to_string()),
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.start", json!({ "id": 9 })),
         }]);
@@ -353,6 +378,7 @@ mod tests {
             arg_index: Some(0),
             arg_value: Some("1".to_string()),
             release_value: Some("0".to_string()),
+            range: None,
             behavior,
             action: ActionReference::new(action, json!({})),
         }

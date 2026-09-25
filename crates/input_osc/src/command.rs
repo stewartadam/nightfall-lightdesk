@@ -8,7 +8,7 @@
 
 //! OSC command and state types.
 
-use nightfall_actions::{ActionReference, ControlBehavior};
+use nightfall_actions::{ActionReference, ControlBehavior, InvocationError};
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -126,7 +126,21 @@ impl OscType {
         }
     }
 
-    /// Convert this OSC argument into a hardware fader percentage.
+    /// Returns this OSC argument's numeric value, for arguments that carry a number.
+    pub fn as_number(&self) -> Option<f64> {
+        match self {
+            Self::Int(value) => Some(f64::from(*value)),
+            Self::Float(value) => Some(f64::from(*value)),
+            Self::Double(value) => Some(*value),
+            Self::Long(value) => value.parse::<f64>().ok(),
+            _ => None,
+        }
+    }
+
+    /// Converts this OSC argument into a hardware fader percentage by inferring its units.
+    ///
+    /// Floats and doubles within `0..=1` are treated as normalized; every other number is
+    /// treated as a percent. Booleans read as fully off or on.
     pub fn as_hardware_fader_percent(&self) -> Option<f32> {
         let (value, normalize_unit_interval) = match self {
             Self::Int(value) => (*value as f64, false),
@@ -149,6 +163,53 @@ impl OscType {
     }
 }
 
+/// Explicit range of numeric argument values an OSC control sends between its two ends.
+///
+/// `min` maps to level 0 and `max` to level 1; `min` may exceed `max` for controls that
+/// travel in reverse.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct OscValueRange {
+    /// Argument value sent at the bottom of the control's travel.
+    pub min: f32,
+    /// Argument value sent at the top of the control's travel.
+    pub max: f32,
+}
+
+impl OscValueRange {
+    /// Checks that both ends are finite and distinct, so the range spans some values.
+    pub fn validate(&self) -> Result<(), InvocationError> {
+        if !self.min.is_finite() || !self.max.is_finite() {
+            return Err(InvocationError::new(
+                "osc.invalid_range",
+                format!(
+                    "OSC value range {}..{} must use finite numbers",
+                    self.min, self.max
+                ),
+            ));
+        }
+        if self.min == self.max {
+            return Err(InvocationError::new(
+                "osc.invalid_range",
+                format!(
+                    "OSC value range minimum and maximum must differ (both are {})",
+                    self.min
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Maps a numeric argument linearly onto a level in `0..=1`, clamping values outside it.
+    ///
+    /// Returns `None` for an invalid range, which cannot map any value.
+    pub fn normalize(&self, value: f64) -> Option<f32> {
+        self.validate().ok()?;
+        let (min, max) = (f64::from(self.min), f64::from(self.max));
+        Some(((value - min) / (max - min)).clamp(0.0, 1.0) as f32)
+    }
+}
+
 /// A mapping from OSC source/address/argument criteria to an action.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -167,6 +228,11 @@ pub struct OscMapping {
     /// Argument value a button sends when released, turning matches into press and release edges.
     #[serde(default)]
     pub release_value: Option<String>,
+    /// Argument values the control sends at either end, when its units are not inferred.
+    ///
+    /// Unset, floats within `0..=1` read as normalized levels and other numbers as percents.
+    #[serde(default)]
+    pub range: Option<OscValueRange>,
     /// How the control's presses and releases invoke the action.
     #[serde(default)]
     pub behavior: ControlBehavior,
@@ -226,7 +292,7 @@ pub struct OscMappingUpserted {
 #[serde(deny_unknown_fields)]
 pub enum OscCommand {
     /// Create or replace a mapping; other mappings with the same match criteria are removed.
-    UpsertMapping(OscMapping),
+    UpsertMapping(Box<OscMapping>),
     /// Delete a mapping by its stable ID.
     DeleteMapping(#[typeshare(serialized_as = "String")] Uuid),
 }
@@ -235,7 +301,70 @@ impl IngressCommand for OscCommand {}
 
 #[cfg(test)]
 mod tests {
-    use super::OscType;
+    use super::{OscMapping, OscType, OscValueRange};
+
+    /// Builds a value range from its two ends.
+    fn range(min: f32, max: f32) -> OscValueRange {
+        OscValueRange { min, max }
+    }
+
+    /// Verifies integer faders spanning 0..127 map linearly onto the full level range.
+    #[test]
+    fn range_maps_integer_fader_linearly() {
+        let midi_like = range(0.0, 127.0);
+        assert_eq!(midi_like.normalize(0.0), Some(0.0));
+        assert_eq!(midi_like.normalize(127.0), Some(1.0));
+        let half = midi_like.normalize(63.5).unwrap();
+        assert!((half - 0.5).abs() < 1e-6, "{half}");
+    }
+
+    /// Verifies an inverted range reads the top of its travel as zero.
+    #[test]
+    fn inverted_range_reverses_levels() {
+        let inverted = range(127.0, 0.0);
+        assert_eq!(inverted.normalize(127.0), Some(0.0));
+        assert_eq!(inverted.normalize(0.0), Some(1.0));
+        let quarter = inverted.normalize(95.25).unwrap();
+        assert!((quarter - 0.25).abs() < 1e-6, "{quarter}");
+    }
+
+    /// Verifies values beyond either end clamp to the nearest level.
+    #[test]
+    fn range_clamps_values_outside_it() {
+        let midi_like = range(0.0, 127.0);
+        assert_eq!(midi_like.normalize(200.0), Some(1.0));
+        assert_eq!(midi_like.normalize(-5.0), Some(0.0));
+    }
+
+    /// Verifies empty and non-finite ranges are rejected and cannot map values.
+    #[test]
+    fn degenerate_ranges_are_invalid() {
+        for invalid in [
+            range(5.0, 5.0),
+            range(f32::NAN, 1.0),
+            range(0.0, f32::INFINITY),
+        ] {
+            let error = invalid.validate().unwrap_err();
+            assert_eq!(error.code, "osc.invalid_range");
+            assert_eq!(invalid.normalize(1.0), None);
+        }
+        assert!(range(1.0, 0.0).validate().is_ok());
+    }
+
+    /// Verifies mappings saved before value ranges existed load with no range.
+    #[test]
+    fn mappings_without_range_deserialize_with_inferred_units() {
+        let mapping: OscMapping = serde_json::from_value(serde_json::json!({
+            "id": "00000000-0000-0000-0000-000000000000",
+            "source": null,
+            "address": "/fader",
+            "arg_index": 0,
+            "arg_value": null,
+            "action": { "id": "test.level", "arguments": {} },
+        }))
+        .unwrap();
+        assert_eq!(mapping.range, None);
+    }
 
     #[test]
     fn fader_percent_scales_normalized_float_values() {
