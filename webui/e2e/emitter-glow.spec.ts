@@ -120,10 +120,7 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
       // Force sustained GPU overload without depending on the test machine's speed.
       const start = performance.now() - 10_000;
       for (let id = 0; id < 10; id++)
-        pipeline.atmosphereBudget.update(
-          { id, milliseconds: 20 },
-          start + id * 1001,
-        );
+        pipeline.gpuBudget.observe({ id, milliseconds: 20 }, start + id * 1001);
       for (let id = 10; id < 13; id++)
         renderWithPostProcessing(pipeline, { id, milliseconds: 20 });
       const overloadedFaces = await capture();

@@ -54,7 +54,7 @@ import type { ResolvedEmitterOptics } from "./emitter-optics";
 import { GoboAtlas } from "./gobo-atlas";
 import { sampleGoboProjection } from "./gobo-projection";
 import { OpticalShadowPool } from "./optical-shadow-pool";
-import { SurfaceLightBudget } from "./surface-light-budget";
+import { SurfaceLightSelector } from "./surface-light-selector";
 
 /** Profile marker for ordinary point lights, which skip optical aperture attenuation. */
 const PLAIN_LIGHT = -1;
@@ -161,10 +161,10 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
   private readonly apertureTexture: DataTexture;
   private readonly atlasColumns = uniform(4);
   private readonly pointCandidates: PointLight[] = [];
-  private readonly lightBudget: SurfaceLightBudget;
+  private readonly lightSelector: SurfaceLightSelector;
   /** Extra sources an overflowing cluster may evaluate, bounding its per-fragment loop. */
   private readonly priorityCapacity: number;
-  private readonly priorityBudget: SurfaceLightBudget;
+  private readonly prioritySelector: SurfaceLightSelector;
   private readonly priorityLights: PointLight[] = [];
   private readonly priorityData: Float32Array;
   private readonly priorityTexture: DataTexture;
@@ -199,7 +199,7 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     private readonly shadows?: OpticalShadowPool,
   ) {
     super(maxLights, 32, 24, maxPerCluster);
-    this.lightBudget = new SurfaceLightBudget(maxLights);
+    this.lightSelector = new SurfaceLightSelector(maxLights);
     this.apertureData = new Float32Array(maxLights * 4 * 6);
     this.apertureTexture = new DataTexture(
       this.apertureData,
@@ -212,7 +212,7 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     this.priorityCapacity = Math.min(FULL_CLUSTER_PRIORITY_LIGHTS, maxLights);
     // Full cluster lists hold the earliest depth-sorted sources, so equally important
     // later sources are the ones the list is most likely to have dropped.
-    this.priorityBudget = new SurfaceLightBudget(
+    this.prioritySelector = new SurfaceLightSelector(
       this.priorityCapacity,
       (left, right) =>
         (this.sortedIndex.get(left) ?? 0) < (this.sortedIndex.get(right) ?? 0),
@@ -243,7 +243,7 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
   updateLightsTexture(camera: Camera): void {
     this.renderedOmittedPointLights = this.omittedPointLights;
     if (this.omittedPointLights > 0)
-      this.lightBudget.select(
+      this.lightSelector.select(
         this.pointCandidates,
         camera,
         this.clusteredLights,
@@ -321,7 +321,7 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
       this.sortedIndex.clear();
       for (let index = 0; index < count; index++)
         this.sortedIndex.set(this.clusteredLights[order[index]], index);
-      this.priorityBudget.select(
+      this.prioritySelector.select(
         this.clusteredLights,
         camera,
         this.priorityLights,

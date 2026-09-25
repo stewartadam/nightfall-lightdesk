@@ -228,8 +228,8 @@ for (const forceWebGL of [false, true]) {
       const { OpticalSurfaceLight, OpticalSurfaceLighting } = await import(
         "/features/visualizer/rendering/effects/optical-surface-lighting.ts"
       );
-      const { ShadowRefreshBudget } = await import(
-        "/features/visualizer/rendering/effects/shadow-refresh-budget.ts"
+      const { GpuBudget } = await import(
+        "/features/visualizer/rendering/effects/gpu-budget.ts"
       );
       const renderer = new T.WebGPURenderer({
         canvas: document.querySelector("canvas")!,
@@ -282,7 +282,7 @@ for (const forceWebGL of [false, true]) {
       blocker.position.set(0.3, 0.3, -2);
       blocker.visible = false;
       scene.add(blocker);
-      const budget = new ShadowRefreshBudget();
+      const budget = new GpuBudget();
       const copy = document.createElement("canvas");
       copy.width = copy.height = 320;
       const ctx = copy.getContext("2d")!;
@@ -306,7 +306,8 @@ for (const forceWebGL of [false, true]) {
           const elapsed = now - started;
           // A slowly drifting source exercises the moving-source path.
           source.position.x = 0.02 * Math.sin(elapsed / 300);
-          const allow = budget.canRefresh(undefined, 0, now);
+          budget.observe(undefined, now);
+          const allow = budget.canRefreshShadows(0, now);
           blocker.visible = true;
           refreshes += pool.update(
             renderer,
@@ -314,7 +315,7 @@ for (const forceWebGL of [false, true]) {
             camera,
             now,
             allow,
-            budget.refreshIntervalMs,
+            budget.shadowRefreshIntervalMs,
           );
           blocker.visible = false;
           renderer.render(scene, camera);

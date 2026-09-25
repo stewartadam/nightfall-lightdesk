@@ -38,10 +38,9 @@ import {
   type WebGPURenderer,
 } from "three/webgpu";
 import { type QualityProfile, resolveQualityProfile } from "../quality-profile";
-import { AtmosphereBudget, type GpuBudgetSample } from "./atmosphere-budget";
+import { GpuBudget, type GpuBudgetSample } from "./gpu-budget";
 import { createOpticalRenderContext } from "./optical-render-context";
 import { OpticalSurfaceLighting } from "./optical-surface-lighting";
-import { ShadowRefreshBudget } from "./shadow-refresh-budget";
 
 /** Post-processing configuration */
 export interface PostProcessingConfig {
@@ -128,11 +127,11 @@ export interface PostProcessingState {
   renderer: WebGPURenderer;
   scene: Scene;
   camera: Camera;
-  shadowBudget: ShadowRefreshBudget;
+  /** Adapts soft-effect resolution and optional shadow refreshes to measured frame cost. */
+  gpuBudget: GpuBudget;
   /** Only selected cell proxies participate in scene projection and outline depth passes. */
   visibleOutlineProxies: Set<Object3D>;
   surfaceLighting: OpticalSurfaceLighting;
-  atmosphereBudget: AtmosphereBudget;
   volumePass: ReturnType<typeof pass>;
   postProcessing: RenderPipeline;
   scenePass: ReturnType<typeof pass>;
@@ -340,10 +339,9 @@ export function createPostProcessing(
     renderer,
     scene,
     camera,
-    shadowBudget: new ShadowRefreshBudget(),
+    gpuBudget: new GpuBudget(),
     visibleOutlineProxies: new Set(),
     surfaceLighting,
-    atmosphereBudget: new AtmosphereBudget(),
     volumePass,
     postProcessing,
     scenePass,
@@ -451,7 +449,7 @@ export function renderWithPostProcessing(
   updateMs = 0,
 ): void {
   const started = performance.now();
-  const scale = state.atmosphereBudget.update(gpu, started);
+  const scale = state.gpuBudget.observe(gpu, started);
   const atmosphereScale = state.profile.adaptiveAtmosphereResolution
     ? scale
     : FIXED_ATMOSPHERE_RESOLUTION_SCALE;
@@ -467,11 +465,11 @@ export function renderWithPostProcessing(
       state.scene,
       state.camera,
       started,
-      state.shadowBudget.canRefresh(gpu, updateMs, started),
-      state.shadowBudget.refreshIntervalMs,
+      state.gpuBudget.canRefreshShadows(updateMs, started),
+      state.gpuBudget.shadowRefreshIntervalMs,
     );
   state.postProcessing.render();
-  state.shadowBudget.recordRender(performance.now() - started, updateMs);
+  state.gpuBudget.recordRender(performance.now() - started, updateMs);
 }
 
 /** Releases every pass's targets and materials, including resources not owned by RenderPipeline. */

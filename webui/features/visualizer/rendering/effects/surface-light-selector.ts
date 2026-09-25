@@ -17,7 +17,7 @@ import {
 } from "three/webgpu";
 
 /** Selects a bounded set of surface sources with reusable heap storage and stable tie-breaking. */
-export class SurfaceLightBudget {
+export class SurfaceLightSelector {
   private readonly scores: Float64Array;
   private readonly frustum = new Frustum();
   private readonly projection = new Matrix4();

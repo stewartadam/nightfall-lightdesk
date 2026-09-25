@@ -406,7 +406,7 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
           reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
           startedAt: metrics.startedAt,
           atmosphereScale:
-            this.rendererState?.postProcessing?.atmosphereBudget.scale,
+            this.rendererState?.postProcessing?.volumePass.getResolutionScale(),
           sceneScale:
             this.rendererState?.postProcessing?.scenePass.getResolutionScale(),
           omittedSurfaceLights:

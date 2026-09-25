@@ -9,13 +9,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PerspectiveCamera, Scene, type WebGPURenderer } from "three/webgpu";
+import { GpuBudget } from "./gpu-budget";
 import {
   OpticalShadowPool,
   type OpticalShadowSource,
   type ShadowSlot,
 } from "./optical-shadow-pool";
 import { OpticalSurfaceLight } from "./optical-surface-lighting";
-import { ShadowRefreshBudget } from "./shadow-refresh-budget";
 
 const FRAME_MS = 16;
 const INTERVAL_MS = 60;
@@ -142,12 +142,13 @@ test("unregistering invalidates the source's map", () => {
 /** Without any GPU timing, the budget and pool together keep shadow maps valid over time, even while a source moves. */
 test("shadows remain visible over time without GPU timing", () => {
   const { pool, sources, frame } = setup(2);
-  const budget = new ShadowRefreshBudget();
+  const budget = new GpuBudget();
   let firstValid = Infinity;
   for (let now = 0; now < 10000; now += FRAME_MS) {
     sources[0].position.x = Math.sin(now / 1000);
-    const allow = budget.canRefresh(undefined, 1, now);
-    frame(now, allow, budget.refreshIntervalMs);
+    budget.observe(undefined, now);
+    const allow = budget.canRefreshShadows(1, now);
+    frame(now, allow, budget.shadowRefreshIntervalMs);
     budget.recordRender(3, 1);
     const valid = sources.every((source) => pool.hasValidMap(source));
     if (valid) firstValid = Math.min(firstValid, now);

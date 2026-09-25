@@ -154,7 +154,7 @@ test("300 active optical sources sustain frame pacing", async ({
                   interval: completed - previous,
                   cpuMs: completed - started,
                   gpu: readGpu(),
-                  scale: pipeline.atmosphereBudget.scale,
+                  scale: pipeline.gpuBudget.resolutionScale,
                   sceneScale: pipeline.scenePass.getResolutionScale(),
                 });
               }
