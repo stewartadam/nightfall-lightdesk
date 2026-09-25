@@ -18,7 +18,8 @@ export type GuideContent =
       panels?: PanelComponentName[];
       sampleTimeline?: boolean;
     }
-  | { type: "details"; title: string; text: string };
+  | { type: "details"; title: string; text: string }
+  | { type: "stop-playback" };
 
 export type GuidePrerequisite = Extract<GuideContent, { type: "prerequisite" }>;
 
@@ -34,12 +35,20 @@ export interface GuideStep {
   target?: string;
   targetSequence?: { id: number; cueId?: number };
   targetClip?: { id: number; gear?: boolean };
+  /** Targets an action chip in the sample timeline editor by track and action ID. */
+  targetTimelineAction?: { trackId: string; actionId: string };
+  /** Targets a fixture's ID cell in Patch, or the Fixtures view tab while DMX I/O is showing. */
+  targetPatchFixture?: { id: number };
+  /** Targets a regular FX card or list row in FX List by its user-facing ID. */
+  targetFx?: { id: number };
   placement?: "above";
   focusTarget?: boolean;
   observe?: GuideObservation;
 }
 export interface GuideLesson {
   id: string;
+  /** Library eyebrow placing the lesson in the learning path; defaults to a follow-on lesson. */
+  label?: string;
   title: string;
   duration: string;
   introduction: string;
@@ -48,10 +57,11 @@ export interface GuideLesson {
 export const GUIDE_LESSONS: GuideLesson[] = [
   {
     id: "basics",
+    label: "Module 1 · Orientation",
     title: "Welcome to Nightfall",
     duration: "6–8 min",
     introduction:
-      "Explore playback and properties, find your way around, and personalize Nightfall.",
+      "Get oriented: play the sample show, inspect properties, find your way around, and personalize Nightfall.",
     steps: [
       {
         id: "visualizer",
@@ -87,7 +97,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Open Timeline 1: Lo-Fi and keep the 3D Visualizer open beside it.",
+            body: "Open Timeline 1: Lo-fi and keep the 3D Visualizer open beside it.",
           },
         ],
       },
@@ -162,12 +172,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
             text: "Clicking a running clip again stops its playback.",
           },
           { type: "action", body: "Click RGB cycle (full) again to stop it." },
-          {
-            type: "action",
-            title: "Command alternative",
-            body: "You can also stop the clip from the command input.",
-            command: "clip 1 stop",
-          },
         ],
       },
       {
@@ -212,6 +216,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "A shortcut for lighting instructions",
         target: "#header-cmdline",
         focusTarget: true,
+        observe: {
+          type: "command-submitted",
+          command: "fix 601>606 green @ 100; sleep 2; clear",
+        },
         content: [
           {
             type: "text",
@@ -219,7 +227,9 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Find the command input at the top left. You’ll use it in Your first lights; leave it empty for now and continue.",
+            title: "Try this command",
+            body: "It will set the LED strobes to green for 2 seconds.",
+            command: "fix 601>606 green @ 100; sleep 2; clear",
           },
         ],
       },
@@ -232,10 +242,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
             type: "text",
             text: "Layouts save arrangements of panels, so you can keep different workspaces for programming and playback. The layout switcher shows your current layout and lets you choose another.",
           },
-          {
-            type: "action",
-            body: "Find the layout switcher in the top toolbar. Keep the current layout for this introduction, then continue.",
-          },
         ],
       },
       {
@@ -247,7 +253,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "The Command Palette searches for panels and app actions. You can open it from any workspace.",
+            text: "The Command Palette searches for panels and app actions. It is available any time.",
           },
           {
             type: "action",
@@ -268,7 +274,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Search for Open Settings in the Command Palette, then press Enter.",
+            body: "Search for Settings in the Command Palette, then press Enter.",
           },
         ],
       },
@@ -285,7 +291,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Select Appearance in Settings, then choose an accent swatch. Try a few colors and keep your favorite. Close Settings when you’re happy to move on.",
+            body: "Open the Appearance tab in Settings, then choose an accent swatch. Try a few colors and keep your favorite. Close Settings when you’re happy to move on.",
           },
         ],
       },
@@ -361,6 +367,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
   },
   {
     id: "welcome",
+    label: "Module 2",
     title: "Your first lights",
     duration: "8–10 min",
     introduction:
@@ -412,6 +419,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         focusTarget: true,
         observe: {
           type: "selection",
+          fixtureIds: [310, 311, 312, 313],
         },
         content: [
           {
@@ -580,13 +588,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            title: "Click twice to clear the programmer",
-            body: "The first clears the active selection, the second releases programmer values.",
-          },
-          {
-            type: "details",
-            title: "Learn more",
-            text: "Setting intensity to zero leaves a live instruction. Clearing allows stored cues to control the lights.",
+            title: "Click Clear twice",
+            body: "The first click clears the selection; the second releases the Programmer’s values. You can also press {clear-shortcut} twice.",
           },
         ],
       },
@@ -627,7 +630,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "create-clip",
-        title: "Create your playback clip",
+        title: "Create a clip to play your sequence",
         target: '[aria-label="Add clip"]',
         observe: { type: "clip-created", clipId: 50 },
         content: [
@@ -802,89 +805,116 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     id: "patch",
     title: "Patching fixtures",
     duration: "4 min",
-    introduction: "Explore how the sample fixtures describe the demo rig.",
+    introduction:
+      "Find a fixture in Patch, select it by ID, and see how the sample rig runs without DMX.",
     steps: [
       {
-        id: "open",
-        title: "Open the sample patch",
-        observe: {
-          type: "panel",
-          component: "PatchEditor",
-        },
+        id: "open-patch",
+        title: "Open Patch",
+        target:
+          '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
+        observe: { type: "panel", component: "PatchEditor" },
         content: [
           {
             type: "text",
-            text: "All four pixel strips use the same model and mode.",
-          },
-          {
-            type: "prerequisite",
-            panels: ["PatchEditor"],
+            text: "Patch lists every fixture in the show with its ID, make, model, mode, and position.",
           },
           {
             type: "action",
-            body: "Open Patch and find pixel strip 310, model RGBPixelTape 120ch RGB.",
+            body: "Press {command-palette-shortcut}, search for 'Patch', and press Enter.",
           },
         ],
       },
       {
-        id: "inspect",
-        title: "Inspect pixel strip 310",
+        id: "find-fixture",
+        title: "Find pixel strip 310",
+        targetPatchFixture: { id: 310 },
+        observe: { type: "fixture-edit-selected", fixtureId: 310 },
         content: [
           {
             type: "text",
-            text: "RGB mode supplies 40 RGB pixels, with virtual intensity for dimming.",
+            text: "Each row is one fixture. Fixture 310 is a Generic RGBPixelTape 120ch in RGB mode: 40 pixels of red, green, and blue, using 120 DMX channels.",
           },
-          {
-            type: "prerequisite",
-            panels: ["PatchEditor"],
-          },
+          { type: "prerequisite", panels: ["PatchEditor", "Visualizer"] },
           {
             type: "action",
-            body: "Inspect pixel strip 310’s manufacturer, model, and mode. Compare it with pixel strip 311.",
-          },
-        ],
-      },
-      {
-        id: "address",
-        title: "Understand the disabled patch",
-        content: [
-          {
-            type: "text",
-            text: "The sample has disabled output bindings. The fixtures still run in the Visualizer; physical output needs enabled bindings and transport routing. Fixture ID 310 is a selection number, not a DMX address.",
-          },
-          {
-            type: "prerequisite",
-            panels: ["PatchEditor"],
-          },
-          {
-            type: "action",
-            body: "Switch Patch to DMX I/O and inspect the disabled bindings.",
+            body: "In the Fixtures view, click fixture 310’s ID. The Visualizer highlights the strip you picked.",
           },
           {
             type: "details",
             title: "Learn more",
-            text: "A universe contains 512 channels. In the real app, Add fixture walks through a library definition, mode, quantity, and console DMX address. This virtual sample does not need that setup.",
+            text: "All 32 pixel strips (310–383) use this model and mode. Scroll down to find the moving heads (501–506), strobes (601–606), strobe bars, and wash beams.",
           },
         ],
       },
       {
-        id: "verify",
-        title: "Select the patched fixture",
+        id: "select-fixture",
+        title: "Select it by ID",
         target: "#header-cmdline",
+        focusTarget: true,
+        observe: { type: "selection", fixtureIds: [310] },
         content: [
           {
             type: "text",
-            text: "Selection uses the fixture ID regardless of whether a hardware route exists.",
-          },
-          {
-            type: "prerequisite",
-            panels: ["ProgrammerGrid", "Visualizer"],
+            text: "The fixture ID is the number you type to select a light. It is not a DMX address.",
           },
           {
             type: "action",
-            title: "Select pixel strip 310:",
-            body: "Enter fix 310, then inspect pixel strip 310 in Programmer and the Visualizer.",
+            title: "Type this command, then press Enter:",
+            body: "This selects pixel strip 310 so you can program it.",
             command: "fix 310",
+          },
+        ],
+      },
+      {
+        id: "dmx-io",
+        title: "Open the DMX I/O view",
+        target:
+          '[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-bindings"]',
+        observe: { type: "patch-view", view: "bindings" },
+        content: [
+          {
+            type: "text",
+            text: "Bindings connect fixtures to DMX addresses. The DMX I/O view lists them.",
+          },
+          { type: "prerequisite", panels: ["PatchEditor"] },
+          { type: "action", body: "Click DMX I/O at the top of Patch." },
+        ],
+      },
+      {
+        id: "disabled-bindings",
+        title: "The sample needs no DMX",
+        target:
+          '[data-panel-kind="patch"] [data-grid-column-key="target"][data-grid-row-key^="disabled-"]',
+        content: [
+          {
+            type: "text",
+            text: "Every sample fixture has a Disabled output binding, so none has a DMX address. The Visualizer shows fixture values directly, so the sample works without DMX.",
+          },
+          { type: "prerequisite", panels: ["PatchEditor"] },
+          {
+            type: "action",
+            body: "Look at the Target column: every row says Disabled.",
+          },
+          {
+            type: "details",
+            title: "Learn more",
+            text: "On a real rig, Add fixture in Patch walks through a fixture definition, mode, quantity, and starting universe and address. A universe holds 512 channels. Importing fixture definitions from the fixture library requires the installed app.",
+          },
+        ],
+      },
+      {
+        id: "deselect",
+        title: "Clear your selection",
+        target: "#header-cmdline",
+        focusTarget: true,
+        observe: { type: "selection", fixtureIds: [] },
+        content: [
+          {
+            type: "action",
+            title: "Type this command, then press Enter:",
+            body: "This deselects fixture 310.",
+            command: "clear",
           },
         ],
       },
@@ -893,70 +923,100 @@ export const GUIDE_LESSONS: GuideLesson[] = [
   {
     id: "transports",
     title: "Transports and output",
-    duration: "4 min",
+    duration: "3 min",
     introduction:
-      "Inspect the sample’s output targets and understand physical routing.",
+      "See where Nightfall can send DMX and why the sample rig doesn’t send any.",
     steps: [
       {
-        id: "routing",
+        id: "open-transports",
         title: "Open I/O Transports",
-        observe: {
-          type: "panel",
-          component: "IoTransports",
-        },
+        target:
+          '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
+        observe: { type: "panel", component: "IoTransports" },
         content: [
           {
             type: "text",
-            text: "A binding maps attributes to channels; a transport carries those channels to hardware. The sample’s fixture output bindings are disabled.",
-          },
-          {
-            type: "prerequisite",
-            panels: ["IoTransports"],
+            text: "A transport carries DMX to real lights over the network or through a USB interface.",
           },
           {
             type: "action",
-            body: "Open I/O Transports and locate the network and USB output sections.",
+            body: "Press {command-palette-shortcut}, search for 'I/O Transports', and press Enter.",
           },
         ],
       },
       {
-        id: "configure",
-        title: "Inspect the sample targets",
+        id: "network-targets",
+        title: "Network targets",
+        target:
+          '[data-component="IoTransportsPanel"] [data-slot="target-row"][data-target-id="sacn"]',
         content: [
           {
             type: "text",
-            text: "sacn uses sACN multicast, artnet uses Art-Net broadcast, and udmx names the default USB device.",
+            text: "Nightfall includes two network targets: sacn sends sACN by multicast, and artnet sends Art-Net by broadcast. Add a Unicast target to send to one device’s IP address.",
+          },
+          { type: "prerequisite", panels: ["IoTransports"] },
+          {
+            type: "action",
+            body: "Find the sacn and artnet rows. Leave their settings unchanged.",
           },
           {
-            type: "prerequisite",
-            panels: ["IoTransports"],
+            type: "text",
+            text: "If the Network output switch is dimmed and each Status shows Disabled, this runtime can’t send DMX. The browser demo drives only the Visualizer.",
+          },
+        ],
+      },
+      {
+        id: "usb-target",
+        title: "USB target",
+        target:
+          '[data-component="IoTransportsPanel"] [data-slot="usb-target-row"][data-target-id="udmx"]',
+        content: [
+          {
+            type: "text",
+            text: "udmx sends DMX through a USB interface. Its device is Auto, so it uses the first compatible uDMX interface it finds.",
+          },
+          { type: "prerequisite", panels: ["IoTransports"] },
+          {
+            type: "action",
+            body: "Find the udmx row in the USB section.",
+          },
+        ],
+      },
+      {
+        id: "open-console-dmx",
+        title: "Open Console DMX",
+        target:
+          '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
+        observe: { type: "panel", component: "DmxUniverse" },
+        content: [
+          {
+            type: "text",
+            text: "Console DMX shows the universes Nightfall builds from patched fixtures, before a transport sends them.",
           },
           {
             type: "action",
-            body: "Inspect those three targets. Leave their settings unchanged for this walkthrough.",
+            body: "Press {command-palette-shortcut}, search for 'Console DMX', and press Enter.",
+          },
+        ],
+      },
+      {
+        id: "no-universes",
+        title: "Nothing to send yet",
+        target: '[data-component="DmxUniverse"][data-panel-id]',
+        content: [
+          {
+            type: "text",
+            text: "The sample fixtures’ output bindings are disabled, so they write to no universe and no transport has anything to send.",
+          },
+          { type: "prerequisite", panels: ["DmxUniverse"] },
+          {
+            type: "action",
+            body: "Notice that Console DMX has no universe data.",
           },
           {
             type: "details",
             title: "Learn more",
-            text: "On a physical rig, configure your interface and map console universes to targets. The receiver must use the same universe and protocol.",
-          },
-        ],
-      },
-      {
-        id: "test",
-        title: "Separate output from visualization",
-        content: [
-          {
-            type: "text",
-            text: "The Visualizer does not require a transport. The browser demo cannot send network or USB DMX, so there is no hardware route to test.",
-          },
-          {
-            type: "prerequisite",
-            panels: ["DmxUniverse", "PatchEditor"],
-          },
-          {
-            type: "action",
-            body: "Compare Console DMX with the disabled sample patch. Return to the creative lessons to work with the virtual fixtures.",
+            text: "On a real rig, patch fixtures to console universes, then send those universes to a transport, for example with the command patch console @ sacn. Your receiver must use the same protocol and universe.",
           },
         ],
       },
@@ -965,100 +1025,127 @@ export const GUIDE_LESSONS: GuideLesson[] = [
   {
     id: "waveform",
     title: "Waveform effects",
-    duration: "5 min",
-    introduction: "Play and reshape fx3, the sample’s red-channel effect.",
+    duration: "6 min",
+    introduction:
+      "Reshape fx3, the sample’s red sine wave, then play your version from its clip.",
     steps: [
       {
-        id: "play",
-        title: "Start fx3",
-        target: "#header-cmdline",
-        observe: {
-          type: "clip-playing",
-          clipId: 6,
-        },
+        id: "quiet",
+        title: "Start from a quiet stage",
+        observe: { type: "playback-idle" },
         content: [
           {
             type: "text",
-            text: "Clip 6 already plays the red-channel wave across all pixel strips.",
-          },
-          {
-            type: "prerequisite",
-            panels: ["Visualizer"],
+            text: "fx3 changes only the red channel. Other running clips or timelines would mix their own colors into what you see.",
           },
           {
             type: "action",
-            title: "Type this command, then press Enter:",
-            body: "Stop Lo-fi and any running clips, clear the Programmer, then enter clip 6 start and watch the Visualizer.",
-            command: "clip 6 start",
+            body: "Stop all playback. This step completes on its own if nothing is running.",
+          },
+          { type: "stop-playback" },
+        ],
+      },
+      {
+        id: "open-fx",
+        title: "Open fx3",
+        targetFx: { id: 3 },
+        observe: { type: "panel", component: "FxEditor" },
+        content: [
+          {
+            type: "text",
+            text: "fx3 is a waveform effect: a repeating sine wave on the red channel of all 32 pixel strips. Each strip starts at a different point in the cycle, so the red appears to travel.",
+          },
+          { type: "prerequisite", panels: ["FxList", "Visualizer"] },
+          {
+            type: "action",
+            body: "In FX List, click 3: fx3 to open it in the FX Editor. In list view, select the row and press Enter.",
           },
         ],
       },
       {
-        id: "open",
-        title: "Open fx3",
-        target: '[aria-label="Edit selected effect"]:not(:disabled)',
-        observe: {
-          type: "panel",
-          component: "FxEditor",
-        },
+        id: "rate",
+        title: "Slow the wave down",
+        target: '[data-component="FxEditor"] input[aria-label="Rate"]',
+        focusTarget: true,
         content: [
           {
             type: "text",
-            text: "This effect repeats a sine wave with different phases across the pixel strips.",
+            text: "The FX Editor previews fx3 on the rig while it is open and updates as you edit. Rate is the length of one cycle; fx3 repeats every 4 seconds.",
           },
-          {
-            type: "prerequisite",
-            panels: ["FxList"],
-          },
+          { type: "prerequisite", panels: ["Visualizer"] },
           {
             type: "action",
-            title: "Edit fx3.",
-            body: "In FX List, select 3: fx3 and choose Edit selected effect.",
+            body: "Set Rate to 8 and watch the red wave slow to half speed.",
           },
         ],
       },
       {
         id: "shape",
-        title: "Explore the red wave",
+        title: "Change the wave’s shape",
+        target:
+          '[data-component="FxEditor"] .waveform-editor button[title="Square"]',
         content: [
           {
             type: "text",
-            text: "fx3 uses Red, a four-second cycle, and a full cycle of phase spread.",
-          },
-          {
-            type: "prerequisite",
-            panels: ["Visualizer"],
+            text: "The shape sets how the value moves through each cycle. Sine glides between off and full red; Square jumps between them.",
           },
           {
             type: "action",
-            body: "Change its cycle rate and phase range, save, and compare how the pixel strips move through the pattern.",
-          },
-          {
-            type: "details",
-            title: "Learn more",
-            text: "Try a slower cycle, then reduce the phase range to bring the lights closer together in the pattern.",
+            body: "Choose Square and watch the strips snap between full red and off.",
           },
         ],
       },
       {
-        id: "stop",
-        title: "Stop fx3",
-        target: "#header-cmdline",
-        observe: {
-          type: "clip-stopped",
-          clipId: 6,
-        },
+        id: "save",
+        title: "Save your version of fx3",
+        target: '[data-guide-target="fx-save"]',
+        observe: { type: "fx-saved", fxId: 3 },
         content: [
           {
             type: "text",
-            text: "Release the effect before trying another lesson.",
+            text: "Edits in the FX Editor are a preview until you save. Saving stores the new rate and shape in fx3, so clip 6 and the Lo-fi timeline use them the next time they start.",
           },
+          { type: "action", body: "Click Save in the FX Editor toolbar." },
+        ],
+      },
+      {
+        id: "close-editor",
+        title: "Close the FX Editor",
+        target: '[aria-label^="FX 3: fx3"] .dv-default-tab-action',
+        observe: { type: "panel-closed", component: "FxEditor" },
+        content: [
+          {
+            type: "text",
+            text: "The preview runs only while the FX Editor is open. Close it to hand the strips back to playback.",
+          },
+          { type: "action", body: "Click × on the FX 3: fx3 tab." },
+        ],
+      },
+      {
+        id: "play-clip",
+        title: "Play your saved fx3",
+        targetClip: { id: 6 },
+        observe: { type: "clip-playing", clipId: 6 },
+        content: [
+          {
+            type: "text",
+            text: "Clip 6: fx3 plays the saved effect. The Lo-fi timeline launches this same clip.",
+          },
+          { type: "prerequisite", panels: ["ClipList", "Visualizer"] },
           {
             type: "action",
-            title: "Type this command, then press Enter:",
-            body: "Enter clip 6 stop. If you also started an editor preview, stop that preview too.",
-            command: "clip 6 stop",
+            body: "Click clip 6: fx3 and watch your slower, square red wave in the Visualizer.",
           },
+        ],
+      },
+      {
+        id: "stop-clip",
+        title: "Stop fx3",
+        targetClip: { id: 6 },
+        observe: { type: "clip-stopped", clipId: 6 },
+        content: [
+          { type: "text", text: "Clicking a running clip again stops it." },
+          { type: "action", body: "Click fx3 again to stop it." },
         ],
       },
     ],
@@ -1067,102 +1154,157 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     id: "step-fx",
     title: "Step FX designer",
     duration: "7 min",
-    introduction: "Build a two-step intensity chase for the four pixel strips.",
+    introduction:
+      "Turn a new Step FX into an intensity chase across four pixel strips.",
     steps: [
       {
-        id: "create",
-        title: "Open the Step FX designer",
-        target: '[aria-label="Add effect"]',
-        observe: {
-          type: "panel",
-          component: "StepFxEditor",
-        },
+        id: "base",
+        title: "Give the strips a red base",
+        target: "#header-cmdline",
+        focusTarget: true,
+        observe: { type: "color", color: "Red" },
         content: [
           {
             type: "text",
-            text: "Step FX describes a repeating pattern as explicit values and durations.",
+            text: "An intensity chase only dims and brightens. The sample strips start with no color, so hold red on fixtures 310–313 in the Programmer first.",
           },
-          {
-            type: "prerequisite",
-            panels: ["FxList"],
-          },
+          { type: "prerequisite", panels: ["Visualizer"] },
           {
             type: "action",
-            title: "Choose Step FX.",
-            body: "Stop Lo-fi and any running clips, then clear the Programmer. Enter fix 310>313 red @ 100 green @ 0 blue @ 0 to give the chase a red base. In FX List, choose Add effect → Step FX.",
+            title: "Type this command, then press Enter:",
+            body: "Watch the four strips turn red.",
+            command: "fix 310>313 red @ 100 green @ 0 blue @ 0",
+          },
+        ],
+      },
+      {
+        id: "create",
+        title: "Create a Step FX",
+        target:
+          '[data-component="DropdownMenuItem"]:has([data-guide-target="add-step-fx"]), [aria-label="Add effect"]:not([aria-expanded="true"])',
+        observe: { type: "panel", component: "StepFxEditor" },
+        content: [
+          {
+            type: "text",
+            text: "Step FX describes a repeating pattern as explicit values and durations. A new one starts as a two-step Intensity chase: 100%, then 0%, one beat each.",
+          },
+          { type: "prerequisite", panels: ["FxList"] },
+          {
+            type: "action",
+            body: "In FX List, open Add effect and choose Step FX.",
           },
         ],
       },
       {
         id: "selection",
-        title: "Use the four pixel strips",
-        target: '[aria-label="Step FX attributes"]',
+        title: "Point the chase at the strips",
+        target:
+          '[data-component="PropertiesInspector"] textarea[aria-label="Selection"]',
+        observe: { type: "step-fx", selection: [310, 313] },
         content: [
           {
             type: "text",
-            text: "The selection tells the chase which lights participate.",
+            text: "The editor previews the chase live, but a new Step FX targets fixture 1. Its Selection decides which lights take part.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["PropertiesInspector", "Visualizer"],
           },
           {
             type: "action",
-            title: "Choose Intensity for the pixel strips.",
-            body: "Label the effect Demo Chase. Set Selection to fix 310>313 and choose the Intensity lane.",
+            title:
+              "In Properties, replace Selection with this text, then click Apply:",
+            body: "The red strips start chasing on and off.",
+            command: "Fixture 310>313",
           },
         ],
       },
       {
-        id: "steps",
-        title: "Make an on/off pattern",
-        target: '[aria-label="Add step"]',
+        id: "together",
+        title: "Flash the strips together",
+        target:
+          '[aria-label="Start position"]:not([aria-expanded="true"]), [role="radiogroup"][aria-label="Start position mode"]',
+        observe: { type: "step-fx", phase: "together" },
         content: [
           {
             type: "text",
-            text: "An absolute intensity track supplies brightness values directly.",
+            text: "Start position sets where each strip begins in the cycle. The new chase uses Spread, which staggers the strips.",
           },
           {
             type: "action",
-            title: "Add the off step after the on step.",
-            body: "Use the absolute track. Set the first step to full intensity and add a second step at zero. Give both equal widths.",
-          },
-          {
-            type: "details",
-            title: "Learn more",
-            text: "Equal widths give on and off equal time. Relative contributions modify another value; absolute intensity is easier to see for this chase.",
+            body: "Open Start position and choose Together. All four strips now flash in unison.",
           },
         ],
       },
       {
         id: "spread",
-        title: "Spread across the pixel strips",
-        target: '[aria-label="Preview"], [aria-label="Stop preview"]',
+        title: "Spread the chase again",
+        target:
+          '[aria-label="Start position"]:not([aria-expanded="true"]), [role="radiogroup"][aria-label="Start position mode"]',
+        observe: { type: "step-fx", phase: "spread" },
         content: [
           {
             type: "text",
-            text: "Different start positions make the lights alternate instead of flashing together.",
-          },
-          {
-            type: "prerequisite",
-            panels: ["Visualizer"],
+            text: "Spread staggers the strips across one cycle, so the lit step travels along them.",
           },
           {
             type: "action",
-            title: "Preview Demo Chase while changing spread.",
-            body: "Preview Demo Chase and adjust Start position / Spread. Watch fixtures 310 through 313 move through the steps.",
+            body: "In Start position, choose Spread and watch the chase move across the strips.",
           },
         ],
       },
       {
-        id: "timing",
-        title: "Shape the chase rhythm",
-        target: '[aria-label="Step FX speed"]',
+        id: "speed",
+        title: "Slow the chase",
+        target:
+          '[aria-label="Speed and scaling"]:not([aria-expanded="true"]), [aria-label="Step FX speed"]',
+        observe: { type: "step-fx", beatSeconds: 1 },
         content: [
           {
             type: "text",
-            text: "Speed changes the pace; step widths change the balance within a cycle.",
+            text: "Speed sets the length of one beat, and each step here is one beat wide. The new chase runs at 120 BPM.",
           },
           {
             type: "action",
-            title: "Adjust Demo Chase’s pace.",
-            body: "Adjust Demo Chase’s speed, then try unequal step widths. Stop preview and save the effect.",
+            body: "Open Speed and scaling, set Speed to 60, then press Enter. The chase slows to half speed.",
+          },
+        ],
+      },
+      {
+        id: "stop-preview",
+        title: "Stop the preview",
+        target: '[aria-label="Stop preview"]',
+        observe: { type: "step-fx-preview-stopped" },
+        content: [
+          {
+            type: "text",
+            text: "Step FX saves your edits automatically. The preview runs only while you test in the editor; to use the chase in a show, give it a clip.",
+          },
+          {
+            type: "action",
+            body: "Click Stop preview in the Step FX editor toolbar.",
+          },
+          {
+            type: "details",
+            title: "Learn more",
+            text: "Rename the effect in Properties so it’s easy to find in FX List later.",
+          },
+        ],
+      },
+      {
+        id: "clear",
+        title: "Release the red base",
+        target: '[aria-label="Clear programmer"]',
+        observe: { type: "clear" },
+        content: [
+          {
+            type: "text",
+            text: "The red base is still held in the Programmer. Clear it so it doesn’t affect other lessons.",
+          },
+          {
+            type: "action",
+            title: "Click Clear twice",
+            body: "The first click clears the selection; the second releases the Programmer’s values. You can also press {clear-shortcut} twice.",
           },
         ],
       },
@@ -1172,113 +1314,121 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     id: "timeline",
     title: "Timeline programming",
     duration: "5 min",
-    introduction: "Edit when Lo-fi starts the fx3 clip.",
+    introduction:
+      "Move when Lo-fi starts the fx3 red wave, then rehearse the change.",
     steps: [
       {
         id: "open",
         title: "Open Lo-fi",
-        observe: {
-          type: "panel",
-          component: "Timeline",
-        },
+        observe: { type: "sample-panels" },
         content: [
           {
             type: "text",
-            text: "FX Track contains Exec 5 (fx3); Seq Track starts and advances RGB cycle (full).",
+            text: "Lo-fi has two tracks. Seq Track starts RGB cycle (full), advances it through its cues, and stops it at 3.6 seconds. FX Track starts the fx3 red wave at the same moment.",
           },
           {
             type: "prerequisite",
-            panels: ["TimelinesPanel"],
+            panels: ["Visualizer"],
+            sampleTimeline: true,
           },
           {
             type: "action",
-            body: "Open timeline 1: Lo-fi from Timelines.",
+            body: "Open Timeline 1: Lo-fi beside the 3D Visualizer.",
           },
         ],
       },
       {
-        id: "inspect",
-        title: "Inspect Exec 5 (fx3)",
+        id: "select",
+        title: "Select the fx3 action",
+        targetTimelineAction: { trackId: "1", actionId: "1" },
+        observe: {
+          type: "timeline-action-selected",
+          trackId: "1",
+          actionId: "1",
+        },
         content: [
           {
             type: "text",
-            text: "Despite its older label, Exec 5 (fx3) starts clip 6: fx3. Seq Track starts and advances clip 1.",
+            text: "Each chip on a track is an action. Exec 6: fx3 on FX Track starts clip 6, which plays the red waveform effect.",
           },
           {
             type: "prerequisite",
             panels: ["PropertiesInspector"],
+            sampleTimeline: true,
           },
           {
             type: "action",
-            body: "Select Exec 5 (fx3) and inspect its target and timing in Properties.",
+            body: "Click the Exec 6: fx3 chip on FX Track to select it.",
           },
         ],
       },
       {
         id: "timing",
-        title: "Move the wave earlier",
+        title: "Start the wave earlier",
+        target: '[aria-label="Action position (ms)"]',
+        focusTarget: true,
         observe: {
-          type: "timeline-action-moved",
+          type: "timeline-action-position",
+          trackId: "1",
+          actionId: "1",
+          positionMs: 3000,
+          toleranceMs: 50,
         },
         content: [
           {
             type: "text",
-            text: "An action’s position determines when it happens.",
+            text: "Properties shows the selected action. Its position, 3600 ms, sets when it fires.",
           },
           {
             type: "prerequisite",
             panels: ["PropertiesInspector"],
+            sampleTimeline: true,
           },
           {
             type: "action",
-            body: "Move Exec 5 (fx3) from 3.6 seconds to 3 seconds by dragging it or editing its position in Properties.",
+            title: "Set Position (ms) to 3000",
+            body: "Type 3000 in Position (ms), then press Enter.",
+          },
+          {
+            type: "details",
+            title: "Drag instead",
+            text: "You can also drag the chip left along FX Track. At the default zoom, each pixel is 10 ms.",
           },
         ],
       },
       {
         id: "play",
-        title: "Play your arrangement",
+        title: "Rehearse the change",
         target: '[aria-label="Play timeline"]',
-        observe: {
-          type: "timeline-playing",
-        },
+        observe: { type: "timeline-playing" },
         content: [
           {
             type: "text",
-            text: "The red waveform effect will begin 0.6 seconds earlier.",
+            text: "fx3 now starts 0.6 seconds earlier, while the color cycle is still on its last cue.",
           },
           {
             type: "prerequisite",
             panels: ["Visualizer"],
+            sampleTimeline: true,
           },
           {
             type: "action",
-            title: "Start the timeline",
-            body: "Press Play timeline and watch the Visualizer.",
+            body: "Press Play timeline and watch the red wave reach the pixel strips at 3 seconds.",
           },
         ],
       },
       {
         id: "stop",
-        title: "Finish the rehearsal",
+        title: "Stop the rehearsal",
+        placement: "above",
         target: '[aria-label="Stop timeline"]',
-        observe: {
-          type: "timeline-stopped",
-        },
+        observe: { type: "timeline-stopped" },
         content: [
           {
             type: "text",
-            text: "Watch the color changes and earlier red wave, then stop playback.",
+            text: "Stopping Lo-fi returns it to the start and releases the clips it started.",
           },
-          {
-            type: "prerequisite",
-            panels: ["StatusDisplay"],
-          },
-          {
-            type: "action",
-            title: "Stop the timeline",
-            body: "Press Stop timeline. Check Status Display and stop any clips you started manually.",
-          },
+          { type: "action", body: "Press Stop timeline." },
         ],
       },
     ],
