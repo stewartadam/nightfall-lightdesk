@@ -226,6 +226,26 @@ function activeFunction(
   return found ? { function: found, dmx } : undefined;
 }
 
+/** Smallest strobe rate that still strobes; zero means an open shutter. */
+const MIN_PROFILE_STROBE_RATE = 1e-3;
+
+/**
+ * Returns the normalized strobe rate of a profile shutter function at a DMX value.
+ *
+ * GDTF separates plain `ShutterN` functions (open/closed) from strobe
+ * variants such as `ShutterNStrobe`, `...Pulse` and `...Random`. Only the
+ * latter strobe, at a rate given by the position within the function's
+ * DMX range, reversed when the physical frequency descends across it;
+ * plain shutter functions return 0 so the beam stays steady.
+ */
+function profileStrobeRate(fn: ParameterFunction, dmx: number): number {
+  if (!/strobe|pulse|random/i.test(fn.attribute)) return 0;
+  const span = fn.dmx_to - fn.dmx_from;
+  let position = span > 0 ? (dmx - fn.dmx_from) / span : 1;
+  if (fn.physical_from > fn.physical_to) position = 1 - position;
+  return Math.max(MIN_PROFILE_STROBE_RATE, Math.min(1, position));
+}
+
 /** Converts a normalized strobe shutter value into the visualizer strobe frequency. */
 export function strobeShutterFrequencyHz(strobeShutter: number): number {
   const normalized = Math.min(1, Math.max(0, strobeShutter));
@@ -322,6 +342,10 @@ export function extractVisualizerDmx(
     }
     if (slot?.media) {
       dmx.gobo = elementGoboMedia(element).indexOf(slot.media) + 1;
+    }
+    if (prop === "strobeShutter" && active) {
+      dmx.strobeShutter = profileStrobeRate(active.function, active.dmx);
+      continue;
     }
 
     if (attrType === "Custom") {

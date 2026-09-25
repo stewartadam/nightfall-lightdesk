@@ -49,6 +49,61 @@ async function loadGoboTexture(url: string): Promise<Texture> {
   return texture;
 }
 
+/**
+ * Returns a white image for a spot light that projected a gobo and is now open.
+ *
+ * It matches the size of the image it replaces, since resizing a map in
+ * place does not reliably reallocate its GPU texture.
+ */
+function openProjectionImage(width: number, height: number): ImageData {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  pixels.fill(255);
+  return new ImageData(pixels, width, height);
+}
+
+/**
+ * Projects a gobo image from a beam's spot light, or white when `gobo` is null.
+ *
+ * Lit materials key their pipelines on each spot light's map texture, so
+ * assigning a different texture per gobo would recompile every lit material
+ * in the scene on each change. Each light instead keeps one map, created
+ * with its first gobo, and only that map's image changes; the map is only
+ * replaced when a gobo of a different image size is selected. Lights that
+ * never show a gobo get no map and cost no texture sampler.
+ */
+function setProjectedGobo(beam: BeamInstance, gobo: Texture | null): void {
+  if (beam.projectedGobo === gobo) return;
+  beam.projectedGobo = gobo;
+  // Scene inspection (debug tools, e2e) reads whether a gobo is projected.
+  beam.spotLight.userData.projectsGobo = gobo !== null;
+  let map = beam.spotLight.map;
+  const current = map?.image as { width: number; height: number } | undefined;
+  const next = gobo?.image as { width: number; height: number } | undefined;
+  if (
+    map &&
+    current &&
+    next &&
+    (current.width !== next.width || current.height !== next.height)
+  ) {
+    // A differently sized image needs a new GPU texture (see openProjectionImage).
+    map.dispose();
+    map = null;
+  }
+  if (!map) {
+    if (!gobo) return;
+    map = new Texture();
+    map.flipY = false;
+    beam.spotLight.map = map;
+  }
+  if (gobo) {
+    map.image = gobo.image;
+  } else {
+    const { width, height } = map.image as { width: number; height: number };
+    map.image = openProjectionImage(width, height);
+  }
+  map.needsUpdate = true;
+}
+
 /** Beam specification for a fixture */
 export interface BeamSpec {
   beamAngle: number;
@@ -66,6 +121,8 @@ export interface BeamInstance {
   parent: Object3D;
   /** Current beam length in meters */
   beamLength: number;
+  /** Gobo image the spot light projects, or null for an open beam. */
+  projectedGobo: Texture | null;
 }
 
 /** Map of fixture UID to beam instances */
@@ -141,6 +198,7 @@ export class BeamManager {
       spotlightTarget,
       parent,
       beamLength: defaultBeamParameters.beamLength,
+      projectedGobo: null,
     };
     this.beams.set(fixtureUid, beam);
     return beam;
@@ -150,11 +208,12 @@ export class BeamManager {
    * Shapes a beam with a gobo image, or opens it when `goboUrl` is undefined.
    *
    * Images load once per URL (in the main thread or a worker) and are shared
-   * between beams; until an image is ready the beam renders open.
+   * between beams; until an image is ready the beam renders open. The image
+   * is also projected by the beam's spot light onto the floor and scenery
+   * (see {@link goboProjectionNode}); this works without shadow maps, which
+   * the visualizer leaves disabled.
    */
   private applyGobo(beam: BeamInstance, goboUrl: string | undefined): void {
-    if (isLowQualityBeamMaterial(beam.material)) return;
-    const material = beam.material;
     const loaded = goboUrl ? this.goboTextures.get(goboUrl) : undefined;
     if (goboUrl && loaded === undefined) {
       this.goboTextures.set(goboUrl, null);
@@ -163,6 +222,9 @@ export class BeamManager {
         () => log.warn(`Failed to load gobo image ${goboUrl}`),
       );
     }
+    if (isLowQualityBeamMaterial(beam.material)) return;
+    setProjectedGobo(beam, loaded ?? null);
+    const material = beam.material;
     if (loaded) {
       for (const node of material.goboTextureNodes) node.value = loaded;
       material.goboActiveUniform.value = 1;
@@ -284,6 +346,7 @@ export class BeamManager {
 
     beam.mesh.geometry?.dispose();
     disposeBeamMaterial(beam.material);
+    beam.spotLight.map?.dispose();
     beam.spotLight.dispose();
 
     this.beams.delete(fixtureUid);
