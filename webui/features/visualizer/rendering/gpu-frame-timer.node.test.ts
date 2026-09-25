@@ -18,6 +18,8 @@ import {
   GpuFrameTimer,
   gpuIntervalSpan,
   type InspectorGpuFrame,
+  MAX_READBACK_RETRIES,
+  READBACK_RETRY_BASE_MS,
   readInspectorGpuSample,
   type TimestampRenderer,
 } from "./gpu-frame-timer";
@@ -322,6 +324,72 @@ test("GPU timing tolerates unavailable queries and device loss", async () => {
   timer.end(renderer);
   assert.equal(calls, 1);
   assert.equal(timer.sample, undefined);
+  assert.equal(timer.available, false);
+});
+
+/** A failed readback backs off exponentially, recovers on success, and gives up after the retry budget. */
+test("GPU timing retries failed readback with bounded backoff", async () => {
+  let failing = true;
+  let calls = 0;
+  const renderer: TimestampRenderer = {
+    backend: {
+      trackTimestamp: false,
+      timestampQueryPool: {
+        render: {
+          timestamps: new Map(),
+          currentQueryIndex: 2,
+          lastInterval: [0n, 2000000n],
+        },
+      },
+    },
+    hasFeature: () => true,
+    resolveTimestampsAsync: async (type) => {
+      if (type === "compute") return undefined;
+      calls++;
+      if (failing) throw new Error("mapping failed");
+      return 2;
+    },
+  };
+  /** Runs one sampled frame at a synthetic time and waits for its readback. */
+  const frame = async (now: number) => {
+    timer.begin(renderer, now);
+    timer.end(renderer);
+    await flush();
+  };
+  const timer = new GpuFrameTimer(0);
+  assert.equal(timer.available, true);
+  await frame(0);
+  assert.equal(calls, 1);
+  assert.equal(timer.available, false);
+
+  // The first retry waits the base delay, measured from the next frame's clock.
+  await frame(10);
+  await frame(10 + READBACK_RETRY_BASE_MS - 1);
+  assert.equal(calls, 1);
+  await frame(10 + READBACK_RETRY_BASE_MS);
+  assert.equal(calls, 2);
+
+  // A success restores availability and normal sampling cadence.
+  failing = false;
+  let now = 20_000;
+  await frame(now);
+  await frame(now + 2 * READBACK_RETRY_BASE_MS);
+  assert.equal(calls, 3);
+  assert.equal(timer.available, true);
+  assert.deepEqual(timer.sample, { id: 1, milliseconds: 2 });
+
+  // Persistent failure exhausts the retry budget and stops sampling for good.
+  failing = true;
+  now = 100_000;
+  for (let attempt = 0; attempt <= MAX_READBACK_RETRIES + 2; attempt++) {
+    await frame(now);
+    now += 60_000;
+    await frame(now);
+  }
+  assert.equal(calls, 3 + MAX_READBACK_RETRIES + 1);
+  assert.equal(timer.sample, undefined);
+  assert.equal(timer.available, false);
+  await timer.dispose();
 });
 
 /** A failed render query must not let disposal destroy buffers still mapped by a compute query. */

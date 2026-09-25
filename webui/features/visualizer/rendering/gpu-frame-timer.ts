@@ -7,6 +7,16 @@
  */
 
 import { InspectorBase } from "three/webgpu";
+import { getLogger } from "../../../lib/logger";
+
+const log = getLogger(import.meta.url);
+
+/** Consecutive failed readbacks tolerated before GPU timing is disabled. */
+export const MAX_READBACK_RETRIES = 5;
+/** First retry delay after a failed readback; doubles per consecutive failure. */
+export const READBACK_RETRY_BASE_MS = 1000;
+/** Ceiling on the retry delay so a transient fault recovers within a bounded time. */
+const READBACK_RETRY_MAX_MS = 30_000;
 
 /** One resolved frame's GPU work, grouped by render target or compute operation. */
 export interface GpuTimingSample {
@@ -121,7 +131,12 @@ export class GpuFrameTimer {
   private readback: Promise<void> = Promise.resolve();
   private recording = false;
   private disposed = false;
-  private failed = false;
+  /** Set once consecutive readback failures exceed the retry budget. */
+  private exhausted = false;
+  private consecutiveFailures = 0;
+  /** Backoff chosen by a failed readback, applied on the next `begin` using its clock. */
+  private pendingBackoffMs: number | undefined;
+  private supported: boolean | undefined;
   private latest: number | undefined;
   private sampleId = 0;
   private readonly passLabels = new GpuPassLabels();
@@ -130,6 +145,21 @@ export class GpuFrameTimer {
 
   /** Bounds query mapping overhead independently of the display's refresh rate. */
   constructor(private readonly sampleIntervalMs = 100) {}
+
+  /**
+   * Whether GPU samples are currently expected to arrive. False when the
+   * device lacks timestamp queries, while recovering from a failed readback,
+   * after retries are exhausted, or once disposed, so callers can stop
+   * waiting for samples instead of treating their absence as zero cost.
+   */
+  get available(): boolean {
+    return (
+      !this.disposed &&
+      !this.exhausted &&
+      this.consecutiveFailures === 0 &&
+      this.supported !== false
+    );
+  }
 
   /** Reports the last completed GPU sample; unavailable timing is never zero. */
   get sample(): GpuTimingSample | undefined {
@@ -146,12 +176,17 @@ export class GpuFrameTimer {
   begin(renderer: TimestampRenderer, now = performance.now()): void {
     if (renderer.inspector?.constructor === InspectorBase)
       renderer.inspector = this.passLabels;
+    if (this.pendingBackoffMs !== undefined && !this.pending) {
+      this.nextSampleAt = now + this.pendingBackoffMs;
+      this.pendingBackoffMs = undefined;
+    }
+    this.supported = renderer.hasFeature("timestamp-query");
     this.recording =
       !this.disposed &&
-      !this.failed &&
+      !this.exhausted &&
       !this.pending &&
       now >= this.nextSampleAt &&
-      renderer.hasFeature("timestamp-query");
+      this.supported;
     renderer.backend.trackTimestamp = this.recording;
     this.passLabels.recording = this.recording;
     if (this.recording) {
@@ -183,6 +218,7 @@ export class GpuFrameTimer {
       .then(([renderResult, computeResult]) => {
         if (renderResult.status === "rejected") throw renderResult.reason;
         if (computeResult.status === "rejected") throw computeResult.reason;
+        this.consecutiveFailures = 0;
         const render = hasRenderQueries ? renderResult.value : undefined;
         const compute = hasComputeQueries ? computeResult.value : undefined;
         const pools = renderer.backend.timestampQueryPool;
@@ -224,11 +260,7 @@ export class GpuFrameTimer {
           this.sampleId++;
         }
       })
-      .catch(() => {
-        // Device loss or failed mapping must not break timeline playback.
-        this.failed = true;
-        this.latest = undefined;
-      })
+      .catch((error: unknown) => this.recordReadbackFailure(error))
       .finally(() => {
         // This timer owns readback; retain no per-frame keys after consuming them.
         for (const pool of Object.values(
@@ -237,6 +269,35 @@ export class GpuFrameTimer {
           pool?.timestamps.clear();
         this.pending = false;
       });
+  }
+
+  /**
+   * Clears the stale sample after a rejected readback and schedules a retry
+   * with exponential backoff. Device loss or failed mapping must not break
+   * playback, so timing is disabled after {@link MAX_READBACK_RETRIES}
+   * consecutive failures. Logs only the first failure of each failing streak
+   * and the final give-up, never once per retry.
+   */
+  private recordReadbackFailure(error: unknown): void {
+    this.latest = undefined;
+    this.passes = undefined;
+    if (this.disposed) return;
+    this.consecutiveFailures++;
+    if (this.consecutiveFailures === 1)
+      log.warn("GPU timestamp readback failed; retrying with backoff", {
+        error,
+      });
+    if (this.consecutiveFailures > MAX_READBACK_RETRIES) {
+      this.exhausted = true;
+      log.warn(
+        `GPU timing disabled after ${this.consecutiveFailures} consecutive readback failures`,
+      );
+      return;
+    }
+    this.pendingBackoffMs = Math.min(
+      READBACK_RETRY_BASE_MS * 2 ** (this.consecutiveFailures - 1),
+      READBACK_RETRY_MAX_MS,
+    );
   }
 
   /** Stops recording and lets the owner drain mapping before destroying GPU buffers. */
