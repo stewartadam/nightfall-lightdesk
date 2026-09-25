@@ -405,6 +405,57 @@ test("Sharpy beam hangs down at rest and tilts to horizontal", async ({
   await submitCommand(page, "clear");
 });
 
+/**
+ * Verifies a selected, lit Sharpy outlines only its body: every volumetric
+ * beam and emitter mesh in the fixture group is flagged out of the selection
+ * outline, and the capture is attached for visual review of the outline.
+ */
+test("Sharpy selection outline excludes its beam", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  const uid = await installBenchFixture(page, backendSlot.dataDir, SHARPY, 1);
+  await expect.poll(() => missingMeshCount(page, uid)).toBe(0);
+
+  await submitCommand(page, "fix 1 int @ 100");
+  await submitCommand(page, "fix 1");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (uid) =>
+          ((window as any).appStores.programmerSelection.get() as string[])
+            .map(String)
+            .includes(String(uid)),
+        uid,
+      ),
+    )
+    .toBe(true);
+
+  const lightMeshes = () =>
+    page.evaluate((uid) => {
+      const root = (window as any).visualizerApi
+        .getScene()
+        .getObjectByName(`Fixture_${uid}`);
+      let beams = 0;
+      const unflagged: string[] = [];
+      root.traverse((child: any) => {
+        if (!child.isMesh) return;
+        const isBeam = child.name.startsWith("Beam_");
+        if (isBeam) beams++;
+        const isLightMesh = isBeam || child.name.endsWith("_emitter");
+        if (isLightMesh && child.userData.excludeFromSelection !== true) {
+          unflagged.push(child.name);
+        }
+      });
+      return { hasBeam: beams > 0, unflagged };
+    }, uid);
+  await expect.poll(async () => (await lightMeshes()).hasBeam).toBe(true);
+  expect((await lightMeshes()).unflagged).toEqual([]);
+
+  await attachCanvas(page, "sharpy-selected-lit", testInfo);
+  await submitCommand(page, "clear");
+});
+
 /** Verifies moving one Hydrabeam head leaves its sibling heads' beams unchanged. */
 test("Hydrabeam heads tilt independently", async ({
   page,

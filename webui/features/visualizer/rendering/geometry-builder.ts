@@ -35,6 +35,7 @@ import type {
   GeometryModel,
   GeometryNode,
 } from "../../../types";
+import { excludeFromSelection } from "../model/selection-exclusion";
 import type { EmitterData, FixtureInstance } from "../model/types";
 import { createGdtfJoints } from "./gdtf-joints";
 import { loadMesh } from "./mesh-loader";
@@ -143,6 +144,7 @@ function createEmitterMesh(node: GeometryNode): Mesh {
 
   const mesh = new Mesh();
   mesh.name = `${node.name}_emitter`;
+  excludeFromSelection(mesh);
 
   switch (primitiveType) {
     case "cube":

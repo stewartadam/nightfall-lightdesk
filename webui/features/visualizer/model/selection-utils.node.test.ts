@@ -11,8 +11,10 @@ import test from "node:test";
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial } from "three/webgpu";
 import { SceneObjectType } from "../../../types";
 import type { ExtendedFixtureInstance } from "../rendering/fixture-renderers";
+import { excludeFromSelection } from "./selection-exclusion";
 import {
   getSceneObjectSelectionMeshes,
+  getSelectionMeshes,
   getSelectionTargetObjects,
   SelectionHighlighter,
 } from "./selection-utils";
@@ -87,6 +89,30 @@ function ledBarInstance(): ExtendedFixtureInstance {
     },
   } as unknown as ExtendedFixtureInstance;
 }
+
+/** Verifies whole-fixture outlines skip flagged beam/emitter meshes nested in the fixture group. */
+test("getSelectionMeshes skips meshes flagged with excludeFromSelection", () => {
+  const body = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+  const emitter = excludeFromSelection(
+    new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()),
+  );
+  const beam = excludeFromSelection(
+    new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()),
+  );
+  emitter.add(beam);
+  const group = new Group();
+  group.add(body, emitter);
+
+  const instance = {
+    uid: "fixture-gdtf",
+    group,
+    nodeObjects: new Map(),
+    emitters: new Map(),
+    rendererType: "gdtf",
+  } as unknown as ExtendedFixtureInstance;
+
+  assert.deepEqual(getSelectionMeshes(instance), [body]);
+});
 
 test("SelectionHighlighter keeps active span objects separate from general selection", () => {
   const instances = fixtureInstances();

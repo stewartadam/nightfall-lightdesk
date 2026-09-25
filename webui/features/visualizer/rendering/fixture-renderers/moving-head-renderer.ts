@@ -35,6 +35,7 @@ import {
 } from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import type { FixtureElement, FixtureGeometry } from "../../../../types";
+import { excludeFromSelection } from "../../model/selection-exclusion";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 import {
   type BeamMaterial,
@@ -312,6 +313,7 @@ export function buildMovingHeadFixture(
   const lensMaterial = new MeshBasicMaterial({ color: 0x444444 });
   const lens = new Mesh(lensGeometry, lensMaterial);
   lens.name = "Lens";
+  excludeFromSelection(lens);
   lens.position.y = -0.11;
   headGroup.add(lens);
 
@@ -322,6 +324,7 @@ export function buildMovingHeadFixture(
   // Beam mesh - unit cone that gets scaled dynamically
   const beamMesh = new Mesh(beamGeometryMesh, beamMaterial);
   beamMesh.name = "Beam";
+  excludeFromSelection(beamMesh);
   beamMesh.position.set(0, -0.5, 0);
   beamMesh.castShadow = false;
   beamMesh.frustumCulled = false;
@@ -340,6 +343,7 @@ export function buildMovingHeadFixture(
   });
   const floorSpotMesh = new Mesh(floorSpotGeometry, floorSpotMaterial);
   floorSpotMesh.name = "BeamFootprint";
+  excludeFromSelection(floorSpotMesh);
   floorSpotMesh.rotation.x = -Math.PI / 2;
   floorSpotMesh.renderOrder = 101;
   floorSpotMesh.visible = false;
