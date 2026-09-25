@@ -29,4 +29,4 @@ Use `{command-palette-shortcut}` or `{clear-shortcut}` in text, action titles, o
 
 Sample objects have session-specific UIDs, so target them by user-facing ID with `targetClip`, `targetSequence`, `targetFx`, `targetPatchFixture`, or `targetTimelineAction` instead of a hard-coded `target` selector.
 
-Steps with `observe` advance automatically: the guide shows a checkmark briefly, then moves on, and the forward button reads **Skip**. Steps without `observe` show **Continue**. Most observations only fire on a change after the step opens; `sample-panels`, `sequence-editor`, `panel-hidden`, `panel-closed`, `playback-idle`, and `timeline-action-selected` also complete immediately if already satisfied.
+Steps with `observe` advance automatically, and their forward button reads **Skip**. Steps without `observe` show **Continue**. Most observations only fire on a change after the step opens; `sample-panels`, `sequence-editor`, `panel-hidden`, `panel-closed`, `playback-idle`, and `timeline-action-selected` also complete immediately if already satisfied.

@@ -8,13 +8,11 @@
 
 import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
-import { CheckCircleIcon } from "@squidlab/phosphor-solid/check-circle";
 import {
   createEffect,
   createMemo,
   createSignal,
   For,
-  on,
   onCleanup,
   Show,
 } from "solid-js";
@@ -68,9 +66,6 @@ import { useGuideProgress } from "./use-guide-progress";
 import "./welcome-guide.css";
 
 const log = getLogger(import.meta.url);
-
-/** How long a detected step shows its checkmark before the next instruction appears. */
-const STEP_COMPLETION_DELAY_MS = 700;
 
 /** Offers an unobtrusive first-visit invitation in the browser demo only. */
 export function GuideInvitation() {
@@ -327,45 +322,10 @@ export default function WelcomeGuide() {
     });
   };
 
-  const [completing, setCompleting] = createSignal(false);
-  let completionTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Cancels a pending automatic advance so manual navigation always wins. */
-  const cancelCompletion = () => {
-    clearTimeout(completionTimer);
-    completionTimer = undefined;
-    setCompleting(false);
-  };
-  onCleanup(cancelCompletion);
-  /** Drops a pending checkmark when the guide closes or the user switches lesson or step. */
-  createEffect(
-    on([opened, lessonId, index], cancelCompletion, { defer: true }),
-  );
-
   /** Changes instructional position and returns focus to its heading for keyboard users. */
   const moveTo = (position: number) => {
-    cancelCompletion();
     guideStepIndex.set(position);
     heading?.focus();
-  };
-
-  /**
-   * Keeps the card in place while a finished step shows its checkmark, even when the
-   * completing action removes or relabels its target (Play becoming Pause, Save disabling).
-   */
-  const holdAnchorWhileCompleting = (bounds: DOMRect | null) => {
-    if (!completing()) setAnchor(bounds);
-  };
-
-  /** Shows a checkmark on the finished instruction briefly before revealing the next one. */
-  const completeStep = () => {
-    if (completionTimer !== undefined) return;
-    setCompleting(true);
-    // Advance without moving focus, so typing in the command input is not interrupted.
-    completionTimer = setTimeout(() => {
-      completionTimer = undefined;
-      setCompleting(false);
-      guideStepIndex.set(guideStepIndex.get() + 1);
-    }, STEP_COMPLETION_DELAY_MS);
   };
 
   /** Detects any clip, effect preview, or timeline still running after a lesson. */
@@ -398,17 +358,16 @@ export default function WelcomeGuide() {
       return undefined;
     return target;
   });
-  useGuideProgress(observation, dockviewApi, completeStep);
+  useGuideProgress(observation, dockviewApi, () =>
+    guideStepIndex.set(guideStepIndex.get() + 1),
+  );
 
   return (
     <Show when={opened()}>
       <aside
         ref={setCard}
         class="nf-welcome-guide"
-        classList={{
-          "nf-guide-floating": Boolean(lesson()),
-          "nf-guide-completing": completing(),
-        }}
+        classList={{ "nf-guide-floating": Boolean(lesson()) }}
         use:draggable={{
           disabled: !lesson(),
           handle: ".nf-guide-move",
@@ -507,21 +466,9 @@ export default function WelcomeGuide() {
           >
             {(current) => (
               <>
-                <div class="nf-guide-step-heading">
-                  <Show when={completing()}>
-                    <CheckCircleIcon
-                      class="nf-guide-step-done size-5"
-                      weight="fill"
-                      aria-hidden
-                    />
-                  </Show>
-                  <h2 ref={heading} tabIndex={-1} aria-live="polite">
-                    {completing() ? (
-                      <span class="sr-only">Step complete: </span>
-                    ) : null}
-                    {step()?.title ?? "Ready to explore"}
-                  </h2>
-                </div>
+                <h2 ref={heading} tabIndex={-1} aria-live="polite">
+                  {step()?.title ?? "Ready to explore"}
+                </h2>
                 <Show when={step()}>
                   {(instruction) => (
                     <>
@@ -547,7 +494,7 @@ export default function WelcomeGuide() {
                         selector={targetSelector()}
                         highlight={!blocked()}
                         focusTarget={!blocked() && instruction().focusTarget}
-                        onBounds={holdAnchorWhileCompleting}
+                        onBounds={setAnchor}
                       />
                       <GuideTarget
                         stepId={instruction().id}
@@ -589,7 +536,6 @@ export default function WelcomeGuide() {
                         >
                           <Button
                             size="compact"
-                            disabled={completing()}
                             onClick={() => moveTo(index() + 1)}
                             title="Move on without completing this step"
                           >
