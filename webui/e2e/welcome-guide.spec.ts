@@ -2146,3 +2146,39 @@ test("lesson end stops leftover playback", async ({ page }) => {
     )
     .toBe(false);
 });
+
+/** The lesson end clears a held selection and live values in a single press. */
+test("lesson end clears the programmer in one press", async ({ page }) => {
+  await openSample(page);
+  await submitCommand(page, "fix 310>313 red @ 100");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.programmerState.get().length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const guide = await startLesson(page, /Transports and output/);
+  await reachStep(page, "Ready to explore");
+  await expect(guide).toContainText("The Programmer still holds values.");
+  await expect(
+    guide.getByRole("button", { name: "Stop all playback", exact: true }),
+  ).toHaveCount(0);
+  await guide
+    .getByRole("button", { name: "Clear programmer", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const stores = (window as any).appStores;
+        return (
+          stores.programmerState.get().length +
+          stores.programmerSelection.get().length
+        );
+      }),
+    )
+    .toBe(0);
+  await expect(
+    guide.getByRole("button", { name: "Clear programmer", exact: true }),
+  ).toHaveCount(0);
+});
