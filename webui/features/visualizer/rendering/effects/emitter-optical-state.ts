@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { OpticalFunction } from "../../../../types";
+import { type OpticalFunction, PhysicalUnit } from "../../../../types";
 import type { EmitterData } from "../../model/types";
 import type { EmitterColor } from "../geometry-builder";
 import type { GoboAtlasSlot } from "./gobo-atlas";
@@ -204,14 +204,14 @@ export class EmitterOpticalState {
       const attribute = state.function!.attribute;
       if (
         /^Zoom\d*$/.test(attribute) &&
-        state.function!.physicalUnit === "Angle" &&
+        state.function!.physicalUnit === PhysicalUnit.Angle &&
         state.physical! > 0
       ) {
         this.zoomDegrees = state.physical!;
       }
       if (
         /^Focus\d*(Distance)?$/.test(attribute) &&
-        state.function!.physicalUnit === "Length" &&
+        state.function!.physicalUnit === PhysicalUnit.Length &&
         state.physical! > 0
       ) {
         this.focusDistance = state.physical!;

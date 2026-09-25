@@ -72,6 +72,101 @@ mod gdtf_tests {
 
     use super::super::gdtf::*;
 
+    /// Parses a minimal fixture type declaring an angular Zoom and length Focus attribute plus one
+    /// DMX profile, so optical conversion resolves units and curves as it does for real archives.
+    fn optical_fixture_type() -> gdtf::fixture_type::FixtureType {
+        use std::str::FromStr;
+        let description = gdtf::Description::from_str(
+            r#"<GDTF DataVersion="1.2">
+  <FixtureType Name="Optic" ShortName="Optic" LongName="Optic" Manufacturer="Test" Description=""
+      FixtureTypeID="6A2B1B4C-3C11-4C3E-8B8D-0F6D7C1A2B3C" RefFT="" CanHaveChildren="Yes">
+    <AttributeDefinitions>
+      <ActivationGroups/>
+      <FeatureGroups>
+        <FeatureGroup Name="Focus" Pretty="Focus"><Feature Name="Focus"/></FeatureGroup>
+      </FeatureGroups>
+      <Attributes>
+        <Attribute Name="Zoom" Pretty="Zoom" Feature="Focus.Focus" PhysicalUnit="Angle"/>
+        <Attribute Name="Focus1" Pretty="Focus1" Feature="Focus.Focus" PhysicalUnit="Length"/>
+      </Attributes>
+    </AttributeDefinitions>
+    <PhysicalDescriptions>
+      <DMXProfiles>
+        <DMXProfile Name="Curve"><Point DMXPercentage="0" CFC0="0" CFC1="1"/></DMXProfile>
+      </DMXProfiles>
+    </PhysicalDescriptions>
+    <Geometries>
+      <Geometry Name="Head" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}"/>
+    </Geometries>
+    <DMXModes>
+      <DMXMode Name="Mode" Geometry="Head"><DMXChannels/></DMXMode>
+    </DMXModes>
+  </FixtureType>
+</GDTF>"#,
+        )
+        .unwrap();
+        description.fixture_types.into_iter().next().unwrap()
+    }
+
+    /// Mirrors bytes by default and zero-pads only for shifted values, per the GDTF spec.
+    #[test]
+    fn test_channel_resolution_mirrors_unshifted_values() {
+        let value = |source: &str| -> gdtf::values::DmxValue {
+            serde_json::from_value(serde_json::json!(source)).unwrap()
+        };
+        let fine = ChannelResolution {
+            bytes: 2,
+            max: 65535,
+        };
+        let coarse = ChannelResolution { bytes: 1, max: 255 };
+        assert_eq!(fine.value(value("255/1")), 65535);
+        assert_eq!(fine.value(value("128/1")), 32896);
+        assert_eq!(fine.value(value("255/1s")), 65280);
+        assert_eq!(coarse.value(value("32896/2")), 128);
+    }
+
+    /// Resolves units and transfer curves into typed values, keeping dangling links explicit.
+    #[test]
+    fn test_optical_function_units_and_profiles_are_typed() {
+        let fixture_type = optical_fixture_type();
+        let mode: gdtf::dmx_mode::DmxMode = serde_json::from_value(serde_json::json!({
+            "@Name": "Mode", "@Geometry": "Head",
+            "DMXChannels": [{ "DMXChannel": [
+                { "@Geometry": "Head", "@Offset": "1", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Zoom", "ChannelFunction": [
+                    { "@Attribute": "Zoom", "@DMXFrom": "0/1", "@PhysicalFrom": 5, "@PhysicalTo": 40 }
+                  ] }] },
+                { "@Geometry": "Head", "@Offset": "2", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Focus1", "ChannelFunction": [
+                    { "@Attribute": "Focus1", "@DMXFrom": "0/1", "@DMXProfile": "Curve",
+                      "@PhysicalFrom": 1, "@PhysicalTo": 20 },
+                    { "@Attribute": "Focus1", "@DMXFrom": "128/1", "@DMXProfile": "Missing",
+                      "@PhysicalFrom": 1, "@PhysicalTo": 20 }
+                  ] }] },
+                { "@Geometry": "Head", "@Offset": "3", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Gobo1", "ChannelFunction": [
+                    { "@Attribute": "Gobo1", "@DMXFrom": "0/1",
+                      "@ModeMaster": "Head_Absent", "@ModeFrom": "0/1", "@ModeTo": "10/1" }
+                  ] }] }
+            ] }]
+        }))
+        .unwrap();
+        let channels = convert_optical_channels(&mode, &fixture_type);
+        let zoom = &channels[0].functions[0];
+        assert_eq!(zoom.physical_unit, PhysicalUnit::Angle);
+        assert_eq!(zoom.profile, OpticalProfile::Linear);
+        assert_eq!(zoom.mode_master, OpticalModeMaster::None);
+        let focus = &channels[1].functions;
+        assert_eq!(focus[0].physical_unit, PhysicalUnit::Length);
+        assert!(
+            matches!(&focus[0].profile, OpticalProfile::Curve(curve) if curve.points.len() == 1)
+        );
+        assert_eq!(focus[1].profile, OpticalProfile::Unresolved);
+        let gobo = &channels[2].functions[0];
+        assert_eq!(gobo.physical_unit, PhysicalUnit::None);
+        assert_eq!(gobo.mode_master, OpticalModeMaster::Unresolved);
+    }
+
     /// Converts coarse-encoded boundaries to a fine channel without losing inclusive slot ends.
     #[test]
     fn test_optical_function_resolution_and_slots() {
@@ -89,7 +184,7 @@ mod gdtf_tests {
                 ] }]
             }] }]
         })).unwrap();
-        let channels = convert_optical_channels(&mode, None);
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
         assert_eq!(channels.len(), 1);
         let channel = &channels[0];
         assert_eq!(channel.dmx_max, 65535);
@@ -121,16 +216,22 @@ mod gdtf_tests {
                   ] }] }
             ] }]
         })).unwrap();
-        let channels = convert_optical_channels(&mode, None);
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
         assert_eq!(channels.len(), 1);
         assert_eq!(channels[0].functions.len(), 2);
         for function in &channels[0].functions {
             assert_eq!((function.dmx_from, function.dmx_to), (0, 255));
-            assert!(function.mode_master.is_some());
+            assert!(matches!(
+                function.mode_master,
+                OpticalModeMaster::Resolved(_)
+            ));
         }
         assert_eq!(channels[0].functions[0].attribute, "Gobo1Pos");
         assert_eq!(channels[0].functions[1].attribute, "Gobo1PosRotate");
-        let condition = &channels[0].functions[1].mode_conditions.as_ref().unwrap()[0];
+        let OpticalModeMaster::Resolved(conditions) = &channels[0].functions[1].mode_master else {
+            panic!("expected resolved mode master");
+        };
+        let condition = &conditions[0];
         assert_eq!(condition.geometry, "Head");
         assert_eq!(condition.parameter_key, "Control");
         assert_eq!(
@@ -144,7 +245,7 @@ mod gdtf_tests {
         let mut second_speed = functions[1].clone();
         second_speed.dmx_from = serde_json::from_value(serde_json::json!("128/1")).unwrap();
         functions.push(second_speed);
-        let channels = convert_optical_channels(&mode, None);
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
         assert_eq!(channels[0].functions[0].dmx_to, 255);
         assert_eq!(channels[0].functions[1].dmx_to, 127);
         assert_eq!(channels[0].functions[2].dmx_to, 255);
@@ -174,8 +275,10 @@ mod gdtf_tests {
                   ] }] }
             ] }]
         })).unwrap();
-        let channels = convert_optical_channels(&mode, None);
-        let conditions = channels[1].functions[0].mode_conditions.as_ref().unwrap();
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
+        let OpticalModeMaster::Resolved(conditions) = &channels[1].functions[0].mode_master else {
+            panic!("expected resolved mode master");
+        };
         assert_eq!(conditions.len(), 2);
         assert_eq!((conditions[0].dmx_from, conditions[0].dmx_to), (20, 99));
         assert_eq!(conditions[0].geometry, "Head");
@@ -193,9 +296,11 @@ mod gdtf_tests {
             mode.dmx_channels[2].logical_channels[0].channel_functions[0]
                 .mode_master
                 .clone();
-        let channels = convert_optical_channels(&mode, None);
-        assert!(channels[1].functions[0].mode_conditions.is_none());
-        assert!(channels[1].functions[0].mode_master.is_some());
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
+        assert_eq!(
+            channels[1].functions[0].mode_master,
+            OpticalModeMaster::Unresolved
+        );
     }
 
     /// Sorts profile segments without dropping nonlinear coefficients or physical limits.

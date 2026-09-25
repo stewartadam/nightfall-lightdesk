@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { PhysicalUnit } from "../types";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
 /** Crowded clusters must retain both late sources and the energy of genuinely overlapping beams. */
@@ -269,16 +270,20 @@ for (const forceWebGL of [false, true]) {
                   physicalFrom: 0,
                   physicalTo: 0,
                   sets: [],
-                  modeMaster: "source",
-                  modeConditions: [
-                    {
-                      geometry: "Base",
-                      parameterKey: "Control",
-                      dmxMax: 255,
-                      dmxFrom: 0,
-                      dmxTo: 127,
-                    },
-                  ],
+                  physicalUnit: "Angle" as PhysicalUnit,
+                  profile: { type: "Linear" },
+                  modeMaster: {
+                    type: "Resolved",
+                    data: [
+                      {
+                        geometry: "Base",
+                        parameterKey: "Control",
+                        dmxMax: 255,
+                        dmxFrom: 0,
+                        dmxTo: 127,
+                      },
+                    ],
+                  },
                 },
                 {
                   attribute: "Gobo1PosRotate",
@@ -287,16 +292,20 @@ for (const forceWebGL of [false, true]) {
                   physicalFrom: 180,
                   physicalTo: 180,
                   sets: [],
-                  modeMaster: "source",
-                  modeConditions: [
-                    {
-                      geometry: "Base",
-                      parameterKey: "Control",
-                      dmxMax: 255,
-                      dmxFrom: 128,
-                      dmxTo: 255,
-                    },
-                  ],
+                  physicalUnit: "AngularSpeed" as PhysicalUnit,
+                  profile: { type: "Linear" },
+                  modeMaster: {
+                    type: "Resolved",
+                    data: [
+                      {
+                        geometry: "Base",
+                        parameterKey: "Control",
+                        dmxMax: 255,
+                        dmxFrom: 128,
+                        dmxTo: 255,
+                      },
+                    ],
+                  },
                 },
               ],
             },

@@ -82,9 +82,8 @@ pub struct OpticalChannel {
 pub struct OpticalFunction {
     /// Exact function attribute, distinguishing selection from rotation effects.
     pub attribute: String,
-    /// Source unit for physical values; absent units must not be interpreted as metres or angles.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub physical_unit: Option<String>,
+    /// Source unit for physical values; `None` values must not be interpreted as metres or angles.
+    pub physical_unit: PhysicalUnit,
     /// Inclusive channel-resolution DMX boundaries.
     pub dmx_from: u32,
     /// Inclusive final DMX value.
@@ -95,18 +94,89 @@ pub struct OpticalFunction {
     pub physical_to: f64,
     /// Referenced wheel name, if this function selects wheel slots.
     pub wheel: Option<String>,
-    /// Referenced nonlinear DMX profile, if present.
-    pub dmx_profile: Option<String>,
-    /// Resolved source polynomial segments and physical limits, when the profile exists.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile_curve: Option<OpticalDmxProfile>,
-    /// Source mode-master condition retained for conditional-function evaluation.
-    pub mode_master: Option<String>,
-    /// Resolved conditions that must all hold; absent when a source link cannot be resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode_conditions: Option<Vec<OpticalModeCondition>>,
+    /// Transfer curve mapping DMX within the function to its physical range.
+    pub profile: OpticalProfile,
+    /// Other-channel conditions gating whether this function is active.
+    pub mode_master: OpticalModeMaster,
     /// Named subintervals, including wheel-slot assignments.
     pub sets: Vec<OpticalChannelSet>,
+}
+
+/// Physical quantity of an optical function's values, mapped from the GDTF attribute definition.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum PhysicalUnit {
+    /// No physical unit, or the attribute definition could not be resolved.
+    #[default]
+    None,
+    /// Percentage (%).
+    Percent,
+    /// Meters (m).
+    Length,
+    /// Kilograms (kg).
+    Mass,
+    /// Seconds (s).
+    Time,
+    /// Kelvin (K).
+    Temperature,
+    /// Candela (cd).
+    LuminousIntensity,
+    /// Degrees.
+    Angle,
+    /// Newtons (N).
+    Force,
+    /// Hertz (Hz).
+    Frequency,
+    /// Amperes (A).
+    Current,
+    /// Volts (V).
+    Voltage,
+    /// Watts (W).
+    Power,
+    /// Joules (J).
+    Energy,
+    /// Square meters (m²).
+    Area,
+    /// Cubic meters (m³).
+    Volume,
+    /// Meters per second (m/s).
+    Speed,
+    /// Meters per second squared (m/s²).
+    Acceleration,
+    /// Degrees per second.
+    AngularSpeed,
+    /// Degrees per second squared.
+    AngularAcceleration,
+    /// Nanometers (nm).
+    WaveLength,
+    /// Abstract color component intensity from 0 to 1.
+    ColorComponent,
+}
+
+/// DMX-to-physical transfer curve of one optical function.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(tag = "type", content = "data")]
+pub enum OpticalProfile {
+    /// Physical values interpolate linearly across the function or channel set.
+    Linear,
+    /// A resolved source polynomial curve.
+    Curve(OpticalDmxProfile),
+    /// The source references a profile that could not be resolved; values must not be guessed.
+    Unresolved,
+}
+
+/// Activation gate of one optical function driven by other channels.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(tag = "type", content = "data")]
+pub enum OpticalModeMaster {
+    /// The function is always active within its DMX interval.
+    None,
+    /// Conditions that must all hold for the function to be active.
+    Resolved(Vec<OpticalModeCondition>),
+    /// The source declares a mode master that could not be resolved (missing link or cycle).
+    Unresolved,
 }
 
 /// An inclusive mode-master range in the controlling channel's native DMX resolution.

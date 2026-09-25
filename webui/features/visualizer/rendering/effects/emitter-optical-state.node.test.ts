@@ -9,7 +9,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Mesh } from "three/webgpu";
+import { PhysicalUnit } from "../../../../types";
 import { EmitterOpticalState } from "./emitter-optical-state";
+
+/** Unitless, linear and ungated source function defaults. */
+const PLAIN = {
+  physicalUnit: PhysicalUnit.None,
+  profile: { type: "Linear" },
+  modeMaster: { type: "None" },
+} as const;
 
 /** Ancestor zoom follows physical profiles and resets when its multifunction channel changes. */
 test("inherited zoom evaluates percentage profiles and clears inactive functions", () => {
@@ -25,21 +33,25 @@ test("inherited zoom evaluates percentage profiles and clears inactive functions
           dmxMax: 1000,
           functions: [
             {
+              ...PLAIN,
               attribute: "Zoom",
-              physicalUnit: "Angle",
+              physicalUnit: PhysicalUnit.Angle,
               dmxFrom: 0,
               dmxTo: 800,
               physicalFrom: 5,
               physicalTo: 45,
-              dmxProfile: "Linear",
-              profileCurve: {
-                min: 5,
-                max: 45,
-                points: [{ dmxPercentage: 0, coefficients: [0, 1, 0, 0] }],
+              profile: {
+                type: "Curve",
+                data: {
+                  min: 5,
+                  max: 45,
+                  points: [{ dmxPercentage: 0, coefficients: [0, 1, 0, 0] }],
+                },
               },
               sets: [],
             },
             {
+              ...PLAIN,
               attribute: "NoFeature",
               dmxFrom: 801,
               dmxTo: 1000,
@@ -94,6 +106,7 @@ test("gobo stages preserve separate wheel selection and rotation", () => {
           dmxMax: 255,
           functions: [
             {
+              ...PLAIN,
               attribute: `Gobo${i}`,
               wheel: `Wheel${i}`,
               dmxFrom: 0,
@@ -119,6 +132,7 @@ test("gobo stages preserve separate wheel selection and rotation", () => {
           dmxMax: 255,
           functions: [
             {
+              ...PLAIN,
               attribute: `Gobo${i}Pos`,
               dmxFrom: 0,
               dmxTo: 255,
@@ -190,6 +204,7 @@ test("prism reduction follows active DMX combinations", () => {
         dmxMax: 255,
         functions: [
           {
+            ...PLAIN,
             attribute: `Prism${i}`,
             wheel: "Split",
             dmxFrom: 0,
@@ -279,6 +294,7 @@ test("two active prism wheels compose instead of overwriting", () => {
         dmxMax: 255,
         functions: [
           {
+            ...PLAIN,
             attribute: `Prism${i + 1}`,
             wheel: `Wheel${i}`,
             dmxFrom: 0,
@@ -358,6 +374,7 @@ test("separate index and speed channels share only their wheel rotation", () => 
           dmxMax: 255,
           functions: [
             {
+              ...PLAIN,
               attribute: `${family}${suffix}`,
               dmxFrom: 0,
               dmxTo: 255,
@@ -449,17 +466,20 @@ test("profiled focus drives the physical focal plane", () => {
           dmxMax: 1000,
           functions: [
             {
+              ...PLAIN,
               attribute: "Focus1Distance",
-              physicalUnit: "Length",
+              physicalUnit: PhysicalUnit.Length,
               dmxFrom: 0,
               dmxTo: 1000,
               physicalFrom: 2,
               physicalTo: 10,
-              dmxProfile: "Quadratic",
-              profileCurve: {
-                min: 2,
-                max: 10,
-                points: [{ dmxPercentage: 0, coefficients: [0, 0, 0.01, 0] }],
+              profile: {
+                type: "Curve",
+                data: {
+                  min: 2,
+                  max: 10,
+                  points: [{ dmxPercentage: 0, coefficients: [0, 0, 0.01, 0] }],
+                },
               },
               sets: [],
             },
@@ -492,7 +512,7 @@ test("profiled focus drives the physical focal plane", () => {
 
 /** Only calibrated length values control the focal plane; generic positions remain uncalibrated. */
 test("focus distance preserves physical units and clears missing input", () => {
-  for (const physicalUnit of ["Length", "None"]) {
+  for (const physicalUnit of [PhysicalUnit.Length, PhysicalUnit.None]) {
     const state = new EmitterOpticalState(
       {
         mesh: new Mesh(),
@@ -505,6 +525,7 @@ test("focus distance preserves physical units and clears missing input", () => {
             dmxMax: 255,
             functions: [
               {
+                ...PLAIN,
                 attribute: "Focus1",
                 physicalUnit,
                 dmxFrom: 0,
@@ -525,7 +546,10 @@ test("focus distance preserves physical units and clears missing input", () => {
       ["Head", { red: 1, green: 1, blue: 1, intensity: 1, "optical:Focus": 1 }],
     ]);
     state.update(colors);
-    assert.equal(state.focusDistance, physicalUnit === "Length" ? 20 : 0);
+    assert.equal(
+      state.focusDistance,
+      physicalUnit === PhysicalUnit.Length ? 20 : 0,
+    );
     colors.clear();
     state.update(colors);
     assert.equal(state.focusDistance, 0);
@@ -547,6 +571,7 @@ test("indexed and continuous optical rotation have distinct physical semantics",
             dmxMax: 255,
             functions: [
               {
+                ...PLAIN,
                 attribute: `${prefix}Pos`,
                 dmxFrom: 0,
                 dmxTo: 127,
@@ -555,6 +580,7 @@ test("indexed and continuous optical rotation have distinct physical semantics",
                 sets: [],
               },
               {
+                ...PLAIN,
                 attribute: `${prefix}PosRotate`,
                 dmxFrom: 128,
                 dmxTo: 255,
@@ -625,6 +651,7 @@ test("prism DMX selects source facets and resets to an unsplit aperture", () => 
           dmxMax: 255,
           functions: [
             {
+              ...PLAIN,
               attribute: "Prism1",
               dmxFrom: 0,
               dmxTo: 255,
@@ -703,6 +730,7 @@ test("emitter optical state selects imported wheel masks and restores open slots
           dmxMax: 255,
           functions: [
             {
+              ...PLAIN,
               attribute: "Gobo1",
               dmxFrom: 0,
               dmxTo: 255,

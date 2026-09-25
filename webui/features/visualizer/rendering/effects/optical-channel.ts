@@ -110,13 +110,13 @@ export function evaluateOpticalChannel(
   for (const candidate of channel.functions) {
     if (candidate.dmxFrom > value) break;
     if (candidate.dmxTo < value) continue;
-    if (candidate.modeMaster) {
-      const conditions = candidate.modeConditions;
-      if (!conditions?.length) {
-        state.function = candidate;
-        state.status = "requires-mode-master";
-        continue;
-      }
+    if (candidate.modeMaster.type === "Unresolved") {
+      state.function = candidate;
+      state.status = "requires-mode-master";
+      continue;
+    }
+    if (candidate.modeMaster.type === "Resolved") {
+      const conditions = candidate.modeMaster.data;
       let missing = false;
       let inactive = false;
       for (const condition of conditions) {
@@ -153,7 +153,7 @@ export function evaluateOpticalChannel(
   if (!fn) return;
   state.function = fn;
   state.status = "inactive";
-  if (fn.dmxProfile && !fn.profileCurve) {
+  if (fn.profile.type === "Unresolved") {
     state.status = "requires-profile";
     return;
   }
@@ -161,15 +161,16 @@ export function evaluateOpticalChannel(
   const interval = set ?? fn;
   const range = interval.dmxTo - interval.dmxFrom;
   const fraction = range > 0 ? (value - interval.dmxFrom) / range : 0;
-  const physical = fn.profileCurve
-    ? profilePhysical(
-        fn.profileCurve,
-        fn.dmxTo > fn.dmxFrom
-          ? (value - fn.dmxFrom) / (fn.dmxTo - fn.dmxFrom)
-          : 0,
-      )
-    : interval.physicalFrom +
-      fraction * (interval.physicalTo - interval.physicalFrom);
+  const physical =
+    fn.profile.type === "Curve"
+      ? profilePhysical(
+          fn.profile.data,
+          fn.dmxTo > fn.dmxFrom
+            ? (value - fn.dmxFrom) / (fn.dmxTo - fn.dmxFrom)
+            : 0,
+        )
+      : interval.physicalFrom +
+        fraction * (interval.physicalTo - interval.physicalFrom);
   if (physical === undefined) {
     state.status = "requires-profile";
     return;

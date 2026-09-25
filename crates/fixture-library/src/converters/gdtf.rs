@@ -684,7 +684,7 @@ fn extract_geometry_tree(
 
     Some(FixtureGeometry {
         optical_wheels: convert_optical_wheels(&fixture_type.wheels),
-        optical_channels: convert_optical_channels(dmx_mode, Some(fixture_type)),
+        optical_channels: convert_optical_channels(dmx_mode, fixture_type),
         nodes,
         roots,
         mesh_resources,
@@ -692,62 +692,120 @@ fn extract_geometry_tree(
     })
 }
 
-/// Converts source bytes by repetition or zero-padding according to the GDTF shift flag.
-pub(super) fn optical_dmx_value(value: gdtf::values::DmxValue, bytes: u8) -> u32 {
-    let source_bytes = value.bytes().get();
-    let mut result = 0u32;
-    for index in 0..bytes.min(4) {
-        let byte = if index >= source_bytes && value.shifting() {
-            0
-        } else {
-            (value.value() >> (8 * (source_bytes - 1 - index % source_bytes))) as u8
-        };
-        result = (result << 8) | byte as u32;
-    }
-    result
+/// Native DMX resolution of one source channel, used to express intervals as integers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ChannelResolution {
+    /// Number of DMX bytes the channel occupies, clamped to 1–4.
+    pub bytes: u8,
+    /// Largest integer value at this resolution.
+    pub max: u32,
 }
 
-/// Preserves source optical function intervals at the channel's native DMX resolution.
-pub(super) fn convert_optical_channels(
-    mode: &gdtf::dmx_mode::DmxMode,
-    fixture_type: Option<&gdtf::fixture_type::FixtureType>,
-) -> Vec<OpticalChannel> {
-    let mut result = Vec::new();
-    for channel in &mode.dmx_channels {
+impl ChannelResolution {
+    /// Derives the resolution from the channel's DMX offsets; virtual channels count as 8-bit.
+    pub fn of(channel: &gdtf::dmx_mode::DmxChannel) -> Self {
         let bytes = channel
             .offset
             .as_ref()
             .map_or(1, |offset| offset.len())
             .clamp(1, 4) as u8;
-        let dmx_max = ((1u64 << (bytes as u32 * 8)) - 1) as u32;
+        Self {
+            bytes,
+            max: ((1u64 << (u32::from(bytes) * 8)) - 1) as u32,
+        }
+    }
+
+    /// Rescales a source DMX value to this resolution, honoring the GDTF shift flag.
+    ///
+    /// Per the GDTF spec, values are byte-mirrored by default (`255/1` on a 16-bit channel is
+    /// 65535) and zero-padded only with the shift operator (`255/1s` is 65280). gdtf-rs's
+    /// `DmxValue::to` zero-pads non-shifting values too, so it cannot be used here.
+    pub fn value(self, value: gdtf::values::DmxValue) -> u32 {
+        let source_bytes = value.bytes().get();
+        let mut result = 0u32;
+        for index in 0..self.bytes {
+            let byte = if index >= source_bytes && value.shifting() {
+                0
+            } else {
+                (value.value() >> (8 * (source_bytes - 1 - index % source_bytes))) as u8
+            };
+            result = (result << 8) | u32::from(byte);
+        }
+        result
+    }
+}
+
+/// Attribute prefixes whose channel functions the visualizer evaluates as optics.
+///
+/// This mirrors the optical key filter in the web UI's `visualizer-dmx.ts`. Framing
+/// shutters (`Blade*`) are deliberately excluded because the renderer has no framing
+/// model; importing them would only ship metadata that is never evaluated.
+const OPTICAL_ATTRIBUTE_PREFIXES: [&str; 7] =
+    ["Gobo", "Prism", "Focus", "Zoom", "Frost", "Iris", "Shaper"];
+
+/// Maps the GDTF attribute definition's unit onto the Nightfall unit exposed to clients.
+pub(super) fn map_gdtf_physical_unit(unit: gdtf::attribute::PhysicalUnit) -> PhysicalUnit {
+    use gdtf::attribute::PhysicalUnit as Gdtf;
+    match unit {
+        Gdtf::None => PhysicalUnit::None,
+        Gdtf::Percent => PhysicalUnit::Percent,
+        Gdtf::Length => PhysicalUnit::Length,
+        Gdtf::Mass => PhysicalUnit::Mass,
+        Gdtf::Time => PhysicalUnit::Time,
+        Gdtf::Temperature => PhysicalUnit::Temperature,
+        Gdtf::LuminousIntensity => PhysicalUnit::LuminousIntensity,
+        Gdtf::Angle => PhysicalUnit::Angle,
+        Gdtf::Force => PhysicalUnit::Force,
+        Gdtf::Frequency => PhysicalUnit::Frequency,
+        Gdtf::Current => PhysicalUnit::Current,
+        Gdtf::Voltage => PhysicalUnit::Voltage,
+        Gdtf::Power => PhysicalUnit::Power,
+        Gdtf::Energy => PhysicalUnit::Energy,
+        Gdtf::Area => PhysicalUnit::Area,
+        Gdtf::Volume => PhysicalUnit::Volume,
+        Gdtf::Speed => PhysicalUnit::Speed,
+        Gdtf::Acceleration => PhysicalUnit::Acceleration,
+        Gdtf::AngularSpeed => PhysicalUnit::AngularSpeed,
+        Gdtf::AngularAccc => PhysicalUnit::AngularAcceleration,
+        Gdtf::WaveLength => PhysicalUnit::WaveLength,
+        Gdtf::ColorComponent => PhysicalUnit::ColorComponent,
+    }
+}
+
+/// Preserves source optical function intervals at the channel's native DMX resolution.
+pub(super) fn convert_optical_channels(
+    mode: &gdtf::dmx_mode::DmxMode,
+    fixture_type: &gdtf::fixture_type::FixtureType,
+) -> Vec<OpticalChannel> {
+    let mut result = Vec::new();
+    for channel in &mode.dmx_channels {
+        let resolution = ChannelResolution::of(channel);
         for logical in &channel.logical_channels {
             let attribute = logical.attribute.to_string();
-            if !["Gobo", "Prism", "Focus", "Zoom", "Frost", "Iris", "Shaper"]
+            if !OPTICAL_ATTRIBUTE_PREFIXES
                 .iter()
                 .any(|prefix| attribute.starts_with(prefix))
             {
                 continue;
             }
             let mut functions: Vec<_> = logical.channel_functions.iter().collect();
-            functions.sort_by_key(|function| optical_dmx_value(function.dmx_from, bytes));
+            functions.sort_by_key(|function| resolution.value(function.dmx_from));
             let mut converted = Vec::new();
             for function in &functions {
-                let from = optical_dmx_value(function.dmx_from, bytes);
-                let to = optical_function_end(logical, function, bytes, dmx_max);
+                let from = resolution.value(function.dmx_from);
+                let to = optical_function_end(logical, function, resolution);
                 if from > to {
                     continue;
                 }
                 let mut sets: Vec<_> = function.channel_sets.iter().collect();
-                sets.sort_by_key(|set| optical_dmx_value(set.dmx_from, bytes));
+                sets.sort_by_key(|set| resolution.value(set.dmx_from));
                 let sets = sets
                     .iter()
                     .enumerate()
                     .filter_map(|(index, set)| {
-                        let start = optical_dmx_value(set.dmx_from, bytes).max(from);
+                        let start = resolution.value(set.dmx_from).max(from);
                         let end = sets.get(index + 1).map_or(to, |next| {
-                            optical_dmx_value(next.dmx_from, bytes)
-                                .saturating_sub(1)
-                                .min(to)
+                            resolution.value(next.dmx_from).saturating_sub(1).min(to)
                         });
                         (start <= end).then(|| OpticalChannelSet {
                             dmx_from: start,
@@ -760,29 +818,22 @@ pub(super) fn convert_optical_channels(
                     .collect();
                 converted.push(OpticalFunction {
                     attribute: function.attribute.to_string(),
-                    physical_unit: fixture_type
-                        .and_then(|fixture| function.attribute(fixture))
-                        .and_then(|attribute| serde_json::to_value(attribute.physical_unit).ok())
-                        .and_then(|unit| unit.as_str().map(str::to_owned)),
+                    physical_unit: function
+                        .attribute(fixture_type)
+                        .map_or(PhysicalUnit::None, |attribute| {
+                            map_gdtf_physical_unit(attribute.physical_unit)
+                        }),
                     dmx_from: from,
                     dmx_to: to,
                     physical_from: function.physical_from,
                     physical_to: function.physical_to,
                     wheel: function.wheel.as_ref().map(ToString::to_string),
-                    dmx_profile: function.dmx_profile.as_ref().map(ToString::to_string),
-                    profile_curve: fixture_type
-                        .and_then(|fixture| function.dmx_profile(fixture))
-                        .map(|profile| {
-                            convert_optical_profile(profile, function.min(), function.max())
-                        }),
-                    mode_master: function
-                        .mode_master
-                        .as_ref()
-                        .and_then(|master| serde_json::to_string(master).ok()),
-                    mode_conditions: function
-                        .mode_master
-                        .as_ref()
-                        .and_then(|master| convert_optical_mode_conditions(master, mode)),
+                    profile: convert_optical_function_profile(function, fixture_type),
+                    mode_master: match &function.mode_master {
+                        None => OpticalModeMaster::None,
+                        Some(master) => convert_optical_mode_conditions(master, mode)
+                            .map_or(OpticalModeMaster::Unresolved, OpticalModeMaster::Resolved),
+                    },
                     sets,
                 });
             }
@@ -792,7 +843,7 @@ pub(super) fn convert_optical_channels(
                     .unwrap_or_else(|| attribute.clone()),
                 geometry: channel.geometry.to_string(),
                 attribute,
-                dmx_max,
+                dmx_max: resolution.max,
                 functions: converted,
             });
         }
@@ -800,22 +851,40 @@ pub(super) fn convert_optical_channels(
     result
 }
 
+/// Resolves a function's transfer curve, distinguishing linear functions from dangling profile links.
+fn convert_optical_function_profile(
+    function: &gdtf::dmx_mode::ChannelFunction,
+    fixture_type: &gdtf::fixture_type::FixtureType,
+) -> OpticalProfile {
+    if function.dmx_profile.is_none() {
+        return OpticalProfile::Linear;
+    }
+    function
+        .dmx_profile(fixture_type)
+        .map_or(OpticalProfile::Unresolved, |profile| {
+            OpticalProfile::Curve(convert_optical_profile(
+                profile,
+                function.min(),
+                function.max(),
+            ))
+        })
+}
+
 /// Finds a function's final value within its own mode-master container.
 fn optical_function_end(
     logical: &gdtf::dmx_mode::LogicalChannel,
     function: &gdtf::dmx_mode::ChannelFunction,
-    bytes: u8,
-    dmx_max: u32,
+    resolution: ChannelResolution,
 ) -> u32 {
-    let from = optical_dmx_value(function.dmx_from, bytes);
+    let from = resolution.value(function.dmx_from);
     logical
         .channel_functions
         .iter()
         .filter(|next| next.mode_master == function.mode_master)
-        .map(|next| optical_dmx_value(next.dmx_from, bytes))
+        .map(|next| resolution.value(next.dmx_from))
         .filter(|next| *next > from)
         .min()
-        .map_or(dmx_max, |next| next - 1)
+        .map_or(resolution.max, |next| next - 1)
 }
 
 /// Flattens linked function masters into numeric conditions once, rejecting unresolved links and cycles.
@@ -837,24 +906,19 @@ fn convert_optical_mode_conditions<'a>(
                 (channel, logical, Some(function))
             }
         };
-        let bytes = channel
-            .offset
-            .as_ref()
-            .map_or(1, |offset| offset.len())
-            .clamp(1, 4) as u8;
-        let dmx_max = ((1u64 << (bytes as u32 * 8)) - 1) as u32;
-        let mut from = optical_dmx_value(master.from, bytes);
-        let mut to = optical_dmx_value(master.to, bytes);
+        let resolution = ChannelResolution::of(channel);
+        let mut from = resolution.value(master.from);
+        let mut to = resolution.value(master.to);
         if let Some(function) = function {
-            from = from.max(optical_dmx_value(function.dmx_from, bytes));
-            to = to.min(optical_function_end(logical, function, bytes, dmx_max));
+            from = from.max(resolution.value(function.dmx_from));
+            to = to.min(optical_function_end(logical, function, resolution));
         }
         conditions.push(OpticalModeCondition {
             geometry: channel.geometry.to_string(),
             parameter_key: map_gdtf_attribute_to_nightfall(&logical.attribute)
                 .map(|attribute| attribute.key())
                 .unwrap_or_else(|| logical.attribute.to_string()),
-            dmx_max,
+            dmx_max: resolution.max,
             dmx_from: from,
             dmx_to: to,
         });

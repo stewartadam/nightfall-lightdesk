@@ -30,6 +30,7 @@ import {
   MergeStrategy,
   ParameterUnit,
   ParameterValuePolarity,
+  PhysicalUnit,
   type Transform,
 } from "../../../types";
 import type { FixtureInstance, RenderableFixture } from "../model/types";
@@ -205,16 +206,20 @@ test("fixture DMX selects indexed and rotating gobo modes across geometries", ()
               physicalFrom: 0,
               physicalTo: 90,
               sets: [],
-              modeMaster: "source",
-              modeConditions: [
-                {
-                  geometry: "Base",
-                  parameterKey: "Control",
-                  dmxMax: 65535,
-                  dmxFrom: 0,
-                  dmxTo: 32895,
-                },
-              ],
+              physicalUnit: PhysicalUnit.Angle,
+              profile: { type: "Linear" },
+              modeMaster: {
+                type: "Resolved",
+                data: [
+                  {
+                    geometry: "Base",
+                    parameterKey: "Control",
+                    dmxMax: 65535,
+                    dmxFrom: 0,
+                    dmxTo: 32895,
+                  },
+                ],
+              },
             },
             {
               attribute: "Gobo1PosRotate",
@@ -223,16 +228,20 @@ test("fixture DMX selects indexed and rotating gobo modes across geometries", ()
               physicalFrom: -180,
               physicalTo: 180,
               sets: [],
-              modeMaster: "source",
-              modeConditions: [
-                {
-                  geometry: "Base",
-                  parameterKey: "Control",
-                  dmxMax: 65535,
-                  dmxFrom: 32896,
-                  dmxTo: 65535,
-                },
-              ],
+              physicalUnit: PhysicalUnit.AngularSpeed,
+              profile: { type: "Linear" },
+              modeMaster: {
+                type: "Resolved",
+                data: [
+                  {
+                    geometry: "Base",
+                    parameterKey: "Control",
+                    dmxMax: 65535,
+                    dmxFrom: 32896,
+                    dmxTo: 65535,
+                  },
+                ],
+              },
             },
           ],
         },
@@ -2012,7 +2021,9 @@ test("moving-head layout preserves inherited optical controls", () => {
         functions: [
           {
             attribute: "Zoom",
-            physicalUnit: "Angle",
+            physicalUnit: PhysicalUnit.Angle,
+            profile: { type: "Linear" },
+            modeMaster: { type: "None" },
             dmxFrom: 0,
             dmxTo: 1000,
             physicalFrom: 5,
@@ -2029,6 +2040,9 @@ test("moving-head layout preserves inherited optical controls", () => {
         functions: [
           {
             attribute: "Gobo1",
+            physicalUnit: PhysicalUnit.None,
+            profile: { type: "Linear" },
+            modeMaster: { type: "None" },
             wheel: "Gobos",
             dmxFrom: 0,
             dmxTo: 255,

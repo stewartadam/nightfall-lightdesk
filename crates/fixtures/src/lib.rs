@@ -89,7 +89,8 @@ pub mod prelude {
     pub use crate::physical::{
         BeamOptics, BeamType, FixturePhysical, OpticalChannel, OpticalChannelSet,
         OpticalDmxProfile, OpticalDmxProfilePoint, OpticalFunction, OpticalModeCondition,
-        OpticalPrismFacet, OpticalWheel, OpticalWheelSlot,
+        OpticalModeMaster, OpticalPrismFacet, OpticalProfile, OpticalWheel, OpticalWheelSlot,
+        PhysicalUnit,
     };
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};

@@ -8,11 +8,23 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { OpticalChannel } from "../../../../types";
+import {
+  type OpticalChannel,
+  type OpticalDmxProfile,
+  type OpticalModeCondition,
+  PhysicalUnit,
+} from "../../../../types";
 import {
   createOpticalChannelState,
   evaluateOpticalChannel,
 } from "./optical-channel";
+
+/** Unitless, linear and ungated source function defaults. */
+const PLAIN = {
+  physicalUnit: PhysicalUnit.None,
+  profile: { type: "Linear" },
+  modeMaster: { type: "None" },
+} as const;
 
 const channel: OpticalChannel = {
   parameterKey: "Gobo",
@@ -21,6 +33,7 @@ const channel: OpticalChannel = {
   dmxMax: 65535,
   functions: [
     {
+      ...PLAIN,
       attribute: "Gobo1",
       dmxFrom: 0,
       dmxTo: 32895,
@@ -45,6 +58,7 @@ const channel: OpticalChannel = {
       ],
     },
     {
+      ...PLAIN,
       attribute: "Gobo1PosRotate",
       dmxFrom: 32896,
       dmxTo: 65535,
@@ -57,45 +71,49 @@ const channel: OpticalChannel = {
 
 /** Overlapping functions follow the master channel, preserving inclusive coarse/fine boundaries. */
 test("mode masters select indexed or rotating optics and clear inactive output", () => {
+  const rotateConditions: OpticalModeCondition[] = [
+    {
+      geometry: "Base",
+      parameterKey: "Control",
+      dmxMax: 65535,
+      dmxFrom: 32896,
+      dmxTo: 65535,
+    },
+  ];
   const conditional: OpticalChannel = {
     ...channel,
     dmxMax: 255,
     functions: [
       {
+        ...PLAIN,
         attribute: "Gobo1Pos",
         dmxFrom: 0,
         dmxTo: 255,
         physicalFrom: 0,
         physicalTo: 360,
         sets: [],
-        modeMaster: "source",
-        modeConditions: [
-          {
-            geometry: "Base",
-            parameterKey: "Control",
-            dmxMax: 65535,
-            dmxFrom: 0,
-            dmxTo: 32895,
-          },
-        ],
+        modeMaster: {
+          type: "Resolved",
+          data: [
+            {
+              geometry: "Base",
+              parameterKey: "Control",
+              dmxMax: 65535,
+              dmxFrom: 0,
+              dmxTo: 32895,
+            },
+          ],
+        },
       },
       {
+        ...PLAIN,
         attribute: "Gobo1PosRotate",
         dmxFrom: 0,
         dmxTo: 255,
         physicalFrom: -180,
         physicalTo: 180,
         sets: [],
-        modeMaster: "source",
-        modeConditions: [
-          {
-            geometry: "Base",
-            parameterKey: "Control",
-            dmxMax: 65535,
-            dmxFrom: 32896,
-            dmxTo: 65535,
-          },
-        ],
+        modeMaster: { type: "Resolved", data: rotateConditions },
       },
     ],
   };
@@ -117,7 +135,7 @@ test("mode masters select indexed or rotating optics and clear inactive output",
     assert.equal(state.physical, undefined);
   }
   values.Control = 1;
-  conditional.functions[1].modeConditions!.push({
+  rotateConditions.push({
     geometry: "Head",
     parameterKey: "Gobo",
     dmxMax: 255,
@@ -136,26 +154,27 @@ test("mode masters select indexed or rotating optics and clear inactive output",
 
 /** GDTF profile polynomials use percentage offsets within each segment. */
 test("optical profiles evaluate piecewise curves over the function range", () => {
+  const curve: OpticalDmxProfile = {
+    min: 2,
+    max: 10,
+    points: [
+      { dmxPercentage: 0, coefficients: [0, 0, 0.02, 0] },
+      { dmxPercentage: 50, coefficients: [50, 2, -0.02, 0] },
+    ],
+  };
   const profiled: OpticalChannel = {
     ...channel,
     dmxMax: 1000,
     functions: [
       {
+        ...PLAIN,
         attribute: "Focus1Distance",
-        physicalUnit: "Length",
+        physicalUnit: PhysicalUnit.Length,
         dmxFrom: 200,
         dmxTo: 1000,
         physicalFrom: 0,
         physicalTo: 1,
-        dmxProfile: "S-curve",
-        profileCurve: {
-          min: 2,
-          max: 10,
-          points: [
-            { dmxPercentage: 0, coefficients: [0, 0, 0.02, 0] },
-            { dmxPercentage: 50, coefficients: [50, 2, -0.02, 0] },
-          ],
-        },
+        profile: { type: "Curve", data: curve },
         sets: [
           {
             dmxFrom: 200,
@@ -181,14 +200,12 @@ test("optical profiles evaluate piecewise curves over the function range", () =>
     assert.equal(state.physical, expected);
     assert.equal(state.wheelSlot, dmx <= 600 ? 2 : undefined);
   }
-  profiled.functions[0].profileCurve!.points = [
-    { dmxPercentage: 50, coefficients: [200, 0, 0, 0] },
-  ];
+  curve.points = [{ dmxPercentage: 50, coefficients: [200, 0, 0, 0] }];
   evaluateOpticalChannel(profiled, 0.4, state);
   assert.equal(state.physical, 2);
   evaluateOpticalChannel(profiled, 0.6, state);
   assert.equal(state.physical, 10);
-  profiled.functions[0].profileCurve!.points[0].coefficients[0] = NaN;
+  curve.points[0].coefficients[0] = NaN;
   evaluateOpticalChannel(profiled, 0.6, state);
   assert.equal(state.status, "requires-profile");
   assert.equal(state.physical, undefined);
@@ -221,7 +238,7 @@ test("optical channels explicitly report unresolved source semantics", () => {
   evaluateOpticalChannel(
     {
       ...channel,
-      functions: [{ ...channel.functions[0], dmxProfile: "Curve" }],
+      functions: [{ ...channel.functions[0], profile: { type: "Unresolved" } }],
     },
     0.1,
     state,
@@ -231,7 +248,9 @@ test("optical channels explicitly report unresolved source semantics", () => {
   evaluateOpticalChannel(
     {
       ...channel,
-      functions: [{ ...channel.functions[0], modeMaster: "Master" }],
+      functions: [
+        { ...channel.functions[0], modeMaster: { type: "Unresolved" } },
+      ],
     },
     0.1,
     state,

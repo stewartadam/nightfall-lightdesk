@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { PhysicalUnit } from "../types";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
 /** Decodes owned PNG masks and verifies atlas growth preserves existing patterns and shared slots. */
@@ -240,6 +241,9 @@ for (const forceWebGL of [false, true]) {
             functions: [
               {
                 attribute: `Prism${i + 1}`,
+                physicalUnit: "None" as PhysicalUnit,
+                profile: { type: "Linear" as const },
+                modeMaster: { type: "None" as const },
                 wheel: `Wheel${i}`,
                 dmxFrom: 0,
                 dmxTo: 255,
