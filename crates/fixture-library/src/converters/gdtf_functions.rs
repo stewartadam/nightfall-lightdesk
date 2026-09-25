@@ -84,9 +84,12 @@ pub(super) fn ordered_functions(
 
 /// Returns each function's inclusive DMX range.
 ///
-/// Functions under the same mode master condition partition the channel
-/// between them; functions under different conditions are alternatives for
-/// the same DMX values, so each condition's functions are ranged separately.
+/// A function ends just before the next higher start of a function that can
+/// be active at the same time: one under the same mode master condition, or
+/// either of the two having no condition. Functions under different
+/// conditions are alternatives for the same DMX values, so they do not end
+/// each other, while an unconditional function gives way to every function
+/// that starts after it.
 fn function_ranges(
     functions: &[&ChannelFunction],
     resolution: DmxValueResolution,
@@ -102,23 +105,26 @@ fn function_ranges(
         .iter()
         .map(|function| condition(function))
         .collect();
-    let mut result = vec![(0, 0); functions.len()];
-    for (first, key) in conditions.iter().enumerate() {
-        if conditions[..first].contains(key) {
-            continue;
-        }
-        let members: Vec<usize> = (first..conditions.len())
-            .filter(|index| conditions[*index] == *key)
-            .collect();
-        let starts: Vec<u32> = members
-            .iter()
-            .map(|index| scaled(functions[*index].dmx_from, resolution))
-            .collect();
-        for (index, range) in members.into_iter().zip(ranges(&starts, max)) {
-            result[index] = range;
-        }
-    }
-    result
+    let starts: Vec<u32> = functions
+        .iter()
+        .map(|function| scaled(function.dmx_from, resolution))
+        .collect();
+    (0..functions.len())
+        .map(|index| {
+            let from = starts[index];
+            let to = (0..functions.len())
+                .filter(|other| {
+                    starts[*other] > from
+                        && (conditions[*other].is_none()
+                            || conditions[index].is_none()
+                            || conditions[*other] == conditions[index])
+                })
+                .map(|other| starts[other] - 1)
+                .min()
+                .unwrap_or(max);
+            (from, to)
+        })
+        .collect()
 }
 
 /// Converts a DMX profile's points, or returns an empty (linear) curve.

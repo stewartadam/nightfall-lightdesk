@@ -8,7 +8,7 @@
 
 //! GDTF to Fixture conversion
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use gdtf::geometry::Geometry;
 use nightfall::prelude::Identifiers;
@@ -110,7 +110,10 @@ pub fn convert_gdtf_mode(
         &resolved,
         dmx_mode,
         &mut built.elements,
-        &built.placements,
+        super::gdtf_links::LinkTargets {
+            placements: &built.placements,
+            slot_owners: &built.slot_owners,
+        },
         &mut built.diagnostics,
     );
     let physical = extract_physical_properties(&resolved);
@@ -182,6 +185,8 @@ struct BuiltElements {
     elements: Vec<FixtureElement>,
     /// Per resolved channel, the parameter it produced.
     placements: Vec<Placement>,
+    /// Per resolved channel demoted for sharing slots, the channel that owns them.
+    slot_owners: Vec<Option<usize>>,
     /// Channels dropped or demoted while building.
     diagnostics: Vec<GdtfDiagnostic>,
 }
@@ -190,7 +195,8 @@ struct BuiltElements {
 ///
 /// Channels whose slots cannot be represented are dropped with a diagnostic.
 /// A channel reusing slots of an earlier one becomes a virtual parameter, so
-/// two parameters never write the same byte.
+/// two parameters never write the same byte; the earlier channel is recorded
+/// as the owner that links to the demoted copy resolve to.
 fn build_elements(
     resolved: &ResolvedMode<'_>,
     fixture_type: &gdtf::fixture_type::FixtureType,
@@ -198,8 +204,9 @@ fn build_elements(
     let mut element_by_instance: HashMap<usize, usize> = HashMap::new();
     let mut elements: Vec<FixtureElement> = Vec::new();
     let mut placements = vec![None; resolved.channels.len()];
+    let mut slot_owners = vec![None; resolved.channels.len()];
     let mut diagnostics = Vec::new();
-    let mut used_slots: HashSet<(u16, u16)> = HashSet::new();
+    let mut used_slots: HashMap<(u16, u16), usize> = HashMap::new();
     for (index, channel) in resolved.channels.iter().enumerate() {
         let instance = &resolved.instances[channel.instance].name;
         let Some(mut parameter) = convert_channel_to_parameter(channel, fixture_type) else {
@@ -212,19 +219,20 @@ fn build_elements(
             continue;
         };
         if let DmxSlots::Explicit { dmx_break, offsets } = &parameter.dmx_slots {
-            if offsets
+            if let Some(owner) = offsets
                 .iter()
-                .any(|slot| used_slots.contains(&(*dmx_break, *slot)))
+                .find_map(|slot| used_slots.get(&(*dmx_break, *slot)))
             {
                 diagnostics.push(GdtfDiagnostic::SharedSlots {
                     instance: instance.clone(),
                     offsets: offsets.clone(),
                 });
+                slot_owners[index] = Some(*owner);
                 parameter.dmx_slots = DmxSlots::Virtual;
                 parameter.default_dmx = None;
                 parameter.highlight_dmx = None;
             } else {
-                used_slots.extend(offsets.iter().map(|slot| (*dmx_break, *slot)));
+                used_slots.extend(offsets.iter().map(|slot| ((*dmx_break, *slot), index)));
             }
         }
         let element = *element_by_instance
@@ -242,6 +250,7 @@ fn build_elements(
     BuiltElements {
         elements,
         placements,
+        slot_owners,
         diagnostics,
     }
 }

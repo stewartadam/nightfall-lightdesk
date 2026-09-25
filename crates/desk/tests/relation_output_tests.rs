@@ -256,3 +256,96 @@ fn chained_virtual_masters_compose() {
     ]);
     assert_eq!(output, 64);
 }
+
+/// Verifies a real dimmer that a virtual pixel dimmer follows still reaches
+/// the pixel: the fixture never sees the virtual dimmer, so the console
+/// applies the whole chain.
+#[test]
+fn physical_master_of_a_virtual_follower_is_applied() {
+    let body_slot = DmxSlots::Explicit {
+        dmx_break: 1,
+        offsets: vec![3],
+    };
+    let output = |body: f32| {
+        slot_one_output(vec![
+            Channel {
+                metadata: param(Attribute::Intensity, body_slot.clone(), Vec::new()),
+                value: body,
+            },
+            Channel {
+                metadata: param(
+                    Attribute::Intensity,
+                    DmxSlots::Virtual,
+                    vec![intensity_of(0, RelationKind::Multiply)],
+                ),
+                value: 255.0,
+            },
+            Channel {
+                metadata: param(
+                    Attribute::Red,
+                    red_slot(),
+                    vec![intensity_of(1, RelationKind::Multiply)],
+                ),
+                value: 255.0,
+            },
+        ])
+    };
+    assert_eq!(output(0.0), 0);
+    assert_eq!(output(255.0), 255);
+}
+
+/// Verifies the follower's active function honours its mode master: a
+/// relation on a function whose mode is not selected does not apply.
+#[test]
+fn relations_follow_the_mode_master_selected_function() {
+    let control = Attribute::Custom {
+        label: "Control".to_string(),
+    };
+    let under_mode = |from: u32, to: u32, relations: Vec<FunctionRelation>| ParameterFunction {
+        name: format!("Mode {from}"),
+        attribute: "ColorAdd_R".to_string(),
+        dmx_to: 255,
+        physical_to: 1.0,
+        mode_master: Some(ModeMasterCondition {
+            master: ElementParameterRef {
+                element: 0,
+                attribute: control.clone(),
+            },
+            dmx_from: from,
+            dmx_to: to,
+        }),
+        relations,
+        ..Default::default()
+    };
+    let output = |mode: f32| {
+        slot_one_output(vec![
+            Channel {
+                metadata: param(
+                    control.clone(),
+                    DmxSlots::Explicit {
+                        dmx_break: 1,
+                        offsets: vec![2],
+                    },
+                    Vec::new(),
+                ),
+                value: mode,
+            },
+            Channel {
+                metadata: param(Attribute::Intensity, DmxSlots::Virtual, Vec::new()),
+                value: 0.0,
+            },
+            Channel {
+                metadata: ParameterMetadata {
+                    functions: vec![
+                        under_mode(0, 127, vec![intensity_of(1, RelationKind::Multiply)]),
+                        under_mode(128, 255, Vec::new()),
+                    ],
+                    ..param(Attribute::Red, red_slot(), Vec::new())
+                },
+                value: 255.0,
+            },
+        ])
+    };
+    assert_eq!(output(10.0), 0, "dimmed in the related mode");
+    assert_eq!(output(200.0), 255, "unrelated mode is not dimmed");
+}

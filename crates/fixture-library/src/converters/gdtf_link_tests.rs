@@ -258,3 +258,123 @@ fn unresolved_links_are_reported() {
         link: "Elsewhere_Control".to_string()
     }));
 }
+
+/// Verifies an unconditional function gives way to conditional functions
+/// that start after it, instead of running to the channel maximum.
+#[test]
+fn unconditional_functions_end_where_conditional_ones_start() {
+    let builder = GdtfBuilder::new("Test", "Mixed")
+        .geometry(GeometrySpec::generic("Base"))
+        .mode(
+            ModeSpec::new("Mode", "Base")
+                .channel(ChannelSpec::new("Base", "Control", &[1]))
+                .channel(
+                    ChannelSpec::new("Base", "Shutter1", &[2])
+                        .function(FunctionSpec::new("Shutter1").named("Closed"))
+                        .function(FunctionSpec::new("Shutter1").named("Open").from_dmx(32))
+                        .function(
+                            FunctionSpec::new("Shutter1Strobe")
+                                .named("Strobe")
+                                .from_dmx(64)
+                                .mode_master("Base_Control", 0, 9),
+                        )
+                        .function(
+                            FunctionSpec::new("Shutter1StrobePulse")
+                                .named("Pulse")
+                                .from_dmx(64)
+                                .mode_master("Base_Control", 10, 19),
+                        ),
+                ),
+        );
+    let (fixture, _) = convert(&builder);
+    let ranges: Vec<(&str, u32, u32)> = parameter(&fixture, "Base", &Attribute::StrobeShutter)
+        .functions
+        .iter()
+        .map(|function| (function.name.as_str(), function.dmx_from, function.dmx_to))
+        .collect();
+    assert_eq!(
+        ranges,
+        [
+            ("Closed", 0, 31),
+            ("Open", 32, 63),
+            ("Strobe", 64, 255),
+            ("Pulse", 64, 255),
+        ]
+    );
+}
+
+/// Verifies a relation naming a channel demoted for sharing another
+/// channel's slots links to the channel that owns them, which is what the
+/// fixture receives.
+#[test]
+fn links_to_shared_slot_copies_resolve_to_the_owner() {
+    let builder = GdtfBuilder::new("Test", "Mirror")
+        .geometry(
+            GeometrySpec::generic("Body")
+                .child(GeometrySpec::beam("Cell A"))
+                .child(GeometrySpec::beam("Cell B")),
+        )
+        .mode(
+            ModeSpec::new("Mode", "Body")
+                .channel(ChannelSpec::new("Cell A", "Dimmer", &[1]))
+                .channel(ChannelSpec::new("Cell B", "Dimmer", &[1]))
+                .channel(ChannelSpec::new("Cell B", "ColorAdd_R", &[2]))
+                .relation(
+                    "Cell B_Dimmer",
+                    "Cell B_ColorAdd_R.ColorAdd_R.ColorAdd_R",
+                    "Multiply",
+                ),
+        );
+    let (fixture, _) = convert(&builder);
+    let owner = fixture
+        .elements
+        .iter()
+        .position(|element| element.label == "Cell A")
+        .unwrap() as u32;
+    let red = parameter(&fixture, "Cell B", &Attribute::Red);
+    assert_eq!(red.functions[0].relations[0].master.element, owner);
+    let copy = parameter(&fixture, "Cell B", &Attribute::Intensity);
+    assert_eq!(copy.dmx_slots, DmxSlots::Virtual);
+    assert!(!copy.use_grandmaster, "the copy mirrors the owner's dimmer");
+}
+
+/// Verifies masters scale each light path once: virtual dimmers that follow
+/// another dimmer, or sit in a fixture with a physical dimmer, stop
+/// responding to masters, while a root virtual dimmer keeps responding.
+#[test]
+fn virtual_dimmers_respond_to_masters_once_per_path() {
+    let bar = |body_offsets: Option<&[i32]>| {
+        let body = match body_offsets {
+            Some(offsets) => ChannelSpec::new("Body", "Dimmer", offsets),
+            None => ChannelSpec::virtual_channel("Body", "Dimmer"),
+        };
+        GdtfBuilder::new("Test", "Bar")
+            .geometry(GeometrySpec::generic("Body").child(GeometrySpec::beam("Pixel")))
+            .mode(
+                ModeSpec::new("Mode", "Body")
+                    .channel(body)
+                    .channel(ChannelSpec::virtual_channel("Pixel", "Dimmer"))
+                    .channel(ChannelSpec::new("Pixel", "ColorAdd_R", &[2]))
+                    .relation("Body_Dimmer", "Pixel_Dimmer.Dimmer.Dimmer", "Multiply")
+                    .relation(
+                        "Pixel_Dimmer",
+                        "Pixel_ColorAdd_R.ColorAdd_R.ColorAdd_R",
+                        "Multiply",
+                    ),
+            )
+    };
+    let grandmaster = |fixture: &Fixture, element: &str| {
+        parameter(fixture, element, &Attribute::Intensity).use_grandmaster
+    };
+
+    let (virtual_root, _) = convert(&bar(None));
+    assert!(grandmaster(&virtual_root, "Body"), "chain root responds");
+    assert!(!grandmaster(&virtual_root, "Pixel"), "follower does not");
+
+    let (physical_root, _) = convert(&bar(Some(&[1])));
+    assert!(
+        grandmaster(&physical_root, "Body"),
+        "physical dimmer responds"
+    );
+    assert!(!grandmaster(&physical_root, "Pixel"), "follower does not");
+}

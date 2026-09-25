@@ -288,8 +288,8 @@ export function extractVisualizerDmx(
 /**
  * Derives visualizer values for one element from its evaluated channels.
  *
- * An intensity channel that masters channels of its own element reaches
- * them through relations, so it does not also dim the element. Elements
+ * An intensity channel that masters emitter channels of its own element
+ * reaches them through relations, so it does not also dim the element. Elements
  * without an effective intensity take their brightness from the brightest
  * color component, with colors rescaled so brightness is not applied twice,
  * scaled by the fixture-level dimmer when one is given.
@@ -319,7 +319,7 @@ function visualizerDmxFromChannels(
     const attrType = param.attribute.type;
     const prop = ATTR_TO_PROP[attrType];
     const color = ATTR_TO_COLOR[attrType];
-    if (prop === "intensity" && channel.mastersOwnElement) {
+    if (prop === "intensity" && channel.mastersOwnEmitters) {
       declaresIntensityControl = false;
       continue;
     }
