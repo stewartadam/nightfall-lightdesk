@@ -73,6 +73,18 @@ const MOVEMENT_FUNCTIONS: Record<
   TiltRotate: "tiltRotation",
 };
 
+/** Smallest physical span, in degrees, taken as a position function's real range. */
+const MIN_POSITION_SPAN_DEG = 1;
+
+/**
+ * Returns true when a position function states a usable angular range.
+ * Profiles that leave the range empty or at GDTF's 0-1 default fall back to
+ * the normalized position instead of moving through at most one degree.
+ */
+function statesAngles(fn: ParameterFunction): boolean {
+  return Math.abs(fn.physical_to - fn.physical_from) > MIN_POSITION_SPAN_DEG;
+}
+
 const TILT_SPEED_LABELS = new Set([
   "Tilt Speed",
   "Pan/Tilt Speed",
@@ -389,9 +401,12 @@ function visualizerDmxFromChannels(
     const movement = channel.function
       ? MOVEMENT_FUNCTIONS[channel.function.attribute]
       : undefined;
-    if (movement) {
+    if (movement === "panRotation" || movement === "tiltRotation") {
       dmx[movement] = channel.physical;
-      if (movement === "panRotation" || movement === "tiltRotation") continue;
+      continue;
+    }
+    if (movement && channel.function && statesAngles(channel.function)) {
+      dmx[movement] = channel.physical;
     }
 
     if (attrType === "Custom") {

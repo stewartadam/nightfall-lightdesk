@@ -536,6 +536,24 @@ test("movement uses physical pan angles and rotation speeds", () => {
   near(spinning.panRotation, 240, "full speed");
 });
 
+/**
+ * Verifies a pan function left at GDTF's default 0-1 physical range does not
+ * pin the head within one degree; the normalized position is used instead.
+ */
+test("pan functions without an angular range use the normalized position", () => {
+  resetDmxPool();
+  const pan: ParameterMetadata = {
+    ...parameter({ type: "Pan" }, [fn("Pan", 0, 255)]),
+    value_polarity: ParameterValuePolarity.Signed,
+  };
+  const [[, head]] = extractFixtureDmxData(
+    [{ label: "Head", parameters: [pan] }],
+    [{ Pan: 127.5 }],
+  );
+  assert.equal(head.panDegrees, undefined, "no physical angle");
+  assert.ok((head.pan ?? 0) > 0, "normalized pan still drives the joint");
+});
+
 /** Verifies signed parameters convert to DMX around their centre like the engine. */
 test("signed outputs convert to DMX around the logical centre", () => {
   const pan: ParameterMetadata = {
