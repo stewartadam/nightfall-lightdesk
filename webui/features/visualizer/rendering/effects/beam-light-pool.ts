@@ -42,6 +42,20 @@ interface PoolSlot {
   light: SpotLight;
   target: Object3D;
   gobo: Texture | null;
+  /** Key of the proxy the light stood for last frame. */
+  proxyKey: string | null;
+}
+
+/** Returns whether a light's map holds an image the size of the gobo's. */
+function sameImageSize(map: Texture | null, gobo: Texture): boolean {
+  const current = map?.image as { width: number; height: number } | undefined;
+  const next = gobo.image as { width: number; height: number } | undefined;
+  return (
+    current !== undefined &&
+    next !== undefined &&
+    current.width === next.width &&
+    current.height === next.height
+  );
 }
 
 /** Fixed set of spot lights assigned to beam light proxies each frame. */
@@ -61,7 +75,7 @@ export class BeamLightPool {
       target.name = `BeamLightTarget_${index}`;
       light.target = target;
       scene.add(light, target);
-      this.slots.push({ light, target, gobo: null });
+      this.slots.push({ light, target, gobo: null, proxyKey: null });
     }
   }
 
@@ -73,19 +87,54 @@ export class BeamLightPool {
   /**
    * Points the pool at the brightest proxies and darkens the remaining lights.
    *
-   * Proxies are ranked by intensity; when there are more proxies than
-   * lights, the dimmest proxies do not light surfaces this frame.
+   * When there are more proxies than lights, the dimmest proxies do not
+   * light surfaces this frame. Placement avoids changing any light's map,
+   * which would recompile lit shaders: a proxy keeps the light it had last
+   * frame, gobo proxies take lights that already hold a map (of the same
+   * image size first), and open proxies take lights without one.
    */
   assign(proxies: readonly BeamLightProxy[]): void {
-    const ranked = [...proxies].sort((a, b) => b.intensity - a.intensity);
-    this.slots.forEach((slot, index) => {
-      const proxy = ranked[index];
+    const selected = [...proxies]
+      .sort((a, b) => b.intensity - a.intensity)
+      .slice(0, this.slots.length);
+    const assigned = new Map<PoolSlot, BeamLightProxy>();
+    const free = new Set(this.slots);
+    const take = (slot: PoolSlot | undefined, proxy: BeamLightProxy) => {
+      if (!slot) return false;
+      assigned.set(slot, proxy);
+      free.delete(slot);
+      return true;
+    };
+
+    const unplaced: BeamLightProxy[] = [];
+    for (const proxy of selected) {
+      const previous = [...free].find((slot) => slot.proxyKey === proxy.key);
+      if (!take(previous, proxy)) unplaced.push(proxy);
+    }
+    for (const proxy of unplaced) {
+      const gobo = proxy.gobo instanceof Texture ? proxy.gobo : null;
+      const candidates = [...free];
+      const withMap = candidates.filter((slot) => slot.light.map);
+      const withoutMap = candidates.filter((slot) => !slot.light.map);
+      const preferred = gobo
+        ? [
+            ...withMap.filter((slot) => sameImageSize(slot.light.map, gobo)),
+            ...withMap,
+            ...withoutMap,
+          ]
+        : [...withoutMap, ...withMap];
+      take(preferred[0], proxy);
+    }
+
+    for (const slot of this.slots) {
+      const proxy = assigned.get(slot);
       const { light, target } = slot;
+      slot.proxyKey = proxy?.key ?? null;
       if (!proxy) {
         light.intensity = 0;
         light.userData = {};
         this.setGobo(slot, null);
-        return;
+        continue;
       }
       light.position.copy(proxy.position);
       target.position.copy(proxy.position).add(proxy.direction);
@@ -101,7 +150,7 @@ export class BeamLightPool {
         projectsGobo: proxy.gobo instanceof Texture,
       };
       this.setGobo(slot, proxy.gobo instanceof Texture ? proxy.gobo : null);
-    });
+    }
   }
 
   /**

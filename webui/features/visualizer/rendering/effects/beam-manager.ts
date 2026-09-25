@@ -314,6 +314,7 @@ export class BeamManager {
       beam.parent.getWorldPosition(position);
       beam.parent.getWorldQuaternion(worldQuaternion);
       samples.push({
+        beamId,
         fixtureUid: beamId.split(":")[0],
         position,
         direction: new Vector3(0, 0, -1).applyQuaternion(worldQuaternion),
