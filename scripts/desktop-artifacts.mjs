@@ -91,7 +91,8 @@ export function desktopArtifactPlan(target, version, artifactPaths) {
 
 /** Reads the application version used by Tauri and the frontend build. */
 function appVersion() {
-  return JSON.parse(readFileSync("crates/app/tauri.conf.json", "utf8")).version;
+  return JSON.parse(readFileSync("crates/app-tauri/tauri.conf.json", "utf8"))
+    .version;
 }
 
 /** Exposes validated release policy and the shared platform matrix to GitHub Actions. */
@@ -102,7 +103,7 @@ function prepareDesktopBuild() {
     }),
   );
   const crateVersion = metadata.packages.find(
-    (pkg) => pkg.name === "nightfall-app",
+    (pkg) => pkg.name === "app-tauri",
   )?.version;
   const policy = desktopReleasePolicy(
     appVersion(),

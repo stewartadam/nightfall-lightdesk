@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/*"]
-default-members = ["crates/app"]
+default-members = ["crates/app-runtime"]
 resolver = "3" # default for rust 2024
 
 [workspace.package]

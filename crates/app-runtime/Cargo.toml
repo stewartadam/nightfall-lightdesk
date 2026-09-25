@@ -1,24 +1,14 @@
 [package]
-name = "nightfall-app"
+name = "app-runtime"
 description = "A modern lighting controller"
 version.workspace = true
 license.workspace = true
 edition.workspace = true
-default-run = "nightfall-app"
+default-run = "nightfall-headless"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[build-dependencies]
-tauri-build = { version = "2", features = [], optional = true }
-
-# The mobile interface of Tauri requires a shared library
-[lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "nightfall_app_lib"
-# required for mobile builds but conflicts with bevy_dylib
-#crate-type = ["staticlib", "cdylib", "rlib"]
+[[bin]]
+name = "nightfall-headless"
+path = "src/main.rs"
 
 [dependencies]
 axum.workspace = true
@@ -67,10 +57,6 @@ nightfall-websocket = { path = "../websocket" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2", optional = true , features = [] }
-# The existing LogTracer bridge handles plugin records; its tracing feature would duplicate them.
-tauri-plugin-log = { version = "2", optional = true }
-tauri-plugin-dialog = { version = "2", optional = true }
 tokio = { workspace = true, features = ["sync"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower-http = { workspace = true, features = ["fs"] }
@@ -99,7 +85,6 @@ usb = ["dep:nightfall-output-usb"]
 fixture-library = ["dep:nightfall-fixture-library"]
 object-library = ["dep:nightfall-object-library"]
 bevy_dynamic = ["bevy/dynamic_linking"]  # you opt in to Bevy's "dynamic" feature
-tauri = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-log", "dep:tauri-plugin-dialog"] # meta-feature for enabling Tauri app
 debug = ["nightfall-engine/debug", "nightfall-desk/debug"]
 
 [dev-dependencies]

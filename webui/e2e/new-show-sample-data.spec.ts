@@ -74,7 +74,10 @@ test("new show optionally includes standalone sample data", async ({
     const audioPath = timeline.audio_path as string;
     expect(audioPath).toMatch(/^timeline-audio\/[a-f0-9]+\/(lofi|rap)\.mp3$/);
     const bundledAudio = readFileSync(
-      join("crates/app/assets/sample-audio", audioPath.split("/").at(-1)!),
+      join(
+        "crates/app-runtime/assets/sample-audio",
+        audioPath.split("/").at(-1)!,
+      ),
     );
     const installedAudio = readFileSync(
       join(backendSlot.dataDir, "drafts/Sample Tour.nightfall-show", audioPath),

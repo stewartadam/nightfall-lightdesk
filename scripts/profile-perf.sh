@@ -8,9 +8,9 @@
 set -eu
 
 # profile compile times
-# cargo +nightly rustc -p nightfall-app --bin nightfall-app --   -Zself-profile
+# cargo +nightly rustc -p app-runtime --bin nightfall-headless --   -Zself-profile
 # cargo +nightly rustc -p nightfall-cmd-parse --   -Ztime-passes
 
 # note: mixing llvm and cranelift causes samply to fail to record
-cargo build --profile samply --bin nightfall-app --no-default-features
-samply record cargo run --profile samply --bin nightfall-app --no-default-features "$@"
+cargo build --profile samply --bin nightfall-headless --no-default-features
+samply record cargo run --profile samply --bin nightfall-headless --no-default-features "$@"

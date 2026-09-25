@@ -57,9 +57,6 @@ use super::{
     CommandProcessingState, PendingWorldSwap, RuntimeOutputState, SwapOrchestrator, WorldBootstrap,
     WorldFactory,
     composition::{PeriodicDraftAutosaveTimer, ShowfileHandling},
-    desktop_shell::{
-        file_explorer_command, resolve_open_data_dir_path, resolve_open_log_file_path,
-    },
     session::{
         complete_and_publish_world_swap_success, queue_current_showfile_changed,
         queue_post_swap_resync, run_world_swap_session_loop,
@@ -681,104 +678,6 @@ fn initial_world_bootstrap_can_seed_sample_data_explicitly() {
             showfile_name: None
         }
     );
-}
-
-/// Verifies the open-data helper creates the typed configured directory.
-#[test]
-fn resolve_open_data_dir_path_creates_configured_directory() {
-    let _guard = crate::process_config_lock()
-        .lock()
-        .expect("process config lock");
-    let temp_root = std::env::temp_dir().join(format!(
-        "nightfall-open-data-dir-test-{}-{}",
-        std::process::id(),
-        uuid::Uuid::new_v4()
-    ));
-    let override_dir = temp_root.join("data-root");
-
-    nightfall::set_nightfall_data_dir(Some(override_dir.clone()));
-
-    let resolved = resolve_open_data_dir_path().expect("resolve open data dir path");
-    assert_eq!(resolved, override_dir);
-    assert!(
-        resolved.is_dir(),
-        "expected created directory at {}",
-        resolved.display()
-    );
-
-    nightfall::set_nightfall_data_dir(None);
-    std::fs::remove_dir_all(&temp_root).expect("cleanup temp root");
-}
-
-/// Verifies the open-log helper uses the application log filename.
-#[test]
-fn resolve_open_log_file_path_uses_application_log_name() {
-    let _guard = crate::process_config_lock()
-        .lock()
-        .expect("process config lock");
-    let temp_root = std::env::temp_dir().join(format!(
-        "nightfall-open-log-path-test-{}-{}",
-        std::process::id(),
-        uuid::Uuid::new_v4()
-    ));
-    let override_dir = temp_root.join("data-root");
-
-    nightfall::set_nightfall_data_dir(Some(override_dir.clone()));
-
-    let resolved = resolve_open_log_file_path().expect("resolve open log file path");
-    assert_eq!(resolved, override_dir.join("nightfall.log"));
-    assert!(
-        override_dir.is_dir(),
-        "expected log parent directory to exist"
-    );
-
-    nightfall::set_nightfall_data_dir(None);
-    std::fs::remove_dir_all(&temp_root).expect("cleanup temp root");
-}
-
-#[test]
-fn file_explorer_command_matches_current_platform() {
-    let path = Path::new("test-dir");
-    let (program, args) = file_explorer_command(path).expect("file explorer command");
-
-    #[cfg(target_os = "windows")]
-    assert_eq!(program, "explorer.exe");
-    #[cfg(target_os = "macos")]
-    assert_eq!(program, "open");
-    #[cfg(target_os = "linux")]
-    assert_eq!(program, "xdg-open");
-
-    assert_eq!(args, vec![path.as_os_str().to_owned()]);
-}
-
-#[cfg(not(target_os = "windows"))]
-#[test]
-/// Preserve the log path as one argument to the platform file launcher.
-fn file_open_command_matches_current_platform() {
-    let path = Path::new("test-log.txt");
-    let (program, args) = crate::desktop_shell::file_open_command(path).expect("file open command");
-
-    #[cfg(target_os = "macos")]
-    assert_eq!(program, "open");
-    #[cfg(target_os = "linux")]
-    assert_eq!(program, "xdg-open");
-
-    assert_eq!(args, vec![path.as_os_str().to_owned()]);
-}
-
-#[cfg(not(target_os = "windows"))]
-#[test]
-/// Preserve the complete external URL as one argument to the platform browser launcher.
-fn url_open_command_matches_current_platform() {
-    let url = "https://github.com/example/project/issues/new?title=Bug%20report&body=Details%0AUnicode%20%E2%9C%93";
-    let (program, args) = crate::desktop_shell::url_open_command(url).expect("url open command");
-
-    #[cfg(target_os = "macos")]
-    assert_eq!(program, "open");
-    #[cfg(target_os = "linux")]
-    assert_eq!(program, "xdg-open");
-
-    assert_eq!(args, vec![std::ffi::OsString::from(url)]);
 }
 
 #[test]

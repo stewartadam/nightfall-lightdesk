@@ -35,7 +35,7 @@ pub fn install_panic_shutdown_hook(config: &ShutdownConfig) {
 }
 
 /// Wait for the Bevy session to finish or coordinate its fatal-shutdown grace period.
-pub(super) async fn monitor_bevy_session(mut bevy_task: tokio::task::JoinHandle<()>) -> i32 {
+pub async fn monitor_bevy_session(mut bevy_task: tokio::task::JoinHandle<()>) -> i32 {
     let mut shutdown_rx = subscribe_process_shutdown();
 
     tokio::select! {

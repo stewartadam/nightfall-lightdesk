@@ -32,7 +32,7 @@ use crate::{
 };
 
 /// Run one Bevy session and replace its world atomically when showfiles change.
-pub(super) fn run_bevy_session(
+pub fn run_bevy_session(
     thread_role: &'static str,
     log_config: LogConfig,
     runtime_config: RuntimeConfig,

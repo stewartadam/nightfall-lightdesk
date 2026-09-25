@@ -1,0 +1,70 @@
+name: Desktop compilation
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Check desktop on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, windows-2022, ubuntu-22.04]
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_DEV_OPT_LEVEL: "0"
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - name: Restore Windows source and Git history
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import os
+          import pathlib
+          import shutil
+          import subprocess
+          import tarfile
+
+          # Match a Windows checkout with core.symlinks=false.
+          with tarfile.open('.ci-source/source.tar') as archive:
+              for member in archive:
+                  if member.issym():
+                      target = os.fsencode(member.linkname)
+                      member.type = tarfile.REGTYPE
+                      member.size = 0
+                      member.linkname = ''
+                      archive.extract(member, filter='data')
+                      pathlib.Path(member.name).write_bytes(target)
+                  else:
+                      archive.extract(member, filter='data')
+          subprocess.run(['git', 'config', 'core.symlinks', 'false'], check=True)
+          shutil.rmtree('.ci-source')
+      - name: Load the repository Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: desktop-check
+          cache-on-failure: true
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libasound2-dev \
+            libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev
+      - name: Check the desktop application and tests without creating installers
+        env:
+          # Distribution notices are produced by packaging, not by compilation checks.
+          TAURI_CONFIG: '{"bundle":{"resources":[]}}'
+        run: cargo check -p app-tauri --all-targets --no-default-features --features full,beatgrid-detect --locked

@@ -15,13 +15,13 @@ use std::{
     time::Duration,
 };
 
+use app_runtime::{WorldBootstrap, WorldFactory};
 use bevy::{
     ecs::system::{SystemParam, SystemState},
     prelude::*,
 };
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
-use nightfall_app_lib::{WorldBootstrap, WorldFactory};
 use nightfall_clips::{Clip, Source};
 use nightfall_cues::prelude::*;
 use nightfall_desk::{
@@ -44,7 +44,8 @@ use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use uuid::Uuid;
 
-const DEFAULT_OUTPUT_PATH: &str = "crates/app/tests/data/procedural-showfile-parse-data.json";
+const DEFAULT_OUTPUT_PATH: &str =
+    "crates/app-runtime/tests/data/procedural-showfile-parse-data.json";
 const SNAPSHOT_LAST_SAVED_UNIX_SEC: u64 = 1_800_000_000;
 const FIXTURE_UID: &str = "10000000-0000-0000-0000-000000000001";
 const CUE_UID: &str = "10000000-0000-0000-0000-000000000002";
@@ -132,7 +133,7 @@ fn generate_json() -> Result<String, String> {
         showfile_name: None,
     })?;
     populate_parser_test_world(app.world_mut())?;
-    nightfall_app_lib::serialize_showfile_snapshot_json_from_world(
+    app_runtime::serialize_showfile_snapshot_json_from_world(
         app.world_mut(),
         SNAPSHOT_LAST_SAVED_UNIX_SEC,
     )
