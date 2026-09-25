@@ -49,3 +49,6 @@ export function getCommandShortcutKeys(command: CommandAction): string[] {
 export const DEFAULT_CATEGORY = "General";
 
 export const OPEN_COMMAND_PALETTE_SHORTCUT = "$mod+Shift+p";
+
+/** Clears the programmer from anywhere, including while a text input has focus. */
+export const CLEAR_PROGRAMMER_SHORTCUT = "Shift+Escape";

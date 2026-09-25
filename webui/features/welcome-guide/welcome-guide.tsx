@@ -8,11 +8,13 @@
 
 import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
+import { CheckCircleIcon } from "@squidlab/phosphor-solid/check-circle";
 import {
   createEffect,
   createMemo,
   createSignal,
   For,
+  on,
   onCleanup,
   Show,
 } from "solid-js";
@@ -27,11 +29,15 @@ import {
 import { openOrFocusPanelDefinition } from "../../lib/panel-open-command";
 import { isEmbeddedDemoRuntime } from "../../lib/runtime-config";
 import {
+  activeInstances,
   clips,
   cues,
+  fixtures,
+  fx,
   pushToast,
   runtimeCapabilities,
   sequences,
+  timecodes,
   timelines,
 } from "../../state/appStores";
 import { normalizeTimelineUid } from "../timeline";
@@ -40,6 +46,7 @@ import { GuideContentItem } from "./guide-content";
 import { GuideTarget } from "./guide-target";
 import { guideLessons } from "./lesson-store";
 import type { GuidePrerequisite } from "./lessons";
+import { isPlaybackRunning, stopAllPlayback } from "./playback";
 import {
   closeWelcomeGuide,
   guideCompleted,
@@ -56,6 +63,9 @@ import "./welcome-guide.css";
 
 const log = getLogger(import.meta.url);
 
+/** How long a detected step shows its checkmark before the next instruction appears. */
+const STEP_COMPLETION_DELAY_MS = 700;
+
 /** Offers an unobtrusive first-visit invitation in the browser demo only. */
 export function GuideInvitation() {
   const dismissed = useStore(guideDismissed);
@@ -65,7 +75,7 @@ export function GuideInvitation() {
       <aside class="nf-guide-invitation" aria-label="Welcome to Nightfall">
         <div>
           <strong>New to Nightfall?</strong>
-          <p>Make your first lights with a guided tour.</p>
+          <p>Take a short orientation, then make your first lights.</p>
         </div>
         <Button size="compact" variant="primary" onClick={openWelcomeGuide}>
           Take the tour
@@ -90,6 +100,10 @@ export default function WelcomeGuide() {
   const clipMap = useStore(clips);
   const sequenceMap = useStore(sequences);
   const cueMap = useStore(cues);
+  const fixtureMap = useStore(fixtures);
+  const fxMap = useStore(fx);
+  const instanceMap = useStore(activeInstances);
+  const clockMap = useStore(timecodes);
   /** Finds the generated sample timeline without relying on its session-specific UID. */
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
@@ -185,6 +199,31 @@ export default function WelcomeGuide() {
   const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
   /** Resolves authored object identities to clip tiles, inspect buttons, sequence cards, or Trigger cells. */
   const targetSelector = createMemo(() => {
+    const actionTarget = step()?.targetTimelineAction;
+    if (actionTarget) {
+      const timeline = sampleTimeline();
+      if (!timeline) return undefined;
+      const uid = CSS.escape(normalizeTimelineUid(timeline.identifiers.uid));
+      return `[data-timeline-surface="true"][data-timeline-uid="${uid}"] [data-timeline-action="true"][data-track-id="${CSS.escape(actionTarget.trackId)}"][data-action-id="${CSS.escape(actionTarget.actionId)}"]:not([data-drag-preview]) [data-timeline-action-chip="true"]`;
+    }
+    const fxTarget = step()?.targetFx;
+    if (fxTarget) {
+      const effect = Object.values(fxMap()).find(
+        (entry) => entry.identifiers.id === fxTarget.id,
+      );
+      if (!effect) return undefined;
+      const uid = CSS.escape(effect.identifiers.uid);
+      return `[data-crud-select-id="${uid}"], [data-grid-row-key="${uid}"][data-grid-column-key="label"]`;
+    }
+    const fixtureTarget = step()?.targetPatchFixture;
+    if (fixtureTarget) {
+      const fixture = Object.values(fixtureMap()).find(
+        (entry) => entry.identifiers.id === fixtureTarget.id,
+      );
+      if (!fixture) return undefined;
+      const uid = CSS.escape(fixture.identifiers.uid);
+      return `[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-fixtures"][aria-selected="false"], [data-panel-kind="patch"] [data-grid-row-key="${uid}"][data-grid-column-key="id"]`;
+    }
     const clipTarget = step()?.targetClip;
     if (clipTarget) {
       const clip = Object.values(clipMap()).find(
@@ -280,11 +319,43 @@ export default function WelcomeGuide() {
     });
   };
 
+  const [completing, setCompleting] = createSignal(false);
+  let completionTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Cancels a pending automatic advance so manual navigation always wins. */
+  const cancelCompletion = () => {
+    clearTimeout(completionTimer);
+    completionTimer = undefined;
+    setCompleting(false);
+  };
+  onCleanup(cancelCompletion);
+  /** Drops a pending checkmark when the guide closes or the user switches lesson or step. */
+  createEffect(
+    on([opened, lessonId, index], cancelCompletion, { defer: true }),
+  );
+
   /** Changes instructional position and returns focus to its heading for keyboard users. */
   const moveTo = (position: number) => {
+    cancelCompletion();
     guideStepIndex.set(position);
     heading?.focus();
   };
+
+  /** Shows a checkmark on the finished instruction briefly before revealing the next one. */
+  const completeStep = () => {
+    if (completionTimer !== undefined) return;
+    setCompleting(true);
+    // Advance without moving focus, so typing in the command input is not interrupted.
+    completionTimer = setTimeout(() => {
+      completionTimer = undefined;
+      setCompleting(false);
+      guideStepIndex.set(guideStepIndex.get() + 1);
+    }, STEP_COMPLETION_DELAY_MS);
+  };
+
+  /** Detects any clip, effect preview, or timeline still running after a lesson. */
+  const playbackRunning = createMemo(() =>
+    isPlaybackRunning(instanceMap(), clockMap()),
+  );
 
   /** Records lesson completion only when the user explicitly finishes the lesson. */
   const finish = () => {
@@ -307,16 +378,17 @@ export default function WelcomeGuide() {
       return undefined;
     return target;
   });
-  useGuideProgress(observation, dockviewApi, () =>
-    guideStepIndex.set(guideStepIndex.get() + 1),
-  );
+  useGuideProgress(observation, dockviewApi, completeStep);
 
   return (
     <Show when={opened()}>
       <aside
         ref={setCard}
         class="nf-welcome-guide"
-        classList={{ "nf-guide-floating": Boolean(lesson()) }}
+        classList={{
+          "nf-guide-floating": Boolean(lesson()),
+          "nf-guide-completing": completing(),
+        }}
         use:draggable={{
           disabled: !lesson(),
           handle: ".nf-guide-move",
@@ -384,10 +456,11 @@ export default function WelcomeGuide() {
             when={lesson()}
             fallback={
               <>
-                <h2>Make your first lights</h2>
+                <h2>Start with the orientation</h2>
                 <p>
-                  Start with the essentials, then choose what to learn next. You
-                  can leave at any time and return using Guide.
+                  Module 1 shows you around the workspace. Module 2 walks you
+                  through making your first lights. Then choose what to learn
+                  next. You can leave at any time and return using Guide.
                 </p>
                 <For each={lessons()}>
                   {(entry) => (
@@ -397,10 +470,7 @@ export default function WelcomeGuide() {
                       onClick={() => startGuideLesson(entry.id)}
                     >
                       <span class="nf-guide-lesson-meta">
-                        {entry.id === "basics"
-                          ? "START HERE"
-                          : "FOLLOW-ON LESSON"}{" "}
-                        · {entry.duration}
+                        {entry.label ?? "Follow-on lesson"} · {entry.duration}
                       </span>
                       <strong>{entry.title}</strong>
                       <span>{entry.introduction}</span>
@@ -417,9 +487,21 @@ export default function WelcomeGuide() {
           >
             {(current) => (
               <>
-                <h2 ref={heading} tabIndex={-1} aria-live="polite">
-                  {step()?.title ?? "Ready to explore"}
-                </h2>
+                <div class="nf-guide-step-heading">
+                  <Show when={completing()}>
+                    <CheckCircleIcon
+                      class="nf-guide-step-done size-5"
+                      weight="fill"
+                      aria-hidden
+                    />
+                  </Show>
+                  <h2 ref={heading} tabIndex={-1} aria-live="polite">
+                    {completing() ? (
+                      <span class="sr-only">Step complete: </span>
+                    ) : null}
+                    {step()?.title ?? "Ready to explore"}
+                  </h2>
+                </div>
                 <Show when={step()}>
                   {(instruction) => (
                     <>
@@ -436,6 +518,7 @@ export default function WelcomeGuide() {
                             openPanel={openPanel}
                             openTimeline={openSampleTimeline}
                             copyCommand={copyCommand}
+                            playbackRunning={playbackRunning()}
                           />
                         )}
                       </For>
@@ -472,23 +555,46 @@ export default function WelcomeGuide() {
                         >
                           {`${Math.min(index() + 1, current().steps.length)}/${current().steps.length}`}
                         </span>
-                        <Button
-                          size="compact"
-                          variant="primary"
-                          onClick={() => moveTo(index() + 1)}
+                        <Show
+                          when={instruction().observe}
+                          fallback={
+                            <Button
+                              size="compact"
+                              variant="primary"
+                              onClick={() => moveTo(index() + 1)}
+                            >
+                              Continue
+                            </Button>
+                          }
                         >
-                          Continue
-                        </Button>
+                          <Button
+                            size="compact"
+                            disabled={completing()}
+                            onClick={() => moveTo(index() + 1)}
+                            title="Move on without completing this step"
+                          >
+                            Skip
+                          </Button>
+                        </Show>
                       </div>
                     </>
                   )}
                 </Show>
                 <Show when={index() >= current().steps.length}>
-                  <p>
-                    You’ve reached the end of this lesson. Stop any timeline,
-                    clip, or effect preview you started before choosing another
-                    lesson.
-                  </p>
+                  <p>You’ve reached the end of this lesson.</p>
+                  <Show when={playbackRunning()}>
+                    <div class="nf-guide-action">
+                      <p>
+                        Playback is still running. Stop it before starting
+                        another lesson so it doesn’t affect what you see.
+                      </p>
+                      <div class="nf-guide-shortcuts">
+                        <Button size="compact" onClick={stopAllPlayback}>
+                          Stop all playback
+                        </Button>
+                      </div>
+                    </div>
+                  </Show>
                   <Show
                     when={capabilities()?.persistence === "Unavailable"}
                     fallback={
@@ -508,7 +614,7 @@ export default function WelcomeGuide() {
                     <Button size="compact" onClick={() => moveTo(index() - 1)}>
                       Back
                     </Button>
-                    <Button variant="primary" onClick={finish}>
+                    <Button variant="primary" size="compact" onClick={finish}>
                       Finish lesson
                     </Button>
                   </div>
@@ -517,34 +623,6 @@ export default function WelcomeGuide() {
             )}
           </Show>
         </div>
-        <footer class="nf-guide-footer">
-          <Show when={capabilities()?.persistence === "Unavailable"}>
-            Demo edits are temporary.{" "}
-          </Show>
-          <Show
-            when={
-              lessonId() === "patch" &&
-              capabilities()?.fixture_library === "Unavailable"
-            }
-          >
-            Fixture-library import is unavailable here. Inspect the existing
-            patch.
-          </Show>
-          <Show
-            when={
-              lessonId() === "transports" &&
-              capabilities() &&
-              !capabilities()?.network_dmx_output &&
-              !capabilities()?.usb_dmx_output
-            }
-          >
-            Hardware output is unavailable here. Follow this lesson as an
-            inspection.
-          </Show>
-          <Show when={lessonId() !== "patch" && lessonId() !== "transports"}>
-            Your show stays interactive while you learn.
-          </Show>
-        </footer>
       </aside>
     </Show>
   );

@@ -6,4 +6,5 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+export { type PatchTab, patchPanelActiveTab } from "./model/patch-view";
 export { PatchWizard, PatchWizardProvider, usePatchWizard } from "./wizard";
