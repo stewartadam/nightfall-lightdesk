@@ -289,7 +289,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       {/* Toolbar */}
       <DataGridToolbar
         selectedCount={selectedRows().length}
-        onDelete={handleDeleteSelected}
+        onDelete={canManageLibrary() ? handleDeleteSelected : undefined}
       >
         <DataGridFilterMenu
           columns={filterColumns()}

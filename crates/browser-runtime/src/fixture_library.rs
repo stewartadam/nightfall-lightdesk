@@ -106,6 +106,9 @@ pub fn handle_builtin_fixture_library_commands(
 }
 
 /// Resolves one built-in profile and its preview fixture for the requested or default mode.
+///
+/// Failures use the native library's codes: an unknown profile reports
+/// `fixture_library.not_found` and an unoffered mode `fixture_library.profile_failed`.
 fn builtin_fixture_profile(
     make: &str,
     model: &str,
@@ -114,9 +117,15 @@ fn builtin_fixture_profile(
     let profile = find_builtin_fixture_profile(make, model)
         .ok_or_else(|| fixture_profile_not_found(make, model))?;
     let requested_mode = mode.unwrap_or(profile.mode);
-    let fixture = profile
-        .create_fixture(0, requested_mode)
-        .ok_or_else(|| mode_not_found(make, model, requested_mode))?;
+    let fixture = profile.create_fixture(0, requested_mode).ok_or_else(|| {
+        CommandError::new(
+            "fixture_library.profile_failed",
+            format!(
+                "Failed to load fixture profile: {}",
+                mode_not_found(make, model, requested_mode)
+            ),
+        )
+    })?;
     Ok(GetFixtureProfileResponse {
         info: profile.info(),
         requested_mode: Some(requested_mode.to_string()),
@@ -126,6 +135,9 @@ fn builtin_fixture_profile(
 }
 
 /// Instantiates the fixture template for one built-in creation request.
+///
+/// Failures use the native library's codes: an unknown profile reports
+/// `fixture_library.not_found` and an unoffered mode `fixture_library.create_failed`.
 fn builtin_template(
     make: &str,
     model: &str,
@@ -134,21 +146,24 @@ fn builtin_template(
 ) -> Result<LibraryFixtureTemplate, CommandError> {
     let profile = find_builtin_fixture_profile(make, model)
         .ok_or_else(|| fixture_profile_not_found(make, model))?;
-    let fixture = profile
-        .create_fixture(id, mode)
-        .ok_or_else(|| mode_not_found(make, model, mode))?;
+    let fixture = profile.create_fixture(id, mode).ok_or_else(|| {
+        CommandError::new(
+            "fixture_library.create_failed",
+            format!(
+                "Failed to create fixture: {}",
+                mode_not_found(make, model, mode)
+            ),
+        )
+    })?;
     Ok(LibraryFixtureTemplate {
         fixture,
         asset_etag: profile.asset_etag.to_string(),
     })
 }
 
-/// Builds the stable failure for a mode the built-in profile does not offer.
-fn mode_not_found(make: &str, model: &str, mode: &str) -> CommandError {
-    CommandError::new(
-        "fixture_library.create_failed",
-        format!("Failed to create fixture: Mode '{mode}' not found for {make} {model}"),
-    )
+/// Describes a mode the built-in profile does not offer, worded like the native library error.
+fn mode_not_found(make: &str, model: &str, mode: &str) -> String {
+    format!("Mode '{mode}' not found for {make} {model}")
 }
 
 /// Builds the failure reported for library file management the browser cannot host.
@@ -255,6 +270,66 @@ mod tests {
         assert_eq!(profile["data"]["requested_mode"], "Spot");
         assert_eq!(profile["data"]["fixture"]["mode"], "Spot");
         assert_eq!(profile["data"]["info"]["source_format"], "Built-in");
+    }
+
+    /// Verifies an unoffered preview mode fails with the native library's profile error code.
+    #[test]
+    fn get_fixture_profile_unknown_mode_reports_profile_failure() {
+        let mut engine = sample_engine();
+        let (command_id, messages) = run_fixture_library_command(
+            &mut engine,
+            json!({
+                "type": "GetFixtureProfile",
+                "data": {
+                    "make": "Generic",
+                    "model": "Moving Head Spot 16ch",
+                    "mode": "Not A Mode"
+                }
+            }),
+        );
+
+        let result = command_result(&messages, command_id);
+        assert_eq!(
+            result.pointer("/data/outcome/data/code"),
+            Some(&json!("fixture_library.profile_failed")),
+            "{result:#?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .all(|message| message["type"] != "GetFixtureProfileResponse"),
+            "failed lookups must not broadcast a profile"
+        );
+    }
+
+    /// Verifies creating with an unoffered mode fails with the native creation error code.
+    #[test]
+    fn create_fixture_from_library_unknown_mode_reports_create_failure() {
+        let mut engine = sample_engine();
+        let (command_id, messages) = run_fixture_library_command(
+            &mut engine,
+            json!({
+                "type": "CreateFixtureFromLibrary",
+                "data": {
+                    "id": 902,
+                    "make": "Generic",
+                    "model": "Moving Head Spot 16ch",
+                    "mode": "Not A Mode"
+                }
+            }),
+        );
+
+        let result = command_result(&messages, command_id);
+        assert_eq!(
+            result.pointer("/data/outcome/data/code"),
+            Some(&json!("fixture_library.create_failed")),
+            "{result:#?}"
+        );
+        let fixtures = engine
+            .app
+            .world()
+            .resource::<nightfall_fixtures::prelude::FixtureDataProviderExt>();
+        assert!(fixtures.inner.from_id(902).is_err());
     }
 
     /// Verifies a created built-in is stored, broadcast, and indexed with live parameters.
