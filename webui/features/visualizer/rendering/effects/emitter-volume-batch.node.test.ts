@@ -67,6 +67,7 @@ test("frost broadens the shared distribution while retaining flux and focus", ()
   const batch = new EmitterVolumeBatch(scene);
   const optics = roundOptics(0.1, 0.2, 8);
   const color = { ...WHITE, frost: 1 };
+  /** Republishes the aperture at double zoom with a 10 m focal plane and the current frost. */
   const update = () =>
     batch.update("fixture:beam", new Object3D(), {
       optics,

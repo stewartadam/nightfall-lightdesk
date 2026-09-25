@@ -388,8 +388,11 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     const distribution = exp(
       pow(radius, max(profile.x, 0.1)).mul(-Math.log(10)),
     );
-    const inside = z
-      .greaterThanEqual(0)
+    // A zero or placeholder aperture record (no throw, no radius) would otherwise hit the
+    // minimum width everywhere and multiply the light by ~1e8, flooding every surface.
+    const validAperture = profile.z.greaterThan(0).and(right.w.greaterThan(0));
+    const inside = validAperture
+      .and(z.greaterThanEqual(0))
       .and(z.lessThanEqual(profile.z))
       .and(radius.lessThanEqual(2));
     // The cluster light applies inverse-square falloff later; replace it with finite-aperture spreading.

@@ -953,7 +953,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
         reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
         reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
         omittedSurfaceLights:
-          this.postProcessing?.surfaceLighting?.omittedPointLights,
+          this.postProcessing?.surfaceLighting.omittedPointLights,
         atmosphereScale: this.postProcessing?.volumePass.getResolutionScale(),
         sceneScale: this.postProcessing?.scenePass.getResolutionScale(),
       });

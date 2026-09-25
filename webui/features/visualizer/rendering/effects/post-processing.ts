@@ -140,6 +140,11 @@ export interface PostProcessingState {
   displayMaterial?: NodeMaterial;
   /** Present only when the quality profile blooms. */
   bloomPass?: ReturnType<typeof bloom>;
+  /** Renderer hooks replaced by this pipeline, restored when it is disposed. */
+  replacedRendererHooks: {
+    lighting: WebGPURenderer["lighting"];
+    renderObjectFunction: ReturnType<WebGPURenderer["getRenderObjectFunction"]>;
+  };
   outlinePass: ReturnType<typeof outline>;
   editSelectionOutlinePass: ReturnType<typeof outline>;
   programmerValueOutlinePass: ReturnType<typeof outline>;
@@ -217,6 +222,10 @@ export function createPostProcessing(
     configOverrides?: Partial<PostProcessingConfig>;
   },
 ): PostProcessingState {
+  const replacedRendererHooks = {
+    lighting: renderer.lighting,
+    renderObjectFunction: renderer.getRenderObjectFunction(),
+  };
   /** Outline passes install their own draw callback; the beauty pass skips invisible selection proxies. */
   renderer.setRenderObjectFunction(
     (...args: Parameters<WebGPURenderer["renderObject"]>) => {
@@ -348,6 +357,7 @@ export function createPostProcessing(
     displayPass,
     displayMaterial,
     bloomPass,
+    replacedRendererHooks,
     outlinePass,
     editSelectionOutlinePass,
     programmerValueOutlinePass,
@@ -472,11 +482,18 @@ export function renderWithPostProcessing(
   state.gpuBudget.recordRender(performance.now() - started, updateMs);
 }
 
-/** Releases every pass's targets and materials, including resources not owned by RenderPipeline. */
+/**
+ * Releases every pass's targets and materials, including resources not owned by RenderPipeline,
+ * and hands the renderer back its previous lighting and object-draw hooks.
+ */
 export function disposePostProcessing(
   state: PostProcessingState | null | undefined,
 ): void {
   if (!state) return;
+  const { renderer, replacedRendererHooks } = state;
+  if (renderer.lighting === state.surfaceLighting)
+    renderer.lighting = replacedRendererHooks.lighting;
+  renderer.setRenderObjectFunction(replacedRendererHooks.renderObjectFunction);
   state.surfaceLighting.dispose();
   state.outlinePass.dispose();
   state.editSelectionOutlinePass.dispose();

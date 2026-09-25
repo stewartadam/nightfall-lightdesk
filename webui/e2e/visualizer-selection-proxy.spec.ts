@@ -41,6 +41,7 @@ test("selection proxies skip beauty submission and retain outlines", async ({
     scene.background = new THREE.Color(0);
     const camera = new THREE.PerspectiveCamera(45, 320 / 240, 0.1, 100);
     camera.position.z = 4;
+    const originalLighting = renderer.lighting;
     const pipeline = createPostProcessing(renderer, scene, camera);
     /** Samples one fully submitted frame after shaders and render targets have warmed. */
     const capture = async () => {
@@ -95,10 +96,14 @@ test("selection proxies skip beauty submission and retain outlines", async ({
     const deselectedProxyCount = proxies.filter((mesh) => mesh.visible).length;
     const deselected = await capture();
     disposePostProcessing(pipeline);
+    const restoredRenderer =
+      renderer.lighting === originalLighting &&
+      renderer.getRenderObjectFunction() === null;
     geometry.dispose();
     material.dispose();
     renderer.dispose();
     return {
+      restoredRenderer,
       empty,
       unselected,
       selected,
@@ -109,6 +114,7 @@ test("selection proxies skip beauty submission and retain outlines", async ({
     };
   });
   expect(errors).toEqual([]);
+  expect(result.restoredRenderer).toBe(true);
   expect(result.unselected.draws).toBe(result.empty.draws);
   expect(result.unselected.brightness).toBe(result.empty.brightness);
   expect(result.selected.brightness).toBeGreaterThan(

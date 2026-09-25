@@ -452,3 +452,88 @@ for (const forceWebGL of [false, true]) {
     expect(result.away.blue).toBe(0);
   });
 }
+
+for (const forceWebGL of [false, true]) {
+  /** An all-zero aperture record, like an unwritten texture placeholder, must add no light rather than flood surfaces. */
+  test(`degenerate aperture records light nothing (${forceWebGL ? "WebGL" : "WebGPU"})`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    await page.goto("/e2e/fixtures/optics.html");
+    const energy = await page.evaluate(async (forceWebGL) => {
+      const THREE = await import("/e2e/fixtures/three-api.ts");
+      const { OpticalSurfaceLight, OpticalSurfaceLighting } = await import(
+        "/features/visualizer/rendering/effects/optical-surface-lighting.ts"
+      );
+      const renderer = new THREE.WebGPURenderer({
+        canvas: document.querySelector("canvas")!,
+        forceWebGL,
+      });
+      renderer.setSize(400, 400);
+      await renderer.init();
+      const lighting = new OpticalSurfaceLighting({
+        gobos: true,
+        shadows: true,
+      });
+      renderer.lighting = lighting;
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0);
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+      camera.position.z = 4;
+      const wall = new THREE.Mesh(
+        new THREE.PlaneGeometry(8, 8),
+        new THREE.MeshStandardNodeMaterial({ color: 0xffffff, roughness: 1 }),
+      );
+      wall.position.z = -4;
+      scene.add(wall);
+      const light = new OpticalSurfaceLight({
+        shape: "round",
+        radius: 0,
+        slopeX: 0,
+        slopeY: 0,
+        halfPowerRatio: 0.5,
+        distributionPower: 0,
+        lumens: 0,
+      });
+      light.apertureRight.set(0, 0, 0);
+      light.apertureUp.set(0, 0, 0);
+      light.apertureForward.set(0, 0, 0);
+      light.beamLength = 0;
+      light.intensity = 1;
+      light.position.z = -2;
+      scene.add(light);
+      try {
+        await new Promise<void>((resolve) => {
+          let frames = 0;
+          renderer.setAnimationLoop(() => {
+            renderer.render(scene, camera);
+            if (++frames === 4) {
+              renderer.setAnimationLoop(null);
+              resolve();
+            }
+          });
+        });
+        const copy = document.createElement("canvas");
+        copy.width = copy.height = 400;
+        const context = copy.getContext("2d")!;
+        context.drawImage(renderer.domElement, 0, 0);
+        const pixels = context.getImageData(0, 0, 400, 400).data;
+        let total = 0;
+        for (let i = 0; i < pixels.length; i += 4)
+          total += pixels[i] + pixels[i + 1] + pixels[i + 2];
+        return total;
+      } finally {
+        lighting.dispose();
+        wall.geometry.dispose();
+        wall.material.dispose();
+        renderer.dispose();
+      }
+    }, forceWebGL);
+    expect(errors).toEqual([]);
+    expect(energy).toBe(0);
+  });
+}

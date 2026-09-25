@@ -411,7 +411,7 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
             this.rendererState?.postProcessing?.scenePass.getResolutionScale(),
           omittedSurfaceLights:
             this.rendererState?.postProcessing?.surfaceLighting
-              ?.omittedPointLights,
+              .omittedPointLights,
           updateMs: metrics.updateMs,
           renderMs: metrics.renderMs,
           gpu: metrics.gpu,
