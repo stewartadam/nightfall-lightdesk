@@ -1974,7 +1974,7 @@ async function rotatingWashBeamOpticalStats(
         object.visible &&
         object.intensity > 0.01
       )
-        lightIds.add(object.id);
+        lightIds.add(object.shadowKey);
     });
     stats.opticalBeamCount = lightIds.size;
     const { getOpticalRenderContext } = await import(
