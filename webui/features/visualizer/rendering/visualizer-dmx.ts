@@ -11,7 +11,14 @@
  * Derives normalized visualizer values from ParameterState output.
  */
 
-import { type FixtureElement, ParameterValuePolarity } from "../../../types";
+import { cieChromaticityToFullBrightnessRgb } from "../../../lib/color-path-preview";
+import { getResolutionChannelWidth } from "../../../lib/dmx";
+import {
+  type CieColor,
+  type FixtureElement,
+  type ParameterFunction,
+  ParameterValuePolarity,
+} from "../../../types";
 
 /** Visualizer-friendly parameter state */
 export interface VisualizerDmx {
@@ -154,6 +161,42 @@ function normalizeSignedPositionOutput(
   return value;
 }
 
+/** Display colors of profile CIE colors, keyed by chromaticity. */
+const cieDisplayColors = new Map<string, ColorContribution>();
+
+/** Returns the display RGB of a profile CIE color, caching conversions for the render loop. */
+function cieDisplayColor(color: CieColor): ColorContribution {
+  const key = `${color.x},${color.y}`;
+  let cached = cieDisplayColors.get(key);
+  if (!cached) {
+    const rgb = cieChromaticityToFullBrightnessRgb(color);
+    cached = { r: rgb.red, g: rgb.green, b: rgb.blue };
+    cieDisplayColors.set(key, cached);
+  }
+  return cached;
+}
+
+/**
+ * Returns the profile function active at a parameter's output value, with
+ * the DMX integer that value encodes.
+ */
+function activeFunction(
+  param: FixtureElement["parameters"][number],
+  value: number,
+): { function: ParameterFunction; dmx: number } | undefined {
+  if (!param.functions?.length) return undefined;
+  const range = param.max - param.min;
+  const normalized = range > 0 ? (value - param.min) / range : 0;
+  const width = getResolutionChannelWidth(param.resolution);
+  const dmx = Math.round(
+    Math.min(1, Math.max(0, normalized)) * (2 ** (8 * width) - 1),
+  );
+  const found = param.functions.find(
+    (candidate) => dmx >= candidate.dmx_from && dmx <= candidate.dmx_to,
+  );
+  return found ? { function: found, dmx } : undefined;
+}
+
 /** Converts a normalized strobe shutter value into the visualizer strobe frequency. */
 export function strobeShutterFrequencyHz(strobeShutter: number): number {
   const normalized = Math.min(1, Math.max(0, strobeShutter));
@@ -206,6 +249,10 @@ export function extractVisualizerDmx(
   let addGreen = 0;
   let addBlue = 0;
   let hasIntensity = false;
+  let filterRed = 1;
+  let filterGreen = 1;
+  let filterBlue = 1;
+  let hasFilter = false;
   const declaresIntensityControl = elementDeclaresIntensityControl(element);
 
   for (const param of element.parameters) {
@@ -220,6 +267,31 @@ export function extractVisualizerDmx(
       (attrType === "Pan" || attrType === "Tilt")
         ? normalizeSignedPositionOutput(value, attrType)
         : normalizeParameterOutput(value, param);
+
+    // Profile colors take precedence over attribute-name approximations.
+    const active = activeFunction(param, value);
+    if (active?.function.emitter_color) {
+      const emitter = cieDisplayColor(active.function.emitter_color);
+      addRed += emitter.r * normalized;
+      addGreen += emitter.g * normalized;
+      addBlue += emitter.b * normalized;
+      if (prop === "intensity") {
+        hasIntensity = true;
+        dmx.intensity = normalized;
+      }
+      continue;
+    }
+    const slot = active?.function.sets?.find(
+      (set) => active.dmx >= set.dmx_from && active.dmx <= set.dmx_to,
+    );
+    if (slot?.color) {
+      const filter = cieDisplayColor(slot.color);
+      filterRed *= filter.r;
+      filterGreen *= filter.g;
+      filterBlue *= filter.b;
+      hasFilter = true;
+    }
+
     if (attrType === "Custom") {
       if (TILT_SPEED_LABELS.has(param.attribute.data.label)) {
         dmx.tiltSpeed = normalized;
@@ -255,6 +327,13 @@ export function extractVisualizerDmx(
   dmx.red = Math.min(1, baseRed + addRed);
   dmx.green = Math.min(1, baseGreen + addGreen);
   dmx.blue = Math.min(1, baseBlue + addBlue);
+  if (hasFilter) {
+    // A wheel filters the source; a lamp without additive color is white.
+    const unlit = dmx.red + dmx.green + dmx.blue <= 0;
+    dmx.red = (unlit ? 1 : dmx.red) * filterRed;
+    dmx.green = (unlit ? 1 : dmx.green) * filterGreen;
+    dmx.blue = (unlit ? 1 : dmx.blue) * filterBlue;
+  }
   if (!hasIntensity && !declaresIntensityControl) {
     if (fixtureIntensity !== undefined) {
       dmx.intensity = fixtureIntensity;
