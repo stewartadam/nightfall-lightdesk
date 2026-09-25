@@ -9,7 +9,7 @@
 //! Runtime invocation messages exchanged between automation surfaces and the registry.
 
 use bevy_ecs::prelude::Message;
-use nightfall_engine::prelude::CommandId;
+use nightfall_engine::prelude::{CommandError, CommandId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -24,14 +24,36 @@ pub struct InvocationError {
     pub code: String,
     /// User-presentable description of the failure.
     pub message: String,
+    /// Optional structured domain details that are safe to expose to clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[typeshare(serialized_as = "Option<unknown>")]
+    pub details: Option<Value>,
 }
 
 impl InvocationError {
-    /// Creates a structured invocation failure.
+    /// Creates a structured invocation failure without additional details.
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
+            details: None,
+        }
+    }
+
+    /// Attaches serialized domain details, such as the missing target's identity.
+    pub fn with_details(mut self, details: Value) -> Self {
+        self.details = Some(details);
+        self
+    }
+}
+
+impl From<InvocationError> for CommandError {
+    /// Carries the invocation code, message, and details into a command failure unchanged.
+    fn from(error: InvocationError) -> Self {
+        Self {
+            code: error.code,
+            message: error.message,
+            details: error.details,
         }
     }
 }
@@ -136,6 +158,8 @@ pub struct ActionInvocation {
     pub input: ActionInput,
     /// Optional human-readable source detail for diagnostics and UI feedback.
     pub source: Option<String>,
+    /// Client command that requested this invocation and finishes with its outcome.
+    pub completes_command: Option<CommandId>,
 }
 
 impl ActionInvocation {
@@ -147,6 +171,7 @@ impl ActionInvocation {
             surface,
             input,
             source: None,
+            completes_command: None,
         }
     }
 
@@ -163,6 +188,15 @@ impl ActionInvocation {
     /// Attaches human-readable source detail to an invocation.
     pub fn with_source(mut self, source: impl Into<String>) -> Self {
         self.source = Some(source.into());
+        self
+    }
+
+    /// Ties the invocation to the client command that requested it.
+    ///
+    /// The dispatcher finishes that command with the invocation outcome, so a rejected
+    /// invocation fails the command instead of reporting success before the action ran.
+    pub fn completing(mut self, command_id: CommandId) -> Self {
+        self.completes_command = Some(command_id);
         self
     }
 
@@ -262,6 +296,30 @@ pub struct InvocationResult {
     pub surface: ActionSurface,
     /// Accepted, submitted, terminal success, ignored, or failure state.
     pub outcome: InvocationOutcome,
+}
+
+/// Failed invocation published to clients so surface failures are visible to the operator.
+///
+/// Discrete inputs publish every failure; continuous scalar input publishes a repeated
+/// failure for the same binding at most once per repeat window, see
+/// [`crate::InvocationFailureThrottle`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Message)]
+#[typeshare::typeshare]
+pub struct ActionInvocationFailure {
+    /// Invocation that failed.
+    pub invocation_id: InvocationId,
+    /// Action and arguments that were invoked, for display against the action catalog.
+    pub action: ActionReference,
+    /// Surface that produced the invocation.
+    pub surface: ActionSurface,
+    /// Human-readable source label, such as the MIDI device or OSC sender.
+    pub source: String,
+    /// Raw surface input that was rejected.
+    pub input: ActionInput,
+    /// Structured registry or domain failure.
+    pub error: InvocationError,
+    /// Client command finished with this failure, whose `CommandResult` also reports it.
+    pub command_id: Option<CommandId>,
 }
 
 /// Notification that a registered action intentionally started a user-visible command.

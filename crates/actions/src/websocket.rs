@@ -13,7 +13,7 @@ use nightfall_engine::prelude::{ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, Re
 use serde::Serialize;
 
 use crate::descriptor::ActionCatalogEntry;
-use crate::invocation::ClientActionInvocation;
+use crate::invocation::{ActionInvocationFailure, ClientActionInvocation};
 use crate::registry::ActionRegistry;
 
 /// Websocket messages emitted by the actions plugin.
@@ -25,6 +25,8 @@ pub enum ActionsWsMessage<'a> {
     ActionCatalog(&'a [ActionCatalogEntry]),
     /// Request for opted-in clients to run a client-hosted `ui.*` action.
     ClientActionInvocation(&'a ClientActionInvocation),
+    /// A registered action invocation failed and the operator should be told.
+    ActionInvocationFailed(&'a ActionInvocationFailure),
 }
 
 /// Broadcasts the catalog whenever registrations change.
@@ -73,6 +75,27 @@ pub fn send_client_action_invocations(
         sink.publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &ActionsWsMessage::ClientActionInvocation(invocation),
+        );
+    }
+}
+
+/// Broadcasts admitted invocation failures to connected clients.
+///
+/// Failures are non-droppable so a rejected palette, keybinding, MIDI, or OSC action is
+/// never silently lost under websocket backpressure; the dispatcher already throttles
+/// repeated failures from continuous input.
+pub fn send_action_invocation_failures(
+    mut failures: MessageReader<ActionInvocationFailure>,
+    sink: Option<Res<ClientEventSink>>,
+) {
+    let Some(sink) = sink else {
+        failures.clear();
+        return;
+    };
+    for failure in failures.read() {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &ActionsWsMessage::ActionInvocationFailed(failure),
         );
     }
 }

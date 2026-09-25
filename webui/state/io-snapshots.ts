@@ -7,6 +7,11 @@
  */
 
 import {
+  appendInvocationFailure,
+  describeInvocationFailure,
+} from "../features/actions/model/invocation-failures";
+import { markCommandFailurePresented } from "../lib/command-failure-toasts";
+import {
   replaceStoredLayoutsFromShowfile,
   type StoredPanelLayout,
 } from "../lib/layoutStorage";
@@ -14,6 +19,7 @@ import { setStoreAction } from "../lib/nanostore-action";
 import type * as types from "../types";
 import {
   actionCatalog,
+  actionInvocationFailures,
   clientActionInvocation,
   midiDevices,
   midiLastEvent,
@@ -24,6 +30,7 @@ import {
   oscSources,
 } from "./appStores";
 import { reconcileLayoutSessions } from "./layout-switcher";
+import { pushToast } from "./notifications";
 import {
   $availableAudioDevices,
   $availableNetworkInterfaces,
@@ -136,6 +143,29 @@ export function applyClientActionInvocation(
     "Receive ClientActionInvocation",
     invocation,
   );
+}
+
+/**
+ * Records a failed action invocation and tells the operator which action failed.
+ *
+ * When the failure finished a client command, this labelled toast replaces the generic
+ * `CommandResult` failure toast, which the backend always sends afterwards.
+ */
+export function applyActionInvocationFailure(
+  failure: types.ActionInvocationFailure,
+): void {
+  setStoreAction(
+    actionInvocationFailures,
+    "Receive ActionInvocationFailed",
+    appendInvocationFailure(actionInvocationFailures.get(), failure),
+  );
+  if (failure.command_id != null) {
+    markCommandFailurePresented(failure.command_id);
+  }
+  const toast = describeInvocationFailure(failure, actionCatalog.get());
+  pushToast(toast.level, toast.message, toast.ttlMs, [], {
+    title: toast.title,
+  });
 }
 
 /** Applies the backend action catalog used by mapping and binding pickers. */
