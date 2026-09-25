@@ -43,6 +43,14 @@ const MAGIC_PANEL: BenchFixture = {
   mode: "Extended",
 };
 
+/** Profile spot with subtractive CMY, CTO, an iris closing to 16% and zoom in degrees. */
+const MAC_VIPER: BenchFixture = {
+  file: "Martin_Professional@MAC_Viper_Profile@20230516NoMeas.gdtf",
+  make: "Martin Professional",
+  model: "MAC Viper Profile",
+  mode: "Extended",
+};
+
 test.beforeEach(async ({ backendSlot, page }) => {
   await openBenchVisualizer(page, backendSlot.backendPort);
 });
@@ -181,4 +189,98 @@ test("MagicPanel pans to physical angles and rotates continuously", async ({
       },
     )
     .toBeLessThan(1);
+});
+
+/**
+ * Returns the programmer percentage that puts a parameter at the last DMX
+ * value of its first function with `attribute`, with the parameter's
+ * attribute label for console commands.
+ */
+function functionEndPercent(
+  page: import("./playwright-fixtures").Page,
+  uid: string,
+  attribute: string,
+): Promise<{ label: string; percent: number }> {
+  return page.evaluate(
+    ({ uid, attribute }) => {
+      const fixture = (window as any).appStores.fixtures.get()[uid] as Fixture;
+      for (const element of fixture.elements) {
+        for (const parameter of element.parameters) {
+          const fn = parameter.functions?.find(
+            (candidate) => candidate.attribute === attribute,
+          );
+          if (!fn) continue;
+          const max =
+            2 ** (8 * (parameter.resolution === "Coarse" ? 1 : 2)) - 1;
+          const label =
+            parameter.attribute.type === "Custom"
+              ? parameter.attribute.data.label
+              : parameter.attribute.type;
+          return { label, percent: (fn.dmx_to / max) * 100 };
+        }
+      }
+      throw new Error(`no ${attribute} function`);
+    },
+    { uid, attribute },
+  );
+}
+
+/** Returns the radius scale of a fixture's volumetric beam mesh. */
+function beamRadius(
+  page: import("./playwright-fixtures").Page,
+  uid: string,
+): Promise<number | undefined> {
+  return page.evaluate((uid) => {
+    let radius: number | undefined;
+    (window as any).visualizerApi
+      .getScene()
+      .getObjectByName(`Fixture_${uid}`)
+      .traverse((child: any) => {
+        if (child.isMesh && child.name.startsWith("Beam_") && child.visible) {
+          radius = child.scale.x;
+        }
+      });
+    return radius;
+  }, uid);
+}
+
+/**
+ * Verifies subtractive cyan removes red from a white lamp and the iris
+ * narrows the beam to its authored aperture.
+ */
+test("MAC Viper filters with CMY and narrows with its iris", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  const uid = await installBenchFixture(
+    page,
+    backendSlot.dataDir,
+    MAC_VIPER,
+    1,
+  );
+  await submitCommand(page, "fix 1 int @ 100");
+  const color = async () => Object.values(await emitterColors(page, uid))[0];
+  await expect.poll(async () => (await color())?.[0]).toBeGreaterThan(0.5);
+  const openRadius = await beamRadius(page, uid);
+  expect(openRadius).toBeGreaterThan(0);
+
+  const cyan = await functionEndPercent(page, uid, "ColorSub_C");
+  await submitCommand(
+    page,
+    `fix 1 "${cyan.label}" @ ${cyan.percent.toFixed(2)}`,
+  );
+  await expect.poll(async () => (await color())?.[0]).toBeLessThan(0.05);
+  expect((await color())?.[1]).toBeGreaterThan(0.5);
+  await attachCanvas(page, "mac-viper-cyan", testInfo);
+
+  const iris = await functionEndPercent(page, uid, "Iris");
+  await submitCommand(
+    page,
+    `fix 1 "${iris.label}" @ ${iris.percent.toFixed(2)}`,
+  );
+  // The MAC Viper iris closes to 16% of the open beam.
+  await expect
+    .poll(async () => ((await beamRadius(page, uid)) ?? 0) / (openRadius ?? 1))
+    .toBeLessThan(0.3);
+  await attachCanvas(page, "mac-viper-iris", testInfo);
 });
