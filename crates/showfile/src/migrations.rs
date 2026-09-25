@@ -11,6 +11,8 @@
 //! Each step rewrites the raw JSON of one schema version into the next, so persisted
 //! data that no longer has a runtime type can still be read and converted.
 
+mod action_references;
+
 use nightfall_fixtures::bindings::{DmxRange, OutputSource};
 use serde_json::Value;
 
@@ -28,6 +30,7 @@ pub(crate) fn migrate_showfile_json(showfile: &mut Value, version: u32) -> Resul
     while version < CURRENT_SHOWFILE_VERSION {
         match version {
             17 => remove_output_disabled_bindings(showfile)?,
+            18 => action_references::migrate_v18_to_v19(showfile),
             _ => return Err(format!("no migration from showfile version {version}")),
         }
         version += 1;
