@@ -383,6 +383,47 @@ mod tests {
         );
     }
 
+    /// Verifies momentary command actions lower press and release to separate tracked commands.
+    #[test]
+    fn momentary_command_action_submits_press_and_release_commands() {
+        let mut app = action_app();
+        app.register_momentary_command_action::<TestArguments, TestCommand, _>(
+            ActionDescriptor::new("test.hold", "Test hold", "Tests")
+                .with_input(ActionInputKind::Momentary),
+            |_world, arguments, pressed| {
+                Ok(TestCommand(if pressed {
+                    arguments.value
+                } else {
+                    arguments.value + 100
+                }))
+            },
+        );
+        let action = ActionReference::new("test.hold", json!({ "value": 3 }));
+
+        for input in [ActionInput::Press, ActionInput::Release] {
+            let outcome = invoke(
+                &mut app,
+                ActionInvocation::new(action.clone(), ActionSurface::Midi, input),
+            );
+            assert!(matches!(outcome, InvocationOutcome::Submitted { .. }));
+        }
+
+        let commands = app
+            .world_mut()
+            .resource_mut::<PendingCommandBuffer>()
+            .drain()
+            .iter()
+            .map(|envelope| {
+                envelope
+                    .payload
+                    .as_any()
+                    .downcast_ref::<TestCommand>()
+                    .cloned()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(commands, vec![Some(TestCommand(3)), Some(TestCommand(103))]);
+    }
+
     /// Verifies update actions write untracked updates carrying the clamped normalized value.
     #[test]
     fn update_action_writes_untracked_update() {
