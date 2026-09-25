@@ -31,6 +31,7 @@ import {
 } from "../../components/ui/form-controls";
 import Modal from "../../components/ui/modal";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
+import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { durationToMs, msToDuration } from "../../lib/duration";
 import { engineRuntime } from "../../lib/engine-runtime";
@@ -701,21 +702,32 @@ export function SettingsOverlay() {
                   Visualizer
                 </h3>
                 <div class="space-y-3">
-                  <label class="flex items-center justify-between">
-                    <span class="text-sm text-gray-400">
-                      Highlight selection
-                    </span>
-                    <Checkbox
-                      checked={highlightSelection()}
-                      onChange={(e) =>
-                        setStoreAction(
-                          visualizerHighlightSelection,
-                          "Set Visualizer Highlight Selection",
-                          e.currentTarget.checked,
-                        )
-                      }
-                    />
-                  </label>
+                  <ToggleSwitch
+                    label="Highlight selection"
+                    ariaLabel="Highlight selection"
+                    class="w-full justify-between"
+                    checked={highlightSelection()}
+                    onChange={(enabled) =>
+                      setStoreAction(
+                        visualizerHighlightSelection,
+                        "Set Visualizer Highlight Selection",
+                        enabled,
+                      )
+                    }
+                  />
+                  <ToggleSwitch
+                    label="Show current orbit target"
+                    ariaLabel="Show current orbit target"
+                    class="w-full justify-between"
+                    checked={showOrbitTargetIndicator()}
+                    onChange={(enabled) =>
+                      setStoreAction(
+                        visualizerShowOrbitTargetIndicator,
+                        "Set Visualizer Orbit Target Indicator",
+                        enabled,
+                      )
+                    }
+                  />
                   <label class="block">
                     <span class="text-sm text-gray-400">Quality preset</span>
                     <NativeSelect
@@ -753,21 +765,6 @@ export function SettingsOverlay() {
                         )}
                       </For>
                     </NativeSelect>
-                  </label>
-                  <label class="flex items-center justify-between">
-                    <span class="text-sm text-gray-400">
-                      Show current orbit target
-                    </span>
-                    <Checkbox
-                      checked={showOrbitTargetIndicator()}
-                      onChange={(e) =>
-                        setStoreAction(
-                          visualizerShowOrbitTargetIndicator,
-                          "Set Visualizer Orbit Target Indicator",
-                          e.currentTarget.checked,
-                        )
-                      }
-                    />
                   </label>
                 </div>
               </section>

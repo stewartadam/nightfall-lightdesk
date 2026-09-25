@@ -64,6 +64,15 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await expect(visualizer).toBeFocused();
   await expect(visualizer).toBeInViewport({ ratio: 1 });
   await expect(dialog.getByLabel("Quality preset")).toBeVisible();
+  for (const name of ["Highlight selection", "Show current orbit target"]) {
+    const toggle = dialog.getByRole("switch", { name, exact: true });
+    const checked = await toggle.isChecked();
+    await toggle.focus();
+    await toggle.press("Space");
+    await expect(toggle).toBeChecked({ checked: !checked });
+    await toggle.press("Space");
+    await expect(toggle).toBeChecked({ checked });
+  }
   await expect
     .poll(async () => {
       const highlight = await indicator.boundingBox();
