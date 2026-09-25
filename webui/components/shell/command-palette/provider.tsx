@@ -14,10 +14,11 @@ import {
   type ParentComponent,
   Show,
 } from "solid-js";
+import { actionAllowsSurface } from "../../../features/actions";
 import { $mappingMode, bindArmedSource } from "../../../features/io";
 import { invokeBoundAction } from "../../../features/keybindings";
 import { actionCatalog } from "../../../state/appStores";
-import { ActionInputKind } from "../../../types";
+import { ActionInputKind, ActionSurface } from "../../../types";
 import {
   $uiActions,
   CommandPaletteContext,
@@ -57,6 +58,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
       .filter(
         (entry) =>
           entry.descriptor.input === ActionInputKind.Trigger &&
+          actionAllowsSurface(entry, ActionSurface.CommandPalette) &&
           entry.descriptor.parameters.every((parameter) => !parameter.required),
       )
       .map((entry) => ({

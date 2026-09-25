@@ -146,6 +146,7 @@ export function KeybindingsSettings() {
           <ActionPicker
             label="Keybinding action"
             inputKinds={[types.ActionInputKind.Trigger]}
+            surface={types.ActionSurface.Keyboard}
             includeUiActions
             onChange={setPendingAction}
             onIncomplete={() => setPendingAction(undefined)}

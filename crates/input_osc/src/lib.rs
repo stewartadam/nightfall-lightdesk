@@ -204,7 +204,9 @@ fn handle_osc_crud(
         let result = match &event.command {
             OscCommand::UpsertMapping(mapping) => {
                 match registry
-                    .validate_binding(&mapping.action, |kind| mapping.can_drive(kind))
+                    .validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
+                        mapping.can_drive(kind)
+                    })
                     .and_then(|()| {
                         registry.validate_behavior(
                             &mapping.action,
@@ -292,6 +294,11 @@ mod tests {
         registry.register::<serde::de::IgnoredAny, _>(
             nightfall_actions::ActionDescriptor::new("test.level", "Test level", "Tests")
                 .with_input(nightfall_actions::ActionInputKind::Absolute),
+            |_world, _arguments, _invocation| Ok(nightfall_actions::InvocationDispatch::succeeded()),
+        );
+        registry.register::<serde::de::IgnoredAny, _>(
+            nightfall_actions::ActionDescriptor::new("test.timeline", "Timeline only", "Tests")
+                .with_surfaces([ActionSurface::Timeline]),
             |_world, _arguments, _invocation| Ok(nightfall_actions::InvocationDispatch::succeeded()),
         );
         app.add_message::<CommandEnvelope<OscCommand>>();
@@ -409,6 +416,26 @@ mod tests {
             take_result(&mut app).outcome,
             CommandOutcome::Failed(CommandError { ref code, .. })
                 if code == "action.input_incompatible"
+        ));
+    }
+
+    /// Verifies an OSC address cannot be bound to an action restricted to other surfaces.
+    #[test]
+    fn upsert_rejects_action_disallowed_on_osc() {
+        let mut app = osc_command_app();
+        let mapping = OscMapping {
+            action: nightfall_actions::ActionReference::new("test.timeline", serde_json::json!({})),
+            ..test_mapping()
+        };
+
+        submit_command(&mut app, OscCommand::UpsertMapping(mapping));
+        app.update();
+
+        assert!(app.world().resource::<OscMappings>().mappings().is_empty());
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. })
+                if code == "action.surface_not_allowed"
         ));
     }
 

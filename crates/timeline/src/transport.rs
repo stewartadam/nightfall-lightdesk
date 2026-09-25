@@ -12,7 +12,7 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionParameter, ActionParameterKind, ActionReference,
-    InvocationError,
+    ActionSurface, InvocationError,
 };
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{TimelinePlaybackActionKind, TimelinePlaybackActionPlan};
@@ -227,7 +227,9 @@ pub fn fire_cue_action(cue: Uuid) -> ActionReference {
 /// Registers the timeline-owned fire-cue action.
 ///
 /// Firing a cue creates a transient playback owned by the timeline action that placed it,
-/// lasting the action's duration, so it only runs from timelines.
+/// lasting the action's duration, so it is restricted to the timeline surface. Timeline
+/// playback materializes the cue through the planning capability rather than the live
+/// invoker, which only reports that path.
 fn register_fire_cue_action(app: &mut App) {
     app.register_action::<TimelineFireCueArguments, _>(
         ActionDescriptor::new(TIMELINE_FIRE_CUE_ACTION_ID, "Fire cue", "Timeline")
@@ -236,11 +238,12 @@ fn register_fire_cue_action(app: &mut App) {
                 "cue",
                 "Cue",
                 ActionParameterKind::Cue,
-            )),
+            ))
+            .with_surfaces([ActionSurface::Timeline]),
         |_world, _arguments, _invocation| {
             Err(InvocationError::new(
-                "timeline.fire_cue_timeline_only",
-                "Fire cue only runs from timeline actions",
+                "timeline.fire_cue_planned",
+                "Fire cue runs through timeline playback planning",
             ))
         },
     )
