@@ -104,7 +104,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "play-timeline",
         title: "Start the sample show",
-        target: '[aria-label="Play timeline"]',
+        target: '[aria-label="Play timeline"], [aria-label="Pause timeline"]',
         observe: {
           type: "timeline-playing",
         },
@@ -1399,7 +1399,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "play",
         title: "Rehearse the change",
-        target: '[aria-label="Play timeline"]',
+        target: '[aria-label="Play timeline"], [aria-label="Pause timeline"]',
         observe: { type: "timeline-playing" },
         content: [
           {
