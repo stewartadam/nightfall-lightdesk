@@ -499,6 +499,43 @@ test("profiles and channel sets map DMX to physical values", () => {
   near(evaluateProfile([], 40), 40, "empty profile is linear");
 });
 
+/**
+ * Verifies movement follows the profile's physical angles and rotation
+ * speeds, using the MagicPanel FX layout: a 16-bit pan authored from 180° to
+ * -360° and a separate rotate channel that stops below DMX 128.
+ */
+test("movement uses physical pan angles and rotation speeds", () => {
+  resetDmxPool();
+  const pan: ParameterMetadata = {
+    ...parameter({ type: "Pan" }, [
+      fn("Pan", 0, 65535, { physical_from: 180, physical_to: -360 }),
+    ]),
+    resolution: DmxValueResolution.Fine,
+    value_polarity: ParameterValuePolarity.Signed,
+    min: -360,
+    max: 180,
+    is_inverted: true,
+  };
+  const rotate = parameter({ type: "Custom", data: { label: "PanRotate" } }, [
+    fn("PanMode", 0, 127, { physical_from: 0, physical_to: 0 }),
+    fn("PanRotate", 128, 255, { physical_from: -240, physical_to: 240 }),
+  ]);
+  const elements: FixtureElement[] = [
+    { label: "Yoke", parameters: [pan, rotate] },
+  ];
+  // Output values are after inversion: -180 sits a third of the way up.
+  const [[, still]] = extractFixtureDmxData(elements, [
+    { Pan: -180, PanRotate: 64 },
+  ]);
+  near(still.panDegrees, 0, "pan at 0°", 0.05);
+  assert.equal(still.panRotation, undefined, "stopped");
+  const [[, spinning]] = extractFixtureDmxData(elements, [
+    { Pan: -360, PanRotate: 255 },
+  ]);
+  near(spinning.panDegrees, 180, "pan at 180°");
+  near(spinning.panRotation, 240, "full speed");
+});
+
 /** Verifies signed parameters convert to DMX around their centre like the engine. */
 test("signed outputs convert to DMX around the logical centre", () => {
   const pan: ParameterMetadata = {

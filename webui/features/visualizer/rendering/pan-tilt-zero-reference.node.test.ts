@@ -1616,8 +1616,12 @@ test("moving head spot decodes Generic color wheel split colors", () => {
   );
 });
 
-/** Builds pan and tilt joints on identity-transform nodes without element bindings. */
-function unboundPanTiltJoints() {
+/**
+ * Builds pan and tilt joints on identity-transform nodes, both driven by
+ * `element` (null leaves the nodes unbound).
+ */
+function panTiltJoints(element: string | null = "Head") {
+  const controlledElement = element ?? undefined;
   const panNode = new Group();
   const tiltNode = new Group();
   const geometry: FixtureGeometry = {
@@ -1627,6 +1631,7 @@ function unboundPanTiltJoints() {
         geometryType: GeometryType.Axis,
         transform: identityTransform(),
         axes: [AxisType.Pan],
+        controlledElement,
         parentIndex: -1,
       },
       {
@@ -1634,6 +1639,7 @@ function unboundPanTiltJoints() {
         geometryType: GeometryType.Axis,
         transform: identityTransform(),
         axes: [AxisType.Tilt],
+        controlledElement,
         parentIndex: 0,
       },
     ],
@@ -1649,9 +1655,9 @@ function unboundPanTiltJoints() {
   return { panNode, tiltNode, joints };
 }
 
-/** Verifies zero pan/tilt leaves unbound joints at their neutral pose. */
+/** Verifies zero pan/tilt leaves articulated nodes at their neutral pose. */
 test("GDTF pan/tilt zero keeps articulated nodes at their neutral pose", () => {
-  const { panNode, tiltNode, joints } = unboundPanTiltJoints();
+  const { panNode, tiltNode, joints } = panTiltJoints();
 
   updateGdtfJoints(joints, new Map([["Head", { pan: 0, tilt: 0 }]]), 0, null);
 
@@ -1659,9 +1665,14 @@ test("GDTF pan/tilt zero keeps articulated nodes at their neutral pose", () => {
   approx(tiltNode.quaternion.angleTo(new Quaternion()), 0);
 });
 
-/** Verifies unbound joints fall back to fixture-wide values, rotating pan about Z and tilt about X. */
+/** Verifies axis nodes without a controlling element do not become joints. */
+test("GDTF axis nodes without a controlling element are not articulated", () => {
+  assert.equal(panTiltJoints(null).joints.length, 0);
+});
+
+/** Verifies bound joints rotate pan about Z and tilt about X from the zero reference. */
 test("GDTF pan/tilt values rotate axis nodes from the zero reference", () => {
-  const { panNode, tiltNode, joints } = unboundPanTiltJoints();
+  const { panNode, tiltNode, joints } = panTiltJoints();
 
   updateGdtfJoints(
     joints,
