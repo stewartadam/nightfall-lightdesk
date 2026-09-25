@@ -18,8 +18,8 @@ use std::net::SocketAddr;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
-    ActionInputKind, ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin,
-    ExternalCommandInvocation, SourceEdgeStates,
+    ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, ExternalCommandInvocation,
+    SourceEdgeStates,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -146,7 +146,8 @@ fn osc_event_system(
     }
 }
 
-/// Invokes the action bound to each matching OSC message, adapted to its input kind.
+/// Invokes the action bound to each matching OSC message, adapted to its input kind and
+/// behavior.
 fn handle_osc_events(
     mut events: MessageReader<OscInput>,
     mappings: Res<OscMappings>,
@@ -157,16 +158,17 @@ fn handle_osc_events(
     for event in events.read() {
         let osc_event = &event.0;
         for mapping in mappings.lookup(osc_event) {
-            // Unknown actions still dispatch so the registry reports them as unregistered.
-            let kind = registry
-                .input_kind(&mapping.action.id)
-                .unwrap_or(ActionInputKind::Trigger);
-            let signal = mapping.signal(osc_event);
-            let Some(input) = edges.adapt(mapping.id, kind, mapping.edge, signal) else {
+            let Some((action, input)) = edges.resolve(
+                &registry,
+                mapping.id,
+                &mapping.action,
+                mapping.behavior,
+                mapping.signal(osc_event),
+            ) else {
                 continue;
             };
             invocations.write(
-                ActionInvocation::new(mapping.action.clone(), ActionSurface::Osc, input)
+                ActionInvocation::new(action, ActionSurface::Osc, input)
                     .with_source(format!("OSC {}", osc_event.source)),
             );
         }
@@ -201,7 +203,15 @@ fn handle_osc_crud(
     for event in events.read() {
         let result = match &event.command {
             OscCommand::UpsertMapping(mapping) => {
-                match registry.validate_binding(&mapping.action, |kind| mapping.can_drive(kind)) {
+                match registry
+                    .validate_binding(&mapping.action, |kind| mapping.can_drive(kind))
+                    .and_then(|()| {
+                        registry.validate_behavior(
+                            &mapping.action,
+                            mapping.behavior,
+                            mapping.reports_release(),
+                        )
+                    }) {
                     Ok(()) => {
                         edges.forget(mapping.id);
                         let displaced = mappings
@@ -259,7 +269,7 @@ mod tests {
             arg_index: None,
             arg_value: None,
             release_value: None,
-            edge: nightfall_actions::SourceEdge::Press,
+            behavior: nightfall_actions::ControlBehavior::Press,
             action: nightfall_actions::ActionReference::new(
                 "test.eval",
                 serde_json::json!({ "command": "noop" }),

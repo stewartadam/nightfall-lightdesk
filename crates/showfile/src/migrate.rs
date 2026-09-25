@@ -50,7 +50,7 @@ pub(crate) fn migrate_showfile_json(
 ///
 /// - Timeline `ActionKind` variants become the equivalent registered action reference.
 /// - MIDI mappings gain a stable ID, a typed source decoded from their status byte, and the
-///   edge they fired on.
+///   behavior matching the edge they fired on.
 /// - OSC mappings gain a stable ID.
 /// - Action references drop the retired `control.set-external` ID and `target` clip argument.
 fn migrate_v17_to_v18(showfile: &mut Value, source: &str) {
@@ -83,7 +83,7 @@ fn migrate_v17_to_v18(showfile: &mut Value, source: &str) {
             // v18 binds one action per control edge, so the first legacy mapping on an edge
             // wins, matching the order lookups used.
             let control =
-                json!([mapping["device_name"], mapping["source"], mapping["edge"]]).to_string();
+                json!([mapping["device_name"], mapping["source"], mapping["behavior"]]).to_string();
             if !bound_controls.insert(control) {
                 tracing::warn!(filename = source, mapping = %legacy, "Dropping MIDI mapping that duplicates an earlier mapping on the same control");
                 return false;
@@ -222,23 +222,23 @@ fn migrate_midi_mapping(mapping: &mut Value, migrate_reference: &impl Fn(&mut Va
     let Some(midi_source) = legacy_midi_source(mapping) else {
         return false;
     };
-    let edge = legacy_midi_edge(mapping);
+    let behavior = legacy_midi_behavior(mapping);
     for field in ["channel", "note", "velocity"] {
         mapping.remove(field);
     }
     mapping.insert("id".into(), json!(Uuid::new_v4()));
     mapping.insert("source".into(), midi_source);
-    mapping.insert("edge".into(), json!(edge));
+    mapping.insert("behavior".into(), json!(behavior));
     if let Some(reference) = mapping.get_mut("action") {
         migrate_reference(reference);
     }
     true
 }
 
-/// Returns the serialized `SourceEdge` a v17 mapping fired on.
+/// Returns the serialized `ControlBehavior` matching the edge a v17 mapping fired on.
 ///
 /// Note-off statuses and note-on with an exact velocity of zero matched only releases.
-fn legacy_midi_edge(mapping: &Map<String, Value>) -> &'static str {
+fn legacy_midi_behavior(mapping: &Map<String, Value>) -> &'static str {
     let status = mapping.get("channel").and_then(Value::as_u64).unwrap_or(0);
     let velocity = mapping.get("velocity").and_then(Value::as_u64);
     match (status & 0xF0, velocity) {
@@ -371,9 +371,9 @@ mod tests {
             mappings[2]["source"],
             json!({"type": "PitchBend", "data": {"channel": 3}})
         );
-        assert_eq!(mappings[1]["edge"], json!("Press"));
+        assert_eq!(mappings[1]["behavior"], json!("Press"));
         assert_eq!(mappings[3]["source"], mappings[1]["source"]);
-        assert_eq!(mappings[3]["edge"], json!("Release"));
+        assert_eq!(mappings[3]["behavior"], json!("Release"));
         assert_eq!(mappings[3]["action"]["id"], json!("clip.stop"));
     }
 

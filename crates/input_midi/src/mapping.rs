@@ -42,7 +42,7 @@ impl MidiMappings {
     ///
     /// A control fires at most one action per edge, so other mappings on the same device and
     /// control are removed when they would fire from the same edge (see
-    /// [`nightfall_actions::SourceEdge::overlaps`]). `input_kind` reports the input kind of a bound action. An
+    /// [`nightfall_actions::ControlBehavior::overlaps`]). `input_kind` reports the input kind of a bound action. An
     /// existing mapping with the same ID keeps its list position.
     pub fn upsert(
         &mut self,
@@ -57,9 +57,11 @@ impl MidiMappings {
                 existing.id != mapping.id
                     && existing.device_name == mapping.device_name
                     && existing.source == mapping.source
-                    && mapping
-                        .edge
-                        .overlaps(kind, existing.edge, input_kind(&existing.action))
+                    && mapping.behavior.overlaps(
+                        kind,
+                        existing.behavior,
+                        input_kind(&existing.action),
+                    )
             })
             .map(|existing| existing.id)
             .collect::<Vec<_>>();
@@ -93,7 +95,7 @@ impl MidiMappings {
 
 #[cfg(test)]
 mod tests {
-    use nightfall_actions::SourceEdge;
+    use nightfall_actions::ControlBehavior;
     use serde_json::json;
 
     use super::*;
@@ -109,7 +111,7 @@ mod tests {
             id: Uuid::from_u128(id),
             device_name: device.to_string(),
             source: MidiSource::Note { channel: 0, note },
-            edge: SourceEdge::Press,
+            behavior: ControlBehavior::Press,
             action: ActionReference::new(action, json!({})),
         }
     }
@@ -206,7 +208,7 @@ mod tests {
         let mut mappings = MidiMappings::new();
         mappings.upsert(note_mapping(1, "Device A", 60, "test.start"), input_kind);
         let release = MidiMapping {
-            edge: SourceEdge::Release,
+            behavior: ControlBehavior::Release,
             ..note_mapping(2, "Device A", 60, "test.stop")
         };
 

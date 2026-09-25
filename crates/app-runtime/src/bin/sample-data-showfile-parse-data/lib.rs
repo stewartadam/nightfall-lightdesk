@@ -322,7 +322,7 @@ fn add_input_mappings(world: &mut World) {
                 channel: 0,
                 controller: 36,
             },
-            edge: nightfall_actions::SourceEdge::Press,
+            behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(1),
         }]);
 
@@ -336,7 +336,7 @@ fn add_input_mappings(world: &mut World) {
             arg_index: Some(0),
             arg_value: None,
             release_value: None,
-            edge: nightfall_actions::SourceEdge::Press,
+            behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(2),
         }]);
 }
