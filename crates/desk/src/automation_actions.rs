@@ -38,6 +38,9 @@ pub const CLIP_STOP_ACTION_ID: &str = "clip.stop";
 /// Stable action ID for advancing a clip.
 pub const CLIP_GO_ACTION_ID: &str = "clip.go";
 
+/// Stable action ID for running a clip only while a control is held.
+pub const CLIP_HOLD_ACTION_ID: &str = "clip.hold";
+
 /// Stable action ID for moving a sequence clip back one cue.
 pub const CLIP_BACK_ACTION_ID: &str = "clip.back";
 
@@ -216,6 +219,20 @@ pub fn register_desk_actions(app: &mut App) {
         "Back clip",
         ClipCommand::BackClip,
         TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceBack),
+    );
+    app.register_momentary_command_action::<ClipActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_HOLD_ACTION_ID, "Hold clip", "Clips")
+            .with_input(ActionInputKind::Momentary)
+            .with_description("Starts a clip while the control is held and stops it on release")
+            .with_parameter(clip_parameter()),
+        |world, arguments, pressed| {
+            let id = IdExpr::Single(resolve_clip_id(world, arguments.clip)?);
+            Ok(if pressed {
+                ClipCommand::StartClip(id)
+            } else {
+                ClipCommand::StopClip(id)
+            })
+        },
     );
     app.register_command_action::<ClipGotoActionArguments, ClipCommand, _>(
         ActionDescriptor::new(CLIP_GOTO_ACTION_ID, "Go to cue", "Clips")
@@ -461,7 +478,9 @@ fn invoke_desk_eval(
 #[cfg(test)]
 mod tests {
     use bevy_ecs::message::Messages;
-    use nightfall_actions::{ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult};
+    use nightfall_actions::{
+        ActionInput, ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult,
+    };
 
     use super::*;
 
@@ -526,6 +545,48 @@ mod tests {
         assert!(matches!(
             envelope.payload.as_any().downcast_ref::<ClipCommand>(),
             Some(ClipCommand::GoClip(IdExpr::Single(7)))
+        ));
+    }
+
+    /// Verifies holding a clip starts it on press and stops it on release.
+    #[test]
+    fn clip_hold_starts_on_press_and_stops_on_release() {
+        let mut app = desk_action_app();
+        let uid = Uuid::from_u128(7);
+        app.world_mut().spawn(Clip {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 7,
+                uid,
+                label: "Clip 7".to_string(),
+            },
+            ..Default::default()
+        });
+        let action = clip_action_reference(CLIP_HOLD_ACTION_ID, uid);
+        for input in [ActionInput::Press, ActionInput::Release] {
+            app.world_mut().write_message(ActionInvocation::new(
+                action.clone(),
+                ActionSurface::Midi,
+                input,
+            ));
+            app.update();
+        }
+
+        let commands = take_pending_commands(&mut app)
+            .iter()
+            .map(|envelope| {
+                envelope
+                    .payload
+                    .as_any()
+                    .downcast_ref::<ClipCommand>()
+                    .cloned()
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            commands.as_slice(),
+            [
+                Some(ClipCommand::StartClip(IdExpr::Single(7))),
+                Some(ClipCommand::StopClip(IdExpr::Single(7)))
+            ]
         ));
     }
 
