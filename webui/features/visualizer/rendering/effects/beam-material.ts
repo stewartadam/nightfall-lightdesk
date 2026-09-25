@@ -41,7 +41,7 @@ import {
   vec4,
 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
+import type { VisualizerQualityPreset } from "../../state/settings";
 
 // Default values for beam parameters
 export const MIN_CONE_ANGLE_DEGREES = 4;
@@ -191,7 +191,7 @@ export function isLowQualityBeamMaterial(
  * UV coordinates: x: 0 at edges, 1 at center; y: 1 at tip, 0 at base.
  */
 export function createBeamMaterial(
-  quality: VisualizerBeamQuality = "high",
+  quality: VisualizerQualityPreset = "high",
 ): BeamMaterial {
   if (quality === "low") {
     return createLowQualityBeamMaterial();
@@ -533,7 +533,7 @@ export function updateBeamMaterial(
  * Tip at origin, base extending downward. Scale dynamically for actual dimensions.
  */
 export function createBeamGeometry(
-  quality: VisualizerBeamQuality = "high",
+  quality: VisualizerQualityPreset = "high",
 ): ConeGeometry {
   const radialSegments = quality === "low" ? 12 : 64;
   return new ConeGeometry(1.0, 1.0, radialSegments, 1, true);

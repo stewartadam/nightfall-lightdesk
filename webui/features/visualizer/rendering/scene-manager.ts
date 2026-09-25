@@ -13,7 +13,6 @@
 
 import { Raycaster, Vector2, Vector3 } from "three";
 import { Mesh, type PerspectiveCamera, type Scene } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../lib/feature-flags";
 import { createLogger } from "../../../lib/logger";
 import type { SelectionTarget } from "../../../lib/selection-targets";
 import type { FixtureElement } from "../../../types";
@@ -22,6 +21,7 @@ import {
   SelectionHighlighter,
 } from "../model/selection-utils";
 import type { RenderableFixture, RenderableSceneObject } from "../model/types";
+import type { VisualizerQualityPreset } from "../state/settings";
 import { BeamManager, BeamUpdater } from "./effects";
 import { FixtureColorState } from "./fixture-color-state";
 import { FixtureManager } from "./fixture-manager";
@@ -114,7 +114,7 @@ export class SceneManager {
     FixtureColorState
   >();
 
-  constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
+  constructor(scene: Scene, beamQuality: VisualizerQualityPreset = "high") {
     this.fixtureManager = new FixtureManager(scene, beamQuality);
     this.sceneObjectManager = new SceneObjectManager(scene);
     this.beamManager = new BeamManager(scene, beamQuality);

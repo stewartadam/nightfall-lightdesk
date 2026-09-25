@@ -58,6 +58,24 @@ test("visualizer settings hydrate valid persisted values and default invalid fie
   assert.equal(settings.visualizerSnapPointsEnabled.get(), true);
 });
 
+/** A diagnostic quality override drives rendering without being saved, and yields to the next user choice. */
+test("visualizer quality override applies without persisting", async () => {
+  const settings = await importVisualizerSettings();
+
+  settings.visualizerQualityOverride.set("low");
+  assert.equal(settings.visualizerEffectiveQuality.get(), "low");
+  assert.equal(settings.visualizerQualityPreset.get(), "medium");
+  assert.notEqual(
+    JSON.parse(getTestStorage()[STORAGE_KEY] ?? "{}").qualityPreset,
+    "low",
+  );
+
+  settings.visualizerQualityPreset.set("high");
+  assert.equal(settings.visualizerQualityOverride.get(), undefined);
+  assert.equal(settings.visualizerEffectiveQuality.get(), "high");
+  assert.equal(JSON.parse(getTestStorage()[STORAGE_KEY]).qualityPreset, "high");
+});
+
 test("visualizer setting atoms persist updates into the legacy storage key", async () => {
   const settings = await importVisualizerSettings();
 

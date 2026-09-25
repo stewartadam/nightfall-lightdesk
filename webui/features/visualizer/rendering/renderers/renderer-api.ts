@@ -14,7 +14,6 @@
  */
 
 import type { Scene } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import type { SelectionTarget } from "../../../../lib/selection-targets";
 import type { VisualizerStats } from "../../../../state/appStores";
 import type {
@@ -27,6 +26,7 @@ import type {
   RenderableFixture,
   RenderableSceneObject,
 } from "../../model/types";
+import type { VisualizerQualityPreset } from "../../state/settings";
 
 export type {
   CameraState,
@@ -92,7 +92,7 @@ export interface VisualizerInitConfig {
   /** Initial camera pose; renderers fall back to the persisted camera state when absent. */
   initialCameraState?: CameraState;
   /** Beam render quality selected by visualizer runtime settings. */
-  beamQuality: VisualizerBeamQuality;
+  beamQuality: VisualizerQualityPreset;
 }
 
 /**

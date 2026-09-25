@@ -29,13 +29,13 @@ import {
   SpotLight,
   Vector3,
 } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import {
   BeamType,
   type FixtureElement,
   type FixturePhysical,
 } from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
+import type { VisualizerQualityPreset } from "../../state/settings";
 import {
   type BeamMaterial,
   type BeamParameters,
@@ -167,7 +167,7 @@ export interface RotatingWashBeamData {
 export function buildRotatingWashBeamFixture(
   fixtureUid: string,
   elements: FixtureElement[],
-  beamQuality: VisualizerBeamQuality = "high",
+  beamQuality: VisualizerQualityPreset = "high",
   beamCount = BEAM_COUNT,
   physical?: FixturePhysical,
 ): FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData } {

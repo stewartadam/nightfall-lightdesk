@@ -37,7 +37,7 @@ import {
   UnsignedByteType,
   type WebGPURenderer,
 } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
+import type { VisualizerQualityPreset } from "../../state/settings";
 import { AtmosphereBudget, type GpuBudgetSample } from "./atmosphere-budget";
 import { createOpticalRenderContext } from "./optical-render-context";
 import { OpticalSurfaceLighting } from "./optical-surface-lighting";
@@ -121,7 +121,7 @@ export const defaultPostProcessingConfig: PostProcessingConfig = {
 
 /** State for post-processing effects */
 export interface PostProcessingState {
-  quality: VisualizerBeamQuality;
+  quality: VisualizerQualityPreset;
   renderer: WebGPURenderer;
   scene: Scene;
   camera: Camera;
@@ -152,7 +152,7 @@ export function createPostProcessing(
   scene: Scene,
   camera: Camera,
   options?: {
-    quality?: VisualizerBeamQuality;
+    quality?: VisualizerQualityPreset;
     selectedObjects?: Object3D[];
     editSelectionObjects?: Object3D[];
     programmerValueObjects?: Object3D[];

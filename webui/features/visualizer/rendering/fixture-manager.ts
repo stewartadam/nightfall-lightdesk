@@ -18,9 +18,9 @@ import {
   Quaternion,
   type Scene,
 } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../lib/feature-flags";
 import { createLogger } from "../../../lib/logger";
 import type { RenderableFixture } from "../model/types";
+import type { VisualizerQualityPreset } from "../state/settings";
 import { getOpticalRenderContext } from "./effects/optical-render-context";
 import { EMITTER_RADIANCE } from "./emitter-radiance";
 import {
@@ -38,14 +38,14 @@ const log = createLogger("visualizer:fixture-manager");
  */
 export class FixtureManager {
   private scene: Scene;
-  private beamQuality: VisualizerBeamQuality;
+  private beamQuality: VisualizerQualityPreset;
   private fixtureInstances: Map<string, ExtendedFixtureInstance> = new Map();
   /** Maps fixture UID -> element label -> element index (0-based) */
   private elementLabelMaps: Map<string, Map<string, number>> = new Map();
   /** Maps fixture UID -> ordered element labels (for strobe panel updates) */
   private elementLabelLists: Map<string, string[]> = new Map();
 
-  constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
+  constructor(scene: Scene, beamQuality: VisualizerQualityPreset = "high") {
     this.scene = scene;
     this.beamQuality = beamQuality;
   }

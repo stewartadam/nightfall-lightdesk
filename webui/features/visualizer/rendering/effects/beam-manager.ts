@@ -20,8 +20,8 @@ import {
   Vector3,
 } from "three/webgpu";
 import { getBackendUrl } from "../../../../lib/api";
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import type { BeamOptics } from "../../../../types";
+import type { VisualizerQualityPreset } from "../../state/settings";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
 import { DEFAULT_STAGE_FLOOR_TOP_Y } from "../scene-environment";
@@ -80,7 +80,7 @@ export class BeamManager {
     ReturnType<typeof resolveEmitterOptics>
   >();
   private beams: BeamInstanceMap = new Map();
-  readonly beamQuality: VisualizerBeamQuality;
+  readonly beamQuality: VisualizerQualityPreset;
   /** Default beam specification when fixture doesn't provide one */
   private defaultBeamSpec: BeamSpec = {
     beamAngle: 15,
@@ -88,7 +88,7 @@ export class BeamManager {
     lumens: 10000,
   };
 
-  constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
+  constructor(scene: Scene, beamQuality: VisualizerQualityPreset = "high") {
     this.beamQuality = beamQuality;
     this.volumeBatch = new EmitterVolumeBatch(scene);
   }

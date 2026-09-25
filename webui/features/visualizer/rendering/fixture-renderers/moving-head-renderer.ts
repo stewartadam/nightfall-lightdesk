@@ -33,7 +33,6 @@ import {
   SpotLight,
   Vector3,
 } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import type {
   FixtureElement,
   FixtureGeometry,
@@ -42,6 +41,7 @@ import type {
 import { BeamType } from "../../../../types";
 import { bindEmitterOpticalChannels } from "../../model/optical-bindings";
 import type { EmitterData, FixtureInstance } from "../../model/types";
+import type { VisualizerQualityPreset } from "../../state/settings";
 import {
   type BeamMaterial,
   type BeamParameters,
@@ -258,7 +258,7 @@ export function buildMovingHeadFixture(
   fixtureUid: string,
   elements: FixtureElement[],
   geometry?: FixtureGeometry,
-  beamQuality: VisualizerBeamQuality = "high",
+  beamQuality: VisualizerQualityPreset = "high",
   physical?: FixturePhysical,
 ): FixtureInstance & { movingHeadData: MovingHeadData } {
   const group = new Group();

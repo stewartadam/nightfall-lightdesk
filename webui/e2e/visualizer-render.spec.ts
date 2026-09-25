@@ -1001,7 +1001,6 @@ test("generic wash beam low-quality setting uses geometry beams", async ({
       JSON.stringify({
         features: {
           visualizerOffscreenCanvas: false,
-          visualizerBeamQuality: "low",
           startupDraftRecovery: false,
         },
       }),
@@ -1019,17 +1018,16 @@ test("generic wash beam low-quality setting uses geometry beams", async ({
       ),
     )
     .toBe(false);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          JSON.parse(
-            window.localStorage.getItem("nightfall-feature-flags") ?? "{}",
-          ).features?.visualizerBeamQuality,
-      ),
-    )
-    .toBe("low");
   await waitForVisualizerReady(page);
+  // The diagnostic URL quality applies to this session without being saved.
+  expect(
+    await page.evaluate(
+      () =>
+        JSON.parse(
+          window.localStorage.getItem("nightfall-visualizer-settings") ?? "{}",
+        ).qualityPreset,
+    ),
+  ).not.toBe("low");
   await largestVisibleCanvasBox(page);
   await expectVisualizerFpsLabel(page);
   await waitForMainThreadVisualizerApi(page);

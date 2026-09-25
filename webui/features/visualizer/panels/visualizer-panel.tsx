@@ -35,7 +35,10 @@ import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { usePropertiesInspector } from "../../property-inspector";
-import { visualizerQualityPreset } from "../state/settings";
+import {
+  visualizerEffectiveQuality,
+  visualizerQualityOverride,
+} from "../state/settings";
 
 const log = getLogger(import.meta.url);
 
@@ -61,8 +64,8 @@ interface VisualizerPanelProps extends BasePanelComponentProps {
 
 const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
   const override = consumeVisualizerQualityUrlOverride();
-  if (override) visualizerQualityPreset.set(override);
-  const quality = useStore(visualizerQualityPreset);
+  if (override) visualizerQualityOverride.set(override);
+  const quality = useStore(visualizerEffectiveQuality);
   log.trace("mounting");
   let visualizerApi: VisualizerCanvasApi | null = null;
   const [visualizerHandle, setVisualizerHandle] =

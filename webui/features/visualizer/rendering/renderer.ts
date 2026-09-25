@@ -25,10 +25,7 @@ import {
   Scene,
   WebGPURenderer,
 } from "three/webgpu";
-import {
-  isVisualizerInspectorEnabled,
-  type VisualizerBeamQuality,
-} from "../../../lib/feature-flags";
+import { isVisualizerInspectorEnabled } from "../../../lib/feature-flags";
 import { getLogger } from "../../../lib/logger";
 import {
   cancelControlsInteraction,
@@ -46,6 +43,7 @@ import {
   saveCameraState,
 } from "../model/camera-state";
 import { setupInspectorParams } from "../model/inspector-params";
+import type { VisualizerQualityPreset } from "../state/settings";
 import {
   createPostProcessing,
   disposePostProcessing,
@@ -185,7 +183,7 @@ export interface RendererState extends CoreRendererState {
  */
 export async function initRenderer(
   canvas: HTMLCanvasElement,
-  quality: VisualizerBeamQuality = "high",
+  quality: VisualizerQualityPreset = "high",
   initialCameraState?: CameraState,
 ): Promise<RendererState> {
   // Create WebGPU renderer (falls back to WebGL if WebGPU unavailable)

@@ -16,7 +16,6 @@
  * 3. Default GDTF geometry builder (fallback for all other fixtures)
  */
 
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import type {
   BeamType,
   FixtureElement,
@@ -24,6 +23,7 @@ import type {
   FixtureLayout,
 } from "../../../../types";
 import type { FixtureInstance } from "../../model/types";
+import type { VisualizerQualityPreset } from "../../state/settings";
 import { buildGeometryTree, disposeFixtureInstance } from "../geometry-builder";
 import {
   buildSimpleLedBar,
@@ -111,7 +111,7 @@ export function buildFixtureWithRenderer(
   geometry: FixtureGeometry,
   elements: FixtureElement[],
   beamType?: BeamType,
-  beamQuality: VisualizerBeamQuality = "high",
+  beamQuality: VisualizerQualityPreset = "high",
   layout?: FixtureLayout,
   physical?: import("../../../../types").FixturePhysical,
 ): ExtendedFixtureInstance {
@@ -194,7 +194,7 @@ export function buildFixtureWithoutGeometry(
   fixtureUid: string,
   elements: FixtureElement[],
   beamType?: BeamType,
-  beamQuality: VisualizerBeamQuality = "high",
+  beamQuality: VisualizerQualityPreset = "high",
   layout?: FixtureLayout,
   physical?: import("../../../../types").FixturePhysical,
 ): ExtendedFixtureInstance | null {
