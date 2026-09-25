@@ -77,6 +77,8 @@ export interface PanelOpenDockApi {
   getEdgeGroup?: (
     position: EdgeGroupPosition,
   ) => ExpandableEdgeGroup | undefined;
+  isEdgeGroupVisible?: (position: EdgeGroupPosition) => boolean;
+  setEdgeGroupVisible?: (position: EdgeGroupPosition, visible: boolean) => void;
   addPanel: (params: AddPanelParams) => unknown;
 }
 
@@ -324,7 +326,11 @@ function resizeCurrentGroupSplit(
   }
 }
 
-/** Expands the edge group that owns a panel so focusing it reveals content. */
+/**
+ * Reveals and expands the edge group that owns a panel so focusing it shows
+ * content. A hidden edge group is made visible first, because expanding a
+ * hidden group leaves the panel off screen.
+ */
 function expandPanelEdgeGroup(
   api: PanelOpenDockApi,
   panel: FocusablePanel | undefined,
@@ -334,6 +340,9 @@ function expandPanelEdgeGroup(
     return;
   }
 
+  if (api.isEdgeGroupVisible?.(location.position) === false) {
+    api.setEdgeGroupVisible?.(location.position, true);
+  }
   api.getEdgeGroup?.(location.position)?.expand();
 }
 
