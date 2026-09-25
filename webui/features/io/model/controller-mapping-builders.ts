@@ -191,6 +191,7 @@ export function oscMappingFromGesture(
     arg_index: undefined,
     arg_value: undefined,
     release_value: undefined,
+    range: undefined,
     behavior,
     action: plain(action),
   };

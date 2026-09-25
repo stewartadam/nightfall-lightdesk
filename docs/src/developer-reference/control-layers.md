@@ -87,6 +87,14 @@ trigger binding. The action catalog lists each action's supported behaviors. OSC
 buttons report releases when their mapping names both the pressed value (`arg_value`)
 and the released value (`release_value`).
 
+An OSC mapping that reads an argument without matching a value turns numbers into a
+level. With no `range`, floats within `0..1` are read as normalized and other numbers as
+percents. An explicit `range` (`min`, `max`; `min > max` reverses travel) maps values
+linearly onto `0..1` and clamps, so a fader sending integers `0..127` sets
+`{ min: 0, max: 127 }`. Upserts reject non-finite or empty ranges with
+`osc.invalid_range`, which diagnostics also report for loaded mappings. The press
+threshold for edge-driven actions applies to the normalized level.
+
 ### Mapping edit undo
 
 `UpsertMapping` and `DeleteMapping` for MIDI and OSC are undoable through one shared
