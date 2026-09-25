@@ -23,12 +23,16 @@ import {
   controls,
   cues,
   fixtures,
+  fx,
   programmerSelection,
   programmerState,
   sequences,
+  stepFx,
   timecodes,
   timelines,
+  visualizerEditSelection,
 } from "../../state/appStores";
+import { patchPanelActiveTab } from "../patch";
 import {
   type GuideObservation,
   type GuideSnapshot,
@@ -45,10 +49,14 @@ export function useGuideProgress(
   const { isSettingsOpen, isShortcutsPopupVisible } = useAppShell();
   const fixtureMap = useStore(fixtures);
   const selection = useStore(programmerSelection);
+  const editSelection = useStore(visualizerEditSelection);
+  const patchView = useStore(patchPanelActiveTab);
   const programmer = useStore(programmerState);
   const cueMap = useStore(cues);
   const sequenceMap = useStore(sequences);
   const clipMap = useStore(clips);
+  const fxMap = useStore(fx);
+  const stepFxMap = useStore(stepFx);
   const controlList = useStore(controls);
   const instances = useStore(activeInstances);
   const timelineMap = useStore(timelines);
@@ -68,6 +76,7 @@ export function useGuideProgress(
           component: entry.api.component,
           timelineUid: entry.params?.initialTimelineUid,
           sequenceUid: entry.params?.initialSequenceUid,
+          stepFxUid: entry.params?.initialStepFxUid,
           visible: entry.api.isVisible && !entry.group.api.isCollapsed(),
         })) ?? [],
       );
@@ -116,6 +125,51 @@ export function useGuideProgress(
         document.removeEventListener("click", pressSaveShowfile, true),
       );
     }
+    const [submittedCommand, setSubmittedCommand] = createSignal<string>();
+    /** Captures command input submissions, including repeats of the previous history entry. */
+    const submitCommand = (event: SubmitEvent) => {
+      const input =
+        event.target instanceof HTMLFormElement
+          ? event.target.querySelector<HTMLInputElement>(
+              "#header-cmdline, #cmdline",
+            )
+          : null;
+      if (input) setSubmittedCommand(input.value);
+    };
+    if (target.type === "command-submitted") {
+      document.addEventListener("submit", submitCommand, true);
+      onCleanup(() =>
+        document.removeEventListener("submit", submitCommand, true),
+      );
+    }
+    const [selectedTimelineActions, setSelectedTimelineActions] = createSignal<
+      GuideSnapshot["selectedTimelineActions"]
+    >([]);
+    /** Mirrors selected timeline action chips, whose selection is local to each editor. */
+    const readSelectedTimelineActions = () =>
+      setSelectedTimelineActions(
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-timeline-surface="true"] [data-timeline-action="true"][data-selected="true"]:not([data-drag-preview])',
+          ),
+        ].map((element) => ({
+          timelineUid:
+            element.closest<HTMLElement>('[data-timeline-surface="true"]')
+              ?.dataset.timelineUid ?? "",
+          trackId: element.dataset.trackId ?? "",
+          actionId: element.dataset.actionId ?? "",
+        })),
+      );
+    if (target.type === "timeline-action-selected") {
+      readSelectedTimelineActions();
+      const observer = new MutationObserver(readSelectedTimelineActions);
+      observer.observe(document.body, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-selected"],
+      });
+      onCleanup(() => observer.disconnect());
+    }
     /** Counts a deliberate swatch choice, including reselecting the current color. */
     const pickAccent = (event: MouseEvent) => {
       if (
@@ -137,6 +191,10 @@ export function useGuideProgress(
         shortcutsOpen: isShortcutsPopupVisible(),
         accentPicked: accentPicked(),
         saveShowfilePressed: saveShowfilePressed(),
+        submittedCommand: submittedCommand(),
+        editSelection: editSelection(),
+        patchView: patchView(),
+        selectedTimelineActions: selectedTimelineActions(),
         panel: panel(),
         openPanels: openPanels(),
         fixtures: fixtureMap(),
@@ -145,6 +203,8 @@ export function useGuideProgress(
         cues: cueMap(),
         sequences: sequenceMap(),
         clips: clipMap(),
+        fx: fxMap(),
+        stepFx: stepFxMap(),
         controls: controlList(),
         instances: instances(),
         timelines: timelineMap(),
@@ -153,7 +213,10 @@ export function useGuideProgress(
     let previous =
       target.type === "sample-panels" ||
       target.type === "sequence-editor" ||
-      target.type === "panel-hidden"
+      target.type === "panel-hidden" ||
+      target.type === "panel-closed" ||
+      target.type === "playback-idle" ||
+      target.type === "timeline-action-selected"
         ? ""
         : untrack(token);
     let pending: ReturnType<typeof setTimeout> | undefined;

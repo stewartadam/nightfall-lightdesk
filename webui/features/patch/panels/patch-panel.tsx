@@ -37,11 +37,11 @@ import PatchBindingsTab from "../components/bindings-tab";
 import PatchFixtureListTab from "../components/fixture-list-tab";
 import PatchFixturesTab from "../components/fixtures-tab";
 import PatchUniversesTab from "../components/universes-tab";
+import { type PatchTab, patchPanelActiveTab } from "../model/patch-view";
 import { usePatchWizard } from "../wizard";
 
 export interface PatchPanelProps extends BasePanelComponentProps {}
 
-type PatchTab = "fixtures" | "bindings";
 type BindingsGroupBy = "none" | "fixture" | "universe";
 
 const TABS: { key: PatchTab; label: string }[] = [
@@ -55,16 +55,8 @@ const BINDINGS_GROUP_OPTIONS: { key: BindingsGroupBy; label: string }[] = [
   { key: "universe", label: "Universe" },
 ];
 
-const PATCH_PANEL_ACTIVE_TAB_STORAGE_KEY = "nightfall-patch-panel:active-tab";
 const PATCH_PANEL_BINDINGS_GROUP_STORAGE_KEY =
   "nightfall-patch-panel:bindings-group-by";
-
-/**
- * Returns whether a stored value is a supported patch panel tab.
- */
-function isPatchTab(value: string): value is PatchTab {
-  return value === "fixtures" || value === "bindings";
-}
 
 /**
  * Returns whether a stored value is a supported bindings grouping mode.
@@ -72,15 +64,6 @@ function isPatchTab(value: string): value is PatchTab {
 function isBindingsGroupBy(value: string): value is BindingsGroupBy {
   return value === "none" || value === "fixture" || value === "universe";
 }
-
-const patchPanelActiveTab = bestEffortPersistentAtom<PatchTab>(
-  PATCH_PANEL_ACTIVE_TAB_STORAGE_KEY,
-  "fixtures",
-  {
-    decode: (value) => (isPatchTab(value) ? value : "fixtures"),
-    encode: (value) => value,
-  },
-);
 
 const patchPanelBindingsGroupBy = bestEffortPersistentAtom<BindingsGroupBy>(
   PATCH_PANEL_BINDINGS_GROUP_STORAGE_KEY,
