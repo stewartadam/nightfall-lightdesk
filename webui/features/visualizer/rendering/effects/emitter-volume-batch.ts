@@ -410,7 +410,7 @@ export class EmitterVolumeBatch {
         this.surfaceScene.add(light);
         this.shadows?.register(light);
       }
-      this.attributes.volumeShape.setZ(slot, light.id);
+      this.attributes.volumeShape.setZ(slot, light.shadowKey);
       light.visible = true;
       light.position.copy(this.origin);
       light.apertureRight.copy(this.right);

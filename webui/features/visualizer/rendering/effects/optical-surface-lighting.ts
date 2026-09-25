@@ -55,6 +55,9 @@ import { sampleGoboProjection } from "./gobo-projection";
 import { OpticalShadowPool } from "./optical-shadow-pool";
 import { SurfaceLightBudget } from "./surface-light-budget";
 
+/** Profile marker for ordinary point lights, which skip optical aperture attenuation. */
+const PLAIN_LIGHT = -1;
+
 /** A clusterable source whose intensity is area-normalized flux in scene units, shared with the atmosphere. */
 export class OpticalSurfaceLight extends PointLight {
   readonly apertureRight = new Vector3(1, 0, 0);
@@ -67,6 +70,8 @@ export class OpticalSurfaceLight extends PointLight {
   goboSlot = 0;
   goboRotation = 0;
   focusDistance = 0;
+  /** Assigned by the shadow pool on registration; 0 means no shadow map can apply. */
+  shadowKey = 0;
 
   /** Creates a reusable light; owners update its world pose and intensity alongside the fog instance. */
   constructor(readonly optics: ResolvedEmitterOptics) {
@@ -213,9 +218,12 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
       index++
     ) {
       const light = this.clusteredLights[order[index]];
-      if (!(light instanceof OpticalSurfaceLight)) continue;
       const offset = index * 4;
       const data = this.apertureData;
+      if (!(light instanceof OpticalSurfaceLight)) {
+        data[stride * 3 + offset + 3] = PLAIN_LIGHT;
+        continue;
+      }
       light.apertureRight.toArray(data, offset);
       data[offset + 3] = light.optics.radius;
       light.apertureUp.toArray(data, stride + offset);
@@ -226,7 +234,7 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
       data[stride * 3 + offset + 1] =
         light.optics.shape === "rectangle" ? 1 : 0;
       data[stride * 3 + offset + 2] = light.beamLength;
-      data[stride * 3 + offset + 3] = light.id;
+      data[stride * 3 + offset + 3] = light.shadowKey;
       data[stride * 4 + offset] = light.secondaryColor.r * light.intensity;
       data[stride * 4 + offset + 1] = light.secondaryColor.g * light.intensity;
       data[stride * 4 + offset + 2] = light.secondaryColor.b * light.intensity;
@@ -271,14 +279,15 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     const split = smoothstep(edgeWidth.negate(), edgeWidth, uv.x).mul(
       secondary.w,
     );
+    const plain = profile.w.lessThan(0);
     return {
       ...light,
       // Optical attenuation already includes finite-aperture spreading and a
       // bounded throw. Cluster bounds must not introduce an extra radial fade.
-      cutoffDistance: profile.w.equal(0).select(light.distance, 0),
+      cutoffDistance: plain.select(light.distance, 0),
       color: Fn(() => {
         const contribution = vec3(0).toVar();
-        If(profile.w.equal(0), () => {
+        If(plain, () => {
           contribution.assign(light.color);
         }).ElseIf(inside, () => {
           // Cluster spheres are conservative; only covered fragments need optical texture samples.

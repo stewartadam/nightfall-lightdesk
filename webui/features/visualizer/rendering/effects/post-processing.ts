@@ -427,7 +427,11 @@ export function renderWithPostProcessing(
   // Preserve native-resolution geometry; only the soft effects trade pixels for GPU headroom.
   if (state.bloomPass.getResolutionScale() !== scale)
     state.bloomPass.setResolutionScale(scale);
-  const allowShadowRefresh = state.shadowBudget.canRefresh(gpu, updateMs);
+  const allowShadowRefresh = state.shadowBudget.canRefresh(
+    gpu,
+    updateMs,
+    started,
+  );
   if (state.quality === "high")
     state.surfaceLighting?.shadows.update(
       state.renderer,
@@ -435,9 +439,10 @@ export function renderWithPostProcessing(
       state.camera,
       started,
       allowShadowRefresh,
+      state.shadowBudget.refreshIntervalMs,
     );
   state.postProcessing.render();
-  state.shadowBudget.recordRender(performance.now() - started);
+  state.shadowBudget.recordRender(performance.now() - started, updateMs);
 }
 
 /** Releases every pass's targets and materials, including resources not owned by RenderPipeline. */

@@ -41,7 +41,11 @@ import {
 
 /** Generic projector state; fixture identity and DMX interpretation stay outside shadow rendering. */
 export interface OpticalShadowSource {
-  id: number;
+  /**
+   * Small pool-assigned key identifying this source in shaders; 0 while unregistered.
+   * Keys stay exact in float attributes and textures, unlike scene object IDs.
+   */
+  shadowKey: number;
   visible: boolean;
   position: Vector3;
   apertureRight: Vector3;
@@ -55,7 +59,11 @@ export interface OpticalShadowSource {
 
 /** A fixed pair of maps bounds memory and shader sampling independently of emitter count. */
 const SHADOW_MAP_COUNT = 2;
-const MAX_MAP_AGE_MS = 250;
+/**
+ * Refresh cycles (one refresh per slot each) a map may miss before it expires. Maps
+ * outlive routine cadence jitter and readback latency, but stale occluders are bounded.
+ */
+const MAP_AGE_REFRESH_CYCLES = 5;
 // Depth textures use [0, 1] on both backends; WebGL clip coordinates use [-1, 1].
 const WEBGL_DEPTH_TO_TEXTURE = new Matrix4().set(
   1,
@@ -87,7 +95,8 @@ function createShadowSlot() {
     target,
     camera,
     source: undefined as OpticalShadowSource | undefined,
-    sourceId: uniform(0),
+    /** Shadow key of the source whose map is currently valid; 0 disables sampling. */
+    key: uniform(0),
     projection: uniform(new Matrix4()),
     position: new Vector3(),
     right: new Vector3(),
@@ -100,6 +109,9 @@ function createShadowSlot() {
     refreshedAt: -Infinity,
   };
 }
+
+/** One reusable depth map, its projector camera, and the pose it was rendered from. */
+export type ShadowSlot = ReturnType<typeof createShadowSlot>;
 
 /** Shares bounded, selectively refreshed visibility maps between surface and atmospheric shaders. */
 export class OpticalShadowPool {
@@ -121,6 +133,8 @@ export class OpticalShadowPool {
     SHADOW_MAP_COUNT,
   );
   private readonly scores = new Float64Array(SHADOW_MAP_COUNT);
+  private readonly freeKeys: number[] = [];
+  private keyCount = 0;
   private disposed = false;
 
   /** Allocates maps and compiles ordinary and instanced depth pipelines before the render loop starts. */
@@ -146,67 +160,85 @@ export class OpticalShadowPool {
     }
   }
 
-  /** Registers persistent emitter state; changing its fields never allocates another map. */
+  /**
+   * Registers persistent emitter state and assigns it the smallest free shadow key;
+   * changing its fields never allocates another map.
+   */
   register(source: OpticalShadowSource): void {
+    if (this.sources.has(source)) return;
     this.sources.add(source);
+    source.shadowKey = this.freeKeys.pop() ?? ++this.keyCount;
   }
 
-  /** Immediately invalidates removed emitters so a recycled map cannot shadow another source. */
+  /**
+   * Immediately invalidates removed emitters and recycles their key; a recycled
+   * key or map can therefore never shadow another source with stale depth.
+   */
   unregister(source: OpticalShadowSource): void {
-    this.sources.delete(source);
+    if (!this.sources.delete(source)) return;
     for (const slot of this.slots)
       if (slot.source === source) {
         slot.source = undefined;
-        slot.sourceId.value = 0;
+        slot.key.value = 0;
       }
+    // Reuse keeps keys bounded by the peak number of registered sources.
+    this.freeKeys.push(source.shadowKey);
+    source.shadowKey = 0;
   }
 
-  /** Builds a shared visibility expression; emitters without a valid map remain unshadowed. */
-  sample(worldPosition: Node<"vec3">, sourceId: Node<"float">): Node<"float"> {
+  /** Reports whether shaders currently sample a map for this source. */
+  hasValidMap(source: OpticalShadowSource): boolean {
+    return this.slots.some(
+      (slot) => slot.source === source && slot.key.value > 0,
+    );
+  }
+
+  /** Builds a shared visibility expression; emitters without a valid map (key 0 included) remain unshadowed. */
+  sample(worldPosition: Node<"vec3">, shadowKey: Node<"float">): Node<"float"> {
     return Fn(() => {
       const visibility = float(1).toVar();
       for (const slot of this.slots) {
-        If(
-          slot.sourceId.greaterThan(0).and(sourceId.equal(slot.sourceId)),
-          () => {
-            const clip = slot.projection.mul(vec4(worldPosition, 1));
-            const ndc = clip.xyz.div(clip.w);
-            const uv = vec2(ndc.x.mul(0.5).add(0.5), ndc.y.mul(-0.5).add(0.5));
-            const inside = clip.w
-              .greaterThan(0)
-              .and(uv.x.greaterThanEqual(0))
-              .and(uv.x.lessThanEqual(1))
-              .and(uv.y.greaterThanEqual(0))
-              .and(uv.y.lessThanEqual(1))
-              .and(ndc.z.greaterThanEqual(0))
-              .and(ndc.z.lessThanEqual(1));
-            If(inside, () => {
-              const depth = textureLoad(
-                slot.target.depthTexture!,
-                ivec2(clamp(uv.mul(512), 0, 511)),
-              ).r;
-              visibility.assign(
-                select(
-                  ndc.z.lessThanEqual(depth.add(0.001)),
-                  float(1),
-                  float(0),
-                ),
-              );
-            });
-          },
-        );
+        If(slot.key.greaterThan(0).and(shadowKey.equal(slot.key)), () => {
+          const clip = slot.projection.mul(vec4(worldPosition, 1));
+          const ndc = clip.xyz.div(clip.w);
+          const uv = vec2(ndc.x.mul(0.5).add(0.5), ndc.y.mul(-0.5).add(0.5));
+          const inside = clip.w
+            .greaterThan(0)
+            .and(uv.x.greaterThanEqual(0))
+            .and(uv.x.lessThanEqual(1))
+            .and(uv.y.greaterThanEqual(0))
+            .and(uv.y.lessThanEqual(1))
+            .and(ndc.z.greaterThanEqual(0))
+            .and(ndc.z.lessThanEqual(1));
+          If(inside, () => {
+            const depth = textureLoad(
+              slot.target.depthTexture!,
+              ivec2(clamp(uv.mul(512), 0, 511)),
+            ).r;
+            visibility.assign(
+              select(ndc.z.lessThanEqual(depth.add(0.001)), float(1), float(0)),
+            );
+          });
+        });
       }
       return visibility;
     })();
   }
 
-  /** Refreshes at most one map; callers can deny optional work when their frame budget is exhausted. */
+  /**
+   * Refreshes at most one map; callers can deny optional work when their frame budget is exhausted.
+   *
+   * Maps expire after several missed refresh cycles at the caller's current cadence,
+   * so routine scheduling never lets them lapse. A source whose pose or optics changed
+   * keeps sampling its slightly stale map and is refreshed ahead of unchanged sources.
+   */
   update(
     renderer: WebGPURenderer,
     scene: Scene,
     viewCamera: Camera,
     now: number,
     allowRefresh: boolean,
+    refreshIntervalMs: number,
   ): number {
     if (this.disposed) return 0;
     const selected = this.selected;
@@ -230,7 +262,8 @@ export class OpticalShadowPool {
       for (let i = 0; i < SHADOW_MAP_COUNT; i++) {
         if (
           score < this.scores[i] ||
-          (score === this.scores[i] && source.id > selected[i]!.id)
+          (score === this.scores[i] &&
+            source.shadowKey > selected[i]!.shadowKey)
         )
           continue;
         for (let j = SHADOW_MAP_COUNT - 1; j > i; j--) {
@@ -242,43 +275,87 @@ export class OpticalShadowPool {
         break;
       }
     }
+    // One full cycle refreshes every slot once at the caller's cadence.
+    const cycleMs = Math.max(0, refreshIntervalMs) * SHADOW_MAP_COUNT;
     for (const slot of this.slots) {
       if (!slot.source || !selected.includes(slot.source)) {
         slot.source = undefined;
-        slot.sourceId.value = 0;
+        slot.key.value = 0;
       }
-      if (now - slot.refreshedAt > MAX_MAP_AGE_MS) slot.sourceId.value = 0;
-      const source = slot.source;
-      if (
-        source &&
-        (!slot.position.equals(source.position) ||
-          !slot.right.equals(source.apertureRight) ||
-          !slot.up.equals(source.apertureUp) ||
-          !slot.forward.equals(source.apertureForward) ||
-          slot.radius !== source.optics.radius ||
-          slot.slopeX !== source.optics.slopeX ||
-          slot.slopeY !== source.optics.slopeY ||
-          slot.beamLength !== source.beamLength)
-      )
-        slot.sourceId.value = 0;
+      if (now - slot.refreshedAt > cycleMs * MAP_AGE_REFRESH_CYCLES)
+        slot.key.value = 0;
     }
     for (const source of selected) {
       if (!source) continue;
       if (this.slots.some((slot) => slot.source === source)) continue;
       const slot = this.slots.find((entry) => !entry.source)!;
       slot.source = source;
+      slot.key.value = 0;
       slot.refreshedAt = -Infinity;
     }
     if (!allowRefresh) return 0;
-    let slot: (typeof this.slots)[number] | undefined;
-    for (const entry of this.slots)
-      if (entry.source && (!slot || entry.refreshedAt < slot.refreshedAt))
+    let slot: ShadowSlot | undefined;
+    let slotPriority = Infinity;
+    for (const entry of this.slots) {
+      if (!entry.source) continue;
+      // Moved sources count as one cycle older, without starving unchanged ones.
+      const priority =
+        entry.refreshedAt - (this.poseChanged(entry) ? cycleMs : 0);
+      if (!slot || priority < slotPriority) {
         slot = entry;
+        slotPriority = priority;
+      }
+    }
     if (!slot) return 0;
-    if (!this.fitCamera(slot.camera, slot.source!)) {
-      slot.sourceId.value = 0;
+    const source = slot.source!;
+    if (!this.fitCamera(slot.camera, source)) {
+      // Degenerate apertures stay unshadowed and wait their turn instead of monopolizing refreshes.
+      slot.key.value = 0;
+      slot.refreshedAt = now;
       return 0;
     }
+    this.renderMap(renderer, scene, slot);
+    slot.projection.value.multiplyMatrices(
+      slot.camera.projectionMatrix,
+      slot.camera.matrixWorldInverse,
+    );
+    if (slot.camera.coordinateSystem === WebGLCoordinateSystem)
+      slot.projection.value.premultiply(WEBGL_DEPTH_TO_TEXTURE);
+    slot.key.value = source.shadowKey;
+    slot.position.copy(source.position);
+    slot.right.copy(source.apertureRight);
+    slot.up.copy(source.apertureUp);
+    slot.forward.copy(source.apertureForward);
+    slot.radius = source.optics.radius;
+    slot.slopeX = source.optics.slopeX;
+    slot.slopeY = source.optics.slopeY;
+    slot.beamLength = source.beamLength;
+    slot.refreshedAt = now;
+    return 1;
+  }
+
+  /** Detects pose or optics changes since the slot's map was rendered. */
+  private poseChanged(slot: ShadowSlot): boolean {
+    const source = slot.source;
+    return (
+      !!source &&
+      (!slot.position.equals(source.position) ||
+        !slot.right.equals(source.apertureRight) ||
+        !slot.up.equals(source.apertureUp) ||
+        !slot.forward.equals(source.apertureForward) ||
+        slot.radius !== source.optics.radius ||
+        slot.slopeX !== source.optics.slopeX ||
+        slot.slopeY !== source.optics.slopeY ||
+        slot.beamLength !== source.beamLength)
+    );
+  }
+
+  /** Renders opaque stage occluders into a slot's depth map from its fitted projector camera. */
+  protected renderMap(
+    renderer: WebGPURenderer,
+    scene: Scene,
+    slot: ShadowSlot,
+  ): void {
     const savedRenderer = RendererUtils.saveRendererState(renderer);
     const savedScene = RendererUtils.saveSceneState(scene);
     RendererUtils.resetRendererState(renderer, savedRenderer);
@@ -326,27 +403,10 @@ export class OpticalShadowPool {
         },
       );
       renderer.render(scene, slot.camera);
-      slot.projection.value.multiplyMatrices(
-        slot.camera.projectionMatrix,
-        slot.camera.matrixWorldInverse,
-      );
-      if (slot.camera.coordinateSystem === WebGLCoordinateSystem)
-        slot.projection.value.premultiply(WEBGL_DEPTH_TO_TEXTURE);
-      slot.sourceId.value = slot.source!.id;
-      slot.position.copy(slot.source!.position);
-      slot.right.copy(slot.source!.apertureRight);
-      slot.up.copy(slot.source!.apertureUp);
-      slot.forward.copy(slot.source!.apertureForward);
-      slot.radius = slot.source!.optics.radius;
-      slot.slopeX = slot.source!.optics.slopeX;
-      slot.slopeY = slot.source!.optics.slopeY;
-      slot.beamLength = slot.source!.beamLength;
-      slot.refreshedAt = now;
     } finally {
       RendererUtils.restoreRendererState(renderer, savedRenderer);
       RendererUtils.restoreSceneState(scene, savedScene);
     }
-    return 1;
   }
 
   /** Fits arbitrary affine prism rays conservatively, including rectangular and asymmetric apertures. */
@@ -422,7 +482,7 @@ export class OpticalShadowPool {
     this.disposed = true;
     this.sources.clear();
     for (const slot of this.slots) {
-      slot.sourceId.value = 0;
+      slot.key.value = 0;
       slot.target.dispose();
     }
     this.depthMaterial.dispose();

@@ -19,6 +19,7 @@ import {
 } from "three/webgpu";
 import { EmitterVolumeBatch } from "./emitter-volume-batch";
 import { createOpticalRenderContext } from "./optical-render-context";
+import { OpticalShadowPool } from "./optical-shadow-pool";
 import {
   OpticalClusteredLightsNode,
   OpticalSurfaceLight,
@@ -142,4 +143,39 @@ test("atmospheric emitters own matching reusable surface lights", () => {
   );
   batch.dispose();
   assert.equal(scene.children.length, 0);
+});
+
+/** Shader-visible shadow keys come from the pool, never from scene object IDs, which can be 0 or exceed float precision. */
+test("atmospheric instances carry the pool's small shadow key", () => {
+  const scene = new Scene();
+  const pool = new OpticalShadowPool();
+  createOpticalRenderContext(scene, float(-100), true, undefined, pool);
+  const batch = new EmitterVolumeBatch(scene);
+  const optics = {
+    shape: "round" as const,
+    radius: 0.02,
+    slopeX: 0.1,
+    slopeY: 0.1,
+    halfPowerRatio: 0.5,
+    distributionPower: 2,
+    lumens: 1000,
+  };
+  const color = { red: 1, green: 1, blue: 1, intensity: 1 };
+  batch.update("a:1", new Object3D(), optics, color, 30, 1);
+  batch.update("b:1", new Object3D(), optics, color, 30, 1);
+  const lights = scene.children.filter(
+    (child) => child instanceof OpticalSurfaceLight,
+  ) as OpticalSurfaceLight[];
+  assert.deepEqual(
+    lights.map((light) => light.shadowKey),
+    [1, 2],
+  );
+  const shape = (
+    batch as unknown as {
+      attributes: Record<string, { getZ(index: number): number }>;
+    }
+  ).attributes.volumeShape;
+  assert.deepEqual([shape.getZ(0), shape.getZ(1)], [1, 2]);
+  batch.dispose();
+  pool.dispose();
 });

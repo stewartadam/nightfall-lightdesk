@@ -13,6 +13,12 @@ export interface GpuBudgetSample {
 }
 
 const SCALES = [0.5, 0.375, 0.25] as const;
+/**
+ * Without any fresh timing for this long, GPU timing is considered unavailable and
+ * the budget returns to its default tier; long enough to outlast readback latency
+ * on a heavily loaded GPU so overload itself never triggers a reset.
+ */
+export const TIMING_LOSS_RECOVERY_MS = 5000;
 
 /** Bounds offscreen pixel cost with fast degradation and deliberately slow recovery. */
 export class ResolutionBudget {
@@ -21,6 +27,7 @@ export class ResolutionBudget {
   private overloaded = 0;
   private underloaded = 0;
   private lastChange = -Infinity;
+  private lastSampleAt = -Infinity;
 
   /** Uses prepared quality tiers, ordered from highest resolution to the performance floor. */
   constructor(private readonly scales: readonly number[]) {}
@@ -30,16 +37,22 @@ export class ResolutionBudget {
     return this.scales[this.tier];
   }
 
-  /** Consumes only fresh valid timings; missing timing never implies spare GPU capacity. */
+  /**
+   * Consumes only fresh valid timings; missing timing never implies spare GPU capacity.
+   * A sustained absence of timing restores the default tier instead of freezing a degraded one.
+   */
   update(sample: GpuBudgetSample | undefined, now: number): number {
+    const fresh = sample !== undefined && sample.id !== this.lastSample;
+    if (fresh) this.lastSample = sample.id;
     if (
-      !sample ||
-      sample.id === this.lastSample ||
+      !fresh ||
       !Number.isFinite(sample.milliseconds) ||
       sample.milliseconds < 0
-    )
+    ) {
+      if (now - this.lastSampleAt > TIMING_LOSS_RECOVERY_MS) this.reset(now);
       return this.scale;
-    this.lastSample = sample.id;
+    }
+    this.lastSampleAt = now;
     this.overloaded = sample.milliseconds > 8 ? this.overloaded + 1 : 0;
     this.underloaded = sample.milliseconds < 4 ? this.underloaded + 1 : 0;
     if (now - this.lastChange < 1000) return this.scale;
@@ -54,6 +67,15 @@ export class ResolutionBudget {
     this.overloaded = 0;
     this.underloaded = 0;
     return this.scale;
+  }
+
+  /** Returns to the highest-quality tier with fresh hysteresis once timing evidence has been lost. */
+  private reset(now: number): void {
+    this.overloaded = 0;
+    this.underloaded = 0;
+    if (this.tier === 0) return;
+    this.tier = 0;
+    this.lastChange = now;
   }
 }
 
