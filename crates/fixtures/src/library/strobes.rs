@@ -15,6 +15,16 @@ use uuid::Uuid;
 
 use crate::prelude::*;
 
+/// Creates the 308-channel strobe matrix, which has 16 white segments.
+pub(super) fn create_strobe_matrix_308(id: u32, make: &str, model: &str) -> Fixture {
+    create_strobe(id, make, model, 16)
+}
+
+/// Creates the 312-channel strobe matrix, which has 20 white segments.
+pub(super) fn create_strobe_matrix_312(id: u32, make: &str, model: &str) -> Fixture {
+    create_strobe(id, make, model, 20)
+}
+
 /// Creates a strobe fixture with 96 RGB pixels and the requested white segment count.
 ///
 /// The hardware control prefix is Tilt, Rotation Speed, and Reset. Tilt uses

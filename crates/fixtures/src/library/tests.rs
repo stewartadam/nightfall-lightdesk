@@ -382,15 +382,19 @@ fn builtin_catalog_profiles_instantiate_in_their_advertised_mode() {
             .create_fixture(7, profile.mode)
             .unwrap_or_else(|| panic!("{} should instantiate", profile.model));
         assert_eq!(fixture.identifiers.id, 7);
+        assert_eq!(fixture.make, profile.make);
+        assert_eq!(fixture.model, profile.model);
         assert_eq!(fixture.mode, profile.mode);
         assert!(
             !fixture.elements.is_empty(),
             "{} has no elements",
             profile.model
         );
-        assert_eq!(
-            find_builtin_fixture_profile(profile.make, profile.model),
-            Some(profile)
+        assert!(
+            find_builtin_fixture_profile(profile.make, profile.model)
+                .is_some_and(|found| std::ptr::eq(found, profile)),
+            "{} should resolve to its own catalog entry",
+            profile.model
         );
     }
 }
