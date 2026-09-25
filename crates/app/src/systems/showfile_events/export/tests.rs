@@ -256,6 +256,17 @@ fn copied_links_are_omitted_before_writing_the_snapshot() {
     read_export(&prepared);
 }
 
+/// Returns an unversioned reference to the exported test fixture's library definition.
+#[cfg(all(feature = "fixture-library", feature = "object-library"))]
+fn export_fixture_ref() -> nightfall_fixtures::prelude::Fixture {
+    nightfall_fixtures::prelude::Fixture {
+        make: "Export Test".to_string(),
+        model: "Export Fixture".to_string(),
+        mode: "Default".to_string(),
+        ..Default::default()
+    }
+}
+
 /// Writes a small real GDTF archive whose geometry can be materialized after export.
 #[cfg(all(feature = "fixture-library", feature = "object-library"))]
 fn write_gdtf(path: &Path) {
@@ -364,7 +375,7 @@ fn all_references_reload_without_the_original_libraries() {
     assert!(
         app.world()
             .resource::<FixtureLibraryManager>()
-            .get_geometry("Export Test", "Export Fixture", "Default")
+            .geometry_for_fixture(&export_fixture_ref())
             .is_some()
     );
     assert_eq!(
@@ -431,13 +442,13 @@ fn all_references_reload_without_the_original_libraries() {
     )
     .unwrap();
     let geometry = library
-        .get_geometry("Export Test", "Export Fixture", "Default")
+        .geometry_for_fixture(&export_fixture_ref())
         .expect("packaged GDTF geometry");
     assert!(Path::new(geometry.gdtf_path.as_ref().unwrap()).starts_with(prepared.path()));
     library.set_showfile_directory(None).unwrap();
     assert!(
         library
-            .get_geometry("Export Test", "Export Fixture", "Default")
+            .geometry_for_fixture(&export_fixture_ref())
             .is_none()
     );
     write_gdtf(&empty.path().join("installed.gdtf"));

@@ -395,6 +395,18 @@ export function removePatchBindingsForFixtureIds(
 }
 
 /**
+ * Returns the identifier of one library fixture revision. Several revisions
+ * of a make/model can coexist, so the revision fingerprint is part of the id.
+ */
+export function libraryDefinitionId(info: {
+  make: string;
+  model: string;
+  asset_etag: string;
+}): string {
+  return JSON.stringify([info.make, info.model, info.asset_etag]);
+}
+
+/**
  * Create a fixture from the library and wait for completion.
  * Returns a promise that resolves when the fixture is created.
  * Use this when you need to perform follow-up operations like patching.
@@ -407,6 +419,7 @@ export async function createFixtureFromLibrary(
   label?: string,
   updateExistingIds?: number[],
   updateExistingOnly = false,
+  assetEtag?: string,
 ): Promise<types.CommandResult> {
   const command: FixtureLibraryCommand = {
     type: "CreateFixtureFromLibrary",
@@ -415,6 +428,7 @@ export async function createFixtureFromLibrary(
       make,
       model,
       mode,
+      asset_etag: assetEtag,
       label: label || undefined,
       update_existing_ids: updateExistingIds?.length
         ? updateExistingIds
@@ -443,6 +457,7 @@ export function fetchFixtureProfile(
   make: string,
   model: string,
   mode?: string,
+  assetEtag?: string,
 ) {
   const command: FixtureLibraryCommand = {
     type: "GetFixtureProfile",
@@ -450,6 +465,7 @@ export function fetchFixtureProfile(
       make,
       model,
       mode,
+      asset_etag: assetEtag,
     },
   };
 

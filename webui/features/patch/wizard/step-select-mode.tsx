@@ -10,7 +10,11 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Button } from "../../../components/ui/visual-language/button";
-import { computeFixtureChannelCount } from "../../../lib/fixture-service";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
+import {
+  computeFixtureChannelCount,
+  libraryDefinitionId,
+} from "../../../lib/fixture-service";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import { LibraryFixturePreview } from "../../fixture-library";
 import { usePatchWizard } from "./wizard-context";
@@ -23,7 +27,7 @@ export function StepSelectMode() {
   const selectedFixture = createMemo(() => {
     const defId = state().fixtureDefinitionId;
     if (!defId) return null;
-    return $fixtureLibrary().find((f) => `${f.make}:${f.model}` === defId);
+    return $fixtureLibrary().find((f) => libraryDefinitionId(f) === defId);
   });
 
   const modes = createMemo(() => selectedFixture()?.modes ?? []);
@@ -32,12 +36,7 @@ export function StepSelectMode() {
   const channelCount = createMemo(() => {
     const profile = $fixtureProfile();
     const fixture = selectedFixture();
-    if (
-      !profile?.fixture ||
-      !fixture ||
-      profile.info.make !== fixture.make ||
-      profile.info.model !== fixture.model
-    ) {
+    if (!profileMatchesRevision(profile, fixture) || !profile.fixture) {
       return null;
     }
     return computeFixtureChannelCount(profile.fixture);
@@ -121,6 +120,7 @@ export function StepSelectMode() {
               make={selectedFixture()!.make}
               model={selectedFixture()!.model}
               mode={state().fixtureMode ?? undefined}
+              assetEtag={selectedFixture()!.asset_etag}
             />
           </Show>
         </div>

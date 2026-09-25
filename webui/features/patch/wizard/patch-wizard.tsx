@@ -31,7 +31,10 @@ import {
 import { createModalScrollLock } from "../../../components/ui/modal/scroll-lock";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
-import { computeFixtureChannelCount } from "../../../lib/fixture-service";
+import {
+  computeFixtureChannelCount,
+  libraryDefinitionId,
+} from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import {
   fixtureLibrary,
@@ -167,24 +170,25 @@ export function PatchWizard() {
     return null;
   });
 
-  const selectedLibraryFixture = createMemo(() => {
-    const s = state();
-    if (!s.fixtureDefinitionId || !s.fixtureMode) return null;
-
-    const [make, model] = s.fixtureDefinitionId.split(":");
-    const profile = $fixtureProfile();
-    if (!profile?.fixture) return null;
-    if (profile.info.make !== make || profile.info.model !== model) return null;
-    if (profile.fixture.mode !== s.fixtureMode) return null;
-
-    return profile.fixture;
-  });
   const selectedLibraryFixtureInfo = createMemo(() => {
     const fixtureDefinitionId = state().fixtureDefinitionId;
     if (!fixtureDefinitionId) return null;
     return $fixtureLibrary().find(
-      (fixture) => `${fixture.make}:${fixture.model}` === fixtureDefinitionId,
+      (fixture) => libraryDefinitionId(fixture) === fixtureDefinitionId,
     );
+  });
+  const selectedLibraryFixture = createMemo(() => {
+    const s = state();
+    if (!s.fixtureDefinitionId || !s.fixtureMode) return null;
+
+    const profile = $fixtureProfile();
+    if (!profile?.fixture) return null;
+    if (libraryDefinitionId(profile.info) !== s.fixtureDefinitionId) {
+      return null;
+    }
+    if (profile.fixture.mode !== s.fixtureMode) return null;
+
+    return profile.fixture;
   });
   const selectedLibraryGeometry = createMemo(() => {
     const fixtureDefinitionId = state().fixtureDefinitionId;
@@ -194,8 +198,7 @@ export function PatchWizard() {
       return null;
     }
 
-    const [make, model] = fixtureDefinitionId.split(":");
-    if (profile.info.make !== make || profile.info.model !== model) {
+    if (libraryDefinitionId(profile.info) !== fixtureDefinitionId) {
       return null;
     }
 

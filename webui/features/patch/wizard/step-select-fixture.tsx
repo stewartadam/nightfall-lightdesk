@@ -10,6 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
 import { Table, TableScroll } from "../../../components/ui/table";
+import { libraryDefinitionId } from "../../../lib/fixture-service";
 import { fixtureLibrary } from "../../../state/appStores";
 import type { AvailableFixtureInfo } from "../../../types";
 import { LibraryFixturePreview } from "../../fixture-library";
@@ -44,11 +45,11 @@ export function StepSelectFixture() {
   const selectedFixture = createMemo(() => {
     const defId = state().fixtureDefinitionId;
     if (!defId) return null;
-    return $fixtureLibrary().find((f) => `${f.make}:${f.model}` === defId);
+    return $fixtureLibrary().find((f) => libraryDefinitionId(f) === defId);
   });
 
   const handleFixtureSelect = (fixture: AvailableFixtureInfo) => {
-    const fixtureId = `${fixture.make}:${fixture.model}`;
+    const fixtureId = libraryDefinitionId(fixture);
     const defaultMode = fixture.modes.length > 0 ? fixture.modes[0] : null;
     updateState({
       fixtureDefinitionId: fixtureId,
@@ -110,7 +111,7 @@ export function StepSelectFixture() {
               <tbody>
                 <For each={filteredFixtures()}>
                   {(fixture) => {
-                    const fixtureId = () => `${fixture.make}:${fixture.model}`;
+                    const fixtureId = () => libraryDefinitionId(fixture);
 
                     const isSelected = () =>
                       state().fixtureDefinitionId === fixtureId();
@@ -156,6 +157,7 @@ export function StepSelectFixture() {
                 make={fixture().make}
                 model={fixture().model}
                 mode={state().fixtureMode ?? undefined}
+                assetEtag={fixture().asset_etag}
               />
             )}
           </Show>

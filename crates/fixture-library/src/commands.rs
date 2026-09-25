@@ -30,6 +30,9 @@ pub enum FixtureLibraryCommand {
         /// Optional DMX mode name (if not provided, uses first/default mode)
         #[serde(default)]
         mode: Option<String>,
+        /// Library revision to inspect; the default revision when omitted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        asset_etag: Option<String>,
     },
 
     /// Refresh the fixture library by rescanning the directory
@@ -45,6 +48,9 @@ pub enum FixtureLibraryCommand {
         model: String,
         /// DMX mode name
         mode: String,
+        /// Library revision to create from; the default revision when omitted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        asset_etag: Option<String>,
         /// Optional user-defined label for the fixture
         #[serde(default)]
         label: Option<String>,
@@ -78,6 +84,9 @@ pub struct FixtureLibraryEntry {
     pub make: String,
     /// Model name
     pub model: String,
+    /// Revision to delete; the default revision when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_etag: Option<String>,
 }
 
 /// Information about an available fixture

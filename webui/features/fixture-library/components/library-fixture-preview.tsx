@@ -22,6 +22,7 @@ import {
   createSignal,
   on,
 } from "solid-js";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
 import { fixtureProfile } from "../../../state/appStores";
 import type { Fixture, FixtureGeometry } from "../../../types";
@@ -31,6 +32,8 @@ type LibraryFixturePreviewProps = {
   make: string;
   model: string;
   mode?: string;
+  /** Library revision to preview; the default revision when omitted. */
+  assetEtag?: string;
 };
 
 const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
@@ -43,10 +46,10 @@ const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
   // Subscribe to global fixture profile store
   const $fixtureProfile = useStore(fixtureProfile);
 
-  // Clear preview data when fixture (make/model) changes so stale renders disappear.
+  // Clear preview data when fixture (make/model/revision) changes so stale renders disappear.
   createEffect(
     on(
-      () => [props.make, props.model] as const,
+      () => [props.make, props.model, props.assetEtag] as const,
       () => {
         setFixture(null);
         // (mode changes within same fixture should preserve geometry until new data arrives)
@@ -59,10 +62,10 @@ const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
   // Fetch fixture profile when any prop changes.
   createEffect(
     on(
-      () => [props.make, props.model, props.mode] as const,
-      ([make, model, mode]) => {
+      () => [props.make, props.model, props.mode, props.assetEtag] as const,
+      ([make, model, mode, assetEtag]) => {
         // Request profile from backend
-        fetchFixtureProfile(make, model, mode);
+        fetchFixtureProfile(make, model, mode, assetEtag);
       },
     ),
   );
@@ -78,11 +81,13 @@ const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
       profile.requested_mode === props.mode ||
       profile.fixture?.mode === props.mode;
 
-    if (
-      profile.info.make === props.make &&
-      profile.info.model === props.model &&
-      modeMatches
-    ) {
+    const revisionMatches = profileMatchesRevision(profile, {
+      make: props.make,
+      model: props.model,
+      asset_etag: props.assetEtag,
+    });
+
+    if (revisionMatches && modeMatches) {
       setFixture(profile.fixture ?? null);
       setGeometry(profile.geometry ?? null);
     }
