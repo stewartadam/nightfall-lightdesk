@@ -30,6 +30,8 @@ type WorkerSlot = {
 export type BackendSlot = WorkerSlot & {
   backendService: unknown;
   dataDir: string;
+  /** The only MIDI input port name this test's backend connects to. */
+  midiInputPort: string;
   testId: string;
 };
 
