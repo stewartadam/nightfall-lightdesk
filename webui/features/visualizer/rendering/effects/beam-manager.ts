@@ -8,14 +8,15 @@
 
 /**
  * Beam manager for visualizer fixtures.
- * Creates and updates volumetric light beams attached to fixture emitters.
+ * Creates and updates volumetric light beams attached to fixture emitters,
+ * and drives the shared spot light pool that lights stage surfaces.
  */
 
 import {
   Mesh,
-  Object3D,
+  type Object3D,
   Quaternion,
-  SpotLight,
+  type Scene,
   Texture,
   Vector3,
 } from "three/webgpu";
@@ -25,6 +26,11 @@ import { excludeFromSelection } from "../../model/selection-exclusion";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
 import { DEFAULT_STAGE_FLOOR_TOP_Y } from "../scene-environment";
+import { BeamLightPool } from "./beam-light-pool";
+import {
+  type BeamLightSample,
+  buildBeamLightProxies,
+} from "./beam-light-proxies";
 import {
   type BeamMaterial,
   type BeamParameters,
@@ -50,61 +56,6 @@ async function loadGoboTexture(url: string): Promise<Texture> {
   return texture;
 }
 
-/**
- * Returns a white image for a spot light that projected a gobo and is now open.
- *
- * It matches the size of the image it replaces, since resizing a map in
- * place does not reliably reallocate its GPU texture.
- */
-function openProjectionImage(width: number, height: number): ImageData {
-  const pixels = new Uint8ClampedArray(width * height * 4);
-  pixels.fill(255);
-  return new ImageData(pixels, width, height);
-}
-
-/**
- * Projects a gobo image from a beam's spot light, or white when `gobo` is null.
- *
- * Lit materials key their pipelines on each spot light's map texture, so
- * assigning a different texture per gobo would recompile every lit material
- * in the scene on each change. Each light instead keeps one map, created
- * with its first gobo, and only that map's image changes; the map is only
- * replaced when a gobo of a different image size is selected. Lights that
- * never show a gobo get no map and cost no texture sampler.
- */
-function setProjectedGobo(beam: BeamInstance, gobo: Texture | null): void {
-  if (beam.projectedGobo === gobo) return;
-  beam.projectedGobo = gobo;
-  // Scene inspection (debug tools, e2e) reads whether a gobo is projected.
-  beam.spotLight.userData.projectsGobo = gobo !== null;
-  let map = beam.spotLight.map;
-  const current = map?.image as { width: number; height: number } | undefined;
-  const next = gobo?.image as { width: number; height: number } | undefined;
-  if (
-    map &&
-    current &&
-    next &&
-    (current.width !== next.width || current.height !== next.height)
-  ) {
-    // A differently sized image needs a new GPU texture (see openProjectionImage).
-    map.dispose();
-    map = null;
-  }
-  if (!map) {
-    if (!gobo) return;
-    map = new Texture();
-    map.flipY = false;
-    beam.spotLight.map = map;
-  }
-  if (gobo) {
-    map.image = gobo.image;
-  } else {
-    const { width, height } = map.image as { width: number; height: number };
-    map.image = openProjectionImage(width, height);
-  }
-  map.needsUpdate = true;
-}
-
 /** Beam specification for a fixture */
 export interface BeamSpec {
   beamAngle: number;
@@ -112,21 +63,33 @@ export interface BeamSpec {
   lumens: number;
 }
 
+/** Surface lighting a beam contributes, pooled across beams each frame. */
+export interface BeamLight {
+  /** Spot light intensity; 0 when the beam does not light surfaces. */
+  intensity: number;
+  /** Half cone angle in radians. */
+  halfAngle: number;
+  /** Linear color, 0-1 per channel. */
+  red: number;
+  green: number;
+  blue: number;
+  /** Gobo image projected onto surfaces, or null for an open beam. */
+  gobo: Texture | null;
+}
+
 /** Data for a single beam instance */
 export interface BeamInstance {
   mesh: Mesh;
   material: BeamMaterial;
-  spotLight: SpotLight;
-  spotlightTarget: Object3D;
-  /** The parent object this beam is attached to */
+  /** The emitter node this beam is attached to; its -Z axis is the beam direction. */
   parent: Object3D;
   /** Current beam length in meters */
   beamLength: number;
-  /** Gobo image the spot light projects, or null for an open beam. */
-  projectedGobo: Texture | null;
+  /** Surface lighting this beam contributes to the light pool. */
+  light: BeamLight;
 }
 
-/** Map of fixture UID to beam instances */
+/** Map of beam ID ("fixtureUid:emitterName") to beam instances */
 type BeamInstanceMap = Map<string, BeamInstance>;
 
 /**
@@ -137,6 +100,10 @@ export class BeamManager {
   /** Gobo textures by URL; null while loading or after a failed load. */
   private goboTextures = new Map<string, Texture | null>();
   private beamQuality: VisualizerBeamQuality;
+  /** Spot lights lighting stage surfaces; absent without a scene or in low quality. */
+  private lightPool: BeamLightPool | null = null;
+  /** Scene whose render hook syncs the light pool. */
+  private scene: Scene | null = null;
   /** Default beam specification when fixture doesn't provide one */
   private defaultBeamSpec: BeamSpec = {
     beamAngle: 15,
@@ -144,65 +111,58 @@ export class BeamManager {
     lumens: 10000,
   };
 
-  constructor(beamQuality: VisualizerBeamQuality = "high") {
+  /**
+   * Creates a beam manager; with a scene (and high quality), a fixed light
+   * pool is added to it and synced before every render.
+   */
+  constructor(beamQuality: VisualizerBeamQuality = "high", scene?: Scene) {
     this.beamQuality = beamQuality;
+    if (scene && beamQuality !== "low") {
+      this.scene = scene;
+      this.lightPool = new BeamLightPool(scene);
+      scene.onBeforeRender = () => this.syncLights();
+    }
   }
 
   /**
    * Get or create a beam for a fixture.
    * The beam is attached to the provided parent object.
    */
-  getOrCreateBeam(fixtureUid: string, parent: Object3D): BeamInstance {
-    let beam = this.beams.get(fixtureUid);
+  getOrCreateBeam(beamId: string, parent: Object3D): BeamInstance {
+    let beam = this.beams.get(beamId);
     if (beam) {
       return beam;
     }
 
-    // Create new beam
     const material = createBeamMaterial(this.beamQuality);
     const geometry = createBeamGeometry(this.beamQuality);
     const mesh = new Mesh(geometry, material);
-    mesh.name = `Beam_${fixtureUid}`;
+    mesh.name = `Beam_${beamId}`;
     excludeFromSelection(mesh);
-    // ConeGeometry has tip at +Y, base at -Y. We want beam to extend downward (-Y).
-    // No rotation needed - just position so tip is at origin.
-    mesh.position.set(0, -0.5, 0); // Temporary position (updated dynamically in updateBeam)
+    // Temporary position (updated dynamically in updateBeam)
+    mesh.position.set(0, -0.5, 0);
     mesh.castShadow = false;
     mesh.frustumCulled = false;
     // Render beams after opaque geometry but before UI overlays
     // This prevents z-fighting with floor transparency at certain camera angles
     mesh.renderOrder = 100;
-
-    // Create spotlight for ground illumination
-    const spotLight = new SpotLight(0xffffff, 0);
-    spotLight.name = `SpotLight_${fixtureUid}`;
-    spotLight.angle = Math.PI / 6;
-    spotLight.penumbra = 0.5;
-    spotLight.decay = 2;
-    spotLight.distance = 50;
-    spotLight.castShadow = false;
-
-    const spotlightTarget = new Object3D();
-    spotlightTarget.name = `SpotLightTarget_${fixtureUid}`;
-    // Target along -Z (GDTF beam direction), scaled for parent hierarchy (0.001)
-    spotlightTarget.position.set(0, 0, -50000);
-    spotLight.target = spotlightTarget;
-
-    // Add to parent
     parent.add(mesh);
-    parent.add(spotLight);
-    parent.add(spotlightTarget);
 
     beam = {
       mesh,
       material,
-      spotLight,
-      spotlightTarget,
       parent,
       beamLength: defaultBeamParameters.beamLength,
-      projectedGobo: null,
+      light: {
+        intensity: 0,
+        halfAngle: Math.PI / 6,
+        red: 1,
+        green: 1,
+        blue: 1,
+        gobo: null,
+      },
     };
-    this.beams.set(fixtureUid, beam);
+    this.beams.set(beamId, beam);
     return beam;
   }
 
@@ -211,9 +171,8 @@ export class BeamManager {
    *
    * Images load once per URL (in the main thread or a worker) and are shared
    * between beams; until an image is ready the beam renders open. The image
-   * is also projected by the beam's spot light onto the floor and scenery
-   * (see {@link goboProjectionNode}); this works without shadow maps, which
-   * the visualizer leaves disabled.
+   * is also projected onto stage surfaces by the pooled light standing in
+   * for the beam, when that light stands for this beam alone.
    */
   private applyGobo(beam: BeamInstance, goboUrl: string | undefined): void {
     const loaded = goboUrl ? this.goboTextures.get(goboUrl) : undefined;
@@ -225,7 +184,7 @@ export class BeamManager {
       );
     }
     if (isLowQualityBeamMaterial(beam.material)) return;
-    setProjectedGobo(beam, loaded ?? null);
+    beam.light.gobo = loaded ?? null;
     const material = beam.material;
     if (loaded) {
       for (const node of material.goboTextureNodes) node.value = loaded;
@@ -239,7 +198,7 @@ export class BeamManager {
    * Update a beam's appearance based on DMX values.
    */
   updateBeam(
-    fixtureUid: string,
+    beamId: string,
     color: EmitterColor,
     options?: {
       beamSpec?: BeamSpec;
@@ -253,7 +212,7 @@ export class BeamManager {
       goboUrl?: string;
     },
   ): void {
-    const beam = this.beams.get(fixtureUid);
+    const beam = this.beams.get(beamId);
     if (!beam) return;
     this.applyGobo(beam, options?.goboUrl);
 
@@ -270,7 +229,6 @@ export class BeamManager {
       ) * (options?.iris ?? 1);
     const halfAngleRad = (coneAngleDeg * Math.PI) / 360;
 
-    // Calculate beam origin world position and direction
     // The beam mesh is parented to the emitter node, so it inherits transforms automatically.
     // We still need world-space values for the shader's lighting calculations.
     const beamOrigin = new Vector3();
@@ -280,8 +238,6 @@ export class BeamManager {
     beam.parent.updateMatrixWorld(true);
     beam.parent.getWorldPosition(beamOrigin);
     beam.parent.getWorldQuaternion(worldQuaternion);
-
-    // Transform beam direction from local to world space for shader
     beamDirection.applyQuaternion(worldQuaternion);
 
     // Use default beam length and let clipping/depth handle the floor.
@@ -289,7 +245,6 @@ export class BeamManager {
     // a moving circular cutoff where they intersect the stage.
     const beamLength = defaultBeamParameters.beamLength;
 
-    // Calculate base radius from cone angle
     const baseRadius = Math.min(
       beamLength * Math.tan(halfAngleRad),
       beamLength * 2,
@@ -307,11 +262,9 @@ export class BeamManager {
       baseRadius * parentScale,
     );
     // After rotation, cone extends along Z. Position so tip is at origin.
-    // Position is also affected by parent scale, so we scale it too.
     beam.mesh.position.set(0, 0, (-beamLength / 2) * parentScale);
     beam.beamLength = beamLength;
 
-    // Build beam parameters with world-space direction
     const params: BeamParameters = {
       ...defaultBeamParameters,
       intensity: color.intensity,
@@ -327,51 +280,81 @@ export class BeamManager {
 
     updateBeamMaterial(beam.material, params);
 
-    // Update spotlight
-    beam.spotLight.angle = halfAngleRad;
-    beam.spotLight.intensity =
-      this.beamQuality === "low" ? 0 : color.intensity * beamSpec.lumens * 0.02;
-    beam.spotLight.color.setRGB(color.red, color.green, color.blue);
-    // Target along -Z (GDTF beam direction), scaled for parent hierarchy
-    beam.spotlightTarget.position.set(0, 0, -beamLength * parentScale);
+    const lit = color.intensity > 0.01;
+    beam.mesh.visible = lit;
+    beam.light.halfAngle = halfAngleRad;
+    beam.light.intensity = lit ? color.intensity * beamSpec.lumens * 0.02 : 0;
+    beam.light.red = color.red;
+    beam.light.green = color.green;
+    beam.light.blue = color.blue;
+  }
 
-    // Set visibility
-    beam.mesh.visible = color.intensity > 0.01;
-    beam.spotLight.visible =
-      this.beamQuality !== "low" && color.intensity > 0.01;
+  /** Hides a beam and stops it lighting surfaces, e.g. when its intensity drops out. */
+  hideBeam(beamId: string): void {
+    const beam = this.beams.get(beamId);
+    if (!beam) return;
+    beam.mesh.visible = false;
+    beam.light.intensity = 0;
+  }
+
+  /**
+   * Points the light pool at this frame's beams.
+   *
+   * Runs before every render, after world matrices update, so lights follow
+   * moving heads. Lit beams are combined into per-fixture proxies (see
+   * beam-light-proxies) and the brightest proxies take the pooled lights.
+   */
+  syncLights(): void {
+    if (!this.lightPool) return;
+    const samples: BeamLightSample[] = [];
+    const worldQuaternion = new Quaternion();
+    for (const [beamId, beam] of this.beams) {
+      if (beam.light.intensity <= 0 || !beam.mesh.visible) continue;
+      const position = new Vector3();
+      beam.parent.getWorldPosition(position);
+      beam.parent.getWorldQuaternion(worldQuaternion);
+      samples.push({
+        beamId,
+        fixtureUid: beamId.split(":")[0],
+        position,
+        direction: new Vector3(0, 0, -1).applyQuaternion(worldQuaternion),
+        halfAngle: beam.light.halfAngle,
+        intensity: beam.light.intensity,
+        red: beam.light.red,
+        green: beam.light.green,
+        blue: beam.light.blue,
+        gobo: beam.light.gobo ?? undefined,
+      });
+    }
+    this.lightPool.assign(buildBeamLightProxies(samples));
   }
 
   /**
    * Remove a beam for a fixture.
    */
-  removeBeam(fixtureUid: string): void {
-    const beam = this.beams.get(fixtureUid);
+  removeBeam(beamId: string): void {
+    const beam = this.beams.get(beamId);
     if (!beam) return;
 
     beam.parent.remove(beam.mesh);
-    beam.parent.remove(beam.spotLight);
-    beam.parent.remove(beam.spotlightTarget);
-
     beam.mesh.geometry?.dispose();
     disposeBeamMaterial(beam.material);
-    beam.spotLight.map?.dispose();
-    beam.spotLight.dispose();
 
-    this.beams.delete(fixtureUid);
+    this.beams.delete(beamId);
   }
 
   /**
    * Check if a fixture has a beam.
    */
-  hasBeam(fixtureUid: string): boolean {
-    return this.beams.has(fixtureUid);
+  hasBeam(beamId: string): boolean {
+    return this.beams.has(beamId);
   }
 
   /**
    * Get beam for a fixture.
    */
-  getBeam(fixtureUid: string): BeamInstance | undefined {
-    return this.beams.get(fixtureUid);
+  getBeam(beamId: string): BeamInstance | undefined {
+    return this.beams.get(beamId);
   }
 
   /**
@@ -380,9 +363,7 @@ export class BeamManager {
    * Beam IDs use format "fixtureUid:emitterName" for multi-emitter fixtures.
    */
   syncWithFixtures(fixtures: Map<string, ExtendedFixtureInstance>): void {
-    // Remove beams for fixtures that no longer exist
     for (const beamId of this.beams.keys()) {
-      // Extract fixture UID from composite beam ID (format: "fixtureUid:emitterName")
       const fixtureUid = beamId.split(":")[0];
       if (!fixtures.has(fixtureUid)) {
         this.removeBeam(beamId);
@@ -391,15 +372,29 @@ export class BeamManager {
   }
 
   /**
-   * Dispose all beams.
+   * Remove all beams and gobo images; the light pool stays, dark.
    */
   dispose(): void {
-    for (const fixtureUid of [...this.beams.keys()]) {
-      this.removeBeam(fixtureUid);
+    for (const beamId of [...this.beams.keys()]) {
+      this.removeBeam(beamId);
     }
     for (const texture of this.goboTextures.values()) {
       texture?.dispose();
     }
     this.goboTextures.clear();
+    this.lightPool?.assign([]);
+  }
+
+  /**
+   * Dispose beams and remove the light pool and its render hook from the scene.
+   */
+  destroy(): void {
+    this.dispose();
+    this.lightPool?.dispose();
+    this.lightPool = null;
+    if (this.scene) {
+      this.scene.onBeforeRender = () => {};
+      this.scene = null;
+    }
   }
 }

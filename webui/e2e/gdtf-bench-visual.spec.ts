@@ -662,12 +662,16 @@ async function findGoboSlot(page: Page, uid: string): Promise<GoboChoice> {
 /** Returns whether any spot light of the fixture projects a gobo image. */
 function projectsGobo(page: Page, uid: string): Promise<boolean> {
   return page.evaluate((uid) => {
-    const root = (window as any).visualizerApi
-      .getScene()
-      .getObjectByName(`Fixture_${uid}`);
     let projecting = false;
-    root.traverse((object: any) => {
-      if (object.isSpotLight && object.userData.projectsGobo) projecting = true;
+    // Pooled beam lights live at the scene root and record the fixture they serve.
+    (window as any).visualizerApi.getScene().traverse((object: any) => {
+      if (
+        object.isSpotLight &&
+        object.userData.fixtureUid === uid &&
+        object.userData.projectsGobo
+      ) {
+        projecting = true;
+      }
     });
     return projecting;
   }, uid);
