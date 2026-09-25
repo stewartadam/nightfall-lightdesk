@@ -32,6 +32,7 @@ export function uiActionCatalogEntries(
       description: action.description,
       input: types.ActionInputKind.Trigger,
       parameters: [],
+      surfaces: Object.values(types.ActionSurface),
     },
     capabilities: [],
     behaviors: [types.ControlBehavior.Press, types.ControlBehavior.Release],

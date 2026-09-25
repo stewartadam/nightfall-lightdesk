@@ -12,7 +12,7 @@ import { Input, Textarea } from "../../../components/ui/form-controls";
 import { durationToMs, msToDuration } from "../../../lib/utils";
 import { timelineLookaheadActionStatuses } from "../../../state/appStores";
 import * as types from "../../../types";
-import { ActionInputKind } from "../../../types";
+import { ActionInputKind, ActionSurface } from "../../../types";
 import { ActionPicker } from "../../actions";
 import type { SelectedAction } from "../context/timeline-context";
 import {
@@ -546,6 +546,7 @@ export default function TimelineActionProperties(
                     label="Timeline action"
                     value={record().action.action}
                     inputKinds={[ActionInputKind.Trigger]}
+                    surface={ActionSurface.Timeline}
                     onChange={(action) => updateSelectedItem({ action })}
                   />
                 </div>

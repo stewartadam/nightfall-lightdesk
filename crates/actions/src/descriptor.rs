@@ -49,6 +49,16 @@ pub enum ActionSurface {
 }
 
 impl ActionSurface {
+    /// Every surface, in declaration order; the default set an action may be invoked from.
+    pub const ALL: [Self; 6] = [
+        Self::Timeline,
+        Self::Midi,
+        Self::Osc,
+        Self::CommandPalette,
+        Self::Keyboard,
+        Self::Websocket,
+    ];
+
     /// Returns the user-facing name of the surface.
     pub fn label(self) -> &'static str {
         match self {
@@ -181,6 +191,14 @@ pub struct ActionDescriptor {
     /// `clip.stop` for `clip.start`.
     #[serde(default)]
     pub hold_release: Option<ActionId>,
+    /// Surfaces allowed to bind and invoke the action; every surface unless restricted.
+    #[serde(default = "all_surfaces")]
+    pub surfaces: Vec<ActionSurface>,
+}
+
+/// Returns every surface, the default set an action may be invoked from.
+fn all_surfaces() -> Vec<ActionSurface> {
+    ActionSurface::ALL.to_vec()
 }
 
 impl ActionDescriptor {
@@ -198,6 +216,7 @@ impl ActionDescriptor {
             input: ActionInputKind::Trigger,
             parameters: Vec::new(),
             hold_release: None,
+            surfaces: all_surfaces(),
         }
     }
 
@@ -223,6 +242,22 @@ impl ActionDescriptor {
     pub fn with_hold_release(mut self, action_id: impl Into<String>) -> Self {
         self.hold_release = Some(ActionId::new(action_id));
         self
+    }
+
+    /// Restricts which surfaces may bind and invoke the action.
+    ///
+    /// Use this for actions that only make sense in one context, such as timeline-owned
+    /// actions whose effect depends on the timeline action that placed them.
+    pub fn with_surfaces(mut self, surfaces: impl IntoIterator<Item = ActionSurface>) -> Self {
+        self.surfaces = surfaces.into_iter().collect();
+        self.surfaces.sort();
+        self.surfaces.dedup();
+        self
+    }
+
+    /// Returns whether the action may be bound to or invoked from `surface`.
+    pub fn allows_surface(&self, surface: ActionSurface) -> bool {
+        self.surfaces.contains(&surface)
     }
 }
 

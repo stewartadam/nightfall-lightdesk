@@ -49,6 +49,7 @@ import {
 import {
   ActionInputKind,
   type ActionReference,
+  ActionSurface,
   ControlBehavior,
   type OscMapping,
   type OscType,
@@ -500,6 +501,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                 <ActionPicker
                   label="Action for last input"
                   inputKinds={OSC_INPUT_KINDS}
+                  surface={ActionSurface.Osc}
                   includeUiActions
                   onChange={setLastEventAction}
                   onIncomplete={() => setLastEventAction(undefined)}
@@ -574,6 +576,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                 label="Selected mapping action"
                 value={row().mapping.action}
                 inputKinds={OSC_INPUT_KINDS}
+                surface={ActionSurface.Osc}
                 includeUiActions
                 onChange={updateSelectedAction}
               />

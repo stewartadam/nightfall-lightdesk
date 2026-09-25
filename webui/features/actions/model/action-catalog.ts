@@ -50,13 +50,44 @@ export function actionInputKind(
   );
 }
 
-/** Returns catalog entries whose input kind is one of the accepted kinds, sorted for pickers. */
+/** Returns whether an action may be bound to or invoked from a surface. */
+export function actionAllowsSurface(
+  entry: types.ActionCatalogEntry,
+  surface: types.ActionSurface,
+): boolean {
+  return entry.descriptor.surfaces.includes(surface);
+}
+
+/**
+ * Returns whether the surface may bind an action reference.
+ *
+ * Actions missing from the catalog, such as client-hosted `ui.*` actions, are left to the
+ * backend to accept or reject.
+ */
+export function actionReferenceAllowsSurface(
+  catalog: readonly types.ActionCatalogEntry[],
+  action: types.ActionReference,
+  surface: types.ActionSurface,
+): boolean {
+  const entry = findCatalogEntry(catalog, action.id);
+  return !entry || actionAllowsSurface(entry, surface);
+}
+
+/**
+ * Returns catalog entries a surface may bind whose input kind is one of the accepted kinds,
+ * sorted by category and label for pickers.
+ */
 export function actionsAccepting(
   catalog: readonly types.ActionCatalogEntry[],
   inputKinds: readonly types.ActionInputKind[],
+  surface: types.ActionSurface,
 ): types.ActionCatalogEntry[] {
   return catalog
-    .filter((entry) => inputKinds.includes(entry.descriptor.input))
+    .filter(
+      (entry) =>
+        inputKinds.includes(entry.descriptor.input) &&
+        actionAllowsSurface(entry, surface),
+    )
     .sort(
       (left, right) =>
         left.descriptor.category.localeCompare(right.descriptor.category) ||

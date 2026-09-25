@@ -14,7 +14,9 @@ use std::collections::{BTreeMap, HashMap};
 use bevy_ecs::prelude::{Resource, World};
 use serde::de::DeserializeOwned;
 
-use crate::descriptor::{ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind};
+use crate::descriptor::{
+    ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionSurface,
+};
 use crate::flash::{FLASH_LEVEL, FlashStates};
 use crate::invocation::{
     ActionInput, ActionInvocation, ActionReference, ClientActionInvocation, InvocationDispatch,
@@ -75,6 +77,30 @@ fn decode_arguments<A: DeserializeOwned>(action: &ActionReference) -> Result<A, 
             ),
         )
     })
+}
+
+/// Rejects binding or invoking an action from a surface its descriptor does not allow.
+fn ensure_surface_allowed(
+    descriptor: &ActionDescriptor,
+    surface: ActionSurface,
+) -> Result<(), InvocationError> {
+    if descriptor.allows_surface(surface) {
+        return Ok(());
+    }
+    let allowed = descriptor
+        .surfaces
+        .iter()
+        .map(|surface| surface.label())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(InvocationError::new(
+        "action.surface_not_allowed",
+        format!(
+            "'{}' cannot be invoked from {}; it only runs from: {allowed}",
+            descriptor.label,
+            surface.label()
+        ),
+    ))
 }
 
 /// Lists the controller binding behaviors a registered action supports.
@@ -287,6 +313,7 @@ impl ActionRegistry {
             return Ok(InvocationDispatch::Accepted);
         }
         let registered = self.registered(&invocation.action.id)?;
+        ensure_surface_allowed(&registered.descriptor, invocation.surface)?;
         let input = match (registered.descriptor.input, invocation.input) {
             (ActionInputKind::Absolute, ActionInput::Press | ActionInput::Release) => {
                 let Some(level) = flash_level(
@@ -363,18 +390,21 @@ impl ActionRegistry {
 
     /// Validates that a stored binding can invoke its action before it is persisted.
     ///
-    /// Checks that the action exists, that every required argument is present, and that the
-    /// binding's source can drive the action's input kind. Actions in the reserved `ui.`
-    /// namespace are hosted by connected clients and are accepted without a registration.
+    /// Checks that the action exists, that it may be bound on `surface`, that every required
+    /// argument is present, and that the binding's source can drive the action's input kind.
+    /// Actions in the reserved `ui.` namespace are hosted by connected clients and are
+    /// accepted without a registration.
     pub fn validate_binding(
         &self,
         action: &ActionReference,
+        surface: ActionSurface,
         can_drive: impl Fn(ActionInputKind) -> bool,
     ) -> Result<(), InvocationError> {
         if is_client_action(&action.id) {
             return Ok(());
         }
         let descriptor = &self.registered(&action.id)?.descriptor;
+        ensure_surface_allowed(descriptor, surface)?;
         if let Some(missing) = descriptor.parameters.iter().find(|parameter| {
             parameter.required
                 && action
