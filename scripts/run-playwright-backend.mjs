@@ -31,7 +31,7 @@ const outcome = await runOwnedCommand(
   backendExecutable ?? "cargo",
   backendExecutable
     ? []
-    : ["run", "--quiet", "-p", "nightfall-app", "--bin", "nightfall-app"],
+    : ["run", "--quiet", "-p", "app-runtime", "--bin", "nightfall-headless"],
   {
     onSpawn: configureBackendChild,
     spawnOptions: {

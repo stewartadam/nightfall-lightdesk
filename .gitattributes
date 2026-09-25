@@ -11,6 +11,6 @@ Dockerfile text eol=lf
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads
 # Bundled sample media is stored outside Git object history.
-crates/app/assets/sample-audio/*.mp3 filter=lfs diff=lfs merge=lfs -text
+crates/app-runtime/assets/sample-audio/*.mp3 filter=lfs diff=lfs merge=lfs -text
 # The browser demo showfile is large and regenerated from the sample rig.
 webui/public/nightfall-demo.nightfall-show/** filter=lfs diff=lfs merge=lfs -text

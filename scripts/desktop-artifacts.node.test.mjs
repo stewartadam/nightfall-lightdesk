@@ -118,9 +118,9 @@ test("rejects incomplete and ambiguous installer sets", () => {
 test("stages an installer from the Tauri JSON output", () => {
   const directory = mkdtempSync(join(tmpdir(), "nightfall-desktop-artifacts-"));
   try {
-    mkdirSync(join(directory, "crates/app"), { recursive: true });
+    mkdirSync(join(directory, "crates/app-tauri"), { recursive: true });
     writeFileSync(
-      join(directory, "crates/app/tauri.conf.json"),
+      join(directory, "crates/app-tauri/tauri.conf.json"),
       JSON.stringify({ version: "0.1.0" }),
     );
     const installer = join(directory, "Nightfall.dmg");
@@ -245,9 +245,9 @@ test("requires a complete valid desktop notice matrix", () => {
 test("writes a single combined release notice", () => {
   const directory = mkdtempSync(join(tmpdir(), "nightfall-combined-notices-"));
   try {
-    mkdirSync(join(directory, "crates/app"), { recursive: true });
+    mkdirSync(join(directory, "crates/app-tauri"), { recursive: true });
     writeFileSync(
-      join(directory, "crates/app/tauri.conf.json"),
+      join(directory, "crates/app-tauri/tauri.conf.json"),
       JSON.stringify({ version: "0.1.0" }),
     );
     mkdirSync(join(directory, "desktop-notices"));

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock, mpsc};
 
 /// Showfile state and the asset root belonging to the same engine snapshot.
-pub(crate) struct DiagnosticShowfile {
+pub struct DiagnosticShowfile {
     pub snapshot: nightfall_showfile::ShowfileSnapshot,
     pub asset_root: PathBuf,
     pub source: &'static str,
@@ -60,7 +60,7 @@ pub(crate) fn read_stored_showfile(asset_root: PathBuf) -> Result<DiagnosticShow
 }
 
 /// Requests live state, falling back to disk if the engine cannot respond during startup or a stall.
-pub(crate) async fn capture_showfile() -> Result<DiagnosticShowfile, String> {
+pub async fn capture_showfile() -> Result<DiagnosticShowfile, String> {
     let sender = REQUESTS.get().and_then(|lock| lock.lock().ok()?.clone());
     if let Some(sender) = sender {
         let (reply, response) = tokio::sync::oneshot::channel();

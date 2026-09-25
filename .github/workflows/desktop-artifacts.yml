@@ -157,7 +157,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
         with:
-          projectPath: crates/app
+          projectPath: crates/app-tauri
           tauriScript: npx tauri
           args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
       - name: Archive the macOS app for isolated signing

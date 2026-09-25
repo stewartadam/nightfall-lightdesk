@@ -19,14 +19,37 @@ test("static native selection retains every functional workspace default", () =>
     }),
   );
   const args = nativeCargoArgs("test");
+  assert.equal(args[args.indexOf("--exclude") + 1], "app-tauri");
   const features = new Set(args[args.indexOf("--features") + 1].split(","));
   for (const pkg of metadata.packages) {
+    if (pkg.name === "app-tauri") continue;
     for (const feature of pkg.features.default ?? []) {
-      if (pkg.name === "nightfall-app" && feature === "bevy_dynamic") continue;
+      if (pkg.name === "app-runtime" && feature === "bevy_dynamic") continue;
       assert.ok(
         features.has(`${pkg.name}/${feature}`),
         `Native CI must retain ${pkg.name}/${feature}`,
       );
     }
   }
+});
+
+/** Runtime-only builds must not pull a WebView or Tauri build script into native validation. */
+test("the full runtime dependency graph excludes Tauri", () => {
+  const graph = execFileSync(
+    "cargo",
+    [
+      "tree",
+      "-p",
+      "app-runtime",
+      "--no-default-features",
+      "--features",
+      "full,beatgrid-detect",
+      "--prefix",
+      "none",
+      "--format",
+      "{p}",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.doesNotMatch(graph, /^(?:app-tauri|tauri(?:-[\w-]+)?) v/m);
 });

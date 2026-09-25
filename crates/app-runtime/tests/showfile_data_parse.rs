@@ -84,7 +84,7 @@ fn parses_procedural_showfile_test_data() {
         serde_json::from_str(&showfile_json).expect("parse procedural showfile test data");
     assert_showfile_collections_are_populated(&showfile_value);
 
-    nightfall_app_lib::validate_showfile_snapshot_json(
+    app_runtime::validate_showfile_snapshot_json(
         &showfile_json,
         &showfile_path.display().to_string(),
     )
@@ -104,7 +104,7 @@ fn parses_showfile_test_data_without_native_units() {
     let legacy_showfile_json =
         serde_json::to_string(&showfile_value).expect("serialize showfile without native units");
 
-    nightfall_app_lib::validate_showfile_snapshot_json(
+    app_runtime::validate_showfile_snapshot_json(
         &legacy_showfile_json,
         &showfile_path.display().to_string(),
     )

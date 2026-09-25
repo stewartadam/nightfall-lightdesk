@@ -27,7 +27,7 @@ use crate::{
 /// Controls whether the archive contains showfile state and its referenced files.
 #[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ShowfileMode {
+pub enum ShowfileMode {
     None,
     ShowfileOnly,
     ShowfileReferences,
@@ -37,7 +37,7 @@ pub(crate) enum ShowfileMode {
 /// Small export request; log bytes and showfile data are collected natively.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BundleOptions {
+pub struct BundleOptions {
     pub system_info: String,
     pub log_mode: Option<DiagnosticLogMode>,
     pub log_length: Option<u64>,
@@ -45,10 +45,9 @@ pub(crate) struct BundleOptions {
 }
 
 /// Confirms archive completion and describes any unavailable referenced data.
-#[cfg(any(test, feature = "tauri"))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BundleResult {
+pub struct BundleResult {
     pub path: String,
     pub warnings: Vec<String>,
 }
@@ -95,8 +94,7 @@ impl Archive<'_> {
 }
 
 /// Builds an archive in a temporary file, publishing it only once every entry is finalized.
-#[cfg(any(test, feature = "tauri"))]
-pub(crate) fn write_bundle(
+pub fn write_bundle(
     destination: &Path,
     app_data: &Path,
     options: BundleOptions,

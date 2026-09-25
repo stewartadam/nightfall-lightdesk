@@ -16,9 +16,11 @@ export function nativeCargoArgs(command, args = []) {
     // Include dev dependencies when building the backend so Cargo uses the test graph.
     ...(command === "build" ? ["--tests"] : []),
     "--workspace",
+    "--exclude",
+    "app-tauri",
     "--no-default-features",
     "--features",
-    "nightfall-app/full,nightfall-app/beatgrid-detect,nightfall-flow/fx-module",
+    "app-runtime/full,app-runtime/beatgrid-detect,nightfall-flow/fx-module",
     ...args,
   ];
 }

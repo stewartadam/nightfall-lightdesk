@@ -8,6 +8,12 @@ on:
       - develop
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      distribution:
+        description: Distributions to package
+        type: choice
+        default: all
+        options: [all, desktop, browser]
 
 permissions: {}
 
@@ -26,36 +32,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      distributions: ${{ steps.scope.outputs.distributions }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: ${{ startsWith(github.ref, 'refs/tags/') && '0' || '2' }}
           lfs: true
           persist-credentials: false
-      - name: Select distribution validation
-        id: scope
+      - name: Capture changed paths as data
         env:
           EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
-          distributions=true
+          : > .ci-changed-files
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            distributions=false
-            git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/ci-changed-files"
-            while IFS= read -r file; do
-              case "$file" in
-                .github/actions/wasm-assets/*|.github/workflows/*|.github/desktop-release-notes.md|.gitignore|webui/index.html|webui/public/*|webui/lib/engine-runtime*|webui/lib/runtime-config.ts|scripts/*browser-demo*|scripts/desktop-artifacts*|scripts/release-notes*|scripts/package-sample-audio*|scripts/*notices*|scripts/check-distribution-wasm*|config/notices/*|about.toml|Cargo.lock|package.json|package-lock.json|vite.config.ts|crates/app/*|crates/wasm-bridge/*|crates/browser-runtime/*)
-                  distributions=true ;;
-              esac
-            done < "$RUNNER_TEMP/ci-changed-files"
+            git diff --no-renames --name-only -z HEAD^1 HEAD > .ci-changed-files
           fi
-          # Develop pushes warm caches available to subsequent PRs without packaging releases.
-          if [[ "$EVENT_NAME" == push && "$REF_NAME" == develop ]]; then
-            distributions=false
-          fi
-          echo "distributions=$distributions" >> "$GITHUB_OUTPUT"
       # This job never executes repository scripts, installs dependencies, or restores caches.
       - name: Archive credential-free source and Git history
         run: |
@@ -85,6 +75,37 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  selection:
+    name: Select distribution validation
+    needs: scope
+    runs-on: ubuntu-latest
+    outputs:
+      desktop_check: ${{ steps.select.outputs.desktop_check }}
+      desktop_package: ${{ steps.select.outputs.desktop_package }}
+      browser_package: ${{ steps.select.outputs.browser_package }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore credential-free source
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - name: Test and select validation
+        id: select
+        env:
+          DISTRIBUTION: ${{ inputs.distribution }}
+        run: |
+          node --test scripts/ci-scope.node.test.mjs
+          node scripts/ci-scope.mjs
+
+  desktop-check:
+    needs: [scope, selection]
+    if: needs.selection.outputs.desktop_check == 'true'
+    uses: ./.github/workflows/desktop-check.yml
+
   wasm-bridge:
     needs: scope
     uses: ./.github/workflows/wasm.yml
@@ -94,15 +115,15 @@ jobs:
 
   browser-runtime:
     needs: scope
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     uses: ./.github/workflows/wasm.yml
     with:
       package: browser-runtime
       directory: browser-runtime
 
   desktop:
-    needs: [scope, wasm-bridge]
-    if: needs.scope.outputs.distributions == 'true'
+    needs: [scope, selection, wasm-bridge]
+    if: needs.selection.outputs.desktop_package == 'true'
     uses: ./.github/workflows/desktop-artifacts.yml
     # Permission ceiling for the metadata-only job; all build/render jobs use {}.
     permissions:
@@ -124,8 +145,8 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
   browser-demo:
-    needs: [scope, wasm-bridge, browser-runtime]
-    if: needs.scope.outputs.distributions == 'true'
+    needs: [scope, selection, wasm-bridge, browser-runtime]
+    if: needs.selection.outputs.browser_package == 'true'
     uses: ./.github/workflows/browser-demo.yml
 
   source-checks:
@@ -269,7 +290,7 @@ jobs:
           path: ci-artifacts
       - name: Run Chromium product flows
         env:
-          NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-app
+          NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-headless
         uses: ./.github/actions/playwright-smoke
 
   precommit:

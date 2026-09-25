@@ -22,7 +22,7 @@ const RECENT_PROBLEM_LIMIT: usize = 20;
 /// Selects either the complete stored log or its most recent warnings and errors.
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum DiagnosticLogMode {
+pub enum DiagnosticLogMode {
     All,
     Recent,
 }
@@ -79,10 +79,9 @@ pub(crate) fn read_diagnostic_logs_until(
 }
 
 /// A small formatted log page with a stable file boundary reused by the archive export.
-#[cfg(any(test, feature = "tauri"))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DiagnosticLogPage {
+pub struct DiagnosticLogPage {
     entries: Vec<DiagnosticLogEntry>,
     next_offset: Option<u64>,
     file_length: u64,
@@ -109,7 +108,6 @@ pub(crate) fn complete_log_length(path: &Path) -> Result<u64, String> {
 }
 
 /// A bounded display record retaining tracing metadata for CLI-style syntax coloring.
-#[cfg(any(test, feature = "tauri"))]
 #[derive(Serialize)]
 pub(crate) struct DiagnosticLogEntry {
     timestamp: String,
@@ -121,7 +119,6 @@ pub(crate) struct DiagnosticLogEntry {
 }
 
 /// A named tracing field rendered inline after the event message.
-#[cfg(any(test, feature = "tauri"))]
 #[derive(Serialize)]
 pub(crate) struct DiagnosticLogField {
     name: String,
@@ -129,7 +126,6 @@ pub(crate) struct DiagnosticLogField {
 }
 
 /// Bounds preview text on Unicode boundaries while leaving the stored log untouched.
-#[cfg(any(test, feature = "tauri"))]
 fn preview_text(value: &str, remaining: &mut usize, shortened: &mut bool) -> String {
     let text: String = value.chars().take(*remaining).collect();
     *remaining = remaining.saturating_sub(text.chars().count());
@@ -142,7 +138,6 @@ fn preview_text(value: &str, remaining: &mut usize, shortened: &mut bool) -> Str
 }
 
 /// Extracts display fields directly from the stored JSON without reparsing formatted log text.
-#[cfg(any(test, feature = "tauri"))]
 fn preview_log_entry(entry: &Value) -> DiagnosticLogEntry {
     let mut remaining = 4096;
     let mut shortened = false;
@@ -186,7 +181,6 @@ fn preview_log_entry(entry: &Value) -> DiagnosticLogEntry {
 }
 
 /// Reads a bounded page of formatted messages, keeping All out of a single large IPC response.
-#[cfg(any(test, feature = "tauri"))]
 pub(crate) fn read_log_page(
     path: &Path,
     mode: DiagnosticLogMode,
@@ -240,10 +234,8 @@ pub(crate) fn read_log_page(
     })
 }
 
-#[cfg(feature = "tauri")]
-#[tauri::command]
 /// Reads formatted log pages through native IPC even when the WebSocket is unavailable.
-pub(crate) async fn collect_diagnostic_logs(
+pub async fn collect_diagnostic_logs(
     mode: DiagnosticLogMode,
     offset: Option<u64>,
     file_length: Option<u64>,
@@ -251,7 +243,7 @@ pub(crate) async fn collect_diagnostic_logs(
     let path = nightfall::nightfall_data_dir()
         .ok_or("Application data directory unavailable")?
         .join(nightfall::constants::APP_LOG_FILE_NAME);
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         read_log_page(&path, mode, offset.unwrap_or(0), file_length)
     })
     .await
@@ -288,37 +280,6 @@ mod tests {
         assert_eq!(logs[1]["target"], "webview");
         let recent = read_diagnostic_logs(&path, DiagnosticLogMode::Recent).unwrap();
         assert_eq!(recent, logs[..1]);
-    }
-
-    /// The plugin's log facade feeds the existing tracing bridge exactly once at the original level.
-    #[cfg(feature = "tauri")]
-    #[test]
-    fn plugin_log_records_reach_the_tracing_file_once() {
-        tracing_subscriber::registry().try_init().unwrap();
-        let _plugin = tauri_plugin_log::Builder::new()
-            .skip_logger()
-            .build::<tauri::Wry>();
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("nightfall.log");
-        let subscriber = tracing_subscriber::registry().with(
-            tracing_subscriber::fmt::layer()
-                .json()
-                .with_writer(std::sync::Mutex::new(File::create(&path).unwrap())),
-        );
-        tracing::subscriber::with_default(subscriber, || {
-            tauri_plugin_log::log::logger().log(
-                &tauri_plugin_log::log::Record::builder()
-                    .level(tauri_plugin_log::log::Level::Warn)
-                    .target("webview")
-                    .args(format_args!("browser warning"))
-                    .build(),
-            );
-        });
-        let logs = read_diagnostic_logs(&path, DiagnosticLogMode::All).unwrap();
-        assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0]["level"], "WARN");
-        assert_eq!(logs[0]["target"], "webview");
-        assert_eq!(logs[0]["fields"]["message"], "browser warning");
     }
 
     /// All reads beyond the old count and size limits while Recent selects the last 20 problems.

@@ -23,8 +23,8 @@ runs:
       run: |
         seed_dir=$(mktemp -d "$RUNNER_TEMP/nightfall-ci-seed.XXXXXX")
         mkdir -p "$seed_dir/default.nightfall-show" "$seed_dir/sample.nightfall-show"
-        cp crates/app/tests/data/procedural-showfile-parse-data.json "$seed_dir/default.nightfall-show/showfile.json"
-        cp crates/app/tests/data/procedural-showfile-parse-data.json "$seed_dir/sample.nightfall-show/showfile.json"
+        cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/default.nightfall-show/showfile.json"
+        cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/sample.nightfall-show/showfile.json"
         echo "data-dir=$seed_dir" >> "$GITHUB_OUTPUT"
 
     - name: Test startup, showfiles, navigation, patching, and playback
