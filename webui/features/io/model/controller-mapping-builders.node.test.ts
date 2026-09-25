@@ -9,67 +9,166 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as types from "../../../types";
-import { oscMappingFromEvent } from "./controller-mapping-builders";
+import { describeBinding } from "./binding-behaviors";
+import {
+  midiMappingFromEvent,
+  type OscGesture,
+  oscMappingFromGesture,
+  oscMappingReportsRelease,
+  parseBehavior,
+  trackOscGesture,
+} from "./controller-mapping-builders";
 
 const ACTION: types.ActionReference = { id: "clip.go", arguments: {} };
+const { Press, Release, Hold, Flash } = types.ControlBehavior;
+const { Trigger, Absolute } = types.ActionInputKind;
 
 /** Builds an OSC event from one address and its arguments. */
 function oscEvent(...args: types.OscType[]): types.OscLastEvent {
   return { source: "127.0.0.1:9000", address: "/go", args };
 }
 
-/** Returns the argument criteria of a mapping built for an event and input kind. */
-function criteria(
-  event: types.OscLastEvent,
-  kind: types.ActionInputKind,
-): Pick<types.OscMapping, "arg_index" | "arg_value"> {
-  const { arg_index, arg_value } = oscMappingFromEvent(event, ACTION, kind);
-  return { arg_index, arg_value };
+/** Folds a sequence of OSC messages into one captured touch. */
+function gestureOf(...events: types.OscLastEvent[]): OscGesture {
+  let gesture: OscGesture | undefined;
+  for (const event of events) gesture = trackOscGesture(gesture, event);
+  assert.ok(gesture);
+  return gesture;
 }
 
-/** Argument-free messages are pulses regardless of the action. */
+/** Returns the argument criteria of a mapping built for a touch, action kind, and behavior. */
+function criteria(
+  gesture: OscGesture,
+  kind: types.ActionInputKind,
+  behavior: types.ControlBehavior = Press,
+): Pick<types.OscMapping, "arg_index" | "arg_value" | "release_value"> {
+  const { arg_index, arg_value, release_value } = oscMappingFromGesture(
+    gesture,
+    ACTION,
+    kind,
+    behavior,
+  );
+  return { arg_index, arg_value, release_value };
+}
+
+const ONE = oscEvent({ type: "Int", data: 1 });
+const ZERO = oscEvent({ type: "Int", data: 0 });
+const READS_ARGUMENT = {
+  arg_index: 0,
+  arg_value: undefined,
+  release_value: undefined,
+};
+const BUTTON_VALUES = { arg_index: 0, arg_value: "1", release_value: "0" };
+
+/** Argument-free messages are pulses. */
 test("argument-free OSC messages map as pulses", () => {
-  assert.deepEqual(criteria(oscEvent(), types.ActionInputKind.Trigger), {
+  assert.deepEqual(criteria(gestureOf(oscEvent()), Trigger), {
     arg_index: undefined,
     arg_value: undefined,
+    release_value: undefined,
   });
 });
 
-/** Trigger actions match the touched value so releases and integer levels do not misfire. */
-test("trigger actions match the touched argument value", () => {
-  assert.deepEqual(
-    criteria(oscEvent({ type: "Int", data: 1 }), types.ActionInputKind.Trigger),
-    { arg_index: 0, arg_value: "1" },
-  );
-  assert.deepEqual(
-    criteria(
-      oscEvent({ type: "Float", data: 0.75 }),
-      types.ActionInputKind.Trigger,
-    ),
-    { arg_index: 0, arg_value: "0.75" },
+/** A touch keeps its first value as the press and the first different value as the release. */
+test("touches record pressed and released values in arrival order", () => {
+  const touch = gestureOf(ONE, ONE, ZERO, ONE);
+  assert.equal(touch.event, ONE);
+  assert.equal(touch.releaseEvent, ZERO);
+  assert.equal(
+    gestureOf(ONE, { ...ZERO, address: "/other" }).event.address,
+    "/other",
   );
 });
 
-/** Boolean arguments report press and release edges for any button-style action. */
-test("boolean arguments map as buttons", () => {
+/** Press triggers match the touched value, and turn a recorded release into edges. */
+test("press triggers match the touched values", () => {
+  assert.deepEqual(criteria(gestureOf(ONE, ZERO), Trigger), BUTTON_VALUES);
   assert.deepEqual(
-    criteria(
-      oscEvent({ type: "Bool", data: true }),
-      types.ActionInputKind.Trigger,
-    ),
-    { arg_index: 0, arg_value: undefined },
+    criteria(gestureOf(oscEvent({ type: "Float", data: 0.75 })), Trigger),
+    { arg_index: 0, arg_value: "0.75", release_value: undefined },
   );
 });
 
-/** Absolute and momentary actions read the first argument as a level. */
-test("absolute and momentary actions read the first argument", () => {
-  for (const kind of [
-    types.ActionInputKind.Absolute,
-    types.ActionInputKind.Momentary,
-  ]) {
-    assert.deepEqual(criteria(oscEvent({ type: "Float", data: 0.5 }), kind), {
-      arg_index: 0,
-      arg_value: undefined,
-    });
+/** Release, Hold, and Flash use recorded button values, or read the argument as a level. */
+test("release behaviors use button values or levels", () => {
+  for (const [behavior, kind] of [
+    [Release, Trigger],
+    [Hold, Trigger],
+    [Flash, Absolute],
+  ] as const) {
+    assert.deepEqual(
+      criteria(gestureOf(ONE, ZERO), kind, behavior),
+      BUTTON_VALUES,
+    );
+    assert.deepEqual(criteria(gestureOf(ONE), kind, behavior), READS_ARGUMENT);
   }
+});
+
+/** Faders driving absolute actions and boolean arguments read the first argument. */
+test("faders and booleans read the first argument", () => {
+  assert.deepEqual(criteria(gestureOf(ONE, ZERO), Absolute), READS_ARGUMENT);
+  assert.deepEqual(
+    criteria(gestureOf(oscEvent({ type: "Bool", data: true })), Trigger),
+    READS_ARGUMENT,
+  );
+});
+
+/** Only mappings that read an argument or name a release value report releases. */
+test("release reporting follows the argument criteria", () => {
+  const touch = gestureOf(ONE, ZERO);
+  assert.equal(
+    oscMappingReportsRelease(oscMappingFromGesture(touch, ACTION, Trigger)),
+    true,
+  );
+  assert.equal(
+    oscMappingReportsRelease(
+      oscMappingFromGesture(gestureOf(ONE), ACTION, Trigger),
+    ),
+    false,
+  );
+});
+
+/** MIDI mappings carry the chosen behavior, and edited cells parse behaviors in any case. */
+test("MIDI mappings carry the chosen behavior", () => {
+  const mapping = midiMappingFromEvent(
+    {
+      device: "Pad",
+      source: { type: "Note", data: { channel: 0, note: 60 } },
+    } as types.MidiLastEvent,
+    ACTION,
+    Hold,
+  );
+  assert.equal(mapping?.behavior, Hold);
+  assert.equal(parseBehavior(" flash "), Flash);
+  assert.equal(parseBehavior("sometimes"), undefined);
+});
+
+/** Binding previews spell out both halves of Hold and Flash. */
+test("binding descriptions name what each edge does", () => {
+  const binding = {
+    control: "Pad 60",
+    action: "Start clip Intro",
+    inputKind: Trigger,
+  };
+  assert.equal(
+    describeBinding({
+      ...binding,
+      behavior: Hold,
+      releaseAction: "Stop clip Intro",
+    }),
+    "Holding Pad 60 runs Start clip Intro; letting go runs Stop clip Intro.",
+  );
+  assert.equal(
+    describeBinding({ ...binding, behavior: Release }),
+    "Releasing Pad 60 runs Start clip Intro.",
+  );
+  assert.equal(
+    describeBinding({
+      ...binding,
+      action: "Master level",
+      inputKind: Absolute,
+      behavior: Flash,
+    }),
+    "Holding Pad 60 pushes Master level to full; letting go restores it.",
+  );
 });

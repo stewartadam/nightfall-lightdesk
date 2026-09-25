@@ -47,18 +47,24 @@ import {
 import {
   ActionInputKind,
   type ActionReference,
+  ControlBehavior,
   type MidiMapping,
 } from "../../../types";
 import {
   ActionPicker,
+  findCatalogEntry,
   formatActionReference,
   useActionTargetNames,
   useBindableActionCatalog,
 } from "../../actions";
+import { BehaviorSelect } from "../components/behavior-select";
+import { actionBehaviors } from "../model/binding-behaviors";
 import {
+  formatBehavior,
   midiMappingFromEvent,
   midiSourceLabel,
   midiSourceNumber,
+  parseBehavior,
   withMidiChannel,
   withMidiNumber,
 } from "../model/controller-mapping-builders";
@@ -117,6 +123,13 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
     ...columnVisibilityMeta("Binding", "Number"),
   },
   {
+    title: "Behavior",
+    id: "behavior",
+    width: 90,
+    filter: { value: (row) => formatBehavior(row.mapping.behavior) },
+    ...columnVisibilityMeta("Binding", "Behavior"),
+  },
+  {
     title: "Action",
     id: "action",
     width: 240,
@@ -135,6 +148,19 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   const [lastEventAction, setLastEventAction] = createSignal<
     ActionReference | undefined
   >();
+  const [chosenBehavior, setLastEventBehavior] = createSignal(
+    ControlBehavior.Press,
+  );
+  /** Returns the catalog entry of the action chosen for the last input. */
+  const lastEventEntry = createMemo(() => {
+    const action = lastEventAction();
+    return action ? findCatalogEntry($actionCatalog(), action.id) : undefined;
+  });
+  /** Returns the chosen behavior, or Press when the chosen action does not support it. */
+  const lastEventBehavior = () =>
+    actionBehaviors(lastEventEntry()).includes(chosenBehavior())
+      ? chosenBehavior()
+      : ControlBehavior.Press;
   const panelId = props.id;
 
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -222,6 +248,13 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
               allowOverlay: true,
             };
           }
+          case "behavior":
+            return {
+              kind: GridCellKind.Text,
+              data: formatBehavior(mapping.behavior),
+              displayData: formatBehavior(mapping.behavior),
+              allowOverlay: true,
+            };
           case "action": {
             const label = formatActionReference(
               mapping.action,
@@ -277,12 +310,12 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     for (const id of ids) void deleteMidiMapping(id);
   };
 
-  /** Binds the control that sent the last MIDI message to the chosen action. */
+  /** Binds, with the chosen behavior, the control that sent the last MIDI message to the chosen action. */
   const applyLastEvent = () => {
     const event = $midiLastEvent();
     const action = lastEventAction();
     if (!event || !action) return;
-    const mapping = midiMappingFromEvent(event, action);
+    const mapping = midiMappingFromEvent(event, action, lastEventBehavior());
     if (mapping) void upsertMidiMapping(mapping);
   };
 
@@ -344,6 +377,12 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                       includeUiActions
                       onChange={setLastEventAction}
                       onIncomplete={() => setLastEventAction(undefined)}
+                    />
+                    <BehaviorSelect
+                      value={lastEventBehavior()}
+                      behaviors={actionBehaviors(lastEventEntry())}
+                      inputKind={lastEventEntry()?.descriptor.input}
+                      onChange={setLastEventBehavior}
                     />
                     <Button
                       size="compact"
@@ -475,6 +514,11 @@ function editedMapping(
         return undefined;
       }
       return { ...mapping, source: withMidiNumber(mapping.source, number) };
+    }
+    case "behavior": {
+      if (value.kind !== GridCellKind.Text) return undefined;
+      const behavior = parseBehavior(String(value.data ?? ""));
+      return behavior === undefined ? undefined : { ...mapping, behavior };
     }
     default:
       return undefined;

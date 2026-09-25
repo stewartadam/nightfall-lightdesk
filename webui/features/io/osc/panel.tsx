@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { Button } from "../../../components/ui/visual-language/button";
 import DataGrid, {
@@ -44,21 +44,33 @@ import {
   oscListenerStatus,
   oscMappings,
   oscSources,
+  pushToast,
 } from "../../../state/appStores";
 import {
   ActionInputKind,
   type ActionReference,
+  ControlBehavior,
   type OscMapping,
   type OscType,
 } from "../../../types";
 import {
   ActionPicker,
   actionInputKind,
+  findCatalogEntry,
   formatActionReference,
   useActionTargetNames,
   useBindableActionCatalog,
 } from "../../actions";
-import { oscMappingFromEvent } from "../model/controller-mapping-builders";
+import { BehaviorSelect } from "../components/behavior-select";
+import { actionBehaviors } from "../model/binding-behaviors";
+import {
+  formatBehavior,
+  type OscGesture,
+  oscMappingFromGesture,
+  oscMappingReportsRelease,
+  parseBehavior,
+  trackOscGesture,
+} from "../model/controller-mapping-builders";
 import {
   deleteOscMapping,
   upsertOscMapping,
@@ -106,6 +118,20 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
     width: 120,
     filter: { value: (row) => row.mapping.arg_value ?? "" },
     ...columnVisibilityMeta("Binding", "Arg Match"),
+  },
+  {
+    title: "Release Match",
+    id: "release_value",
+    width: 120,
+    filter: { value: (row) => row.mapping.release_value ?? "" },
+    ...columnVisibilityMeta("Binding", "Release Match"),
+  },
+  {
+    title: "Behavior",
+    id: "behavior",
+    width: 90,
+    filter: { value: (row) => formatBehavior(row.mapping.behavior) },
+    ...columnVisibilityMeta("Binding", "Behavior"),
   },
   {
     title: "Action",
@@ -185,6 +211,15 @@ function editedMapping(
     }
     case "arg_value":
       return { ...mapping, arg_value: trimmed === "" ? undefined : trimmed };
+    case "release_value":
+      return {
+        ...mapping,
+        release_value: trimmed === "" ? undefined : trimmed,
+      };
+    case "behavior": {
+      const behavior = parseBehavior(value);
+      return behavior === undefined ? undefined : { ...mapping, behavior };
+    }
     default:
       return undefined;
   }
@@ -200,6 +235,28 @@ export default function OscInputPanel(props: OscInputPanelProps) {
   const [lastEventAction, setLastEventAction] = createSignal<
     ActionReference | undefined
   >();
+  const [chosenBehavior, setLastEventBehavior] = createSignal(
+    ControlBehavior.Press,
+  );
+  /** Returns the catalog entry of the action chosen for the last input. */
+  const lastEventEntry = createMemo(() => {
+    const action = lastEventAction();
+    return action ? findCatalogEntry($actionCatalog(), action.id) : undefined;
+  });
+  /** Returns the chosen behavior, or Press when the chosen action does not support it. */
+  const lastEventBehavior = () =>
+    actionBehaviors(lastEventEntry()).includes(chosenBehavior())
+      ? chosenBehavior()
+      : ControlBehavior.Press;
+  const initialEvent = oscLastEvent.get();
+  const [gesture, setGesture] = createSignal<OscGesture | undefined>(
+    initialEvent ? { event: initialEvent } : undefined,
+  );
+  // Every received message extends the touch, even when it repeats the previous one.
+  const unsubscribeGesture = oscLastEvent.listen((event) => {
+    if (event) setGesture((current) => trackOscGesture(current, event));
+  });
+  onCleanup(unsubscribeGesture);
   const panelId = props.id;
 
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -279,6 +336,20 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               displayData: rowData.arg_value ?? "",
               data: rowData.arg_value ?? "",
             };
+          case "release_value":
+            return {
+              kind: GridCellKind.Text,
+              allowOverlay: true,
+              displayData: rowData.release_value ?? "",
+              data: rowData.release_value ?? "",
+            };
+          case "behavior":
+            return {
+              kind: GridCellKind.Text,
+              allowOverlay: true,
+              displayData: formatBehavior(rowData.behavior),
+              data: formatBehavior(rowData.behavior),
+            };
           case "action": {
             const actionStr = formatActionReference(
               rowData.action,
@@ -350,18 +421,28 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     for (const id of ids) void deleteOscMapping(id);
   };
 
-  /** Binds the last received OSC address to the action chosen beside it. */
+  /** Binds, with the chosen behavior, the last touched OSC control to the action chosen beside it. */
   const applyLastEvent = () => {
-    const event = $oscLastEvent();
+    const touch = gesture();
     const action = lastEventAction();
-    if (!event || !action) return;
-    void upsertOscMapping(
-      oscMappingFromEvent(
-        event,
-        action,
-        actionInputKind($actionCatalog(), action),
-      ),
+    if (!touch || !action) return;
+    const mapping = oscMappingFromGesture(
+      touch,
+      action,
+      actionInputKind($actionCatalog(), action),
+      lastEventBehavior(),
     );
+    if (
+      mapping.behavior !== ControlBehavior.Press &&
+      !oscMappingReportsRelease(mapping)
+    ) {
+      pushToast(
+        "info",
+        "Press and release the OSC control so its release can be recorded.",
+      );
+      return;
+    }
+    void upsertOscMapping(mapping);
   };
 
   return (
@@ -422,6 +503,12 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                   includeUiActions
                   onChange={setLastEventAction}
                   onIncomplete={() => setLastEventAction(undefined)}
+                />
+                <BehaviorSelect
+                  value={lastEventBehavior()}
+                  behaviors={actionBehaviors(lastEventEntry())}
+                  inputKind={lastEventEntry()?.descriptor.input}
+                  onChange={setLastEventBehavior}
                 />
                 <Button
                   size="compact"
