@@ -7,41 +7,17 @@
  */
 
 import { createSocket } from "node:dgram";
-import { prepareFreshBackendShowfile } from "./backend-showfile";
+import {
+  enterMapping,
+  leaveMapping,
+  mappingClients,
+  onlyMaster,
+  openMappingApp,
+  openPanel,
+} from "./controller-mapping";
 import { gridCellByKey } from "./data-grid-selectors";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
-
-const COMMAND_INPUT_PLACEHOLDER = "Type a command or search...";
-
-/** Opens a blank showfile on the test's isolated backend. */
-async function openMappingApp(page: Page, backendPort: number): Promise<void> {
-  await prepareFreshBackendShowfile(backendPort);
-  await page.setViewportSize({ width: 1800, height: 1100 });
-  await page.addInitScript(() => {
-    window.localStorage.clear();
-    window.localStorage.setItem("nightfall.currentShowfileName", "default");
-  });
-  await page.goto("/?startup:draftRecovery=false&e2e=1");
-  await expect(page.locator("main#app")).toBeVisible();
-  await waitForDockviewApp(page);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => ((window as any).appStores.actionCatalog.get() as []).length,
-      ),
-    )
-    .toBeGreaterThan(0);
-}
-
-/** Opens a panel through the command palette. */
-async function openPanel(page: Page, panelName: string): Promise<void> {
-  await page.getByRole("button", { name: "Open command palette" }).click();
-  const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
-  await expect(commandInput).toBeVisible();
-  await commandInput.fill(`Open ${panelName}`);
-  await page.keyboard.press("Enter");
-}
 
 /** Encodes a string as a null-terminated, four-byte-aligned OSC string. */
 function oscString(value: string): Buffer {
@@ -91,44 +67,6 @@ async function oscPort(page: Page): Promise<number> {
     .toBe(true);
   return page.evaluate(
     () => (window as any).appStores.oscListenerStatus.get().port as number,
-  );
-}
-
-/** Enters mapping mode and waits until the backend confirms controller actions are paused. */
-async function enterMapping(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Controller mapping mode" }).click();
-  await expect(
-    page.locator("[data-mapping-mode-banner] [data-mapping-pause]"),
-  ).toHaveText("MIDI and OSC actions are paused.");
-}
-
-/** Leaves mapping mode and waits until the backend resumes controller actions. */
-async function leaveMapping(page: Page): Promise<void> {
-  const banner = page.locator("[data-mapping-mode-banner]");
-  await expect(async () => {
-    if (await banner.isVisible()) await page.keyboard.press("Escape");
-    await expect(banner).toBeHidden({ timeout: 500 });
-  }).toPass();
-  await expect.poll(() => mappingClients(page)).toBe(0);
-}
-
-/** Returns how many clients the backend reports as mapping controllers. */
-function mappingClients(page: Page): Promise<number> {
-  return page.evaluate(
-    () =>
-      (window as any).appStores.controllerMappingMode.get()
-        .mapping_clients as number,
-  );
-}
-
-/** Returns the only master in the showfile. */
-async function onlyMaster(page: Page): Promise<{
-  uid: string;
-  level_percent: number;
-  mode: { type: string; data?: { active: boolean } };
-}> {
-  return page.evaluate(
-    () => Object.values((window as any).appStores.masters.get())[0] as never,
   );
 }
 
