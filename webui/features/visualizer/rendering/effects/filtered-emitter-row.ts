@@ -12,19 +12,21 @@ import {
   clamp,
   dFdx,
   dFdy,
-  float,
   floor,
+  int,
+  ivec2,
   log2,
   materialColor,
   max,
+  min,
   mix,
   modelViewMatrix,
   positionGeometry,
   pow,
+  round,
   screenSize,
-  texture,
+  textureLoad,
   varying,
-  vec2,
   vec3,
   vec4,
 } from "three/tsl";
@@ -33,11 +35,20 @@ import {
   BoxGeometry,
   DataTexture,
   FloatType,
-  LinearFilter,
   Mesh,
   MeshBasicNodeMaterial,
+  NearestFilter,
+  type Node,
   RGBAFormat,
 } from "three/webgpu";
+
+/**
+ * Texels per texture row. Well below WebGPU's default maxTextureDimension2D (8192)
+ * and WebGL2's guaranteed minimum (2048), so long rows never exceed device limits.
+ */
+export const TEXTURE_ROW_TEXELS = 2048;
+/** Finest pyramid level resolution; beyond it, several cells share one texel's area average. */
+export const MAX_BASE_TEXELS = 65536;
 
 /** Prefilters a regular emitter row's linear radiance and gaps without changing its optical apertures. */
 export class FilteredEmitterRow {
@@ -60,14 +71,20 @@ export class FilteredEmitterRow {
     height: number,
     depth: number,
   ) {
-    this.width = 2 ** Math.ceil(Math.log2((count + 2) * 8));
-    const pyramid = new Float32Array(this.width * 2 * 4);
+    this.width = Math.min(
+      MAX_BASE_TEXELS,
+      2 ** Math.ceil(Math.log2((count + 2) * 8)),
+    );
+    // The packed pyramid holds 2 * width texels; wrap it into rows that fit any device.
+    const texels = this.width * 2;
+    const rowWidth = Math.min(texels, TEXTURE_ROW_TEXELS);
+    const pyramid = new Float32Array(texels * 4);
     this.pixels = pyramid.subarray(0, this.width * 4);
     this.previousColors = new Float32Array(count * 3);
     this.map = new DataTexture(
       pyramid,
-      this.width * 2,
-      1,
+      rowWidth,
+      texels / rowWidth,
       RGBAFormat,
       FloatType,
     );
@@ -82,8 +99,9 @@ export class FilteredEmitterRow {
       offset += width * 4;
     }
     this.map.generateMipmaps = false;
-    this.map.minFilter = LinearFilter;
-    this.map.magFilter = LinearFilter;
+    // Filtering happens in the shader so wrapped rows never blend unrelated texels.
+    this.map.minFilter = NearestFilter;
+    this.map.magFilter = NearestFilter;
     this.map.needsUpdate = true;
     const length = (count + 2) * spacing;
     const material = new MeshBasicNodeMaterial({
@@ -113,17 +131,30 @@ export class FilteredEmitterRow {
     const footprint = max(abs(dFdx(rowUV)), abs(dFdy(rowUV))).mul(this.width);
     const lod = clamp(log2(max(footprint, 1)), 0, Math.log2(this.width));
     const lowerLevel = floor(lod);
-    /** Samples one packed pyramid level without filtering across neighboring level boundaries. */
+    /** Loads one texel of the packed pyramid by its linear index across wrapped rows. */
+    const texel = (index: Node<"float">) => {
+      const linear = int(index);
+      return textureLoad(
+        this.map,
+        ivec2(linear.mod(int(rowWidth)), linear.div(int(rowWidth))),
+      ).rgb;
+    };
+    /** Linearly filters one packed pyramid level without blending across level or row boundaries. */
     const sampleLevel = (level: typeof lowerLevel) => {
-      const width = pow(2, level.negate()).mul(this.width);
+      // Rounding keeps power-of-two level widths exact for integer texel indexing.
+      const width = round(pow(2, level.negate()).mul(this.width));
       const offset = width
         .mul(2)
         .negate()
         .add(this.width * 2);
-      const coordinate = offset
-        .add(clamp(rowUV.mul(width), 0.5, width.sub(0.5)))
-        .div(this.width * 2);
-      return texture(this.map, vec2(coordinate, 0.5)).level(float(0)).rgb;
+      const position = clamp(rowUV.mul(width), 0.5, width.sub(0.5)).sub(0.5);
+      const first = floor(position);
+      const second = min(first.add(1), width.sub(1));
+      return mix(
+        texel(offset.add(first)),
+        texel(offset.add(second)),
+        position.sub(first),
+      );
     };
     // Packing the pyramid into one image avoids an upload command for every mip level on each DMX change.
     const radiance = mix(
