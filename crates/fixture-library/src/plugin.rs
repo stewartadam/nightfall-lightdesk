@@ -14,6 +14,7 @@ use nightfall_engine::prelude::*;
 use nightfall_websocket::WebsocketPlugin;
 
 use crate::commands::FixtureLibraryCommand;
+use crate::library_archives::{LibraryArchives, sync_library_archives};
 use crate::manager::FixtureLibraryManager;
 use crate::watcher::{FixtureLibraryEvent, FixtureLibraryWatcher};
 
@@ -42,19 +43,20 @@ impl Plugin for FixtureLibraryPlugin {
             crate::websocket::deserialize_fixture_library_command,
         );
 
-        // Register HTTP routes for mesh serving
-        app.world_mut()
-            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>()
-            .register(
-                "/api/mesh/{gdtf_path}/{model_name}",
-                axum::routing::get(crate::http_routes::serve_mesh),
-            );
-        app.world_mut()
-            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>()
-            .register(
-                "/api/wheel-media/{gdtf_path}/{media_name}",
-                axum::routing::get(crate::http_routes::serve_wheel_media),
-            );
+        // Register archive media routes, restricted to archives the library indexes
+        let archives = LibraryArchives::default();
+        app.insert_resource(archives.clone());
+        let mut routes = app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>();
+        routes.register(
+            "/api/mesh/{gdtf_path}/{model_name}",
+            axum::routing::get(crate::http_routes::serve_mesh).with_state(archives.clone()),
+        );
+        routes.register(
+            "/api/wheel-media/{gdtf_path}/{media_name}",
+            axum::routing::get(crate::http_routes::serve_wheel_media).with_state(archives),
+        );
 
         // Try to initialize the file watcher (optional - may fail if library path doesn't exist)
         if let Ok(manager) = FixtureLibraryManager::new() {
@@ -99,8 +101,11 @@ impl Plugin for FixtureLibraryPlugin {
         );
 
         // Register geometry provider so fixtures crate can access geometry
-        app.add_systems(Startup, register_geometry_provider);
-        app.add_systems(Update, register_geometry_provider.before(ClientOutput));
+        app.add_systems(Startup, (register_geometry_provider, sync_library_archives));
+        app.add_systems(
+            Update,
+            (register_geometry_provider, sync_library_archives).before(ClientOutput),
+        );
     }
 }
 

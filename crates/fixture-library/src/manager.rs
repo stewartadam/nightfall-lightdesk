@@ -240,6 +240,14 @@ impl FixtureLibraryManager {
         }
     }
 
+    /// Iterates the source paths of every indexed GDTF archive, including showfile-packaged ones.
+    pub fn gdtf_archive_paths(&self) -> impl Iterator<Item = &Path> {
+        self.fixtures
+            .values()
+            .filter(|profile| matches!(profile.source, FixtureSource::Gdtf(_)))
+            .map(|profile| profile.file_path.as_path())
+    }
+
     /// Get the number of fixtures in the library
     pub fn fixture_count(&self) -> usize {
         self.fixtures.len()
