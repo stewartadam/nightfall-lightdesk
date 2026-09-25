@@ -6,9 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 use std::{
     fs::File,
     io::IsTerminal,
@@ -17,22 +14,26 @@ use std::{
 };
 
 use nightfall::{constants::APP_LOG_FILE_NAME, nightfall_data_dir, set_nightfall_data_dir};
-use nightfall_app_lib::EngineLogTimer;
 use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     EnvFilter, fmt::writer::BoxMakeWriter, layer::SubscriberExt, reload, util::SubscriberInitExt,
 };
 
+use crate::EngineLogTimer;
+
+/// Resolves the structured log file under the configured data directory.
 fn app_log_file_path(data_dir: &Path) -> PathBuf {
     data_dir.join(APP_LOG_FILE_NAME)
 }
 
+/// Creates or truncates the structured log file for this process.
 fn open_log_file(path: &Path) -> Result<File, String> {
     File::create(path)
         .map_err(|error| format!("failed to open log file {}: {}", path.display(), error))
 }
 
+/// Starts a nonblocking writer whose guard flushes outstanding records on shutdown.
 fn create_log_file_writer() -> Result<(BoxMakeWriter, WorkerGuard, PathBuf), String> {
     let data_dir = nightfall_data_dir()
         .ok_or_else(|| "could not determine Nightfall data directory".to_string())?;
@@ -90,30 +91,20 @@ fn init_logging(log_filter: Option<&str>) -> (LogConfig, Option<WorkerGuard>) {
     (log_config, file_guard)
 }
 
-/// Loads startup configuration and launches the desktop or headless application.
-fn main() {
-    let runtime_config = nightfall_app_lib::load_runtime_config().unwrap_or_else(|error| {
+/// Resolves configuration and installs shared logging and panic shutdown handling.
+pub fn initialize() -> (
+    LogConfig,
+    nightfall_config::RuntimeConfig,
+    Option<WorkerGuard>,
+) {
+    let runtime_config = crate::load_runtime_config().unwrap_or_else(|error| {
         eprintln!("Failed to load startup configuration: {error}");
         std::process::exit(2);
     });
     set_nightfall_data_dir(runtime_config.data_dir.clone());
-    let (log_config, _log_file_guard) = init_logging(runtime_config.log_filter.as_deref());
-    nightfall_app_lib::install_panic_shutdown_hook(&runtime_config.shutdown);
-
-    // Initialize and run either the Tauri app or headless app
-    {
-        #[cfg(feature = "tauri")]
-        nightfall_app_lib::run_tauri(log_config, runtime_config);
-
-        #[cfg(not(feature = "tauri"))]
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("failed to build tokio runtime")
-            .block_on(nightfall_app_lib::run_headless(log_config, runtime_config));
-    }
-
-    tracing::info!("Application exiting");
+    let (log_config, guard) = init_logging(runtime_config.log_filter.as_deref());
+    crate::install_panic_shutdown_hook(&runtime_config.shutdown);
+    (log_config, runtime_config, guard)
 }
 
 #[cfg(test)]
@@ -122,6 +113,7 @@ mod tests {
 
     use super::{app_log_file_path, open_log_file};
 
+    /// Log paths consistently use the application log filename.
     #[test]
     fn app_log_file_path_uses_nightfall_log_name() {
         let data_dir = Path::new("temp").join("nightfall");
@@ -129,6 +121,7 @@ mod tests {
         assert_eq!(path, data_dir.join("nightfall.log"));
     }
 
+    /// Each process starts a fresh log instead of retaining a previous session.
     #[test]
     fn open_log_file_truncates_existing_log() {
         let temp_dir =

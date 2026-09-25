@@ -11,13 +11,13 @@ use bevy::prelude::World;
 #[cfg(feature = "beatgrid-detect")]
 mod beat_model_http;
 mod composition;
-mod desktop_shell;
 mod diagnostic_bundle;
 mod diagnostic_http;
 mod diagnostic_logs;
 mod diagnostic_showfile;
 mod engine_log_time;
 mod feature_integration;
+mod logging;
 mod plugin_groups;
 #[cfg_attr(
     all(target_os = "macos", not(target_arch = "aarch64")),
@@ -36,12 +36,15 @@ mod tests;
 mod world_factory;
 
 pub use composition::init_bevy;
-#[cfg(feature = "tauri")]
-pub use desktop_shell::run_tauri;
+pub use diagnostic_bundle::{BundleOptions, BundleResult, ShowfileMode, write_bundle};
+pub use diagnostic_logs::{DiagnosticLogMode, DiagnosticLogPage, collect_diagnostic_logs};
+pub use diagnostic_showfile::{DiagnosticShowfile, capture_showfile};
 pub use engine_log_time::EngineLogTimer;
+pub use logging::initialize;
 pub use runtime_config::load_runtime_config;
-pub use session::run_headless;
+pub use session::{run_bevy_session, run_headless};
 pub use shutdown::install_panic_shutdown_hook;
+pub use shutdown::monitor_bevy_session;
 pub use startup_commands::get_stdin;
 pub use swap_orchestrator::{
     CommandProcessingState, PendingWorldSwap, PendingWorldSwapRequest, RuntimeOutputState,

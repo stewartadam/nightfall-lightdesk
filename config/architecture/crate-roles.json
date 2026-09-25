@@ -55,7 +55,8 @@
       "nightfall-wasm-bridge"
     ],
     "composition": [
-      "nightfall-app",
+      "app-runtime",
+      "app-tauri",
       "nightfall-browser-runtime",
       "nightfall-cli"
     ]

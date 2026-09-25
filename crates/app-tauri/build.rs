@@ -9,6 +9,5 @@
 /// Prepare desktop resources and platform integration when building the desktop host.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    #[cfg(feature = "tauri")]
     tauri_build::build()
 }

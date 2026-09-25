@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { expect, type Page, test } from "./playwright-fixtures";
 
 const SHOWFILE_FIXTURE_PATH =
-  "crates/app/tests/data/procedural-showfile-parse-data.json";
+  "crates/app-runtime/tests/data/procedural-showfile-parse-data.json";
 const SHOWFILE_SNAPSHOT_FILENAME = "showfile.json";
 const SHOWFILE_FOLDER_EXTENSION = "nightfall-show";
 const CURRENT_SHOWFILE_STORAGE_KEY = "nightfall.currentShowfileName";

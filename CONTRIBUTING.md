@@ -440,7 +440,7 @@ If your default app data directory is not writable in your environment, set
 1. Seed and save
 
 ```sh
-NIGHTFALL_SAMPLE_DATA=1 cargo run -p nightfall-app
+NIGHTFALL_SAMPLE_DATA=1 cargo run -p app-runtime
 ```
 
 Then run `save`, followed by `quit`.
@@ -448,7 +448,7 @@ Then run `save`, followed by `quit`.
 2. Restart without sample data and load
 
 ```sh
-NIGHTFALL_SAMPLE_DATA=0 cargo run -p nightfall-app
+NIGHTFALL_SAMPLE_DATA=0 cargo run -p app-runtime
 ```
 
 Then run `load`, wait for restart, then run `save`, followed by `quit`.
@@ -485,7 +485,7 @@ Consider reducing the sample rate with `-r sample_hz` if running a long profilin
 
 ```sh
 cargo build --profile profiling
-samply record cargo run --profile profiling --bin nightfall-app "$@"
+samply record cargo run --profile profiling --bin nightfall-headless "$@"
 ```
 
 Clip lookup scaling has a Criterion suite covering snapshot construction,

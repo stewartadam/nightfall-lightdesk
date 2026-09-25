@@ -66,14 +66,14 @@ jobs:
       - name: Stage the tested native backend
         if: inputs.stage == 'pre-push'
         run: |
-          node scripts/run-native-cargo.mjs build --bin nightfall-app
+          node scripts/run-native-cargo.mjs build --bin nightfall-headless
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           mkdir -p ci-artifacts
-          cp "$target_dir/debug/nightfall-app" ci-artifacts/nightfall-app
+          cp "$target_dir/debug/nightfall-headless" ci-artifacts/nightfall-headless
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: inputs.stage == 'pre-push'
         with:
           name: native-test-backend-${{ github.sha }}
-          path: ci-artifacts/nightfall-app
+          path: ci-artifacts/nightfall-headless
           if-no-files-found: error
           retention-days: 1

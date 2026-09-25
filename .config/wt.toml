@@ -15,7 +15,7 @@ copy-data-dir = "node ./scripts/seed-data-dir-from-main.mjs {{ args }}"
 copy-assets = "cp -a {{ primary_worktree_path }}/webui/assets webui"
 
 [[post-start]]
-build = "cargo build --workspace"
+build = "node scripts/run-native-cargo.mjs build --bin nightfall-headless"
 wasm-build = "npm run wasm-build:dev"
 
 [pre-remove]

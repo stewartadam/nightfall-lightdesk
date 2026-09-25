@@ -18,6 +18,49 @@ Keep these boundaries intact when adding checks, tools, caches, or release steps
 
 ## Native checks
 
+The application is split into `app-runtime` (shared native runtime and the
+`nightfall-headless` executable) and `app-tauri` (the `nightfall-app` desktop
+executable). Native validation excludes `app-tauri`; desktop checks explicitly
+enable its `full,beatgrid-detect` features.
+
+## Distribution selection
+
+The source-acquisition job captures a NUL-delimited PR diff with rename detection
+disabled so deleted paths and both sides of a rename are considered. A separate
+permissionless job runs the tested policy in `scripts/ci-scope.mjs`. Repository
+scripts never execute in the credentialed acquisition job.
+
+| Changes / event | Desktop check | Desktop installers | Browser distribution |
+| --- | --- | --- | --- |
+| Runtime implementation, runtime tests, ordinary UI changes | No | No | No |
+| Desktop shell or shared startup, shutdown, diagnostics interfaces | Yes | No | No |
+| Desktop configuration, capabilities, icons, installer tooling | Included in packaging | Yes | No |
+| Browser runtime or browser packaging tooling | No | No | Yes |
+| Shared distribution inputs, root manifests, lockfiles | Included in packaging | Yes | Yes |
+| Main push | Included in packaging | Yes | Yes |
+| Develop push | No | No | No |
+| Release tag | Included in packaging | Yes | No |
+| Manual dispatch | Included when desktop selected | Selectable | Selectable |
+
+All non-tag events still run native and WebUI validation. Desktop checks use
+`cargo check --all-targets` on macOS, Windows, and Linux, without release
+optimization, frontend generation, or installer creation. A check-only Tauri
+configuration omits bundled resources; packaging validates the actual resources.
+The check and release packaging caches are separate.
+
+Compilation checks do not validate linking or installers. Full main-branch and
+release builds remain the cross-platform packaging backstop. Use manual dispatch
+with `desktop`, `browser`, or `all` when an artifact is needed before merging.
+Lockfile selection remains conservative; an ordinary lockfile update selects
+both distributions. Release-note-only changes do not select packaging.
+
+Keep policy tests in sync with added packaging inputs. Validate them with
+`node --test scripts/ci-scope.node.test.mjs`, and validate workflow syntax with
+`npx prek run actionlint --all-files`. Hosted runs are still needed to measure
+wall-time improvements and confirm Windows/Linux toolchain behavior.
+
+## Native execution and caching
+
 `ci-precommit.yml` runs the native pre-commit stage (Clippy and source checks)
 and pre-push stage (Rust tests) as parallel matrix jobs with `fail-fast: false`.
 Each stage runs once. Both skip TypeScript and Node hooks, which run once in the

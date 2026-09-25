@@ -12,7 +12,7 @@
       "script": "npm run dev",
       "cwd": "../../webui"
     },
-    "features": ["tauri", "full", "beatgrid-detect"],
+    "features": ["full", "beatgrid-detect"],
     "frontendDist": "../../webui/dist",
     "devUrl": "http://localhost:3031",
     "beforeBundleCommand": {
@@ -41,7 +41,7 @@
     "license": "MPL-2.0",
     "resources": {
       "../../webui/dist/notices": "notices",
-      "assets/sample-audio/": "sample-audio/"
+      "../app-runtime/assets/sample-audio/": "sample-audio/"
     },
     "targets": "all",
     "icon": [

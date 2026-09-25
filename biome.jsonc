@@ -9,7 +9,7 @@
     "ignoreUnknown": false,
     "includes": [
       "**",
-      "!crates/app/tests/data/procedural-showfile-parse-data.json"
+      "!crates/app-runtime/tests/data/procedural-showfile-parse-data.json"
     ]
   },
   "formatter": {
