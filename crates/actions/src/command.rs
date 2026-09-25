@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::descriptor::ActionSurface;
-use crate::invocation::{ActionInvocation, ActionReference};
+use crate::invocation::{ActionInvocation, ActionReference, InvocationOutcome};
 
 /// Commands clients send to invoke backend actions from keybindings or the palette.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
@@ -52,22 +52,45 @@ pub fn deserialize_action_command(
     Ok(())
 }
 
-/// Turns client invoke commands into action invocations and completes the commands.
+/// Turns client invoke commands into action invocations that finish the commands.
 ///
-/// The invoke command only requests the invocation; the invoked action reports its own
-/// outcome, including any tracked command it submits.
+/// The command stays active until the invocation is dispatched, which then finishes it with
+/// the invocation's immediate outcome through [`complete_invoke_command`].
 pub fn handle_action_commands(
     mut events: MessageReader<CommandEnvelope<ActionCommand>>,
     mut invocations: MessageWriter<ActionInvocation>,
-    mut responder: CommandResponder,
 ) {
     for event in events.read() {
         let ActionCommand::Invoke { action, surface } = &event.command;
         invocations.write(
-            ActionInvocation::trigger(action.clone(), *surface).with_source(surface.label()),
+            ActionInvocation::trigger(action.clone(), *surface)
+                .with_source(surface.label())
+                .completing(event.command_id),
         );
-        if let Err(error) = responder.succeed(event.command_id) {
-            tracing::error!(command_id = %event.command_id, %error, "action_command_completion_failed");
-        }
+    }
+}
+
+/// Finishes a client invoke command with the dispatched invocation's immediate outcome.
+///
+/// A rejected invocation fails the command with the invocation's code, message, and details.
+/// Any other outcome succeeds with the serialized [`InvocationOutcome`] as output, so a
+/// submitted domain command can be correlated through its own `CommandResult`.
+pub fn complete_invoke_command(
+    world: &mut World,
+    command_id: CommandId,
+    outcome: &InvocationOutcome,
+) {
+    let outcome = match outcome {
+        InvocationOutcome::Failed(error) => CommandOutcome::failed(error.clone().into()),
+        outcome => match CommandOutput::from_serializable(outcome) {
+            Ok(output) => CommandOutcome::with_output(output),
+            Err(error) => {
+                tracing::error!(%command_id, %error, "action_command_output_serialization_failed");
+                CommandOutcome::succeeded()
+            }
+        },
+    };
+    if let Err(error) = finish_command_in_world(world, command_id, outcome) {
+        tracing::error!(%command_id, %error, "action_command_completion_failed");
     }
 }

@@ -87,6 +87,33 @@ trigger binding. The action catalog lists each action's supported behaviors. OSC
 buttons report releases when their mapping names both the pressed value (`arg_value`)
 and the released value (`release_value`).
 
+### Invocation failures
+
+Registry and domain failures are `InvocationError`s: a stable `code`, an
+operator-facing `message`, and optional structured `details` (such as the missing
+clip or master UID), mirroring `CommandError`. The dispatcher reports them to clients
+so a binding that stops working is never silent:
+
+- Each failure is broadcast as a non-droppable `ActionInvocationFailed` message
+  carrying the action reference, surface, source label, raw input, and error.
+  Successful invocations are not broadcast; commands they submit already report a
+  `CommandResult`.
+- Discrete input (triggers, presses, releases) reports every failure. Continuous
+  scalar input is throttled by `InvocationFailureThrottle`: per surface and action
+  reference, a failure is reported when it is the first, when its code changes, or
+  after `FAILURE_REPEAT_WINDOW` (5 s) has elapsed; any non-failed outcome resets the
+  binding. A fader bound to a deleted master therefore reports once per window,
+  not once per movement.
+- `ActionCommand::Invoke` stays active until its invocation is dispatched on the
+  next frame and finishes with the invocation's outcome: a rejection fails the
+  command with the same code, message, and details, and any other outcome succeeds
+  with the serialized `InvocationOutcome` as output. The failure broadcast carries
+  the command's `command_id` and is sent before its `CommandResult`.
+- The Web UI keeps recent failures in the `actionInvocationFailures` store and
+  shows a toast titled with the action's catalog label. Fader failures are
+  short-lived warnings. When a failure finished a client command, that toast
+  replaces the generic command failure toast.
+
 ### Capabilities
 
 Optional, deterministic interpretations of an action are registered as

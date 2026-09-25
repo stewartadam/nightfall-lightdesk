@@ -100,7 +100,11 @@ fn ensure_surface_allowed(
             descriptor.label,
             surface.label()
         ),
-    ))
+    )
+    .with_details(serde_json::json!({
+        "surface": surface,
+        "allowed_surfaces": descriptor.surfaces,
+    })))
 }
 
 /// Lists the controller binding behaviors a registered action supports.
@@ -478,6 +482,7 @@ impl ActionRegistry {
                 "action.not_registered",
                 format!("Action '{}' is not registered", id.as_str()),
             )
+            .with_details(serde_json::json!({ "action_id": id }))
         })
     }
 }
