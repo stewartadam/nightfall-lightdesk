@@ -14,6 +14,7 @@
 
 mod command;
 mod descriptor;
+mod failures;
 mod flash;
 mod invocation;
 mod lowering;
@@ -32,10 +33,11 @@ pub use descriptor::{
     ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionParameter,
     ActionParameterKind, ActionSurface,
 };
+pub use failures::{FAILURE_REPEAT_WINDOW, InvocationFailureThrottle};
 pub use invocation::{
-    ActionInput, ActionInvocation, ActionReference, ClientActionInvocation,
-    ExternalCommandInvocation, InvocationDispatch, InvocationError, InvocationId,
-    InvocationOutcome, InvocationResult,
+    ActionInput, ActionInvocation, ActionInvocationFailure, ActionReference,
+    ClientActionInvocation, ExternalCommandInvocation, InvocationDispatch, InvocationError,
+    InvocationId, InvocationOutcome, InvocationResult,
 };
 pub use lowering::{ActionAppExt, submit_command};
 use nightfall_engine::prelude::{
@@ -57,8 +59,10 @@ impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ActionRegistry>();
         app.init_resource::<SourceEdgeStates>();
+        app.init_resource::<InvocationFailureThrottle>();
         app.add_message::<ActionInvocation>();
         app.add_message::<InvocationResult>();
+        app.add_message::<ActionInvocationFailure>();
         app.add_message::<ExternalCommandInvocation>();
         app.add_message::<ClientActionInvocation>();
         app.add_message::<ResyncRequested>();
@@ -77,6 +81,7 @@ impl Plugin for ActionsPlugin {
             (
                 websocket::send_action_catalog_on_change.in_set(ClientOutput),
                 websocket::send_client_action_invocations.in_set(ClientOutput),
+                websocket::send_action_invocation_failures.in_set(ClientOutput),
                 websocket::handle_resync_state.in_set(ResyncHandling),
             ),
         );
@@ -101,6 +106,10 @@ impl Plugin for ActionsPlugin {
 }
 
 /// Dispatches queued invocations and publishes their immediate outcome.
+///
+/// Failures admitted by the [`InvocationFailureThrottle`] are also written as
+/// [`ActionInvocationFailure`] messages for clients, and invocations requested by a client
+/// command finish that command with their outcome.
 pub fn dispatch_action_invocations(
     world: &mut World,
     state: &mut SystemState<MessageReader<ActionInvocation>>,
@@ -111,6 +120,10 @@ pub fn dispatch_action_invocations(
             .expect("action invocation reader should be available");
         reader.read().cloned().collect::<Vec<_>>()
     };
+    if invocations.is_empty() {
+        return;
+    }
+    let now = web_time::Instant::now();
     for invocation in invocations {
         let outcome: InvocationOutcome = world
             .resource_scope(
@@ -119,14 +132,15 @@ pub fn dispatch_action_invocations(
                 },
             )
             .into();
+        let publish =
+            world
+                .resource_mut::<InvocationFailureThrottle>()
+                .admit(&invocation, &outcome, now);
         if let InvocationOutcome::Failed(error) = &outcome {
-            tracing::warn!(
-                action_id = invocation.action.id.as_str(),
-                surface = ?invocation.surface,
-                code = %error.code,
-                message = %error.message,
-                "action_invocation_failed"
-            );
+            report_failure(world, &invocation, error, publish);
+        }
+        if let Some(command_id) = invocation.completes_command {
+            command::complete_invoke_command(world, command_id, &outcome);
         }
         world
             .resource_mut::<Messages<InvocationResult>>()
@@ -139,11 +153,50 @@ pub fn dispatch_action_invocations(
     }
 }
 
+/// Logs one invocation failure and, when admitted, writes it for client publication.
+///
+/// Failures suppressed by the throttle are logged at debug level so repeated fader input
+/// neither floods clients nor the log.
+fn report_failure(
+    world: &mut World,
+    invocation: &ActionInvocation,
+    error: &InvocationError,
+    publish: bool,
+) {
+    if !publish {
+        tracing::debug!(
+            action_id = invocation.action.id.as_str(),
+            surface = ?invocation.surface,
+            code = %error.code,
+            "action_invocation_failure_suppressed"
+        );
+        return;
+    }
+    tracing::warn!(
+        action_id = invocation.action.id.as_str(),
+        surface = ?invocation.surface,
+        code = %error.code,
+        message = %error.message,
+        "action_invocation_failed"
+    );
+    world.write_message(ActionInvocationFailure {
+        invocation_id: invocation.invocation_id,
+        action: invocation.action.clone(),
+        surface: invocation.surface,
+        source: invocation.source_label(),
+        input: invocation.input,
+        error: error.clone(),
+        command_id: invocation.completes_command,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use bevy_ecs::prelude::Message;
     use nightfall_engine::prelude::{
-        CommandOrigin, CommandTracker, EnginePayload, IngressCommand, PendingCommandBuffer,
+        CommandError, CommandId, CommandOrigin, CommandOutcome, CommandOutput, CommandReply,
+        CommandResult, CommandTracker, EnginePayload, FinishedCommand, IngressCommand,
+        PendingCommandBuffer, ReplyTarget, UndoId,
     };
     use serde::Deserialize;
     use serde_json::json;
@@ -606,6 +659,207 @@ mod tests {
         assert_eq!(
             surfaces("test.timeline"),
             Some(vec![ActionSurface::Timeline])
+        );
+    }
+
+    /// Registers a trigger action and an absolute action that both fail with details.
+    fn register_failing_actions(app: &mut App) {
+        app.register_action::<TestArguments, _>(
+            ActionDescriptor::new("test.missing_target", "Missing target", "Tests"),
+            |_world, arguments, _invocation| {
+                Err(
+                    InvocationError::new("test.not_found", "Target does not exist")
+                        .with_details(json!({ "target": arguments.value })),
+                )
+            },
+        )
+        .register_update_action::<TestArguments, TestApplied, _>(
+            ActionDescriptor::new("test.missing_level", "Missing level", "Tests")
+                .with_input(ActionInputKind::Absolute),
+            |_world, arguments, _value| {
+                Err(
+                    InvocationError::new("test.not_found", "Target does not exist")
+                        .with_details(json!({ "target": arguments.value })),
+                )
+            },
+        );
+    }
+
+    /// Drains failures written for client publication.
+    fn published_failures(app: &mut App) -> Vec<ActionInvocationFailure> {
+        app.world_mut()
+            .resource_mut::<Messages<ActionInvocationFailure>>()
+            .drain()
+            .collect()
+    }
+
+    /// Verifies every discrete failure is published with its source and structured details.
+    #[test]
+    fn discrete_failures_publish_with_details() {
+        let mut app = action_app();
+        register_failing_actions(&mut app);
+        let action = ActionReference::new("test.missing_target", json!({ "value": 9 }));
+
+        for _ in 0..2 {
+            invoke(
+                &mut app,
+                ActionInvocation::trigger(action.clone(), ActionSurface::Osc)
+                    .with_source("OSC 127.0.0.1:9000"),
+            );
+        }
+
+        let failures = published_failures(&mut app);
+        assert_eq!(failures.len(), 2);
+        let failure = &failures[0];
+        assert_eq!(failure.action, action);
+        assert_eq!(failure.surface, ActionSurface::Osc);
+        assert_eq!(failure.source, "OSC 127.0.0.1:9000");
+        assert_eq!(failure.error.code, "test.not_found");
+        assert_eq!(failure.error.details, Some(json!({ "target": 9 })));
+        assert_eq!(failure.command_id, None);
+    }
+
+    /// Verifies a fader driving a missing target publishes one failure, not one per movement.
+    #[test]
+    fn repeated_scalar_failures_publish_once() {
+        let mut app = action_app();
+        register_failing_actions(&mut app);
+        let action = ActionReference::new("test.missing_level", json!({ "value": 4 }));
+
+        let mut failures = Vec::new();
+        for value in [0.1, 0.2, 0.3] {
+            let outcome = invoke(
+                &mut app,
+                ActionInvocation::scalar(action.clone(), ActionSurface::Midi, value),
+            );
+            assert!(matches!(outcome, InvocationOutcome::Failed(_)));
+            failures.extend(published_failures(&mut app));
+        }
+
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].input, ActionInput::Scalar(0.1));
+    }
+
+    /// Verifies successful invocations are not published as failures.
+    #[test]
+    fn successful_invocations_are_not_published() {
+        let mut app = action_app();
+        register_trigger_action(&mut app);
+
+        invoke(
+            &mut app,
+            ActionInvocation::trigger(
+                ActionReference::new("test.apply", json!({ "value": 1 })),
+                ActionSurface::Keyboard,
+            ),
+        );
+
+        assert!(published_failures(&mut app).is_empty());
+    }
+
+    /// Creates an action app that records terminal command results and an active client
+    /// command for an invocation to finish.
+    fn app_with_client_command() -> (App, CommandId) {
+        let mut app = action_app();
+        app.add_message::<CommandResult>();
+        app.add_message::<CommandReply>();
+        app.add_message::<FinishedCommand>();
+        let command_id = CommandId::new();
+        app.world_mut()
+            .resource_mut::<CommandTracker>()
+            .register_context(
+                command_id,
+                UndoId::from(command_id),
+                CommandOrigin::WebUi,
+                ReplyTarget::ClientBroadcast,
+            )
+            .expect("client command should register");
+        (app, command_id)
+    }
+
+    /// Drains the terminal command results published by the dispatcher.
+    fn command_results(app: &mut App) -> Vec<CommandResult> {
+        app.world_mut()
+            .resource_mut::<Messages<CommandResult>>()
+            .drain()
+            .collect()
+    }
+
+    /// Verifies a rejected invocation fails the client command that requested it with the
+    /// invocation's code, message, and details.
+    #[test]
+    fn rejected_invocation_fails_requesting_command() {
+        let (mut app, command_id) = app_with_client_command();
+        register_failing_actions(&mut app);
+
+        invoke(
+            &mut app,
+            ActionInvocation::trigger(
+                ActionReference::new("test.missing_target", json!({ "value": 5 })),
+                ActionSurface::Keyboard,
+            )
+            .completing(command_id),
+        );
+
+        let results = command_results(&mut app);
+        let [result] = results.as_slice() else {
+            panic!("invoke command should finish exactly once, got {results:?}");
+        };
+        assert_eq!(result.command_id, command_id);
+        assert_eq!(
+            result.outcome,
+            CommandOutcome::failed(
+                CommandError::new("test.not_found", "Target does not exist")
+                    .with_details(json!({ "target": 5 }))
+            )
+        );
+        assert_eq!(published_failures(&mut app)[0].command_id, Some(command_id));
+        assert!(
+            !app.world()
+                .resource::<CommandTracker>()
+                .is_active(command_id)
+        );
+    }
+
+    /// Verifies a successful invocation succeeds the requesting command with its outcome.
+    #[test]
+    fn successful_invocation_succeeds_requesting_command() {
+        let (mut app, command_id) = app_with_client_command();
+        register_trigger_action(&mut app);
+
+        invoke(
+            &mut app,
+            ActionInvocation::trigger(
+                ActionReference::new("test.apply", json!({ "value": 2 })),
+                ActionSurface::Keyboard,
+            )
+            .completing(command_id),
+        );
+
+        let results = command_results(&mut app);
+        assert_eq!(
+            results[0].outcome,
+            CommandOutcome::with_output(
+                CommandOutput::from_serializable(InvocationOutcome::Succeeded { output: None })
+                    .unwrap()
+            )
+        );
+        assert_eq!(applied(&mut app), vec![TestApplied(2.0)]);
+    }
+
+    /// Verifies invocation errors serialize details only when present.
+    #[test]
+    fn invocation_error_serializes_optional_details() {
+        assert_eq!(
+            serde_json::to_value(InvocationError::new("a.b", "Nope")).unwrap(),
+            json!({ "code": "a.b", "message": "Nope" })
+        );
+        assert_eq!(
+            serde_json::to_value(
+                InvocationError::new("a.b", "Nope").with_details(json!({ "clip": 1 }))
+            )
+            .unwrap(),
+            json!({ "code": "a.b", "message": "Nope", "details": { "clip": 1 } })
         );
     }
 

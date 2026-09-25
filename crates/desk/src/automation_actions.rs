@@ -408,6 +408,7 @@ fn resolve_master(world: &World, uid: Uuid) -> Result<Master, InvocationError> {
                 "master.not_found",
                 format!("Master with UID {uid} does not exist"),
             )
+            .with_details(serde_json::json!({ "master": uid }))
         })
 }
 
@@ -427,7 +428,8 @@ fn set_master_active(
                 "Master '{}' is not a toggle master",
                 master.identifiers.label
             ),
-        ));
+        )
+        .with_details(serde_json::json!({ "master": uid })));
     }
     Ok(MasterCommand::SetMasterMode {
         id: master.identifiers.id,
@@ -485,6 +487,7 @@ fn resolve_clip_id(world: &World, uid: Uuid) -> Result<u32, InvocationError> {
                 "clip.not_found",
                 format!("Clip with UID {uid} does not exist"),
             )
+            .with_details(serde_json::json!({ "clip": uid }))
         })
 }
 

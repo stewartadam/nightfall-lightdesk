@@ -417,6 +417,10 @@ export const actionCatalog = atom<types.ActionCatalogEntry[]>([]);
 export const clientActionInvocation = atom<types.ClientActionInvocation | null>(
   null,
 );
+/** Recent failed action invocations from any surface, newest first. */
+export const actionInvocationFailures = atom<types.ActionInvocationFailure[]>(
+  [],
+);
 
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);
@@ -1059,6 +1063,7 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     flowPortValues,
     flowTriggerTicks,
     actionCatalog,
+    actionInvocationFailures,
     midiDevices,
     midiMappings,
     midiLastEvent,

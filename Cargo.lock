@@ -4995,6 +4995,7 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+ "web-time",
 ]
 
 [[package]]

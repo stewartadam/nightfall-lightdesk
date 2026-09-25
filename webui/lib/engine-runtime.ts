@@ -128,6 +128,7 @@ import {
 import type * as types from "../types";
 import type * as flowTypes from "../types/index";
 import { setAttributeMetadata } from "./attribute-metadata";
+import { consumeCommandFailurePresented } from "./command-failure-toasts";
 import {
   decodeCorrelationId,
   normalizeCorrelationId,
@@ -1405,7 +1406,7 @@ function dispatchMessage(raw: AnyWsMessage) {
               result.outcome,
             );
           }
-        } else {
+        } else if (!consumeCommandFailurePresented(result.command_id)) {
           pushToast("error", result.outcome.data.message);
         }
       }
