@@ -297,31 +297,3 @@
   outline: 2px solid var(--accent);
   border-radius: var(--radius-sm);
 }
-
-/* Confirms a detected action briefly before the next instruction replaces it. */
-.nf-guide-step-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-.nf-guide-step-done {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--color-accent-green);
-  animation: nf-guide-step-done 0.25s ease-out;
-}
-.nf-guide-completing .nf-guide-body > :not(.nf-guide-step-heading) {
-  opacity: 0.55;
-  transition: opacity 0.2s;
-}
-@keyframes nf-guide-step-done {
-  from {
-    transform: scale(0.4);
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .nf-guide-step-done {
-    animation: none;
-  }
-}

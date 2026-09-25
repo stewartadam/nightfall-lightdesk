@@ -1803,10 +1803,8 @@ async function expectStep(
     await expect(page.getByTestId("guide-target").first()).toBeVisible();
 }
 
-/** Detected steps confirm with a checkmark before advancing, and label the forward button Skip. */
-test("observed steps show a checkmark and offer Skip instead of Continue", async ({
-  page,
-}) => {
+/** Detected steps label the forward button Skip and advance as soon as the action happens. */
+test("observed steps offer Skip instead of Continue", async ({ page }) => {
   await openSample(page);
   const guide = await startLesson(page, /Welcome to Nightfall/);
   await expectStep(page, "Meet your sample rig");
@@ -1824,9 +1822,7 @@ test("observed steps show a checkmark and offer Skip instead of Continue", async
   await guide
     .getByRole("button", { name: "Open Timeline 1: Lo-fi", exact: true })
     .click();
-  await expect(guide.locator(".nf-guide-step-done")).toBeVisible();
   await expectStep(page, "Start the sample show");
-  await expect(guide.locator(".nf-guide-step-done")).toHaveCount(0);
 });
 
 /** The orientation command step advances once the suggested command is submitted. */
@@ -2023,6 +2019,11 @@ test("step fx lesson builds a chase and releases the red base", async ({
     exact: true,
   });
   if (await properties.isVisible()) await properties.click();
+  // Follow the lesson's fallback: focusing the editor tab points Properties at it.
+  await page.getByRole("tab", { name: /^Step FX 1/ }).click();
+  await expect(
+    page.locator('[data-component="PropertiesInspector"]'),
+  ).toContainText("Step FX 1 Properties");
   await expect(page.getByTestId("guide-target").first()).toBeVisible();
   const selection = page.locator(
     '[data-component="PropertiesInspector"] textarea[aria-label="Selection"]',
@@ -2181,45 +2182,4 @@ test("lesson end clears the programmer in one press", async ({ page }) => {
   await expect(
     guide.getByRole("button", { name: "Clear programmer", exact: true }),
   ).toHaveCount(0);
-});
-
-/** Pressing Play relabels its button to Pause; the card must stay put while the step completes. */
-test("guide keeps its position while the Play step completes", async ({
-  page,
-}) => {
-  await openSample(page);
-  const guide = await startLesson(page, /Welcome to Nightfall/);
-  await reachStep(page, "Open the sample timeline");
-  const timeline = guide.getByRole("button", {
-    name: "Open Timeline 1: Lo-fi",
-    exact: true,
-  });
-  if (await timeline.isVisible()) await timeline.click();
-  await expectStep(page, "Start the sample show", { target: true });
-  // Let the floating card settle beside the Play button before measuring.
-  await expect
-    .poll(async () => JSON.stringify(await guide.boundingBox()), {
-      intervals: [300],
-    })
-    .toBe(JSON.stringify(await guide.boundingBox()));
-  const before = (await guide.boundingBox())!;
-  await page
-    .getByRole("button", { name: "Play timeline", exact: true })
-    .click();
-  await expect(guide.locator(".nf-guide-step-done")).toBeVisible();
-  const positions: { x: number; y: number }[] = [];
-  while (await guide.locator(".nf-guide-step-done").isVisible()) {
-    const box = await guide.boundingBox();
-    if (box) positions.push({ x: box.x, y: box.y });
-    await page.waitForTimeout(50);
-  }
-  expect(positions.length).toBeGreaterThan(0);
-  for (const position of positions) {
-    expect(position.x).toBeCloseTo(before.x, 0);
-    expect(position.y).toBeCloseTo(before.y, 0);
-  }
-  await expectStep(page, "Stop playback");
-  await page
-    .getByRole("button", { name: "Stop timeline", exact: true })
-    .click();
 });

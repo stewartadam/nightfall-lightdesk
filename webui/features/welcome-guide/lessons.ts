@@ -104,7 +104,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "play-timeline",
         title: "Start the sample show",
-        target: '[aria-label="Play timeline"], [aria-label="Pause timeline"]',
+        target: '[aria-label="Play timeline"]',
         observe: {
           type: "timeline-playing",
         },
@@ -1217,6 +1217,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
             body: "The red strips start chasing on and off.",
             command: "Fixture 310>313",
           },
+          {
+            type: "text",
+            text: "If Properties is empty, click the Step FX editor’s tab so Properties shows its settings.",
+          },
         ],
       },
       {
@@ -1399,7 +1403,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "play",
         title: "Rehearse the change",
-        target: '[aria-label="Play timeline"], [aria-label="Pause timeline"]',
+        target: '[aria-label="Play timeline"]',
         observe: { type: "timeline-playing" },
         content: [
           {
