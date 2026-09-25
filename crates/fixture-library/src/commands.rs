@@ -8,8 +8,9 @@
 
 //! WebSocket commands for fixture library operations.
 //!
-//! The contract is owned by `nightfall_fixtures::library::commands` so runtimes without
-//! the file-backed library can serve built-in profiles through the same commands.
+//! Re-exports the shared command and response types defined by
+//! `nightfall_fixtures::library::commands`, which every runtime serving fixture
+//! profiles uses.
 
 pub use nightfall_fixtures::library::commands::{
     AvailableFixtureInfo, FixtureLibraryCommand, FixtureLibraryEntry, GetFixtureProfileResponse,
