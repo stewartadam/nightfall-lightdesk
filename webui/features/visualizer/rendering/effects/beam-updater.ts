@@ -120,13 +120,9 @@ export class BeamUpdater {
                 : undefined,
           });
         }
-      } else if (this.beamManager.hasBeam(beamId)) {
+      } else {
         // Hide beam when intensity is too low
-        const beam = this.beamManager.getBeam(beamId);
-        if (beam) {
-          beam.mesh.visible = false;
-          beam.spotLight.visible = false;
-        }
+        this.beamManager.hideBeam(beamId);
       }
     }
   }
