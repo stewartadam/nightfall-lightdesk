@@ -19,9 +19,16 @@ import { readChangedPaths } from "./ci-scope.mjs";
 test("workflow diff captures both sides of renames and removed files", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "nightfall-scope-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
   /** Run Git inside the isolated repository used to exercise the workflow diff. */
   const git = (...args) =>
-    execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    execFileSync("git", args, {
+      cwd: directory,
+      env: environment,
+      encoding: "utf8",
+    });
   git("init", "--quiet");
   git("config", "user.name", "CI scope test");
   git("config", "user.email", "ci@example.invalid");
@@ -43,7 +50,7 @@ test("workflow diff captures both sides of renames and removed files", (t) => {
   ).run;
   execFileSync("bash", ["-c", command], {
     cwd: directory,
-    env: { ...process.env, EVENT_NAME: "pull_request" },
+    env: { ...environment, EVENT_NAME: "pull_request" },
   });
   assert.deepEqual(
     readChangedPaths(
