@@ -78,16 +78,18 @@ test("batch gobo diagnostics clear on blackout, fixture removal and disposal", (
   assert.equal(batch.goboAtlas.stacks.reducedStacks, 0);
 });
 
-/** Stack addresses survive growth, released rows are reused, and open masks consume no sampling budget. */
+/** Stack addresses survive growth, growth releases the undersized GPU storage, released rows are reused, and open masks consume no sampling budget. */
 test("gobo stack storage preserves masks across growth and removal", () => {
   const table = new GoboStackTable();
-  const texture = table.texture;
+  let disposals = 0;
+  table.texture.addEventListener("dispose", () => disposals++);
   const address = table.update("first", [
     { slot: 3, rotation: 0.25 },
     { slot: 0, rotation: 0 },
   ]);
   for (let i = 0; i < 300; i++) table.reserve(`fixture${i}`);
-  assert.equal(table.texture, texture);
+  assert.equal(disposals, 1);
+  assert.equal(table.texture.image.height, 512);
   assert.equal(table.texture.image.data![0], 1);
   assert.equal(table.texture.image.data![4], 3);
   assert.equal(table.texture.image.data![5], 0.25);

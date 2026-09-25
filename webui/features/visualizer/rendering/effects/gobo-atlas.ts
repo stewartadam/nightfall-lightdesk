@@ -104,6 +104,9 @@ export class GoboAtlas {
         );
       }
     }
+    // Renderers only reallocate GPU storage (and its mip chain) for a disposed
+    // texture; an in-place image swap would upload into the old size.
+    this.texture.dispose();
     this.texture.image = {
       data: this.pixels,
       width: this.side,

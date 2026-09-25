@@ -44,6 +44,9 @@ export class GoboStackTable {
       const data = new Float32Array(WIDTH * this.rows * 4);
       data.set(this.data);
       this.data = data;
+      // Renderers only reallocate GPU storage for a disposed texture; an
+      // in-place image swap would upload the larger rows into the old size.
+      this.texture.dispose();
       this.texture.image = { data, width: WIDTH, height: this.rows };
       this.texture.needsUpdate = true;
     }

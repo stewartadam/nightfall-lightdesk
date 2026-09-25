@@ -7,6 +7,18 @@
  */
 
 export { bloom } from "three/addons/tsl/display/BloomNode.js";
-export { float, pass, positionWorld, renderOutput, vec4 } from "three/tsl";
+export {
+  float,
+  ivec2,
+  pass,
+  positionWorld,
+  renderOutput,
+  screenUV,
+  texture,
+  textureLoad,
+  uniform,
+  vec2,
+  vec4,
+} from "three/tsl";
 // Browser shader fixtures must share Vite's Three module instance with application materials.
 export * from "three/webgpu";
