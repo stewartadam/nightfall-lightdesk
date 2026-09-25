@@ -68,6 +68,26 @@ fn joints_bind_from_channel_geometry_not_names() {
     );
 }
 
+/// Verifies pan and tilt channels on one geometry make a single two-axis joint, pan first.
+#[test]
+fn pan_and_tilt_on_one_geometry_bind_both_axes() {
+    let builder = GdtfBuilder::new("Test", "Gimbal")
+        .geometry(GeometrySpec::generic("Base").child(GeometrySpec::axis("Mover")))
+        .mode(
+            ModeSpec::new("Mode", "Base")
+                .channel(ChannelSpec::new("Mover", "Tilt", &[1]))
+                .channel(ChannelSpec::new("Mover", "Pan", &[2])),
+        );
+    let (_, geometry) = convert(&builder);
+    assert_eq!(
+        joints(&geometry),
+        [
+            ("Mover", AxisType::Pan, "Mover"),
+            ("Mover", AxisType::Tilt, "Mover"),
+        ]
+    );
+}
+
 /// Verifies axes whose names suggest movement stay static without a movement channel.
 #[test]
 fn axis_names_without_channels_do_not_move() {
@@ -182,6 +202,47 @@ fn duplicate_geometry_names_are_renamed() {
             name: "Cell".to_string(),
         }
     ));
+}
+
+/// Verifies a generated duplicate name never displaces a geometry that authored that name.
+///
+/// With children `Cell`, `Cell`, `Cell #2`, the authored `Cell #2` keeps its
+/// name and still binds its channel; the duplicate `Cell` skips to `Cell #3`.
+#[test]
+fn generated_duplicate_names_skip_authored_names() {
+    let builder = GdtfBuilder::new("Test", "Suffix")
+        .geometry(
+            GeometrySpec::generic("Body")
+                .child(GeometrySpec::beam("Cell"))
+                .child(GeometrySpec::beam("Cell"))
+                .child(GeometrySpec::beam("Cell #2")),
+        )
+        .mode(
+            ModeSpec::new("Mode", "Body")
+                .channel(ChannelSpec::new("Cell", "Dimmer", &[1]))
+                .channel(ChannelSpec::new("Cell #2", "Dimmer", &[2])),
+        );
+    let (fixture, geometry, diagnostics) = convert_with_diagnostics(&builder);
+    let geometry = geometry.unwrap();
+    let names: Vec<&str> = geometry
+        .nodes
+        .iter()
+        .map(|node| node.name.as_str())
+        .collect();
+    assert_eq!(names, ["Body", "Cell", "Cell #3", "Cell #2"]);
+    let labels: Vec<&str> = fixture
+        .elements
+        .iter()
+        .map(|element| element.label.as_str())
+        .collect();
+    assert_eq!(labels, ["Cell", "Cell #2"]);
+    assert_eq!(check_invariants(&fixture, Some(&geometry)), vec![]);
+    assert_eq!(
+        diagnostics,
+        vec![super::gdtf_resolve::GdtfDiagnostic::DuplicateGeometryName {
+            name: "Cell".to_string(),
+        }]
+    );
 }
 
 /// Verifies a mode without channels yields one element named after the root geometry.

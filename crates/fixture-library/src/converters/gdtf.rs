@@ -598,8 +598,8 @@ fn geometry_type(geometry: &Geometry) -> GeometryType {
 ///
 /// GDTF places a movement channel on the geometry it moves, so the channel's
 /// geometry is the joint regardless of its tag (`<Axis>` or plain
-/// `<Geometry>`) or its name. When one instance carries both pan and tilt,
-/// the first declared channel wins.
+/// `<Geometry>`) or its name. An instance carrying both pan and tilt becomes
+/// a two-axis joint with pan applied first.
 fn joint_axes(resolved: &ResolvedMode<'_>, converted: &[bool]) -> Vec<Vec<AxisType>> {
     let mut axes = vec![Vec::new(); resolved.instances.len()];
     for (channel, _) in resolved

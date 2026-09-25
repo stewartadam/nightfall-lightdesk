@@ -16,7 +16,7 @@
 //! geometry tree, beam bindings) reads from the single [`ResolvedMode`]
 //! produced here instead of re-walking the XML.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use gdtf::dmx_mode::{DmxBreak, DmxChannel, DmxMode};
 use gdtf::fixture_type::FixtureType;
@@ -196,6 +196,7 @@ impl<'a> ResolvedMode<'a> {
         if resolved.instances.is_empty() {
             return None;
         }
+        resolved.rename_duplicates();
         resolved.resolve_channels(mode);
         Some(resolved)
     }
@@ -236,7 +237,7 @@ impl<'a> ResolvedMode<'a> {
             .name()
             .map(|name| name.to_string())
             .unwrap_or_default();
-        let mut name = name_override.unwrap_or_else(|| match scope {
+        let name = name_override.unwrap_or_else(|| match scope {
             Some(scope) => format!("{}/{geometry_name}", self.scopes[scope].name),
             None => geometry_name,
         });
@@ -245,12 +246,6 @@ impl<'a> ResolvedMode<'a> {
             let diagnostic = GdtfDiagnostic::DuplicateGeometryName { name: name.clone() };
             if !self.diagnostics.contains(&diagnostic) {
                 self.diagnostics.push(diagnostic);
-            }
-            let base = name.clone();
-            let mut suffix = 2;
-            while self.instances.iter().any(|instance| instance.name == name) {
-                name = format!("{base} #{suffix}");
-                suffix += 1;
             }
         }
         let model = placement
@@ -286,6 +281,32 @@ impl<'a> ResolvedMode<'a> {
             );
         }
         Some(index)
+    }
+
+    /// Gives every duplicate instance a unique `"<name> #<n>"` name.
+    ///
+    /// Runs after expansion, once every authored name is known, so a
+    /// generated suffix never takes a name that a later geometry authored
+    /// itself (children `Cell`, `Cell`, `Cell #2` become `Cell`, `Cell #3`,
+    /// `Cell #2`).
+    fn rename_duplicates(&mut self) {
+        let mut taken: HashSet<String> = self
+            .instances
+            .iter()
+            .map(|instance| instance.name.clone())
+            .collect();
+        for index in 0..self.instances.len() {
+            if !self.instances[index].duplicate {
+                continue;
+            }
+            let base = self.instances[index].name.clone();
+            let name = (2..)
+                .map(|suffix| format!("{base} #{suffix}"))
+                .find(|candidate| !taken.contains(candidate))
+                .expect("suffixes are unbounded");
+            taken.insert(name.clone());
+            self.instances[index].name = name;
+        }
     }
 
     /// Instantiates a reference's template geometry at the reference's position.
