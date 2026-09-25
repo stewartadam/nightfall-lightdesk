@@ -147,6 +147,39 @@ test("subtractive CMY filters a white lamp", () => {
   near(green.blue, 0, "yellow removes blue");
 });
 
+/**
+ * Verifies brightness and subtractive amounts follow their authored physical
+ * range rather than the position within the DMX range: HSB brightness from
+ * 25% to 100% starts at a quarter, and cyan authored from full to no
+ * filtering removes red at DMX 0.
+ */
+test("brightness and CMY amounts use their authored physical range", () => {
+  resetDmxPool();
+  const hsb = lamp(
+    custom("HSB_Hue", 0, 360),
+    custom("HSB_Saturation", 0, 100),
+    custom("HSB_Brightness", 25, 100),
+  );
+  const dim = extractVisualizerDmx(
+    { Intensity: 255, HSB_Hue: 0, HSB_Saturation: 255, HSB_Brightness: 0 },
+    hsb,
+  );
+  near(dim.red, 0.25, "lowest brightness is 25%");
+
+  // Full yellow keeps a filter in the beam whatever the cyan amount.
+  const cyan = lamp(custom("ColorSub_C", 1, 0), custom("ColorSub_Y", 0, 1));
+  const full = extractVisualizerDmx(
+    { Intensity: 255, ColorSub_C: 0, ColorSub_Y: 255 },
+    cyan,
+  );
+  near(full.red, 0, "full cyan at DMX 0 removes red");
+  const none = extractVisualizerDmx(
+    { Intensity: 255, ColorSub_C: 255, ColorSub_Y: 255 },
+    cyan,
+  );
+  near(none.red, 1, "no cyan at DMX 255 passes red");
+});
+
 /** Verifies a wheel filter passes only its measured share of light. */
 test("wheel filters keep their relative luminance", () => {
   resetDmxPool();

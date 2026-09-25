@@ -101,6 +101,28 @@ function isFraction(channel: EvaluatedChannel): boolean {
 }
 
 /**
+ * Returns a 0-1 amount (brightness, filter density) on the function's
+ * authored physical scale, read as a fraction or as a percentage.
+ *
+ * The physical value follows the authored direction and offset, so a
+ * function from 25% to 100% starts at a quarter and one from full to no
+ * filtering starts full. When relations changed the channel's level, the
+ * function's range is evaluated at that level instead, as the fixture would
+ * evaluate the DMX value the relation produces. A function without a
+ * physical range falls back to the channel's level.
+ */
+function physicalAmount(channel: EvaluatedChannel): number {
+  const fn = channel.function;
+  if (!fn || fn.physical_from === fn.physical_to) return channel.level;
+  const physical =
+    channel.level !== channel.fraction
+      ? fn.physical_from + (fn.physical_to - fn.physical_from) * channel.level
+      : channel.physical;
+  const amount = isFraction(channel) ? physical : physical / 100;
+  return Math.min(1, Math.max(0, amount));
+}
+
+/**
  * Returns an iris function's aperture as a fraction of the open beam.
  *
  * Irises open at the low end of their DMX range. A range that falls with
@@ -177,7 +199,7 @@ export function collectPhysical(
         : channel.physical / 100;
       return true;
     case "HSB_Brightness":
-      state.hsbBrightness = level;
+      state.hsbBrightness = physicalAmount(channel);
       return true;
     case "CIE_X":
       state.cieX =
@@ -188,16 +210,16 @@ export function collectPhysical(
         physicalSpan(channel) > 1 ? channel.physical / 10000 : channel.physical;
       return true;
     case "CIE_Brightness":
-      state.cieBrightness = level;
+      state.cieBrightness = physicalAmount(channel);
       return true;
     case "ColorSub_C":
-      state.cyan = level;
+      state.cyan = physicalAmount(channel);
       return true;
     case "ColorSub_M":
-      state.magenta = level;
+      state.magenta = physicalAmount(channel);
       return true;
     case "ColorSub_Y":
-      state.yellow = level;
+      state.yellow = physicalAmount(channel);
       return true;
     case "Iris":
       state.iris = Math.max(MIN_IRIS_APERTURE, irisAperture(channel));
