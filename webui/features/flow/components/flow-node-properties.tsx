@@ -280,19 +280,18 @@ export function FlowNodeProperties(props: {
                     dutyCycle: isPortConnected(WAVEFORM_IN_DUTY_CYCLE),
                   }));
 
-                  const handleKindChange = (kind: flowTypes.WaveformKind) => {
-                    if (disabledFields().kind) return;
-                    props.flowContext.updateValue(
-                      nodeId,
-                      WAVEFORM_IN_KIND,
-                      { type: "WaveformKind", data: kind },
-                      true,
-                    );
-                  };
-
+                  /** Applies edited waveform fields to their unconnected input ports. */
                   const handleWaveformChange = (
                     updates: Partial<flowTypes.FlowWaveform>,
                   ) => {
+                    if (updates.kind !== undefined && !disabledFields().kind) {
+                      props.flowContext.updateValue(
+                        nodeId,
+                        WAVEFORM_IN_KIND,
+                        { type: "WaveformKind", data: updates.kind },
+                        true,
+                      );
+                    }
                     if (
                       updates.rate_secs !== undefined &&
                       !disabledFields().rate
@@ -352,7 +351,6 @@ export function FlowNodeProperties(props: {
                       <WaveformEditor
                         waveform={waveformData()}
                         onWaveformChange={handleWaveformChange}
-                        onKindChange={handleKindChange}
                         disabledFields={disabledFields()}
                       />
                     </div>
