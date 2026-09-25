@@ -34,6 +34,8 @@ import {
   cues,
   fixtures,
   fx,
+  programmerSelection,
+  programmerState,
   pushToast,
   runtimeCapabilities,
   sequences,
@@ -41,12 +43,16 @@ import {
   timelines,
 } from "../../state/appStores";
 import { normalizeTimelineUid } from "../timeline";
+import {
+  clearProgrammerCompletely,
+  isPlaybackRunning,
+  stopAllPlayback,
+} from "./cleanup";
 import { visibleGuideContent } from "./content";
 import { GuideContentItem } from "./guide-content";
 import { GuideTarget } from "./guide-target";
 import { guideLessons } from "./lesson-store";
 import type { GuidePrerequisite } from "./lessons";
-import { isPlaybackRunning, stopAllPlayback } from "./playback";
 import {
   closeWelcomeGuide,
   guideCompleted,
@@ -104,6 +110,8 @@ export default function WelcomeGuide() {
   const fxMap = useStore(fx);
   const instanceMap = useStore(activeInstances);
   const clockMap = useStore(timecodes);
+  const programmerSelectionList = useStore(programmerSelection);
+  const programmerRows = useStore(programmerState);
   /** Finds the generated sample timeline without relying on its session-specific UID. */
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
@@ -356,6 +364,10 @@ export default function WelcomeGuide() {
   const playbackRunning = createMemo(() =>
     isPlaybackRunning(instanceMap(), clockMap()),
   );
+  /** Detects a selection or live values left in the Programmer after a lesson. */
+  const programmerHeld = createMemo(
+    () => programmerSelectionList().length > 0 || programmerRows().length > 0,
+  );
 
   /** Records lesson completion only when the user explicitly finishes the lesson. */
   const finish = () => {
@@ -582,16 +594,31 @@ export default function WelcomeGuide() {
                 </Show>
                 <Show when={index() >= current().steps.length}>
                   <p>You’ve reached the end of this lesson.</p>
-                  <Show when={playbackRunning()}>
+                  <Show when={playbackRunning() || programmerHeld()}>
                     <div class="nf-guide-action">
                       <p>
-                        Playback is still running. Stop it before starting
-                        another lesson so it doesn’t affect what you see.
+                        {playbackRunning() && programmerHeld()
+                          ? "Playback is still running and the Programmer still holds values."
+                          : playbackRunning()
+                            ? "Playback is still running."
+                            : "The Programmer still holds values."}{" "}
+                        Reset before starting another lesson so it doesn’t
+                        affect what you see.
                       </p>
                       <div class="nf-guide-shortcuts">
-                        <Button size="compact" onClick={stopAllPlayback}>
-                          Stop all playback
-                        </Button>
+                        <Show when={playbackRunning()}>
+                          <Button size="compact" onClick={stopAllPlayback}>
+                            Stop all playback
+                          </Button>
+                        </Show>
+                        <Show when={programmerHeld()}>
+                          <Button
+                            size="compact"
+                            onClick={clearProgrammerCompletely}
+                          >
+                            Clear programmer
+                          </Button>
+                        </Show>
                       </div>
                     </div>
                   </Show>
