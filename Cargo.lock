@@ -5773,6 +5773,7 @@ name = "nightfall-showfile"
 version = "0.1.0-alpha.2"
 dependencies = [
  "bevy_ecs",
+ "flate2",
  "moonshine-kind",
  "nightfall",
  "nightfall-clips",
