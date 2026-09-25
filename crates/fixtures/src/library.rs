@@ -13,9 +13,10 @@
 //! scanned and converted by the separate `nightfall-fixture-library` crate; this
 //! module intentionally does not duplicate that general profile system.
 //!
-//! The fixture-library command contract and fixture instantiation also live here so
-//! runtimes without the file-backed library (the embedded browser demo) can still
-//! serve the built-in catalog through the same commands.
+//! Submodules define the fixture-library command contract (`commands`), the
+//! built-in profile catalog (`catalog`), and fixture instantiation with parameter
+//! spawning (`instantiate`), shared by every runtime that serves fixture profiles,
+//! including the embedded browser demo, which has no file-backed library.
 
 pub mod catalog;
 pub mod commands;
