@@ -6,18 +6,31 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  annotateBackend,
+  expectWithArtifacts,
+  openOpticsFixture,
+} from "./optics-harness";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
+
+/**
+ * Largest per-channel 8-bit difference allowed between emitter faces before and after the
+ * GPU budget lowers the fog and glow resolutions. The scene pass stays at full resolution,
+ * so faces must look the same; two levels absorb rounding in the reduced-resolution passes
+ * composited over them, while losing scene resolution shifts edge pixels by far more.
+ */
+const OVERLOAD_FACE_TOLERANCE = 2;
 
 for (const kind of ["bar", "panel", "strobe-bar"] as const) {
   /** Visible emitters without beam metadata produce colored haze glow, which disappears on blackout. */
   test(`${kind} produces colored glow outside its emitting faces`, async ({
     page,
   }, testInfo) => {
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto("/e2e/fixtures/optics.html");
+    const errors = await openOpticsFixture(page);
     const result = await page.evaluate(async (kind) => {
       const T = await import("/e2e/fixtures/three-api.ts");
+      const { readPixels, renderFrames, retainCanvas, verifyBackend } =
+        await import("/e2e/fixtures/optics-harness.ts");
       const { createRenderer } = await import(
         "/features/visualizer/rendering/renderer.ts"
       );
@@ -46,6 +59,7 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
       });
       renderer.setSize(500, 400);
       await renderer.init();
+      const backend = await verifyBackend(renderer, undefined);
       const scene = new T.Scene();
       scene.background = new T.Color(0);
       const camera = new T.PerspectiveCamera(40, 1.25, 0.1, 20);
@@ -94,36 +108,22 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
       const pipeline = createPostProcessing(renderer, scene, camera);
       const bloomPass = pipeline.bloomPass!;
       /** Captures the production tone-mapped pipeline after GPU submission completes. */
-      const capture = async () => {
-        await new Promise<void>((resolve) => {
-          let frame = 0;
-          renderer.setAnimationLoop(() => {
-            renderWithPostProcessing(pipeline);
-            if (++frame === 4) {
-              renderer.setAnimationLoop(null);
-              resolve();
-            }
-          });
-        });
-        const canvas = document.createElement("canvas");
-        canvas.width = 500;
-        canvas.height = 400;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(renderer.domElement, 0, 0);
-        return {
-          pixels: ctx.getImageData(0, 0, 500, 400).data,
-          image: canvas.toDataURL(),
-        };
+      const capture = async (retain?: string) => {
+        await renderFrames(renderer, 4, () =>
+          renderWithPostProcessing(pipeline),
+        );
+        if (retain) retainCanvas(retain, renderer.domElement);
+        return { pixels: readPixels(renderer.domElement) };
       };
       bloomPass.strength.value = 0;
-      const faces = await capture();
+      const faces = await capture(`${kind}-faces`);
       // Force sustained GPU overload without depending on the test machine's speed.
       const start = performance.now() - 10_000;
       for (let id = 0; id < 10; id++)
         pipeline.gpuBudget.observe({ id, milliseconds: 20 }, start + id * 1001);
       for (let id = 10; id < 13; id++)
         renderWithPostProcessing(pipeline, { id, milliseconds: 20 });
-      const overloadedFaces = await capture();
+      const overloadedFaces = await capture(`${kind}-overloaded-faces`);
       let faceDifference = 0;
       for (let i = 0; i < faces.pixels.length; i++)
         faceDifference = Math.max(
@@ -142,7 +142,7 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
         ).height,
       };
       bloomPass.strength.value = pipeline.config.bloomStrength;
-      const glow = await capture();
+      const glow = await capture(`${kind}-glow`);
       let haloPixels = 0;
       for (let i = 0; i < faces.pixels.length; i += 4) {
         const channel = kind === "bar" ? 0 : 2;
@@ -169,27 +169,32 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
       else disposeStrobePanel(fixture);
       renderer.dispose();
       return {
+        backend,
         haloPixels,
         blackoutMax,
         faceDifference,
         scales,
-        image: glow.image,
       };
     }, kind);
-    await testInfo.attach(`${kind}-glow.png`, {
-      body: Buffer.from(result.image.split(",")[1], "base64"),
-      contentType: "image/png",
-    });
-    expect(errors).toEqual([]);
-    expect(result.haloPixels).toBeGreaterThan(500);
-    expect(result.blackoutMax).toBeLessThan(3);
-    expect(result.faceDifference).toBe(0);
-    expect(result.scales).toEqual({
-      scene: 1,
-      fog: 0.25,
-      glow: 0.25,
-      sceneWidth: 500,
-      sceneHeight: 400,
-    });
+    annotateBackend(testInfo, result.backend);
+    await expectWithArtifacts(
+      testInfo,
+      { page, artifacts: { [`${kind}-glow.json`]: result } },
+      () => {
+        expect(errors).toEqual([]);
+        expect(result.haloPixels).toBeGreaterThan(500);
+        expect(result.blackoutMax).toBeLessThan(3);
+        expect(result.faceDifference).toBeLessThanOrEqual(
+          OVERLOAD_FACE_TOLERANCE,
+        );
+        expect(result.scales).toEqual({
+          scene: 1,
+          fog: 0.25,
+          glow: 0.25,
+          sceneWidth: 500,
+          sceneHeight: 400,
+        });
+      },
+    );
   });
 }

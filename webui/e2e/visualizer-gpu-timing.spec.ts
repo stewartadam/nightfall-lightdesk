@@ -6,31 +6,32 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { annotateBackend, openOpticsFixture } from "./optics-harness";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
 /** The real inspector must expose completed elapsed samples through the production render loop. */
 test("developer inspector supplies frame-specific elapsed GPU timing", async ({
   page,
-}) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
-  });
-  await page.goto("/e2e/fixtures/optics.html?visualizer:inspector=true");
+}, testInfo) => {
+  const errors = await openOpticsFixture(page, "?visualizer:inspector=true");
   const result = await page.evaluate(async () => {
     const { initFeatureFlags } = await import("/lib/feature-flags.ts");
     const { initRenderer, startRenderLoop, stopRenderLoop, disposeRenderer } =
       await import("/features/visualizer/rendering/renderer.ts");
+    const { rendererBackend } = await import("/e2e/fixtures/optics-harness.ts");
     initFeatureFlags();
     const canvas = document.querySelector("canvas")!;
     canvas.style.width = "400px";
     canvas.style.height = "300px";
     const state = await initRenderer(canvas);
-    state.renderer.setSize(400, 300);
-    const samples = new Map<number, number>();
-    let frames = 0;
+    const backend = rendererBackend(state.renderer);
     try {
+      // Elapsed samples come only from timestamp queries; devices without them cannot report any.
+      if (!state.renderer.hasFeature("timestamp-query"))
+        return { backend, timestampQuery: false as const };
+      state.renderer.setSize(400, 300);
+      const samples = new Map<number, number>();
+      let frames = 0;
       await new Promise<void>((resolve) => {
         startRenderLoop(state, {
           /** Collects completed asynchronous samples without introducing competing GPU readbacks. */
@@ -45,6 +46,8 @@ test("developer inspector supplies frame-specific elapsed GPU timing", async ({
         });
       });
       return {
+        backend,
+        timestampQuery: true as const,
         inspector: Boolean(state.inspector),
         samples: [...samples.values()],
       };
@@ -52,6 +55,12 @@ test("developer inspector supplies frame-specific elapsed GPU timing", async ({
       await disposeRenderer(state);
     }
   });
+  annotateBackend(testInfo, result.backend);
+  test.skip(
+    !result.timestampQuery,
+    "The GPU device does not support the timestamp-query feature",
+  );
+  if (!result.timestampQuery) return;
   expect(errors).toEqual([]);
   expect(result.inspector).toBe(true);
   expect(result.samples.length).toBeGreaterThan(3);

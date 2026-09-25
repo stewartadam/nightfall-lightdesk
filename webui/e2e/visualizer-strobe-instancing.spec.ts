@@ -6,25 +6,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  annotateBackend,
+  expectWithArtifacts,
+  openOpticsFixture,
+} from "./optics-harness";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
-/** Instanced strobe cells must match independent mesh colors while eliminating per-cell draw submissions. */
 for (const layout of ["matrix", "rgb-bar"] as const) {
+  /** Instanced strobe cells must match independent mesh colors while eliminating per-cell draw submissions. */
   test(`${layout} strobe cells retain their appearance in two shared draws`, async ({
     page,
   }, testInfo) => {
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (message.type() === "error") errors.push(message.text());
-    });
-    await page.route("**/__strobe_batch__", (route) =>
-      route.fulfill({
-        contentType: "text/html",
-        body: "<canvas></canvas>",
-      }),
-    );
-    await page.goto("/__strobe_batch__");
+    const errors = await openOpticsFixture(page);
     const result = await page.evaluate(async (layout) => {
       const THREE = await import("/e2e/fixtures/three-api.ts");
       const {
@@ -35,11 +29,13 @@ for (const layout of ["matrix", "rgb-bar"] as const) {
       } = await import(
         "/features/visualizer/rendering/fixture-renderers/strobe-renderer.ts"
       );
-      const renderer = new THREE.WebGPURenderer({
-        canvas: document.querySelector("canvas")!,
+      const { createTestRenderer, readPixels, renderFrames, retainCanvas } =
+        await import("/e2e/fixtures/optics-harness.ts");
+      const { renderer, backend } = await createTestRenderer({
+        forceWebGL: undefined,
+        width: 400,
+        height: 300,
       });
-      renderer.setSize(400, 300);
-      await renderer.init();
       renderer.info.autoReset = false;
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0);
@@ -64,61 +60,56 @@ for (const layout of ["matrix", "rgb-bar"] as const) {
       updateStrobePanelColors(fixture, values);
       fixture.strobePanelData.panelGroup.rotation.x = 0;
       /** Captures pixels and driver draw counts after pipeline compilation settles. */
-      const capture = async () => {
-        await new Promise<void>((resolve) => {
-          let frames = 0;
-          renderer.setAnimationLoop(() => {
-            renderer.info.reset();
-            renderer.render(scene, camera);
-            if (++frames === 4) {
-              renderer.setAnimationLoop(null);
-              resolve();
-            }
-          });
+      const capture = async (retain: string) => {
+        await renderFrames(renderer, 4, () => {
+          renderer.info.reset();
+          renderer.render(scene, camera);
         });
-        const canvas = document.createElement("canvas");
-        canvas.width = 400;
-        canvas.height = 300;
-        const context = canvas.getContext("2d")!;
-        context.drawImage(renderer.domElement, 0, 0);
+        retainCanvas(retain, renderer.domElement);
         return {
           draws: renderer.info.render.drawCalls,
-          pixels: context.getImageData(0, 0, 400, 300).data,
-          image: canvas.toDataURL("image/png"),
+          pixels: readPixels(renderer.domElement),
         };
       };
-      const batched = await capture();
-      for (const { mesh, sources } of fixture.strobePanelData.emitterBatches) {
-        mesh.visible = false;
-        for (const source of sources) source.visible = true;
+      try {
+        const batched = await capture("strobe-batched");
+        for (const { mesh, sources } of fixture.strobePanelData
+          .emitterBatches) {
+          mesh.visible = false;
+          for (const source of sources) source.visible = true;
+        }
+        const reference = await capture("strobe-reference");
+        let difference = 0;
+        let brightness = 0;
+        for (let i = 0; i < batched.pixels.length; i++) {
+          if (i % 4 === 3) continue;
+          difference += Math.abs(batched.pixels[i] - reference.pixels[i]);
+          brightness += reference.pixels[i];
+        }
+        return {
+          backend,
+          draws: batched.draws,
+          referenceDraws: reference.draws,
+          difference,
+          brightness,
+        };
+      } finally {
+        disposeStrobePanel(fixture);
+        renderer.dispose();
       }
-      const reference = await capture();
-      let difference = 0,
-        brightness = 0;
-      for (let i = 0; i < batched.pixels.length; i++) {
-        if (i % 4 === 3) continue;
-        difference += Math.abs(batched.pixels[i] - reference.pixels[i]);
-        brightness += reference.pixels[i];
-      }
-      disposeStrobePanel(fixture);
-      renderer.dispose();
-      return {
-        draws: batched.draws,
-        referenceDraws: reference.draws,
-        difference,
-        brightness,
-        image: batched.image,
-      };
     }, layout);
-    expect(errors).toEqual([]);
-    expect(result.brightness).toBeGreaterThan(10000);
-    expect(result.difference).toBeLessThan(result.brightness * 0.01);
-    expect(result.referenceDraws - result.draws).toBe(
-      layout === "matrix" ? 110 : 70,
+    annotateBackend(testInfo, result.backend);
+    await expectWithArtifacts(
+      testInfo,
+      { page, artifacts: { "strobe-batch.json": result } },
+      () => {
+        expect(errors).toEqual([]);
+        expect(result.brightness).toBeGreaterThan(10000);
+        expect(result.difference).toBeLessThan(result.brightness * 0.01);
+        expect(result.referenceDraws - result.draws).toBe(
+          layout === "matrix" ? 110 : 70,
+        );
+      },
     );
-    await testInfo.attach("strobe-batched.png", {
-      body: Buffer.from(result.image.split(",")[1], "base64"),
-      contentType: "image/png",
-    });
   });
 }

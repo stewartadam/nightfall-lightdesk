@@ -6,21 +6,23 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  annotateBackend,
+  expectWithArtifacts,
+  openOpticsFixture,
+} from "./optics-harness";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
-/** A definition-driven row of independent apertures must overlap into a sheet and retain cell blackout. */
 for (const geometryDriven of [false, true]) {
+  /** A definition-driven row of independent apertures must overlap into a sheet and retain cell blackout. */
   test(`sixty ${geometryDriven ? "imported geometry" : "builtin"} apertures overlap continuously while retaining independent control`, async ({
     page,
   }, testInfo) => {
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (message.type() === "error") errors.push(message.text());
-    });
-    await page.goto("/e2e/fixtures/optics.html");
+    const errors = await openOpticsFixture(page);
     const result = await page.evaluate(async (geometryDriven) => {
       const T = await import("/e2e/fixtures/three-api.ts");
+      const { readPixels, renderFrames, retainCanvas, verifyBackend } =
+        await import("/e2e/fixtures/optics-harness.ts");
       const { BeamType, FixtureLayout, GeometryType } = await import(
         "/types/index.ts"
       );
@@ -53,6 +55,7 @@ for (const geometryDriven of [false, true]) {
       });
       renderer.setSize(400, 500);
       await renderer.init();
+      const backend = await verifyBackend(renderer, undefined);
       const scene = new T.Scene();
       scene.background = new T.Color(0);
       const camera = new T.PerspectiveCamera(50, 400 / 500, 0.1, 40);
@@ -123,54 +126,47 @@ for (const geometryDriven of [false, true]) {
         ]),
       );
       beams.updateFixtureBeam(fixture.uid, fixture, colors);
-      /** Reads a horizontal slice through the fog, well away from both ends of the apertures. */
-      const capture = async () => {
-        await new Promise<void>((resolve) => {
-          let frames = 0;
-          renderer.setAnimationLoop(() => {
-            pipeline.render();
-            if (++frames === 4) {
-              renderer.setAnimationLoop(null);
-              resolve();
-            }
-          });
+      /** Reads the blue channel along a horizontal slice through the fog, well away from both ends of the apertures. */
+      const capture = async (name: string) => {
+        await renderFrames(renderer, 4, () => pipeline.render());
+        retainCanvas(name, renderer.domElement);
+        const pixels = readPixels(renderer.domElement, {
+          x: 140,
+          y: 200,
+          width: 120,
+          height: 1,
         });
-        const canvas = document.createElement("canvas");
-        canvas.width = 400;
-        canvas.height = 500;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(renderer.domElement, 0, 0);
-        const pixels = ctx.getImageData(0, 0, 400, 500).data;
-        const line = Array.from(
-          { length: 120 },
-          (_, x) => pixels[(200 * 400 + 140 + x) * 4 + 2],
-        );
-        return { line, image: canvas.toDataURL() };
+        return Array.from({ length: 120 }, (_, x) => pixels[x * 4 + 2]);
       };
-      const all = await capture();
-      for (let i = 30; i < 60; i++) colors.get(`Cell ${i}`)!.intensity = 0;
-      beams.updateFixtureBeam(fixture.uid, fixture, colors);
-      const half = await capture();
-      beams.dispose();
-      if (geometryDriven) disposeFixtureInstance(fixture);
-      else disposeLedBar({ ...fixture, ledBarData: fixture.ledBarData! });
-      scenePass.dispose();
-      pipeline.dispose();
-      renderer.dispose();
-      return { all, half };
+      try {
+        const all = await capture("led-sheet-all");
+        for (let i = 30; i < 60; i++) colors.get(`Cell ${i}`)!.intensity = 0;
+        beams.updateFixtureBeam(fixture.uid, fixture, colors);
+        const half = await capture("led-sheet-half");
+        return { backend, all, half };
+      } finally {
+        beams.dispose();
+        if (geometryDriven) disposeFixtureInstance(fixture);
+        else disposeLedBar({ ...fixture, ledBarData: fixture.ledBarData! });
+        scenePass.dispose();
+        pipeline.dispose();
+        renderer.dispose();
+      }
     }, geometryDriven);
-    for (const [name, capture] of Object.entries(result))
-      await testInfo.attach(`led-sheet-${name}.png`, {
-        body: Buffer.from(capture.image.split(",")[1], "base64"),
-        contentType: "image/png",
-      });
-    expect(errors).toEqual([]);
-    expect(Math.min(...result.all.line)).toBeGreaterThan(5);
-    expect(
-      Math.min(...result.all.line) / Math.max(...result.all.line),
-    ).toBeGreaterThan(0.6);
-    const left = result.half.line.slice(10, 30).reduce((a, b) => a + b, 0);
-    const right = result.half.line.slice(90, 110).reduce((a, b) => a + b, 0);
-    expect(right).toBeLessThan(left * 0.1);
+    annotateBackend(testInfo, result.backend);
+    await expectWithArtifacts(
+      testInfo,
+      { page, artifacts: { "led-sheet.json": result } },
+      () => {
+        expect(errors).toEqual([]);
+        expect(Math.min(...result.all)).toBeGreaterThan(5);
+        expect(
+          Math.min(...result.all) / Math.max(...result.all),
+        ).toBeGreaterThan(0.6);
+        const left = result.half.slice(10, 30).reduce((a, b) => a + b, 0);
+        const right = result.half.slice(90, 110).reduce((a, b) => a + b, 0);
+        expect(right).toBeLessThan(left * 0.1);
+      },
+    );
   });
 }
