@@ -5270,7 +5270,6 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "gdtf",
- "moonshine-kind",
  "nightfall",
  "nightfall-dmx",
  "nightfall-engine",
@@ -5284,7 +5283,6 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
- "typeshare",
  "uuid",
 ]
 

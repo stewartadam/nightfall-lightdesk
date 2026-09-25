@@ -10,6 +10,8 @@
 
 #![warn(missing_docs)]
 
+pub mod fixture_library;
+
 #[cfg(target_arch = "wasm32")]
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -36,6 +38,8 @@ use nightfall_timeline::prelude::TimelinePlugin;
 use nightfall_undo::prelude::UndoPlugin;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
+use crate::fixture_library::BuiltinFixtureLibraryPlugin;
 
 const MAX_TICK_DELTA_MS: f64 = 100.0;
 #[cfg(test)]
@@ -166,6 +170,7 @@ fn construction_stage_name(stage: u8) -> &'static str {
         2 => "adding UndoPlugin",
         3 => "adding ClientBridgePlugin",
         4 => "adding FixturePlugin",
+        5 => "adding BuiltinFixtureLibraryPlugin",
         6 => "adding FixtureCompositorPlugin",
         7 => "loading the demo showfile",
         8 => "attaching the client bridge host",
@@ -199,6 +204,8 @@ impl BrowserEngine {
         app.add_plugins(ClientBridgePlugin);
         set_construction_stage(4);
         app.add_plugins(FixturePlugin);
+        set_construction_stage(5);
+        app.add_plugins(BuiltinFixtureLibraryPlugin);
         set_construction_stage(6);
         app.add_plugins(FixtureCompositorPlugin);
         app.add_plugins(SceneObjectPlugin);
@@ -311,13 +318,13 @@ mod tests {
     use super::*;
 
     /// Build the tracked browser test fixture through the canonical JSON load boundary.
-    fn sample_engine() -> BrowserEngine {
+    pub(crate) fn sample_engine() -> BrowserEngine {
         BrowserEngine::create_core(TEST_SAMPLE_ID.to_owned(), TEST_SHOWFILE_JSON)
             .expect("runtime should initialize from the test showfile")
     }
 
     /// Decode one discriminator-prefixed engine publication into JSON.
-    fn decode_publication(bytes: &[u8]) -> Value {
+    pub(crate) fn decode_publication(bytes: &[u8]) -> Value {
         assert!(
             !bytes.is_empty(),
             "publication must contain a discriminator"
@@ -370,6 +377,7 @@ mod tests {
         assert_eq!(capabilities["runtime_mode"], "EmbeddedDemo");
         assert_eq!(capabilities["timeline_audio"], "BundledBrowser");
         assert_eq!(capabilities["fx_modules"], "Unavailable");
+        assert_eq!(capabilities["fixture_library"], "BuiltInOnly");
         let fixtures = messages
             .iter()
             .find(|message| message["type"] == "FixtureDefinitions")

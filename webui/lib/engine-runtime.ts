@@ -2715,14 +2715,15 @@ export const engineRuntime = {
               type: "ResyncState",
             } as types.EngineCommand,
           });
+          // Every runtime serves at least the built-in fixture profiles.
+          this.sendCommand({
+            module: "FixtureLibraryCommand",
+            command: {
+              type: "ListAvailableFixtures",
+            } satisfies types.FixtureLibraryCommand,
+          });
           if (this.config?.mode === "remote") {
             // Request native-only catalog state from the remote backend.
-            this.sendCommand({
-              module: "FixtureLibraryCommand",
-              command: {
-                type: "ListAvailableFixtures",
-              } as any,
-            });
             this.sendCommand({
               module: "ObjectLibraryCommand",
               command: {
