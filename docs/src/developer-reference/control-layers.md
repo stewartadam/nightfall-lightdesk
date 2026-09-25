@@ -87,6 +87,27 @@ trigger binding. The action catalog lists each action's supported behaviors. OSC
 buttons report releases when their mapping names both the pressed value (`arg_value`)
 and the released value (`release_value`).
 
+### Mapping edit undo
+
+`UpsertMapping` and `DeleteMapping` for MIDI and OSC are undoable through one shared
+mechanism in `nightfall-actions` (`binding_undo.rs`). A mapping resource implements
+`BindingStore`, and `register_binding_undo` registers the domain command together with a
+`RestoreBindings<S>` engine operation:
+
+- The command's inverse (`capture_binding_edit`) applies the edit to a copy of the store
+  and snapshots every affected mapping on both sides: the upserted or deleted mapping plus
+  any mappings an upsert displaced, with their list positions before the edit.
+- Undo removes what the edit left and reinserts the snapshots at their former positions,
+  so list order is restored exactly. Its inverse is the opposite restore, which is redo.
+- A restore requires the edit's result to still be stored unchanged, and a reinserted ID
+  to be free. Otherwise its inverse is unavailable and undo or redo fails with
+  `undo.state_conflict` / `redo.state_conflict`, leaving history and mappings untouched.
+
+An upsert that displaces mappings returns them as `MidiMappingUpserted` /
+`OscMappingUpserted` (`replaced`), and the Web UI names them in its confirmation toast.
+Replacing every mapping at once (`set_mappings`) only happens on showfile load and sample
+data, is not a command, and is not undoable.
+
 ### Controller mapping mode
 
 Mapping mode lets an operator touch a MIDI or OSC control and click a UI control to bind

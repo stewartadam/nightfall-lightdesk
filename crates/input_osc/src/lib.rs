@@ -20,7 +20,7 @@ use bevy_ecs::prelude::*;
 use nightfall_actions::{
     ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, BindingDiagnostic,
     ControllerMappingMode, ExternalCommandInvocation, InvocationError, SourceEdgeStates,
-    bindings_need_diagnosis, collect_binding_diagnostics,
+    bindings_need_diagnosis, collect_binding_diagnostics, register_binding_undo,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -29,16 +29,20 @@ pub mod command;
 pub mod mapping;
 mod osc;
 mod service;
+mod undo;
 mod websocket;
 
-use command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
+use command::{
+    OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping, OscMappingUpserted,
+};
 use mapping::OscMappings;
 use osc::RawOscEvent;
 
 /// Prelude for ergonomic imports.
 pub mod prelude {
     pub use crate::command::{
-        OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping, OscType,
+        OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping,
+        OscMappingUpserted, OscType,
     };
     pub use crate::mapping::OscMappings;
     pub use crate::websocket::{OscSource, OscWsMessage};
@@ -84,6 +88,7 @@ impl Plugin for InputOscPlugin {
 
         register_ingress_command::<OscCommand>(app);
         register_command_deserializer::<OscCommand>(app, websocket::deserialize_osc_command);
+        register_binding_undo::<OscMappings, OscCommand>(app);
 
         app.add_systems(
             Update,
@@ -313,15 +318,13 @@ fn handle_osc_crud(
                     }) {
                     Ok(()) => {
                         edges.forget(mapping.id);
-                        let displaced = mappings
+                        let replaced = mappings
                             .upsert(mapping.clone(), |action| registry.input_kind(&action.id));
-                        for id in &displaced {
-                            edges.forget(*id);
+                        for displaced in &replaced {
+                            edges.forget(displaced.id);
                         }
-                        responder.succeed_with_output(
-                            event.command_id,
-                            &serde_json::json!({ "replaced": displaced }),
-                        )
+                        responder
+                            .succeed_with_output(event.command_id, &OscMappingUpserted { replaced })
                     }
                     Err(error) => responder.fail(event.command_id, error.into()),
                 }

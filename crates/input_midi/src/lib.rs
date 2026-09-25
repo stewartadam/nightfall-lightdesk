@@ -20,7 +20,7 @@ use bevy_ecs::prelude::*;
 use nightfall_actions::{
     ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, BindingDiagnostic,
     ControllerMappingMode, InvocationError, SourceEdgeStates, SourceSignal,
-    bindings_need_diagnosis, collect_binding_diagnostics,
+    bindings_need_diagnosis, collect_binding_diagnostics, register_binding_undo,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -28,9 +28,10 @@ use tokio::sync::mpsc::UnboundedReceiver;
 pub mod command;
 pub mod mapping;
 mod service;
+mod undo;
 mod websocket;
 
-use command::{MidiCommand, MidiLastEvent, MidiMapping, MidiSource};
+use command::{MidiCommand, MidiLastEvent, MidiMapping, MidiMappingUpserted, MidiSource};
 use mapping::MidiMappings;
 use service::MidiInputEvent;
 
@@ -39,7 +40,9 @@ const MIDI_DEVICE_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Prelude for ergonomic imports
 pub mod prelude {
-    pub use crate::command::{MidiCommand, MidiLastEvent, MidiMapping, MidiSource};
+    pub use crate::command::{
+        MidiCommand, MidiLastEvent, MidiMapping, MidiMappingUpserted, MidiSource,
+    };
     pub use crate::mapping::MidiMappings;
     pub use crate::websocket::MidiDevice;
     pub use crate::{InputMidiPlugin, MidiMappingDiagnostics};
@@ -82,6 +85,7 @@ impl Plugin for InputMidiPlugin {
         register_ingress_command::<MidiCommand>(app);
         app.add_message::<MidiInput>();
         register_command_deserializer::<MidiCommand>(app, websocket::deserialize_midi_command);
+        register_binding_undo::<MidiMappings, MidiCommand>(app);
 
         // Add systems
         // Poll raw input and resolve mappings before registered actions are dispatched.
@@ -337,14 +341,14 @@ fn handle_midi_crud(
                     }) {
                     Ok(()) => {
                         edges.forget(mapping.id);
-                        let displaced = mappings
+                        let replaced = mappings
                             .upsert(mapping.clone(), |action| registry.input_kind(&action.id));
-                        for id in &displaced {
-                            edges.forget(*id);
+                        for displaced in &replaced {
+                            edges.forget(displaced.id);
                         }
                         responder.succeed_with_output(
                             event.command_id,
-                            &serde_json::json!({ "replaced": displaced }),
+                            &MidiMappingUpserted { replaced },
                         )
                     }
                     Err(error) => responder.fail(event.command_id, error.into()),
@@ -619,7 +623,7 @@ mod tests {
         };
         assert_eq!(
             output.map(|output| output.value),
-            Some(serde_json::json!({ "replaced": [uuid::Uuid::from_u128(1)] }))
+            Some(serde_json::json!({ "replaced": [note_mapping(1, 60)] }))
         );
     }
 

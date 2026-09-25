@@ -113,6 +113,14 @@ pub struct MidiLastEvent {
     pub source: Option<MidiSource>,
 }
 
+/// Output of a successful MIDI mapping upsert.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct MidiMappingUpserted {
+    /// Mappings on the same control that the upsert removed, in their former list order.
+    pub replaced: Vec<MidiMapping>,
+}
+
 /// Commands for MIDI mapping edits.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]

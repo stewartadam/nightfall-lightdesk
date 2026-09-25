@@ -211,6 +211,14 @@ pub struct OscExternalEval {
     pub source: String,
 }
 
+/// Output of a successful OSC mapping upsert.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct OscMappingUpserted {
+    /// Mappings for the same control that the upsert removed, in their former list order.
+    pub replaced: Vec<OscMapping>,
+}
+
 /// Commands accepted by the OSC plugin.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
