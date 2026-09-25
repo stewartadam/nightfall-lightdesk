@@ -18,8 +18,8 @@ import {
   type PanelComponentName,
   panelDefinitionByName,
 } from "../../lib/panel-definitions";
+import { stopAllPlayback } from "./cleanup";
 import type { GuideContent } from "./lessons";
-import { stopAllPlayback } from "./playback";
 
 // TODO: Replace shortcut placeholders with action references so shortcuts can be discovered and injected automatically.
 const lessonShortcuts: Record<string, string> = {
