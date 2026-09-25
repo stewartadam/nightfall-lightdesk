@@ -31,6 +31,7 @@ import {
 } from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import type { FixtureElement } from "../../../../types";
+import { excludeFromSelection } from "../../model/selection-exclusion";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 import {
   type BeamMaterial,
@@ -222,6 +223,7 @@ export function buildRotatingWashBeamFixture(
     }
     const beamMesh = new Mesh(createBeamGeometry(beamQuality), beamMaterial);
     beamMesh.name = `Beam_${index + 1}`;
+    excludeFromSelection(beamMesh);
     beamMesh.position.set(0, -MAX_BEAM_LENGTH / 2, 0);
     beamMesh.castShadow = false;
     beamMesh.frustumCulled = false;
@@ -251,6 +253,7 @@ export function buildRotatingWashBeamFixture(
     });
     const floorSpotMesh = new Mesh(floorSpotGeometry, floorSpotMaterial);
     floorSpotMesh.name = `BeamFootprint_${index + 1}`;
+    excludeFromSelection(floorSpotMesh);
     floorSpotMesh.rotation.x = -Math.PI / 2;
     floorSpotMesh.frustumCulled = false;
     floorSpotMesh.renderOrder = 101;
@@ -533,6 +536,7 @@ function createLensMesh(index: number): Mesh {
   const material = new MeshBasicMaterial({ color: 0x252525 });
   const mesh = new Mesh(geometry, material);
   mesh.name = `Lens_${index}`;
+  excludeFromSelection(mesh);
   mesh.rotation.x = Math.PI / 2;
   return mesh;
 }
@@ -549,6 +553,7 @@ function createStripPixelMesh(stripName: string, pixelIndex: number): Mesh {
   const material = new MeshBasicMaterial({ color: 0x000000 });
   const mesh = new Mesh(geometry, material);
   mesh.name = `${stripName}Pixel_${pixelIndex}`;
+  excludeFromSelection(mesh);
   return mesh;
 }
 

@@ -29,6 +29,7 @@ import {
   Vector3,
 } from "three/webgpu";
 import type { FixtureElement, FixtureGeometry } from "../../../../types";
+import { excludeFromSelection } from "../../model/selection-exclusion";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 
 const LED_BAR_HOUSING_HEIGHT = 0.06;
@@ -65,6 +66,7 @@ function addCellSelectionMeshes(
   const cellSelectionMeshes = cellPositions.map((position, index) => {
     const mesh = new Mesh(cellGeometry, cellSelectionMaterial);
     mesh.name = `PixelSelection_${index}`;
+    excludeFromSelection(mesh);
     mesh.position.copy(position);
     mesh.raycast = () => {};
     group.add(mesh);
@@ -161,6 +163,7 @@ export function buildLedBarFixture(
   });
   const cellMesh = new InstancedMesh(cellGeometry, cellMaterial, cellCount);
   cellMesh.name = "Pixels";
+  excludeFromSelection(cellMesh);
 
   // Initialize instance colors (black = off)
   cellMesh.instanceColor = new InstancedBufferAttribute(
@@ -343,6 +346,7 @@ export function buildSimpleLedBar(
   });
   const cellMesh = new InstancedMesh(cellGeometry, cellMaterial, cellCount);
   cellMesh.name = "Pixels";
+  excludeFromSelection(cellMesh);
 
   // Initialize instance colors (black = off)
   cellMesh.instanceColor = new InstancedBufferAttribute(

@@ -17,6 +17,7 @@ import { Mesh } from "three/webgpu";
 import { getLogger } from "../../../lib/logger";
 import type { SelectionTarget } from "../../../lib/selection-targets";
 import type { ExtendedFixtureInstance } from "../rendering/fixture-renderers";
+import { isExcludedFromSelection } from "./selection-exclusion";
 import type { SceneObjectInstance } from "./types";
 
 const log = getLogger(import.meta.url);
@@ -45,84 +46,20 @@ function findEmitterForElementLabel(
   return undefined;
 }
 
-/** Get meshes to highlight for a fixture based on its renderer type. */
+/**
+ * Collect the structural meshes outlined when a whole fixture is selected.
+ * Walks the fixture group and skips any mesh a renderer flagged with
+ * `excludeFromSelection` (beams, lenses, emitter pixels, debug markers).
+ */
 export const getSelectionMeshes = (
   instance: ExtendedFixtureInstance,
 ): Object3D[] => {
   const meshes: Object3D[] = [];
-
-  switch (instance.rendererType) {
-    case "moving-head":
-      if (instance.movingHeadData) {
-        instance.movingHeadData.yokeGroup.traverse((child) => {
-          if (
-            child instanceof Mesh &&
-            child.name !== "Beam" &&
-            child.name !== "Lens"
-          ) {
-            meshes.push(child);
-          }
-        });
-        instance.movingHeadData.headGroup.traverse((child) => {
-          if (
-            child instanceof Mesh &&
-            child.name !== "Beam" &&
-            child.name !== "Lens"
-          ) {
-            meshes.push(child);
-          }
-        });
-      }
-      break;
-
-    case "led-bar":
-      if (instance.ledBarData) {
-        const housing = instance.group.children[0];
-        if (housing instanceof Mesh) {
-          meshes.push(housing);
-        }
-      }
-      break;
-
-    case "strobe-panel":
-      if (instance.strobePanelData) {
-        instance.group.traverse((child) => {
-          if (
-            child instanceof Mesh &&
-            child.name !== "Pixel" &&
-            child.name !== "WhiteSegment" &&
-            child.name !== "TopRgbSegment" &&
-            child.name !== "BottomRgbSegment"
-          ) {
-            meshes.push(child);
-          }
-        });
-        return meshes;
-      }
-      break;
-
-    case "rotating-wash-beam":
-      instance.group.traverse((child) => {
-        if (
-          child instanceof Mesh &&
-          !child.name.startsWith("Lens_") &&
-          !child.name.startsWith("Beam_") &&
-          !child.name.includes("StripPixel")
-        ) {
-          meshes.push(child);
-        }
-      });
-      return meshes;
-
-    default:
-      instance.group.traverse((child) => {
-        if (child instanceof Mesh && !child.name.endsWith("_emitter")) {
-          meshes.push(child);
-        }
-      });
-      return meshes;
-  }
-
+  instance.group.traverse((child) => {
+    if (child instanceof Mesh && !isExcludedFromSelection(child)) {
+      meshes.push(child);
+    }
+  });
   return meshes;
 };
 
