@@ -225,6 +225,14 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
       FloatType,
     );
     this.priorityTexture.generateMipmaps = false;
+    // Allocate real GPU storage before any material binds these textures. Three binds a
+    // never-uploaded texture to a placeholder and re-resolves a binding only when that render
+    // object refreshes in a frame where the version changed; render objects that skip that
+    // frame keep sampling the placeholder, an all-zero aperture that floods surfaces with light.
+    // With change-only uploads the version may never change again, so later uploads must only
+    // replace the contents of storage every binding already references.
+    this.apertureTexture.needsUpdate = true;
+    this.priorityTexture.needsUpdate = true;
   }
 
   /**

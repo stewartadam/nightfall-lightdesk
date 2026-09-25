@@ -211,8 +211,19 @@ function internals(node: OpticalClusteredLightsNode) {
     apertureTexture: DataTexture;
     apertureData: Float32Array;
     priorityData: Float32Array;
+    priorityTexture: DataTexture;
   };
 }
+
+/** Surfaces bound before the first aperture write must reference real texture storage, not a placeholder. */
+test("optical textures own GPU storage before any material binds them", () => {
+  const { node } = clusterNode(8, 4);
+  // Version 0 would bind Three's placeholder, which render objects that miss the first
+  // upload keep sampling while change-only uploads never bump the version again.
+  assert.ok(internals(node).apertureTexture.version > 0);
+  assert.ok(internals(node).priorityTexture.version > 0);
+  node.disposeApertures();
+});
 
 /** Unchanged optical parameters must not re-upload the aperture texture every frame. */
 test("aperture texture uploads only when optical data changes", () => {

@@ -237,6 +237,11 @@ for (const forceWebGL of [false, true]) {
       const isWebGPU = Boolean(
         (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend,
       );
+      // Rejected adapters (for example SwiftShader) leave only the WebGL fallback.
+      if (!forceWebGL && !isWebGPU) {
+        renderer.dispose();
+        return null;
+      }
       const lighting = new OpticalSurfaceLighting();
       renderer.lighting = lighting;
       const pool = lighting.shadows;
