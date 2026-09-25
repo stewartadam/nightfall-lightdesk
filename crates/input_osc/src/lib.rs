@@ -18,8 +18,9 @@ use std::net::SocketAddr;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
-    ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, ExternalCommandInvocation,
-    SourceEdgeStates,
+    ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, BindingDiagnostic,
+    ExternalCommandInvocation, InvocationError, SourceEdgeStates, bindings_need_diagnosis,
+    collect_binding_diagnostics,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -30,18 +31,18 @@ mod osc;
 mod service;
 mod websocket;
 
-use command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus};
+use command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
 use mapping::OscMappings;
 use osc::RawOscEvent;
 
 /// Prelude for ergonomic imports.
 pub mod prelude {
-    pub use crate::InputOscPlugin;
     pub use crate::command::{
         OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping, OscType,
     };
     pub use crate::mapping::OscMappings;
     pub use crate::websocket::{OscSource, OscWsMessage};
+    pub use crate::{InputOscPlugin, OscMappingDiagnostics};
 }
 
 /// Plugin for OSC input handling.
@@ -93,7 +94,16 @@ impl Plugin for InputOscPlugin {
             Update,
             (forward_external_command_invocations, handle_osc_crud).in_set(EventHandling),
         );
-        app.add_systems(Render, websocket::send_osc_state.in_set(ClientOutput));
+        app.init_resource::<OscMappingDiagnostics>();
+        app.add_systems(
+            Render,
+            (
+                refresh_osc_mapping_diagnostics.run_if(bindings_need_diagnosis::<OscMappings>),
+                websocket::send_osc_state,
+            )
+                .chain()
+                .in_set(ClientOutput),
+        );
         app.add_systems(
             PostUpdate,
             websocket::send_external_evals.in_set(ClientFeedback),
@@ -192,6 +202,51 @@ fn forward_external_command_invocations(
             source: invocation.source.clone(),
         });
     }
+}
+
+/// Mappings that cannot currently invoke their action, in mapping order.
+///
+/// Invalid mappings stay stored; these diagnostics tell the operator which ones will fail.
+#[derive(Resource, Default, Debug, PartialEq)]
+pub struct OscMappingDiagnostics(pub Vec<BindingDiagnostic>);
+
+/// Validates one stored OSC mapping against the registry and the current world.
+///
+/// Checks the action, its arguments, whether the mapping's source can drive the action and
+/// its behavior, and that the action's targets exist.
+fn diagnose_osc_mapping(
+    registry: &ActionRegistry,
+    world: &World,
+    mapping: &OscMapping,
+) -> Result<(), InvocationError> {
+    registry
+        .validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
+            mapping.can_drive(kind)
+        })
+        .and_then(|()| {
+            registry.validate_behavior(&mapping.action, mapping.behavior, mapping.reports_release())
+        })
+        .and_then(|()| registry.validate_target(world, &mapping.action))
+}
+
+/// Recomputes OSC mapping diagnostics after mappings, registrations, or targets changed.
+///
+/// The diagnostics resource is only written when the result differs, so clients are
+/// notified only when a mapping becomes invalid or recovers.
+fn refresh_osc_mapping_diagnostics(world: &mut World) {
+    let diagnostics = {
+        let registry = world.resource::<ActionRegistry>();
+        collect_binding_diagnostics(
+            world
+                .resource::<OscMappings>()
+                .mappings()
+                .iter()
+                .map(|mapping| (mapping.id, diagnose_osc_mapping(registry, world, mapping))),
+        )
+    };
+    world
+        .resource_mut::<OscMappingDiagnostics>()
+        .set_if_neq(OscMappingDiagnostics(diagnostics));
 }
 
 /// Applies tracked OSC mapping CRUD commands and reports their terminal outcomes.
@@ -396,6 +451,52 @@ mod tests {
             take_result(&mut app).outcome,
             CommandOutcome::Succeeded { .. }
         ));
+    }
+
+    /// Verifies loaded mappings that cannot run are kept and diagnosed with their failure.
+    #[test]
+    fn loaded_invalid_mappings_are_kept_and_diagnosed() {
+        let mut app = osc_command_app();
+        app.init_resource::<nightfall_actions::ActionTargets>();
+        app.init_resource::<OscMappingDiagnostics>();
+        app.add_systems(
+            Update,
+            refresh_osc_mapping_diagnostics.run_if(bindings_need_diagnosis::<OscMappings>),
+        );
+        let mapping = |id: u128, action: &str| OscMapping {
+            id: Uuid::from_u128(id),
+            address: format!("/control/{id}"),
+            action: nightfall_actions::ActionReference::new(action, serde_json::json!({})),
+            ..test_mapping()
+        };
+        app.world_mut()
+            .resource_mut::<OscMappings>()
+            .set_mappings(vec![
+                mapping(1, "test.eval"),
+                mapping(2, "test.timeline"),
+                mapping(3, "test.level"),
+            ]);
+
+        app.update();
+
+        assert_eq!(app.world().resource::<OscMappings>().mappings().len(), 3);
+        let diagnostics = &app.world().resource::<OscMappingDiagnostics>().0;
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.binding_id, diagnostic.error.code.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (Uuid::from_u128(2), "action.surface_not_allowed"),
+                (Uuid::from_u128(3), "action.input_incompatible"),
+            ]
+        );
+
+        app.world_mut()
+            .resource_mut::<OscMappings>()
+            .delete(Uuid::from_u128(2));
+        app.update();
+        assert_eq!(app.world().resource::<OscMappingDiagnostics>().0.len(), 1);
     }
 
     /// Verifies an argument-free address cannot be bound to a fader-style action.
