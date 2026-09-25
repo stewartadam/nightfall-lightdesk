@@ -88,7 +88,14 @@ export function StartupController(props: StartupControllerProps) {
       restartAppLifecycleForBackendSessionReset();
       return;
     }
-    if (state.phase === "interactive") return;
+    // World-swap operations own completion after canonical resync. The old
+    // world's Ready state can remain visible while their command is in flight.
+    if (
+      state.phase === "interactive" ||
+      state.phase === "startup-loading-saved" ||
+      state.phase === "startup-loading-draft"
+    )
+      return;
     if (backendState === types.AppState.Ready) {
       transitionAppLifecycle({ type: "interactive" });
       return;
