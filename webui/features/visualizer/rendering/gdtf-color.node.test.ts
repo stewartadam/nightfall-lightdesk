@@ -259,6 +259,32 @@ test("only gobo wheels project, lowest wheel first", () => {
   );
 });
 
+/** Verifies an unnumbered `Gobo` wheel function contributes and projects its images. */
+test("unnumbered gobo wheels project", () => {
+  resetDmxPool();
+  const element: FixtureElement = {
+    label: "Head",
+    parameters: [
+      parameter({ type: "Intensity" }),
+      parameter({ type: "Gobo" }, [
+        fn("Gobo", {
+          wheel: "Gobo Wheel",
+          sets: [
+            { name: "Open", dmx_from: 0, dmx_to: 9 },
+            { name: "Stars", dmx_from: 10, dmx_to: 255, media: "stars" },
+          ],
+        }),
+      ]),
+    ],
+  };
+  assert.deepEqual(elementGoboMedia(element), ["stars"]);
+  assert.equal(
+    extractVisualizerDmx({ Intensity: 255, Gobo: 20 }, element).gobo,
+    1,
+    "stars projected",
+  );
+});
+
 /** Verifies a profile shutter strobes only inside strobe functions, with rate from their range. */
 test("shutter functions strobe only in strobe ranges", () => {
   resetDmxPool();

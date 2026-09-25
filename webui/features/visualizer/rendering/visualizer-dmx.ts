@@ -238,19 +238,24 @@ function normalizeSignedPositionOutput(
 /** Gobo image lists per element, computed once per element object. */
 const elementGoboMediaCache = new WeakMap<FixtureElement, string[]>();
 
-/** Matches GDTF gobo wheel attributes (`Gobo1`, `Gobo2SelectSpin`, ...), capturing the wheel number. */
-const GOBO_WHEEL_ATTRIBUTE = /^Gobo(\d+)/;
+/**
+ * Matches GDTF gobo wheel attributes (`Gobo1`, `Gobo2SelectSpin`, and the
+ * unnumbered `Gobo`, `GoboSelectSpin`, ...), capturing the wheel number.
+ */
+const GOBO_WHEEL_ATTRIBUTE = /^Gobo(\d*)/;
 
 /**
  * Returns the gobo wheel number a profile function selects slots on, or
  * undefined for functions on other wheels (color, prism, animation) whose
- * slot images are swatches or effects rather than projected gobos.
+ * slot images are swatches or effects rather than projected gobos. An
+ * unnumbered gobo wheel is wheel 1, as the fixture library imports it.
  */
 function goboWheelNumber(
   fn: ParameterFunction | undefined,
 ): number | undefined {
   const match = fn && GOBO_WHEEL_ATTRIBUTE.exec(fn.attribute);
-  return match ? Number(match[1]) : undefined;
+  if (!match) return undefined;
+  return match[1] ? Number(match[1]) : 1;
 }
 
 /**
