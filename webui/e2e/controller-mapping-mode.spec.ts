@@ -135,6 +135,13 @@ test("touching a control then clicking a target binds it and the binding drives 
     name: "Map Global Master level",
   });
   await levelOverlay.click();
+  const levelMenu = page.getByRole("menu", {
+    name: "Map Global Master level to",
+  });
+  await expect(levelMenu).toContainText(
+    "Moving OSC /e2e/map/level sets Master level",
+  );
+  await levelMenu.getByRole("menuitem", { name: "Follow fader" }).click();
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -144,6 +151,11 @@ test("touching a control then clicking a target binds it and the binding drives 
       ),
     )
     .toEqual(["master.level"]);
+  // Binding disarms the control and a toast confirms what was created.
+  await expect(banner).toContainText("move a MIDI or OSC control");
+  await expect(
+    page.getByText("Bound OSC /e2e/map/level → Master level"),
+  ).toBeVisible();
   await expect(levelOverlay.locator("[data-mapping-count]")).toHaveText("1");
   // The click bound the slider instead of moving it.
   expect((await onlyMaster(page)).level_percent).toBe(100);
@@ -174,6 +186,10 @@ test("touching a control then clicking a target binds it and the binding drives 
   await page
     .getByRole("navigation", { name: "Global" })
     .getByRole("button", { name: "Map clear programmer" })
+    .click();
+  await page
+    .getByRole("menu", { name: "Map clear programmer to" })
+    .getByRole("menuitem", { name: "On press" })
     .click();
   await expect
     .poll(() =>
@@ -213,7 +229,30 @@ test("touching a control then clicking a target binds it and the binding drives 
     .toBe(true);
 });
 
-test("binding a button's press and release holds a master on only while pressed", async ({
+/**
+ * Arms an OSC button by sending one press and one release while mapping mode is active.
+ *
+ * The backend publishes at most one last event per frame, so the press must arrive first.
+ */
+async function touchOscButton(
+  page: Page,
+  port: number,
+  address: string,
+): Promise<void> {
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await sendOsc(port, address, [1]);
+  await expect(banner).toContainText(`OSC ${address}`);
+  await sendOsc(port, address, [0]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.oscLastEvent.get()?.args[0]?.data,
+      ),
+    )
+    .toBe(0);
+}
+
+test("a Hold binding keeps a toggle master on only while the button is held", async ({
   backendSlot,
   page,
 }) => {
@@ -230,29 +269,31 @@ test("binding a button's press and release holds a master on only while pressed"
     .poll(async () => (await onlyMaster(page))?.mode.type)
     .toBe("Toggle");
 
-  // One touch of a button sending 1 on press and 0 on release records both values.
   await page.getByRole("button", { name: "Controller mapping mode" }).click();
-  const banner = page.locator("[data-mapping-mode-banner]");
-  // The backend publishes at most one last event per frame, so let the press arrive first.
-  await sendOsc(port, "/e2e/map/button", [1]);
-  await expect(banner).toContainText("OSC /e2e/map/button");
-  await sendOsc(port, "/e2e/map/button", [0]);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => (window as any).appStores.oscLastEvent.get()?.args[0]?.data,
-      ),
-    )
-    .toBe(0);
-  await expect(banner).toContainText("bind its press");
+  await touchOscButton(page, port, "/e2e/map/button");
   const toggleOverlay = page.getByRole("button", {
     name: "Map toggle Global Master",
   });
   await toggleOverlay.click();
-
-  await banner.getByRole("button", { name: "Bind release" }).click();
-  await expect(banner).toContainText("bind its release");
-  await toggleOverlay.click();
+  const menu = page.getByRole("menu", { name: "Map toggle Global Master to" });
+  await expect(
+    menu
+      .getByRole("menuitem")
+      .evaluateAll((items) =>
+        items.map((item) => item.getAttribute("aria-label")),
+      ),
+  ).resolves.toEqual([
+    "Toggle · On press",
+    "Toggle · On release",
+    "On while held",
+  ]);
+  await expect(menu).toContainText(
+    "Holding OSC /e2e/map/button runs Master on: 1: Global Master; letting go runs Master off: 1: Global Master.",
+  );
+  await page.screenshot({
+    path: test.info().outputPath("controller-mapping-behaviors.png"),
+  });
+  await menu.getByRole("menuitem", { name: "On while held" }).click();
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -260,27 +301,25 @@ test("binding a button's press and release holds a master on only while pressed"
           action: mapping.action.id,
           arg_value: mapping.arg_value,
           release_value: mapping.release_value,
-          edge: mapping.edge,
+          behavior: mapping.behavior,
         })),
       ),
     )
     .toEqual([
       {
-        action: "master.toggle",
+        action: "master.on",
         arg_value: "1",
         release_value: "0",
-        edge: "Press",
-      },
-      {
-        action: "master.toggle",
-        arg_value: "1",
-        release_value: "0",
-        edge: "Release",
+        behavior: "Hold",
       },
     ]);
-  await page.screenshot({
-    path: test.info().outputPath("controller-mapping-release.png"),
-  });
+
+  // With nothing armed, clicking the target lists its binding instead of rebinding it.
+  await toggleOverlay.click();
+  await expect(menu.locator("[data-existing-binding]")).toContainText(
+    "OSC /e2e/map/button 1 · Hold",
+  );
+  await expect(menu.getByRole("menuitem")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   // Pressing turns the master on and releasing turns it back off.
@@ -292,6 +331,64 @@ test("binding a button's press and release holds a master on only while pressed"
   await expect
     .poll(async () => (await onlyMaster(page)).mode.data?.active)
     .toBe(false);
+});
+
+test("a Flash binding pushes a master to full while held and restores it", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await expect
+    .poll(async () => (await onlyMaster(page))?.level_percent)
+    .toBe(100);
+  const masterId = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.masters.get())[0] as any)
+        .identifiers.id as number,
+  );
+  await page.evaluate(
+    (id) =>
+      (window as any).appStores.sendAndAwait({
+        module: "MasterCommand",
+        command: {
+          type: "SetMasterLevel",
+          data: { id, level_percent: 30 },
+        },
+      }),
+    masterId,
+  );
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBeCloseTo(30, 3);
+
+  await page.getByRole("button", { name: "Controller mapping mode" }).click();
+  await touchOscButton(page, port, "/e2e/map/flash");
+  await page.getByRole("button", { name: "Map Global Master level" }).click();
+  await page
+    .getByRole("menu", { name: "Map Global Master level to" })
+    .getByRole("menuitem", { name: "Flash to full" })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.oscMappings.get()[0]?.behavior,
+      ),
+    )
+    .toBe("Flash");
+  await page.keyboard.press("Escape");
+
+  await sendOsc(port, "/e2e/map/flash", [1]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBe(100);
+  await sendOsc(port, "/e2e/map/flash", [0]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBeCloseTo(30, 3);
 });
 
 test("fader slots with an assigned master offer both mapping targets", async ({
@@ -331,11 +428,20 @@ test("fader slots with an assigned master offer both mapping targets", async ({
   );
   await page.getByRole("button", { name: "Map control 1 fader" }).click();
   const menu = page.getByRole("menu", { name: "Map control 1 fader to" });
-  await expect(menu.getByRole("menuitem")).toHaveText([
-    "Fader slot 1",
-    "Assigned master: Global Master",
+  await expect(
+    menu
+      .getByRole("menuitem")
+      .evaluateAll((items) =>
+        items.map((item) => item.getAttribute("aria-label")),
+      ),
+  ).resolves.toEqual([
+    "Fader slot 1 · Follow fader",
+    "Assigned master: Global Master · Follow fader",
+    "Assigned master: Global Master · Flash to full",
   ]);
-  await menu.getByRole("menuitem", { name: "Fader slot 1" }).click();
+  await menu
+    .getByRole("menuitem", { name: "Fader slot 1 · Follow fader" })
+    .click();
 
   await expect
     .poll(() =>
@@ -418,6 +524,10 @@ test("a mapped OSC button toggles timeline playback", async ({
     "OSC /e2e/map/play",
   );
   await page.getByRole("button", { name: "Map timeline play/pause" }).click();
+  await page
+    .getByRole("menu", { name: "Map timeline play/pause to" })
+    .getByRole("menuitem", { name: "On press" })
+    .click();
   await expect
     .poll(() =>
       page.evaluate(() =>

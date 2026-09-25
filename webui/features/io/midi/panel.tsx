@@ -47,22 +47,24 @@ import {
 import {
   ActionInputKind,
   type ActionReference,
+  ControlBehavior,
   type MidiMapping,
-  SourceEdge,
 } from "../../../types";
 import {
   ActionPicker,
+  findCatalogEntry,
   formatActionReference,
   useActionTargetNames,
   useBindableActionCatalog,
 } from "../../actions";
-import { EdgeSelect } from "../components/edge-select";
+import { BehaviorSelect } from "../components/behavior-select";
+import { actionBehaviors } from "../model/binding-behaviors";
 import {
-  formatSourceEdge,
+  formatBehavior,
   midiMappingFromEvent,
   midiSourceLabel,
   midiSourceNumber,
-  parseSourceEdge,
+  parseBehavior,
   withMidiChannel,
   withMidiNumber,
 } from "../model/controller-mapping-builders";
@@ -121,11 +123,11 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
     ...columnVisibilityMeta("Binding", "Number"),
   },
   {
-    title: "Fires On",
-    id: "edge",
+    title: "Behavior",
+    id: "behavior",
     width: 90,
-    filter: { value: (row) => formatSourceEdge(row.mapping.edge) },
-    ...columnVisibilityMeta("Binding", "Fires On"),
+    filter: { value: (row) => formatBehavior(row.mapping.behavior) },
+    ...columnVisibilityMeta("Binding", "Behavior"),
   },
   {
     title: "Action",
@@ -146,7 +148,19 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   const [lastEventAction, setLastEventAction] = createSignal<
     ActionReference | undefined
   >();
-  const [lastEventEdge, setLastEventEdge] = createSignal(SourceEdge.Press);
+  const [chosenBehavior, setLastEventBehavior] = createSignal(
+    ControlBehavior.Press,
+  );
+  /** Returns the catalog entry of the action chosen for the last input. */
+  const lastEventEntry = createMemo(() => {
+    const action = lastEventAction();
+    return action ? findCatalogEntry($actionCatalog(), action.id) : undefined;
+  });
+  /** Returns the chosen behavior, or Press when the chosen action does not support it. */
+  const lastEventBehavior = () =>
+    actionBehaviors(lastEventEntry()).includes(chosenBehavior())
+      ? chosenBehavior()
+      : ControlBehavior.Press;
   const panelId = props.id;
 
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -234,11 +248,11 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
               allowOverlay: true,
             };
           }
-          case "edge":
+          case "behavior":
             return {
               kind: GridCellKind.Text,
-              data: formatSourceEdge(mapping.edge),
-              displayData: formatSourceEdge(mapping.edge),
+              data: formatBehavior(mapping.behavior),
+              displayData: formatBehavior(mapping.behavior),
               allowOverlay: true,
             };
           case "action": {
@@ -296,12 +310,12 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     for (const id of ids) void deleteMidiMapping(id);
   };
 
-  /** Binds the chosen edge of the control that sent the last MIDI message to the chosen action. */
+  /** Binds, with the chosen behavior, the control that sent the last MIDI message to the chosen action. */
   const applyLastEvent = () => {
     const event = $midiLastEvent();
     const action = lastEventAction();
     if (!event || !action) return;
-    const mapping = midiMappingFromEvent(event, action, lastEventEdge());
+    const mapping = midiMappingFromEvent(event, action, lastEventBehavior());
     if (mapping) void upsertMidiMapping(mapping);
   };
 
@@ -364,9 +378,11 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                       onChange={setLastEventAction}
                       onIncomplete={() => setLastEventAction(undefined)}
                     />
-                    <EdgeSelect
-                      value={lastEventEdge()}
-                      onChange={setLastEventEdge}
+                    <BehaviorSelect
+                      value={lastEventBehavior()}
+                      behaviors={actionBehaviors(lastEventEntry())}
+                      inputKind={lastEventEntry()?.descriptor.input}
+                      onChange={setLastEventBehavior}
                     />
                     <Button
                       size="compact"
@@ -499,10 +515,10 @@ function editedMapping(
       }
       return { ...mapping, source: withMidiNumber(mapping.source, number) };
     }
-    case "edge": {
+    case "behavior": {
       if (value.kind !== GridCellKind.Text) return undefined;
-      const edge = parseSourceEdge(String(value.data ?? ""));
-      return edge === undefined ? undefined : { ...mapping, edge };
+      const behavior = parseBehavior(String(value.data ?? ""));
+      return behavior === undefined ? undefined : { ...mapping, behavior };
     }
     default:
       return undefined;

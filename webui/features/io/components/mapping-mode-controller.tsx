@@ -13,7 +13,6 @@ import { useUiAction } from "../../../components/providers/command-registry";
 import { Button } from "../../../components/ui/visual-language/button";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { midiLastEvent, oscLastEvent } from "../../../state/appStores";
-import * as types from "../../../types";
 import { midiSourceLabel } from "../model/controller-mapping-builders";
 import {
   $mappingMode,
@@ -21,7 +20,6 @@ import {
   armOscSource,
   describeArmedSource,
   exitMappingMode,
-  setMappingEdge,
   toggleMappingMode,
 } from "../model/mapping-mode";
 
@@ -74,8 +72,6 @@ export function MappingModeController() {
 /** Shows mapping progress while mapping mode is active. */
 export function MappingModeBanner() {
   const $mode = useStore($mappingMode);
-  /** Returns whether the next click binds the armed control's release. */
-  const onRelease = () => $mode().edge === types.SourceEdge.Release;
   return (
     <Show when={$mode().active}>
       <div
@@ -86,37 +82,20 @@ export function MappingModeBanner() {
         <span>
           <Show
             when={$mode().armed}
-            fallback="Controller mapping: move a MIDI or OSC control to start."
+            fallback="Controller mapping: move a MIDI or OSC control, then click a highlighted control. Click one without moving a control to review its bindings."
           >
             {(armed) => (
               <>
                 Controller mapping:{" "}
                 {describeArmedSource(armed(), midiSourceLabel)} — click a
-                highlighted control to bind its{" "}
-                {onRelease() ? "release" : "press"}.
+                highlighted control to choose how it binds.
               </>
             )}
           </Show>
         </span>
-        <div class="flex items-center gap-2">
-          <Button
-            size="compact"
-            type="button"
-            variant={onRelease() ? "primary" : undefined}
-            aria-pressed={onRelease()}
-            title="Bind the next click to the control's release, such as stopping what its press started"
-            onClick={() =>
-              setMappingEdge(
-                onRelease() ? types.SourceEdge.Press : types.SourceEdge.Release,
-              )
-            }
-          >
-            Bind release
-          </Button>
-          <Button size="compact" type="button" onClick={exitMappingMode}>
-            Done
-          </Button>
-        </div>
+        <Button size="compact" type="button" onClick={exitMappingMode}>
+          Done
+        </Button>
       </div>
     </Show>
   );

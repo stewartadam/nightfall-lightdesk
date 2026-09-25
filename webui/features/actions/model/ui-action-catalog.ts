@@ -19,7 +19,7 @@ import * as types from "../../../types";
 /**
  * Describes client-hosted UI actions as catalog entries so they can be bound like backend actions.
  *
- * UI actions take no arguments and fire once per trigger.
+ * UI actions take no arguments and fire once, on a control's press or its release.
  */
 export function uiActionCatalogEntries(
   actions: readonly UiAction[],
@@ -34,6 +34,7 @@ export function uiActionCatalogEntries(
       parameters: [],
     },
     capabilities: [],
+    behaviors: [types.ControlBehavior.Press, types.ControlBehavior.Release],
   }));
 }
 

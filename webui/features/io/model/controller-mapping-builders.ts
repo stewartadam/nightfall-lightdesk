@@ -69,18 +69,18 @@ export function withMidiNumber(
   }
 }
 
-/** Builds a MIDI mapping binding one edge of the control that sent an event to an action. */
+/** Builds a MIDI mapping binding the control that sent an event to an action and behavior. */
 export function midiMappingFromEvent(
   event: types.MidiLastEvent,
   action: types.ActionReference,
-  edge: types.SourceEdge = types.SourceEdge.Press,
+  behavior: types.ControlBehavior = types.ControlBehavior.Press,
 ): types.MidiMapping | undefined {
   if (!event.source) return undefined;
   return {
     id: newMappingId(),
     device_name: event.device,
     source: event.source,
-    edge,
+    behavior,
     action: plain(action),
   };
 }
@@ -106,21 +106,21 @@ export function oscMatchValue(
   }
 }
 
-/** Formats the edge a mapping fires on for grid display; mappings default to press. */
-export function formatSourceEdge(edge: types.SourceEdge | undefined): string {
-  return edge === types.SourceEdge.Release ? "Release" : "Press";
+/** Formats a mapping's behavior for grid display; mappings default to Press. */
+export function formatBehavior(
+  behavior: types.ControlBehavior | undefined,
+): string {
+  return behavior ?? types.ControlBehavior.Press;
 }
 
-/** Parses an edited "Fires On" cell, accepting `press` or `release` in any case. */
-export function parseSourceEdge(value: string): types.SourceEdge | undefined {
-  switch (value.trim().toLowerCase()) {
-    case "press":
-      return types.SourceEdge.Press;
-    case "release":
-      return types.SourceEdge.Release;
-    default:
-      return undefined;
-  }
+/** Parses an edited Behavior cell, accepting a behavior name in any case. */
+export function parseBehavior(
+  value: string,
+): types.ControlBehavior | undefined {
+  const name = value.trim().toLowerCase();
+  return Object.values(types.ControlBehavior).find(
+    (behavior) => behavior.toLowerCase() === name,
+  );
 }
 
 /**
@@ -169,20 +169,20 @@ export function trackOscGesture(
 }
 
 /**
- * Builds an OSC mapping binding one edge of the control that sent a gesture to an action.
+ * Builds an OSC mapping binding the control that sent a gesture to an action and behavior.
  *
- * The argument criteria depend on what the action consumes:
- * - Absolute actions and boolean arguments read the first argument as a level or button.
- * - Otherwise the touched value is matched exactly. When the gesture also recorded a
- *   different release value, messages report press and release edges; without one each
- *   matching message is a pulse, so senders that never report a release still fire every
- *   time. Momentary actions without a recorded release read the argument as a level.
+ * The argument criteria depend on the behavior and what the action consumes:
+ * - Boolean arguments, and faders driving absolute actions, read the first argument.
+ * - A Press trigger matches the touched value exactly, so senders that never report a
+ *   release still fire every time; a recorded release value turns matches into edges.
+ * - Other behaviors need releases: they match the recorded pressed and released values,
+ *   or read the first argument as a level crossing the press threshold.
  */
 export function oscMappingFromGesture(
   gesture: OscGesture,
   action: types.ActionReference,
   inputKind: types.ActionInputKind,
-  edge: types.SourceEdge = types.SourceEdge.Press,
+  behavior: types.ControlBehavior = types.ControlBehavior.Press,
 ): types.OscMapping {
   const mapping: types.OscMapping = {
     id: newMappingId(),
@@ -191,23 +191,26 @@ export function oscMappingFromGesture(
     arg_index: undefined,
     arg_value: undefined,
     release_value: undefined,
-    edge,
+    behavior,
     action: plain(action),
   };
   const [arg] = gesture.event.args;
   if (!arg) return mapping;
-  if (inputKind === types.ActionInputKind.Absolute || arg.type === "Bool") {
-    return { ...mapping, arg_index: 0 };
-  }
+  const press = behavior === types.ControlBehavior.Press;
   const pressed = oscMatchValue(arg);
   const released = oscMatchValue(gesture.releaseEvent?.args[0]);
-  if (pressed === undefined) {
-    return inputKind === types.ActionInputKind.Trigger
+  const readsArgument =
+    arg.type === "Bool" ||
+    (press && inputKind === types.ActionInputKind.Absolute) ||
+    pressed === undefined ||
+    (!press && released === undefined);
+  if (readsArgument) {
+    return press &&
+      inputKind === types.ActionInputKind.Trigger &&
+      pressed === undefined &&
+      arg.type !== "Bool"
       ? mapping
       : { ...mapping, arg_index: 0 };
-  }
-  if (released === undefined && inputKind === types.ActionInputKind.Momentary) {
-    return { ...mapping, arg_index: 0 };
   }
   return {
     ...mapping,

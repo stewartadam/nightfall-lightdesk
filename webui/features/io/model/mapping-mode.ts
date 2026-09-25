@@ -7,7 +7,7 @@
  */
 
 import { atom } from "nanostores";
-import * as types from "../../../types";
+import type * as types from "../../../types";
 import {
   type OscGesture,
   trackOscGesture,
@@ -32,24 +32,26 @@ export interface MappingModeState {
   active: boolean;
   /** Control that the next click binds, once one has been touched. */
   armed?: ArmedSource;
-  /** Edge of the armed control that the next click binds. */
-  edge: types.SourceEdge;
 }
 
 /** Current controller mapping mode state. */
-export const $mappingMode = atom<MappingModeState>({
-  active: false,
-  edge: types.SourceEdge.Press,
-});
+export const $mappingMode = atom<MappingModeState>({ active: false });
+
+/** How long messages from a just-bound control are ignored, so its release does not re-arm it. */
+const REARM_DELAY_MS = 1000;
+
+/** The control most recently bound and when, used to ignore its trailing messages. */
+let lastBound: { key: string; at: number } | undefined;
 
 /** Enters mapping mode and waits for the next control to be touched. */
 export function enterMappingMode(): void {
-  $mappingMode.set({ active: true, edge: types.SourceEdge.Press });
+  lastBound = undefined;
+  $mappingMode.set({ active: true });
 }
 
 /** Leaves mapping mode, restoring normal control behavior. */
 export function exitMappingMode(): void {
-  $mappingMode.set({ active: false, edge: types.SourceEdge.Press });
+  $mappingMode.set({ active: false });
 }
 
 /** Toggles mapping mode on or off. */
@@ -64,8 +66,9 @@ export function toggleMappingMode(): void {
 /** Records a MIDI control that the next mappable click binds, when mapping mode is active. */
 export function armMidiSource(event: types.MidiLastEvent): void {
   const state = $mappingMode.get();
-  if (!state.active) return;
-  $mappingMode.set({ ...state, armed: { kind: "midi", event } });
+  const armed: ArmedSource = { kind: "midi", event };
+  if (!state.active || isJustBound(armed)) return;
+  $mappingMode.set({ ...state, armed });
 }
 
 /**
@@ -76,7 +79,7 @@ export function armMidiSource(event: types.MidiLastEvent): void {
  */
 export function armOscSource(event: types.OscLastEvent): void {
   const state = $mappingMode.get();
-  if (!state.active) return;
+  if (!state.active || isJustBound({ kind: "osc", event })) return;
   const current = state.armed?.kind === "osc" ? state.armed : undefined;
   $mappingMode.set({
     ...state,
@@ -84,9 +87,32 @@ export function armOscSource(event: types.OscLastEvent): void {
   });
 }
 
-/** Chooses which edge of the armed control the next mappable click binds. */
-export function setMappingEdge(edge: types.SourceEdge): void {
-  $mappingMode.set({ ...$mappingMode.get(), edge });
+/** Identifies the physical control behind an armed source. */
+function sourceKey(source: ArmedSource): string {
+  return source.kind === "osc"
+    ? `osc:${source.event.address}`
+    : `midi:${source.event.device}:${JSON.stringify(source.event.source)}`;
+}
+
+/** Returns whether a source is the control just bound, still sending its trailing messages. */
+function isJustBound(source: ArmedSource): boolean {
+  return (
+    lastBound !== undefined &&
+    lastBound.key === sourceKey(source) &&
+    Date.now() - lastBound.at < REARM_DELAY_MS
+  );
+}
+
+/**
+ * Clears the armed control after it was bound, keeping mapping mode active.
+ *
+ * Messages from the same control are ignored briefly, so the release that follows a touch
+ * does not arm it again.
+ */
+export function disarmMappingSource(): void {
+  const state = $mappingMode.get();
+  if (state.armed) lastBound = { key: sourceKey(state.armed), at: Date.now() };
+  $mappingMode.set({ active: state.active });
 }
 
 /** Describes an armed source for status text. */

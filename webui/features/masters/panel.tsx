@@ -365,11 +365,23 @@ export default function MastersPanel(
                         label={`toggle ${master.identifiers.label}`}
                         choices={() => [
                           {
-                            label: `Toggle ${master.identifiers.label}`,
+                            label: "Toggle",
                             action: {
                               id: "master.toggle",
                               arguments: { master: master.identifiers.uid },
                             },
+                            behaviors: [
+                              types.ControlBehavior.Press,
+                              types.ControlBehavior.Release,
+                            ],
+                          },
+                          {
+                            label: "On while held",
+                            action: {
+                              id: "master.on",
+                              arguments: { master: master.identifiers.uid },
+                            },
+                            behaviors: [types.ControlBehavior.Hold],
                           },
                         ]}
                       >

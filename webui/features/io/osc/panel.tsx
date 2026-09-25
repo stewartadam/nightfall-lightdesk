@@ -49,24 +49,26 @@ import {
 import {
   ActionInputKind,
   type ActionReference,
+  ControlBehavior,
   type OscMapping,
   type OscType,
-  SourceEdge,
 } from "../../../types";
 import {
   ActionPicker,
   actionInputKind,
+  findCatalogEntry,
   formatActionReference,
   useActionTargetNames,
   useBindableActionCatalog,
 } from "../../actions";
-import { EdgeSelect } from "../components/edge-select";
+import { BehaviorSelect } from "../components/behavior-select";
+import { actionBehaviors } from "../model/binding-behaviors";
 import {
-  formatSourceEdge,
+  formatBehavior,
   type OscGesture,
   oscMappingFromGesture,
   oscMappingReportsRelease,
-  parseSourceEdge,
+  parseBehavior,
   trackOscGesture,
 } from "../model/controller-mapping-builders";
 import {
@@ -125,11 +127,11 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
     ...columnVisibilityMeta("Binding", "Release Match"),
   },
   {
-    title: "Fires On",
-    id: "edge",
+    title: "Behavior",
+    id: "behavior",
     width: 90,
-    filter: { value: (row) => formatSourceEdge(row.mapping.edge) },
-    ...columnVisibilityMeta("Binding", "Fires On"),
+    filter: { value: (row) => formatBehavior(row.mapping.behavior) },
+    ...columnVisibilityMeta("Binding", "Behavior"),
   },
   {
     title: "Action",
@@ -214,9 +216,9 @@ function editedMapping(
         ...mapping,
         release_value: trimmed === "" ? undefined : trimmed,
       };
-    case "edge": {
-      const edge = parseSourceEdge(value);
-      return edge === undefined ? undefined : { ...mapping, edge };
+    case "behavior": {
+      const behavior = parseBehavior(value);
+      return behavior === undefined ? undefined : { ...mapping, behavior };
     }
     default:
       return undefined;
@@ -233,7 +235,19 @@ export default function OscInputPanel(props: OscInputPanelProps) {
   const [lastEventAction, setLastEventAction] = createSignal<
     ActionReference | undefined
   >();
-  const [lastEventEdge, setLastEventEdge] = createSignal(SourceEdge.Press);
+  const [chosenBehavior, setLastEventBehavior] = createSignal(
+    ControlBehavior.Press,
+  );
+  /** Returns the catalog entry of the action chosen for the last input. */
+  const lastEventEntry = createMemo(() => {
+    const action = lastEventAction();
+    return action ? findCatalogEntry($actionCatalog(), action.id) : undefined;
+  });
+  /** Returns the chosen behavior, or Press when the chosen action does not support it. */
+  const lastEventBehavior = () =>
+    actionBehaviors(lastEventEntry()).includes(chosenBehavior())
+      ? chosenBehavior()
+      : ControlBehavior.Press;
   const initialEvent = oscLastEvent.get();
   const [gesture, setGesture] = createSignal<OscGesture | undefined>(
     initialEvent ? { event: initialEvent } : undefined,
@@ -329,12 +343,12 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               displayData: rowData.release_value ?? "",
               data: rowData.release_value ?? "",
             };
-          case "edge":
+          case "behavior":
             return {
               kind: GridCellKind.Text,
               allowOverlay: true,
-              displayData: formatSourceEdge(rowData.edge),
-              data: formatSourceEdge(rowData.edge),
+              displayData: formatBehavior(rowData.behavior),
+              data: formatBehavior(rowData.behavior),
             };
           case "action": {
             const actionStr = formatActionReference(
@@ -407,7 +421,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     for (const id of ids) void deleteOscMapping(id);
   };
 
-  /** Binds the chosen edge of the last touched OSC control to the action chosen beside it. */
+  /** Binds, with the chosen behavior, the last touched OSC control to the action chosen beside it. */
   const applyLastEvent = () => {
     const touch = gesture();
     const action = lastEventAction();
@@ -416,10 +430,10 @@ export default function OscInputPanel(props: OscInputPanelProps) {
       touch,
       action,
       actionInputKind($actionCatalog(), action),
-      lastEventEdge(),
+      lastEventBehavior(),
     );
     if (
-      mapping.edge === SourceEdge.Release &&
+      mapping.behavior !== ControlBehavior.Press &&
       !oscMappingReportsRelease(mapping)
     ) {
       pushToast(
@@ -490,9 +504,11 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                   onChange={setLastEventAction}
                   onIncomplete={() => setLastEventAction(undefined)}
                 />
-                <EdgeSelect
-                  value={lastEventEdge()}
-                  onChange={setLastEventEdge}
+                <BehaviorSelect
+                  value={lastEventBehavior()}
+                  behaviors={actionBehaviors(lastEventEntry())}
+                  inputKind={lastEventEntry()?.descriptor.input}
+                  onChange={setLastEventBehavior}
                 />
                 <Button
                   size="compact"
