@@ -33,7 +33,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { fx } from "../../../state/appStores";
 import type * as types from "../../../types";
-import type { FlowWaveform, WaveformKind } from "../../../types";
+import type { FlowWaveform } from "../../../types";
 
 const log = getLogger(import.meta.url);
 
@@ -49,7 +49,6 @@ export interface FxEditorContextType {
   /** Update waveform parameters for a specific attribute */
   updateWaveform: (attr: string, updates: Partial<FlowWaveform>) => void;
   /** Change the waveform kind for an attribute */
-  setKind: (attr: string, kind: WaveformKind) => void;
   /** Set is_relative flag for an attribute */
   setIsRelative: (attr: string, relative: boolean) => void;
   /** Add a new attribute mapping to the FX */
@@ -287,10 +286,6 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
     triggerPreview();
   };
 
-  const setKind = (attr: string, kind: WaveformKind) => {
-    updateWaveform(attr, { kind });
-  };
-
   const setIsRelative = (attr: string, relative: boolean) => {
     setLocalIsRelative((prev) => ({ ...prev, [attr]: relative }));
     setIsDirty(true);
@@ -356,7 +351,6 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
         getAttributeKeys,
         getIsRelative,
         updateWaveform,
-        setKind,
         setIsRelative,
         addAttribute,
         removeAttribute,

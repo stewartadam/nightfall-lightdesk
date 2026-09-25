@@ -54,7 +54,6 @@ function FxEditorPanelContent(props: FxEditorPanelProps) {
     getAttributeKeys,
     getIsRelative,
     updateWaveform,
-    setKind,
     setIsRelative,
     addAttribute,
     removeAttribute,
@@ -227,7 +226,6 @@ function FxEditorPanelContent(props: FxEditorPanelProps) {
                           onWaveformChange={(updates) =>
                             updateWaveform(attr, updates)
                           }
-                          onKindChange={(kind) => setKind(attr, kind)}
                           showRelative={true}
                           isRelative={getIsRelative(attr)}
                           onRelativeChange={(rel) => setIsRelative(attr, rel)}

@@ -24,8 +24,6 @@ export interface WaveformEditorProps {
   waveform: FlowWaveform;
   /** Callback when waveform fields are updated */
   onWaveformChange: (updates: Partial<FlowWaveform>) => void;
-  /** Callback when waveform kind is changed */
-  onKindChange: (kind: WaveformKind) => void;
   /** Whether to show the Relative checkbox (FX editor only) */
   showRelative?: boolean;
   /** Current is_relative value (FX editor only) */
@@ -60,10 +58,11 @@ export function WaveformEditor(props: WaveformEditorProps) {
   /** Applies the selected shape and resets an editable square duty cycle. */
   const selectKind = (kind: WaveformKind) => {
     if (isDisabled("kind")) return;
-    props.onKindChange(kind);
-    if (kind === WaveformKind.Square && !isDisabled("dutyCycle")) {
-      props.onWaveformChange({ duty_cycle: 0.5 });
-    }
+    props.onWaveformChange(
+      kind === WaveformKind.Square && !isDisabled("dutyCycle")
+        ? { kind, duty_cycle: 0.5 }
+        : { kind },
+    );
   };
 
   return (
