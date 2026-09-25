@@ -30,6 +30,7 @@
     "test:browser-demo-artifact": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 NIGHTFALL_PLAYWRIGHT_VITE_MODE=preview node scripts/run-playwright.mjs test --target embedded-demo webui/e2e/browser-demo.spec.ts webui/e2e/distribution-notices.spec.ts",
     "test:browser-demo-artifact-soak": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 NIGHTFALL_PLAYWRIGHT_VITE_MODE=preview NIGHTFALL_BROWSER_DEMO_SOAK=1 node scripts/run-playwright.mjs test --target embedded-demo webui/e2e/browser-demo-soak.spec.ts",
     "test:browser-demo-soak": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 NIGHTFALL_BROWSER_DEMO_SOAK=1 node scripts/run-playwright.mjs test webui/e2e/browser-demo-soak.spec.ts",
+    "test:visualizer-perf": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 NIGHTFALL_OPTICAL_PLAYBACK_PERF=1 node scripts/run-playwright.mjs test --target embedded-demo webui/e2e/optical-playback-perf.spec.ts",
     "test:webui-playwright:headed": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 node scripts/run-playwright.mjs test --headed",
     "test:webui-playwright:ui": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 node scripts/run-playwright.mjs test --ui",
     "check:command-architecture": "node scripts/check-command-architecture.mjs",

@@ -6,11 +6,22 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { writeFile } from "node:fs/promises";
 import type { TimestampRenderer } from "../features/visualizer/rendering/gpu-frame-timer";
+import { annotateBackend, openOpticsFixture } from "./optics-harness";
+import {
+  expectPresentationWithinBudget,
+  MAX_LATE_SUBMISSION_RATIO,
+  MAX_SKIPPED_FRAME_RATIO,
+  P99_FRAME_INTERVAL_MS,
+  percentile,
+  ratio,
+} from "./perf-budgets";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { summarizePresentationTrace } from "./visualizer-presentation-report";
 import { startVisualizerPresentationTrace } from "./visualizer-presentation-trace";
+
+/** Measured frames after the 120-frame warm-up; twelve seconds span a full five-second Chromium tracker window. */
+const MEASURED_FRAMES = 720;
 
 // Performance measurements must not include the test runner's video encoder.
 test.use({ video: "off" });
@@ -20,16 +31,11 @@ test("300 active optical sources sustain frame pacing", async ({
   page,
 }, testInfo) => {
   test.skip(
-    process.env.NIGHTFALL_VISUALIZER_PLAYBACK_PERF !== "1",
-    "Opt-in GPU performance workload",
+    process.env.NIGHTFALL_OPTICAL_PLAYBACK_PERF !== "1",
+    "Opt-in synthetic GPU performance workload; set NIGHTFALL_OPTICAL_PLAYBACK_PERF=1",
   );
   test.setTimeout(60_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
-  });
-  await page.goto("/e2e/fixtures/optics.html");
+  const errors = await openOpticsFixture(page);
   const stopTrace = await startVisualizerPresentationTrace(page);
   let presentationTrace: string | undefined;
   const result = await page
@@ -61,6 +67,8 @@ test("300 active optical sources sustain frame pacing", async ({
       });
       renderer.setSize(800, 700);
       await renderer.init();
+      const { verifyBackend } = await import("/e2e/fixtures/optics-harness.ts");
+      const backend = await verifyBackend(renderer, undefined);
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0);
       const camera = new THREE.PerspectiveCamera(50, 800 / 700, 0.1, 80);
@@ -174,6 +182,7 @@ test("300 active optical sources sustain frame pacing", async ({
         copy.height = 700;
         copy.getContext("2d")!.drawImage(renderer.domElement, 0, 0);
         return {
+          backend,
           samples,
           pacing: pacing.snapshot(),
           image: copy.toDataURL("image/png"),
@@ -190,19 +199,15 @@ test("300 active optical sources sustain frame pacing", async ({
     })
     .finally(async () => {
       presentationTrace = await stopTrace();
-      await writeFile(
-        testInfo.outputPath("optical-stress-presentation.json"),
-        presentationTrace,
-      );
+      // This benchmark is opt-in, so its reports are always retained for review.
       await testInfo.attach("optical-stress-presentation.json", {
         body: presentationTrace,
         contentType: "application/json",
       });
     });
-  const report = JSON.stringify(result.samples);
-  await writeFile(testInfo.outputPath("optical-stress.json"), report);
+  annotateBackend(testInfo, result.backend);
   await testInfo.attach("optical-stress.json", {
-    body: report,
+    body: JSON.stringify(result.samples),
     contentType: "application/json",
   });
   await testInfo.attach("optical-stress-pacing.json", {
@@ -221,32 +226,26 @@ test("300 active optical sources sustain frame pacing", async ({
     body: JSON.stringify(presentation),
     contentType: "application/json",
   });
-  expect.soft(presentation.presentedAll).toBeGreaterThan(600);
-  expect.soft(presentation.droppedAffectingSmoothness).toBe(0);
-  expect.soft(presentation.presentationIntervalsOver25Ms).toBe(0);
-  expect
-    .soft(
-      presentation.sequences.some(
-        (sequence) => sequence.name === "CanvasAnimation",
-      ),
-    )
-    .toBe(true);
-  for (const sequence of presentation.sequences) {
-    expect.soft(sequence.expected).toBeGreaterThan(0);
-    expect.soft(sequence.droppedV3, sequence.name).toBe(0);
-    expect.soft(sequence.droppedV4, sequence.name).toBe(0);
-  }
-  expect(result.samples).toHaveLength(720);
+  expectPresentationWithinBudget(presentation, "CanvasAnimation");
+  expect(result.samples).toHaveLength(MEASURED_FRAMES);
+  const scheduling = result.pacing.scheduling;
   expect(
-    result.pacing.scheduling?.frames,
+    scheduling?.frames,
     "Every measured frame must include scheduler timing",
-  ).toBe(720);
+  ).toBe(MEASURED_FRAMES);
+  const intervals = result.samples
+    .map((sample) => sample.interval)
+    .sort((a, b) => a - b);
   expect(
-    result.pacing.scheduling?.over25Ms,
-    "Renderer skips refreshes under optical load",
-  ).toBe(0);
+    percentile(intervals, 0.99),
+    "p99 frame interval under optical load",
+  ).toBeLessThanOrEqual(P99_FRAME_INTERVAL_MS);
   expect(
-    result.pacing.scheduling?.lateSubmissions,
-    "Renderer submits after its 60 Hz frame budget",
-  ).toBe(0);
+    ratio(scheduling?.over25Ms, scheduling?.frames),
+    "Share of refreshes skipped under optical load",
+  ).toBeLessThanOrEqual(MAX_SKIPPED_FRAME_RATIO);
+  expect(
+    ratio(scheduling?.lateSubmissions, scheduling?.frames),
+    "Share of submissions after their 60 Hz frame budget",
+  ).toBeLessThanOrEqual(MAX_LATE_SUBMISSION_RATIO);
 });

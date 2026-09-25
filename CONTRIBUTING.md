@@ -395,6 +395,41 @@ npm run test:webui-playwright -- --headed webui/e2e/clip-go-button.spec.ts
 
 Use `--grep` to select a scenario and `--workers=1` to reduce concurrent load. Inspect screenshots and traces under `test-results/playwright/`; verify the visible result, not just command acknowledgements. Stop timeline playback at the end of a test that starts it. The wrapper disables timeline audio during its test runs.
 
+#### Visualizer optics and performance tests
+
+The optics GPU specs (`webui/e2e/emitter-*.spec.ts`, `optical-*.spec.ts`, `visualizer-antialias.spec.ts` and similar) render into `/e2e/fixtures/optics.html` without a backend, so run them with `--target embedded-demo`. They share `webui/e2e/optics-harness.ts` (Node side) and `webui/e2e/fixtures/optics-harness.ts` (browser side, imported inside `page.evaluate`). WebGPU variants verify the backend the renderer actually used and are skipped when the browser exposes no WebGPU adapter. Captured images and metrics are attached only when a test fails.
+
+| Variable | Effect |
+| --- | --- |
+| `NIGHTFALL_OPTICS_ARTIFACTS=1` | Attach optics images and metrics for passing tests too. |
+| `NIGHTFALL_VISUALIZER_ANTIALIAS_SWEEP=1` | Run the full backend × DPR × quality matrix of the antialias motion test instead of the representative subset. |
+
+Performance specs are opt-in and fail on percentile and ratio budgets defined in `webui/e2e/perf-budgets.ts` (p99 frame interval, share of skipped, late or dropped frames) rather than on single outliers.
+
+`npm run test:visualizer-perf` runs the synthetic 300-source optics workload (`optical-playback-perf.spec.ts`, enabled by `NIGHTFALL_OPTICAL_PLAYBACK_PERF=1`) against the embedded-demo target.
+
+`visualizer-playback-perf.spec.ts` benchmarks timeline 4, beat 47 of the operator's `default` showfile on the native target. It needs that show in the seed data directory and is enabled with `NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1`:
+
+```sh
+NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1 npm run test:webui-playwright -- webui/e2e/visualizer-playback-perf.spec.ts
+```
+
+It opens the app with the `visualizer:inspector=true` URL flag, which is required for the renderer to publish frame-pacing diagnostics. Further knobs:
+
+| Variable | Effect |
+| --- | --- |
+| `NIGHTFALL_VISUALIZER_RENDER_MODE=worker` | Render in the OffscreenCanvas worker instead of the main thread. |
+| `NIGHTFALL_VISUALIZER_QUALITY` | Quality preset (`low`, `medium`, `high`; default `high`). |
+| `NIGHTFALL_VISUALIZER_DISABLE_GPU_TIMING=1` | Disable GPU timestamp queries during the measured interval. |
+| `NIGHTFALL_VISUALIZER_WASH_STRESS=1` | Drive every rotating wash fixture to full intensity before measuring. |
+| `NIGHTFALL_VISUALIZER_WASH_ZOOM` | Zoom value used with the wash stress (default `0`). |
+| `NIGHTFALL_VISUALIZER_WARMUP_PROFILE=1` | Record a CPU profile of the warm-up playback. |
+| `NIGHTFALL_VISUALIZER_MESSAGE_PROFILE=1` | Measure worker message deserialization time by message type. |
+| `NIGHTFALL_VISUALIZER_CPU_PROFILE=1` | Record a CPU profile of the measured playback. |
+| `NIGHTFALL_VISUALIZER_CPU_PROFILE_TARGET=main` | In worker mode, profile the main thread instead of the worker. |
+| `NIGHTFALL_VISUALIZER_PRESENTATION_TRACE=1` | Record a Chromium presentation trace and check dropped-frame budgets. |
+| `NIGHTFALL_VISUALIZER_DETAILED_TRACE=1` | Add DevTools timeline, V8 execution and GC categories to presentation traces (both perf specs). |
+
 ### Building the documentation
 
 The user-facing manual is an mdBook in `docs/`. Its navigation lives in `docs/src/SUMMARY.md`; add a navigation entry for every new user-facing page. The [panel guide](docs/src/user-guide/panels/index.md) covers first-release panels, with Flows excluded.

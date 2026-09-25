@@ -6,8 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { writeFile } from "node:fs/promises";
 import type { VisualizerStats } from "../state/appStores";
+import {
+  expectPresentationWithinBudget,
+  FRAME_SKIP_MS,
+  MAX_LATE_SUBMISSION_RATIO,
+  MAX_SKIPPED_FRAME_RATIO,
+  P99_FRAME_INTERVAL_MS,
+  percentile,
+  ratio,
+} from "./perf-budgets";
 import { expect, type Page, test } from "./playwright-fixtures";
 import {
   seedStartupShowfileName,
@@ -27,6 +35,25 @@ const workerMode = process.env.NIGHTFALL_VISUALIZER_RENDER_MODE === "worker";
 const quality = process.env.NIGHTFALL_VISUALIZER_QUALITY ?? "high";
 const gpuTimingDisabled =
   process.env.NIGHTFALL_VISUALIZER_DISABLE_GPU_TIMING === "1";
+
+/**
+ * Quiet period after the renderer first reports FPS. Startup restores the saved layout
+ * asynchronously (and can restore it twice, see nightfall-lightdesk-lhdn) without a
+ * completion signal, so the benchmark waits this long before resolving panels.
+ */
+const STARTUP_LAYOUT_SETTLE_MS = 3000;
+
+/** Time for zoom-to-fit's animated camera transition to finish before playback starts. */
+const CAMERA_SETTLE_MS = 3000;
+
+/** Shorter settle for re-fitting after resizing, when the camera only moves slightly. */
+const REFIT_CAMERA_SETTLE_MS = 1000;
+
+/** Playback time rendered before sizing, so shader compilation and texture uploads finish outside the measurement. */
+const WARMUP_PLAYBACK_MS = 5000;
+
+/** Playback time that must elapse after restarting transport before sampling begins. */
+const RESTART_PLAYBACK_MS = 1000;
 
 // Continuous video encoding adds work absent from normal playback. Retain the
 // explicit post-measurement screenshots and opt-in profiles/traces instead.
@@ -97,6 +124,25 @@ async function transport(page: Page, target: PlaybackTarget, playing: boolean) {
     .toBe(playing);
 }
 
+/** Waits until the authoritative timecode has advanced `ms` beyond the benchmark's seek position. */
+async function waitForPlaybackProgress(
+  page: Page,
+  target: PlaybackTarget,
+  ms: number,
+): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((uid) => {
+          const time = (window as any).appStores.timecodes.get()[uid]?.[1]
+            ?.current_time;
+          return (time?.secs ?? 0) * 1000 + (time?.nanos ?? 0) / 1e6;
+        }, target.timecodeUid),
+      { timeout: ms + 30_000 },
+    )
+    .toBeGreaterThanOrEqual(target.positionMs + ms);
+}
+
 /** Resolves beat 47 using the same grid conversion as the operator's jump command. */
 async function openWorkload(page: Page): Promise<PlaybackTarget> {
   await page.setViewportSize({ width: 1920, height: 1080 });
@@ -131,7 +177,7 @@ async function openWorkload(page: Page): Promise<PlaybackTarget> {
       { timeout: 60_000 },
     )
     .toBeGreaterThan(0);
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(STARTUP_LAYOUT_SETTLE_MS);
   await waitForDockviewApp(page, { showfileName: "default" });
   return page.evaluate(async () => {
     const { resolveTimelineJumpTarget } = await import(
@@ -313,7 +359,7 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
         ".profiler-panel, .profiler-mini-panel { display: none !important; }",
     });
     await page.evaluate(() => window.getVisualizerApi?.()?.zoomToFit());
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(CAMERA_SETTLE_MS);
     await expect
       .poll(() =>
         page.evaluate(() => window.getVisualizerApi?.()?.isUsingWorker()),
@@ -331,13 +377,12 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
           : undefined;
       try {
         await transport(page, target, true);
-        await page.waitForTimeout(5000);
+        await waitForPlaybackProgress(page, target, WARMUP_PLAYBACK_MS);
       } finally {
         if (stopWarmupProfile) {
           const result = (await stopWarmupProfile()) as { profile: unknown };
           const profile = JSON.stringify(result.profile);
           const name = `visualizer-warmup-${workerMode ? "worker" : "main"}.cpuprofile`;
-          await writeFile(testInfo.outputPath(name), profile);
           await testInfo.attach(name, {
             body: profile,
             contentType: "application/json",
@@ -347,7 +392,7 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
       await waitForDockviewApp(page, { showfileName: "default" });
       await sizeBenchmarkCanvas(page);
       await page.evaluate(() => window.getVisualizerApi?.()?.zoomToFit());
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(REFIT_CAMERA_SETTLE_MS);
       await page.evaluate((visible) => {
         const apis = Object.values(window.visualizerApis ?? {});
         if (apis.length === 0)
@@ -371,7 +416,7 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
           .toBeGreaterThan(0);
       }
       await transport(page, target, true);
-      await page.waitForTimeout(1000);
+      await waitForPlaybackProgress(page, target, RESTART_PLAYBACK_MS);
       await expect(
         page.locator('canvas[aria-label="3D visualizer viewport"]'),
       ).toHaveJSProperty("width", 800);
@@ -450,18 +495,11 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
               contentType: "application/json",
             },
           );
-          await writeFile(
-            testInfo.outputPath(
-              `message-deserialization-${visible ? "rendering" : "paused"}.json`,
-            ),
-            JSON.stringify(totals),
-          );
         }
         try {
           if (stopTrace) {
             const trace = await stopTrace();
             const name = `visualizer-presentation-${workerMode ? "worker" : "main"}.json`;
-            await writeFile(testInfo.outputPath(name), trace);
             await testInfo.attach(name, {
               body: trace,
               contentType: "application/json",
@@ -471,21 +509,12 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
               body: JSON.stringify(presentation),
               contentType: "application/json",
             });
-            expect.soft(presentation.presentedAll).toBeGreaterThan(600);
-            expect.soft(presentation.droppedAffectingSmoothness).toBe(0);
-            expect.soft(presentation.presentationIntervalsOver25Ms).toBe(0);
             // Chromium reports the offscreen worker's page animation under RAF;
             // CanvasAnimation is emitted for the main-thread canvas path only.
-            const requiredSequence = workerMode ? "RAF" : "CanvasAnimation";
-            const animationSequences = presentation.sequences.filter(
-              (sequence) => sequence.name === requiredSequence,
+            expectPresentationWithinBudget(
+              presentation,
+              workerMode ? "RAF" : "CanvasAnimation",
             );
-            expect.soft(animationSequences.length).toBeGreaterThan(0);
-            for (const sequence of presentation.sequences) {
-              expect.soft(sequence.expected).toBeGreaterThan(0);
-              expect.soft(sequence.droppedV3, sequence.name).toBe(0);
-              expect.soft(sequence.droppedV4, sequence.name).toBe(0);
-            }
           }
         } finally {
           if (stopProfile) {
@@ -494,7 +523,6 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
             const profileName = profileWorker
               ? "visualizer-worker.cpuprofile"
               : "visualizer-main.cpuprofile";
-            await writeFile(testInfo.outputPath(profileName), profile);
             await testInfo.attach(profileName, {
               body: profile,
               contentType: "application/json",
@@ -553,20 +581,23 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
         detailedTrace: process.env.NIGHTFALL_VISUALIZER_DETAILED_TRACE === "1",
         canvases,
         frames: samples.length,
-        p50: intervals[Math.floor(intervals.length * 0.5)],
-        p95: intervals[Math.floor(intervals.length * 0.95)],
-        p99: intervals[Math.floor(intervals.length * 0.99)],
+        p50: percentile(intervals, 0.5),
+        p95: percentile(intervals, 0.95),
+        p99: percentile(intervals, 0.99),
         max: intervals.at(-1),
-        over25Ms: intervals.filter((ms) => ms > 25).length,
+        over25Ms: intervals.filter((ms) => ms > FRAME_SKIP_MS).length,
         renderPacing,
         samples,
       });
-      await writeFile(testInfo.outputPath(`${scenario}-playback.json`), report);
+      // This benchmark is opt-in, so its reports are always retained for review.
       await testInfo.attach(`${scenario}-playback.json`, {
         body: report,
         contentType: "application/json",
       });
-      await page.screenshot({ path: testInfo.outputPath(`${scenario}.png`) });
+      await testInfo.attach(`${scenario}.png`, {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
       await expect(
         page.locator('canvas[aria-label="3D visualizer viewport"]'),
       ).toHaveJSProperty("width", 800);
@@ -594,22 +625,37 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
           .toBe(renderPacing?.submittedFrames);
         expect
           .soft(
-            renderPacing?.scheduling?.intervalsOver25Ms,
-            "Renderer skips refreshes during timeline playback",
+            ratio(
+              renderPacing?.scheduling?.intervalsOver25Ms,
+              renderPacing?.scheduling?.frames,
+            ),
+            "Share of refreshes the renderer skips during timeline playback",
           )
-          .toBe(0);
+          .toBeLessThanOrEqual(MAX_SKIPPED_FRAME_RATIO);
         expect
           .soft(
-            renderPacing?.scheduling?.lateSubmissions,
-            "Renderer submits after its 60 Hz frame budget",
+            ratio(
+              renderPacing?.scheduling?.lateSubmissions,
+              renderPacing?.scheduling?.frames,
+            ),
+            "Share of submissions after their 60 Hz frame budget",
           )
-          .toBe(0);
+          .toBeLessThanOrEqual(MAX_LATE_SUBMISSION_RATIO);
         expect
           .soft(
-            intervals.filter((ms) => ms > 25).length,
-            "UI stalls during timeline playback",
+            percentile(intervals, 0.99),
+            "p99 UI frame interval during timeline playback",
           )
-          .toBe(0);
+          .toBeLessThanOrEqual(P99_FRAME_INTERVAL_MS);
+        expect
+          .soft(
+            ratio(
+              intervals.filter((ms) => ms > FRAME_SKIP_MS).length,
+              intervals.length,
+            ),
+            "Share of UI frames stalled during timeline playback",
+          )
+          .toBeLessThanOrEqual(MAX_SKIPPED_FRAME_RATIO);
       } else {
         expect(
           renderPacing?.submittedFrames ?? 0,
