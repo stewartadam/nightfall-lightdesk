@@ -450,6 +450,40 @@ async function openVisualizerSettings(page: Page) {
   return dialog;
 }
 
+/** Reads the quality preset the live main-thread renderer's optical context was built with, or undefined mid-rebuild. */
+async function renderedQualityPreset(page: Page) {
+  return page.evaluate(async () => {
+    const scene = (window as any).visualizerApi?.getScene?.();
+    if (!scene) return undefined;
+    const { getOpticalRenderContext } = await import(
+      "/features/visualizer/rendering/effects/optical-render-context.ts"
+    );
+    return getOpticalRenderContext(scene)?.profile.preset;
+  });
+}
+
+/** A diagnostic URL quality shows in Settings, and re-picking the already-saved preset drops the override and renders that preset. */
+test("settings quality slider reflects and clears the URL override", async ({
+  page,
+}) => {
+  const pageErrors = collectPageErrors(page, { consoleErrors: false });
+  await page.goto(
+    "/?visualizer:offscreenCanvas=false&visualizer:beamQuality=low",
+  );
+  await waitForVisualizerReady(page);
+  await waitForMainThreadVisualizerApi(page);
+  await expect.poll(() => renderedQualityPreset(page)).toBe("low");
+  const dialog = await openVisualizerSettings(page);
+  const slider = dialog.getByRole("slider", { name: "Quality preset" });
+  // The saved preset is High (see beforeEach); the slider must show what renders.
+  await expect(slider).toHaveValue("0");
+  await slider.fill("2");
+  await expect(slider).toHaveValue("2");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => renderedQualityPreset(page)).toBe("high");
+  expect(pageErrors).toEqual([]);
+});
+
 /**
  * Minimum mean-luma drop (0–255) between Darkness 0 and 100. The unlit stage fills most of
  * the canvas, so darkening it moves the mean by tens of levels; a missed re-render moves it by none.

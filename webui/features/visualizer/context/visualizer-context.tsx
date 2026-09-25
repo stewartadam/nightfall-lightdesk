@@ -21,15 +21,23 @@ import type * as types from "../../../types";
 import type { VisualizerInteractionMode } from "../rendering/renderers/renderer-api";
 import {
   type VisualizerQualityPreset,
+  visualizerEffectiveQuality,
+  visualizerQualityOverride,
   visualizerQualityPreset,
   visualizerSnapPointsEnabled,
 } from "../state/settings";
 
 const DEFAULT_VISUALIZER_TOOL_MODE: VisualizerInteractionMode = "camera";
 export type QualityPreset = VisualizerQualityPreset;
-export const visualizerQuality = visualizerQualityPreset;
+/** Quality currently rendering, so Settings reflects a diagnostic URL override rather than only the saved preset. */
+export const visualizerQuality = visualizerEffectiveQuality;
 
+/**
+ * Saves the user's quality choice and drops any diagnostic URL override, so the
+ * chosen preset renders even when it equals the already-saved preset.
+ */
 export function setVisualizerQuality(quality: QualityPreset): void {
+  visualizerQualityOverride.set(undefined);
   setStoreAction(visualizerQualityPreset, "Set Visualizer Quality", quality);
 }
 

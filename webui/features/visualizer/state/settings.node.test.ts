@@ -58,7 +58,7 @@ test("visualizer settings hydrate valid persisted values and default invalid fie
   assert.equal(settings.visualizerSnapPointsEnabled.get(), true);
 });
 
-/** A diagnostic quality override drives rendering without being saved, and yields to the next user choice. */
+/** A diagnostic quality override drives rendering without being saved, and survives persisted preset changes such as startup or cross-tab settings sync. */
 test("visualizer quality override applies without persisting", async () => {
   const settings = await importVisualizerSettings();
 
@@ -71,8 +71,8 @@ test("visualizer quality override applies without persisting", async () => {
   );
 
   settings.visualizerQualityPreset.set("high");
-  assert.equal(settings.visualizerQualityOverride.get(), undefined);
-  assert.equal(settings.visualizerEffectiveQuality.get(), "high");
+  assert.equal(settings.visualizerQualityOverride.get(), "low");
+  assert.equal(settings.visualizerEffectiveQuality.get(), "low");
   assert.equal(JSON.parse(getTestStorage()[STORAGE_KEY]).qualityPreset, "high");
 });
 

@@ -122,8 +122,8 @@ export const visualizerQualityPreset = atom<VisualizerQualityPreset>(
 );
 /**
  * Session-only quality applied by the `visualizer:beamQuality` diagnostic URL
- * parameter. It is never persisted and is dropped as soon as the user picks a
- * preset, so saved Settings stay authoritative.
+ * parameter. It is never persisted, survives persisted-settings sync, and is
+ * dropped only when the user explicitly picks a preset.
  */
 export const visualizerQualityOverride = atom<
   VisualizerQualityPreset | undefined
@@ -133,7 +133,6 @@ export const visualizerEffectiveQuality = computed(
   [visualizerQualityPreset, visualizerQualityOverride],
   (preset, override) => override ?? preset,
 );
-visualizerQualityPreset.listen(() => visualizerQualityOverride.set(undefined));
 export const visualizerCameraRotationMode = atom<VisualizerCameraRotationMode>(
   initialSettings.cameraRotationMode,
 );
