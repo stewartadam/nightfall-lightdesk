@@ -101,8 +101,9 @@ async function transport(page: Page, target: PlaybackTarget, playing: boolean) {
 async function openWorkload(page: Page): Promise<PlaybackTarget> {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await seedStartupShowfileName(page, "default");
+  // `visualizer:inspector` publishes the frame-pacing diagnostics this benchmark reports.
   await page.goto(
-    `/?e2e=1&startup:draftRecovery=false&visualizer:beamQuality=${quality}&visualizer:offscreenCanvas=${workerMode}`,
+    `/?e2e=1&startup:draftRecovery=false&visualizer:beamQuality=${quality}&visualizer:offscreenCanvas=${workerMode}&visualizer:inspector=true`,
   );
   // Let the app-owned automatic open finish before the general readiness helper
   // can click the showfile picker and enqueue a second load of the same show.

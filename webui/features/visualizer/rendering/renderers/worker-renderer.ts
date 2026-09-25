@@ -34,7 +34,7 @@ import type {
   RenderableFixture,
   RenderableSceneObject,
 } from "../../model/types";
-import { FramePacing } from "../../services/frame-pacing";
+import { Instrumentation } from "../../services/instrumentation";
 import {
   createPostProcessing,
   disposePostProcessing,
@@ -161,6 +161,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
       devicePixelRatio: config.devicePixelRatio,
       proxyId: this.proxy.id,
       initialCameraState,
+      diagnostics: config.diagnostics,
       beamQuality: config.beamQuality,
     };
     await this.workerApi.init(
@@ -551,17 +552,10 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   private cameraDragEnabled = true;
   private orbitTargetIndicatorEnabled = false;
 
-  // Stats tracking
-  private readonly STATS_WINDOW_SIZE = 60;
-  private readonly STATS_PUBLISH_INTERVAL = 10;
-  private frameTimesMs: number[] = [];
-  private readonly pacing = new FramePacing();
-  private renderTimesMs: number[] = [];
-  private updateTimesMs: number[] = [];
+  // Stats tracking; instrumentation exists once init() knows the diagnostics flag.
+  private instrumentation: Instrumentation | undefined;
   private pendingDmxMs = 0;
   private gpuTimer = new GpuFrameTimer();
-  private statsFrameCount = 0;
-  private statsLastFrameTime = 0;
 
   // Render loop timing
   private lastTime = 0;
@@ -592,6 +586,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       proxyId,
       initialCameraState,
     } = config;
+
+    this.instrumentation = new Instrumentation({
+      renderMode: "worker",
+      diagnostics: config.diagnostics,
+    });
+    this.instrumentation.setStatsCallback(this.statsCallback);
 
     // Create renderer
     this.renderer = createRenderer({
@@ -711,15 +711,14 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     if (this._isPaused) return;
     this._isPaused = true;
     this.renderer?.setAnimationLoop(null);
-
-    // Send zeroed stats to indicate paused state
-    this.publishStats(true);
+    // Publishes zeroed stats to indicate the paused state.
+    this.instrumentation?.pause();
   }
 
   resume(): void {
     if (!this._isPaused) return;
     this._isPaused = false;
-    this.resetStats();
+    this.instrumentation?.resume();
     this.startRenderLoop();
   }
 
@@ -729,7 +728,8 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
   async dispose(): Promise<void> {
     this.renderer?.setAnimationLoop(null);
-    this.statsCallback = null;
+    this.setStatsCallback(null);
+    this.instrumentation?.clear();
     this.cameraChangeCallback = null;
     await this.gpuTimer.dispose();
     this.debugOverlays?.dispose();
@@ -737,8 +737,6 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     disposePostProcessing(this.postProcessing);
     this.postProcessing = null;
     this.renderer?.dispose();
-    this.statsCallback = null;
-    this.cameraChangeCallback = null;
   }
 
   /**
@@ -761,6 +759,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     callback: ((stats: VisualizerStats | null) => void) | null,
   ): void {
     this.statsCallback = callback;
+    this.instrumentation?.setStatsCallback(callback);
   }
 
   /**
@@ -940,14 +939,6 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       if (remainingFrameTime === null) return;
       this.accumulator = remainingFrameTime;
 
-      // Track frame-to-frame timing for stats
-      const frameToFrameMs =
-        this.statsLastFrameTime > 0 ? time - this.statsLastFrameTime : 0;
-      this.statsLastFrameTime = time;
-      if (frameToFrameMs > 0) {
-        this.pushToWindow(this.frameTimesMs, frameToFrameMs);
-      }
-
       // Update controls
       const updateStarted = performance.now();
       this.controls.update();
@@ -966,7 +957,6 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       const renderStart = performance.now();
       const updateMs = this.pendingDmxMs + renderStart - updateStarted;
       this.pendingDmxMs = 0;
-      this.pushToWindow(this.updateTimesMs, updateMs);
       const timedRenderer = this.renderer! as unknown as TimestampRenderer;
       this.gpuTimer.begin(timedRenderer);
       if (this.postProcessing) {
@@ -980,90 +970,20 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       }
       this.gpuTimer.end(timedRenderer);
       const renderEnd = performance.now();
-      this.pacing.record(
-        renderEnd,
-        updateMs,
-        renderEnd - renderStart,
+      this.instrumentation?.recordFrame(time, {
+        completedAt: renderEnd,
         startedAt,
-        time,
-      );
-      this.pushToWindow(this.renderTimesMs, renderEnd - renderStart);
-
-      // Publish stats periodically
-      this.statsFrameCount++;
-      if (this.statsFrameCount % this.STATS_PUBLISH_INTERVAL === 0) {
-        this.publishStats(false);
-      }
-    });
-  }
-
-  private pushToWindow(window: number[], value: number): void {
-    window.push(value);
-    if (window.length > this.STATS_WINDOW_SIZE) {
-      window.shift();
-    }
-  }
-
-  private average(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((a, b) => a + b, 0) / values.length;
-  }
-
-  private publishStats(zeroed: boolean): void {
-    if (!this.statsCallback) return;
-
-    if (zeroed) {
-      this.statsCallback({
-        fps: 0,
-        frameToFrameMs: 0,
-        updateFixturesMs: 0,
-        totalRenderMs: 0,
-        postProcessMs: 0,
-        gpuMs: undefined,
-        scenePassMs: 0,
-        volumetricPassMs: 0,
-        gaussianBlurMs: 0,
-        bloomMs: 0,
-        renderMode: "worker",
+        updateMs,
+        renderMs: renderEnd - renderStart,
+        gpu: this.gpuTimer.sample,
+        reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
+        reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
+        omittedSurfaceLights:
+          this.postProcessing?.surfaceLighting?.omittedPointLights,
+        atmosphereScale: this.postProcessing?.atmosphereBudget.scale,
+        sceneScale: this.postProcessing?.scenePass.getResolutionScale(),
       });
-      return;
-    }
-
-    if (this.frameTimesMs.length === 0) return;
-
-    const avgFrameTime = this.average(this.frameTimesMs);
-    const fps = avgFrameTime > 0 ? 1000 / avgFrameTime : 0;
-
-    this.statsCallback({
-      fps,
-      framePacing: this.pacing.snapshot(),
-      atmosphereScale: this.postProcessing?.atmosphereBudget.scale,
-      sceneScale: this.postProcessing?.scenePass.getResolutionScale(),
-      reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
-      reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
-      omittedSurfaceLights:
-        this.postProcessing?.surfaceLighting?.omittedPointLights,
-      frameToFrameMs: avgFrameTime,
-      updateFixturesMs: this.average(this.updateTimesMs),
-      totalRenderMs: this.average(this.renderTimesMs),
-      postProcessMs: 0,
-      gpuMs: this.gpuTimer.sample?.milliseconds,
-      gpuPasses: this.gpuTimer.sample?.passes,
-      scenePassMs: this.average(this.renderTimesMs),
-      volumetricPassMs: 0,
-      gaussianBlurMs: 0,
-      bloomMs: 0,
-      renderMode: "worker",
     });
-  }
-
-  private resetStats(): void {
-    this.pacing.suspend();
-    this.frameTimesMs.length = 0;
-    this.renderTimesMs.length = 0;
-    this.updateTimesMs.length = 0;
-    this.statsFrameCount = 0;
-    this.statsLastFrameTime = 0;
   }
 
   private applyControlInteractionState(): void {

@@ -118,8 +118,10 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     this.initDebugOverlays();
 
     // Create instrumentation
-    this.instrumentation = new Instrumentation();
-    this.instrumentation.setRenderMode("main-thread");
+    this.instrumentation = new Instrumentation({
+      renderMode: "main-thread",
+      diagnostics: config.diagnostics,
+    });
 
     // Handle initial resize
     handleResize(this.rendererState, config.width, config.height);

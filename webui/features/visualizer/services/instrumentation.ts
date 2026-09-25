@@ -44,6 +44,18 @@ export interface FrameMetrics {
   gpu?: { id: number; milliseconds: number; passes?: Record<string, number> };
 }
 
+/** Construction options shared by the main-thread and worker renderers. */
+export interface InstrumentationOptions {
+  /** Rendering mode reported with every published stats record. */
+  renderMode: "worker" | "main-thread";
+  /**
+   * Publishes developer diagnostics (frame pacing, adaptive resolution scales
+   * and per-pass GPU timings). Off by default so normal sessions skip the
+   * per-frame bookkeeping and the extra payload on every stats tick.
+   */
+  diagnostics?: boolean;
+}
+
 /**
  * Performance instrumentation manager.
  * Collects timing data and publishes aggregated stats.
@@ -54,7 +66,8 @@ export class Instrumentation {
   private omittedSurfaceLights: number | undefined;
   private reducedPrismEmitters: number | undefined;
   private reducedGoboEmitters: number | undefined;
-  private readonly pacing = new FramePacing();
+  /** Present only when diagnostics are enabled. */
+  private readonly pacing: FramePacing | undefined;
   private frameCount = 0;
   private lastFrameTime = 0;
   private frameTimesMs: number[] = [];
@@ -64,13 +77,14 @@ export class Instrumentation {
   private lastGpuSampleId = -1;
   private gpuPasses: Record<string, number> | undefined;
   private onStats: ((stats: VisualizerStats | null) => void) | null = null;
-  private renderMode: "worker" | "main-thread" = "main-thread";
+  private readonly renderMode: "worker" | "main-thread";
+  private readonly diagnostics: boolean;
 
-  /**
-   * Set the rendering mode for stats reporting.
-   */
-  setRenderMode(mode: "worker" | "main-thread"): void {
-    this.renderMode = mode;
+  /** Creates instrumentation for one renderer; diagnostics default to off. */
+  constructor(options: InstrumentationOptions) {
+    this.renderMode = options.renderMode;
+    this.diagnostics = options.diagnostics ?? false;
+    this.pacing = this.diagnostics ? new FramePacing() : undefined;
   }
 
   /**
@@ -88,18 +102,20 @@ export class Instrumentation {
    * @param metrics Frame timing measurements
    */
   recordFrame(currentTime: number, metrics: FrameMetrics): void {
-    this.atmosphereScale = metrics.atmosphereScale;
-    this.sceneScale = metrics.sceneScale;
     this.omittedSurfaceLights = metrics.omittedSurfaceLights;
     this.reducedPrismEmitters = metrics.reducedPrismEmitters;
     this.reducedGoboEmitters = metrics.reducedGoboEmitters;
-    this.pacing.record(
-      metrics.completedAt ?? currentTime,
-      metrics.updateMs,
-      metrics.renderMs,
-      metrics.startedAt,
-      currentTime,
-    );
+    if (this.pacing) {
+      this.atmosphereScale = metrics.atmosphereScale;
+      this.sceneScale = metrics.sceneScale;
+      this.pacing.record(
+        metrics.completedAt ?? currentTime,
+        metrics.updateMs,
+        metrics.renderMs,
+        metrics.startedAt,
+        currentTime,
+      );
+    }
     // Calculate frame-to-frame time
     const frameToFrameMs =
       this.lastFrameTime > 0 ? currentTime - this.lastFrameTime : 0;
@@ -118,7 +134,7 @@ export class Instrumentation {
     this.pushToWindow(this.renderTimesMs, metrics.renderMs);
     if (metrics.gpu && metrics.gpu.id !== this.lastGpuSampleId) {
       this.lastGpuSampleId = metrics.gpu.id;
-      this.gpuPasses = metrics.gpu.passes;
+      if (this.diagnostics) this.gpuPasses = metrics.gpu.passes;
       this.pushToWindow(this.gpuTimesMs, metrics.gpu.milliseconds);
     }
 
@@ -135,7 +151,7 @@ export class Instrumentation {
    * Publishes stats with fps=0 to indicate paused state.
    */
   pause(): void {
-    this.pacing.suspend();
+    this.pacing?.suspend();
     this.lastFrameTime = 0;
     // Publish zeroed stats so the section stays visible but shows paused
     this.onStats?.({
@@ -158,7 +174,7 @@ export class Instrumentation {
    * Keeps historical data for smooth averaging after resume.
    */
   resume(): void {
-    this.pacing.suspend();
+    this.pacing?.suspend();
     this.lastFrameTime = 0;
   }
 
@@ -166,7 +182,7 @@ export class Instrumentation {
    * Clear all data (e.g., when disposing).
    */
   clear(): void {
-    this.pacing.suspend();
+    this.pacing?.suspend();
     this.frameCount = 0;
     this.lastFrameTime = 0;
     this.frameTimesMs = [];
@@ -178,6 +194,7 @@ export class Instrumentation {
     this.onStats?.(null);
   }
 
+  /** Appends a sample to a rolling window, evicting the oldest beyond its size. */
   private pushToWindow(window: number[], value: number): void {
     window.push(value);
     if (window.length > WINDOW_SIZE) {
@@ -185,11 +202,13 @@ export class Instrumentation {
     }
   }
 
+  /** Mean of a rolling window, or 0 when it is empty. */
   private average(values: number[]): number {
     if (values.length === 0) return 0;
     return values.reduce((a, b) => a + b, 0) / values.length;
   }
 
+  /** Publishes windowed averages, plus diagnostics only when they are enabled. */
   private publishStats(): void {
     if (!this.onStats || this.frameTimesMs.length === 0) return;
 
@@ -199,9 +218,14 @@ export class Instrumentation {
     // Build stats object
     // Note: Some fields are placeholders until post-processing is implemented
     const stats: VisualizerStats = {
-      framePacing: this.pacing.snapshot(),
-      atmosphereScale: this.atmosphereScale,
-      sceneScale: this.sceneScale,
+      ...(this.pacing
+        ? {
+            framePacing: this.pacing.snapshot(),
+            atmosphereScale: this.atmosphereScale,
+            sceneScale: this.sceneScale,
+            gpuPasses: this.gpuPasses,
+          }
+        : {}),
       omittedSurfaceLights: this.omittedSurfaceLights,
       reducedPrismEmitters: this.reducedPrismEmitters,
       reducedGoboEmitters: this.reducedGoboEmitters,
@@ -211,7 +235,6 @@ export class Instrumentation {
       totalRenderMs: this.average(this.renderTimesMs),
       postProcessMs: 0, // TODO: Add when post-processing implemented
       gpuMs: this.gpuTimesMs.length ? this.average(this.gpuTimesMs) : undefined,
-      gpuPasses: this.gpuPasses,
       scenePassMs: this.average(this.renderTimesMs), // Scene render = total for now
       volumetricPassMs: 0, // TODO: Add when fog implemented
       gaussianBlurMs: 0, // TODO: Add when blur implemented

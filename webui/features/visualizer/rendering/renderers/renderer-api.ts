@@ -87,6 +87,12 @@ export interface VisualizerInitConfig {
   devicePixelRatio: number;
   /** Proxy ID for event forwarding (worker mode only) */
   proxyId?: number;
+  /**
+   * Publishes developer diagnostics with renderer stats. Resolved on the main
+   * thread from the `visualizer:inspector` URL flag, because the worker cannot
+   * see the page URL.
+   */
+  diagnostics?: boolean;
   /** Initial camera pose; renderers fall back to the persisted camera state when absent. */
   initialCameraState?: CameraState;
   /** Beam render quality selected by visualizer runtime settings. */

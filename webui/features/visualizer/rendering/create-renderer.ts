@@ -14,6 +14,7 @@
  */
 
 import * as Comlink from "comlink";
+import { isVisualizerInspectorEnabled } from "../../../lib/feature-flags";
 import { visualizerQualityPreset } from "../state/settings";
 import { MainThreadRenderer } from "./renderers/main-thread-renderer";
 import type {
@@ -103,6 +104,7 @@ export async function createVisualizerRenderer(
     height,
     devicePixelRatio: window.devicePixelRatio,
     initialCameraState: options.initialCameraState,
+    diagnostics: isVisualizerInspectorEnabled(),
     beamQuality: visualizerQualityPreset.get(),
   });
 

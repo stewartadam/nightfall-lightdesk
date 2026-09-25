@@ -434,3 +434,36 @@ for (const offscreenCanvas of [true, false]) {
     });
   });
 }
+
+for (const inspector of [false, true]) {
+  /**
+   * Verifies the worker renderer publishes the shared instrumentation stats,
+   * and includes frame-pacing and resolution diagnostics only when the
+   * `visualizer:inspector` flag is set on the page URL.
+   */
+  test(`worker stats ${inspector ? "include" : "omit"} diagnostics ${inspector ? "with" : "without"} the inspector flag`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => window.localStorage.clear());
+    await page.goto(
+      `/?e2e=1&visualizer:offscreenCanvas=true&visualizer:inspector=${inspector}`,
+    );
+    await waitForDockviewApp(page);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const stats = (window as any).appStores.visualizerStats.get();
+            return stats && stats.fps > 0 ? stats.renderMode : null;
+          }),
+        { timeout: 60_000 },
+      )
+      .toBe("worker");
+    const keys = await page.evaluate(() =>
+      Object.keys((window as any).appStores.visualizerStats.get()),
+    );
+    expect(keys).toContain("updateFixturesMs");
+    for (const key of ["framePacing", "sceneScale", "atmosphereScale"])
+      expect(keys.includes(key), key).toBe(inspector);
+  });
+}
