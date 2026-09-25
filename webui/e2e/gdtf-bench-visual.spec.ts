@@ -14,6 +14,7 @@
  * When it is set, a missing archive fails the test rather than skipping it.
  */
 
+import { existsSync } from "node:fs";
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Fixture, FixtureGeometry } from "../types/index";
@@ -262,12 +263,37 @@ async function missingMeshCount(page: Page, uid: string): Promise<number> {
 }
 
 /**
+ * Returns whether a canvas capture can be compared on this platform.
+ *
+ * Baselines are recorded per platform and only some platforms have reviewed
+ * ones committed. Without a baseline the comparison would fail for the
+ * missing snapshot rather than check the render, so it is skipped with an
+ * annotation, unless `--update-snapshots` asks for new baselines to be
+ * recorded.
+ */
+function hasReviewedBaseline(
+  testInfo: import("@playwright/test").TestInfo,
+  name: string,
+): boolean {
+  const { updateSnapshots } = testInfo.config;
+  if (updateSnapshots === "all" || updateSnapshots === "changed") return true;
+  const baseline = testInfo.snapshotPath(`${name}.png`, { kind: "screenshot" });
+  if (existsSync(baseline)) return true;
+  testInfo.annotations.push({
+    type: "skip-screenshot-comparison",
+    description: `No reviewed ${process.platform} baseline for ${name}.png; record one with --update-snapshots`,
+  });
+  return false;
+}
+
+/**
  * Attaches a screenshot of the visualizer canvas from a fixed close-up
  * viewpoint of the fixture hanging at 4 m, so captures are comparable.
  *
  * With NIGHTFALL_GDTF_BENCH_SCREENSHOTS set, captures marked `compare` are
- * also compared with the reviewed per-platform baseline (`--update-snapshots`
- * records new ones, which must be reviewed before committing). Only unlit
+ * also compared with the reviewed per-platform baseline when this platform
+ * has one (`--update-snapshots` records new ones, which must be reviewed
+ * before committing). Only unlit
  * captures are compared: volumetric beams and floor lighting are not
  * pixel-stable between runs, so lit captures are attached for review only.
  */
@@ -297,7 +323,11 @@ async function attachCanvas(
   const path = testInfo.outputPath(`${name}.png`);
   await canvas.screenshot({ path });
   await testInfo.attach(name, { path, contentType: "image/png" });
-  if (options.compare && process.env.NIGHTFALL_GDTF_BENCH_SCREENSHOTS) {
+  if (
+    options.compare &&
+    process.env.NIGHTFALL_GDTF_BENCH_SCREENSHOTS &&
+    hasReviewedBaseline(testInfo, name)
+  ) {
     await expect.soft(canvas).toHaveScreenshot(`${name}.png`, {
       maxDiffPixelRatio: 0.02,
       mask: [
