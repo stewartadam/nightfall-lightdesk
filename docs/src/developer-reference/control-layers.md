@@ -51,6 +51,14 @@ Parameter kinds (`Clip`, `Master`, `Control`, `Timeline`, `Cue`, `Panel`,
 `Integer`, `Number`, `Text`) tell clients which picker to render and which UI
 target a click can capture.
 
+### Control edges
+
+MIDI and OSC mappings choose the `SourceEdge` that fires a trigger action. A control
+holds either one binding whose action consumes both edges (a momentary or absolute
+action), or up to one trigger binding per edge: a pad can start one action on press and
+another on release. OSC buttons report edges when their mapping names both the pressed
+value (`arg_value`) and the released value (`release_value`).
+
 ### Capabilities
 
 Optional, deterministic interpretations of an action are registered as

@@ -2402,6 +2402,7 @@ fn seed_world(world: &mut World) {
                 channel: 0,
                 controller: 36,
             },
+            edge: nightfall_actions::SourceEdge::Press,
             action: control_level_action(1),
         }]);
     #[cfg(feature = "osc")]
@@ -2413,6 +2414,8 @@ fn seed_world(world: &mut World) {
             address: "/grid/fader".to_string(),
             arg_index: Some(1),
             arg_value: None,
+            release_value: None,
+            edge: nightfall_actions::SourceEdge::Press,
             action: control_level_action(2),
         }]);
 

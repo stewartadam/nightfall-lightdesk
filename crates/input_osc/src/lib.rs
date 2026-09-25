@@ -18,7 +18,7 @@ use std::net::SocketAddr;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
-    ActionInput, ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin,
+    ActionInputKind, ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin,
     ExternalCommandInvocation, SourceEdgeStates,
 };
 use nightfall_engine::prelude::*;
@@ -156,15 +156,15 @@ fn handle_osc_events(
 ) {
     for event in events.read() {
         let osc_event = &event.0;
-        let Some(mapping) = mappings.lookup_mapping(osc_event) else {
-            continue;
-        };
-        // Unknown actions still dispatch so the registry reports them as unregistered.
-        let input = match registry.input_kind(&mapping.action.id) {
-            Some(kind) => edges.adapt(mapping.id, kind, mapping.signal(osc_event)),
-            None => Some(ActionInput::Trigger),
-        };
-        if let Some(input) = input {
+        for mapping in mappings.lookup(osc_event) {
+            // Unknown actions still dispatch so the registry reports them as unregistered.
+            let kind = registry
+                .input_kind(&mapping.action.id)
+                .unwrap_or(ActionInputKind::Trigger);
+            let signal = mapping.signal(osc_event);
+            let Some(input) = edges.adapt(mapping.id, kind, mapping.edge, signal) else {
+                continue;
+            };
             invocations.write(
                 ActionInvocation::new(mapping.action.clone(), ActionSurface::Osc, input)
                     .with_source(format!("OSC {}", osc_event.source)),
@@ -204,7 +204,8 @@ fn handle_osc_crud(
                 match registry.validate_binding(&mapping.action, |kind| mapping.can_drive(kind)) {
                     Ok(()) => {
                         edges.forget(mapping.id);
-                        let displaced = mappings.upsert(mapping.clone());
+                        let displaced = mappings
+                            .upsert(mapping.clone(), |action| registry.input_kind(&action.id));
                         for id in &displaced {
                             edges.forget(*id);
                         }
@@ -257,6 +258,8 @@ mod tests {
             address: "/control".to_string(),
             arg_index: None,
             arg_value: None,
+            release_value: None,
+            edge: nightfall_actions::SourceEdge::Press,
             action: nightfall_actions::ActionReference::new(
                 "test.eval",
                 serde_json::json!({ "command": "noop" }),
