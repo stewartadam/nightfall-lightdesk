@@ -42,7 +42,7 @@ use osc::RawOscEvent;
 pub mod prelude {
     pub use crate::command::{
         OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping,
-        OscMappingUpserted, OscType,
+        OscMappingUpserted, OscType, OscValueRange,
     };
     pub use crate::mapping::OscMappings;
     pub use crate::websocket::{OscSource, OscWsMessage};
@@ -257,16 +257,19 @@ pub struct OscMappingDiagnostics(pub Vec<BindingDiagnostic>);
 
 /// Validates one stored OSC mapping against the registry and the current world.
 ///
-/// Checks the action, its arguments, whether the mapping's source can drive the action and
-/// its behavior, and that the action's targets exist.
+/// Checks the mapping's value range, the action, its arguments, whether the mapping's source
+/// can drive the action and its behavior, and that the action's targets exist.
 fn diagnose_osc_mapping(
     registry: &ActionRegistry,
     world: &World,
     mapping: &OscMapping,
 ) -> Result<(), InvocationError> {
-    registry
-        .validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
-            mapping.can_drive(kind)
+    mapping
+        .validate()
+        .and_then(|()| {
+            registry.validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
+                mapping.can_drive(kind)
+            })
         })
         .and_then(|()| {
             registry.validate_behavior(&mapping.action, mapping.behavior, mapping.reports_release())
@@ -305,9 +308,12 @@ fn handle_osc_crud(
     for event in events.read() {
         let result = match &event.command {
             OscCommand::UpsertMapping(mapping) => {
-                match registry
-                    .validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
-                        mapping.can_drive(kind)
+                match mapping
+                    .validate()
+                    .and_then(|()| {
+                        registry.validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
+                            mapping.can_drive(kind)
+                        })
                     })
                     .and_then(|()| {
                         registry.validate_behavior(
@@ -318,8 +324,9 @@ fn handle_osc_crud(
                     }) {
                     Ok(()) => {
                         edges.forget(mapping.id);
-                        let replaced = mappings
-                            .upsert(mapping.clone(), |action| registry.input_kind(&action.id));
+                        let replaced = mappings.upsert(OscMapping::clone(mapping), |action| {
+                            registry.input_kind(&action.id)
+                        });
                         for displaced in &replaced {
                             edges.forget(displaced.id);
                         }
@@ -368,6 +375,7 @@ mod tests {
             arg_index: None,
             arg_value: None,
             release_value: None,
+            range: None,
             behavior: nightfall_actions::ControlBehavior::Press,
             action: nightfall_actions::ActionReference::new(
                 "test.eval",
@@ -465,6 +473,63 @@ mod tests {
         );
     }
 
+    /// Verifies an explicit range reads integer faders linearly instead of as percents.
+    #[test]
+    fn ranged_numeric_argument_maps_across_its_range() {
+        let unranged = OscMapping {
+            arg_index: Some(0),
+            ..test_mapping()
+        };
+        let ranged = OscMapping {
+            range: Some(crate::command::OscValueRange {
+                min: 0.0,
+                max: 127.0,
+            }),
+            ..unranged.clone()
+        };
+
+        assert_eq!(
+            unranged.signal(&test_event(OscType::Int(100))),
+            SourceSignal::Level(1.0)
+        );
+        assert_eq!(
+            ranged.signal(&test_event(OscType::Int(127))),
+            SourceSignal::Level(1.0)
+        );
+        assert_eq!(
+            ranged.signal(&test_event(OscType::Int(100))),
+            SourceSignal::Level(100.0 / 127.0)
+        );
+        assert_eq!(
+            ranged.signal(&test_event(OscType::Bool(true))),
+            SourceSignal::Button(true)
+        );
+    }
+
+    /// Verifies upserting a mapping with an empty value range fails without storing it.
+    #[test]
+    fn upsert_rejects_invalid_range() {
+        let mut app = osc_command_app();
+        let mapping = OscMapping {
+            arg_index: Some(0),
+            range: Some(crate::command::OscValueRange {
+                min: 10.0,
+                max: 10.0,
+            }),
+            ..test_mapping()
+        };
+
+        submit_command(&mut app, OscCommand::UpsertMapping(Box::new(mapping)));
+        app.update();
+
+        assert!(app.world().resource::<OscMappings>().mappings().is_empty());
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. })
+                if code == "osc.invalid_range"
+        ));
+    }
+
     /// Verifies value-matching and argument-free mappings treat messages as pulses.
     #[test]
     fn value_filters_and_missing_arguments_are_pulses() {
@@ -489,7 +554,10 @@ mod tests {
     #[test]
     fn upsert_mapping_mutates_before_success() {
         let mut app = osc_command_app();
-        submit_command(&mut app, OscCommand::UpsertMapping(test_mapping()));
+        submit_command(
+            &mut app,
+            OscCommand::UpsertMapping(Box::new(test_mapping())),
+        );
         app.update();
         assert_eq!(app.world().resource::<OscMappings>().mappings().len(), 1);
         assert!(matches!(
@@ -553,7 +621,7 @@ mod tests {
             ..test_mapping()
         };
 
-        submit_command(&mut app, OscCommand::UpsertMapping(mapping));
+        submit_command(&mut app, OscCommand::UpsertMapping(Box::new(mapping)));
         app.update();
 
         assert!(app.world().resource::<OscMappings>().mappings().is_empty());
@@ -573,7 +641,7 @@ mod tests {
             ..test_mapping()
         };
 
-        submit_command(&mut app, OscCommand::UpsertMapping(mapping));
+        submit_command(&mut app, OscCommand::UpsertMapping(Box::new(mapping)));
         app.update();
 
         assert!(app.world().resource::<OscMappings>().mappings().is_empty());
