@@ -313,6 +313,34 @@ impl ParameterMetadata {
         }
     }
 
+    /// Returns the physical output value for a logical `value`: applies the
+    /// calibration offset, clamps to the logical range and applies inversion.
+    pub fn raw_value(&self, value: ParameterDmxValue) -> ParameterDmxValue {
+        let min = self.logical_min();
+        let max = self.logical_max();
+        let offset = self.offset.resolve_as_dmx_offset(min, max);
+        let value = (value + offset).clamp(min, max);
+        if self.is_inverted {
+            min + max - value
+        } else {
+            value
+        }
+    }
+
+    /// Returns the DMX integer at this parameter's resolution that a logical
+    /// `value` outputs, the forward mapping of [`Self::logical_value_from_dmx`].
+    pub fn dmx_value(&self, value: ParameterDmxValue) -> u32 {
+        let min = self.logical_min();
+        let range = self.logical_max() - min;
+        let normalized = if range > 0.0 {
+            ((self.raw_value(value) - min) / range).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (normalized * crate::wire_layout::dmx_max(self.resolution) as ParameterDmxValue).round()
+            as u32
+    }
+
     /// Returns the minimum logical value operators should use for this parameter.
     pub fn logical_min(&self) -> ParameterDmxValue {
         if self.value_polarity == ParameterValuePolarity::Signed && self.min >= 0.0 {
@@ -512,15 +540,7 @@ impl Parameter {
     /// Applies the calibration offset and clamps to valid range.
     /// Use this for actual DMX output where offsets should be applied.
     pub fn get_raw_value(&self) -> ParameterDmxValue {
-        let min = self.metadata.logical_min();
-        let max = self.metadata.logical_max();
-        let offset = self.metadata.offset.resolve_as_dmx_offset(min, max);
-        let value = (self.values.current_value + offset).clamp(min, max);
-        if self.metadata.is_inverted {
-            min + max - value
-        } else {
-            value
-        }
+        self.metadata.raw_value(self.values.current_value)
     }
 
     /// Sets the effective output value, honoring parameter metadata settings

@@ -19,7 +19,7 @@
 //! plate dimmer), so followers are resolved through their chains before any
 //! value is written.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
@@ -52,25 +52,16 @@ pub struct RelationLinkCache {
     followers: HashMap<Entity, FollowerLinks>,
 }
 
-/// A follower's active function with the masters the console applies to it.
-struct ActiveFollower {
-    /// Logical value at the function's first DMX value.
-    from: ParameterDmxValue,
-    /// Logical value at the function's last DMX value.
-    to: ParameterDmxValue,
-    /// Masters in declaration order.
-    masters: Vec<(Entity, RelationKind)>,
-}
-
 /// Applies the relations the console is responsible for to their followers'
 /// current values.
 ///
 /// The follower's active function is the first whose DMX range contains its
-/// current DMX value and whose mode master condition holds. `Multiply`
-/// scales the follower's position within that function by the master's
-/// level, and `Override` replaces the position with the master's level; both
-/// keep the value inside the function's DMX range. A master's level includes
-/// the relations it follows itself.
+/// current DMX value and whose mode master condition holds, judged by the
+/// mode master's value after the relations it follows. `Multiply` scales the
+/// follower's position within that function by the master's level, and
+/// `Override` replaces the position with the master's level; both keep the
+/// value inside the function's DMX range. A master's level includes the
+/// relations it follows itself.
 pub fn apply_virtual_relations(
     mut param_query: Query<InstanceMut<Parameter>>,
     data_provider: Res<FixtureDataProviderExt>,
@@ -80,7 +71,7 @@ pub fn apply_virtual_relations(
         cache.followers.clear();
     }
 
-    let mut followers: HashMap<Entity, ActiveFollower> = HashMap::new();
+    let mut followers = HashSet::new();
     for follower in param_query.iter() {
         let metadata = &follower.metadata;
         if !metadata
@@ -99,39 +90,20 @@ pub fn apply_virtual_relations(
             let links = resolve_links(&follower.instance(), metadata, &param_query, &data_provider);
             cache.followers.insert(entity, links);
         }
-        let links = &cache.followers[&entity];
-        let dmx = parameter_to_dmx_value(&follower);
-        let Some(index) = metadata
-            .functions
-            .iter()
-            .enumerate()
-            .position(|(index, function)| {
-                (function.dmx_from..=function.dmx_to).contains(&dmx)
-                    && mode_master_holds(function, links.mode_masters[index], &param_query)
-            })
-        else {
-            continue;
-        };
-        if links.masters[index].is_empty() {
-            continue;
-        }
-        let function = &metadata.functions[index];
-        followers.insert(
-            entity,
-            ActiveFollower {
-                from: metadata.logical_value_from_dmx(function.dmx_from),
-                to: metadata.logical_value_from_dmx(function.dmx_to),
-                masters: links.masters[index].clone(),
-            },
-        );
+        followers.insert(entity);
     }
+    cache
+        .followers
+        .retain(|entity, _| followers.contains(entity));
 
     let mut resolved: HashMap<Entity, ParameterDmxValue> = HashMap::new();
-    for entity in followers.keys() {
-        resolve(*entity, &followers, &param_query, &mut resolved, 0);
+    for entity in &followers {
+        resolve(*entity, &cache, &param_query, &mut resolved, 0);
     }
     for (entity, value) in resolved {
-        if let Ok(mut follower) = param_query.get_mut(entity) {
+        if let Ok(mut follower) = param_query.get_mut(entity)
+            && follower.values.current_value != value
+        {
             follower.values.current_value = value;
         }
     }
@@ -207,26 +179,37 @@ fn resolve_links(
 }
 
 /// Returns true when a function has no mode master, its master cannot be
-/// found, or the master's DMX value lies in the condition's range.
+/// found, or the master's DMX value, after the relations it follows, lies in
+/// the condition's range.
 fn mode_master_holds(
     function: &ParameterFunction,
     master: Option<Entity>,
+    cache: &RelationLinkCache,
     param_query: &Query<InstanceMut<Parameter>>,
+    resolved: &mut HashMap<Entity, ParameterDmxValue>,
+    depth: usize,
 ) -> bool {
     let (Some(condition), Some(master)) = (&function.mode_master, master) else {
         return true;
     };
-    let Ok(master) = param_query.get(master) else {
+    let (Some(value), Ok(master)) = (
+        resolve(master, cache, param_query, resolved, depth + 1),
+        param_query.get(master),
+    ) else {
         return true;
     };
-    (condition.dmx_from..=condition.dmx_to).contains(&parameter_to_dmx_value(&master))
+    (condition.dmx_from..=condition.dmx_to).contains(&master.metadata.dmx_value(value))
 }
 
 /// Returns a parameter's value after the console-applied relations it
 /// follows, memoizing followers in `resolved`.
+///
+/// A follower's active function is selected from its own DMX value and its
+/// mode master's resolved value, then each of that function's masters is
+/// applied in declaration order.
 fn resolve(
     entity: Entity,
-    followers: &HashMap<Entity, ActiveFollower>,
+    cache: &RelationLinkCache,
     param_query: &Query<InstanceMut<Parameter>>,
     resolved: &mut HashMap<Entity, ParameterDmxValue>,
     depth: usize,
@@ -236,25 +219,49 @@ fn resolve(
     }
     let parameter = param_query.get(entity).ok()?;
     let mut value = parameter.values.current_value;
-    let Some(follower) = followers
+    let Some(links) = cache
+        .followers
         .get(&entity)
         .filter(|_| depth < MAX_RELATION_DEPTH)
     else {
         return Some(value);
     };
-    for (master, kind) in &follower.masters {
-        let Some(master_value) = resolve(*master, followers, param_query, resolved, depth + 1)
-        else {
-            continue;
-        };
-        let Ok(master_parameter) = param_query.get(*master) else {
-            continue;
-        };
-        let level = level(&master_parameter.metadata, master_value);
-        value = match kind {
-            RelationKind::Multiply => follower.from + (value - follower.from) * level,
-            RelationKind::Override => follower.from + (follower.to - follower.from) * level,
-        };
+    let metadata = &parameter.metadata;
+    let dmx = parameter_to_dmx_value(&parameter);
+    let mut active = None;
+    for (index, function) in metadata.functions.iter().enumerate() {
+        if (function.dmx_from..=function.dmx_to).contains(&dmx)
+            && mode_master_holds(
+                function,
+                links.mode_masters[index],
+                cache,
+                param_query,
+                resolved,
+                depth,
+            )
+        {
+            active = Some(index);
+            break;
+        }
+    }
+    if let Some(index) = active {
+        let function = &metadata.functions[index];
+        let from = metadata.logical_value_from_dmx(function.dmx_from);
+        let to = metadata.logical_value_from_dmx(function.dmx_to);
+        for (master, kind) in &links.masters[index] {
+            let Some(master_value) = resolve(*master, cache, param_query, resolved, depth + 1)
+            else {
+                continue;
+            };
+            let Ok(master_parameter) = param_query.get(*master) else {
+                continue;
+            };
+            let level = level(&master_parameter.metadata, master_value);
+            value = match kind {
+                RelationKind::Multiply => from + (value - from) * level,
+                RelationKind::Override => from + (to - from) * level,
+            };
+        }
     }
     resolved.insert(entity, value);
     Some(value)
