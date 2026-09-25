@@ -142,11 +142,19 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   },
 });
 
+/** Options for backend-free browser tests. */
+type FrontendOnlyOptions = {
+  /** Serves the packaged demo showfile and audio instead of the tracked test show (preview mode only). */
+  packagedDemoShow: boolean;
+};
+
 /** Playwright fixture that starts only Vite, leaving the backend port deliberately empty. */
 export const frontendOnlyTest = playwrightTest.extend<
-  Record<never, never>,
+  FrontendOnlyOptions,
   WorkerFixtures
 >({
+  packagedDemoShow: [false, { option: true }],
+
   /** Own one Vite service and port pair for a backend-free browser test worker. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -169,9 +177,15 @@ export const frontendOnlyTest = playwrightTest.extend<
     await use(workerSlot.baseURL);
   },
 
-  /** Use packaged release resources in preview mode and deterministic fixtures in development. */
-  context: async ({ context }, use) => {
-    if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview") {
+  /**
+   * Serve the tracked test show and generated audio so product flows stay deterministic
+   * while the packaged demo show changes; opted-in preview tests see the packaged show.
+   */
+  context: async ({ context, packagedDemoShow }, use) => {
+    if (
+      packagedDemoShow &&
+      process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+    ) {
       await use(context);
       return;
     }
