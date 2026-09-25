@@ -241,8 +241,8 @@ fn rotating_wash_beam_profile_matches_194_channel_footprint_and_element_order() 
     );
 }
 
-/// Verifies persisted wash-beam emitters gain one virtual intensity without duplicate insertion.
-/// Built-in wash profiles keep zoom travel separate from the beam's photometric contours.
+/// Built-in wash profiles express zoom travel as degree metadata, separate from the beam's
+/// photometric contours, and normalization restores both on persisted fixtures.
 #[test]
 fn wash_beam_optics_define_a_narrow_zoom_and_restore_missing_metadata() {
     let mut fixture =
@@ -250,16 +250,33 @@ fn wash_beam_optics_define_a_narrow_zoom_and_restore_missing_metadata() {
     let expected = fixture.physical.clone().unwrap();
     assert_eq!(expected.beam_angle, 1.0);
     assert_eq!(expected.field_angle, 1.2);
-    let zoom = expected.zoom_range.as_ref().unwrap();
-    assert_eq!((zoom.narrow, zoom.wide), (1.0, 34.0));
+    let zoom_index = fixture.elements[0]
+        .parameters
+        .iter()
+        .position(|parameter| parameter.attribute == Attribute::Zoom)
+        .unwrap();
+    let expected_zoom = fixture.elements[0].parameters[zoom_index].clone();
+    assert_eq!(expected_zoom.native_unit, ParameterUnit::Degrees);
+    assert_eq!((expected_zoom.min, expected_zoom.max), (1.0, 34.0));
+    assert!(!expected_zoom.is_inverted);
+
     fixture.physical = None;
+    fixture.elements[0].parameters[zoom_index].native_unit = ParameterUnit::Percent;
+    fixture.elements[0].parameters[zoom_index].max = 255.0;
     normalize_fixture_profile(&mut fixture);
     assert_eq!(fixture.physical, Some(expected));
+    let restored = &fixture.elements[0].parameters[zoom_index];
+    assert_eq!(restored.native_unit, ParameterUnit::Degrees);
+    assert_eq!(
+        (restored.min, restored.max),
+        (expected_zoom.min, expected_zoom.max)
+    );
     fixture.physical.as_mut().unwrap().beam_angle = 2.0;
     normalize_fixture_profile(&mut fixture);
     assert_eq!(fixture.physical.unwrap().beam_angle, 2.0);
 }
 
+/// Verifies persisted wash-beam emitters gain one virtual intensity without duplicate insertion.
 #[test]
 fn wash_beam_normalization_restores_missing_virtual_intensity_once() {
     let mut fixture =

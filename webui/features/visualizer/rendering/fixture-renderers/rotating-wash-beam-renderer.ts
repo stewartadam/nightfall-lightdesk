@@ -122,6 +122,8 @@ interface EmitterColorData {
   tilt?: number;
   tiltSpeed?: number;
   zoom?: number;
+  /** Full beam angle when the zoom channel carries degree metadata. */
+  zoomDegrees?: number;
   frost?: number;
 }
 
@@ -410,6 +412,7 @@ export function updateRotatingWashBeamColors(
   );
   const masterIntensity = control?.intensity ?? 1;
   const zoom = control?.zoom ?? 0.5;
+  const zoomDegrees = control?.zoomDegrees;
   const frost = control?.frost ?? 0;
   const tilt = control?.tilt ?? 0;
   const tiltSpeed = control?.tiltSpeed;
@@ -449,7 +452,15 @@ export function updateRotatingWashBeamColors(
       BEAM_ELEMENT_OFFSET + index,
       beam.elementLabel,
     );
-    updateBeamEmitter(instance, beam, color, masterIntensity, zoom, frost);
+    updateBeamEmitter(
+      instance,
+      beam,
+      color,
+      masterIntensity,
+      zoom,
+      zoomDegrees,
+      frost,
+    );
   }
 
   for (let index = 0; index < data.stripPixelMeshes.length; index++) {
@@ -644,6 +655,9 @@ function beamX(index: number, count = BEAM_COUNT): number {
 
 /**
  * Update one beam aperture, volumetric cone, and synthetic floor footprint.
+ *
+ * The cone uses the control channel's degree-valued zoom when present, falling
+ * back to interpolating the beam and field angles by normalized zoom.
  */
 function updateBeamEmitter(
   instance: FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData },
@@ -651,17 +665,19 @@ function updateBeamEmitter(
   colorData: EmitterColorData | undefined,
   masterIntensity: number,
   zoom: number,
+  zoomDegrees: number | undefined,
   frost: number,
 ): void {
   const intensity = (colorData?.intensity ?? 0) * masterIntensity;
   updateFlatEmitter(beam.lensMesh, colorData, masterIntensity);
 
-  const coneAngleDeg = beamConeAngleDegrees(
-    beam.optical.optics!.physical.beamAngle,
-    beam.optical.optics!.physical.fieldAngle,
-    zoom,
-    beam.optical.optics!.physical.zoomRange,
-  );
+  const coneAngleDeg =
+    zoomDegrees ??
+    beamConeAngleDegrees(
+      beam.optical.optics!.physical.beamAngle,
+      beam.optical.optics!.physical.fieldAngle,
+      zoom,
+    );
   const halfAngleRad = MathUtils.degToRad(coneAngleDeg / 2);
   const color = BEAM_COLOR.setRGB(
     colorData?.red ?? 0,

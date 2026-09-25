@@ -300,7 +300,7 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
     for (const id of ids) {
       const input = page.locator("#header-cmdline");
       await input.fill(
-        `fix ${id} int @ 100 white @ 100 zoom @ ${process.env.NIGHTFALL_VISUALIZER_WASH_ZOOM ?? "100"}`,
+        `fix ${id} int @ 100 white @ 100 zoom @ ${process.env.NIGHTFALL_VISUALIZER_WASH_ZOOM ?? "0"}`,
       );
       await input.press("Enter");
       await expect(input).toHaveValue("");
@@ -547,7 +547,7 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
         workerMode,
         quality,
         washStress: process.env.NIGHTFALL_VISUALIZER_WASH_STRESS === "1",
-        washZoom: process.env.NIGHTFALL_VISUALIZER_WASH_ZOOM ?? "100",
+        washZoom: process.env.NIGHTFALL_VISUALIZER_WASH_ZOOM ?? "0",
         gpuTimingDisabled,
         detailedTrace: process.env.NIGHTFALL_VISUALIZER_DETAILED_TRACE === "1",
         canvases,

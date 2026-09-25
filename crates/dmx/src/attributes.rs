@@ -30,7 +30,17 @@ pub enum AttributeCategory {
 #[allow(missing_docs)]
 #[non_exhaustive]
 #[derive(
-    Debug, Default, strum::Display, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumString,
+    Debug,
+    Default,
+    strum::Display,
+    strum::EnumCount,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumString,
 )]
 /// DMX attribute names understood by fixture definitions and command parsing.
 #[strum(ascii_case_insensitive)]
@@ -108,95 +118,59 @@ pub struct AttributeMetadata {
 
 impl Attribute {
     /// Standard non-custom attributes in canonical presentation order.
+    ///
+    /// This list defines [`Self::sort_order`]: dimmer, r/g/b, whites, amber, c/y/m, uv,
+    /// pan/tilt, strobe, gobos, shaper, prism, beam/focus, then raw.
     pub fn standard_attributes() -> &'static [Attribute] {
         &[
+            // Dimmer
             Attribute::Intensity,
             Attribute::VirtualIntensity,
+            // R/G/B
             Attribute::Red,
             Attribute::Green,
             Attribute::Blue,
+            // White variants
             Attribute::White,
             Attribute::CoolWhite,
             Attribute::WarmWhite,
+            // Amber
             Attribute::Amber,
+            // C/Y/M
             Attribute::Cyan,
             Attribute::Yellow,
             Attribute::Magenta,
+            // UV
             Attribute::UV,
+            // Pan/Tilt
             Attribute::Pan,
             Attribute::Tilt,
+            // Strobe
             Attribute::StrobeShutter,
             Attribute::StrobeRate,
+            // Gobos
             Attribute::Gobo,
             Attribute::GoboRot,
+            // Shaper
             Attribute::Shaper,
+            // Prism
             Attribute::Prism,
+            // Beam/Focus
             Attribute::Frost,
             Attribute::Zoom,
             Attribute::Focus,
+            // Other attributes
             Attribute::Raw,
         ]
     }
 
-    /// Get the sort order for this attribute based on the desired presentation order:
-    /// dimmer, r/g/b, white, cool white, warm white, amber, c/y/m/k, uv, pan/tilt, strobe, gobos, shaper, prism
+    /// Presentation rank of this attribute: its index in [`Self::standard_attributes`], with
+    /// custom attributes sorting last.
     pub fn sort_order(&self) -> u8 {
-        match self {
-            // Dimmer
-            Attribute::Intensity => 0,
-            Attribute::VirtualIntensity => 1,
-
-            // R/G/B
-            Attribute::Red => 2,
-            Attribute::Green => 3,
-            Attribute::Blue => 4,
-
-            // White variants
-            Attribute::White => 5,
-            Attribute::CoolWhite => 6,
-            Attribute::WarmWhite => 7,
-
-            // Amber
-            Attribute::Amber => 8,
-
-            // C/Y/M/K (Cyan/Yellow/Magenta/Key-Black)
-            Attribute::Cyan => 9,
-            Attribute::Yellow => 10,
-            Attribute::Magenta => 11,
-            // Note: No "K" (Key/Black) attribute in current enum
-
-            // UV
-            Attribute::UV => 12,
-
-            // Pan/Tilt
-            Attribute::Pan => 13,
-            Attribute::Tilt => 14,
-
-            // Strobe
-            Attribute::StrobeShutter => 15,
-            Attribute::StrobeRate => 16,
-
-            // Gobos
-            Attribute::Gobo => 17,
-            Attribute::GoboRot => 18,
-
-            // Shaper
-            Attribute::Shaper => 19,
-
-            // Prism
-            Attribute::Prism => 20,
-
-            // Beam/Focus
-            Attribute::Frost => 21,
-            Attribute::Zoom => 22,
-            Attribute::Focus => 23,
-
-            // Other attributes
-            Attribute::Raw => 24,
-
-            // Custom attributes go last
-            Attribute::Custom { .. } => 255,
-        }
+        Self::standard_attributes()
+            .iter()
+            .position(|attribute| attribute == self)
+            .map_or(u8::MAX, |index| index as u8)
     }
 
     /// Get the canonical category for this attribute.
@@ -297,6 +271,24 @@ pub fn standard_attribute_metadata() -> Vec<AttributeMetadata> {
 mod tests {
     use super::*;
 
+    /// Every non-custom variant is listed exactly once, so each has a distinct rank ahead of
+    /// custom attributes.
+    #[test]
+    fn standard_attributes_rank_every_non_custom_variant() {
+        use strum::EnumCount;
+        let standard = Attribute::standard_attributes();
+        assert_eq!(standard.len(), Attribute::COUNT - 1);
+        for (index, attribute) in standard.iter().enumerate() {
+            assert_eq!(usize::from(attribute.sort_order()), index);
+        }
+        let custom = Attribute::Custom {
+            label: "Custom".to_owned(),
+        };
+        assert_eq!(custom.sort_order(), u8::MAX);
+        assert!(Attribute::Raw < custom);
+    }
+
+    /// Verifies metadata rows mirror each standard attribute's key, category and rank.
     #[test]
     fn standard_attribute_metadata_covers_all_standard_attributes() {
         let metadata = standard_attribute_metadata();

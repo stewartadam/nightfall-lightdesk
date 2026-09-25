@@ -142,6 +142,8 @@ type MovingHeadElementDmx = {
   tilt?: number;
   pan?: number;
   zoom?: number;
+  /** Full beam angle when the zoom channel carries degree metadata. */
+  zoomDegrees?: number;
   frost?: number;
   "Color Wheel"?: number;
 };
@@ -520,12 +522,9 @@ export function updateMovingHeadColors(
   data.yokeGroup.rotation.y = data.currentPan;
   data.headGroup.rotation.x = data.currentTilt;
 
-  const coneAngleDeg = beamConeAngleDegrees(
-    data.beamAngleDeg,
-    data.fieldAngleDeg,
-    zoom,
-    instance.emitters.get("MainEmitter")?.optics?.physical.zoomRange,
-  );
+  const coneAngleDeg =
+    dmx.zoomDegrees ??
+    beamConeAngleDegrees(data.beamAngleDeg, data.fieldAngleDeg, zoom);
   const halfAngleRad = MathUtils.degToRad(coneAngleDeg / 2);
 
   // Calculate beam origin world position

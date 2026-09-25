@@ -13,7 +13,7 @@ mod native_unit_tests {
     use nightfall_dmx::prelude::{Attribute, ParameterUnit};
     use nightfall_fixtures::prelude::ParameterMetadata;
 
-    use super::super::apply_position_physical_range;
+    use super::super::apply_angular_physical_range;
 
     /// Preserves angular zoom values instead of treating them as raw DMX percentages.
     #[test]
@@ -23,7 +23,7 @@ mod native_unit_tests {
             max: 255.0,
             ..Default::default()
         };
-        apply_position_physical_range(&mut metadata, Some((5.0, 45.0)));
+        apply_angular_physical_range(&mut metadata, Some((5.0, 45.0)));
         assert_eq!(metadata.native_unit, ParameterUnit::Degrees);
         assert_eq!(metadata.min, 5.0);
         assert_eq!(metadata.max, 45.0);
@@ -39,7 +39,7 @@ mod native_unit_tests {
             ..Default::default()
         };
 
-        apply_position_physical_range(&mut metadata, None);
+        apply_angular_physical_range(&mut metadata, None);
 
         assert_eq!(metadata.native_unit, ParameterUnit::Percent);
         assert_eq!(metadata.min, 0.0);
@@ -56,7 +56,7 @@ mod native_unit_tests {
             ..Default::default()
         };
 
-        apply_position_physical_range(&mut metadata, Some((270.0, 0.0)));
+        apply_angular_physical_range(&mut metadata, Some((270.0, 0.0)));
 
         assert_eq!(metadata.native_unit, ParameterUnit::Degrees);
         assert_eq!(metadata.min, 0.0);

@@ -10,18 +10,16 @@
  * Maps a normalized zoom value to a rendered cone angle.
  *
  * Visualizer zoom follows fixture operator semantics: 1 is fully zoomed in and
- * focused, while 0 is zoomed out and unfocused.
+ * focused, while 0 is zoomed out and unfocused. Fixtures with degree-valued
+ * zoom metadata supply their angle directly and bypass this interpolation.
  */
 export function beamConeAngleDegrees(
   beamAngleDegrees: number,
   fieldAngleDegrees: number,
   zoom: number,
-  range?: { narrow: number; wide: number },
 ): number {
-  const focusedAngleDegrees =
-    range?.narrow ?? Math.min(beamAngleDegrees, fieldAngleDegrees);
-  const unfocusedAngleDegrees =
-    range?.wide ?? Math.max(beamAngleDegrees, fieldAngleDegrees);
+  const focusedAngleDegrees = Math.min(beamAngleDegrees, fieldAngleDegrees);
+  const unfocusedAngleDegrees = Math.max(beamAngleDegrees, fieldAngleDegrees);
   const normalizedZoom = Math.max(0, Math.min(1, zoom));
 
   return (

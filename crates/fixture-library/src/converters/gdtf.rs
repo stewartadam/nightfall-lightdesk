@@ -16,7 +16,7 @@ use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
 use uuid::Uuid;
 
-use crate::converters::apply_position_physical_range;
+use crate::converters::apply_angular_physical_range;
 use crate::gdtf_metadata::GdtfMetadata;
 use crate::{FixtureLibraryError, Result};
 
@@ -240,9 +240,9 @@ fn convert_logical_channel_to_parameter(
         merge_type,
         use_grandmaster,
     };
-    apply_position_physical_range(
+    apply_angular_physical_range(
         &mut metadata,
-        gdtf_position_physical_range(logical_channel, fixture_type),
+        gdtf_angular_physical_range(logical_channel, fixture_type),
     );
     Some(metadata)
 }
@@ -322,7 +322,7 @@ fn templated_geometry_names(fixture_type: &gdtf::fixture_type::FixtureType) -> H
 }
 
 /// Resolve an angular physical range from a GDTF logical channel.
-fn gdtf_position_physical_range(
+fn gdtf_angular_physical_range(
     logical_channel: &gdtf::dmx_mode::LogicalChannel,
     fixture_type: &gdtf::fixture_type::FixtureType,
 ) -> Option<(f32, f32)> {
@@ -415,7 +415,6 @@ pub(super) fn convert_beam_optics(beam_geometry: &gdtf::geometry::BeamGeometry) 
         throw_ratio: beam_geometry.throw_ratio as f32,
         rectangle_ratio: beam_geometry.rectangle_ratio as f32,
         physical: FixturePhysical {
-            zoom_range: None,
             beam_angle: beam_geometry.beam_angle as f32,
             field_angle: beam_geometry.field_angle as f32,
             lumens: if beam_geometry.luminous_flux > 0.0 {

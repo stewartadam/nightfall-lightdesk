@@ -912,7 +912,6 @@ test("low quality spot and wash comparison", async ({ page }, testInfo) => {
             beamAngle: 1,
             fieldAngle: 1.2,
             lumens: 12000,
-            zoomRange: { narrow: 1, wide: 34 },
           },
           placement: {
             position: { x: -2, y: 1, z: 0 },
@@ -1052,8 +1051,8 @@ test("generic wash beam low-quality setting uses geometry beams", async ({
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 });
 
-/** Verifies the owned Generic wash beam narrows its beam at full zoom. */
-test("generic wash beam zoom 100 renders a focused beam", async ({
+/** Verifies the owned Generic wash beam narrows to its minimum degree-valued zoom angle. */
+test("generic wash beam minimum zoom renders a focused beam", async ({
   page,
 }, testInfo) => {
   await page.goto(
@@ -1068,7 +1067,7 @@ test("generic wash beam zoom 100 renders a focused beam", async ({
 
   await submitCommand(
     page,
-    `fix ${OWNED_WASH_BEAM.id} int @ 100 red @ 100 zoom @ 0 tilt @ 0`,
+    `fix ${OWNED_WASH_BEAM.id} int @ 100 red @ 100 zoom @ 100 tilt @ 0`,
   );
   await expect
     .poll(
@@ -1081,7 +1080,7 @@ test("generic wash beam zoom 100 renders a focused beam", async ({
     fixtureUid,
   );
 
-  await submitCommand(page, `fix ${OWNED_WASH_BEAM.id} zoom @ 100`);
+  await submitCommand(page, `fix ${OWNED_WASH_BEAM.id} zoom @ 0`);
   await expect
     .poll(async () => {
       const radius = await rotatingWashBeamFirstBeamRadius(page, fixtureUid);
@@ -1770,7 +1769,8 @@ async function holdRotatingWashBeamImmediateOutput(
       const { setParametersImmediate } = await import("/state/appStores.ts");
       const control = {
         Tilt: 127,
-        Zoom: 127,
+        // Mid-travel of the wash's 1-34 degree zoom range.
+        Zoom: 17.5,
         Intensity: 255,
         "Tilt Speed": 255,
       };
