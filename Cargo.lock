@@ -5280,6 +5280,7 @@ dependencies = [
  "open-fixture-library",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
