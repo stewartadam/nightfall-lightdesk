@@ -238,9 +238,24 @@ function normalizeSignedPositionOutput(
 /** Gobo image lists per element, computed once per element object. */
 const elementGoboMediaCache = new WeakMap<FixtureElement, string[]>();
 
+/** Matches GDTF gobo wheel attributes (`Gobo1`, `Gobo2SelectSpin`, ...), capturing the wheel number. */
+const GOBO_WHEEL_ATTRIBUTE = /^Gobo(\d+)/;
+
 /**
- * Returns the distinct wheel slot images an element's parameters can select,
- * in parameter/function/set order. Renderers and DMX extraction share this
+ * Returns the gobo wheel number a profile function selects slots on, or
+ * undefined for functions on other wheels (color, prism, animation) whose
+ * slot images are swatches or effects rather than projected gobos.
+ */
+function goboWheelNumber(
+  fn: ParameterFunction | undefined,
+): number | undefined {
+  const match = fn && GOBO_WHEEL_ATTRIBUTE.exec(fn.attribute);
+  return match ? Number(match[1]) : undefined;
+}
+
+/**
+ * Returns the distinct gobo images an element's gobo wheels can select, in
+ * parameter/function/set order. Renderers and DMX extraction share this
  * ordering so a numeric gobo index identifies the same image on both sides.
  */
 export function elementGoboMedia(element: FixtureElement): string[] {
@@ -249,6 +264,7 @@ export function elementGoboMedia(element: FixtureElement): string[] {
     const names = new Set<string>();
     for (const parameter of element.parameters) {
       for (const fn of parameter.functions ?? []) {
+        if (goboWheelNumber(fn) === undefined) continue;
         for (const set of fn.sets ?? []) {
           if (set.media) names.add(set.media);
         }
@@ -383,6 +399,7 @@ function visualizerDmxFromChannels(
   let filterGreen = 1;
   let filterBlue = 1;
   let hasFilter = false;
+  let goboWheel = Number.POSITIVE_INFINITY;
   let declaresIntensityControl = elementDeclaresIntensityControl(element);
   const physical = resetPhysicalState(physicalState);
 
@@ -427,8 +444,11 @@ function visualizerDmxFromChannels(
       filterBlue *= filter.b * transmission;
       hasFilter = true;
     }
-    if (slot?.media) {
+    const wheel = goboWheelNumber(channel.function);
+    // One gobo is projected: the lowest-numbered wheel with an image in place.
+    if (slot?.media && wheel !== undefined && wheel < goboWheel) {
       dmx.gobo = elementGoboMedia(element).indexOf(slot.media) + 1;
+      goboWheel = wheel;
     }
     if (prop === "strobeShutter" && channel.function) {
       dmx.strobeShutter = profileStrobeRate(channel.function, channel.dmx);
@@ -487,9 +507,11 @@ function visualizerDmxFromChannels(
   if (
     filtersSource &&
     !definesSourceColor(physical) &&
+    !elementDeclaresAdditiveColor(element) &&
     dmx.red + dmx.green + dmx.blue <= 0
   ) {
     // Filters act on the source; a lamp without additive color is white.
+    // Additive emitters at zero stay dark instead.
     dmx.red = 1;
     dmx.green = 1;
     dmx.blue = 1;
@@ -552,6 +574,48 @@ export function extractFixtureDmxData(
     ]);
   }
   return result;
+}
+
+/** Attribute types that drive an additive emitter; CMY here are subtractive flags. */
+const ADDITIVE_COLOR_ATTRIBUTES = new Set([
+  "Red",
+  "Green",
+  "Blue",
+  "White",
+  "WarmWhite",
+  "CoolWhite",
+  "Amber",
+  "UV",
+]);
+
+/** Matches GDTF additive color-mixing attributes (`ColorAdd_R`, `ColorRGB_Red`, ...). */
+const ADDITIVE_COLOR_FUNCTION = /^Color(Add|RGB)_/;
+
+/** Additive-color declarations per element, computed once per element object. */
+const elementAdditiveColorCache = new WeakMap<FixtureElement, boolean>();
+
+/**
+ * Returns true when the element's channels in the active mode mix color
+ * additively: RGB-family attributes, GDTF `ColorAdd_*`/`ColorRGB_*`
+ * functions, or functions carrying a measured emitter color. Such an element
+ * produces its own light color, so all emitters at zero means no light rather
+ * than a white lamp behind its filters.
+ */
+export function elementDeclaresAdditiveColor(element: FixtureElement): boolean {
+  let declares = elementAdditiveColorCache.get(element);
+  if (declares === undefined) {
+    declares = element.parameters.some(
+      (parameter) =>
+        ADDITIVE_COLOR_ATTRIBUTES.has(parameter.attribute.type) ||
+        (parameter.functions ?? []).some(
+          (fn) =>
+            fn.emitter_color !== undefined ||
+            ADDITIVE_COLOR_FUNCTION.test(fn.attribute),
+        ),
+    );
+    elementAdditiveColorCache.set(element, declares);
+  }
+  return declares;
 }
 
 /** Returns true when an element contains a real or virtual dimmer attribute. */

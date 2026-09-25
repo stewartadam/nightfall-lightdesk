@@ -175,6 +175,90 @@ test("gobo wheel slots report their image index", () => {
   );
 });
 
+/** Verifies an additive fixture with its emitters at zero stays dark behind a color wheel. */
+test("additive emitters at zero stay dark behind a wheel", () => {
+  resetDmxPool();
+  const element: FixtureElement = {
+    label: "Head",
+    parameters: [
+      parameter({ type: "Intensity" }),
+      parameter({ type: "Red" }),
+      parameter({ type: "Green" }),
+      parameter({ type: "Blue" }),
+      parameter({ type: "Custom", data: { label: "Color1" } }, [
+        fn("Color1", {
+          wheel: "Color Wheel",
+          sets: [
+            {
+              name: "Open",
+              dmx_from: 0,
+              dmx_to: 255,
+              wheel_slot: 1,
+              color: { x: 0.3127, y: 0.329, Y: 100 },
+            },
+          ],
+        }),
+      ]),
+    ],
+  };
+  const dark = extractVisualizerDmx(
+    { Intensity: 255, Red: 0, Green: 0, Blue: 0, Color1: 0 },
+    element,
+  );
+  near(dark.red, 0, "dark red");
+  near(dark.green, 0, "dark green");
+  near(dark.blue, 0, "dark blue");
+});
+
+/** Verifies color wheel images are not gobos and the lowest gobo wheel with an image wins. */
+test("only gobo wheels project, lowest wheel first", () => {
+  resetDmxPool();
+  const element: FixtureElement = {
+    label: "Head",
+    parameters: [
+      parameter({ type: "Intensity" }),
+      parameter({ type: "Custom", data: { label: "Color1" } }, [
+        fn("Color1", {
+          wheel: "Color Wheel",
+          sets: [{ name: "Swatch", dmx_from: 0, dmx_to: 255, media: "swatch" }],
+        }),
+      ]),
+      parameter({ type: "Gobo" }, [
+        fn("Gobo1", {
+          wheel: "Gobo Wheel 1",
+          sets: [
+            { name: "Open", dmx_from: 0, dmx_to: 9 },
+            { name: "Stars", dmx_from: 10, dmx_to: 255, media: "stars" },
+          ],
+        }),
+      ]),
+      parameter({ type: "Custom", data: { label: "Gobo2" } }, [
+        fn("Gobo2", {
+          wheel: "Gobo Wheel 2",
+          sets: [{ name: "Dots", dmx_from: 0, dmx_to: 255, media: "dots" }],
+        }),
+      ]),
+    ],
+  };
+  assert.deepEqual(elementGoboMedia(element), ["stars", "dots"]);
+  assert.equal(
+    extractVisualizerDmx(
+      { Intensity: 255, Color1: 0, Gobo: 0, Gobo2: 0 },
+      element,
+    ).gobo,
+    2,
+    "open Gobo1 lets Gobo2 project",
+  );
+  assert.equal(
+    extractVisualizerDmx(
+      { Intensity: 255, Color1: 0, Gobo: 20, Gobo2: 0 },
+      element,
+    ).gobo,
+    1,
+    "Gobo1 wins over Gobo2",
+  );
+});
+
 /** Verifies a profile shutter strobes only inside strobe functions, with rate from their range. */
 test("shutter functions strobe only in strobe ranges", () => {
   resetDmxPool();
