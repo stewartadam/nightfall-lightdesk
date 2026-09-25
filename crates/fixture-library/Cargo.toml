@@ -13,6 +13,7 @@ gdtf = { git = "https://github.com/stewartadam/gdtf-rs.git", branch = "update-de
 moonshine-kind.workspace = true
 notify.workspace = true
 open-fixture-library = { path = "../open-fixture-library" }
+quick-xml = "0.41"
 nightfall = { path = "../common" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }

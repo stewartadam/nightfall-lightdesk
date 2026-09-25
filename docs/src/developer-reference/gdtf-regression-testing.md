@@ -82,6 +82,15 @@ tolerates: unreachable channels, dangling or cyclic references, duplicate
 geometry names, channels outside one universe (dropped) and channels reusing
 another channel's slots (kept as virtual parameters).
 
+Archives that `gdtf-rs` rejects are retried after load-time repairs
+(`gdtf_repair`): NaN placeholders in optional attributes are dropped (required
+colors become white), missing `FeatureGroup@Pretty` and `DMXChannel@Offset`
+are filled, braced gamut point lists are rewritten, channel sets starting
+below DMX 0 are dropped, and laser geometries import as plain geometries.
+Archives that parse as published are never rewritten. Repairs are logged as
+warnings. The gamut and laser repairs work around parser limitations and can
+be removed once `gdtf-rs` reads those constructs.
+
 ## Continuous integration
 
 No CI workflow runs the bench, visual bench or sweep yet. They need
