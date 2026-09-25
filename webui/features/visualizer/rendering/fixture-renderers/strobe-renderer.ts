@@ -26,6 +26,7 @@ import {
   MeshStandardMaterial,
 } from "three/webgpu";
 import type { FixtureElement } from "../../../../types";
+import { excludeFromSelection } from "../../model/selection-exclusion";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 
 /** Strobe panel dimensions (meters) */
@@ -212,6 +213,7 @@ function createPixelMesh(x: number, y: number): Mesh {
   });
   const mesh = new Mesh(geometry, material);
   mesh.name = "Pixel";
+  excludeFromSelection(mesh);
   mesh.position.set(x, y, STROBE_PIXEL_DEPTH);
   return mesh;
 }
@@ -224,6 +226,7 @@ function createWhiteSegmentMesh(x: number, width: number): Mesh {
   });
   const mesh = new Mesh(geometry, material);
   mesh.name = "WhiteSegment";
+  excludeFromSelection(mesh);
   mesh.position.set(x, 0, STROBE_PIXEL_DEPTH * 1.5 + 0.01);
   return mesh;
 }
@@ -242,6 +245,7 @@ function createRgbStrobeBarSegmentMesh(
   });
   const mesh = new Mesh(geometry, material);
   mesh.name = name;
+  excludeFromSelection(mesh);
   mesh.position.set(
     x,
     y,
