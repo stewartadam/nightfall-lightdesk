@@ -90,6 +90,7 @@ export const getSelectionMeshes = (
           if (
             child instanceof Mesh &&
             child.name !== "Pixel" &&
+            child.userData.visualizerCellBatch !== true &&
             child.name !== "WhiteSegment" &&
             child.name !== "TopRgbSegment" &&
             child.name !== "BottomRgbSegment"

@@ -46,6 +46,12 @@ function parseVisualizerBeamQuality(value: unknown): VisualizerBeamQuality {
 
 let startupDraftRecoveryUrlOverride: boolean | undefined;
 let visualizerDefaultPanelUrlOverride: boolean | undefined;
+let visualizerInspectorUrlOverride = false;
+
+/** Enables the full Three.js developer profiler only for an explicit diagnostic session. */
+export function isVisualizerInspectorEnabled(): boolean {
+  return visualizerInspectorUrlOverride;
+}
 
 /** Parses permissive boolean values from URL feature flag parameters. */
 function parseBooleanFeatureFlag(value: string): boolean {
@@ -129,6 +135,12 @@ function parseFeatureFlagUrlParams(): boolean {
     const params = new URLSearchParams(window.location.search);
     let changed = false;
 
+    const inspector = params.get("visualizer:inspector");
+    if (inspector !== null) {
+      visualizerInspectorUrlOverride = parseBooleanFeatureFlag(inspector);
+      changed = true;
+    }
+
     const offscreenCanvas = params.get("visualizer:offscreenCanvas");
     if (offscreenCanvas !== null) {
       const value = parseVisualizerOffscreenCanvas(offscreenCanvas);
@@ -182,6 +194,7 @@ function cleanFeatureFlagUrlParams(): void {
     params.delete("visualizer:offscreenCanvas");
     params.delete("visualizer:beamQuality");
     params.delete("visualizer:defaultPanel");
+    params.delete("visualizer:inspector");
     params.delete("startup:draftRecovery");
 
     const nextUrl =

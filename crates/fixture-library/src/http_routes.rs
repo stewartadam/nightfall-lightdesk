@@ -20,6 +20,42 @@ use axum::{
 
 use crate::mesh::{MeshExtractionError, decode_gdtf_path, extract_mesh_from_gdtf};
 
+/// Serves a source gobo PNG while archive parsing runs on the blocking I/O pool.
+pub async fn serve_wheel_media(Path((encoded, name)): Path<(String, String)>) -> Response {
+    use crate::wheel_media::{WheelMediaError, extract_wheel_media};
+    let path = match decode_gdtf_path(&encoded) {
+        Ok(path) => path,
+        Err(_) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        extract_wheel_media(std::path::Path::new(&path), &name)
+    })
+    .await;
+    match result {
+        Ok(Ok(data)) => Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "image/png")
+            .header(header::CACHE_CONTROL, "private, max-age=3600")
+            .body(Body::from(data))
+            .unwrap(),
+        Ok(Err(WheelMediaError::ArchiveUnavailable | WheelMediaError::NotFound)) => {
+            Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::empty())
+                .unwrap()
+        }
+        _ => Response::builder()
+            .status(StatusCode::UNPROCESSABLE_ENTITY)
+            .body(Body::empty())
+            .unwrap(),
+    }
+}
+
 /// Serve a mesh file from a GDTF archive.
 ///
 /// The GDTF path is base64url-encoded in the URL to handle special characters.

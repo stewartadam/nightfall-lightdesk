@@ -69,6 +69,8 @@ export type ExtendedFixtureInstance = FixtureInstance & {
   rendererType: RendererType;
   /** Physical layout used to construct this instance. */
   layout?: FixtureLayout;
+  /** Photometry revision used when deciding whether fixture resources need rebuilding. */
+  physicalSignature?: string;
   ledBarData?: LedBarData;
   strobePanelData?: StrobePanelData;
   movingHeadData?: MovingHeadData;
@@ -111,12 +113,13 @@ export function buildFixtureWithRenderer(
   beamType?: BeamType,
   beamQuality: VisualizerBeamQuality = "high",
   layout?: FixtureLayout,
+  physical?: import("../../../../types").FixturePhysical,
 ): ExtendedFixtureInstance {
   const rendererType = detectRendererType(layout);
 
   switch (rendererType) {
     case "led-bar": {
-      const instance = buildSimpleLedBar(fixtureUid, elements);
+      const instance = buildSimpleLedBar(fixtureUid, elements, physical);
       return {
         ...instance,
         rendererType: "led-bar",
@@ -144,6 +147,7 @@ export function buildFixtureWithRenderer(
         elements,
         beamQuality,
         layout === "linear-wash-bar" ? 10 : 12,
+        physical,
       );
       return {
         ...instance,
@@ -159,6 +163,7 @@ export function buildFixtureWithRenderer(
         elements,
         geometry,
         beamQuality,
+        physical,
       );
       return {
         ...instance,
@@ -191,6 +196,7 @@ export function buildFixtureWithoutGeometry(
   beamType?: BeamType,
   beamQuality: VisualizerBeamQuality = "high",
   layout?: FixtureLayout,
+  physical?: import("../../../../types").FixturePhysical,
 ): ExtendedFixtureInstance | null {
   if (layout === "rgb-strobe-bar") {
     const instance = buildRgbStrobeBarFixture(fixtureUid, elements);
@@ -208,6 +214,7 @@ export function buildFixtureWithoutGeometry(
       elements,
       beamQuality,
       layout === "linear-wash-bar" ? 10 : 12,
+      physical,
     );
     return {
       ...instance,
@@ -242,6 +249,7 @@ export function buildFixtureWithoutGeometry(
       elements,
       undefined,
       beamQuality,
+      physical,
     );
     return {
       ...instance,
@@ -253,7 +261,7 @@ export function buildFixtureWithoutGeometry(
 
   // Check if this is a simple LED bar (8+ RGB elements)
   if (layout === "led-bar" || isSimpleLedBar(elements)) {
-    const instance = buildSimpleLedBar(fixtureUid, elements);
+    const instance = buildSimpleLedBar(fixtureUid, elements, physical);
     return {
       ...instance,
       rendererType: "led-bar",

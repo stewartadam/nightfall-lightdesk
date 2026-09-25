@@ -13,6 +13,27 @@ import { Instrumentation } from "./instrumentation";
 
 const FRAME_INTERVAL_MS = 1000 / 60;
 
+/** Slow readbacks are counted once, without overweighting repeated reports of the same frame. */
+test("instrumentation averages distinct GPU samples and exposes unavailable timing", () => {
+  const instrumentation = new Instrumentation();
+  const stats: VisualizerStats[] = [];
+  instrumentation.setStatsCallback((value) => {
+    if (value) stats.push(value);
+  });
+  recordSteadyFrames(instrumentation, 1000, 10);
+  assert.equal(stats.at(-1)?.gpuMs, undefined);
+  for (let i = 0; i < 10; i++) {
+    instrumentation.recordFrame(1200 + i * FRAME_INTERVAL_MS, {
+      updateMs: 1,
+      renderMs: 2,
+      gpu: i === 0 ? { id: 1, milliseconds: 8 } : { id: 2, milliseconds: 2 },
+    });
+  }
+  assert.equal(stats.at(-1)?.gpuMs, 5);
+  instrumentation.pause();
+  assert.equal(stats.at(-1)?.gpuMs, undefined);
+});
+
 /** Records the requested number of steady 60 FPS frames. */
 function recordSteadyFrames(
   instrumentation: Instrumentation,

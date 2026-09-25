@@ -39,6 +39,7 @@ import {
   type GeometryNode,
   type PrimitiveType,
 } from "../../../types";
+import { bindEmitterOpticalChannels } from "../model/optical-bindings";
 import type { EmitterData, FixtureInstance } from "../model/types";
 import { loadMesh } from "./mesh-loader";
 
@@ -315,6 +316,7 @@ export function buildGeometryTree(
 
   const nodeObjects = new Map<string, Object3D>();
   const emitters = new Map<string, EmitterData>();
+  const opticalChannels = bindEmitterOpticalChannels(geometry);
 
   // Create Object3D for each geometry node
   for (const node of geometry.nodes) {
@@ -360,6 +362,10 @@ export function buildGeometryTree(
       obj.add(emitterMesh);
 
       emitters.set(node.name, {
+        optics: node.beam,
+        opticalChannels: opticalChannels.get(node.name),
+        opticalWheels: geometry.opticalWheels,
+        gdtfPath: geometry.gdtfPath,
         mesh: emitterMesh,
         controlledElement: node.controlledElement,
         nodeGroup: obj,
@@ -454,6 +460,10 @@ export interface EmitterColor {
   green: number;
   blue: number;
   intensity: number;
+  /** Optional second half of a split wheel filter, in the same color space as the primary. */
+  secondaryRed?: number;
+  secondaryGreen?: number;
+  secondaryBlue?: number;
   /** White emitter level normalized to 0-1 when the element exposes a white channel. */
   white?: number;
   /** Pan position normalized against the attribute max, with 0 as neutral */
@@ -462,6 +472,10 @@ export interface EmitterColor {
   tilt?: number;
   /** Zoom position (0-1, 0 = wide/unfocused, 1 = narrow/focused) */
   zoom?: number;
+  /** Physical beam angle when the fixture supplies an angular zoom range. */
+  zoomDegrees?: number;
+  /** Lens focus control, retained separately from zoom and frost. */
+  focus?: number;
   /** Frost amount (0-1, 0 = clear, 1 = full frost) */
   frost?: number;
 }

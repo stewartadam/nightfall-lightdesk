@@ -1196,7 +1196,9 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
             "pointer-events": "none",
           }}
         >
-          {Math.round($visualizerStats()!.fps)} FPS
+          <span class="fps-label">
+            {Math.round($visualizerStats()!.fps)} FPS
+          </span>
         </div>
       </Show>
     </div>

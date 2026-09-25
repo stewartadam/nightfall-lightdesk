@@ -15,6 +15,7 @@ import { Euler, MathUtils, Quaternion, type Scene } from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../lib/feature-flags";
 import { createLogger } from "../../../lib/logger";
 import type { RenderableFixture } from "../model/types";
+import { getOpticalRenderContext } from "./effects/optical-render-context";
 import {
   buildFixtureWithoutGeometry,
   buildFixtureWithRenderer,
@@ -77,10 +78,13 @@ export class FixtureManager {
         addedCount += 1;
       } else {
         const layoutChanged = existing.layout !== fixture.layout;
+        const physicalChanged =
+          existing.physicalSignature !==
+          JSON.stringify(fixture.physical ?? null);
         const geometryArrived =
           !fixture.layout && !existing.geometry && !!fixture.geometry;
 
-        if (layoutChanged || geometryArrived) {
+        if (layoutChanged || geometryArrived || physicalChanged) {
           log.debug(
             `Re-creating fixture ${fixture.uid} after its rendering definition changed`,
           );
@@ -116,6 +120,7 @@ export class FixtureManager {
         fixture.beamType,
         this.beamQuality,
         fixture.layout,
+        fixture.physical,
       );
     } else {
       // Try to build without geometry (simple LED bars, strobe panels, etc.)
@@ -125,6 +130,7 @@ export class FixtureManager {
         fixture.beamType,
         this.beamQuality,
         fixture.layout,
+        fixture.physical,
       );
     }
 
@@ -134,6 +140,23 @@ export class FixtureManager {
     }
 
     instance.layout = fixture.layout;
+    const opticalContext = getOpticalRenderContext(this.scene);
+    if (instance.movingHeadData) {
+      instance.movingHeadData.sharedAtmosphere = !!opticalContext;
+      instance.movingHeadData.sharedSurfaceLighting =
+        !!opticalContext?.surfaceScene;
+      if (opticalContext?.surfaceScene)
+        instance.movingHeadData.floorSpotMesh.visible = false;
+    }
+    if (instance.rotatingWashBeamData) {
+      instance.rotatingWashBeamData.sharedAtmosphere = !!opticalContext;
+      instance.rotatingWashBeamData.sharedSurfaceLighting =
+        !!opticalContext?.surfaceScene;
+      if (opticalContext?.surfaceScene)
+        for (const beam of instance.rotatingWashBeamData.beamEmitters)
+          beam.floorSpotMesh.visible = false;
+    }
+    instance.physicalSignature = JSON.stringify(fixture.physical ?? null);
 
     // Apply fixture placement transform
     this.applyPlacement(instance, fixture);

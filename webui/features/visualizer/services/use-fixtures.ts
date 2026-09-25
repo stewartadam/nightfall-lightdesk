@@ -66,6 +66,7 @@ export function useFixtures(): Accessor<readonly RenderableFixture[]> {
         geometry: geometryMap[uid],
         elements: fixture.elements,
         beamType: fixture.physical?.beamType,
+        physical: fixture.physical,
         layout: fixture.layout,
       });
     }

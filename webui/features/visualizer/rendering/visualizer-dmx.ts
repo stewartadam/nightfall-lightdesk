@@ -11,10 +11,15 @@
  * Derives normalized visualizer values from ParameterState output.
  */
 
-import { type FixtureElement, ParameterValuePolarity } from "../../../types";
+import {
+  type FixtureElement,
+  ParameterUnit,
+  ParameterValuePolarity,
+} from "../../../types";
 
 /** Visualizer-friendly parameter state */
 export interface VisualizerDmx {
+  [key: string]: number | undefined;
   intensity: number;
   red: number;
   green: number;
@@ -26,6 +31,8 @@ export interface VisualizerDmx {
   pan?: number;
   tilt?: number;
   zoom: number;
+  zoomDegrees?: number;
+  focus?: number;
   tiltSpeed: number;
   strobeShutter: number;
 }
@@ -69,6 +76,7 @@ function getDmxFromPool(): VisualizerDmx {
     });
   }
   const dmx = dmxPool[dmxPoolIndex++];
+  for (const key in dmx) if (key.startsWith("optical:")) dmx[key] = undefined;
   // Reset to defaults
   dmx.intensity = 0;
   dmx.red = 0;
@@ -81,6 +89,8 @@ function getDmxFromPool(): VisualizerDmx {
   dmx.pan = undefined;
   dmx.tilt = undefined;
   dmx.zoom = 0.5;
+  dmx.zoomDegrees = undefined;
+  dmx.focus = undefined;
   dmx.tiltSpeed = DEFAULT_TILT_SPEED_NORMALIZED;
   dmx.strobeShutter = 0;
   return dmx;
@@ -106,6 +116,7 @@ const ATTR_TO_PROP: Record<string, keyof VisualizerDmx> = {
   Pan: "pan",
   Tilt: "tilt",
   Zoom: "zoom",
+  Focus: "focus",
   StrobeShutter: "strobeShutter",
 };
 
@@ -197,6 +208,7 @@ export function extractVisualizerDmx(
   output: Record<string, number>,
   element: FixtureElement,
   fixtureIntensity: number | undefined = undefined,
+  normalizedAttributes?: Record<string, number>,
 ): VisualizerDmx {
   const dmx = getDmxFromPool();
   let baseRed = 0;
@@ -215,11 +227,25 @@ export function extractVisualizerDmx(
 
     const value = attributeOutputValue(output, param.attribute);
     if (value === undefined || param.max <= 0) continue;
+    if (
+      attrType === "Zoom" &&
+      param.native_unit === ParameterUnit.Degrees &&
+      Number.isFinite(value)
+    ) {
+      dmx.zoomDegrees = value;
+    }
     const normalized =
       param.value_polarity === ParameterValuePolarity.Signed &&
       (attrType === "Pan" || attrType === "Tilt")
         ? normalizeSignedPositionOutput(value, attrType)
         : normalizeParameterOutput(value, param);
+    const opticalKey = attributeOutputKey(param.attribute);
+    if (normalizedAttributes) normalizedAttributes[opticalKey] = normalized;
+    if (/^(Gobo|Prism|Focus|Zoom|Frost|Iris|Shaper)/.test(opticalKey)) {
+      dmx[`optical:${opticalKey}`] = normalized;
+      if (normalizedAttributes)
+        normalizedAttributes[`optical:${opticalKey}`] = normalized;
+    }
     if (attrType === "Custom") {
       if (TILT_SPEED_LABELS.has(param.attribute.data.label)) {
         dmx.tiltSpeed = normalized;
@@ -324,18 +350,12 @@ export function extractElementDmxData(
 ): Record<string, number> {
   const elementDmx: Record<string, number> = {};
 
-  for (const param of element.parameters) {
-    const attrKey = attributeOutputKey(param.attribute);
-    const value = attributeOutputValue(output, param.attribute);
-    if (value === undefined || param.max <= 0) continue;
-    elementDmx[attrKey] =
-      param.value_polarity === ParameterValuePolarity.Signed &&
-      (param.attribute.type === "Pan" || param.attribute.type === "Tilt")
-        ? normalizeSignedPositionOutput(value, param.attribute.type)
-        : normalizeParameterOutput(value, param);
-  }
-
-  const dmx = extractVisualizerDmx(output, element, fixtureIntensity);
+  const dmx = extractVisualizerDmx(
+    output,
+    element,
+    fixtureIntensity,
+    elementDmx,
+  );
   elementDmx.red = dmx.red;
   elementDmx.green = dmx.green;
   elementDmx.blue = dmx.blue;
@@ -343,6 +363,7 @@ export function extractElementDmxData(
   elementDmx.white = dmx.white;
   elementDmx.frost = dmx.frost;
   elementDmx.prism = dmx.prism;
+  if (dmx.focus !== undefined) elementDmx.focus = dmx.focus;
   elementDmx.uv = dmx.uv;
   elementDmx.tiltSpeed = dmx.tiltSpeed;
   if (elementDmx.StrobeShutter !== undefined) {
@@ -357,6 +378,7 @@ export function extractElementDmxData(
   }
   if (elementDmx.Zoom !== undefined) {
     elementDmx.zoom = dmx.zoom;
+    if (dmx.zoomDegrees !== undefined) elementDmx.zoomDegrees = dmx.zoomDegrees;
   }
 
   return elementDmx;

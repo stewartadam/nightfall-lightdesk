@@ -169,6 +169,9 @@ pub struct GeometryNode {
     /// Element name this node controls (for element-to-geometry mapping).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub controlled_element: Option<String>,
+    /// Optical distribution of this aperture, preserved independently of other emitters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub beam: Option<crate::physical::BeamOptics>,
 }
 
 /// Format of a mesh resource file.
@@ -201,6 +204,12 @@ pub struct MeshResource {
 #[typeshare::typeshare]
 #[serde(rename_all = "camelCase")]
 pub struct FixtureGeometry {
+    /// Source optical wheels used by gobo and prism channel functions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optical_wheels: Vec<crate::physical::OpticalWheel>,
+    /// Optical DMX functions and channel sets retained at native resolution.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optical_channels: Vec<crate::physical::OpticalChannel>,
     /// Flat array of nodes (parent indices reference into this array).
     pub nodes: Vec<GeometryNode>,
     /// Indices of root nodes (typically just one).

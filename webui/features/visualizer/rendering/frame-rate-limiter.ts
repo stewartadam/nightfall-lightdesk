@@ -20,6 +20,10 @@ export function consumeDueFrame(
   accumulatorMs: number,
   frameTimeMs = TARGET_FRAME_TIME,
 ): number | null {
-  if (accumulatorMs < frameTimeMs) return null;
-  return accumulatorMs % frameTimeMs;
+  // Browser timestamps can be rounded to tenths of a millisecond. Treat that
+  // boundary as due instead of alternately skipping and consuming two frames.
+  const toleranceMs = 0.1;
+  if (accumulatorMs + toleranceMs < frameTimeMs) return null;
+  const elapsedFrames = Math.floor((accumulatorMs + toleranceMs) / frameTimeMs);
+  return Math.max(0, accumulatorMs - elapsedFrames * frameTimeMs);
 }

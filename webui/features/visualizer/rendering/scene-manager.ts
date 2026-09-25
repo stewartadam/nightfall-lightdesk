@@ -23,6 +23,7 @@ import {
 } from "../model/selection-utils";
 import type { RenderableFixture, RenderableSceneObject } from "../model/types";
 import { BeamManager, BeamUpdater } from "./effects";
+import { FixtureColorState } from "./fixture-color-state";
 import { FixtureManager } from "./fixture-manager";
 import {
   type ExtendedFixtureInstance,
@@ -108,11 +109,15 @@ export class SceneManager {
   private selectionHighlighter: SelectionHighlighter;
   private raycaster = new Raycaster();
   private mouseNdc = new Vector2();
+  private readonly fixtureColors = new WeakMap<
+    ExtendedFixtureInstance,
+    FixtureColorState
+  >();
 
   constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
     this.fixtureManager = new FixtureManager(scene, beamQuality);
     this.sceneObjectManager = new SceneObjectManager(scene);
-    this.beamManager = new BeamManager(beamQuality);
+    this.beamManager = new BeamManager(scene, beamQuality);
     this.beamUpdater = new BeamUpdater(this.beamManager);
     this.selectionHighlighter = new SelectionHighlighter(
       this.fixtureManager.getAllFixtureInstances(),
@@ -131,6 +136,16 @@ export class SceneManager {
    */
   getBeamsEnabled(): boolean {
     return this.beamUpdater.isEnabled();
+  }
+
+  /** Reports active prism approximation for renderer-independent instrumentation. */
+  get reducedPrismEmitters(): number {
+    return this.beamUpdater.reducedPrismEmitters;
+  }
+
+  /** Reports active mask approximation for renderer-independent instrumentation. */
+  get reducedGoboEmitters(): number {
+    return this.beamManager.reducedGoboEmitters;
   }
 
   /**
@@ -467,48 +482,22 @@ export class SceneManager {
     const instance = this.fixtureManager.getFixtureInstance(fixtureUid);
     if (!instance) return;
 
-    // Convert to the format expected by update functions
-    const colorMap = new Map<
-      string,
-      Record<string, number | undefined> &
-        EmitterColor & {
-          pan?: number;
-          tilt?: number;
-          tiltSpeed?: number;
-          zoom?: number;
-          frost?: number;
-          strobeShutter?: number;
-        }
-    >();
-    const nowSeconds = performance.now() / 1000;
-    const fixtureStrobeShutter = getFixtureStrobeShutter(elementDmx);
-    for (const [key, dmx] of elementDmx) {
-      const intensity = strobeAdjustedIntensity(
-        dmx.intensity ?? 0,
-        dmx.strobeShutter,
-        fixtureStrobeShutter,
-        nowSeconds,
-      );
-      colorMap.set(key, {
-        ...dmx,
-        red: dmx.red ?? 0,
-        green: dmx.green ?? 0,
-        blue: dmx.blue ?? 0,
-        intensity,
-        pan: dmx.pan,
-        tilt: dmx.tilt,
-        tiltSpeed: dmx.tiltSpeed,
-        zoom: dmx.zoom,
-        frost: dmx.frost,
-        white: dmx.white,
-        strobeShutter: dmx.strobeShutter,
-      });
+    let colorState = this.fixtureColors.get(instance);
+    if (!colorState) {
+      colorState = new FixtureColorState();
+      this.fixtureColors.set(instance, colorState);
     }
+    const colorMap = colorState.update(
+      elementDmx,
+      getFixtureStrobeShutter(elementDmx),
+      performance.now() / 1000,
+    );
 
     // Use appropriate update function based on renderer type
     if (instance.rendererType !== "gdtf") {
       // Non-GDTF renderers (LED bar, strobe, moving head) use label-based keys
       updateFixtureColors(instance, colorMap);
+      this.beamUpdater.updateFixtureBeam(fixtureUid, instance, colorMap);
     } else {
       // GDTF renderer uses label-based emitter mapping
       updateEmitterColors(instance, colorMap);
@@ -545,6 +534,8 @@ export class SceneManager {
       tilt?: number;
       tiltSpeed: number;
       zoom: number;
+      zoomDegrees?: number;
+      focus?: number;
       frost: number;
       white?: number;
       strobeShutter?: number;
@@ -619,6 +610,7 @@ export class SceneManager {
           });
         }
         updateFixtureColors(instance, elementColors);
+        this.beamUpdater.updateFixtureBeam(uid, instance, elementColors);
       } else {
         // Default GDTF renderer - use label-based mapping
         const elementColors = new Map<string, EmitterColor>();
@@ -643,6 +635,7 @@ export class SceneManager {
         );
         for (const { element, dmx } of rawElementDmx) {
           elementColors.set(element.label, {
+            ...dmx,
             red: dmx.red,
             green: dmx.green,
             blue: dmx.blue,
@@ -655,6 +648,8 @@ export class SceneManager {
             pan: dmx.pan,
             tilt: dmx.tilt,
             zoom: dmx.zoom,
+            zoomDegrees: dmx.zoomDegrees,
+            focus: dmx.focus,
             frost: dmx.frost,
           });
         }

@@ -34,7 +34,13 @@ import {
   Vector3,
 } from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
-import type { FixtureElement, FixtureGeometry } from "../../../../types";
+import type {
+  FixtureElement,
+  FixtureGeometry,
+  FixturePhysical,
+} from "../../../../types";
+import { BeamType } from "../../../../types";
+import { bindEmitterOpticalChannels } from "../../model/optical-bindings";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 import {
   type BeamMaterial,
@@ -83,6 +89,9 @@ const FLOOR_SPOT_WORLD_QUATERNION = new Quaternion();
  */
 export interface MovingHeadData {
   type: "moving-head";
+  /** Uses the scene's shared atmospheric draw when available. */
+  sharedAtmosphere?: boolean;
+  sharedSurfaceLighting?: boolean;
   /** Yoke group that rotates for pan */
   yokeGroup: Group;
   /** Head group that rotates for tilt */
@@ -248,6 +257,7 @@ export function buildMovingHeadFixture(
   elements: FixtureElement[],
   geometry?: FixtureGeometry,
   beamQuality: VisualizerBeamQuality = "high",
+  physical?: FixturePhysical,
 ): FixtureInstance & { movingHeadData: MovingHeadData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -363,24 +373,45 @@ export function buildMovingHeadFixture(
   headGroup.add(spotlightTarget);
   spotLight.target = spotlightTarget;
 
-  // Extract beam parameters from GDTF if available
-  // TODO: Extract beam specs from fixture physical properties when available
-  // For now, use default values. The geometry.nodes don't contain beam info
-  // (beam specs are in FixturePhysical, not GeometryNode)
-  void geometry;
-  const beamAngleDeg = DEFAULT_BEAM_ANGLE;
-  const fieldAngleDeg = DEFAULT_FIELD_ANGLE;
-  const lumens = DEFAULT_LUMENS;
+  const sourceNode = geometry?.nodes.find((node) => node.beam);
+  const source = sourceNode?.beam?.physical ?? physical;
+  const beamAngleDeg = source?.beamAngle ?? DEFAULT_BEAM_ANGLE;
+  const fieldAngleDeg = source?.fieldAngle ?? DEFAULT_FIELD_ANGLE;
+  const lumens = source?.lumens ?? DEFAULT_LUMENS;
 
   // Get element label from first element (moving heads typically have one main element)
   const elementLabel = elements[0]?.label ?? "Main";
 
   // Create emitter map for compatibility
   const emitters = new Map<string, EmitterData>();
+  const aperture = new Object3D();
+  aperture.name = "OpticalAperture";
+  aperture.position.copy(lens.position);
+  aperture.rotation.x = -Math.PI / 2;
+  headGroup.add(aperture);
   emitters.set("MainEmitter", {
     mesh: lens,
     controlledElement: elementLabel,
-    nodeGroup: headGroup,
+    nodeGroup: aperture,
+    opticalChannels:
+      geometry && sourceNode
+        ? bindEmitterOpticalChannels(geometry).get(sourceNode.name)
+        : undefined,
+    opticalWheels: geometry?.opticalWheels,
+    gdtfPath: geometry?.gdtfPath,
+    optics: sourceNode?.beam ?? {
+      physical: source ?? {
+        beamType: BeamType.Spot,
+        beamAngle: beamAngleDeg,
+        fieldAngle: fieldAngleDeg,
+        lumens,
+        colorTemperature: 6500,
+      },
+      radius: 0.06,
+      throwRatio: 1,
+      rectangleRatio: 1,
+    },
+    beamColor: { red: 0, green: 0, blue: 0, intensity: 0 },
   });
 
   return {
@@ -517,8 +548,10 @@ export function updateMovingHeadColors(
   );
 
   // Scale beam mesh: X/Z for radius, Y for length
-  data.beamMesh.scale.set(baseRadius, beamLength, baseRadius);
-  data.beamMesh.position.set(0, -beamLength / 2, 0);
+  if (!data.sharedAtmosphere) {
+    data.beamMesh.scale.set(baseRadius, beamLength, baseRadius);
+    data.beamMesh.position.set(0, -beamLength / 2, 0);
+  }
 
   // Build beam parameters
   const color = new Color(
@@ -533,27 +566,45 @@ export function updateMovingHeadColors(
     beamColor.secondary?.blue ?? beamColor.primary.blue,
   );
   secondaryColor.convertSRGBToLinear();
+  const opticalColor = instance.emitters.get("MainEmitter")!.beamColor!;
+  opticalColor.red = color.r;
+  opticalColor.green = color.g;
+  opticalColor.blue = color.b;
+  opticalColor.intensity = intensity;
+  opticalColor.zoomDegrees = coneAngleDeg;
+  opticalColor.frost = frost;
+  opticalColor.secondaryRed = beamColor.secondary
+    ? secondaryColor.r
+    : undefined;
+  opticalColor.secondaryGreen = beamColor.secondary
+    ? secondaryColor.g
+    : undefined;
+  opticalColor.secondaryBlue = beamColor.secondary
+    ? secondaryColor.b
+    : undefined;
 
-  const params: BeamParameters = {
-    ...defaultBeamParameters,
-    intensity,
-    color: [color.r, color.g, color.b, 0.6],
-    secondaryColor: [secondaryColor.r, secondaryColor.g, secondaryColor.b],
-    splitColorAmount: beamColor.secondary ? 1 : 0,
-    coneAngleDegrees: Math.max(
-      MIN_CONE_ANGLE_DEGREES,
-      Math.min(MAX_CONE_ANGLE_DEGREES, coneAngleDeg),
-    ),
-    beamDirection,
-    beamOrigin,
-    beamLength,
-    clipY: DEFAULT_STAGE_FLOOR_TOP_Y,
-    softIntersectionFade: 0.0,
-    frostAmount: frost,
-  };
+  if (!data.sharedAtmosphere) {
+    const params: BeamParameters = {
+      ...defaultBeamParameters,
+      intensity,
+      color: [color.r, color.g, color.b, 0.6],
+      secondaryColor: [secondaryColor.r, secondaryColor.g, secondaryColor.b],
+      splitColorAmount: beamColor.secondary ? 1 : 0,
+      coneAngleDegrees: Math.max(
+        MIN_CONE_ANGLE_DEGREES,
+        Math.min(MAX_CONE_ANGLE_DEGREES, coneAngleDeg),
+      ),
+      beamDirection,
+      beamOrigin,
+      beamLength,
+      clipY: DEFAULT_STAGE_FLOOR_TOP_Y,
+      softIntersectionFade: 0.0,
+      frostAmount: frost,
+    };
 
-  // Update beam material uniforms
-  updateBeamMaterial(data.beamMaterial, params);
+    // Update beam material uniforms
+    updateBeamMaterial(data.beamMaterial, params);
+  }
 
   // Update spotlight to match beam
   data.spotLight.color.copy(color);
@@ -564,17 +615,19 @@ export function updateMovingHeadColors(
 
   // Visibility based on intensity
   const isVisible = intensity > 0.01;
-  data.beamMesh.visible = isVisible;
+  data.beamMesh.visible = isVisible && !data.sharedAtmosphere;
   data.spotLight.visible = false;
-  updateMovingHeadFloorSpot(
-    instance,
-    color,
-    intensity,
-    beamOrigin,
-    beamDirection,
-    halfAngleRad,
-    beamLength,
-  );
+  if (data.sharedSurfaceLighting) data.floorSpotMesh.visible = false;
+  else
+    updateMovingHeadFloorSpot(
+      instance,
+      color,
+      intensity,
+      beamOrigin,
+      beamDirection,
+      halfAngleRad,
+      beamLength,
+    );
 
   // Update lens emissive color
   const lensMaterial = (instance.emitters.get("MainEmitter")?.mesh as Mesh)

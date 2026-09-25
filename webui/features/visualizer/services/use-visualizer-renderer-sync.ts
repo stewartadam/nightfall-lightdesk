@@ -49,6 +49,7 @@ interface FixtureSyncSnapshot {
   make: string;
   model: string;
   beamType: string | undefined;
+  physicalSignature: string;
   layout: RenderableFixture["layout"];
   elementSignature: string;
   geometrySignature: string;
@@ -80,6 +81,7 @@ function toFixtureSyncSnapshot(
     make: fixture.make,
     model: fixture.model,
     beamType: fixture.beamType,
+    physicalSignature: JSON.stringify(fixture.physical ?? null),
     layout: fixture.layout,
     elementSignature: buildElementSignature(fixture),
     geometrySignature: buildGeometrySignature(fixture),
@@ -96,6 +98,7 @@ function requiresFullFixtureSync(
     previous.make !== next.make ||
     previous.model !== next.model ||
     previous.beamType !== next.beamType ||
+    previous.physicalSignature !== next.physicalSignature ||
     previous.layout !== next.layout ||
     previous.elementSignature !== next.elementSignature ||
     previous.geometrySignature !== next.geometrySignature

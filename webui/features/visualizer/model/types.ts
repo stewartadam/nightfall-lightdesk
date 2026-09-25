@@ -42,6 +42,8 @@ export interface RenderableFixture {
   elements: FixtureElement[];
   /** Beam type for determining spotlight rendering */
   beamType?: BeamType;
+  /** Source photometry retained for fixtures rendered without an imported geometry tree. */
+  physical?: import("../../../types").FixturePhysical;
   /** Explicit physical layout independent of fixture display names. */
   layout?: import("../../../types").FixtureLayout;
 }
@@ -50,6 +52,16 @@ export interface RenderableFixture {
  * Emitter data for a single beam/pixel.
  */
 export interface EmitterData {
+  /** Resolved output from a built-in optical control adapter, shared with the atmosphere pass. */
+  beamColor?: import("../rendering/geometry-builder").EmitterColor;
+  /** Imported optical distribution for this aperture, independent of fixture layout. */
+  optics?: import("../../../types").BeamOptics;
+  /** Source optical controls inherited through the geometry hierarchy. */
+  opticalChannels?: import("../../../types").OpticalChannel[];
+  /** Source wheel definitions shared by this fixture's apertures. */
+  opticalWheels?: import("../../../types").OpticalWheel[];
+  /** Source archive for resolving wheel media during setup. */
+  gdtfPath?: string;
   /** The mesh used to render this emitter */
   mesh: Mesh;
   /** Element name this emitter belongs to (for DMX mapping) */

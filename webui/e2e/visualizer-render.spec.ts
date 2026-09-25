@@ -760,10 +760,20 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
     contentType: "image/png",
   });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
+  await holdRotatingWashBeamImmediateOutput(page, fixtureUid);
+  await expect
+    .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
+    .toEqual({
+      opticalBeamCount: 12,
+      atmosphericBeamCount: 12,
+      atmosphericDraws: 1,
+      visibleBeamCount: 0,
+      visibleSpotLightCount: 0,
+    });
 });
 
-/** Verifies the owned Generic wash beam uses cheap materials in low quality. */
-test("generic wash beam low-quality setting uses cheap beam materials", async ({
+/** Verifies low quality retains shared optical projection without drawing legacy cone meshes. */
+test("generic wash beam low-quality setting uses shared atmosphere", async ({
   page,
 }) => {
   await page.goto("/");
@@ -809,8 +819,14 @@ test("generic wash beam low-quality setting uses cheap beam materials", async ({
   await waitForFixtureStoreHydration(page);
   await holdRotatingWashBeamImmediateOutput(page, fixtureUid);
   await expect
-    .poll(() => rotatingWashBeamLowQualityStats(page, fixtureUid))
-    .toMatchObject({ lowQualityBeamCount: 12, visibleSpotLightCount: 0 });
+    .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
+    .toEqual({
+      opticalBeamCount: 12,
+      atmosphericBeamCount: 12,
+      atmosphericDraws: 1,
+      visibleBeamCount: 0,
+      visibleSpotLightCount: 0,
+    });
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
@@ -1366,11 +1382,16 @@ async function holdRgbStrobeBarImmediateOutput(
   elementOutputs: Record<string, number>[],
 ): Promise<void> {
   await page.evaluate(
-    ({ fixtureUid, elementOutputs }) => {
+    async ({ fixtureUid, elementOutputs }) => {
+      const { setParametersImmediate } = await import("/state/appStores.ts");
       let framesRemaining = 120;
       const writeOutput = () => {
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(fixtureUid, elementOutputs);
+        setParametersImmediate(
+          new Map<string, Record<string, number>[]>(
+            stores.getParametersImmediate(),
+          ).set(fixtureUid, elementOutputs),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);
@@ -1487,7 +1508,8 @@ async function holdRotatingWashBeamImmediateOutput(
   page: Page,
   fixtureUid: string,
 ): Promise<void> {
-  await page.evaluate((uid) => {
+  await page.evaluate(async (uid) => {
+    const { setParametersImmediate } = await import("/state/appStores.ts");
     const control = {
       Tilt: 127,
       Zoom: 127,
@@ -1516,7 +1538,11 @@ async function holdRotatingWashBeamImmediateOutput(
     let framesRemaining = 120;
     const writeOutput = () => {
       const stores = (window as any).appStores;
-      stores.getParametersImmediate().set(uid, output);
+      setParametersImmediate(
+        new Map<string, Record<string, number>[]>(
+          stores.getParametersImmediate(),
+        ).set(uid, output),
+      );
       framesRemaining -= 1;
       if (framesRemaining > 0) {
         requestAnimationFrame(writeOutput);
@@ -1533,7 +1559,8 @@ async function writeRotatingWashBeamImmediateOutput(
   zoom: number,
 ): Promise<void> {
   await page.evaluate(
-    ({ uid, zoom }) => {
+    async ({ uid, zoom }) => {
+      const { setParametersImmediate } = await import("/state/appStores.ts");
       const control = {
         Tilt: 127,
         Zoom: zoom,
@@ -1562,7 +1589,11 @@ async function writeRotatingWashBeamImmediateOutput(
       let framesRemaining = 60;
       const writeOutput = () => {
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(uid, output);
+        setParametersImmediate(
+          new Map<string, Record<string, number>[]>(
+            stores.getParametersImmediate(),
+          ).set(uid, output),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);
@@ -1673,7 +1704,7 @@ async function rotatingWashBeamElementParameterState(
   );
 }
 
-/** Reads the rendered radius scale for the first Generic wash beam mesh. */
+/** Reads the shared optical field radius at the first wash emitter's configured throw distance. */
 async function rotatingWashBeamFirstBeamRadius(
   page: Page,
   fixtureUid: string,
@@ -1681,41 +1712,41 @@ async function rotatingWashBeamFirstBeamRadius(
   return page.evaluate((uid) => {
     const api = (window as any).visualizerApi;
     const scene = api?.getScene?.();
-    const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const beam = root?.getObjectByName?.("Beam_1");
-    if (!beam) return null;
-    return beam.scale.x;
+    const beam = scene?.getObjectByName?.(`OpticalSurface:${uid}:Beam_0`);
+    if (!beam?.optics) return null;
+    return beam.optics.radius + beam.beamLength * beam.optics.slopeX;
   }, fixtureUid);
 }
 
 /**
- * Reads low-quality beam material and visibility statistics for the Generic wash beam fixture.
+ * Matches active atmospheric instances to this fixture's optical lights and checks legacy suppression.
  */
-async function rotatingWashBeamLowQualityStats(
+async function rotatingWashBeamOpticalStats(
   page: Page,
   fixtureUid: string,
 ): Promise<{
-  lowQualityBeamCount: number;
+  opticalBeamCount: number;
+  atmosphericBeamCount: number;
+  atmosphericDraws: number;
   visibleBeamCount: number;
   visibleSpotLightCount: number;
 } | null> {
-  return page.evaluate((uid) => {
+  return page.evaluate(async (uid) => {
     const api = (window as any).visualizerApi;
     const scene = api?.getScene?.();
     const root = scene?.getObjectByName?.(`Fixture_${uid}`);
     if (!root) return null;
 
     const stats = {
-      lowQualityBeamCount: 0,
+      opticalBeamCount: 0,
+      atmosphericBeamCount: 0,
+      atmosphericDraws: 0,
       visibleBeamCount: 0,
       visibleSpotLightCount: 0,
     };
 
     root.traverse((object: any) => {
       if (object.name.startsWith("Beam_")) {
-        if (object.material?.isLowQualityBeamMaterial === true) {
-          stats.lowQualityBeamCount += 1;
-        }
         if (object.visible === true) {
           stats.visibleBeamCount += 1;
         }
@@ -1725,6 +1756,30 @@ async function rotatingWashBeamLowQualityStats(
       ) {
         stats.visibleSpotLightCount += 1;
       }
+    });
+
+    const lightIds = new Set<number>();
+    scene.traverse((object: any) => {
+      if (
+        object.name.startsWith(`OpticalSurface:${uid}:`) &&
+        object.visible &&
+        object.intensity > 0.01
+      )
+        lightIds.add(object.id);
+    });
+    stats.opticalBeamCount = lightIds.size;
+    const { getOpticalRenderContext } = await import(
+      "/features/visualizer/rendering/effects/optical-render-context.ts"
+    );
+    const atmosphere = getOpticalRenderContext(scene)?.scene;
+    atmosphere?.traverse((object: any) => {
+      if (object.name !== "EmitterVolumes" || !object.visible) return;
+      const shape = object.geometry.getAttribute("volumeShape");
+      let matching = 0;
+      for (let i = 0; i < object.count; i++)
+        if (lightIds.has(shape.getZ(i))) matching++;
+      stats.atmosphericBeamCount += matching;
+      if (matching) stats.atmosphericDraws++;
     });
 
     return stats;
@@ -1807,9 +1862,14 @@ async function setFixtureImmediateOutput(
   output: Record<string, number>,
 ): Promise<void> {
   await page.evaluate(
-    ({ fixtureUid, output }) => {
+    async ({ fixtureUid, output }) => {
+      const { setParametersImmediate } = await import("/state/appStores.ts");
       const stores = (window as any).appStores;
-      stores.getParametersImmediate().set(fixtureUid, [output]);
+      setParametersImmediate(
+        new Map<string, Record<string, number>[]>(
+          stores.getParametersImmediate(),
+        ).set(fixtureUid, [output]),
+      );
     },
     { fixtureUid, output },
   );
@@ -1822,11 +1882,16 @@ async function holdFixtureImmediateOutput(
   output: Record<string, number>,
 ): Promise<void> {
   await page.evaluate(
-    ({ fixtureUid, output }) => {
+    async ({ fixtureUid, output }) => {
+      const { setParametersImmediate } = await import("/state/appStores.ts");
       let framesRemaining = 120;
       const writeOutput = () => {
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(fixtureUid, [output]);
+        setParametersImmediate(
+          new Map<string, Record<string, number>[]>(
+            stores.getParametersImmediate(),
+          ).set(fixtureUid, [output]),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);
@@ -1893,7 +1958,7 @@ async function movingSpotBeamStats(
     const api = (window as any).visualizerApi;
     const scene = api?.getScene?.();
     const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const beam = root?.getObjectByName?.("Beam");
+    const beam = scene?.getObjectByName?.(`OpticalSurface:${uid}:MainEmitter`);
     const lens = root?.getObjectByName?.("Lens") as
       | { material?: { color?: { r: number; g: number; b: number } } }
       | undefined;
@@ -1902,7 +1967,7 @@ async function movingSpotBeamStats(
 
     const round = (value: number) => Number(value.toFixed(4));
     return {
-      beamVisible: beam.visible,
+      beamVisible: beam.visible && beam.intensity > 0.01,
       lensColor: {
         r: round(color.r),
         g: round(color.g),
@@ -1913,7 +1978,7 @@ async function movingSpotBeamStats(
 }
 
 /**
- * Reads split-color material uniforms for the Generic moving spot fixture beam.
+ * Reads split-color state used by shared atmospheric and surface projection for the moving spot.
  */
 async function movingSpotBeamMaterialStats(
   page: Page,
@@ -1928,36 +1993,35 @@ async function movingSpotBeamMaterialStats(
     const api = (window as any).visualizerApi;
     const scene = api?.getScene?.();
     const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const beam = root?.getObjectByName?.("Beam") as
+    const beam = scene?.getObjectByName?.(
+      `OpticalSurface:${uid}:MainEmitter`,
+    ) as
       | {
           visible?: boolean;
-          material?: {
-            beamColorUniform?: { value?: { x: number; y: number; z: number } };
-            secondaryBeamColorUniform?: {
-              value?: { x: number; y: number; z: number };
-            };
-            splitColorAmountUniform?: { value?: number };
-          };
+          intensity: number;
+          color: { r: number; g: number; b: number };
+          secondaryColor: { r: number; g: number; b: number };
+          splitColor: boolean;
         }
       | undefined;
-    const primary = beam?.material?.beamColorUniform?.value;
-    const secondary = beam?.material?.secondaryBeamColorUniform?.value;
-    const splitColorAmount = beam?.material?.splitColorAmountUniform?.value;
+    const primary = beam?.color;
+    const secondary = beam?.secondaryColor;
+    const splitColorAmount = beam?.splitColor ? 1 : 0;
     if (!root || !beam || !primary || !secondary) return null;
 
     const round = (value: number) => Number(value.toFixed(4));
     return {
-      beamVisible: Boolean(beam.visible),
+      beamVisible: Boolean(beam.visible) && beam.intensity > 0.01,
       splitColorAmount: round(splitColorAmount ?? 0),
       primaryColor: {
-        r: round(primary.x),
-        g: round(primary.y),
-        b: round(primary.z),
+        r: round(primary.r),
+        g: round(primary.g),
+        b: round(primary.b),
       },
       secondaryColor: {
-        r: round(secondary.x),
-        g: round(secondary.y),
-        b: round(secondary.z),
+        r: round(secondary.r),
+        g: round(secondary.g),
+        b: round(secondary.b),
       },
     };
   }, fixtureUid);

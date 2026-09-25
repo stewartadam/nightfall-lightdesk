@@ -8,9 +8,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { float } from "three/tsl";
 import {
   Group,
   MathUtils,
+  Mesh,
   type MeshBasicMaterial,
   Quaternion,
   Scene,
@@ -19,17 +21,23 @@ import {
 import {
   type Attribute,
   AxisType,
+  BeamType,
   DmxValueResolution,
   type FixtureElement,
   type FixtureGeometry,
   FixtureLayout,
   GeometryType,
   MergeStrategy,
+  ParameterUnit,
   ParameterValuePolarity,
   type Transform,
 } from "../../../types";
 import type { FixtureInstance, RenderableFixture } from "../model/types";
+import { BeamManager } from "./effects/beam-manager";
 import { isLowQualityBeamMaterial } from "./effects/beam-material";
+import { BeamUpdater } from "./effects/beam-updater";
+import { EmitterOpticalState } from "./effects/emitter-optical-state";
+import { createOpticalRenderContext } from "./effects/optical-render-context";
 import { FixtureManager } from "./fixture-manager";
 import { buildSimpleLedBar } from "./fixture-renderers/led-bar-renderer";
 import {
@@ -139,6 +147,144 @@ function parameter(
         : ParameterValuePolarity.Unsigned,
   };
 }
+
+/** Carries physical zoom to both rendering modes without interpreting raw percentages as degrees. */
+test("physical zoom survives visualizer and worker DMX extraction", () => {
+  const zoom = {
+    ...parameter("Zoom", 45),
+    min: 5,
+    native_unit: ParameterUnit.Degrees,
+  };
+  const element: FixtureElement = { label: "Head", parameters: [zoom] };
+  assert.equal(extractVisualizerDmx({ Zoom: 25 }, element).zoomDegrees, 25);
+  assert.equal(extractElementDmxData({ Zoom: 25 }, element).zoomDegrees, 25);
+  assert.equal(extractVisualizerDmx({ Zoom: 25 }, element).zoom, 0.5);
+  const raw: FixtureElement = {
+    label: "Head",
+    parameters: [parameter("Zoom")],
+  };
+  assert.equal(extractVisualizerDmx({ Zoom: 128 }, raw).zoomDegrees, undefined);
+  assert.equal(
+    extractElementDmxData({ Zoom: 128 }, raw).zoomDegrees,
+    undefined,
+  );
+});
+
+/** Keeps focus independent of zoom and frost, including pooled-state reset and worker delivery. */
+test("focus retains its own optical control value", () => {
+  const element: FixtureElement = {
+    label: "Head",
+    parameters: [parameter("Focus"), parameter("Zoom"), parameter("Frost")],
+  };
+  const values = { Focus: 51, Zoom: 153, Frost: 102 };
+  const dmx = extractVisualizerDmx(values, element);
+  approx(dmx.focus!, 0.2);
+  approx(dmx.zoom, 0.6);
+  approx(dmx.frost, 0.4);
+  approx(extractElementDmxData(values, element).focus, 0.2);
+  assert.equal(extractVisualizerDmx({}, element).focus, undefined);
+});
+
+/** Cross-geometry mode controls survive the normalized payload shared by main and worker rendering. */
+test("fixture DMX selects indexed and rotating gobo modes across geometries", () => {
+  const state = new EmitterOpticalState(
+    {
+      mesh: new Mesh(),
+      controlledElement: "Head",
+      opticalChannels: [
+        {
+          geometry: "Head",
+          parameterKey: "GoboRot",
+          attribute: "Gobo1Pos",
+          dmxMax: 255,
+          functions: [
+            {
+              attribute: "Gobo1Pos",
+              dmxFrom: 0,
+              dmxTo: 255,
+              physicalFrom: 0,
+              physicalTo: 90,
+              sets: [],
+              modeMaster: "source",
+              modeConditions: [
+                {
+                  geometry: "Base",
+                  parameterKey: "Control",
+                  dmxMax: 65535,
+                  dmxFrom: 0,
+                  dmxTo: 32895,
+                },
+              ],
+            },
+            {
+              attribute: "Gobo1PosRotate",
+              dmxFrom: 0,
+              dmxTo: 255,
+              physicalFrom: -180,
+              physicalTo: 180,
+              sets: [],
+              modeMaster: "source",
+              modeConditions: [
+                {
+                  geometry: "Base",
+                  parameterKey: "Control",
+                  dmxMax: 65535,
+                  dmxFrom: 32896,
+                  dmxTo: 65535,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    () => {
+      throw new Error("Rotation must not request wheel media");
+    },
+  );
+  const head: FixtureElement = {
+    label: "Head",
+    parameters: [parameter("GoboRot")],
+  };
+  const base: FixtureElement = {
+    label: "Base",
+    parameters: [customParameter("Control", 65535)],
+  };
+  /** Uses the production normalizer for both geometry outputs. */
+  const colors = (control: number) =>
+    new Map([
+      [
+        "Head",
+        {
+          ...extractElementDmxData({ GoboRot: 255 }, head),
+          red: 1,
+          green: 1,
+          blue: 1,
+          intensity: 1,
+        },
+      ],
+      [
+        "Base",
+        {
+          ...extractElementDmxData({ Control: control }, base),
+          red: 1,
+          green: 1,
+          blue: 1,
+          intensity: 1,
+        },
+      ],
+    ]);
+  state.update(colors(32895), 10);
+  approx(state.goboRotation, Math.PI / 2);
+  state.update(colors(32896), 10.5);
+  approx(state.goboRotation, Math.PI);
+  const missingMaster = colors(0);
+  missingMaster.delete("Base");
+  state.update(missingMaster, 11);
+  assert.equal(state.goboRotation, 0);
+  state.update(colors(0), 12);
+  approx(state.goboRotation, Math.PI / 2);
+});
 
 /**
  * Builds custom parameter metadata for fixture-specific control channels.
@@ -600,7 +746,8 @@ test("low quality moving head beam keeps full geometry with depth-tested materia
   assert.ok(instance.movingHeadData.beamMaterial.opacity <= 0.3);
 });
 
-test("fallback LED bar hangs emitters below the housing", () => {
+/** Cell anchors and selection proxies must follow fixture placement through parent transforms. */
+test("fallback LED bar hangs emitters below the housing and follows fixture transforms", () => {
   const instance = buildSimpleLedBar("fixture-led", [
     { label: "Pixel 1" } as FixtureElement,
     { label: "Pixel 2" } as FixtureElement,
@@ -618,11 +765,67 @@ test("fallback LED bar hangs emitters below the housing", () => {
     housingPosition.y > emitterPosition.y,
     `expected LED housing above emitters, got housing=${housingPosition.y} emitter=${emitterPosition.y}`,
   );
+  const anchor = instance.emitters.get("0")!.mesh;
+  const proxy = instance.ledBarData.cellSelectionMeshes[0];
+  const localAnchor = anchor.position.clone();
+  const localProxy = proxy.position.clone();
+  instance.group.position.set(3, 4, 5);
+  instance.group.rotation.set(0.2, 0.8, -0.3);
+  instance.group.scale.set(2, 1, 0.5);
+  instance.group.updateMatrixWorld(true);
+  assert.ok(
+    anchor
+      .getWorldPosition(new Vector3())
+      .distanceTo(localAnchor.applyMatrix4(instance.group.matrixWorld)) < 1e-10,
+  );
+  assert.ok(
+    proxy
+      .getWorldPosition(new Vector3())
+      .distanceTo(localProxy.applyMatrix4(instance.group.matrixWorld)) < 1e-10,
+  );
 });
 
-/**
- * Verifies fallback strobe panels rotate around their base attachment point.
- */
+/** Fixture photometry is distributed across cells without inventing a combined aperture or depending on cell count. */
+test("LED bars retain independent cell optics and conserve supplied fixture flux", () => {
+  const physical = {
+    beamType: BeamType.Wash,
+    beamAngle: 2,
+    fieldAngle: 6,
+    lumens: 6000,
+  };
+  for (const count of [12, 60]) {
+    const elements = Array.from(
+      { length: count },
+      (_, i) => ({ label: `Pixel ${i + 1}` }) as FixtureElement,
+    );
+    const instance = buildSimpleLedBar("optical-bar", elements, physical);
+    instance.group.updateMatrixWorld(true);
+    let flux = 0;
+    const positions = new Set<number>();
+    for (const emitter of instance.emitters.values()) {
+      assert.ok(emitter.optics);
+      assert.equal(emitter.optics.physical.beamAngle, 2);
+      assert.equal(emitter.optics.physical.fieldAngle, 6);
+      flux += emitter.optics.physical.lumens!;
+      positions.add(emitter.mesh.position.x);
+      const direction = new Vector3(0, 0, -1).transformDirection(
+        emitter.mesh.matrixWorld,
+      );
+      assert.ok(direction.distanceTo(new Vector3(0, -1, 0)) < 1e-10);
+    }
+    assert.equal(flux, 6000);
+    assert.equal(positions.size, count);
+    assert.equal(physical.lumens, 6000);
+    const unspecified = buildSimpleLedBar("unspecified", elements);
+    assert.ok(
+      [...unspecified.emitters.values()].every(
+        (emitter) => emitter.optics === undefined,
+      ),
+    );
+  }
+});
+
+/** Verifies fallback strobe panels rotate around their base attachment point. */
 test("fallback strobe rotates around its base attachment point", () => {
   const instance = buildStrobePanelFixture("fixture-strobe", []);
 
@@ -1709,6 +1912,289 @@ test("explicit layouts select renderers without fixture names", () => {
   assert.equal(instance.rotatingWashBeamData.beamEmitters.length, 10);
   assert.equal(instance.rotatingWashBeamData.stripPixelMeshes.length, 0);
   disposeRotatingWashBeam(instance);
+});
+
+/** Source photometry overrides fallback values and rebuilds only when the physical definition changes. */
+test("moving heads publish resolved output to the shared atmospheric batch", () => {
+  const scene = new Scene();
+  const context = createOpticalRenderContext(scene, float(-100), true);
+  const manager = new FixtureManager(scene, "high");
+  const beams = new BeamManager(scene, "high");
+  const updater = new BeamUpdater(beams);
+  const fixture: RenderableFixture = {
+    uid: "shared-head",
+    fixtureId: 1,
+    make: "Generic",
+    model: "Head",
+    position: { x: 0, y: 2, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    elements: [{ label: "Head", parameters: [] } as unknown as FixtureElement],
+    layout: FixtureLayout.MovingHead,
+  };
+  manager.syncFixtures([fixture]);
+  const instance = manager.getFixtureInstance(fixture.uid)!;
+  updater.syncWithFixtures(manager.getAllFixtureInstances());
+  const colors = new Map([
+    ["Head", { red: 1, green: 0, blue: 0, intensity: 1 }],
+  ]);
+  updateMovingHeadColors(
+    instance as ReturnType<typeof buildMovingHeadFixture>,
+    colors,
+  );
+  updater.updateFixtureBeam(fixture.uid, instance, colors);
+  assert.equal(instance.movingHeadData?.beamMesh.visible, false);
+  assert.equal(instance.movingHeadData?.floorSpotMesh.visible, false);
+  const draw = context.scene
+    .children[0] as import("three/webgpu").InstancedMesh;
+  assert.equal(draw.count, 1);
+  const direction = new Vector3().fromBufferAttribute(
+    draw.geometry.getAttribute("volumeForward"),
+    0,
+  );
+  assert.ok(Math.abs(direction.length() - 1) < 1e-6);
+  assert.ok(direction.y < -0.99);
+  colors.get("Head")!.intensity = 0;
+  updateMovingHeadColors(
+    instance as ReturnType<typeof buildMovingHeadFixture>,
+    colors,
+  );
+  updater.updateFixtureBeam(fixture.uid, instance, colors);
+  assert.equal(draw.count, 0);
+  manager.syncFixtures([]);
+  beams.dispose();
+});
+
+/** Imported parent controls and wheel media survive the moving-head adapter and reach beam rendering. */
+test("moving-head layout preserves inherited optical controls", () => {
+  const scene = new Scene();
+  const context = createOpticalRenderContext(scene, float(-100), true);
+  const manager = new FixtureManager(scene, "high");
+  const beams = new BeamManager(scene, "high");
+  const updater = new BeamUpdater(beams);
+  const geometry: FixtureGeometry = {
+    gdtfPath: "imported.gdtf",
+    roots: [0],
+    nodes: [
+      {
+        name: "Head",
+        geometryType: GeometryType.Generic,
+        parentIndex: -1,
+        transform: identityTransform(),
+      },
+      {
+        name: "Lens",
+        geometryType: GeometryType.Beam,
+        parentIndex: 0,
+        transform: identityTransform(),
+        beam: {
+          physical: {
+            beamType: BeamType.Spot,
+            beamAngle: 8,
+            fieldAngle: 12,
+            lumens: 4200,
+            colorTemperature: 6500,
+          },
+          radius: 0.06,
+          throwRatio: 1,
+          rectangleRatio: 1,
+        },
+      },
+    ],
+    opticalWheels: [
+      { name: "Gobos", slots: [{ mediaName: "breakup", facets: [] }] },
+    ],
+    opticalChannels: [
+      {
+        geometry: "Head",
+        attribute: "Zoom",
+        parameterKey: "Zoom",
+        dmxMax: 1000,
+        functions: [
+          {
+            attribute: "Zoom",
+            physicalUnit: "Angle",
+            dmxFrom: 0,
+            dmxTo: 1000,
+            physicalFrom: 5,
+            physicalTo: 45,
+            sets: [],
+          },
+        ],
+      },
+      {
+        geometry: "Head",
+        attribute: "Gobo1",
+        parameterKey: "Gobo",
+        dmxMax: 255,
+        functions: [
+          {
+            attribute: "Gobo1",
+            wheel: "Gobos",
+            dmxFrom: 0,
+            dmxTo: 255,
+            physicalFrom: 0,
+            physicalTo: 1,
+            sets: [
+              {
+                dmxFrom: 0,
+                dmxTo: 255,
+                physicalFrom: 0,
+                physicalTo: 1,
+                wheelSlot: 1,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const fixture: RenderableFixture = {
+    uid: "imported-head",
+    fixtureId: 1,
+    make: "Imported",
+    model: "Head",
+    position: { x: 0, y: 2, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    elements: [{ label: "Head", parameters: [] } as unknown as FixtureElement],
+    layout: FixtureLayout.MovingHead,
+    geometry,
+  };
+  manager.syncFixtures([fixture]);
+  const instance = manager.getFixtureInstance(fixture.uid)!;
+  const emitter = instance.emitters.get("MainEmitter")!;
+  assert.deepEqual(emitter.opticalChannels, geometry.opticalChannels);
+  assert.equal(emitter.gdtfPath, geometry.gdtfPath);
+  assert.equal(emitter.opticalWheels, geometry.opticalWheels);
+  const media: string[][] = [];
+  const state = new EmitterOpticalState(emitter, (path, name) => {
+    media.push([path, name]);
+    return { index: 7, status: "ready" };
+  });
+  assert.deepEqual(media, [["imported.gdtf", "breakup"]]);
+  const values = {
+    red: 1,
+    green: 1,
+    blue: 1,
+    intensity: 1,
+    "optical:Zoom": 0,
+    "optical:Gobo": 1,
+  };
+  const colors = new Map([["Head", values]]);
+  state.update(colors);
+  assert.equal(state.goboSlot, 7);
+  // Avoid starting a network fetch in this node-only rendering regression.
+  emitter.gdtfPath = undefined;
+  updater.syncWithFixtures(manager.getAllFixtureInstances());
+  updateMovingHeadColors(
+    instance as ReturnType<typeof buildMovingHeadFixture>,
+    colors,
+  );
+  updater.updateFixtureBeam(fixture.uid, instance, colors);
+  const draw = context.scene
+    .children[0] as import("three/webgpu").InstancedMesh;
+  const optics = draw.geometry.getAttribute("volumeOptics");
+  const narrow = optics.getX(0);
+  values["optical:Zoom"] = 1;
+  updater.updateFixtureBeam(fixture.uid, instance, colors);
+  assert.ok(optics.getX(0) > narrow * 2);
+  manager.syncFixtures([]);
+  beams.dispose();
+});
+
+/** Independent wash apertures share a draw while decorative strip pixels remain surface emitters. */
+test("rotating wash routes each lens independently to shared atmosphere", () => {
+  const scene = new Scene();
+  const context = createOpticalRenderContext(scene, float(-100), true);
+  const manager = new FixtureManager(scene, "high");
+  const beams = new BeamManager(scene, "high");
+  const updater = new BeamUpdater(beams);
+  const elements = rotatingWashBeamElements();
+  const fixture: RenderableFixture = {
+    uid: "shared-wash",
+    fixtureId: 1,
+    make: "Generic",
+    model: "Wash",
+    position: { x: 0, y: 2, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    elements,
+    layout: FixtureLayout.RotatingWashBeam,
+  };
+  manager.syncFixtures([fixture]);
+  const instance = manager.getFixtureInstance(fixture.uid)! as ReturnType<
+    typeof buildRotatingWashBeamFixture
+  > & { rendererType: "rotating-wash-beam" };
+  updater.syncWithFixtures(manager.getAllFixtureInstances());
+  const colors = new Map(
+    elements.map((element) => [
+      element.label,
+      { red: 1, green: 0, blue: 0, intensity: 1 },
+    ]),
+  );
+  updateRotatingWashBeamColors(instance, colors);
+  updater.updateFixtureBeam(fixture.uid, instance, colors);
+  const draw = context.scene
+    .children[0] as import("three/webgpu").InstancedMesh;
+  assert.equal(draw.count, 12);
+  assert.equal(context.scene.children.length, 1);
+  const positions = draw.geometry.getAttribute("volumeOrigin");
+  assert.equal(
+    new Set(Array.from({ length: 12 }, (_, i) => positions.getX(i))).size,
+    12,
+  );
+  assert.ok(
+    instance.rotatingWashBeamData.beamEmitters.every(
+      (beam) => !beam.beamMesh.visible && !beam.floorSpotMesh.visible,
+    ),
+  );
+  colors.get(
+    instance.rotatingWashBeamData.beamEmitters[0].elementLabel,
+  )!.intensity = 0;
+  updateRotatingWashBeamColors(instance, colors);
+  updater.updateFixtureBeam(fixture.uid, instance, colors);
+  assert.equal(draw.count, 11);
+  manager.syncFixtures([]);
+  updater.syncWithFixtures(manager.getAllFixtureInstances());
+  assert.equal(draw.count, 0);
+  beams.dispose();
+});
+
+/** Source photometry overrides fallback values and rebuilds only when the physical definition changes. */
+test("fixture photometry reaches built-in moving heads and updates without changing placement", () => {
+  const manager = new FixtureManager(new Scene(), "low");
+  const fixture: RenderableFixture = {
+    uid: "physical-head",
+    fixtureId: 1,
+    make: "Generic",
+    model: "Head",
+    position: { x: 1, y: 2, z: 3 },
+    rotation: { x: 0, y: 0, z: 0 },
+    elements: [{ label: "Main", parameters: [] } as unknown as FixtureElement],
+    layout: FixtureLayout.MovingHead,
+    physical: {
+      beamType: BeamType.Spot,
+      beamAngle: 8,
+      fieldAngle: 12,
+      lumens: 4200,
+      colorTemperature: 6500,
+    },
+  };
+  manager.syncFixtures([fixture]);
+  const initial = manager.getFixtureInstance(fixture.uid)!;
+  assert.equal(initial.movingHeadData?.beamAngleDeg, 8);
+  assert.equal(initial.movingHeadData?.fieldAngleDeg, 12);
+  assert.equal(initial.movingHeadData?.lumens, 4200);
+  const updated = {
+    ...fixture,
+    physical: { ...fixture.physical!, beamAngle: 4 },
+  };
+  manager.syncFixtures([updated]);
+  const rebuilt = manager.getFixtureInstance(fixture.uid)!;
+  assert.notEqual(rebuilt, initial);
+  assert.equal(rebuilt.movingHeadData?.beamAngleDeg, 4);
+  assert.deepEqual(rebuilt.group.position.toArray(), [1, 2, 3]);
+  manager.syncFixtures([updated]);
+  assert.equal(manager.getFixtureInstance(fixture.uid), rebuilt);
+  manager.syncFixtures([]);
 });
 
 /** Ensures editing layout rebuilds a fixture once, while renaming preserves its renderer. */

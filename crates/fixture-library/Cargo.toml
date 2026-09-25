@@ -21,6 +21,7 @@ nightfall-websocket = { path = "../websocket" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
@@ -33,7 +34,6 @@ test-support = ["dep:zip"]
 [dev-dependencies]
 async-channel.workspace = true
 tempfile.workspace = true
-tokio.workspace = true
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [lints]

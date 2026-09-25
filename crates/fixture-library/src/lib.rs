@@ -29,6 +29,7 @@ pub mod scanner;
 pub mod testing;
 pub mod watcher;
 pub mod websocket;
+pub mod wheel_media;
 
 pub use gdtf_metadata::GdtfMetadata;
 pub use manager::{FixtureLibraryManager, FixtureProfile, FixtureSource};

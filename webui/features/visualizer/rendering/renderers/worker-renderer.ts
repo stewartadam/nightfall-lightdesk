@@ -34,6 +34,7 @@ import type {
   RenderableFixture,
   RenderableSceneObject,
 } from "../../model/types";
+import { FramePacing } from "../../services/frame-pacing";
 import {
   createPostProcessing,
   disposePostProcessing,
@@ -45,6 +46,8 @@ import {
   setProgrammerValueOutlineSelectedObjects,
 } from "../effects/post-processing";
 import { consumeDueFrame } from "../frame-rate-limiter";
+import { GpuFrameTimer, type TimestampRenderer } from "../gpu-frame-timer";
+import { LatestFrameMailbox } from "../latest-frame-mailbox";
 import {
   cancelControlsInteraction,
   createCamera,
@@ -95,6 +98,7 @@ const log = createLogger("visualizer:worker-renderer");
  * Runs on the main thread and forwards to the worker.
  */
 export class WorkerRendererProxy implements IVisualizerRenderer {
+  private readonly dmxMailbox: LatestFrameMailbox<FixtureDmxBatch>;
   private worker: Worker;
   private workerApi: Comlink.Remote<VisualizerWorkerApi>;
   private proxy: ElementProxy | undefined;
@@ -110,6 +114,10 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
   constructor(worker: Worker, workerApi: Comlink.Remote<VisualizerWorkerApi>) {
     this.worker = worker;
     this.workerApi = workerApi;
+    this.dmxMailbox = new LatestFrameMailbox(
+      (batch) => this.workerApi.setElementDmxBatch(batch),
+      (error) => log.warn("Visualizer lighting update failed", { error }),
+    );
 
     // Push initial log config to worker
     this.workerApi.setLogConfig(getConfig());
@@ -211,7 +219,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
    * Sends all fixture element DMX updates for one frame across the worker boundary.
    */
   setElementDmxBatch(batch: FixtureDmxBatch): void {
-    this.workerApi.setElementDmxBatch(batch);
+    this.dmxMailbox.publish(batch);
   }
 
   setSelection(selectedUids: string[]): void {
@@ -268,6 +276,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
 
   pause(): void {
     if (this._isPaused) return;
+    this.dmxMailbox.clear();
     this._isPaused = true;
     if (this.colorUpdateRafId !== null) {
       cancelAnimationFrame(this.colorUpdateRafId);
@@ -359,13 +368,21 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
   }
 
   dispose(): void {
+    this.dmxMailbox.dispose();
     if (this.colorUpdateRafId !== null) {
       cancelAnimationFrame(this.colorUpdateRafId);
     }
     this.unsubscribeLogConfig?.();
     this.proxy?.dispose();
-    this.workerApi.dispose();
-    this.worker.terminate();
+    // Allow pending GPU mappings to finish before terminating the worker.
+    const timeout = setTimeout(() => this.worker.terminate(), 2000);
+    void this.workerApi
+      .dispose()
+      .catch(() => {})
+      .finally(() => {
+        clearTimeout(timeout);
+        this.worker.terminate();
+      });
   }
 
   setStatsCallback(
@@ -426,6 +443,12 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
     const updateColors = () => {
       if (this._isPaused) {
         this.colorUpdateRafId = null;
+        return;
+      }
+
+      // Sample current DMX on the next frame after acknowledgement instead of building discarded snapshots.
+      if (this.dmxMailbox.busy) {
+        this.colorUpdateRafId = requestAnimationFrame(updateColors);
         return;
       }
 
@@ -496,13 +519,30 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   private readonly STATS_WINDOW_SIZE = 60;
   private readonly STATS_PUBLISH_INTERVAL = 10;
   private frameTimesMs: number[] = [];
+  private readonly pacing = new FramePacing();
   private renderTimesMs: number[] = [];
+  private updateTimesMs: number[] = [];
+  private pendingDmxMs = 0;
+  private gpuTimer = new GpuFrameTimer();
   private statsFrameCount = 0;
   private statsLastFrameTime = 0;
 
   // Render loop timing
   private lastTime = 0;
   private accumulator = 0;
+
+  /** Includes incoming DMX application in the next frame's optional rendering budget. */
+  override setElementDmx(
+    fixtureUid: string,
+    elementDmx: FixtureElementDmxMap,
+  ): void {
+    const started = performance.now();
+    try {
+      super.setElementDmx(fixtureUid, elementDmx);
+    } finally {
+      this.pendingDmxMs += performance.now() - started;
+    }
+  }
 
   /**
    * Initializes the worker-side renderer implementation behind the shared renderer API.
@@ -582,6 +622,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       this.scene,
       this.camera,
     );
+    await this.postProcessing.surfaceLighting?.shadows.prepare(this.renderer);
     setOutlineSelectedObjects(
       this.postProcessing,
       this.sceneManager.getSelectionOutlineObjects(),
@@ -652,8 +693,11 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     return this._isPaused;
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.renderer?.setAnimationLoop(null);
+    this.statsCallback = null;
+    this.cameraChangeCallback = null;
+    await this.gpuTimer.dispose();
     this.debugOverlays?.dispose();
     this.sceneManager?.dispose();
     disposePostProcessing(this.postProcessing);
@@ -841,6 +885,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
     // Use setAnimationLoop for proper WebGPU async rendering
     this.renderer.setAnimationLoop((time: number) => {
+      const startedAt = performance.now();
       if (this._isPaused || !this.scene || !this.camera || !this.controls) {
         return;
       }
@@ -864,6 +909,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       }
 
       // Update controls
+      const updateStarted = performance.now();
       this.controls.update();
 
       // Update floor transparency based on camera position
@@ -878,12 +924,29 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
       // Render and track timing
       const renderStart = performance.now();
+      const updateMs = this.pendingDmxMs + renderStart - updateStarted;
+      this.pendingDmxMs = 0;
+      this.pushToWindow(this.updateTimesMs, updateMs);
+      const timedRenderer = this.renderer! as unknown as TimestampRenderer;
+      this.gpuTimer.begin(timedRenderer);
       if (this.postProcessing) {
-        renderWithPostProcessing(this.postProcessing);
+        renderWithPostProcessing(
+          this.postProcessing,
+          this.gpuTimer.sample,
+          updateMs,
+        );
       } else {
         this.renderer!.render(this.scene, this.camera);
       }
+      this.gpuTimer.end(timedRenderer);
       const renderEnd = performance.now();
+      this.pacing.record(
+        renderEnd,
+        updateMs,
+        renderEnd - renderStart,
+        startedAt,
+        time,
+      );
       this.pushToWindow(this.renderTimesMs, renderEnd - renderStart);
 
       // Publish stats periodically
@@ -916,7 +979,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
         updateFixturesMs: 0,
         totalRenderMs: 0,
         postProcessMs: 0,
-        gpuMs: 0,
+        gpuMs: undefined,
         scenePassMs: 0,
         volumetricPassMs: 0,
         gaussianBlurMs: 0,
@@ -933,11 +996,19 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
     this.statsCallback({
       fps,
+      framePacing: this.pacing.snapshot(),
+      atmosphereScale: this.postProcessing?.atmosphereBudget.scale,
+      sceneScale: this.postProcessing?.sceneBudget.scale,
+      reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
+      reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
+      omittedSurfaceLights:
+        this.postProcessing?.surfaceLighting?.omittedPointLights,
       frameToFrameMs: avgFrameTime,
-      updateFixturesMs: 0,
+      updateFixturesMs: this.average(this.updateTimesMs),
       totalRenderMs: this.average(this.renderTimesMs),
       postProcessMs: 0,
-      gpuMs: 0,
+      gpuMs: this.gpuTimer.sample?.milliseconds,
+      gpuPasses: this.gpuTimer.sample?.passes,
       scenePassMs: this.average(this.renderTimesMs),
       volumetricPassMs: 0,
       gaussianBlurMs: 0,
@@ -947,8 +1018,10 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   }
 
   private resetStats(): void {
+    this.pacing.suspend();
     this.frameTimesMs.length = 0;
     this.renderTimesMs.length = 0;
+    this.updateTimesMs.length = 0;
     this.statsFrameCount = 0;
     this.statsLastFrameTime = 0;
   }

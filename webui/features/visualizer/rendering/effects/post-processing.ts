@@ -16,6 +16,14 @@ import { outline } from "three/addons/tsl/display/OutlineNode.js";
 import { color, float, pass } from "three/tsl";
 import type { Camera, Object3D, Scene } from "three/webgpu";
 import { RenderPipeline, type WebGPURenderer } from "three/webgpu";
+import {
+  AtmosphereBudget,
+  type GpuBudgetSample,
+  ResolutionBudget,
+} from "./atmosphere-budget";
+import { createOpticalRenderContext } from "./optical-render-context";
+import { OpticalSurfaceLighting } from "./optical-surface-lighting";
+import { ShadowRefreshBudget } from "./shadow-refresh-budget";
 
 /** Post-processing configuration */
 export interface PostProcessingConfig {
@@ -95,6 +103,16 @@ export const defaultPostProcessingConfig: PostProcessingConfig = {
 
 /** State for post-processing effects */
 export interface PostProcessingState {
+  renderer: WebGPURenderer;
+  scene: Scene;
+  camera: Camera;
+  shadowBudget: ShadowRefreshBudget;
+  /** Only selected cell proxies participate in scene projection and outline depth passes. */
+  visibleOutlineProxies: Set<Object3D>;
+  surfaceLighting?: OpticalSurfaceLighting;
+  atmosphereBudget: AtmosphereBudget;
+  sceneBudget: ResolutionBudget;
+  volumePass: ReturnType<typeof pass>;
   postProcessing: RenderPipeline;
   scenePass: ReturnType<typeof pass>;
   bloomPass: ReturnType<typeof bloom>;
@@ -120,6 +138,15 @@ export function createPostProcessing(
     configOverrides?: Partial<PostProcessingConfig>;
   },
 ): PostProcessingState {
+  /** Outline passes install their own draw callback; the beauty pass skips invisible selection proxies. */
+  renderer.setRenderObjectFunction(
+    (...args: Parameters<WebGPURenderer["renderObject"]>) => {
+      if (args[0].userData.visualizerOutlineOnly === true) return;
+      renderer.renderObject(...args);
+    },
+  );
+  const surfaceLighting = new OpticalSurfaceLighting();
+  renderer.lighting = surfaceLighting;
   const config = {
     ...defaultPostProcessingConfig,
     ...options?.configOverrides,
@@ -127,11 +154,22 @@ export function createPostProcessing(
 
   // Create scene pass
   const scenePass = pass(scene, camera);
+  scenePass.getTexture("output").name = "scene";
   const scenePassColor = scenePass.getTextureNode("output");
+  const opticalContext = createOpticalRenderContext(
+    scene,
+    scenePass.getViewZNode(),
+    surfaceLighting !== undefined,
+    surfaceLighting?.goboAtlas,
+    surfaceLighting?.shadows,
+  );
+  const volumePass = pass(opticalContext.scene, camera).setResolutionScale(0.5);
+  volumePass.getTexture("output").name = "atmosphere";
+  const litColor = scenePassColor.add(volumePass.getTextureNode("output"));
 
   // Create bloom pass
   const bloomPass = bloom(
-    scenePassColor,
+    litColor,
     config.bloomStrength,
     config.bloomRadius,
     config.bloomThreshold,
@@ -189,14 +227,23 @@ export function createPostProcessing(
 
   // Create post-processing with combined output.
   const postProcessing = new RenderPipeline(renderer);
-  postProcessing.outputNode = scenePassColor
+  postProcessing.outputNode = litColor
     .add(bloomPass)
     .add(selectionOutlineColor)
     .add(editSelectionOutlineColor)
     .add(programmerValueOutlineColor)
     .add(activeSpanOutlineColor);
 
-  return {
+  const state: PostProcessingState = {
+    renderer,
+    scene,
+    camera,
+    shadowBudget: new ShadowRefreshBudget(),
+    visibleOutlineProxies: new Set(),
+    surfaceLighting,
+    atmosphereBudget: new AtmosphereBudget(),
+    sceneBudget: new ResolutionBudget([1, 0.75, 0.5]),
+    volumePass,
     postProcessing,
     scenePass,
     bloomPass,
@@ -206,6 +253,28 @@ export function createPostProcessing(
     activeSpanOutlinePass,
     config,
   };
+  syncOutlineProxyVisibility(state);
+  return state;
+}
+
+/** Keeps invisible selection geometry out of render-list construction until an outline needs it. */
+function syncOutlineProxyVisibility(state: PostProcessingState): void {
+  for (const object of state.visibleOutlineProxies) object.visible = false;
+  state.visibleOutlineProxies.clear();
+  for (const pass of [
+    state.outlinePass,
+    state.editSelectionOutlinePass,
+    state.programmerValueOutlinePass,
+    state.activeSpanOutlinePass,
+  ]) {
+    for (const selected of pass.selectedObjects) {
+      selected.traverse((object) => {
+        if (object.userData.visualizerOutlineOnly !== true) return;
+        object.visible = true;
+        state.visibleOutlineProxies.add(object);
+      });
+    }
+  }
 }
 
 /** Update objects receiving the programmer-selection outline. */
@@ -214,6 +283,7 @@ export function setOutlineSelectedObjects(
   selectedObjects: Object3D[],
 ): void {
   state.outlinePass.selectedObjects = selectedObjects;
+  syncOutlineProxyVisibility(state);
 }
 
 /** Update objects receiving the panel edit-selection outline. */
@@ -222,6 +292,7 @@ export function setEditSelectionOutlineSelectedObjects(
   selectedObjects: Object3D[],
 ): void {
   state.editSelectionOutlinePass.selectedObjects = selectedObjects;
+  syncOutlineProxyVisibility(state);
 }
 
 /** Update objects receiving the programmer-value outline. */
@@ -230,6 +301,7 @@ export function setProgrammerValueOutlineSelectedObjects(
   selectedObjects: Object3D[],
 ): void {
   state.programmerValueOutlinePass.selectedObjects = selectedObjects;
+  syncOutlineProxyVisibility(state);
 }
 
 /** Update objects receiving the prominent active-span outline. */
@@ -238,6 +310,7 @@ export function setActiveSpanOutlineSelectedObjects(
   selectedObjects: Object3D[],
 ): void {
   state.activeSpanOutlinePass.selectedObjects = selectedObjects;
+  syncOutlineProxyVisibility(state);
 }
 
 /**
@@ -262,17 +335,42 @@ export function updateBloomConfig(
 /**
  * Render the scene with post-processing.
  */
-export function renderWithPostProcessing(state: PostProcessingState): void {
+export function renderWithPostProcessing(
+  state: PostProcessingState,
+  gpu?: GpuBudgetSample,
+  updateMs = 0,
+): void {
+  const started = performance.now();
+  const scale = state.atmosphereBudget.update(gpu, started);
+  const sceneScale = state.sceneBudget.update(gpu, started);
+  if (state.scenePass.getResolutionScale() !== sceneScale)
+    state.scenePass.setResolutionScale(sceneScale);
+  if (state.volumePass.getResolutionScale() !== scale)
+    state.volumePass.setResolutionScale(scale);
+  const allowShadowRefresh = state.shadowBudget.canRefresh(gpu, updateMs);
+  state.surfaceLighting?.shadows.update(
+    state.renderer,
+    state.scene,
+    state.camera,
+    started,
+    allowShadowRefresh,
+  );
   state.postProcessing.render();
+  state.shadowBudget.recordRender(performance.now() - started);
 }
 
+/** Releases every pass's targets and materials, including resources not owned by RenderPipeline. */
 export function disposePostProcessing(
   state: PostProcessingState | null | undefined,
 ): void {
   if (!state) return;
+  state.surfaceLighting?.dispose();
   state.outlinePass.dispose();
   state.editSelectionOutlinePass.dispose();
   state.programmerValueOutlinePass.dispose();
   state.activeSpanOutlinePass.dispose();
+  state.bloomPass.dispose();
+  state.volumePass.dispose();
+  state.scenePass.dispose();
   state.postProcessing.dispose();
 }

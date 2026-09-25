@@ -62,6 +62,7 @@ pub enum Attribute {
     Prism,
     Frost,
     Zoom,
+    Focus,
     Custom {
         label: String,
     },
@@ -132,6 +133,7 @@ impl Attribute {
             Attribute::Prism,
             Attribute::Frost,
             Attribute::Zoom,
+            Attribute::Focus,
             Attribute::Raw,
         ]
     }
@@ -187,9 +189,10 @@ impl Attribute {
             // Beam/Focus
             Attribute::Frost => 21,
             Attribute::Zoom => 22,
+            Attribute::Focus => 23,
 
             // Other attributes
-            Attribute::Raw => 23,
+            Attribute::Raw => 24,
 
             // Custom attributes go last
             Attribute::Custom { .. } => 255,
@@ -204,6 +207,7 @@ impl Attribute {
             | Attribute::StrobeShutter
             | Attribute::StrobeRate => AttributeCategory::Dimmer,
             Attribute::Pan | Attribute::Tilt => AttributeCategory::Position,
+            Attribute::Focus => AttributeCategory::Focus,
             Attribute::Red
             | Attribute::Green
             | Attribute::Blue

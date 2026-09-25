@@ -17,7 +17,15 @@
 
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Inspector } from "three/examples/jsm/inspector/Inspector.js";
-import { Mesh, PerspectiveCamera, Scene, WebGPURenderer } from "three/webgpu";
+import {
+  ACESFilmicToneMapping,
+  InspectorBase,
+  Mesh,
+  PerspectiveCamera,
+  Scene,
+  WebGPURenderer,
+} from "three/webgpu";
+import { isVisualizerInspectorEnabled } from "../../../lib/feature-flags";
 import {
   cancelControlsInteraction,
   createControls,
@@ -41,6 +49,12 @@ import {
   renderWithPostProcessing,
 } from "./effects/post-processing";
 import { consumeDueFrame } from "./frame-rate-limiter";
+import {
+  GpuFrameTimer,
+  type InspectorGpuFrame,
+  readInspectorGpuSample,
+  type TimestampRenderer,
+} from "./gpu-frame-timer";
 import {
   createSceneEnvironment,
   type SceneEnvironment,
@@ -93,6 +107,7 @@ export function createRenderer(config: RendererConfig): WebGPURenderer {
   });
   renderer.setPixelRatio(Math.min(config.devicePixelRatio ?? 2, 2));
   renderer.setClearColor(config.clearColor ?? 0x1a1a2e, 1);
+  renderer.toneMapping = ACESFilmicToneMapping;
   return renderer;
 }
 
@@ -141,7 +156,9 @@ interface CoreRendererState {
  * Renderer state containing all Three.js objects.
  */
 export interface RendererState extends CoreRendererState {
-  inspector: Inspector;
+  inspector?: Inspector;
+  /** Bounded timing for normal playback; the developer inspector owns its own queries. */
+  gpuTimer?: GpuFrameTimer;
   /** Post-processing state (optional, enabled by default) */
   postProcessing: PostProcessingState | null;
   updateInspector?: () => void;
@@ -155,20 +172,19 @@ export async function initRenderer(
   canvas: HTMLCanvasElement,
 ): Promise<RendererState> {
   // Create WebGPU renderer (falls back to WebGL if WebGPU unavailable)
-  const renderer = new WebGPURenderer({
+  const renderer = createRenderer({
     canvas,
-    antialias: true,
-    alpha: true,
+    devicePixelRatio: window.devicePixelRatio,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0x1a1a2e, 1); // Dark blue-gray background
 
-  // Create inspector and attach to renderer
-  const { Inspector } = await import(
-    "three/examples/jsm/inspector/Inspector.js"
-  );
-  const inspector = new Inspector();
-  renderer.inspector = inspector;
+  let inspector: Inspector | undefined;
+  if (isVisualizerInspectorEnabled()) {
+    const { Inspector } = await import(
+      "three/examples/jsm/inspector/Inspector.js"
+    );
+    inspector = new Inspector();
+    renderer.inspector = inspector;
+  }
 
   // Create scene
   const scene = new Scene();
@@ -222,17 +238,21 @@ export async function initRenderer(
   const environment = createSceneEnvironment(scene);
 
   // Setup post-processing with bloom
+  await renderer.init();
   const postProcessing = createPostProcessing(renderer, scene, camera);
+  await postProcessing.surfaceLighting?.shadows.prepare(renderer);
 
   // Setup inspector parameters
-  const updateInspector = setupInspectorParams(
-    renderer,
-    inspector,
-    camera,
-    controls,
-    environment,
-    postProcessing,
-  );
+  const updateInspector = inspector
+    ? setupInspectorParams(
+        renderer,
+        inspector,
+        camera,
+        controls,
+        environment,
+        postProcessing,
+      )
+    : undefined;
 
   return {
     renderer,
@@ -240,6 +260,7 @@ export async function initRenderer(
     camera,
     controls,
     inspector,
+    gpuTimer: inspector ? undefined : new GpuFrameTimer(),
     environment,
     isPaused: false,
     frameTiming: { lastTime: 0, accumulator: 0 },
@@ -252,6 +273,11 @@ export async function initRenderer(
  * Frame timing metrics passed to instrumentation callback.
  */
 interface FrameTimingMetrics {
+  /** Actual animation callback entry and submission completion, using the performance clock. */
+  startedAt: number;
+  completedAt: number;
+  /** Completed asynchronous GPU query sample from the active timing owner. */
+  gpu?: { id: number; milliseconds: number; passes?: Record<string, number> };
   /** Current frame timestamp (ms) */
   time: number;
   /** Time spent in update callback (ms) */
@@ -284,6 +310,7 @@ export function startRenderLoop(
   state.frameTiming.accumulator = 0;
 
   state.renderer.setAnimationLoop((time: number) => {
+    const startedAt = performance.now();
     if (state.isPaused) {
       return;
     }
@@ -319,21 +346,39 @@ export function startRenderLoop(
     const updateEnd = performance.now();
 
     // Render scene and track timing
+    const gpu = state.inspector
+      ? readInspectorGpuSample(
+          (state.inspector as unknown as { frames: InspectorGpuFrame[] })
+            .frames,
+          (state.renderer as unknown as TimestampRenderer).backend
+            .timestampQueryPool,
+        )
+      : state.gpuTimer?.sample;
     const renderStart = performance.now();
+    const timedRenderer = state.renderer as unknown as TimestampRenderer;
+    state.gpuTimer?.begin(timedRenderer);
     if (state.postProcessing) {
       // Render with post-processing (bloom, etc.)
-      renderWithPostProcessing(state.postProcessing);
+      renderWithPostProcessing(
+        state.postProcessing,
+        gpu,
+        updateEnd - updateStart,
+      );
     } else {
       // Direct rendering without post-processing
-      state.renderer.renderAsync(state.scene, state.camera);
+      state.renderer.render(state.scene, state.camera);
     }
+    state.gpuTimer?.end(timedRenderer);
     const renderEnd = performance.now();
 
     // Report timing metrics
     callbacks?.onFrame?.({
+      startedAt,
+      completedAt: renderEnd,
       time,
       updateMs: updateEnd - updateStart,
       renderMs: renderEnd - renderStart,
+      gpu,
     });
   });
 }
@@ -366,26 +411,32 @@ export function handleResize(
 /**
  * Dispose all renderer resources.
  */
-export function disposeRenderer(state: RendererState): void {
+export async function disposeRenderer(state: RendererState): Promise<void> {
   stopRenderLoop(state);
-
-  disposeControlsBehavior(state.controls);
-  state.controls.dispose();
-  disposePostProcessing(state.postProcessing);
-
-  // Dispose scene objects
-  state.scene.traverse((object) => {
-    if (object instanceof Mesh) {
-      object.geometry?.dispose();
-      if (Array.isArray(object.material)) {
-        for (const mat of object.material) {
-          mat.dispose();
-        }
-      } else if (object.material) {
-        object.material.dispose();
-      }
+  try {
+    // The addon's declaration omits this public method. Its scheduled query
+    // readback must finish before the renderer destroys the mapped buffers.
+    if (state.inspector) {
+      await (
+        state.inspector as unknown as { resolveTimestamp(): Promise<void> }
+      ).resolveTimestamp();
     }
-  });
-
-  state.renderer.dispose();
+    await state.gpuTimer?.dispose();
+  } finally {
+    state.renderer.inspector = new InspectorBase();
+    disposeControlsBehavior(state.controls);
+    state.controls.dispose();
+    disposePostProcessing(state.postProcessing);
+    state.scene.traverse((object) => {
+      if (object instanceof Mesh) {
+        object.geometry?.dispose();
+        if (Array.isArray(object.material)) {
+          for (const mat of object.material) mat.dispose();
+        } else if (object.material) {
+          object.material.dispose();
+        }
+      }
+    });
+    state.renderer.dispose();
+  }
 }

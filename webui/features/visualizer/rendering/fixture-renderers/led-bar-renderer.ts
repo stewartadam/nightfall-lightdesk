@@ -28,7 +28,11 @@ import {
   Object3D,
   Vector3,
 } from "three/webgpu";
-import type { FixtureElement, FixtureGeometry } from "../../../../types";
+import type {
+  FixtureElement,
+  FixtureGeometry,
+  FixturePhysical,
+} from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 
 const LED_BAR_HOUSING_HEIGHT = 0.06;
@@ -65,6 +69,8 @@ function addCellSelectionMeshes(
   const cellSelectionMeshes = cellPositions.map((position, index) => {
     const mesh = new Mesh(cellGeometry, cellSelectionMaterial);
     mesh.name = `PixelSelection_${index}`;
+    mesh.userData.visualizerOutlineOnly = true;
+    mesh.visible = false;
     mesh.position.copy(position);
     mesh.raycast = () => {};
     group.add(mesh);
@@ -298,6 +304,7 @@ export function disposeLedBar(
 export function buildSimpleLedBar(
   fixtureUid: string,
   elements: FixtureElement[],
+  physical?: FixturePhysical,
 ): FixtureInstance & { ledBarData: LedBarData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -383,11 +390,28 @@ export function buildSimpleLedBar(
     const anchor = new Object3D();
     anchor.name = `EmitterAnchor_${i}`;
     anchor.position.set(pos.x, pos.y, pos.z);
+    anchor.rotation.x = -Math.PI / 2;
     group.add(anchor);
 
     emitters.set(String(i), {
       mesh: anchor as unknown as Mesh,
+      nodeGroup: anchor,
       controlledElement: elements[i].label,
+      optics: physical
+        ? {
+            physical: {
+              ...physical,
+              // Fixture-level flux is shared across independently controlled cells.
+              lumens:
+                physical.lumens === undefined
+                  ? undefined
+                  : physical.lumens / cellCount,
+            },
+            radius: Math.min(cellWidth, 0.03) / 2,
+            throwRatio: 1,
+            rectangleRatio: 1,
+          }
+        : undefined,
     });
   }
 

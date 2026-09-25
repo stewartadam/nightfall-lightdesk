@@ -49,6 +49,12 @@ impl Plugin for FixtureLibraryPlugin {
                 "/api/mesh/{gdtf_path}/{model_name}",
                 axum::routing::get(crate::http_routes::serve_mesh),
             );
+        app.world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>()
+            .register(
+                "/api/wheel-media/{gdtf_path}/{media_name}",
+                axum::routing::get(crate::http_routes::serve_wheel_media),
+            );
 
         // Try to initialize the file watcher (optional - may fail if library path doesn't exist)
         if let Ok(manager) = FixtureLibraryManager::new() {

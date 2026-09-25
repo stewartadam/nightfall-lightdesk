@@ -30,7 +30,11 @@ import {
   Vector3,
 } from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
-import type { FixtureElement } from "../../../../types";
+import {
+  BeamType,
+  type FixtureElement,
+  type FixturePhysical,
+} from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 import {
   type BeamMaterial,
@@ -117,6 +121,7 @@ interface EmitterColorData {
 }
 
 interface WashBeamEmitterData {
+  optical: EmitterData;
   lensMesh: Mesh;
   beamNode: Group;
   beamMesh: Mesh;
@@ -133,6 +138,9 @@ interface WashBeamEmitterData {
  */
 export interface RotatingWashBeamData {
   type: "rotating-wash-beam";
+  /** Routes projecting lenses into the scene's shared atmosphere while retaining decorative pixels. */
+  sharedAtmosphere?: boolean;
+  sharedSurfaceLighting?: boolean;
   tiltGroup: Group;
   beamEmitters: WashBeamEmitterData[];
   stripPixelMeshes: Mesh[];
@@ -153,6 +161,7 @@ export function buildRotatingWashBeamFixture(
   elements: FixtureElement[],
   beamQuality: VisualizerBeamQuality = "high",
   beamCount = BEAM_COUNT,
+  physical?: FixturePhysical,
 ): FixtureInstance & { rotatingWashBeamData: RotatingWashBeamData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -281,7 +290,36 @@ export function buildRotatingWashBeamFixture(
     spotLight.target = spotlightTarget;
 
     const elementLabel = beamElementLabels[index] ?? `Beam ${index + 1}`;
+    const aperture = new Object3D();
+    aperture.name = `OpticalAperture_${index}`;
+    aperture.rotation.x = -Math.PI / 2;
+    beamNode.add(aperture);
+    const optical: EmitterData = {
+      mesh: lensMesh,
+      controlledElement: elementLabel,
+      nodeGroup: aperture,
+      optics: {
+        physical: physical
+          ? {
+              ...physical,
+              lumens:
+                physical.lumens === undefined
+                  ? undefined
+                  : physical.lumens / beamCount,
+            }
+          : {
+              beamType: BeamType.Wash,
+              beamAngle: DEFAULT_BEAM_ANGLE,
+              fieldAngle: DEFAULT_BEAM_ANGLE + DEFAULT_FIELD_ANGLE,
+            },
+        radius: LENS_RADIUS,
+        throwRatio: 1,
+        rectangleRatio: 1,
+      },
+      beamColor: { red: 0, green: 0, blue: 0, intensity: 0 },
+    };
     beamEmitters.push({
+      optical,
       lensMesh,
       beamNode,
       beamMesh,
@@ -292,11 +330,7 @@ export function buildRotatingWashBeamFixture(
       beamParameters: createCachedBeamParameters(),
       elementLabel,
     });
-    emitters.set(`Beam_${index}`, {
-      mesh: lensMesh,
-      controlledElement: elementLabel,
-      nodeGroup: beamNode,
-    });
+    emitters.set(`Beam_${index}`, optical);
   }
 
   for (
@@ -606,8 +640,8 @@ function updateBeamEmitter(
   updateFlatEmitter(beam.lensMesh, colorData, masterIntensity);
 
   const coneAngleDeg = beamConeAngleDegrees(
-    DEFAULT_BEAM_ANGLE,
-    DEFAULT_BEAM_ANGLE + DEFAULT_FIELD_ANGLE,
+    beam.optical.optics!.physical.beamAngle,
+    beam.optical.optics!.physical.fieldAngle,
     zoom,
   );
   const halfAngleRad = MathUtils.degToRad(coneAngleDeg / 2);
@@ -617,6 +651,13 @@ function updateBeamEmitter(
     colorData?.blue ?? 0,
   );
   color.convertSRGBToLinear();
+  const opticalColor = beam.optical.beamColor!;
+  opticalColor.red = color.r;
+  opticalColor.green = color.g;
+  opticalColor.blue = color.b;
+  opticalColor.intensity = intensity;
+  opticalColor.zoomDegrees = coneAngleDeg;
+  opticalColor.frost = frost;
 
   beam.beamNode.updateMatrixWorld(true);
   beam.beamNode.getWorldPosition(BEAM_ORIGIN);
@@ -629,28 +670,30 @@ function updateBeamEmitter(
     MIN_BEAM_RADIUS,
     MAX_BEAM_LENGTH * Math.tan(halfAngleRad),
   );
-  beam.beamMesh.scale.set(baseRadius, MAX_BEAM_LENGTH, baseRadius);
-  beam.beamMesh.position.set(0, -MAX_BEAM_LENGTH / 2, 0);
+  if (!instance.rotatingWashBeamData.sharedAtmosphere) {
+    beam.beamMesh.scale.set(baseRadius, MAX_BEAM_LENGTH, baseRadius);
+    beam.beamMesh.position.set(0, -MAX_BEAM_LENGTH / 2, 0);
 
-  const beamColor = beam.beamParameters.color;
-  beamColor[0] = color.r;
-  beamColor[1] = color.g;
-  beamColor[2] = color.b;
-  beamColor[3] = 0.6;
-  beam.beamParameters.intensity = intensity;
-  beam.beamParameters.coneAngleDegrees = Math.max(
-    MIN_CONE_ANGLE_DEGREES,
-    Math.min(MAX_CONE_ANGLE_DEGREES, coneAngleDeg),
-  );
-  beam.beamParameters.beamDirection.copy(beamDirection);
-  beam.beamParameters.beamOrigin.copy(BEAM_ORIGIN);
-  beam.beamParameters.beamLength = MAX_BEAM_LENGTH;
-  beam.beamParameters.clipY = 0.0;
-  beam.beamParameters.softIntersectionFade = 0.0;
-  beam.beamParameters.frostAmount = frost;
-  beam.beamParameters.minAlpha =
-    intensity > 0.01 ? defaultBeamParameters.minAlpha : 0;
-  updateBeamMaterial(beam.beamMaterial, beam.beamParameters);
+    const beamColor = beam.beamParameters.color;
+    beamColor[0] = color.r;
+    beamColor[1] = color.g;
+    beamColor[2] = color.b;
+    beamColor[3] = 0.6;
+    beam.beamParameters.intensity = intensity;
+    beam.beamParameters.coneAngleDegrees = Math.max(
+      MIN_CONE_ANGLE_DEGREES,
+      Math.min(MAX_CONE_ANGLE_DEGREES, coneAngleDeg),
+    );
+    beam.beamParameters.beamDirection.copy(beamDirection);
+    beam.beamParameters.beamOrigin.copy(BEAM_ORIGIN);
+    beam.beamParameters.beamLength = MAX_BEAM_LENGTH;
+    beam.beamParameters.clipY = 0.0;
+    beam.beamParameters.softIntersectionFade = 0.0;
+    beam.beamParameters.frostAmount = frost;
+    beam.beamParameters.minAlpha =
+      intensity > 0.01 ? defaultBeamParameters.minAlpha : 0;
+    updateBeamMaterial(beam.beamMaterial, beam.beamParameters);
+  }
 
   beam.spotLight.color.copy(color);
   beam.spotLight.intensity = 0;
@@ -660,17 +703,21 @@ function updateBeamEmitter(
 
   const visible = intensity > 0.01;
   beam.beamMesh.visible =
-    visible || beam.beamMesh.userData.beamPrewarmPending === true;
+    !instance.rotatingWashBeamData.sharedAtmosphere &&
+    (visible || beam.beamMesh.userData.beamPrewarmPending === true);
   beam.spotLight.visible = false;
-  updateRotatingWashBeamFloorSpot(
-    instance,
-    beam,
-    color,
-    isLowQuality ? 0 : intensity,
-    BEAM_ORIGIN,
-    beamDirection,
-    halfAngleRad,
-  );
+  if (instance.rotatingWashBeamData.sharedSurfaceLighting)
+    beam.floorSpotMesh.visible = false;
+  else
+    updateRotatingWashBeamFloorSpot(
+      instance,
+      beam,
+      color,
+      isLowQuality ? 0 : intensity,
+      BEAM_ORIGIN,
+      beamDirection,
+      halfAngleRad,
+    );
 }
 
 /**

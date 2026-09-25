@@ -18,8 +18,11 @@
 
 import {
   BoxGeometry,
-  Color,
+  type BufferGeometry,
+  type Color,
   Group,
+  InstancedMesh,
+  type Material,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
@@ -70,6 +73,8 @@ export interface StrobePanelData {
   panelGroup: Group;
   pixelMeshes: Mesh[];
   whiteSegmentMeshes: Mesh[];
+  /** Shared draws retain independent source meshes for optical state and element outlines. */
+  emitterBatches: { mesh: InstancedMesh; sources: Mesh[] }[];
   /** Element labels for DMX lookup (index -> label) */
   elementLabels: string[];
   pixelElementLabels: string[];
@@ -142,6 +147,50 @@ function resolveStrobePanelElementMapping(
         STROBE_PIXEL_ROWS * STROBE_PIXEL_COLUMNS + DEFAULT_STROBE_SEGMENT_COUNT
       ],
   };
+}
+
+/** Batches equal-sized cells sharing a rigid parent while retaining individual selection proxies. */
+function createEmitterBatches(
+  parent: Group,
+  sets: Mesh[][],
+): StrobePanelData["emitterBatches"] {
+  return sets
+    .filter((sources) => sources.length > 0)
+    .map((sources) => {
+      const material = new MeshBasicMaterial({
+        color: 0xffffff,
+        vertexColors: true,
+      });
+      const mesh = new InstancedMesh(
+        sources[0].geometry,
+        material,
+        sources.length,
+      );
+      mesh.name = `${sources[0].name}Instances`;
+      mesh.userData.visualizerCellBatch = true;
+      for (let i = 0; i < sources.length; i++) {
+        const source = sources[i];
+        source.updateMatrix();
+        mesh.setMatrixAt(i, source.matrix);
+        mesh.setColorAt(i, (source.material as MeshBasicMaterial).color);
+        source.userData.visualizerOutlineOnly = true;
+        source.visible = false;
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.instanceColor!.needsUpdate = true;
+      parent.add(mesh);
+      return { mesh, sources };
+    });
+}
+
+/** Copies independently resolved cell colors to the two shared GPU color buffers. */
+function updateEmitterBatches(data: StrobePanelData): void {
+  for (const { mesh, sources } of data.emitterBatches) {
+    for (let i = 0; i < sources.length; i++) {
+      mesh.setColorAt(i, (sources[i].material as MeshBasicMaterial).color);
+    }
+    mesh.instanceColor!.needsUpdate = true;
+  }
 }
 
 function createStrobeArm(side: "left" | "right"): Mesh {
@@ -361,6 +410,10 @@ export function buildStrobePanelFixture(
     strobePanelData: {
       type: "strobe-panel",
       layout: "matrix",
+      emitterBatches: createEmitterBatches(panelGroup, [
+        pixelMeshes,
+        whiteSegmentMeshes,
+      ]),
       panelGroup,
       pixelMeshes,
       whiteSegmentMeshes,
@@ -487,6 +540,10 @@ export function buildRgbStrobeBarFixture(
     strobePanelData: {
       type: "strobe-panel",
       layout: "rgb-strobe-bar",
+      emitterBatches: createEmitterBatches(panelGroup, [
+        pixelMeshes,
+        whiteSegmentMeshes,
+      ]),
       panelGroup,
       pixelMeshes,
       whiteSegmentMeshes,
@@ -501,14 +558,16 @@ export function buildRgbStrobeBarFixture(
   };
 }
 
+/** Applies display gain in place without allocating a color for each emitter on every update. */
 function boostColor(baseColor: Color, intensity: number, cap = 1.15): Color {
-  const boosted = baseColor.clone().multiplyScalar(intensity * 2.0);
+  const boosted = baseColor.multiplyScalar(intensity * 2.0);
   boosted.r = Math.min(boosted.r, cap);
   boosted.g = Math.min(boosted.g, cap);
   boosted.b = Math.min(boosted.b, cap);
   return boosted;
 }
 
+/** Resolves independent RGB cell output into its persistent linear material color. */
 function updateRgbEmitterMesh(
   mesh: Mesh,
   dmx:
@@ -527,11 +586,12 @@ function updateRgbEmitterMesh(
     return;
   }
 
-  const baseColor = new Color(dmx.red, dmx.green, dmx.blue);
+  const baseColor = material.color.setRGB(dmx.red, dmx.green, dmx.blue);
   baseColor.convertSRGBToLinear();
-  material.color.copy(boostColor(baseColor, dmx.intensity));
+  boostColor(baseColor, dmx.intensity);
 }
 
+/** Resolves a white cell without allocating temporary colors or retaining stale output after blackout. */
 function updateWhiteEmitterMesh(
   mesh: Mesh,
   dmx:
@@ -549,9 +609,9 @@ function updateWhiteEmitterMesh(
   }
 
   const level = dmx.white ?? dmx.intensity;
-  const whiteColor = new Color(level, level, level);
+  const whiteColor = material.color.setRGB(level, level, level);
   whiteColor.convertSRGBToLinear();
-  material.color.copy(boostColor(whiteColor, dmx.intensity));
+  boostColor(whiteColor, dmx.intensity);
 }
 
 /**
@@ -618,6 +678,7 @@ export function updateStrobePanelColors(
       updateRgbEmitterMesh(pixelMeshes[i], dmx);
     }
 
+    updateEmitterBatches(data);
     return;
   }
 
@@ -702,6 +763,7 @@ export function updateStrobePanelColors(
       updateWhiteEmitterMesh(whiteSegmentMeshes[i], undefined);
     }
   }
+  updateEmitterBatches(data);
 }
 
 /**
@@ -710,29 +772,20 @@ export function updateStrobePanelColors(
 export function disposeStrobePanel(
   instance: FixtureInstance & { strobePanelData: StrobePanelData },
 ): void {
-  const { pixelMeshes, whiteSegmentMeshes } = instance.strobePanelData;
-
-  for (const mesh of pixelMeshes) {
-    mesh.geometry?.dispose();
-    (mesh.material as MeshBasicMaterial)?.dispose();
-  }
-
-  for (const mesh of whiteSegmentMeshes) {
-    mesh.geometry?.dispose();
-    (mesh.material as MeshBasicMaterial)?.dispose();
-  }
-
-  // Dispose arms and face
+  for (const { mesh } of instance.strobePanelData.emitterBatches)
+    mesh.dispose();
+  const geometries = new Set<BufferGeometry>();
+  const materials = new Set<Material>();
   instance.group.traverse((child) => {
     if (child instanceof Mesh) {
-      child.geometry?.dispose();
+      geometries.add(child.geometry);
       if (Array.isArray(child.material)) {
-        for (const mat of child.material) {
-          mat.dispose();
-        }
+        for (const material of child.material) materials.add(material);
       } else if (child.material) {
-        child.material.dispose();
+        materials.add(child.material);
       }
     }
   });
+  for (const geometry of geometries) geometry.dispose();
+  for (const material of materials) material.dispose();
 }

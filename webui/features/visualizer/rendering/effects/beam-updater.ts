@@ -12,15 +12,18 @@
  */
 
 import { BeamType } from "../../../../types";
+import type { EmitterData } from "../../model/types";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
 import type { BeamManager } from "./beam-manager";
+import { EmitterOpticalState } from "./emitter-optical-state";
 
 /**
  * Extended color data with optional beam parameters.
  */
 export interface BeamColorData extends EmitterColor {
   zoom?: number;
+  zoomDegrees?: number;
   frost?: number;
 }
 
@@ -31,6 +34,16 @@ export interface BeamColorData extends EmitterColor {
 export class BeamUpdater {
   private beamManager: BeamManager;
   private enabled = true;
+  private readonly reducedPrisms = new Set<EmitterData>();
+
+  /** Counts illuminated emitters whose current prism split exceeds the prepared rendering budget. */
+  get reducedPrismEmitters(): number {
+    return this.reducedPrisms.size;
+  }
+  private readonly opticalStates = new WeakMap<
+    EmitterData,
+    EmitterOpticalState
+  >();
 
   constructor(beamManager: BeamManager) {
     this.beamManager = beamManager;
@@ -42,6 +55,7 @@ export class BeamUpdater {
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
     if (!enabled) {
+      this.reducedPrisms.clear();
       this.beamManager.dispose();
     }
   }
@@ -59,11 +73,30 @@ export class BeamUpdater {
    */
   syncWithFixtures(fixtures: Map<string, ExtendedFixtureInstance>): void {
     this.beamManager.syncWithFixtures(fixtures);
+    const live = new Set<EmitterData>();
+    for (const [uid, fixture] of fixtures)
+      for (const [name, emitter] of fixture.emitters) {
+        live.add(emitter);
+        if (!this.opticalStates.has(emitter))
+          this.opticalStates.set(
+            emitter,
+            new EmitterOpticalState(emitter, (path, media) =>
+              this.beamManager.loadGobo(path, media),
+            ),
+          );
+        if (emitter.optics)
+          this.beamManager.reserveOpticalBeam(
+            `${uid}:${name}`,
+            this.opticalStates.get(emitter)!.maxFacetCount,
+          );
+      }
+    for (const emitter of this.reducedPrisms)
+      if (!live.has(emitter)) this.reducedPrisms.delete(emitter);
   }
 
   /**
-   * Update beams for a single GDTF fixture based on emitter colors.
-   * Creates a beam for each emitter in the fixture.
+   * Updates a fixture's defined optical apertures from independently controlled emitter colors.
+   * Legacy fixture renderers retain ownership of their projection until they opt into shared atmosphere.
    *
    * @param uid Fixture UID
    * @param instance Fixture instance
@@ -75,17 +108,53 @@ export class BeamUpdater {
     elementColors: Map<string, BeamColorData>,
   ): void {
     if (!this.enabled) return;
-    if (instance.rendererType !== "gdtf") return;
+    if (
+      (instance.movingHeadData && !instance.movingHeadData.sharedAtmosphere) ||
+      (instance.rotatingWashBeamData &&
+        !instance.rotatingWashBeamData.sharedAtmosphere)
+    )
+      return;
     if (instance.emitters.size === 0) return;
-    // Skip spotlight rendering for Glow beam types (LED bars, pixel fixtures)
-    if (instance.beamType === BeamType.Glow) return;
 
     // Create/update a beam for each emitter
     for (const [emitterName, emitter] of instance.emitters) {
-      if (!emitter.nodeGroup) continue;
-
+      if (!emitter.nodeGroup) {
+        this.reducedPrisms.delete(emitter);
+        continue;
+      }
       const beamId = `${uid}:${emitterName}`;
-      const beamColor = elementColors.get(emitter.controlledElement);
+      const beamColor =
+        emitter.beamColor ?? elementColors.get(emitter.controlledElement);
+      if (emitter.optics) {
+        const opticalState = this.opticalStates.get(emitter);
+        opticalState?.update(elementColors);
+        if (
+          opticalState?.prismReduced &&
+          beamColor &&
+          beamColor.intensity > 0.01
+        )
+          this.reducedPrisms.add(emitter);
+        else this.reducedPrisms.delete(emitter);
+        if (beamColor && beamColor.intensity > 0.01)
+          this.beamManager.updateOpticalBeam(
+            beamId,
+            emitter.nodeGroup,
+            emitter.optics,
+            beamColor,
+            opticalState?.zoomDegrees ?? beamColor.zoomDegrees,
+            opticalState?.goboSlot,
+            opticalState?.goboRotation,
+            opticalState?.prism,
+            opticalState?.prismRotation,
+            opticalState?.focusDistance,
+            opticalState?.gobos,
+          );
+        else this.beamManager.removeOpticalBeam(beamId);
+        continue;
+      }
+      if (instance.rendererType !== "gdtf") continue;
+      // Mixed fixtures can contain both projecting apertures and glow-only pixels.
+      if (instance.beamType === BeamType.Glow) continue;
 
       if (beamColor && beamColor.intensity > 0.01) {
         // Create or get beam, attach to emitter's node group
@@ -114,6 +183,7 @@ export class BeamUpdater {
    * Dispose all beams.
    */
   dispose(): void {
-    this.beamManager.dispose();
+    this.reducedPrisms.clear();
+    this.beamManager.destroy();
   }
 }

@@ -329,6 +329,11 @@ function getFixtureById(id: number): types.Fixture | undefined {
 
 /** Per-element output map for visualizer: uid -> array of element outputs (index = element number) */
 export type ParameterOutputMap = Map<string, Record<string, number>[]>;
+/** Read-only engine snapshot; publishers replace the map when output changes. */
+export type ParameterOutputSnapshot = ReadonlyMap<
+  string,
+  Record<string, number>[]
+>;
 /**
  * Immediate parameter output for non-reactive hot paths.
  * Updated synchronously on every WebSocket message with minimal processing.
@@ -339,8 +344,8 @@ const parametersImmediateHolder = {
   current: new Map<string, Record<string, number>[]>(),
 };
 
-/** Returns the latest parameter output map without subscribing to nanostore updates. */
-export function getParametersImmediate(): ParameterOutputMap {
+/** Returns the latest immutable snapshot; publish changes through setParametersImmediate. */
+export function getParametersImmediate(): ParameterOutputSnapshot {
   return parametersImmediateHolder.current;
 }
 
@@ -613,7 +618,36 @@ export interface VisualizerStats {
   postProcessMs: number;
   totalRenderMs: number;
   frameToFrameMs: number; // Wall clock time between actual renders
-  gpuMs: number; // GPU execution time (from CPU render end to next frame start)
+  gpuMs?: number; // GPU timestamp duration; absent when unsupported or unresolved
+  /** Unsmoothed pass durations from the most recently completed GPU sample. */
+  gpuPasses?: Record<string, number>;
+  atmosphereScale?: number; // Active fog resolution, for correlating quality changes with stalls
+  sceneScale?: number; // Active scene resolution, independent of presentation canvas size
+  /** Sources excluded from surface shading by the fixed light budget. */
+  omittedSurfaceLights?: number;
+  reducedPrismEmitters?: number;
+  reducedGoboEmitters?: number;
+  /** Raw render submission counters; window maximum is not smoothed like FPS. */
+  framePacing?: {
+    frames: number;
+    over25Ms: number;
+    windowMaxMs: number;
+    scheduling?: {
+      frames: number;
+      over25Ms: number;
+      lateSubmissions: number;
+      windowMaxIntervalMs: number;
+      windowMaxLatencyMs: number;
+    };
+    worstFrame?: {
+      completedAt: number;
+      intervalMs: number;
+      updateMs?: number;
+      renderMs?: number;
+      callbackDelayMs?: number;
+      cpuFrameMs?: number;
+    };
+  };
   scenePassMs: number;
   volumetricPassMs: number;
   gaussianBlurMs: number;

@@ -1,5 +1,5 @@
 diff --git a/node_modules/three/build/three.webgpu.js b/node_modules/three/build/three.webgpu.js
-index 2e49079..75aedfb 100644
+index 2e49079..23776a3 100644
 --- a/node_modules/three/build/three.webgpu.js
 +++ b/node_modules/three/build/three.webgpu.js
 @@ -24270,7 +24270,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
@@ -12,8 +12,58 @@ index 2e49079..75aedfb 100644
  
  } );
  
+@@ -83362,6 +83363,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 	 */
+ 	async _resolveQueries() {
+ 
++		this.lastInterval = undefined;
++		this.frameIntervals = undefined;
++
+ 		if ( this.isDisposed ) {
+ 
+ 			return this.lastValue;
+@@ -83430,6 +83434,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 
+ 			const times = new BigUint64Array( this.resultBuffer.getMappedRange( 0, bytesUsed ) );
+ 			const framesDuration = {};
++			const frameIntervals = new Map();
++			let earliest;
++			let latest;
+ 
+ 			const frames = [];
+ 
+@@ -83448,6 +83455,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 
+ 				const startTime = times[ baseOffset ];
+ 				const endTime = times[ baseOffset + 1 ];
++				const interval = frameIntervals.get( frame );
++				frameIntervals.set( frame, interval === undefined ? [ startTime, endTime ] : [ startTime < interval[ 0 ] ? startTime : interval[ 0 ], endTime > interval[ 1 ] ? endTime : interval[ 1 ] ] );
++				if ( earliest === undefined || startTime < earliest ) earliest = startTime;
++				if ( latest === undefined || endTime > latest ) latest = endTime;
+ 				const duration = Number( endTime - startTime ) / 1e6;
+ 
+ 				this.timestamps.set( uid, duration );
+@@ -83462,6 +83473,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 			this.resultBuffer.unmap();
+ 			this.lastValue = totalDuration;
+ 			this.frames = frames;
++			this.frameIntervals = frameIntervals;
++			if ( earliest !== undefined && latest >= earliest ) this.lastInterval = [ earliest, latest ];
+ 
+ 			return totalDuration;
+ 
+@@ -85966,6 +85979,9 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	initTimestampQuery( type, uid, descriptor ) {
+ 
++		// Cached canvas descriptors must not retain writes from a sampled frame.
++		descriptor.timestampWrites = undefined;
++
+ 		if ( ! this.trackTimestamp ) return;
+ 
+ 		if ( ! this.timestampQueryPool[ type ] ) {
 diff --git a/node_modules/three/build/three.webgpu.nodes.js b/node_modules/three/build/three.webgpu.nodes.js
-index f707acc..5643135 100644
+index f707acc..7c793eb 100644
 --- a/node_modules/three/build/three.webgpu.nodes.js
 +++ b/node_modules/three/build/three.webgpu.nodes.js
 @@ -24270,7 +24270,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
@@ -26,6 +76,56 @@ index f707acc..5643135 100644
  
  } );
  
+@@ -83362,6 +83363,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 	 */
+ 	async _resolveQueries() {
+ 
++		this.lastInterval = undefined;
++		this.frameIntervals = undefined;
++
+ 		if ( this.isDisposed ) {
+ 
+ 			return this.lastValue;
+@@ -83430,6 +83434,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 
+ 			const times = new BigUint64Array( this.resultBuffer.getMappedRange( 0, bytesUsed ) );
+ 			const framesDuration = {};
++			const frameIntervals = new Map();
++			let earliest;
++			let latest;
+ 
+ 			const frames = [];
+ 
+@@ -83448,6 +83455,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 
+ 				const startTime = times[ baseOffset ];
+ 				const endTime = times[ baseOffset + 1 ];
++				const interval = frameIntervals.get( frame );
++				frameIntervals.set( frame, interval === undefined ? [ startTime, endTime ] : [ startTime < interval[ 0 ] ? startTime : interval[ 0 ], endTime > interval[ 1 ] ? endTime : interval[ 1 ] ] );
++				if ( earliest === undefined || startTime < earliest ) earliest = startTime;
++				if ( latest === undefined || endTime > latest ) latest = endTime;
+ 				const duration = Number( endTime - startTime ) / 1e6;
+ 
+ 				this.timestamps.set( uid, duration );
+@@ -83462,6 +83473,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 			this.resultBuffer.unmap();
+ 			this.lastValue = totalDuration;
+ 			this.frames = frames;
++			this.frameIntervals = frameIntervals;
++			if ( earliest !== undefined && latest >= earliest ) this.lastInterval = [ earliest, latest ];
+ 
+ 			return totalDuration;
+ 
+@@ -85966,6 +85979,9 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	initTimestampQuery( type, uid, descriptor ) {
+ 
++		// Cached canvas descriptors must not retain writes from a sampled frame.
++		descriptor.timestampWrites = undefined;
++
+ 		if ( ! this.trackTimestamp ) return;
+ 
+ 		if ( ! this.timestampQueryPool[ type ] ) {
 diff --git a/node_modules/three/src/nodes/functions/BSDF/DFGLUT.js b/node_modules/three/src/nodes/functions/BSDF/DFGLUT.js
 index 464dc5b..7ff0c76 100644
 --- a/node_modules/three/src/nodes/functions/BSDF/DFGLUT.js
@@ -39,4 +139,62 @@ index 464dc5b..7ff0c76 100644
 +	return texture( lut, uv ).rg.toVar();
  
  } );
+ 
+diff --git a/node_modules/three/src/renderers/webgpu/WebGPUBackend.js b/node_modules/three/src/renderers/webgpu/WebGPUBackend.js
+index 06e2036..09e175b 100644
+--- a/node_modules/three/src/renderers/webgpu/WebGPUBackend.js
++++ b/node_modules/three/src/renderers/webgpu/WebGPUBackend.js
+@@ -2254,6 +2254,9 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	initTimestampQuery( type, uid, descriptor ) {
+ 
++		// Cached canvas descriptors must not retain writes from a sampled frame.
++		descriptor.timestampWrites = undefined;
++
+ 		if ( ! this.trackTimestamp ) return;
+ 
+ 		if ( ! this.timestampQueryPool[ type ] ) {
+diff --git a/node_modules/three/src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js b/node_modules/three/src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js
+index b19dde8..f8cdb01 100644
+--- a/node_modules/three/src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js
++++ b/node_modules/three/src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js
+@@ -129,6 +129,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 	 */
+ 	async _resolveQueries() {
+ 
++		this.lastInterval = undefined;
++		this.frameIntervals = undefined;
++
+ 		if ( this.isDisposed ) {
+ 
+ 			return this.lastValue;
+@@ -197,6 +200,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 
+ 			const times = new BigUint64Array( this.resultBuffer.getMappedRange( 0, bytesUsed ) );
+ 			const framesDuration = {};
++			const frameIntervals = new Map();
++			let earliest;
++			let latest;
+ 
+ 			const frames = [];
+ 
+@@ -215,6 +221,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 
+ 				const startTime = times[ baseOffset ];
+ 				const endTime = times[ baseOffset + 1 ];
++				const interval = frameIntervals.get( frame );
++				frameIntervals.set( frame, interval === undefined ? [ startTime, endTime ] : [ startTime < interval[ 0 ] ? startTime : interval[ 0 ], endTime > interval[ 1 ] ? endTime : interval[ 1 ] ] );
++				if ( earliest === undefined || startTime < earliest ) earliest = startTime;
++				if ( latest === undefined || endTime > latest ) latest = endTime;
+ 				const duration = Number( endTime - startTime ) / 1e6;
+ 
+ 				this.timestamps.set( uid, duration );
+@@ -229,6 +239,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+ 			this.resultBuffer.unmap();
+ 			this.lastValue = totalDuration;
+ 			this.frames = frames;
++			this.frameIntervals = frameIntervals;
++			if ( earliest !== undefined && latest >= earliest ) this.lastInterval = [ earliest, latest ];
+ 
+ 			return totalDuration;
  

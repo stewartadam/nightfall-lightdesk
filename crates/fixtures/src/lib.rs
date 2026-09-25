@@ -86,7 +86,11 @@ pub mod prelude {
     pub use crate::parameter::{
         DmxSlots, MergeStrategy, Parameter, ParameterMetadata, ParameterValues,
     };
-    pub use crate::physical::{BeamType, FixturePhysical};
+    pub use crate::physical::{
+        BeamOptics, BeamType, FixturePhysical, OpticalChannel, OpticalChannelSet,
+        OpticalDmxProfile, OpticalDmxProfilePoint, OpticalFunction, OpticalModeCondition,
+        OpticalPrismFacet, OpticalWheel, OpticalWheelSlot,
+    };
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
     pub use crate::universe::{

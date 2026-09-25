@@ -50,6 +50,24 @@ export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
         }
       >
         <div class="space-y-3">
+          <Show when={(props.stats?.reducedGoboEmitters ?? 0) > 0}>
+            <p class="text-xs text-amber-400" role="status">
+              Gobo mask limit reached on {props.stats?.reducedGoboEmitters}{" "}
+              emitters: additional masks omitted.
+            </p>
+          </Show>
+          <Show when={(props.stats?.reducedPrismEmitters ?? 0) > 0}>
+            <p class="text-xs text-amber-400" role="status">
+              Prism detail reduced on {props.stats?.reducedPrismEmitters}{" "}
+              emitters to stay within the rendering budget.
+            </p>
+          </Show>
+          <Show when={(props.stats?.omittedSurfaceLights ?? 0) > 0}>
+            <p class="text-xs text-amber-400" role="status">
+              Surface light limit reached: {props.stats?.omittedSurfaceLights}{" "}
+              sources omitted.
+            </p>
+          </Show>
           <div class="grid grid-cols-4 gap-3">
             <MetricCard
               label="FPS"

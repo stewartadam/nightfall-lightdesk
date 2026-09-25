@@ -376,6 +376,7 @@ pub(super) fn map_gdtf_attribute_to_nightfall(
 
         // Beam
         "Zoom" => Some(Attribute::Zoom),
+        "Focus1" | "Focus" => Some(Attribute::Focus),
         "Gobo1" | "Gobo" => Some(Attribute::Gobo),
         "Gobo1Rot" | "GoboRot" => Some(Attribute::GoboRot),
         "Prism1" | "Prism" => Some(Attribute::Prism),
@@ -404,25 +405,31 @@ fn extract_physical_properties(
     // Find the first BeamGeometry in the geometry tree
     let beam_geometry = find_beam_geometry(&fixture_type.geometries)?;
 
-    // Convert GDTF beam type to nightfall beam type
-    let beam_type = map_gdtf_beam_type(&beam_geometry.beam_type);
+    Some(convert_beam_optics(beam_geometry).physical)
+}
 
-    // Extract physical properties
-    Some(FixturePhysical {
-        beam_angle: beam_geometry.beam_angle as f32,
-        field_angle: beam_geometry.field_angle as f32,
-        lumens: if beam_geometry.luminous_flux > 0.0 {
-            Some(beam_geometry.luminous_flux as f32)
-        } else {
-            None
+/// Preserves each GDTF aperture's photometry and shape without inferring fixture identity.
+pub(super) fn convert_beam_optics(beam_geometry: &gdtf::geometry::BeamGeometry) -> BeamOptics {
+    BeamOptics {
+        radius: beam_geometry.beam_radius as f32,
+        throw_ratio: beam_geometry.throw_ratio as f32,
+        rectangle_ratio: beam_geometry.rectangle_ratio as f32,
+        physical: FixturePhysical {
+            beam_angle: beam_geometry.beam_angle as f32,
+            field_angle: beam_geometry.field_angle as f32,
+            lumens: if beam_geometry.luminous_flux > 0.0 {
+                Some(beam_geometry.luminous_flux as f32)
+            } else {
+                None
+            },
+            color_temperature: if beam_geometry.color_temperature > 0.0 {
+                Some(beam_geometry.color_temperature as f32)
+            } else {
+                None
+            },
+            beam_type: map_gdtf_beam_type(&beam_geometry.beam_type),
         },
-        color_temperature: if beam_geometry.color_temperature > 0.0 {
-            Some(beam_geometry.color_temperature as f32)
-        } else {
-            None
-        },
-        beam_type,
-    })
+    }
 }
 
 /// Recursively search for a BeamGeometry in the geometry tree
@@ -452,8 +459,8 @@ pub(super) fn map_gdtf_beam_type(gdtf_beam_type: &gdtf::geometry::BeamType) -> B
         GdtfBeamType::Wash => BeamType::Wash,
         GdtfBeamType::Fresnel => BeamType::Fresnel,
         GdtfBeamType::Pc => BeamType::Pc,
-        // Glow, Rectangle, and None are pixel/LED fixtures that shouldn't render spotlights
-        GdtfBeamType::Glow | GdtfBeamType::Rectangle | GdtfBeamType::None => BeamType::Glow,
+        GdtfBeamType::Rectangle => BeamType::Rectangle,
+        GdtfBeamType::Glow | GdtfBeamType::None => BeamType::Glow,
     }
 }
 
@@ -675,11 +682,261 @@ fn extract_geometry_tree(
     }
 
     Some(FixtureGeometry {
+        optical_wheels: convert_optical_wheels(&fixture_type.wheels),
+        optical_channels: convert_optical_channels(dmx_mode, Some(fixture_type)),
         nodes,
         roots,
         mesh_resources,
         gdtf_path: Some(metadata.file_path.to_string_lossy().to_string()),
     })
+}
+
+/// Converts source bytes by repetition or zero-padding according to the GDTF shift flag.
+pub(super) fn optical_dmx_value(value: gdtf::values::DmxValue, bytes: u8) -> u32 {
+    let source_bytes = value.bytes().get();
+    let mut result = 0u32;
+    for index in 0..bytes.min(4) {
+        let byte = if index >= source_bytes && value.shifting() {
+            0
+        } else {
+            (value.value() >> (8 * (source_bytes - 1 - index % source_bytes))) as u8
+        };
+        result = (result << 8) | byte as u32;
+    }
+    result
+}
+
+/// Preserves source optical function intervals at the channel's native DMX resolution.
+pub(super) fn convert_optical_channels(
+    mode: &gdtf::dmx_mode::DmxMode,
+    fixture_type: Option<&gdtf::fixture_type::FixtureType>,
+) -> Vec<OpticalChannel> {
+    let mut result = Vec::new();
+    for channel in &mode.dmx_channels {
+        let bytes = channel
+            .offset
+            .as_ref()
+            .map_or(1, |offset| offset.len())
+            .clamp(1, 4) as u8;
+        let dmx_max = ((1u64 << (bytes as u32 * 8)) - 1) as u32;
+        for logical in &channel.logical_channels {
+            let attribute = logical.attribute.to_string();
+            if !["Gobo", "Prism", "Focus", "Zoom", "Frost", "Iris", "Shaper"]
+                .iter()
+                .any(|prefix| attribute.starts_with(prefix))
+            {
+                continue;
+            }
+            let mut functions: Vec<_> = logical.channel_functions.iter().collect();
+            functions.sort_by_key(|function| optical_dmx_value(function.dmx_from, bytes));
+            let mut converted = Vec::new();
+            for function in &functions {
+                let from = optical_dmx_value(function.dmx_from, bytes);
+                let to = optical_function_end(logical, function, bytes, dmx_max);
+                if from > to {
+                    continue;
+                }
+                let mut sets: Vec<_> = function.channel_sets.iter().collect();
+                sets.sort_by_key(|set| optical_dmx_value(set.dmx_from, bytes));
+                let sets = sets
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, set)| {
+                        let start = optical_dmx_value(set.dmx_from, bytes).max(from);
+                        let end = sets.get(index + 1).map_or(to, |next| {
+                            optical_dmx_value(next.dmx_from, bytes)
+                                .saturating_sub(1)
+                                .min(to)
+                        });
+                        (start <= end).then(|| OpticalChannelSet {
+                            dmx_from: start,
+                            dmx_to: end,
+                            physical_from: set.physical_from(function),
+                            physical_to: set.physical_to(function),
+                            wheel_slot: set.wheel_slot_index.map(|index| index + 1),
+                        })
+                    })
+                    .collect();
+                converted.push(OpticalFunction {
+                    attribute: function.attribute.to_string(),
+                    physical_unit: fixture_type
+                        .and_then(|fixture| function.attribute(fixture))
+                        .and_then(|attribute| serde_json::to_value(attribute.physical_unit).ok())
+                        .and_then(|unit| unit.as_str().map(str::to_owned)),
+                    dmx_from: from,
+                    dmx_to: to,
+                    physical_from: function.physical_from,
+                    physical_to: function.physical_to,
+                    wheel: function.wheel.as_ref().map(ToString::to_string),
+                    dmx_profile: function.dmx_profile.as_ref().map(ToString::to_string),
+                    profile_curve: fixture_type
+                        .and_then(|fixture| function.dmx_profile(fixture))
+                        .map(|profile| {
+                            convert_optical_profile(profile, function.min(), function.max())
+                        }),
+                    mode_master: function
+                        .mode_master
+                        .as_ref()
+                        .and_then(|master| serde_json::to_string(master).ok()),
+                    mode_conditions: function
+                        .mode_master
+                        .as_ref()
+                        .and_then(|master| convert_optical_mode_conditions(master, mode)),
+                    sets,
+                });
+            }
+            result.push(OpticalChannel {
+                parameter_key: map_gdtf_attribute_to_nightfall(&logical.attribute)
+                    .map(|attribute| attribute.key())
+                    .unwrap_or_else(|| attribute.clone()),
+                geometry: channel.geometry.to_string(),
+                attribute,
+                dmx_max,
+                functions: converted,
+            });
+        }
+    }
+    result
+}
+
+/// Finds a function's final value within its own mode-master container.
+fn optical_function_end(
+    logical: &gdtf::dmx_mode::LogicalChannel,
+    function: &gdtf::dmx_mode::ChannelFunction,
+    bytes: u8,
+    dmx_max: u32,
+) -> u32 {
+    let from = optical_dmx_value(function.dmx_from, bytes);
+    logical
+        .channel_functions
+        .iter()
+        .filter(|next| next.mode_master == function.mode_master)
+        .map(|next| optical_dmx_value(next.dmx_from, bytes))
+        .filter(|next| *next > from)
+        .min()
+        .map_or(dmx_max, |next| next - 1)
+}
+
+/// Flattens linked function masters into numeric conditions once, rejecting unresolved links and cycles.
+fn convert_optical_mode_conditions<'a>(
+    mut master: &'a gdtf::dmx_mode::ModeMasterNode,
+    mode: &'a gdtf::dmx_mode::DmxMode,
+) -> Option<Vec<OpticalModeCondition>> {
+    use gdtf::dmx_mode::ModeMaster;
+    let mut visited = Vec::new();
+    let mut conditions = Vec::new();
+    loop {
+        if visited.contains(&master) {
+            return None;
+        }
+        visited.push(master);
+        let (channel, logical, function) = match master.mode_master(mode)? {
+            ModeMaster::DmxChannel(channel) => (channel, channel.logical_channels.first()?, None),
+            ModeMaster::ChannelFunction(channel, logical, function) => {
+                (channel, logical, Some(function))
+            }
+        };
+        let bytes = channel
+            .offset
+            .as_ref()
+            .map_or(1, |offset| offset.len())
+            .clamp(1, 4) as u8;
+        let dmx_max = ((1u64 << (bytes as u32 * 8)) - 1) as u32;
+        let mut from = optical_dmx_value(master.from, bytes);
+        let mut to = optical_dmx_value(master.to, bytes);
+        if let Some(function) = function {
+            from = from.max(optical_dmx_value(function.dmx_from, bytes));
+            to = to.min(optical_function_end(logical, function, bytes, dmx_max));
+        }
+        conditions.push(OpticalModeCondition {
+            geometry: channel.geometry.to_string(),
+            parameter_key: map_gdtf_attribute_to_nightfall(&logical.attribute)
+                .map(|attribute| attribute.key())
+                .unwrap_or_else(|| logical.attribute.to_string()),
+            dmx_max,
+            dmx_from: from,
+            dmx_to: to,
+        });
+        match function.and_then(|function| function.mode_master.as_ref()) {
+            Some(next) => master = next,
+            None => return Some(conditions),
+        }
+    }
+}
+
+/// Preserves polynomial coefficients and orders segments once during fixture import.
+pub(super) fn convert_optical_profile(
+    profile: &gdtf::physical_descriptions::DmxProfile,
+    min: f64,
+    max: f64,
+) -> OpticalDmxProfile {
+    let mut points: Vec<_> = profile
+        .points
+        .iter()
+        .map(|point| OpticalDmxProfilePoint {
+            dmx_percentage: point.dmx_percentage,
+            coefficients: [point.cfc0, point.cfc1, point.cfc2, point.cfc3],
+        })
+        .collect();
+    points.sort_by(|a, b| a.dmx_percentage.total_cmp(&b.dmx_percentage));
+    OpticalDmxProfile { min, max, points }
+}
+
+/// Retains wheel order and facet optics without inferring patterns from fixture names.
+pub(super) fn convert_optical_wheels(wheels: &[gdtf::wheel::Wheel]) -> Vec<OpticalWheel> {
+    wheels
+        .iter()
+        .filter_map(|wheel| {
+            Some(OpticalWheel {
+                name: wheel.name.as_ref()?.to_string(),
+                slots: wheel
+                    .slots
+                    .iter()
+                    .map(|slot| OpticalWheelSlot {
+                        media_name: slot.media_name.clone(),
+                        facets: slot
+                            .facets
+                            .iter()
+                            .filter_map(|facet| {
+                                // The parser exposes Rotation through its serializer rather than numeric accessors.
+                                let encoded = serde_json::to_value(facet.rotation).ok()?;
+                                let rows: Vec<Vec<f32>> = encoded
+                                    .as_str()?
+                                    .split('{')
+                                    .filter(|row| !row.is_empty())
+                                    .map(|row| {
+                                        row.trim_end_matches('}')
+                                            .split(',')
+                                            .map(str::parse::<f32>)
+                                            .collect::<std::result::Result<Vec<_>, _>>()
+                                    })
+                                    .collect::<std::result::Result<Vec<_>, _>>()
+                                    .ok()?;
+                                if rows.len() != 3
+                                    || rows.iter().any(|row| {
+                                        row.len() != 3 || row.iter().any(|value| !value.is_finite())
+                                    })
+                                {
+                                    return None;
+                                }
+                                Some(OpticalPrismFacet {
+                                    transform: [
+                                        rows[0][0], rows[1][0], rows[2][0], rows[0][1], rows[1][1],
+                                        rows[2][1], rows[0][2], rows[1][2], rows[2][2],
+                                    ],
+                                    color_cie: [
+                                        facet.color.x as f32,
+                                        facet.color.y as f32,
+                                        facet.color.z as f32,
+                                    ],
+                                })
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })
+        })
+        .collect()
 }
 
 /// Recursively traverse a geometry node and its children.
@@ -783,6 +1040,10 @@ fn traverse_geometry(
         parent_index,
         children: Vec::new(),
         controlled_element,
+        beam: match geom {
+            Geometry::Beam(beam) => Some(convert_beam_optics(beam)),
+            _ => None,
+        },
     });
 
     // Recursively process children

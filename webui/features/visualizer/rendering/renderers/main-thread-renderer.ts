@@ -28,6 +28,7 @@ import {
   setOutlineSelectedObjects,
   setProgrammerValueOutlineSelectedObjects,
 } from "../effects/post-processing";
+import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
 import {
   cancelControlsInteraction,
   DEFAULT_CAMERA_POSITION,
@@ -44,15 +45,9 @@ import {
   zoomCameraToGroups,
 } from "../renderer";
 import { SceneManager } from "../scene-manager";
-import {
-  extractElementDmxData,
-  fixtureIntensityValueFromOutputs,
-  resetDmxPool,
-} from "../visualizer-dmx";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
   CameraState,
-  ElementDmxData,
   Vec3,
   VisualizerCameraRotationMode,
   VisualizerInitConfig,
@@ -70,6 +65,7 @@ const log = createLogger("visualizer:main-thread-renderer");
  * post-processing and inspector.
  */
 export class MainThreadRenderer extends BaseVisualizerRenderer {
+  private readonly dmxSnapshot = new FixtureDmxSnapshot();
   private rendererState: RendererState | undefined;
   private instrumentation: Instrumentation | undefined;
   private resizeObserver: ResizeObserver | undefined;
@@ -140,7 +136,9 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     if (!this.rendererState) return;
 
     // Append inspector UI to container
-    container.appendChild(this.rendererState.inspector.domElement);
+    if (this.rendererState.inspector) {
+      container.appendChild(this.rendererState.inspector.domElement);
+    }
 
     this.resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -180,7 +178,14 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     this.sceneManager?.dispose();
     this.instrumentation?.clear();
     if (this.rendererState) {
-      disposeRenderer(this.rendererState);
+      const state = this.rendererState;
+      this.rendererState = undefined;
+      void disposeRenderer(state).catch((error) => {
+        log.error(
+          "Failed to drain visualizer GPU timestamps during disposal",
+          error,
+        );
+      });
     }
   }
 
@@ -383,8 +388,19 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
       onUpdate: () => this.updateEmitters(),
       onFrame: (metrics) => {
         this.instrumentation!.recordFrame(metrics.time, {
+          completedAt: metrics.completedAt,
+          reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
+          reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
+          startedAt: metrics.startedAt,
+          atmosphereScale:
+            this.rendererState?.postProcessing?.atmosphereBudget.scale,
+          sceneScale: this.rendererState?.postProcessing?.sceneBudget.scale,
+          omittedSurfaceLights:
+            this.rendererState?.postProcessing?.surfaceLighting
+              ?.omittedPointLights,
           updateMs: metrics.updateMs,
           renderMs: metrics.renderMs,
+          gpu: metrics.gpu,
         });
       },
     };
@@ -407,38 +423,11 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
    * Called once per frame in the render loop.
    */
   private updateEmitters(): void {
-    // Reset DMX pool at start of frame
-    resetDmxPool();
-
-    const parametersImmediate = getParametersImmediate();
-    const fixtureMap = fixturesStore.get();
-
-    // Update DMX parameter state for each fixture via the interface method
-    for (const [uid, fixture] of Object.entries(fixtureMap)) {
-      const elementOutputs = parametersImmediate.get(uid);
-      if (!elementOutputs) continue;
-
-      // Build element DMX map using element labels as keys
-      const elementDmx = new Map<string, ElementDmxData>();
-      const fixtureIntensity = fixtureIntensityValueFromOutputs(
-        elementOutputs,
-        fixture.elements,
-      );
-
-      for (let i = 0; i < fixture.elements.length; i++) {
-        const element = fixture.elements[i];
-        const output = elementOutputs[i];
-        if (!output) continue;
-
-        elementDmx.set(
-          element.label,
-          extractElementDmxData(output, element, fixtureIntensity),
-        );
-      }
-
-      if (elementDmx.size > 0) {
-        this.setElementDmx(uid, elementDmx);
-      }
-    }
+    const snapshot = this.dmxSnapshot.read(
+      getParametersImmediate(),
+      fixturesStore.get(),
+    );
+    // Strobes and wheel rotation advance even when the engine snapshot is unchanged.
+    for (const [uid, dmx] of snapshot) this.setElementDmx(uid, dmx);
   }
 }
