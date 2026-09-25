@@ -411,15 +411,13 @@ impl Parameter {
         self.values.current_value = value;
     }
 
-    /// Gets the default output value, honoring parameter metadata settings
+    /// Returns the logical value the parameter rests at, in the same space as
+    /// `current_value` and layer values.
+    ///
+    /// The stored default is already the logical value that outputs the
+    /// profile's default DMX, so inversion is applied once, on output.
     pub fn get_default_value(&self) -> ParameterDmxValue {
-        let min = self.metadata.logical_min();
-        let max = self.metadata.logical_max();
-        if self.metadata.is_inverted {
-            min + max - self.values.default_value
-        } else {
-            self.values.default_value
-        }
+        self.values.default_value
     }
 
     /// Resolves a ParameterValue instruction to a raw DmxValue (e.g. 0-255 for
@@ -645,6 +643,25 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Verifies an inverted parameter's declared default is inverted once:
+    /// the default value a cue transition starts from outputs the declared DMX.
+    #[test]
+    fn inverted_default_outputs_declared_dmx() {
+        let metadata = ParameterMetadata {
+            is_inverted: true,
+            default_dmx: Some(64),
+            ..Default::default()
+        };
+        let values = ParameterValues::from_metadata(&metadata);
+        let mut parameter = Parameter {
+            values: values.clone(),
+            metadata,
+        };
+        assert_eq!(parameter.get_default_value(), values.default_value);
+        parameter.values.current_value = parameter.get_default_value();
+        assert_eq!(crate::universe::parameter_to_dmx_value(&parameter), 64);
     }
 
     /// Verifies profile defaults and highlights seed runtime values, with legacy fallbacks otherwise.
