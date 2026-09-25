@@ -135,6 +135,124 @@ test("keybindings open UI actions and persist across reloads", async ({
   await expect.poll(() => isPanelOpen(page, "MIDI Input")).toBe(true);
 });
 
+/** Records a key combination and picks an action without saving the keybinding. */
+async function recordKeybinding(
+  page: Page,
+  keys: string,
+  actionId: string,
+): Promise<void> {
+  const settings = page.locator("[data-keybindings-settings]");
+  await settings.getByRole("button", { name: "Record keys" }).click();
+  await page.keyboard.press(keys);
+  await settings
+    .getByRole("combobox", { name: "Keybinding action" })
+    .selectOption(actionId);
+}
+
+/** Returns whether the command palette input is showing. */
+async function isPaletteOpen(page: Page): Promise<boolean> {
+  return page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER).isVisible();
+}
+
+/** Verifies conflicting keybindings need explicit confirmation before replacing another binding. */
+test("keybinding conflicts require confirmation before replacing", async ({
+  backendSlot,
+  page,
+}) => {
+  await openApp(page, backendSlot.backendPort);
+  await openKeyboardSettings(page);
+  const settings = page.locator("[data-keybindings-settings]");
+  const conflicts = settings.locator("[data-keybinding-conflicts]");
+  await addKeybinding(page, "Alt+Shift+KeyM", "ui.panel-MidiInput");
+  await expect(conflicts).toHaveCount(0);
+
+  await recordKeybinding(page, "Alt+Shift+KeyM", "ui.panel-OscInput");
+  await expect(conflicts).toContainText("Keybinding: Open MIDI Input");
+  await settings.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(
+    conflicts.getByRole("button", { name: "Replace" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("keybinding-conflict.png"),
+  });
+  await conflicts.getByRole("button", { name: "Cancel" }).click();
+  await expect(conflicts).toHaveCount(0);
+  await expect(
+    settings.locator('[data-keybinding="Alt+Shift+KeyM"]'),
+  ).toContainText("Open MIDI Input");
+
+  await recordKeybinding(page, "Alt+Shift+KeyM", "ui.panel-OscInput");
+  await settings.getByRole("button", { name: "Add", exact: true }).click();
+  await conflicts.getByRole("button", { name: "Replace" }).click();
+  await expect(
+    settings.locator('[data-keybinding="Alt+Shift+KeyM"]'),
+  ).toHaveCount(1);
+  await expect(
+    settings.locator('[data-keybinding="Alt+Shift+KeyM"]'),
+  ).toContainText("Open OSC Input");
+
+  // Recording a built-in shortcut's key captures it and names the shadowed shortcut.
+  await recordKeybinding(page, "ControlOrMeta+Shift+KeyP", "ui.panel-OscInput");
+  expect(await isPaletteOpen(page)).toBe(false);
+  await expect(conflicts).toContainText(
+    "Built-in shortcut: Open command palette",
+  );
+  await settings.getByRole("button", { name: "Add", exact: true }).click();
+  await conflicts.getByRole("button", { name: "Cancel" }).click();
+  await expect(settings.locator("[data-keybinding]")).toHaveCount(1);
+});
+
+/** Verifies a disabled built-in shortcut stops firing, persists, and can be re-enabled. */
+test("built-in shortcuts can be disabled and re-enabled", async ({
+  backendSlot,
+  page,
+}) => {
+  await openApp(page, backendSlot.backendPort);
+  await page.locator("main#app").click({ position: { x: 900, y: 600 } });
+  await page.keyboard.press("ControlOrMeta+Shift+KeyP");
+  await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeHidden();
+
+  await openKeyboardSettings(page);
+  const settings = page.locator("[data-keybindings-settings]");
+  await settings.getByText("Disable a built-in shortcut").click();
+  await settings
+    .getByRole("button", { name: "Disable Open command palette" })
+    .click();
+  await expect(
+    settings.getByRole("button", { name: "Re-enable Open command palette" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("disabled-built-in.png"),
+  });
+  await page.keyboard.press("Escape");
+
+  await page.locator("main#app").click({ position: { x: 900, y: 600 } });
+  await page.keyboard.press("ControlOrMeta+Shift+KeyP");
+  await page.waitForTimeout(300);
+  expect(await isPaletteOpen(page)).toBe(false);
+
+  await page.reload();
+  await waitForDockviewApp(page);
+  await page.locator("main#app").click({ position: { x: 900, y: 600 } });
+  await page.keyboard.press("ControlOrMeta+Shift+KeyP");
+  await page.waitForTimeout(300);
+  expect(await isPaletteOpen(page)).toBe(false);
+
+  await openKeyboardSettings(page);
+  await settings
+    .getByRole("button", { name: "Re-enable Open command palette" })
+    .click();
+  await expect(
+    settings.getByText("All built-in shortcuts are enabled."),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.locator("main#app").click({ position: { x: 900, y: 600 } });
+  await page.keyboard.press("ControlOrMeta+Shift+KeyP");
+  await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeVisible();
+});
+
 test("keybindings invoke backend actions with arguments", async ({
   backendSlot,
   page,
