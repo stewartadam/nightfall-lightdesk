@@ -14,6 +14,7 @@ import {
   type EmbeddedRuntimeFactory,
   startEngineRuntimeWorker,
 } from "./engine-runtime-worker-core";
+import { unpackParameterState } from "./parameter-state-transfer";
 
 /** Capture worker publications and suppress background timers for deterministic protocol checks. */
 function workerHarness(t: TestContext) {
@@ -23,8 +24,8 @@ function workerHarness(t: TestContext) {
       | ((event: MessageEvent<EngineRuntimeWorkerRequest>) => void)
       | null,
     /** Capture structured-clone messages sent to the main thread. */
-    postMessage(message: unknown) {
-      publications.push(message);
+    postMessage(message: unknown, options?: StructuredSerializeOptions) {
+      publications.push(structuredClone(message, options));
     },
   };
   const previous = Object.getOwnPropertyDescriptor(globalThis, "self");
@@ -115,6 +116,26 @@ test("demo adapter shares worker delivery and honors cancellation", (t) => {
   callbacks?.processEncodedPublication(new Uint8Array([0, ...encode(payload)]));
   worker.send({ type: "pullFrame" });
   assert.deepEqual(worker.publications.at(-1).messages[0].data, payload);
+  const snapshot = [
+    {
+      fixture_uid: "fixture",
+      parameters: [{ output: { Red: 255 }, absolute: {}, relative: {} }],
+    },
+  ];
+  callbacks?.processEncodedPublication(
+    new Uint8Array([1, ...encode({ type: "ParameterState", data: [] })]),
+  );
+  callbacks?.processEncodedPublication(
+    new Uint8Array([1, ...encode({ type: "ParameterState", data: snapshot })]),
+  );
+  worker.send({ type: "pullFrame" });
+  const messages = worker.publications.at(-1).messages;
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].data, undefined);
+  assert.deepEqual(
+    structuredClone(unpackParameterState(messages[0].packedParameters)),
+    snapshot,
+  );
   worker.send({ type: "submit", data: { update: "test" } });
   assert.deepEqual(submitted, { update: "test" });
   worker.send({ type: "stop" });
