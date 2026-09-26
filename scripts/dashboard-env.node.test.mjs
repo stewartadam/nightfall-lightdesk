@@ -12,6 +12,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -67,9 +68,12 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
       assert.equal(childEnv.DASHBOARD_ONLY_SETTING, undefined);
       assert.equal(childEnv.PATH, "/extra:" + process.env.PATH);
       const command = commandForService(service, childEnv);
-      if (["backend", "artnet-sender", "sacn-sender"].includes(service)) {
+      if (["artnet-sender", "sacn-sender"].includes(service)) {
         assert.equal(command.command, target.NIGHTFALL_CARGO_COMMAND);
         assert.equal(command.label, command.command + " " + command.args.join(" "));
+      } else if (service === "backend") {
+        assert.equal(command.command, process.execPath);
+        assert.deepEqual(command.args, [${JSON.stringify(fileURLToPath(new URL("./run-native-cargo.mjs", import.meta.url)))}, "run"]);
       } else {
         assert.equal(command.command, process.platform === "win32" ? "npm.cmd" : "npm");
       }
@@ -79,10 +83,10 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
     assert.equal(defaults.NIGHTFALL_DATA_DIR, undefined);
     assert.equal(defaults.NIGHTFALL_STARTUP_CMDS, "fps 5");
     const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
-    assert.equal(commandForService("backend", defaults).command, launcherCargo || cargo);
-    assert.equal(commandForService("backend", { NIGHTFALL_CARGO_COMMAND: " " }).command, cargo);
+    assert.equal(commandForService("artnet-sender", defaults).command, launcherCargo || cargo);
+    assert.equal(commandForService("artnet-sender", { NIGHTFALL_CARGO_COMMAND: " " }).command, cargo);
     const other = processEnvForService("backend", cwd + "/other", { NIGHTFALL_CARGO_COMMAND: "other-cargo" });
-    assert.equal(commandForService("backend", other).command, "other-cargo");
+    assert.equal(commandForService("artnet-sender", other).command, "other-cargo");
     const sample = processEnvForService("backend", cwd + "/worktree", target, { sampleData: true });
     assert.equal(sample.NIGHTFALL_SAMPLE_DATA, "1");
     const root = processEnvForService("backend", cwd, target);

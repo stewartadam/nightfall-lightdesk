@@ -12,7 +12,6 @@
       "script": "npm run dev",
       "cwd": "../../webui"
     },
-    "features": ["full", "beatgrid-detect"],
     "frontendDist": "../../webui/dist",
     "devUrl": "http://localhost:3031",
     "beforeBundleCommand": {

@@ -8,7 +8,7 @@ The [CI workflow](../.github/workflows/ci-precommit.yml) calls the [Desktop arti
 | Windows x64 | `windows-2022` | NSIS EXE |
 | Linux x64 | `ubuntu-22.04` | Debian package and AppImage |
 
-The web frontend is prepared once and shared by the native packaging jobs. It consumes the same release WASM bridge artifact as UI tests; the embedded demo engine is built separately and is excluded from desktop bundles and their WASM notices. The beat-detection model is an optional, checksum-verified download offered on first use or through Settings; it is stored in the application data directory and is not included in installers. Saved beat grids and playback do not require it. Native builds disable Cargo's default features to exclude Bevy dynamic linking; the Tauri configuration explicitly selects the desktop features.
+The web frontend is prepared once and shared by the native packaging jobs. It consumes the same release WASM bridge artifact as UI tests; the embedded demo engine is built separately and is excluded from desktop bundles and their WASM notices. The beat-detection model is an optional, checksum-verified download offered on first use or through Settings; it is stored in the application data directory and is not included in installers. Saved beat grids and playback do not require it. Native builds use the `app-tauri` crate's default features.
 
 Generated macOS installers target Apple Silicon only.
 

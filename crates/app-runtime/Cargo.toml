@@ -72,7 +72,7 @@ tempfile.workspace = true
 gdt-cpus = "0.2606.1"
 
 [features]
-default = ["full", "bevy_dynamic", "beatgrid-detect"]
+default = ["full", "beatgrid-detect"]
 full = ["audio", "midi", "osc", "artnet", "sacn", "usb", "fixture-library", "object-library"]
 minimal = []
 audio = ["dep:nightfall-audio", "dep:nightfall-desk-audio", "nightfall-timeline/audio"]
@@ -84,7 +84,6 @@ sacn = ["dep:nightfall-input-sacn", "dep:nightfall-output-sacn"]
 usb = ["dep:nightfall-output-usb"]
 fixture-library = ["dep:nightfall-fixture-library"]
 object-library = ["dep:nightfall-object-library"]
-bevy_dynamic = ["bevy/dynamic_linking"]  # you opt in to Bevy's "dynamic" feature
 debug = ["nightfall-engine/debug", "nightfall-desk/debug"]
 
 [dev-dependencies]

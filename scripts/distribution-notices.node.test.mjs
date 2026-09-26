@@ -225,7 +225,6 @@ test("Cargo collection reads its output file and removes temporary reports", () 
       "--fail",
       "--format",
       "json",
-      "--no-default-features",
       "--features",
       "desktop,full",
     ]);

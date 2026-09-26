@@ -67,4 +67,4 @@ jobs:
         env:
           # Compilation checks do not embed the frontend or copy distribution resources.
           TAURI_CONFIG: '{"build":{"frontendDist":null},"bundle":{"resources":[]}}'
-        run: cargo check -p app-tauri --all-targets --no-default-features --features full,beatgrid-detect --locked
+        run: cargo check -p app-tauri --all-targets --locked

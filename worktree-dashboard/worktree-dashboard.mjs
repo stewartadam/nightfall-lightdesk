@@ -15,6 +15,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
+import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { expand } from "dotenv-expand";
 
@@ -37,9 +38,16 @@ const DASHBOARD_ROOT = resolve(process.cwd());
 const LOG_DIR = join(tmpdir(), "nightfall-worktree-dashboard");
 const DEFAULT_BACKEND_STARTUP_CMDS = "fps 5";
 const SERVICE_DEFINITIONS = {
+  // Shares the hooks' Cargo graph; the script honours NIGHTFALL_CARGO_COMMAND itself.
+  // The dashboard's own copy is used so worktrees predating its `run` command still start.
   backend: {
-    cargo: true,
-    args: ["run"],
+    command: process.execPath,
+    args: [
+      fileURLToPath(
+        new URL("../scripts/run-native-cargo.mjs", import.meta.url),
+      ),
+      "run",
+    ],
   },
   ui: {
     command: process.platform === "win32" ? "npm.cmd" : "npm",

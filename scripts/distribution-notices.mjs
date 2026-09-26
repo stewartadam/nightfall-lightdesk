@@ -271,7 +271,10 @@ export function rustNotices(report) {
     });
 }
 
-/** Run the pinned Cargo collector for the exact root, target and feature set being packaged. */
+/**
+ * Run the pinned Cargo collector for the exact root, target and feature set being
+ * packaged; extra features are added on top of the crate defaults, as Tauri builds do.
+ */
 export function collectRust(
   manifest,
   target,
@@ -298,8 +301,7 @@ export function collectRust(
     "--format",
     "json",
   ];
-  if (features.length)
-    args.push("--no-default-features", "--features", features.join(","));
+  if (features.length) args.push("--features", features.join(","));
   const directory = mkdtempSync(join(tmpdir(), "nightfall-cargo-about-"));
   const reportPath = join(directory, "report.json");
   try {

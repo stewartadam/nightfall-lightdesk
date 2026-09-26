@@ -230,8 +230,10 @@ cargo install-update -a
 
 ### Running Nightfall
 
-By default the terminal-only session is run with a dynamically-linked Bevy for faster compile times.
-The backend engine can be started by simply running `cargo run`, and the web UI with `npm run dev`.
+Start the backend engine with `node scripts/run-native-cargo.mjs run` and the web UI with `npm run dev`.
+The script builds the same Cargo feature graph as the commit hooks, tests, and the worktree dashboard, so
+switching between them reuses build artifacts. Plain `cargo run` also works, but it resolves a slightly
+different dependency graph and recompiles part of the workspace.
 
 Playwright test commands use a pool of up to six parallel workers by default;
 set `NIGHTFALL_PLAYWRIGHT_WORKERS` to choose another pool size. Each worker keeps a
@@ -357,10 +359,10 @@ Example MCP config:
 }
 ```
 
-To start the application with Tauri, dynamic linking must be disabled (see [bevyengine/bevy#3856](https://github.com/bevyengine/bevy/issues/3856)) and the `tauri` feature should be enabled:
+To start the desktop application with Tauri:
 
 ```sh
-npx tauri dev --features full,tauri,beatgrid-detect -- --no-default-features
+npm run tauri-dev
 ```
 
 ### Quality checks and browser tests

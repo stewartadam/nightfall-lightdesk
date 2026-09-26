@@ -25,11 +25,11 @@ Browser manifests record raw byte sizes, SHA-256 hashes, and SHA-384 integrity.
 The size report uses packaged file sizes. Neither script compresses assets to
 estimate transfer size; actual HTTP compression belongs to the hosting service.
 
-`run-native-cargo.mjs` selects the same static workspace feature graph for
-Clippy, workspace tests, and the Playwright backend. It explicitly retains the
-app's full and beat-detection features and the flow crate's default FX-module
-feature, while excluding dynamic Bevy linking. Local default application builds
-remain unchanged. When adding workspace default features, update this selection.
-The backend build includes test targets to retain the same dev-dependency feature
-unification as the test run. Already-built test harnesses are reused; final
-executable linking still requires distinct Cargo work.
+`run-native-cargo.mjs` selects one runtime workspace feature graph, using every
+crate's default features and excluding `app-tauri`, for Clippy, workspace tests,
+the worktree dashboard backend (`run`), and the Playwright backend. The backend
+build includes test targets to retain the same dev-dependency feature
+unification as the test run; `cargo run` cannot select the workspace or its dev
+dependencies, so the `run` subcommand builds with that graph and then launches
+the executable. Already-built test harnesses are reused; final executable
+linking still requires distinct Cargo work.
