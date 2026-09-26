@@ -11,6 +11,10 @@ description = "workspace-hack package, managed by hakari"
 # You can choose to publish this crate: see https://docs.rs/cargo-hakari/latest/cargo_hakari/publishing.
 publish = false
 
+# Declares no workspace lint inheritance; every dependency below exists only to unify features.
+[lints.cargo]
+unused_dependencies = "allow"
+
 # The parts of the file between the BEGIN HAKARI SECTION and END HAKARI SECTION comments
 # are managed by hakari.
 
