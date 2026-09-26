@@ -14,6 +14,7 @@
  * When it is set, a missing archive fails the test rather than skipping it.
  */
 
+import { existsSync } from "node:fs";
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Fixture, FixtureGeometry } from "../types/index";
@@ -262,13 +263,45 @@ async function missingMeshCount(page: Page, uid: string): Promise<number> {
 }
 
 /**
+ * Returns whether a canvas capture can be compared on this platform.
+ *
+ * Baselines are recorded per platform and only some platforms have reviewed
+ * ones committed. Without a baseline the comparison would fail for the
+ * missing snapshot rather than check the render, so it is skipped with an
+ * annotation, unless `--update-snapshots` asks for new baselines to be
+ * recorded.
+ */
+function hasReviewedBaseline(
+  testInfo: import("@playwright/test").TestInfo,
+  name: string,
+): boolean {
+  const { updateSnapshots } = testInfo.config;
+  if (updateSnapshots === "all" || updateSnapshots === "changed") return true;
+  const baseline = testInfo.snapshotPath(`${name}.png`, { kind: "screenshot" });
+  if (existsSync(baseline)) return true;
+  testInfo.annotations.push({
+    type: "skip-screenshot-comparison",
+    description: `No reviewed ${process.platform} baseline for ${name}.png; record one with --update-snapshots`,
+  });
+  return false;
+}
+
+/**
  * Attaches a screenshot of the visualizer canvas from a fixed close-up
  * viewpoint of the fixture hanging at 4 m, so captures are comparable.
+ *
+ * With NIGHTFALL_GDTF_BENCH_SCREENSHOTS set, captures marked `compare` are
+ * also compared with the reviewed per-platform baseline when this platform
+ * has one (`--update-snapshots` records new ones, which must be reviewed
+ * before committing). Only unlit
+ * captures are compared: volumetric beams and floor lighting are not
+ * pixel-stable between runs, so lit captures are attached for review only.
  */
 async function attachCanvas(
   page: Page,
   name: string,
   testInfo: import("@playwright/test").TestInfo,
+  options: { compare?: boolean } = {},
 ): Promise<void> {
   await page.evaluate(() =>
     (window as any).visualizerApi.setCameraState({
@@ -276,13 +309,34 @@ async function attachCanvas(
       target: { x: 0, y: 3.8, z: 0 },
     }),
   );
+  // Let camera damping settle, then wait for two presented frames.
   await page.waitForTimeout(500);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
   const canvas = page.locator(
     '[data-panel-id="panel-Visualizer"] canvas[aria-label="3D visualizer viewport"]',
   );
   const path = testInfo.outputPath(`${name}.png`);
   await canvas.screenshot({ path });
   await testInfo.attach(name, { path, contentType: "image/png" });
+  if (
+    options.compare &&
+    process.env.NIGHTFALL_GDTF_BENCH_SCREENSHOTS &&
+    hasReviewedBaseline(testInfo, name)
+  ) {
+    await expect.soft(canvas).toHaveScreenshot(`${name}.png`, {
+      maxDiffPixelRatio: 0.02,
+      mask: [
+        page
+          .locator('[data-panel-id="panel-Visualizer"]')
+          .getByText(/^\d+ FPS$/),
+      ],
+    });
+  }
 }
 
 /** Verifies the Sharpy hangs its beam downward and tilts it about the head. */
@@ -292,6 +346,8 @@ test("Sharpy beam hangs down at rest and tilts to horizontal", async ({
 }, testInfo) => {
   const uid = await installBenchFixture(page, backendSlot.dataDir, SHARPY, 1);
 
+  await expect.poll(() => missingMeshCount(page, uid)).toBe(0);
+  await attachCanvas(page, "sharpy-body", testInfo, { compare: true });
   await submitCommand(page, "fix 1 int @ 100");
   await expect
     .poll(async () => Object.values(await beamDirections(page, uid)))
@@ -340,7 +396,7 @@ test("Hydrabeam heads tilt independently", async ({
     2,
   );
   await page.waitForTimeout(1500);
-  await attachCanvas(page, "hydrabeam-body", testInfo);
+  await attachCanvas(page, "hydrabeam-body", testInfo, { compare: true });
   const tiltElement = await page.evaluate((uid) => {
     const fixture = (window as any).appStores.fixtures.get()[uid] as Fixture;
     return (
@@ -392,7 +448,7 @@ test("MagicPanel expands its referenced pixels", async ({
     3,
   );
   await page.waitForTimeout(1500);
-  await attachCanvas(page, "magicpanel-body", testInfo);
+  await attachCanvas(page, "magicpanel-body", testInfo, { compare: true });
   await submitCommand(page, "fix 3 int @ 100 red @ 100 green @ 50");
   await expect
     .poll(async () => Object.keys(await beamDirections(page, uid)).length)
@@ -416,7 +472,9 @@ for (const fixture of STATIC_BENCH) {
     );
     await expect.poll(() => missingMeshCount(page, uid)).toBe(0);
     await page.waitForTimeout(1000);
-    await attachCanvas(page, `${fixture.model}-body`, testInfo);
+    await attachCanvas(page, `${fixture.model}-body`, testInfo, {
+      compare: true,
+    });
     await submitCommand(
       page,
       "fix 10 int @ 100 red @ 100 green @ 100 blue @ 100",
