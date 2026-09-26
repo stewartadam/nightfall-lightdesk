@@ -24,10 +24,17 @@ test("confirmed showfile identity deduplicates resync replays", async () => {
     },
   });
   try {
-    const { applyConfirmedShowfileChange, currentShowfileRevision } =
-      await import("./showfile-loading");
+    const {
+      applyConfirmedShowfileChange,
+      currentShowfileRevision,
+      persistCurrentShowfileName,
+    } = await import("./showfile-loading");
     const revision = currentShowfileRevision.get();
+    persistCurrentShowfileName("Tour");
+    assert.equal(currentShowfileRevision.get(), revision);
     applyConfirmedShowfileChange("Tour", "first-load");
+    assert.equal(currentShowfileRevision.get(), revision + 1);
+    persistCurrentShowfileName("Tour");
     assert.equal(currentShowfileRevision.get(), revision + 1);
     storage.clear();
     applyConfirmedShowfileChange("Tour", "first-load");
