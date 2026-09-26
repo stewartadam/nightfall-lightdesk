@@ -135,8 +135,9 @@ import {
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 import { applyFlowDeltaToDefinition } from "./flow-delta";
 import {
-  type PackedParameterState,
-  unpackParameterState,
+  carriesParameterState,
+  queuedWorkerMessageData,
+  type WorkerQueuedMessage,
 } from "./parameter-state-transfer";
 import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
@@ -174,13 +175,6 @@ function cueDurationProfileArrayToMap(
   return Object.fromEntries(
     profiles.map((profile) => [profile.cue_uid, profile]),
   );
-}
-
-interface WorkerQueuedMessage {
-  data: AnyWsMessage;
-  packedParameters?: PackedParameterState;
-  postedAtMs?: unknown;
-  deliveryMessageId?: unknown;
 }
 
 type WebsocketPullHandle =
@@ -319,11 +313,7 @@ function recordWebsocketPullResponse(messages: unknown): void {
   }
 
   for (const message of messages) {
-    const data = (message as WorkerQueuedMessage | undefined)?.data;
-    if (
-      data?.type === "ParameterState" ||
-      (message as WorkerQueuedMessage | undefined)?.packedParameters
-    ) {
+    if (carriesParameterState(message)) {
       websocketPullMetrics.parameterStatesSinceSample++;
     }
   }
@@ -431,14 +421,8 @@ function applyWorkerQueuedMessage(message: WorkerQueuedMessage): void {
   if (typeof message.deliveryMessageId === "number") {
     lastSeenDeliveryMessageId = message.deliveryMessageId;
   }
-  queueWorkerMessage(
-    message.packedParameters
-      ? {
-          type: "ParameterState",
-          data: unpackParameterState(message.packedParameters),
-        }
-      : message.data,
-  );
+  const data = queuedWorkerMessageData(message);
+  if (data) queueWorkerMessage(data);
 }
 
 /** Applies a pulled worker batch and schedules the next frame pull. */
