@@ -381,11 +381,13 @@ export function buildGeometryTree(
 
       if (meshFileName && geometry.gdtfPath) {
         // Load mesh from GDTF archive
-        loadMesh(geometry.gdtfPath, meshFileName).then((meshGroup) => {
-          if (meshGroup) {
-            replacePrimitiveWithMesh(obj, node.name, meshGroup);
-          }
-        });
+        loadMesh(geometry.gdtfPath, meshFileName, geometry.gdtfRevision).then(
+          (meshGroup) => {
+            if (meshGroup) {
+              replacePrimitiveWithMesh(obj, node.name, meshGroup);
+            }
+          },
+        );
       } else if (PRIMITIVE_ASSET_PATHS[primitiveType]) {
         // Load bundled asset model for this primitive type
         loadAssetModel(primitiveType).then((meshGroup) => {

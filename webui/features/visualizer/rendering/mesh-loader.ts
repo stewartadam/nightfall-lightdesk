@@ -118,24 +118,36 @@ function encodeGdtfPath(path: string): string {
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/** Returns a query string versioning archive resource URLs by content revision. */
+function revisionQuery(revision?: string): string {
+  return revision ? `?v=${encodeURIComponent(revision)}` : "";
+}
+
+/** Returns the backend URL serving a wheel slot image (e.g. a gobo) from a GDTF archive revision. */
+export function gdtfWheelMediaUrl(
+  gdtfPath: string,
+  mediaName: string,
+  revision?: string,
+): string {
+  return `${getBackendUrl()}/api/gdtf-wheel/${encodeGdtfPath(gdtfPath)}/${encodeURIComponent(mediaName)}${revisionQuery(revision)}`;
+}
+
 /**
  * Load a fixture mesh from the backend GDTF archive.
  * Tries GLB first, then falls back to 3DS if available.
  *
  * @param gdtfPath - Path to the GDTF file on the server
  * @param modelName - Name of the model/mesh to load (without extension)
+ * @param revision - Library revision of the archive; versions the request URL
+ *   and cache key so a replaced archive is not served from a stale cache
  * @returns A cloned Group containing the mesh, or null if loading failed
  */
-/** Returns the backend URL serving a wheel slot image (e.g. a gobo) from a GDTF archive. */
-export function gdtfWheelMediaUrl(gdtfPath: string, mediaName: string): string {
-  return `${getBackendUrl()}/api/gdtf-wheel/${encodeGdtfPath(gdtfPath)}/${encodeURIComponent(mediaName)}`;
-}
-
 export async function loadMesh(
   gdtfPath: string,
   modelName: string,
+  revision?: string,
 ): Promise<Group | null> {
-  const cacheKey = `${gdtfPath}:${modelName}`;
+  const cacheKey = `${gdtfPath}:${revision ?? ""}:${modelName}`;
 
   if (meshCache.has(cacheKey)) {
     try {
@@ -148,7 +160,7 @@ export async function loadMesh(
   }
 
   const encodedPath = encodeGdtfPath(gdtfPath);
-  const url = `${getBackendUrl()}/api/mesh/${encodedPath}/${encodeURIComponent(modelName)}`;
+  const url = `${getBackendUrl()}/api/mesh/${encodedPath}/${encodeURIComponent(modelName)}${revisionQuery(revision)}`;
 
   const loadPromise = new Promise<Group>((resolve, reject) => {
     // Try loading as GLB/GLTF first
