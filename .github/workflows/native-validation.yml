@@ -96,8 +96,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      # nextest cannot run doctests. Run them after the backend upload so browser
-      # tests are not delayed, and even when nextest fails so both results report.
+      # nextest cannot run doctests, and the push hook skips them (see cargo-doctest in
+      # .pre-commit-config.yaml). Run them after the backend upload so browser tests are
+      # not delayed, and even when nextest fails so both results report.
       - name: Run Rust doctests
         if: ${{ !cancelled() && inputs.stage == 'pre-push' && steps.native-hooks.outcome != 'skipped' }}
-        run: npx prek run cargo-doctest --all-files --verbose --color always --stage pre-push
+        run: npx prek run cargo-doctest --all-files --verbose --color always --stage manual

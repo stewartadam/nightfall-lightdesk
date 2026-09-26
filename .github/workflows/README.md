@@ -72,7 +72,9 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 and pre-push stage (Rust tests) as parallel matrix jobs with `fail-fast: false`.
 Each stage runs once. Both skip TypeScript and Node hooks, which run once in the
 downstream WebUI job after the shared WASM assets are available. Only the native
-test job builds and uploads the tested backend for Playwright. The existing
+test job builds and uploads the tested backend for Playwright, then runs Rust
+doctests through the `manual`-stage `cargo-doctest` hook; the local push hook
+skips doctests because rustdoc processes every library crate. The existing
 `Run prek hooks` check still requires both native stages and both WASM builds
 to succeed before running WebUI validation.
 
