@@ -72,6 +72,26 @@ test("unmappable MIDI touches explain why nothing armed", () => {
   assert.equal($mappingMode.get().armed?.kind, "midi");
 });
 
+/**
+ * Verifies disarming after a bind keeps a different control that was touched while the
+ * binding was being saved.
+ */
+test("disarming a bound control keeps a newer touch armed", () => {
+  enterMappingMode();
+  armMidiTouches([midiTouch(60)]);
+  const bound = $mappingMode.get().armed;
+  assert.ok(bound);
+
+  armMidiTouches([midiTouch(61)]);
+  disarmMappingSource(bound);
+  const stillArmed = $mappingMode.get().armed;
+  assert.ok(stillArmed?.kind === "midi");
+  assert.equal(stillArmed.event.note, 61);
+
+  disarmMappingSource($mappingMode.get().armed);
+  assert.equal($mappingMode.get().armed, undefined);
+});
+
 /** Builds a MIDI touch from controller `controller` sending `value`. */
 function midiControl(controller: number, value: number): types.MidiLastEvent {
   return {

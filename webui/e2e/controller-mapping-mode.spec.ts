@@ -913,3 +913,48 @@ test("targets a touched control cannot drive are dimmed", async ({
     });
   await leaveMapping(page);
 });
+
+/**
+ * Verifies a steady stream of touches does not starve lease renewal: controllers stay
+ * paused for longer than the 15 second lease while controls keep moving.
+ */
+test("mapping mode stays active while controls keep moving", async ({
+  backendSlot,
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  await enterMapping(page);
+
+  for (let second = 0; second < 18; second += 1) {
+    await sendOsc(port, `/e2e/map/stream/${second % 3}`, [(second % 10) / 10]);
+    await page.waitForTimeout(1_000);
+  }
+  expect(await mappingClients(page)).toBe(1);
+  await expect(
+    page.locator("[data-mapping-mode-banner] [data-mapping-pause]"),
+  ).toHaveText("MIDI and OSC actions are paused.");
+  await leaveMapping(page);
+});
+
+/**
+ * Verifies the command palette runs entries as usual in mapping mode until a control is
+ * armed, so panels can still be opened while mapping.
+ */
+test("palette entries run normally until a control is armed", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  await enterMapping(page);
+
+  await openPanel(page, "Masters");
+  await expect(
+    page.getByRole("button", { name: "New intensity global" }),
+  ).toBeVisible();
+  await expect(page.getByText("Move a MIDI or OSC control first")).toHaveCount(
+    0,
+  );
+  await leaveMapping(page);
+});

@@ -49,8 +49,9 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
   /**
    * Returns UI actions plus argument-free backend trigger actions for the palette.
    *
-   * In controller mapping mode, choosing an entry binds the armed MIDI or OSC control to
-   * it instead of running it.
+   * While a MIDI or OSC control is armed in controller mapping mode, choosing an entry binds
+   * the control to it instead of running it. Before a control is armed, entries run as
+   * usual, so panels can still be opened and mapping mode left from the palette.
    */
   const paletteEntries = createMemo<UiAction[]>(() => {
     const backendEntries = $backendCatalog()
@@ -77,7 +78,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
       reference: { id: uiActionId(command), arguments: {} },
     }));
     return [...uiEntries, ...backendEntries].map(({ reference, ...entry }) =>
-      $mode().active
+      $mode().armed
         ? {
             ...entry,
             execute: () => {

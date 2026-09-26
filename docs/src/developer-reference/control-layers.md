@@ -262,8 +262,9 @@ reserved for them) and the binding model, but run in the browser:
   only if its "Run UI actions triggered by MIDI and OSC mappings" setting is on.
 - User keybindings are stored per browser. A keybinding to a backend action sends an
   `ActionCommand::Invoke` with the keyboard surface.
-- In controller mapping mode, choosing a command palette entry binds the armed
-  control to that entry instead of running it.
+- While a control is armed in controller mapping mode, choosing a command palette
+  entry binds the control to that entry instead of running it. Before a control is
+  armed, entries run as usual.
 
 ## Choosing a layer
 
