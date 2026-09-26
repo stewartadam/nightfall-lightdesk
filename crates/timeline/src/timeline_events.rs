@@ -117,7 +117,7 @@ pub(crate) struct TimelineMutationContext<'w, 's> {
 ///
 /// `StoreTimeline` only yields actions that are new or whose reference changed relative to
 /// the stored timeline, so editing a timeline loaded with a legacy invalid action still
-/// succeeds. Undo-owned creation restores are not revalidated.
+/// succeeds. Undo and redo replays are not validated at all; see [`crud_events`].
 fn actions_to_store<'a>(
     command: &'a TimelineCommand,
     timelines: &DataProvider<Timeline>,
@@ -188,17 +188,27 @@ fn validate_stored_actions(
 }
 
 /// Coordinate persisted timeline command families and internal recording actions.
+///
+/// Commands storing new or changed actions are validated first. Undo and redo replays are
+/// not: they restore a timeline as it was, which may hold actions that are invalid now, such
+/// as recorded actions or actions whose target was deleted since, and rejecting them would
+/// make the timeline impossible to restore.
 pub fn crud_events(
     mut context: TimelineMutationContext,
     mut events: MessageReader<CommandEnvelope<TimelineCommand>>,
     mut actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
 ) {
     for event in events.read() {
-        if let Err(error) = validate_stored_actions(
-            &event.command,
-            &context.timeline_data_provider,
-            context.action_registry.as_deref(),
-        ) {
+        let validation = if context.responder.is_undo_replay(event.command_id) {
+            Ok(())
+        } else {
+            validate_stored_actions(
+                &event.command,
+                &context.timeline_data_provider,
+                context.action_registry.as_deref(),
+            )
+        };
+        if let Err(error) = validation {
             if context.responder.is_active(event.command_id)
                 && let Err(completion) = context.responder.fail(event.command_id, error)
             {
