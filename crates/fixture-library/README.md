@@ -252,8 +252,8 @@ cargo test --package nightfall-fixture-library
 
 # Run specific test suites
 cargo test --package nightfall-fixture-library --lib converters::tests
-cargo test --package nightfall-fixture-library --test integration_tests
-cargo test --package nightfall-fixture-library --test websocket_tests
+cargo test --package nightfall-fixture-library --test it integration_tests::
+cargo test --package nightfall-fixture-library --test it websocket_tests::
 ```
 
 ### Examples

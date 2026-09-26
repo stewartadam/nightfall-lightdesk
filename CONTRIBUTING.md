@@ -378,6 +378,8 @@ cargo clippy --all-targets --locked
 cargo test --workspace --locked
 ```
 
+Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file links its own copy of Bevy and the workspace. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.
+
 After changing Rust command parsing or shared types, regenerate with `npm run typeshare` and `npm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
 
 CI runs source checks and script tests independently of native compilation and
@@ -472,10 +474,10 @@ Useful workflows when changing the parser:
 cargo test -p nightfall-cmd-parse
 
 # autocomplete behavior/spec tests
-cargo test -p nightfall-cmd-parse --test autocomplete
+cargo test -p nightfall-cmd-parse --test it autocomplete::
 
 # command validation diagnostics tests
-cargo test -p nightfall-cmd-parse --test validation
+cargo test -p nightfall-cmd-parse --test it validation::
 ```
 
 ### Performance profiling
