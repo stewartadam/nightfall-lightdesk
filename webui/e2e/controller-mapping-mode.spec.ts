@@ -753,3 +753,44 @@ test("loading a show ends controller mapping mode", async ({
   await expect(page.locator("[data-mapping-mode-banner]")).toBeHidden();
   await expect.poll(() => mappingClients(page)).toBe(0);
 });
+
+/**
+ * Verifies that once a control is touched, targets it cannot drive are dimmed before being
+ * clicked, while targets it can drive stay highlighted.
+ */
+test("targets a touched control cannot drive are dimmed", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page))?.mode.type)
+    .toBe("Toggle");
+
+  await enterMapping(page);
+  const level = page.getByRole("button", { name: "Map Global Master level" });
+  const toggle = page.getByRole("button", { name: "Map toggle Global Master" });
+  await expect(level).not.toHaveAttribute("data-mapping-compatible");
+
+  // A message without a value can fire the toggle but cannot set a level.
+  await sendOsc(port, "/e2e/map/pulse");
+  await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
+    "OSC /e2e/map/pulse",
+  );
+  await expect(level).toHaveAttribute("data-mapping-compatible", "false");
+  await expect(toggle).toHaveAttribute("data-mapping-compatible", "true");
+  await page
+    .locator("[data-master-id]")
+    .first()
+    .screenshot({
+      path: test.info().outputPath("mapping-incompatible-target.png"),
+    });
+  await leaveMapping(page);
+});

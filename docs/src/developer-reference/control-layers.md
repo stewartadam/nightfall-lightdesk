@@ -161,10 +161,15 @@ pauses controller dispatch while any client is mapping:
 - `MidiLastEvent` and `OscLastEvent` telemetry is droppable and coalesced to one event
   per frame, which can lose the control an operator touched. While mapping mode is active
   the backend also sends non-droppable `MidiControlTouched` and `OscControlTouched`
-  batches: every mappable MIDI control touched in a frame (its latest message), and every
-  OSC message whose address and first argument are new within the frame, capped at 64
-  per frame. The Web UI arms only from these batches, so the press and release values of
-  an OSC button arriving in one frame are both recorded.
+  batches: every MIDI control touched in a frame (its latest message), and every OSC
+  message whose address and first argument are new within the frame, capped at 64 per
+  frame. The Web UI arms only from these batches, so the press and release values of an
+  OSC button arriving in one frame are both recorded.
+- MIDI channel messages that cannot drive actions, such as program changes, are touches
+  without a `source`, so the mapping banner explains why nothing armed. System messages
+  such as clock are never touches.
+- Listeners timestamp input on receipt, and only input received after some session
+  entered mapping mode is a touch, so a control moved just before entering does not arm.
 - Keybindings are not paused: they are client-local, and mapping mode arms from
   controllers, not the keyboard.
 

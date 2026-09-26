@@ -44,11 +44,20 @@ impl MappingLeaseExpired {
                                responding; MIDI and OSC controls are live again";
 }
 
+/// One session's hold on mapping mode.
+#[derive(Debug, Clone, Copy)]
+struct Lease {
+    /// When the session entered mapping mode; input received earlier is not its touch.
+    since: Instant,
+    /// When the hold lapses unless renewed.
+    deadline: Instant,
+}
+
 /// Client sessions currently mapping controllers; controller actions pause while any are.
 #[derive(Resource, Debug)]
 pub struct ControllerMappingMode {
-    /// Sessions that hold mapping mode, with when each lease lapses.
-    clients: BTreeMap<ClientId, Instant>,
+    /// Sessions that hold mapping mode, with their leases.
+    clients: BTreeMap<ClientId, Lease>,
     /// Sessions whose lease lapsed, until they renew, re-enter, leave, or disconnect.
     expired: BTreeSet<ClientId>,
     /// Identifies the loaded show; a new world or an in-place load gets a new one.
@@ -81,9 +90,39 @@ impl ControllerMappingMode {
     /// Returns `false` if the session was already mapping.
     pub fn enter(&mut self, client: ClientId, now: Instant) -> bool {
         self.expired.remove(&client);
+        self.hold(client, now)
+    }
+
+    /// Starts or extends a session's lease at `now`, returning whether it newly entered.
+    fn hold(&mut self, client: ClientId, now: Instant) -> bool {
+        let deadline = now + MAPPING_MODE_LEASE;
+        match self.clients.get_mut(&client) {
+            Some(lease) => {
+                lease.deadline = deadline;
+                false
+            }
+            None => {
+                self.clients.insert(
+                    client,
+                    Lease {
+                        since: now,
+                        deadline,
+                    },
+                );
+                true
+            }
+        }
+    }
+
+    /// Returns whether input received at `received_at` counts as a mapping touch: some
+    /// session was already mapping when it arrived.
+    ///
+    /// Input queued before mapping mode began, but read afterwards, is not a touch, so a
+    /// control moved just before entering does not arm.
+    pub fn records_touch(&self, received_at: Instant) -> bool {
         self.clients
-            .insert(client, now + MAPPING_MODE_LEASE)
-            .is_none()
+            .values()
+            .any(|lease| received_at >= lease.since)
     }
 
     /// Extends a mapping session's lease, returning whether the session newly entered.
@@ -95,10 +134,7 @@ impl ControllerMappingMode {
         if self.expired.remove(&client) {
             return Err(MappingLeaseExpired);
         }
-        Ok(self
-            .clients
-            .insert(client, now + MAPPING_MODE_LEASE)
-            .is_none())
+        Ok(self.hold(client, now))
     }
 
     /// Records that a session left mapping mode; returns `false` if it was not mapping.
@@ -109,7 +145,7 @@ impl ControllerMappingMode {
 
     /// Returns whether any session's lease lapsed by `now`.
     pub fn has_expired(&self, now: Instant) -> bool {
-        self.clients.values().any(|deadline| *deadline <= now)
+        self.clients.values().any(|lease| lease.deadline <= now)
     }
 
     /// Ends mapping mode for sessions whose lease lapsed by `now`, returning them.
@@ -117,7 +153,7 @@ impl ControllerMappingMode {
         let expired: Vec<_> = self
             .clients
             .iter()
-            .filter(|(_, deadline)| **deadline <= now)
+            .filter(|(_, lease)| lease.deadline <= now)
             .map(|(client, _)| *client)
             .collect();
         for client in &expired {
@@ -348,6 +384,24 @@ mod tests {
         assert!(mode.contains(renewing));
         assert_eq!(mode.renew(silent, lapsed), Err(MappingLeaseExpired));
         assert_eq!(mode.renew(silent, lapsed), Ok(true));
+    }
+
+    /// Verifies only input received after some session entered counts as a touch, and that
+    /// renewing does not move when the session entered.
+    #[test]
+    fn touches_count_only_after_mapping_began() {
+        let mut mode = ControllerMappingMode::default();
+        let entered = Instant::now();
+        let before = entered - Duration::from_millis(5);
+        assert!(!mode.records_touch(entered));
+
+        mode.enter(ClientId(1), entered);
+        assert!(!mode.records_touch(before));
+        assert!(mode.records_touch(entered));
+
+        let later = entered + Duration::from_secs(1);
+        mode.renew(ClientId(1), later).expect("lease is live");
+        assert!(mode.records_touch(entered + Duration::from_millis(1)));
     }
 
     /// Verifies renewing without a lapsed lease enters mapping mode, as happens when a
