@@ -6,15 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 
 const SHOWFILE_FIXTURE_PATH =
@@ -30,6 +23,7 @@ type SeededStartupDraft = {
 };
 
 // Startup prompts only run while the backend has no world loaded (AppState Initialized).
+// Seeds go into each test backend's disposable data dir, which teardown deletes.
 test.use({ emptyStartupWorld: true });
 
 /** Return a stable folder path for one showfile name under the backend data root. */
@@ -42,18 +36,11 @@ function draftDir(dataRoot: string, name: string): string {
   return join(dataRoot, "drafts", `${name}.${SHOWFILE_FOLDER_EXTENSION}`);
 }
 
-/** Remove all folders created for a seeded startup draft. */
-function cleanupSeededStartupDraft(seed: SeededStartupDraft): void {
-  rmSync(seed.savedDir, { force: true, recursive: true });
-  rmSync(seed.draftDir, { force: true, recursive: true });
-}
-
 /** Write saved and draft showfile folders that the real backend can discover. */
 function seedStartupDraft(dataRoot: string, name: string): SeededStartupDraft {
   const savedDir = showfileDir(dataRoot, name);
   const draftShowfileDir = draftDir(dataRoot, name);
   const seed = { name, savedDir, draftDir: draftShowfileDir };
-  cleanupSeededStartupDraft(seed);
 
   const savedSnapshot = JSON.parse(readFileSync(SHOWFILE_FIXTURE_PATH, "utf8"));
   const draftSnapshot = {
@@ -102,27 +89,18 @@ test("loads the app shell after choosing a real startup draft", async ({
   backendSlot,
   page,
 }) => {
-  const seed = seedStartupDraft(backendSlot.dataDir, "codex-real-load-draft");
+  const seed = seedStartupDraft(backendSlot.dataDir, "real-load-draft");
   await setStartupShowfile(page, seed.name);
 
-  try {
-    await page.goto("/?startup:draftRecovery=true");
-    const dialog = page.getByRole("dialog", {
-      name: `Resume your work on ${seed.name}?`,
-    });
-    await expect(dialog).toBeVisible();
+  await page.goto("/?startup:draftRecovery=true");
+  const dialog = page.getByRole("dialog", {
+    name: `Resume your work on ${seed.name}?`,
+  });
+  await expect(dialog).toBeVisible();
 
-    await dialog.getByRole("button", { name: "Load Draft" }).click();
-    await expect(dialog).toBeHidden();
-    await expect(page.locator("button[title='Menu']")).toBeVisible();
-  } finally {
-    if (existsSync(seed.savedDir) || existsSync(seed.draftDir)) {
-      await prepareFreshBackendShowfile(backendSlot.backendPort).catch(
-        () => undefined,
-      );
-    }
-    cleanupSeededStartupDraft(seed);
-  }
+  await dialog.getByRole("button", { name: "Load Draft" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator("button[title='Menu']")).toBeVisible();
 });
 
 /** Verifies an already-Ready backend world cannot complete a newly requested swap or hide its failure prompt. */
@@ -181,54 +159,47 @@ for (const scenario of [
   }, testInfo) => {
     const seed = seedStartupDraft(backendSlot.dataDir, `startup-${scenario}`);
     await setStartupShowfile(page, seed.name);
-    try {
-      if (scenario === "draft-only" || scenario === "neither") {
-        rmSync(seed.savedDir, { recursive: true });
-      }
-      if (scenario === "saved-only" || scenario === "neither") {
-        rmSync(seed.draftDir, { recursive: true });
-      }
-      await page.goto("/?startup:draftRecovery=true");
-      const dialog = page.getByRole("dialog", {
-        name: `Resume your work on ${seed.name}?`,
-      });
-      if (scenario === "neither") {
-        await expect(dialog).toBeHidden();
-        await expect(
-          page.getByRole("dialog", { name: "Open Showfile", exact: true }),
-        ).toBeVisible();
-        await expect(
-          page.getByRole("button", {
-            name: `Show revisions for ${seed.name}`,
-            exact: true,
-          }),
-        ).toBeHidden();
-      } else {
-        await expect(dialog).toBeVisible();
-        const saved = dialog.getByRole("button", { name: "Keep Saved" });
-        const draft = dialog.getByRole("button", { name: "Load Draft" });
-        await expect(saved).toBeVisible();
-        await expect(draft).toBeVisible();
-        if (scenario === "draft-only") await expect(saved).toBeDisabled();
-        else await expect(saved).toBeEnabled();
-        if (scenario === "saved-only") await expect(draft).toBeDisabled();
-        else await expect(draft).toBeEnabled();
-        await expect(scenario === "saved-only" ? saved : draft).toBeFocused();
-      }
-      await page.screenshot({
-        path: testInfo.outputPath(`startup-${scenario}.png`),
-        animations: "disabled",
-      });
-      if (scenario !== "neither") {
-        await page.keyboard.press("Enter");
-        await expect(dialog).toBeHidden();
-        await expect(page.locator("button[title='Menu']")).toBeVisible();
-      }
-    } finally {
-      await prepareFreshBackendShowfile(backendSlot.backendPort).catch(
-        () => undefined,
-      );
-      cleanupSeededStartupDraft(seed);
+    if (scenario === "draft-only" || scenario === "neither") {
+      rmSync(seed.savedDir, { recursive: true });
+    }
+    if (scenario === "saved-only" || scenario === "neither") {
+      rmSync(seed.draftDir, { recursive: true });
+    }
+    await page.goto("/?startup:draftRecovery=true");
+    const dialog = page.getByRole("dialog", {
+      name: `Resume your work on ${seed.name}?`,
+    });
+    if (scenario === "neither") {
+      await expect(dialog).toBeHidden();
+      await expect(
+        page.getByRole("dialog", { name: "Open Showfile", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", {
+          name: `Show revisions for ${seed.name}`,
+          exact: true,
+        }),
+      ).toBeHidden();
+    } else {
+      await expect(dialog).toBeVisible();
+      const saved = dialog.getByRole("button", { name: "Keep Saved" });
+      const draft = dialog.getByRole("button", { name: "Load Draft" });
+      await expect(saved).toBeVisible();
+      await expect(draft).toBeVisible();
+      if (scenario === "draft-only") await expect(saved).toBeDisabled();
+      else await expect(saved).toBeEnabled();
+      if (scenario === "saved-only") await expect(draft).toBeDisabled();
+      else await expect(draft).toBeEnabled();
+      await expect(scenario === "saved-only" ? saved : draft).toBeFocused();
+    }
+    await page.screenshot({
+      path: testInfo.outputPath(`startup-${scenario}.png`),
+      animations: "disabled",
+    });
+    if (scenario !== "neither") {
+      await page.keyboard.press("Enter");
+      await expect(dialog).toBeHidden();
+      await expect(page.locator("button[title='Menu']")).toBeVisible();
     }
   });
 }
