@@ -13,6 +13,7 @@ import { describeBinding } from "./binding-behaviors";
 import {
   midiMappingFromEvent,
   type OscGesture,
+  oscBindingProblem,
   oscMappingFromGesture,
   oscMappingReportsRelease,
   parseBehavior,
@@ -171,4 +172,36 @@ test("binding descriptions name what each edge does", () => {
     }),
     "Holding Pad 60 pushes Master level to full; letting go restores it.",
   );
+});
+
+/** Binding problems are explained from what the touched OSC control actually sent. */
+test("OSC binding problems describe what the control sent", () => {
+  const fader = { id: "control.level", arguments: { control_index: 1 } };
+  const problem = (
+    gesture: OscGesture,
+    kind: types.ActionInputKind,
+    behavior: types.ControlBehavior,
+  ) => oscBindingProblem(gesture, fader, kind, behavior, "Control level 1");
+
+  assert.equal(
+    problem(gestureOf(oscEvent()), Absolute, Press),
+    "OSC /go sent no value, so it can't set Control level 1. Send a number, such as 0.5.",
+  );
+  assert.equal(
+    problem(
+      gestureOf(oscEvent({ type: "String", data: "up" })),
+      Absolute,
+      Press,
+    ),
+    "OSC /go sent a String value, not a number, so it can't set Control level 1. Send a number, such as 0.5.",
+  );
+  assert.equal(
+    problem(gestureOf(oscEvent({ type: "Float", data: 0.5 })), Absolute, Press),
+    undefined,
+  );
+  assert.equal(
+    problem(gestureOf(oscEvent()), Trigger, Hold),
+    "OSC /go sent no value, so there is no way to tell when it is released. Send a value on press and another on release, such as 1 then 0.",
+  );
+  assert.equal(problem(gestureOf(ONE, ZERO), Trigger, Hold), undefined);
 });

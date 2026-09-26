@@ -220,3 +220,55 @@ export function oscMappingFromGesture(
     release_value: released,
   };
 }
+
+/** Argument types an OSC control can use to set a level. */
+const LEVEL_ARGUMENT_TYPES = new Set([
+  "Int",
+  "Float",
+  "Double",
+  "Long",
+  "Bool",
+]);
+
+/**
+ * Explains in plain language why a touched OSC control cannot bind an action, if it cannot.
+ *
+ * The explanation is phrased from what the control actually sent: a fader needs a number,
+ * and Release, Hold, and Flash need a second value marking the release. Returns undefined
+ * when the binding can work.
+ */
+export function oscBindingProblem(
+  gesture: OscGesture,
+  action: types.ActionReference,
+  inputKind: types.ActionInputKind | undefined,
+  behavior: types.ControlBehavior,
+  actionLabel: string,
+): string | undefined {
+  const control = `OSC ${gesture.event.address}`;
+  const [arg] = gesture.event.args;
+  const sent = arg
+    ? `sent ${oscMatchValue(arg) ?? `a ${arg.type} value`}`
+    : "sent no value";
+  if (
+    behavior === types.ControlBehavior.Press &&
+    inputKind === types.ActionInputKind.Absolute &&
+    !(arg && LEVEL_ARGUMENT_TYPES.has(arg.type))
+  ) {
+    return arg
+      ? `${control} sent a ${arg.type} value, not a number, so it can't set ${actionLabel}. Send a number, such as 0.5.`
+      : `${control} sent no value, so it can't set ${actionLabel}. Send a number, such as 0.5.`;
+  }
+  const mapping = oscMappingFromGesture(
+    gesture,
+    action,
+    inputKind ?? types.ActionInputKind.Trigger,
+    behavior,
+  );
+  if (
+    behavior !== types.ControlBehavior.Press &&
+    !oscMappingReportsRelease(mapping)
+  ) {
+    return `${control} ${sent}, so there is no way to tell when it is released. Send a value on press and another on release, such as 1 then 0.`;
+  }
+  return undefined;
+}

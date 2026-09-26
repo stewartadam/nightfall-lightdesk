@@ -13,8 +13,8 @@ import { behaviorLabel } from "./binding-behaviors";
 import {
   midiMappingFromEvent,
   midiSourceLabel,
+  oscBindingProblem,
   oscMappingFromGesture,
-  oscMappingReportsRelease,
 } from "./controller-mapping-builders";
 import {
   replacedMappingLabels,
@@ -52,29 +52,38 @@ function armedSourceAllows(
 }
 
 /**
- * Returns whether an armed control can bind an action with a behavior.
+ * Explains in plain language why the armed control cannot bind an action with a behavior.
  *
- * The action must allow the control's surface. MIDI controls always report releases; OSC
- * controls do when their touch recorded a release value or reads an argument as a level or
- * boolean.
+ * The action must allow the control's surface. MIDI controls send levels and report
+ * releases, so they can drive every behavior; an OSC control's explanation is phrased from
+ * what it sent. Returns undefined when the binding can work.
  */
+export function armedBindingProblem(
+  armed: ArmedSource,
+  action: types.ActionReference,
+  behavior: types.ControlBehavior,
+  actionLabel: string,
+): string | undefined {
+  if (!armedSourceAllows(armed, action)) {
+    return `${actionLabel} cannot be bound to a ${armed.kind === "midi" ? "MIDI" : "OSC"} control.`;
+  }
+  if (armed.kind === "midi") return undefined;
+  return oscBindingProblem(
+    armed,
+    action,
+    actionInputKind(actionCatalog.get(), action),
+    behavior,
+    actionLabel,
+  );
+}
+
+/** Returns whether the armed control can bind an action with a behavior. */
 export function armedSourceSupports(
   armed: ArmedSource,
   action: types.ActionReference,
   behavior: types.ControlBehavior,
 ): boolean {
-  if (!armedSourceAllows(armed, action)) return false;
-  if (behavior === types.ControlBehavior.Press || armed.kind === "midi") {
-    return true;
-  }
-  return oscMappingReportsRelease(
-    oscMappingFromGesture(
-      armed,
-      action,
-      actionInputKind(actionCatalog.get(), action),
-      behavior,
-    ),
-  );
+  return armedBindingProblem(armed, action, behavior, action.id) === undefined;
 }
 
 /**
@@ -95,23 +104,14 @@ export async function bindArmedSource(
     pushToast("info", "Move a MIDI or OSC control first, then click here.");
     return false;
   }
-  if (!armedSourceAllows(armed, action)) {
-    pushToast(
-      "info",
-      `${actionLabel} cannot be bound to a ${armed.kind === "midi" ? "MIDI" : "OSC"} control.`,
-    );
+  const problem = armedBindingProblem(armed, action, behavior, actionLabel);
+  if (problem) {
+    pushToast("info", problem);
     return false;
   }
   const inputKind = actionInputKind(actionCatalog.get(), action);
   let replaced: DescribedMapping[] | null = null;
   if (armed.kind === "osc") {
-    if (!armedSourceSupports(armed, action, behavior)) {
-      pushToast(
-        "info",
-        "Press and release the OSC control so its release can be recorded, then click here.",
-      );
-      return false;
-    }
     replaced = await upsertOscMapping(
       oscMappingFromGesture(armed, action, inputKind, behavior),
     );

@@ -482,12 +482,18 @@ impl ActionRegistry {
             return Ok(());
         };
         if !can_drive(descriptor.input) {
+            let label = &descriptor.label;
             return Err(InvocationError::new(
                 "action.input_incompatible",
-                format!(
-                    "This control cannot drive '{}', which needs {:?} input",
-                    descriptor.label, descriptor.input
-                ),
+                match descriptor.input {
+                    ActionInputKind::Absolute => format!(
+                        "'{label}' needs a number from a fader or knob, and this control does not send one"
+                    ),
+                    ActionInputKind::Momentary => {
+                        format!("'{label}' needs a control that reports both press and release")
+                    }
+                    ActionInputKind::Trigger => format!("This control cannot trigger '{label}'"),
+                },
             ));
         }
         Ok(())

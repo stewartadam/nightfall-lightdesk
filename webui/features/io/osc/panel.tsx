@@ -69,8 +69,8 @@ import { actionBehaviors } from "../model/binding-behaviors";
 import {
   formatBehavior,
   type OscGesture,
+  oscBindingProblem,
   oscMappingFromGesture,
-  oscMappingReportsRelease,
   parseBehavior,
   trackOscGesture,
 } from "../model/controller-mapping-builders";
@@ -502,22 +502,24 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     const touch = gesture();
     const action = lastEventAction();
     if (!touch || !action) return;
+    const inputKind = actionInputKind($actionCatalog(), action);
+    const problem = oscBindingProblem(
+      touch,
+      action,
+      inputKind,
+      lastEventBehavior(),
+      formatActionReference(action, $actionCatalog(), targetNames),
+    );
+    if (problem) {
+      pushToast("info", problem);
+      return;
+    }
     const mapping = oscMappingFromGesture(
       touch,
       action,
-      actionInputKind($actionCatalog(), action),
+      inputKind,
       lastEventBehavior(),
     );
-    if (
-      mapping.behavior !== ControlBehavior.Press &&
-      !oscMappingReportsRelease(mapping)
-    ) {
-      pushToast(
-        "info",
-        "Press and release the OSC control so its release can be recorded.",
-      );
-      return;
-    }
     void upsertOscMapping(mapping).then(announceReplacedMappings);
   };
 
