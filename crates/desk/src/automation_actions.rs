@@ -9,7 +9,9 @@
 //! Domain-owned bindable actions for desk clips, controls, and command evaluation.
 
 use bevy_app::App;
-use bevy_ecs::prelude::{Changed, Query, RemovedComponents, World, resource_exists_and_changed};
+use bevy_ecs::prelude::{
+    Changed, Local, Query, RemovedComponents, Res, World, resource_exists_and_changed,
+};
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionInputKind, ActionInvocation, ActionParameter,
@@ -25,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::clips::{Clip, ClipCommand};
-use crate::controls::{ControlCommand, ControlUpdate};
+use crate::controls::{ControlCommand, ControlUpdate, Controls};
 use crate::desk_command::DeskCommand;
 use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
 
@@ -365,9 +367,10 @@ pub fn register_desk_actions(app: &mut App) {
     );
 }
 
-/// Registers how stored bindings check that their clip and master targets exist.
+/// Registers how stored bindings check that their clip, master, and control targets exist.
 ///
-/// Binding diagnostics are recomputed when clip entities or master definitions change.
+/// Binding diagnostics are recomputed when clip entities, master definitions, or the number
+/// of control slots change.
 fn register_desk_target_validators(app: &mut App) {
     app.register_action_target_validator::<Uuid, _>(ActionParameterKind::Clip, |world, uid| {
         resolve_clip_id(world, uid).map(drop)
@@ -375,13 +378,49 @@ fn register_desk_target_validators(app: &mut App) {
     .register_action_target_validator::<Uuid, _>(ActionParameterKind::Master, |world, uid| {
         resolve_master(world, uid).map(drop)
     })
+    .register_action_target_validator::<u32, _>(ActionParameterKind::Control, validate_control)
     .invalidate_action_targets_when(clips_changed)
-    .invalidate_action_targets_when(resource_exists_and_changed::<DataProvider<Master>>);
+    .invalidate_action_targets_when(resource_exists_and_changed::<DataProvider<Master>>)
+    .invalidate_action_targets_when(control_slot_count_changed);
 }
 
 /// Run condition reporting whether any clip was added, edited, or removed.
 fn clips_changed(changed: Query<(), Changed<Clip>>, removed: RemovedComponents<Clip>) -> bool {
     !changed.is_empty() || !removed.is_empty()
+}
+
+/// Run condition reporting whether the control bank gained or lost slots.
+///
+/// Controls change on every fader move, so this compares slot counts rather than change
+/// ticks to avoid recomputing binding diagnostics while a fader is dragged.
+fn control_slot_count_changed(
+    controls: Option<Res<Controls>>,
+    mut last_count: Local<Option<usize>>,
+) -> bool {
+    let count = controls.map(|controls| controls.slot_count());
+    let changed = *last_count != count;
+    *last_count = count;
+    changed
+}
+
+/// Checks that a 1-based control index addresses a slot in the bank.
+///
+/// Unassigned slots are valid targets, since a binding follows whatever is later assigned.
+fn validate_control(world: &World, control_index: u32) -> Result<(), InvocationError> {
+    let controls = world.get_resource::<Controls>().ok_or_else(|| {
+        InvocationError::new("control.bank_unavailable", "Controls are unavailable")
+    })?;
+    if controls.contains(control_index) {
+        return Ok(());
+    }
+    Err(InvocationError::new(
+        "control.not_found",
+        format!(
+            "Control {control_index} does not exist; controls are numbered 1 to {}",
+            controls.slot_count()
+        ),
+    )
+    .with_details(serde_json::json!({ "control_index": control_index })))
 }
 
 /// Creates a control action reference for one stable action ID.
@@ -549,6 +588,7 @@ mod tests {
         app.add_message::<ControlUpdate>();
         app.add_message::<MasterUpdate>();
         app.init_resource::<DataProvider<Master>>();
+        app.init_resource::<Controls>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<PendingCommandBuffer>();
         register_desk_actions(&mut app);
@@ -740,6 +780,32 @@ mod tests {
         assert!(validate(&app, &start_clip_action(clip_uid)).is_ok());
         assert!(validate(&app, &master_level_action(master_uid)).is_ok());
         assert!(validate(&app, &control_go_action(2)).is_ok());
+    }
+
+    /// Verifies control targets accept every slot in the bank, assigned or not, and reject
+    /// indices outside `1..=slot_count`.
+    #[test]
+    fn target_validation_bounds_control_slots() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
+        let last = u32::try_from(app.world().resource::<Controls>().slot_count())
+            .expect("slot count fits in u32");
+        let code = |index| {
+            registry
+                .validate_target(app.world(), &control_go_action(index))
+                .map_err(|error| error.code)
+        };
+
+        assert_eq!(code(1), Ok(()));
+        assert_eq!(code(last), Ok(()));
+        assert_eq!(code(0), Err("control.not_found".to_string()));
+        assert_eq!(code(last + 1), Err("control.not_found".to_string()));
+        assert_eq!(
+            registry
+                .validate_target(app.world(), &control_level_action(last + 1))
+                .map_err(|error| error.code),
+            Err("control.not_found".to_string())
+        );
     }
 
     /// Verifies removing a clip marks action targets changed so bindings are re-diagnosed.
