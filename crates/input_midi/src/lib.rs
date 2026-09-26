@@ -812,7 +812,7 @@ mod tests {
         let mut mode = app.world_mut().resource_mut::<ControllerMappingMode>();
         let client = ClientId(1);
         if active {
-            mode.enter(client);
+            mode.enter(client, std::time::Instant::now());
         } else {
             mode.leave(client);
         }

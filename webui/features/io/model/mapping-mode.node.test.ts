@@ -18,6 +18,7 @@ import {
   enterMappingMode,
   exitMappingMode,
   mappingModeCommand,
+  observeShowGeneration,
 } from "./mapping-mode";
 
 /** Builds a MIDI touch from a note control on the E2E pad. */
@@ -44,13 +45,35 @@ afterEach(() => {
   exitMappingMode();
 });
 
-/** Verifies the backend command names the mapping mode transition. */
-test("mappingModeCommand enters and leaves backend mapping mode", () => {
-  assert.deepEqual(mappingModeCommand(true), {
+/**
+ * Verifies mapping mode remembers the show generation it entered under, survives binding a
+ * control, and ends when the backend reports a new generation after a show load.
+ */
+test("observeShowGeneration leaves mapping mode when a show load changes the generation", () => {
+  assert.equal(observeShowGeneration("show-a"), false);
+
+  enterMappingMode();
+  assert.equal(observeShowGeneration(""), false);
+  assert.equal(observeShowGeneration("show-a"), false);
+  armMidiTouches([midiTouch(60)]);
+  disarmMappingSource();
+  assert.equal(observeShowGeneration("show-a"), false);
+  assert.equal($mappingMode.get().active, true);
+
+  assert.equal(observeShowGeneration("show-b"), true);
+  assert.deepEqual($mappingMode.get(), { active: false });
+});
+
+/** Verifies the backend command names the requested mapping mode change. */
+test("mappingModeCommand enters, renews, and leaves backend mapping mode", () => {
+  assert.deepEqual(mappingModeCommand("enter"), {
     module: "ActionCommand",
     command: { type: "EnterControllerMappingMode" },
   });
-  assert.deepEqual(mappingModeCommand(false).command, {
+  assert.deepEqual(mappingModeCommand("renew").command, {
+    type: "RenewControllerMappingMode",
+  });
+  assert.deepEqual(mappingModeCommand("leave").command, {
     type: "LeaveControllerMappingMode",
   });
 });
