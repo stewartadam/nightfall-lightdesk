@@ -46,9 +46,9 @@
     "wasm-build:dev": "npx wasm-pack build --dev --target web --out-dir ../../webui/assets/wasm crates/wasm-bridge && npm run wasm-build:browser-demo:dev",
     "wasm-build:browser-demo": "npx wasm-pack build --target web --out-dir ../../webui/assets/browser-runtime crates/browser-runtime",
     "wasm-build:browser-demo:dev": "npx wasm-pack build --dev --target web --out-dir ../../webui/assets/browser-runtime crates/browser-runtime",
-    "tauri-dev": "npm run tauri dev -- -- --no-default-features",
-    "tauri-build": "npm run tauri build -- -- --no-default-features",
-    "tauri-build:dev": "npm run tauri build -- -d -- --no-default-features",
+    "tauri-dev": "npm run tauri dev",
+    "tauri-build": "npm run tauri build",
+    "tauri-build:dev": "npm run tauri build -- -d",
     "knip": "knip",
     "tauri-bundle": "tauri bundle",
     "package:sample-audio": "node scripts/package-sample-audio.mjs"
