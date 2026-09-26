@@ -178,17 +178,21 @@ async function installBenchFixture(
     return result.outcome.type;
   }, placed);
   expect(stored).toBe("Succeeded");
+  // Large archives (e.g. the Argo 6 FX's 318 referenced pixels) take several
+  // seconds to reach the scene when the suite runs its tests in parallel.
   await expect
-    .poll(() =>
-      page.evaluate(
-        (uid) =>
-          Boolean(
-            (window as any).visualizerApi
-              ?.getScene()
-              ?.getObjectByName(`Fixture_${uid}`),
-          ),
-        uid,
-      ),
+    .poll(
+      () =>
+        page.evaluate(
+          (uid) =>
+            Boolean(
+              (window as any).visualizerApi
+                ?.getScene()
+                ?.getObjectByName(`Fixture_${uid}`),
+            ),
+          uid,
+        ),
+      { timeout: 30_000 },
     )
     .toBe(true);
   return uid;
