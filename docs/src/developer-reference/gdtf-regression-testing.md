@@ -72,7 +72,10 @@ npm run test:gdtf-sweep
 
 `NIGHTFALL_GDTF_CORPUS_DIR` is a platform path list searched recursively. Each
 archive must either be rejected with an error or convert every mode without
-invariant violations; panics, timeouts and violations fail. The JSON report
+invariant violations; panics, timeouts and violations fail. After the first
+timeout the sweep starts no further archives, since the hung conversion cannot
+be stopped; the rest are reported as not swept. Directories that cannot be read
+are skipped with a warning and listed in the report. The JSON report
 (per-stage counts, rejection reasons, per-archive outcomes) is informational
 and never compared between runs. To guard a behavior found in the sweep, add a
 synthetic test or a bench archive rather than recording sweep results.

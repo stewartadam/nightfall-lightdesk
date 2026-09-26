@@ -20,6 +20,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -57,13 +58,17 @@ enum ArchiveOutcome {
     },
     /// Import exceeded [`ARCHIVE_TIMEOUT`] (failure).
     TimedOut,
+    /// Not started because another archive timed out first. The timed-out
+    /// archive already fails the sweep, and its conversion thread cannot be
+    /// stopped, so the sweep winds down instead of competing with it.
+    NotSwept,
 }
 
 impl ArchiveOutcome {
     /// Returns whether this outcome fails the sweep.
     fn is_failure(&self) -> bool {
         match self {
-            Self::RejectedArchive { .. } => false,
+            Self::RejectedArchive { .. } | Self::NotSwept => false,
             Self::Imported { violations, .. } => !violations.is_empty(),
             Self::Panicked { .. } | Self::TimedOut => true,
         }
@@ -80,6 +85,8 @@ struct SweepReport {
     modes_with_violations: usize,
     panics: usize,
     timeouts: usize,
+    /// Archives not started because an earlier archive timed out.
+    not_swept: usize,
     /// Directories or entries that could not be read, with the error; their archives were not swept.
     unreadable_paths: Vec<String>,
     /// Rejection reasons with occurrence counts, most common first.
@@ -212,14 +219,28 @@ fn gdtf_corpus_sweep() {
     std::panic::set_hook(Box::new(|_| {}));
     let workers = std::thread::available_parallelism().map_or(4, |count| count.get());
     let chunk = archives.len().div_ceil(workers);
+    // Set by the first timeout: that archive's conversion thread cannot be
+    // stopped, so workers stop starting archives rather than pile more work
+    // on top of it. Archives already in progress still finish.
+    let timed_out = AtomicBool::new(false);
     let results: Vec<(PathBuf, ArchiveOutcome)> = std::thread::scope(|scope| {
         archives
             .chunks(chunk)
             .map(|paths| {
+                let timed_out = &timed_out;
                 scope.spawn(move || {
                     paths
                         .iter()
-                        .map(|path| (path.clone(), sweep_archive_guarded(path.clone())))
+                        .map(|path| {
+                            if timed_out.load(Ordering::Relaxed) {
+                                return (path.clone(), ArchiveOutcome::NotSwept);
+                            }
+                            let outcome = sweep_archive_guarded(path.clone());
+                            if matches!(outcome, ArchiveOutcome::TimedOut) {
+                                timed_out.store(true, Ordering::Relaxed);
+                            }
+                            (path.clone(), outcome)
+                        })
                         .collect::<Vec<_>>()
                 })
             })
@@ -261,6 +282,7 @@ fn gdtf_corpus_sweep() {
             }
             ArchiveOutcome::Panicked { .. } => report.panics += 1,
             ArchiveOutcome::TimedOut => report.timeouts += 1,
+            ArchiveOutcome::NotSwept => report.not_swept += 1,
         }
         if outcome.is_failure() {
             failures.push(format!("{name}: {outcome:?}"));
@@ -277,7 +299,7 @@ fn gdtf_corpus_sweep() {
             .expect("write sweep report");
     }
     println!(
-        "GDTF sweep: {} archives, {} rejected archives, {} modes accepted, {} modes rejected, {} modes with violations, {} panics, {} timeouts, {} unreadable paths skipped",
+        "GDTF sweep: {} archives, {} rejected archives, {} modes accepted, {} modes rejected, {} modes with violations, {} panics, {} timeouts, {} not swept after a timeout, {} unreadable paths skipped",
         report.archives,
         report.rejected_archives,
         report.modes_accepted,
@@ -285,6 +307,7 @@ fn gdtf_corpus_sweep() {
         report.modes_with_violations,
         report.panics,
         report.timeouts,
+        report.not_swept,
         report.unreadable_paths.len()
     );
     assert!(
