@@ -14,7 +14,7 @@ const written = writeTimelineAudio({
   showfilePath: resolve(
     "webui/public/nightfall-demo.nightfall-show/showfile.json",
   ),
-  sampleAudioDir: resolve("crates/app/assets/sample-audio"),
+  sampleAudioDir: resolve("crates/app-runtime/assets/sample-audio"),
 });
 for (const { path, source } of written) {
   process.stdout.write(`${path} (${source})\n`);
