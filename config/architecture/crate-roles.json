@@ -15,7 +15,8 @@
       "nightfall-instances",
       "nightfall-playback-planner",
       "nightfall-selection",
-      "nightfall-waveform"
+      "nightfall-waveform",
+      "nightfall-workspace-hack"
     ],
     "infrastructure": [
       "nightfall-compositor",

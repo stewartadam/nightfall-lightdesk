@@ -49,6 +49,9 @@ debug = ["nightfall-engine/debug"]
 fx-module-host = ["dep:nightfall-fx-module", "nightfall-flow/fx-module"]
 native-network-watch = ["dep:netwatcher"]
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
 [lints]
 workspace = true
 

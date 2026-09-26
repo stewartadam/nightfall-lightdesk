@@ -17,5 +17,8 @@ sacn.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
 [lints]
 workspace = true

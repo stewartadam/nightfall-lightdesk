@@ -178,6 +178,7 @@ jobs:
       - name: Run script tests
         run: npm run test:scripts
       - run: cargo install --locked typeshare-cli --version 1.13.3
+      - run: cargo install --locked cargo-hakari --version 0.9.39
       - name: Run source pre-commit hooks
         run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
 

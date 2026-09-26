@@ -21,5 +21,8 @@ name = "design_matrix_golden"
 path = "tests/design_matrix_golden.rs"
 harness = false
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
 [lints]
 workspace = true

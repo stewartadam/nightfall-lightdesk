@@ -159,7 +159,7 @@ jobs:
         with:
           projectPath: crates/app-tauri
           tauriScript: npx tauri
-          args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --no-default-features --locked
+          args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --locked
       - name: Archive the macOS app for isolated signing
         if: runner.os == 'macOS' && needs.prepare.outputs.publish == 'true'
         shell: bash

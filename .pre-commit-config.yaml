@@ -69,6 +69,15 @@ repos:
       files: \.rs$|(^|/)Cargo\.toml$|^scripts/run-native-cargo\.mjs$
       stages: [pre-commit]
 
+    - id: cargo-hakari
+      name: Cargo workspace-hack
+      description: Check the hakari workspace-hack matches the dependency graph and every crate uses it
+      entry: bash -c 'cargo hakari generate --diff && cargo hakari manage-deps --dry-run'
+      language: system
+      pass_filenames: false
+      files: (^|/)Cargo\.(toml|lock)$|^\.config/hakari\.toml$
+      stages: [pre-commit]
+
     - id: typeshare
       name: typeshare
       description: Check if TypeScript definitions can be generated from Rust types

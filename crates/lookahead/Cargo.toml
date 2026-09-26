@@ -13,5 +13,8 @@ nightfall-fixtures = { path = "../fixtures" }
 nightfall-instances = { path = "../instances" }
 uuid.workspace = true
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
 [lints]
 workspace = true

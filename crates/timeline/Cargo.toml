@@ -42,7 +42,6 @@ uuid.workspace = true
 web-time.workspace = true
 
 [features]
-default = []
 audio = ["dep:nightfall-audio"]
 beatgrid-detect = ["dep:rodio", "dep:rten", "dep:rten-tensor", "dep:rustfft", "dep:sha2"]
 http = ["dep:axum", "dep:nightfall-websocket"]
@@ -51,6 +50,9 @@ http = ["dep:axum", "dep:nightfall-websocket"]
 minicbor-serde.workspace = true
 nightfall-flow = { path = "../flow" }
 nightfall-fx-module = { path = "../fx-module" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true
