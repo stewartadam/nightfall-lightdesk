@@ -36,6 +36,7 @@ import {
   actionBehaviors,
   behaviorLabel,
   describeBinding,
+  recommendedBinding,
 } from "../model/binding-behaviors";
 import {
   formatBehavior,
@@ -50,7 +51,11 @@ import {
   armedSourceSupports,
   bindArmedSource,
 } from "../model/mapping-bind";
-import { $mappingMode, describeArmedSource } from "../model/mapping-mode";
+import {
+  $mappingMode,
+  armedSourceIsContinuous,
+  describeArmedSource,
+} from "../model/mapping-mode";
 
 /** Width of the binding popover, matching its `w-72` class. */
 const POPOVER_WIDTH_PX = 288;
@@ -92,6 +97,8 @@ interface BindingOption {
   action: types.ActionReference;
   /** Behavior to bind with. */
   behavior: types.ControlBehavior;
+  /** Input kind of the action, when the catalog knows it. */
+  inputKind: types.ActionInputKind | undefined;
 }
 
 /** An existing controller binding to one of this target's actions. */
@@ -110,7 +117,8 @@ interface ExistingBinding {
  * Outside mapping mode the wrapper is inert. In mapping mode an overlay covers the control
  * and shows how many controller mappings already invoke its actions. Clicking it with an
  * armed control offers each supported behavior with a sentence describing it, and binds as
- * soon as one is chosen; with a single option it binds directly. Without an armed control
+ * soon as one is chosen; with a single option it binds directly. The option the control most
+ * likely means is marked as suggested and focused, so Enter binds it. Without an armed control
  * the popover lists existing bindings so they can be removed.
  */
 export function Mappable(props: MappableProps): JSX.Element {
@@ -209,9 +217,21 @@ export function Mappable(props: MappableProps): JSX.Element {
             }),
             action: choice.action,
             behavior,
+            inputKind,
           };
         });
     });
+  });
+
+  /**
+   * Picks the option the touched control most likely means, judged from what it sent: a
+   * fader follows a level, a button fires on press. The popover focuses it so Enter binds it.
+   */
+  const recommended = createMemo(() => {
+    const armed = $mode().armed;
+    return armed
+      ? recommendedBinding(options(), armedSourceIsContinuous(armed))
+      : undefined;
   });
 
   /** Binds one option, closing the popover. */
@@ -327,14 +347,27 @@ export function Mappable(props: MappableProps): JSX.Element {
               <For each={options()}>
                 {(option) => (
                   <button
+                    ref={(element) => {
+                      if (option === recommended()) {
+                        queueMicrotask(() => element.focus());
+                      }
+                    }}
                     type="button"
                     role="menuitem"
                     aria-label={option.label}
-                    class="rounded px-2 py-1 text-left hover:bg-neutral-800"
+                    class="rounded px-2 py-1 text-left outline-none hover:bg-neutral-800 focus-visible:bg-neutral-800 data-[recommended]:ring-1 data-[recommended]:ring-amber-400/70"
                     data-binding-option={option.behavior}
+                    data-recommended={option === recommended() ? "" : undefined}
                     onClick={() => void bind(option)}
                   >
-                    <span class="block text-neutral-100">{option.label}</span>
+                    <span class="flex items-center justify-between gap-2 text-neutral-100">
+                      {option.label}
+                      <Show when={option === recommended()}>
+                        <span class="text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                          Suggested
+                        </span>
+                      </Show>
+                    </span>
                     <span class="block text-[11px] text-neutral-400">
                       {option.description}
                     </span>

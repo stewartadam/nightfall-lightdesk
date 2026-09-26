@@ -262,7 +262,12 @@ test("a Hold binding keeps a toggle master on only while the button is held", as
   await expect(menu).toContainText(
     "Holding OSC /e2e/map/button runs Master on: 1: Global Master; letting go runs Master off: 1: Global Master.",
   );
-  await page.screenshot({
+  // A button that sent on then off is suggested to toggle on press, focused for Enter.
+  const suggested = menu.getByRole("menuitem", { name: "Toggle · On press" });
+  await expect(suggested).toHaveAttribute("data-recommended", "");
+  await expect(suggested).toBeFocused();
+  await expect(menu.locator("[data-recommended]")).toHaveCount(1);
+  await menu.screenshot({
     path: test.info().outputPath("controller-mapping-behaviors.png"),
   });
   await menu.getByRole("menuitem", { name: "On while held" }).click();
