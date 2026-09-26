@@ -208,6 +208,9 @@ fn supported_behaviors(action: &RegisteredAction) -> Vec<ControlBehavior> {
 ///
 /// A press captures the current level and returns full; a release returns the captured
 /// level, or `None` while other flashes hold the target or after the level was moved.
+///
+/// A release always ends its hold, even when the level cannot be read because the target
+/// vanished while held, so later flashes of a restored target still return to their level.
 fn flash_level(
     world: &mut World,
     registered: &RegisteredAction,
@@ -220,13 +223,19 @@ fn flash_level(
             format!("Action '{}' cannot flash", registered.descriptor.label),
         )
     })?;
-    let current = reader(world, &invocation.action)?;
+    let current = reader(world, &invocation.action);
     let mut flashes = world.get_resource_or_insert_with(FlashStates::default);
     if pressed {
-        flashes.press(&invocation.action, current);
+        flashes.press(&invocation.action, current?);
         Ok(Some(FLASH_LEVEL))
     } else {
-        Ok(flashes.release(&invocation.action, current))
+        match current {
+            Ok(current) => Ok(flashes.release(&invocation.action, current)),
+            Err(error) => {
+                flashes.release(&invocation.action, None);
+                Err(error)
+            }
+        }
     }
 }
 
