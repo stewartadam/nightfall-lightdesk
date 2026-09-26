@@ -214,6 +214,9 @@ export class BeamManager {
    * the visualizer leaves disabled.
    */
   private applyGobo(beam: BeamInstance, goboUrl: string | undefined): void {
+    // Low-quality beams use neither the gobo texture nor its projection, so
+    // the image is not fetched until the beam switches to full quality.
+    if (isLowQualityBeamMaterial(beam.material)) return;
     const loaded = goboUrl ? this.goboTextures.get(goboUrl) : undefined;
     if (goboUrl && loaded === undefined) {
       this.goboTextures.set(goboUrl, null);
@@ -222,7 +225,6 @@ export class BeamManager {
         () => log.warn(`Failed to load gobo image ${goboUrl}`),
       );
     }
-    if (isLowQualityBeamMaterial(beam.material)) return;
     setProjectedGobo(beam, loaded ?? null);
     const material = beam.material;
     if (loaded) {
