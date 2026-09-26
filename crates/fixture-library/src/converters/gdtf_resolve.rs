@@ -50,9 +50,16 @@ pub enum GdtfDiagnostic {
     /// Expansion exceeded [`MAX_GEOMETRY_DEPTH`] or [`MAX_GEOMETRY_INSTANCES`] and was truncated.
     ExpansionLimit,
     /// A channel names a geometry that is not reachable from the mode root.
+    ///
+    /// The specification forbids this, but published archives do it, usually
+    /// by copying a channel from another mode. A channel with footprint slots
+    /// is bound to the mode root so its slots stay controllable; a virtual
+    /// channel has nothing to control and is dropped.
     UnreachableChannel {
         /// Channel geometry name.
         geometry: String,
+        /// Whether the channel was bound to the mode root instead of dropped.
+        bound_to_root: bool,
     },
     /// A referenced channel's DMX break has no matching `Break` on the reference.
     MissingReferenceBreak {
@@ -310,7 +317,14 @@ impl<'a> ResolvedMode<'a> {
     }
 
     /// Binds every mode channel to the instances of its geometry and applies reference offsets.
+    ///
+    /// A channel whose geometry is outside the mode's tree is bound to the
+    /// mode root when it has footprint slots and dropped when it is virtual;
+    /// either way an [`GdtfDiagnostic::UnreachableChannel`] is recorded.
     fn resolve_channels(&mut self, mode: &'a DmxMode) {
+        /// Instance list for channels bound to the mode root, which is always instance 0.
+        const MODE_ROOT: &[usize] = &[0];
+
         let mut by_geometry: HashMap<String, Vec<usize>> = HashMap::new();
         for (index, instance) in self.instances.iter().enumerate() {
             by_geometry
@@ -321,11 +335,19 @@ impl<'a> ResolvedMode<'a> {
 
         for channel in &mode.dmx_channels {
             let geometry = channel.geometry.as_ref();
-            let Some(instances) = by_geometry.get(geometry) else {
-                self.diagnostics.push(GdtfDiagnostic::UnreachableChannel {
-                    geometry: geometry.to_string(),
-                });
-                continue;
+            let instances = match by_geometry.get(geometry) {
+                Some(instances) => instances.as_slice(),
+                None => {
+                    let bound_to_root = channel.offset.is_some() && !self.instances.is_empty();
+                    self.diagnostics.push(GdtfDiagnostic::UnreachableChannel {
+                        geometry: geometry.to_string(),
+                        bound_to_root,
+                    });
+                    if !bound_to_root {
+                        continue;
+                    }
+                    MODE_ROOT
+                }
             };
             for &instance in instances {
                 let (dmx_break, shift) =
@@ -463,8 +485,50 @@ mod tests {
         assert_eq!(
             resolved.diagnostics,
             vec![GdtfDiagnostic::UnreachableChannel {
-                geometry: "Unused Root".to_string()
+                geometry: "Unused Root".to_string(),
+                bound_to_root: true,
             }]
+        );
+    }
+
+    /// Verifies a slot-bearing channel outside the mode tree is bound to the
+    /// mode root at its own break and slots, while a virtual one is dropped.
+    #[test]
+    fn binds_unreachable_slot_channels_to_mode_root() {
+        let gdtf = GdtfBuilder::new("Test", "Orphans")
+            .geometry(GeometrySpec::generic("Body"))
+            .geometry(GeometrySpec::generic("Other Mode Body"))
+            .mode(
+                ModeSpec::new("Mode", "Body")
+                    .channel(ChannelSpec::new("Body", "Dimmer", &[1]))
+                    .channel(
+                        ChannelSpec::new("Other Mode Body", "ColorMacro1", &[3])
+                            .on_break(BreakSpec::Value(2)),
+                    )
+                    .channel(ChannelSpec::virtual_channel("Other Mode Body", "Dimmer")),
+            )
+            .parse();
+        let fixture_type = &gdtf.description.fixture_types[0];
+        let resolved = ResolvedMode::new(fixture_type, &fixture_type.dmx_modes[0]).unwrap();
+
+        let bound: Vec<(usize, u16, Option<Vec<i64>>)> = resolved
+            .channels
+            .iter()
+            .map(|channel| (channel.instance, channel.dmx_break, channel.offsets.clone()))
+            .collect();
+        assert_eq!(bound, [(0, 1, Some(vec![1])), (0, 2, Some(vec![3]))]);
+        assert_eq!(
+            resolved.diagnostics,
+            vec![
+                GdtfDiagnostic::UnreachableChannel {
+                    geometry: "Other Mode Body".to_string(),
+                    bound_to_root: true,
+                },
+                GdtfDiagnostic::UnreachableChannel {
+                    geometry: "Other Mode Body".to_string(),
+                    bound_to_root: false,
+                },
+            ]
         );
     }
 
@@ -498,6 +562,7 @@ mod tests {
                 ("Pixel 1", vec![4]),
                 ("Pixel 2", vec![7]),
                 ("Pixel 3", vec![10]),
+                ("Body", vec![20]),
             ]
         );
     }

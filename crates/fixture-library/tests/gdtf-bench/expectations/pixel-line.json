@@ -165,5 +165,10 @@
       "7/15/21ch Plate · Intensity · virtual",
       "7/15/21ch Tube · Intensity · virtual"
     ]
+  },
+  "unreachable_channels": {
+    "39 Channel": [
+      "33ch Body · Dimmer · virtual"
+    ]
   }
 }
