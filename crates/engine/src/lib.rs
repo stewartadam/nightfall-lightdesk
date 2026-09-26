@@ -80,7 +80,7 @@ pub mod prelude {
         CommandDeserializerRegistry, CommandJsonEnvelope, CommandSender, DISCRIMINATOR_DELTA,
         DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE, EncodedClientMessage,
         LastClientDisconnected, OutboundFrame, SharedClientBridge, UpdateDeserializerRegistry,
-        UpdateJsonEnvelope,
+        UpdateJsonEnvelope, encode_client_cbor,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
