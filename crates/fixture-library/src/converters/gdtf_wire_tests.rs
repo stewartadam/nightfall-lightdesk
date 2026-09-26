@@ -293,3 +293,65 @@ fn referenced_pixels_round_trip_through_reference_decoder() {
         assert_round_trip(&fixture, &references, seed);
     }
 }
+
+/// Verifies channels under nested references accumulate every enclosing reference's break offset,
+/// checked against the reference decoder's independent nested expansion.
+#[test]
+fn nested_references_round_trip_through_reference_decoder() {
+    let builder = GdtfBuilder::new("Test", "Matrix")
+        .geometry(
+            GeometrySpec::generic("Body")
+                .child(GeometrySpec::reference("Row 1", "Row", &[(1, 2)]))
+                .child(GeometrySpec::reference("Row 2", "Row", &[(1, 10)])),
+        )
+        .geometry(
+            GeometrySpec::generic("Row")
+                .child(GeometrySpec::reference("Cell A", "Cell", &[(1, 1)]))
+                .child(GeometrySpec::reference("Cell B", "Cell", &[(1, 5)])),
+        )
+        .geometry(GeometrySpec::beam("Cell").child(GeometrySpec::generic("Lens")))
+        .mode(
+            ModeSpec::new("Matrix", "Body")
+                .channel(ChannelSpec::new("Body", "Dimmer", &[1]))
+                .channel(ChannelSpec::new("Cell", "Dimmer", &[1, 2]))
+                .channel(
+                    ChannelSpec::new("Cell", "ColorAdd_R", &[3]).on_break(BreakSpec::Overwrite),
+                )
+                .channel(ChannelSpec::new("Lens", "Zoom", &[4])),
+        );
+    let (fixture, references) = convert(&builder, "Matrix");
+    let labels: Vec<&str> = fixture
+        .elements
+        .iter()
+        .map(|element| element.label.as_str())
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            "Body",
+            "Row 1/Cell A",
+            "Row 1/Cell B",
+            "Row 2/Cell A",
+            "Row 2/Cell B",
+            "Row 1/Cell A/Lens",
+            "Row 1/Cell B/Lens",
+            "Row 2/Cell A/Lens",
+            "Row 2/Cell B/Lens",
+        ]
+    );
+    let zoom = fixture
+        .elements
+        .iter()
+        .find(|element| element.label == "Row 2/Cell B/Lens")
+        .expect("nested lens element");
+    assert_eq!(
+        zoom.parameters[0].dmx_slots,
+        DmxSlots::Explicit {
+            dmx_break: 1,
+            offsets: vec![17],
+        }
+    );
+    for seed in 0..16 {
+        assert_round_trip(&fixture, &references, seed);
+    }
+}

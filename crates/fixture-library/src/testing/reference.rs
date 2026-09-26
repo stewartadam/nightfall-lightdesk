@@ -43,14 +43,29 @@ impl ReferenceChannel {
     }
 }
 
-/// Lists a mode's channels with single-level `GeometryReference` expansion applied.
+/// Reference nesting depth beyond which the walk stops, guarding against reference cycles.
+const MAX_REFERENCE_NESTING: usize = 16;
+
+/// One geometry reached from a mode's root, with the references it was reached through.
+struct Occurrence<'a> {
+    /// Name of the geometry definition.
+    geometry: String,
+    /// Reference-qualified instance name (`"Row 2/Cell B"`).
+    instance: String,
+    /// Enclosing references, outermost first.
+    references: Vec<&'a ReferenceGeometry>,
+}
+
+/// Lists a mode's channels with `GeometryReference` expansion applied at any nesting depth.
 ///
-/// For each channel whose geometry lives in a referenced top-level template,
-/// every reference to that template inside the mode's root tree yields one
-/// channel named after the reference (`"Pixel 2"` for the template root,
-/// `"Pixel 2/Lens"` for descendants) with the reference's matching `Break`
-/// offset added. `Overwrite` channels use the reference's last `Break`.
-/// Nested references are out of scope for this reference implementation.
+/// Every place a channel's geometry is reached from the mode root yields one
+/// channel. Inside references the channel is named after the reference path
+/// (`"Pixel 2"` for a template root, `"Pixel 2/Lens"` for its descendants,
+/// `"Row 2/Cell B"` for nested references). Its slots are shifted by the
+/// matching `Break` of every enclosing reference, innermost first: a fixed
+/// break selects the `Break` with the same number, and `Overwrite` takes the
+/// innermost reference's last `Break`, whose number the outer references then
+/// match.
 pub fn reference_mode_channels(
     fixture_type: &FixtureType,
     mode: &DmxMode,
@@ -60,56 +75,40 @@ pub fn reference_mode_channels(
         .as_ref()
         .and_then(|name| fixture_type.root_geometry(name.as_ref()))
         .or_else(|| fixture_type.geometries.first());
-    let mut references = Vec::new();
+    let mut occurrences = Vec::new();
     if let Some(root) = root {
-        collect_references(root, &mut references);
+        collect_occurrences(fixture_type, root, "", &[], &mut occurrences);
     }
 
     let mut expanded = Vec::new();
     for channel in reference_channels(mode) {
-        let template = fixture_type.geometries.iter().find(|top| {
-            top.name().map(|name| name.as_ref()) == Some(channel.geometry.as_str())
-                || top.nested_child(&channel.geometry).is_some()
-        });
-        let template_name = template
-            .and_then(|top| top.name())
-            .map(|name| name.to_string())
-            .unwrap_or_default();
-        let referencing: Vec<&ReferenceGeometry> = references
+        let matching: Vec<&Occurrence> = occurrences
             .iter()
-            .copied()
-            .filter(|reference| {
-                reference.geometry.as_ref().map(|name| name.to_string())
-                    == Some(template_name.clone())
-            })
+            .filter(|occurrence| occurrence.geometry == channel.geometry)
             .collect();
-        if referencing.is_empty() {
+        if matching.is_empty() {
             expanded.push(channel);
             continue;
         }
-        for reference in referencing {
-            let reference_name = reference
-                .name
-                .as_ref()
-                .map(|name| name.to_string())
-                .unwrap_or_default();
-            let entry = match channel.dmx_break {
-                None => reference.breaks.last(),
-                Some(number) => reference
-                    .breaks
-                    .iter()
-                    .find(|entry| entry.dmx_break as i32 == number),
-            };
-            let shift = entry.map_or(0, |entry| entry.dmx_offset.absolute() as u16 - 1);
+        for occurrence in matching {
+            let mut dmx_break = channel.dmx_break;
+            let mut shift = 0u16;
+            for reference in occurrence.references.iter().rev() {
+                let entry = match dmx_break {
+                    None => reference.breaks.last(),
+                    Some(number) => reference
+                        .breaks
+                        .iter()
+                        .find(|entry| entry.dmx_break as i32 == number),
+                };
+                if let Some(entry) = entry {
+                    dmx_break = Some(entry.dmx_break as i32);
+                    shift += entry.dmx_offset.absolute() as u16 - 1;
+                }
+            }
             expanded.push(ReferenceChannel {
-                geometry: if channel.geometry == template_name {
-                    reference_name
-                } else {
-                    format!("{reference_name}/{}", channel.geometry)
-                },
-                dmx_break: entry
-                    .map(|entry| entry.dmx_break as i32)
-                    .or(channel.dmx_break),
+                geometry: occurrence.instance.clone(),
+                dmx_break,
                 slots: channel.slots.iter().map(|slot| slot + shift).collect(),
                 ..channel.clone()
             });
@@ -125,13 +124,72 @@ pub fn reference_mode_channels(
     expanded
 }
 
-/// Collects every `GeometryReference` reachable from `geometry` without following references.
-fn collect_references<'a>(geometry: &'a Geometry, references: &mut Vec<&'a ReferenceGeometry>) {
-    if let Geometry::Reference(reference) = geometry {
-        references.push(reference);
+/// Records `geometry` and its descendants, following references into their templates.
+///
+/// `scope` is the reference path enclosing `geometry` (empty outside
+/// references) and `references` the chain of references that led here.
+/// Dangling references are skipped.
+fn collect_occurrences<'a>(
+    fixture_type: &'a FixtureType,
+    geometry: &'a Geometry,
+    scope: &str,
+    references: &[&'a ReferenceGeometry],
+    occurrences: &mut Vec<Occurrence<'a>>,
+) {
+    /// Prefixes `name` with the enclosing reference path, if any.
+    fn qualify(scope: &str, name: &str) -> String {
+        if scope.is_empty() {
+            name.to_string()
+        } else {
+            format!("{scope}/{name}")
+        }
     }
-    for child in geometry.children() {
-        collect_references(child, references);
+
+    let (definition, instance, references, child_scope) = match geometry {
+        Geometry::Reference(reference) => {
+            if references.len() >= MAX_REFERENCE_NESTING {
+                return;
+            }
+            let Some(template) = reference
+                .geometry
+                .as_ref()
+                .and_then(|target| fixture_type.root_geometry(target.as_ref()))
+            else {
+                return;
+            };
+            let name = reference
+                .name
+                .as_ref()
+                .map(|name| name.to_string())
+                .unwrap_or_default();
+            let instance = qualify(scope, &name);
+            let mut nested = references.to_vec();
+            nested.push(reference);
+            (template, instance.clone(), nested, instance)
+        }
+        _ => {
+            let name = geometry
+                .name()
+                .map(|name| name.to_string())
+                .unwrap_or_default();
+            (
+                geometry,
+                qualify(scope, &name),
+                references.to_vec(),
+                scope.to_string(),
+            )
+        }
+    };
+    occurrences.push(Occurrence {
+        geometry: definition
+            .name()
+            .map(|name| name.to_string())
+            .unwrap_or_default(),
+        instance,
+        references: references.clone(),
+    });
+    for child in definition.children() {
+        collect_occurrences(fixture_type, child, &child_scope, &references, occurrences);
     }
 }
 
