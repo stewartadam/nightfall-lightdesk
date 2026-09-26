@@ -31,7 +31,6 @@ export interface UiAction {
 
 export interface CommandPaletteContextType {
   registerAction: (command: UiAction) => () => void;
-  unregisterAction: (id: string) => void;
   showPalette: () => void;
   hidePalette: () => void;
   isOpen: () => boolean;

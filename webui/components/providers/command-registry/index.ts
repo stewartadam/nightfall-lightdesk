@@ -9,11 +9,14 @@
 export * from "./command-types";
 export { CommandPaletteContext, useCommandPalette } from "./context";
 export {
+  $uiActionCatalog,
   $uiActions,
+  describeUiAction,
   executeUiAction,
   registerUiAction,
   UI_ACTION_PREFIX,
+  type UiActionDescriptor,
+  type UiActionOutcome,
   uiActionId,
-  unregisterUiAction,
 } from "./ui-action-registry";
 export { useUiAction } from "./use-ui-action";
