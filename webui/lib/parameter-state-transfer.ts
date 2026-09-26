@@ -7,6 +7,7 @@
  */
 
 import type { OutboundParameterState, ParameterValue } from "../types";
+import type { AnyWsMessage } from "./ws/types";
 
 /** Numeric parameter snapshots cross the worker boundary without cloning thousands of nested objects. */
 export interface PackedParameterState {
@@ -15,12 +16,22 @@ export interface PackedParameterState {
   values: Float64Array;
 }
 
-const kinds = [
-  "Absolute",
-  "AbsolutePercent",
-  "Relative",
-  "RelativePercent",
-] as const;
+type ParameterValueType = ParameterValue["type"];
+
+/**
+ * Numeric field each assertion variant carries. Keyed by every variant so a new
+ * backend variant fails type checking here instead of decoding incorrectly.
+ */
+const PARAMETER_VALUE_FIELDS: Record<ParameterValueType, "value" | "offset"> = {
+  Absolute: "value",
+  AbsolutePercent: "value",
+  Relative: "offset",
+  RelativePercent: "offset",
+};
+/** Wire code of each variant is its index in this list. */
+const PARAMETER_VALUE_TYPES = Object.keys(
+  PARAMETER_VALUE_FIELDS,
+) as ParameterValueType[];
 
 /** Preserves normal object shapes while treating imported prototype-like names as data. */
 function setAttribute<T>(
@@ -40,13 +51,37 @@ function setAttribute<T>(
   }
 }
 
+/** Counts a plain map's own enumerable keys without allocating an entries array. */
+function keyCount(map: object): number {
+  let count = 0;
+  for (const _ in map) count++;
+  return count;
+}
+
+/** Returns how many numbers a snapshot encodes to, so packing fills one exact-size buffer. */
+function packedLength(states: OutboundParameterState[]): number {
+  let length = 0;
+  for (const fixture of states) {
+    length += 1;
+    for (const element of fixture.parameters) {
+      length +=
+        3 +
+        2 * keyCount(element.output) +
+        3 * keyCount(element.absolute) +
+        3 * keyCount(element.relative);
+    }
+  }
+  return length;
+}
+
 /** Encodes a complete snapshot, preserving double precision and all asserted parameter variants. */
 export function packParameterState(
   states: OutboundParameterState[],
 ): PackedParameterState {
   const attributes: string[] = [];
   const indices = new Map<string, number>();
-  const values: number[] = [];
+  const values = new Float64Array(packedLength(states));
+  let cursor = 0;
   /** Interns repeated attribute names across every fixture and element in this snapshot. */
   function attributeIndex(name: string): number {
     let index = indices.get(name);
@@ -59,23 +94,25 @@ export function packParameterState(
   }
   /** Appends a counted set of asserted values in their original property order. */
   function appendAssertions(assertions: Record<string, ParameterValue>): void {
-    const entries = Object.entries(assertions);
-    values.push(entries.length);
-    for (const [name, value] of entries) {
-      values.push(
-        attributeIndex(name),
-        kinds.indexOf(value.type),
-        "value" in value.data ? value.data.value : value.data.offset,
-      );
+    values[cursor++] = keyCount(assertions);
+    for (const name in assertions) {
+      const assertion = assertions[name];
+      const field = PARAMETER_VALUE_FIELDS[assertion.type];
+      values[cursor++] = attributeIndex(name);
+      values[cursor++] = PARAMETER_VALUE_TYPES.indexOf(assertion.type);
+      values[cursor++] = (assertion.data as Record<typeof field, number>)[
+        field
+      ];
     }
   }
   for (const fixture of states) {
-    values.push(fixture.parameters.length);
+    values[cursor++] = fixture.parameters.length;
     for (const element of fixture.parameters) {
-      const outputs = Object.entries(element.output);
-      values.push(outputs.length);
-      for (const [name, value] of outputs)
-        values.push(attributeIndex(name), value);
+      values[cursor++] = keyCount(element.output);
+      for (const name in element.output) {
+        values[cursor++] = attributeIndex(name);
+        values[cursor++] = element.output[name];
+      }
       appendAssertions(element.absolute);
       appendAssertions(element.relative);
     }
@@ -83,7 +120,7 @@ export function packParameterState(
   return {
     fixtureUids: states.map((fixture) => fixture.fixture_uid),
     attributes,
-    values: new Float64Array(values),
+    values,
   };
 }
 
@@ -93,21 +130,18 @@ export function unpackParameterState(
 ): OutboundParameterState[] {
   const { values, attributes } = packed;
   let cursor = 0;
-  /** Reads a counted assertion map, retaining whether its numeric field is a value or offset. */
+  /** Reads a counted assertion map, restoring each variant's value or offset field. */
   function readAssertions(): Record<string, ParameterValue> {
     const result: Record<string, ParameterValue> = {};
     const count = values[cursor++];
     for (let i = 0; i < count; i++) {
       const name = attributes[values[cursor++]];
-      const kind = values[cursor++];
+      const type = PARAMETER_VALUE_TYPES[values[cursor++]];
       const value = values[cursor++];
-      setAttribute(
-        result,
-        name,
-        (kind < 2
-          ? { type: kinds[kind], data: { value } }
-          : { type: kinds[kind], data: { offset: value } }) as ParameterValue,
-      );
+      setAttribute(result, name, {
+        type,
+        data: { [PARAMETER_VALUE_FIELDS[type]]: value },
+      } as ParameterValue);
     }
     return result;
   }
@@ -129,4 +163,32 @@ export function unpackParameterState(
     }
     return { fixture_uid, parameters };
   });
+}
+
+/** One websocket payload the runtime worker queued for the main thread. */
+export interface WorkerQueuedMessage {
+  data?: AnyWsMessage;
+  packedParameters?: PackedParameterState;
+  postedAtMs?: unknown;
+  deliveryMessageId?: unknown;
+}
+
+/** Returns whether a queued worker message carries a parameter snapshot, packed or not. */
+export function carriesParameterState(message: unknown): boolean {
+  const queued = message as WorkerQueuedMessage | undefined;
+  return (
+    queued?.data?.type === "ParameterState" ||
+    queued?.packedParameters !== undefined
+  );
+}
+
+/** Returns the websocket message a queued worker message delivers, unpacking transferred snapshots. */
+export function queuedWorkerMessageData(
+  message: WorkerQueuedMessage,
+): AnyWsMessage | undefined {
+  if (!message.packedParameters) return message.data;
+  return {
+    type: "ParameterState",
+    data: unpackParameterState(message.packedParameters),
+  } as AnyWsMessage;
 }
