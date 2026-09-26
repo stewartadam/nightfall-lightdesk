@@ -65,6 +65,6 @@ jobs:
             librsvg2-dev
       - name: Check the desktop application and tests without creating installers
         env:
-          # Distribution notices are produced by packaging, not by compilation checks.
-          TAURI_CONFIG: '{"bundle":{"resources":[]}}'
+          # Compilation checks do not embed the frontend or copy distribution resources.
+          TAURI_CONFIG: '{"build":{"frontendDist":null},"bundle":{"resources":[]}}'
         run: cargo check -p app-tauri --all-targets --no-default-features --features full,beatgrid-detect --locked
