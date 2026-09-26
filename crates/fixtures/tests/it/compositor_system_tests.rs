@@ -1629,6 +1629,37 @@ fn test_manual_dmx_channel_uses_console_address_for_console_bound_parameter() {
     );
 }
 
+/// `ch U/A` reaches a console-bound parameter whose fine byte sits at a separate explicit
+/// footprint slot: each byte is matched and decoded at its own console address, and the
+/// unrelated channel between them does not address the parameter.
+#[test]
+fn test_manual_dmx_channel_matches_explicit_console_slots() {
+    let (mut app, parameter) = manual_channel_app(
+        0x1234 as f32,
+        ResolvedConsoleDestination {
+            address: Some(ConsoleParameterAddress {
+                universe: 2,
+                addresses: vec![121, 125],
+            }),
+        },
+    );
+
+    assert_eq!(
+        set_manual_channel(&mut app, parameter, 2, 122, 0x05),
+        0x1234 as f32,
+        "channel between the explicit slots must not address the parameter"
+    );
+    assert_eq!(
+        set_manual_channel(&mut app, parameter, 2, 125, 0x56),
+        0x1256 as f32,
+        "fine write at its explicit slot must keep the current coarse byte"
+    );
+    assert_eq!(
+        set_manual_channel(&mut app, parameter, 2, 121, 0x80),
+        0x8056 as f32
+    );
+}
+
 /// Parameters without a console address stay addressable by their direct wire patch, and a
 /// coarse write keeps the current fine byte instead of reading an unrelated console channel.
 #[test]

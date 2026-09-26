@@ -1603,3 +1603,230 @@ fn resolve_input_bindings_uses_explicit_profile_slots() {
         }
     );
 }
+
+/// Returns a fixture→console binding placing `uids` in console `universe` from `address`.
+fn console_binding(uids: Vec<Uuid>, universe: u16, address: u16) -> OutputBinding {
+    OutputBinding {
+        source: OutputSource::Fixture {
+            uids,
+            element: None,
+            param: None,
+        },
+        target: OutputTarget::Console {
+            universe: Some(DmxRange::single(universe)),
+            address: Some(address),
+        },
+        priority: 0,
+        clone: false,
+    }
+}
+
+/// Returns the console universe and byte addresses resolved for a console-bound parameter.
+fn console_addresses_of(world: &World, entity: Entity) -> (u16, Vec<u16>) {
+    let address = world
+        .get::<ResolvedConsoleDestination>(entity)
+        .expect("resolved console destination")
+        .address
+        .clone()
+        .expect("console-bound parameter");
+    (address.universe, address.addresses)
+}
+
+/// Verifies a console binding places every byte of an explicit-slot fixture at its GDTF
+/// footprint slot in console space (interleaved heads, split fine bytes, unused slot 4) and
+/// starts the next fixture after the full slot footprint.
+#[test]
+fn console_binding_places_explicit_profile_slots() {
+    let mut app = output_app();
+    let uid = Uuid::new_v4();
+    let next_uid = Uuid::new_v4();
+    let [tilt1, dim1, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
+    let next = spawn_fixture_with_parameter(app.world_mut(), next_uid, 2, Attribute::Intensity);
+    app.world_mut().resource_mut::<OutputBindings>().bindings =
+        vec![console_binding(vec![uid, next_uid], 2, 101)];
+
+    app.add_systems(
+        Update,
+        (derive_console_addresses, resolve_output_bindings).chain(),
+    );
+    app.update();
+    app.update();
+
+    let world = app.world();
+    assert_eq!(console_addresses_of(world, tilt1), (2, vec![101, 106]));
+    assert_eq!(console_addresses_of(world, dim1), (2, vec![103]));
+    assert_eq!(console_addresses_of(world, tilt2), (2, vec![102, 107]));
+    assert_eq!(console_addresses_of(world, dim2), (2, vec![105]));
+    assert_eq!(console_addresses_of(world, next), (2, vec![108]));
+    assert!(
+        world
+            .get::<ResolvedOutputDestinations>(tilt1)
+            .expect("resolved destinations")
+            .destinations
+            .is_empty(),
+        "console-only bindings must not produce wire destinations"
+    );
+}
+
+/// Verifies an element-filtered console binding rebases the selected head's explicit slots
+/// onto the binding address while keeping the gap between its bytes.
+#[test]
+fn console_binding_rebases_explicit_slots_for_element_filter() {
+    let mut app = output_app();
+    let uid = Uuid::new_v4();
+    let [tilt1, _, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
+    let mut binding = console_binding(vec![uid], 1, 1);
+    binding.source = OutputSource::Fixture {
+        uids: vec![uid],
+        element: Some(2),
+        param: None,
+    };
+    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![binding];
+
+    app.add_systems(
+        Update,
+        (derive_console_addresses, resolve_output_bindings).chain(),
+    );
+    app.update();
+    app.update();
+
+    let world = app.world();
+    assert_eq!(console_addresses_of(world, tilt2), (1, vec![1, 6]));
+    assert_eq!(console_addresses_of(world, dim2), (1, vec![4]));
+    assert_eq!(
+        world
+            .get::<ResolvedConsoleDestination>(tilt1)
+            .expect("resolved console destination")
+            .address,
+        None
+    );
+}
+
+/// Verifies console-bound bytes land on their explicit console slots and that a
+/// console→sACN passthrough carries them to the same slots of the remapped wire window.
+#[test]
+fn console_passthrough_composes_explicit_slots_onto_the_wire() {
+    let mut app = output_app();
+    app.init_resource::<InputDmxUniverses>();
+    app.init_resource::<OutputDmxFrames>();
+    let uid = Uuid::new_v4();
+    let [tilt1, dim1, _, _] = spawn_interleaved_fixture(app.world_mut(), uid);
+    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
+        console_binding(vec![uid], 1, 1),
+        OutputBinding {
+            source: OutputSource::Console {
+                universe: Some(DmxRange::single(1)),
+                address: None,
+            },
+            target: OutputTarget::Transport {
+                target: "sacn".to_string(),
+                universe: Some(DmxRange::single(9)),
+                address: Some(11),
+            },
+            priority: 0,
+            clone: false,
+        },
+    ];
+    {
+        let mut tilt = app.world_mut().get_mut::<Parameter>(tilt1).unwrap();
+        tilt.values.current_value = 0x1234 as ParameterDmxValue;
+        let mut dimmer = app.world_mut().get_mut::<Parameter>(dim1).unwrap();
+        dimmer.values.current_value = 200.0;
+    }
+
+    app.add_systems(
+        Update,
+        (
+            derive_console_addresses,
+            resolve_output_bindings,
+            nightfall_fixtures::universe::dmx_universes,
+            nightfall_fixtures::output_frames::compose_output_frames,
+        )
+            .chain(),
+    );
+    app.update();
+    app.update();
+
+    let universes = app.world().resource::<ConsoleDmxUniverses>();
+    assert_eq!(universes.get_value(1, 1), Some(0x12));
+    assert_eq!(universes.get_value(1, 6), Some(0x34));
+    assert_eq!(universes.get_value(1, 3), Some(200));
+    assert_eq!(
+        universes.get_origin(1, 4),
+        None,
+        "unused footprint slot must stay unwritten"
+    );
+
+    let frames = app.world().resource::<OutputDmxFrames>();
+    let frame = frames
+        .get(
+            &OutputTransport::Sacn {
+                mode: SacnDelivery::Multicast,
+            },
+            9,
+        )
+        .expect("composed sACN frame");
+    assert_eq!(frame.channels[10], 0x12);
+    assert_eq!(frame.channels[15], 0x34);
+    assert_eq!(frame.channels[12], 200);
+    assert_eq!(frame.channels[13], 0);
+}
+
+/// Verifies console input targets decode each byte of an explicit-slot fixture from its
+/// console slot relative to the binding address.
+#[test]
+fn console_input_targets_use_explicit_profile_slots() {
+    let mut app = output_app();
+    app.init_resource::<InputBindings>();
+    app.init_resource::<ResolvedInputBindings>();
+    let uid = Uuid::new_v4();
+    let [tilt1, dim1, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
+    app.world_mut().resource_mut::<OutputBindings>().bindings =
+        vec![console_binding(vec![uid], 3, 11)];
+    app.world_mut().resource_mut::<InputBindings>().bindings = vec![InputBinding {
+        source: InputSource::Transport {
+            transport: BindingTransport::Sacn,
+            universe: Some(DmxRange::single(1)),
+            address: None,
+        },
+        target: InputTarget::Console {
+            universe: Some(DmxRange::single(3)),
+            address: Some(11),
+        },
+        priority: 0,
+        clone: false,
+    }];
+
+    app.add_systems(
+        Update,
+        (derive_console_addresses, resolve_input_bindings).chain(),
+    );
+    app.update();
+
+    let resolved = app.world().resource::<ResolvedInputBindings>();
+    let ResolvedInputDestination::Console { targets, .. } = &resolved.bindings[0].destination
+    else {
+        panic!("expected console destination");
+    };
+    assert_eq!(
+        targets,
+        &vec![
+            ResolvedInputTarget {
+                entity: tilt1,
+                offsets: vec![0, 5]
+            },
+            ResolvedInputTarget {
+                entity: tilt2,
+                offsets: vec![1, 6]
+            },
+            ResolvedInputTarget {
+                entity: dim1,
+                offsets: vec![2]
+            },
+            ResolvedInputTarget {
+                entity: dim2,
+                offsets: vec![4]
+            },
+        ]
+    );
+}
