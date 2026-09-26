@@ -65,10 +65,11 @@ Install Git, [Git LFS](https://git-lfs.com/), [rustup](https://rustup.rs/), and 
 
 Rustup reads `rust-toolchain.toml`, which pins the nightly compiler and installs rustfmt, Clippy, and the `wasm32-unknown-unknown` target. Do not substitute a stable compiler or set `RUSTUP_TOOLCHAIN` when validating a change. Update the pin deliberately with native and WASM validation.
 
-Install the command-line type generator used by `npm run typeshare`:
+Install the command-line type generator used by `npm run typeshare`, and the Rust test runner used by the push hook:
 
 ```sh
 cargo install --locked typeshare-cli --version 1.13.3
+cargo install --locked cargo-nextest --version 0.9.146
 ```
 
 Vite, Tauri CLI, wasm-pack, Playwright, and prek are project npm dependencies; `npm ci` installs them. No global npm packages are required for an ordinary contribution.
@@ -375,7 +376,15 @@ npm run check:crate-boundaries
 npm test
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked
-cargo test --workspace --locked
+node scripts/run-native-cargo.mjs nextest
+node scripts/run-native-cargo.mjs test --doc
+```
+
+Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. The wrapper selects the same feature graph as CI. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
+
+```sh
+node scripts/run-native-cargo.mjs nextest -E 'rdeps(nightfall-cues)'
+node scripts/run-native-cargo.mjs nextest autocomplete::
 ```
 
 Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file links its own copy of Bevy and the workspace. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.

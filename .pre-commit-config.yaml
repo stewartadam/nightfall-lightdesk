@@ -95,9 +95,17 @@ repos:
       stages: [pre-commit]
 
     # tests
-    - id: cargo-test
+    - id: cargo-nextest
       name: Rust tests
-      entry: node scripts/run-native-cargo.mjs test
+      entry: node scripts/run-native-cargo.mjs nextest
+      language: system
+      pass_filenames: false
+      files: \.rs$|(^|/)Cargo\.(toml|lock)$|^scripts/run-native-cargo\.mjs$|^\.config/nextest\.toml$
+      stages: [pre-push]
+
+    - id: cargo-doctest
+      name: Rust doctests
+      entry: node scripts/run-native-cargo.mjs test --doc
       language: system
       pass_filenames: false
       files: \.rs$|(^|/)Cargo\.(toml|lock)$|^scripts/run-native-cargo\.mjs$
