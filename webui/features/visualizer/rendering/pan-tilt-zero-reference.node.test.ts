@@ -28,7 +28,7 @@ import {
   ParameterValuePolarity,
   type Transform,
 } from "../../../types";
-import type { FixtureInstance, RenderableFixture } from "../model/types";
+import type { RenderableFixture } from "../model/types";
 import { isLowQualityBeamMaterial } from "./effects/beam-material";
 import { FixtureManager } from "./fixture-manager";
 import { buildSimpleLedBar } from "./fixture-renderers/led-bar-renderer";
@@ -50,7 +50,7 @@ import {
   buildStrobePanelFixture,
   updateStrobePanelColors,
 } from "./fixture-renderers/strobe-renderer";
-import { updateGdtfPanTilt } from "./geometry-builder";
+import { createGdtfJoints, updateGdtfJoints } from "./gdtf-joints";
 import {
   applyStrobeShutterIntensity,
   extractElementDmxData,
@@ -1616,18 +1616,10 @@ test("moving head spot decodes Generic color wheel split colors", () => {
   );
 });
 
-test("GDTF pan/tilt zero keeps articulated nodes at their neutral pose", () => {
+/** Builds pan and tilt joints on identity-transform nodes without element bindings. */
+function unboundPanTiltJoints() {
   const panNode = new Group();
   const tiltNode = new Group();
-  const instance: FixtureInstance = {
-    uid: "fixture-3",
-    group: new Group(),
-    nodeObjects: new Map([
-      ["PanAxis", panNode],
-      ["TiltAxis", tiltNode],
-    ]),
-    emitters: new Map(),
-  };
   const geometry: FixtureGeometry = {
     nodes: [
       {
@@ -1647,49 +1639,55 @@ test("GDTF pan/tilt zero keeps articulated nodes at their neutral pose", () => {
     ],
     roots: [0],
   };
+  const joints = createGdtfJoints(
+    new Map([
+      ["PanAxis", panNode],
+      ["TiltAxis", tiltNode],
+    ]),
+    geometry,
+  );
+  return { panNode, tiltNode, joints };
+}
 
-  updateGdtfPanTilt(instance, geometry, 0, 0);
+/** Verifies zero pan/tilt leaves unbound joints at their neutral pose. */
+test("GDTF pan/tilt zero keeps articulated nodes at their neutral pose", () => {
+  const { panNode, tiltNode, joints } = unboundPanTiltJoints();
 
-  approx(panNode.rotation.y, 0);
-  approx(tiltNode.rotation.x, 0);
+  updateGdtfJoints(joints, new Map([["Head", { pan: 0, tilt: 0 }]]), 0, null);
+
+  approx(panNode.quaternion.angleTo(new Quaternion()), 0);
+  approx(tiltNode.quaternion.angleTo(new Quaternion()), 0);
 });
 
+/** Verifies unbound joints fall back to fixture-wide values, rotating pan about Z and tilt about X. */
 test("GDTF pan/tilt values rotate axis nodes from the zero reference", () => {
-  const panNode = new Group();
-  const tiltNode = new Group();
-  const instance: FixtureInstance = {
-    uid: "fixture-4",
-    group: new Group(),
-    nodeObjects: new Map([
-      ["PanAxis", panNode],
-      ["TiltAxis", tiltNode],
-    ]),
-    emitters: new Map(),
-  };
-  const geometry: FixtureGeometry = {
-    nodes: [
-      {
-        name: "PanAxis",
-        geometryType: GeometryType.Axis,
-        transform: identityTransform(),
-        axis: AxisType.Pan,
-        parentIndex: -1,
-      },
-      {
-        name: "TiltAxis",
-        geometryType: GeometryType.Axis,
-        transform: identityTransform(),
-        axis: AxisType.Tilt,
-        parentIndex: 0,
-      },
-    ],
-    roots: [0],
-  };
+  const { panNode, tiltNode, joints } = unboundPanTiltJoints();
 
-  updateGdtfPanTilt(instance, geometry, -135 / 540, 60 / 270);
+  updateGdtfJoints(
+    joints,
+    new Map([["Head", { pan: -135 / 540, tilt: 60 / 270 }]]),
+    0,
+    null,
+  );
 
-  approx(panNode.rotation.y, MathUtils.degToRad(-135));
-  approx(tiltNode.rotation.x, MathUtils.degToRad(60));
+  approx(
+    panNode.quaternion.angleTo(
+      new Quaternion().setFromAxisAngle(
+        new Vector3(0, 0, 1),
+        MathUtils.degToRad(-135),
+      ),
+    ),
+    0,
+  );
+  approx(
+    tiltNode.quaternion.angleTo(
+      new Quaternion().setFromAxisAngle(
+        new Vector3(1, 0, 0),
+        MathUtils.degToRad(60),
+      ),
+    ),
+    0,
+  );
 });
 
 /** Ensures rendering depends on explicit layout rather than editable manufacturer/model names. */

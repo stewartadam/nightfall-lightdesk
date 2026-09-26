@@ -21,6 +21,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   BoxGeometry,
   CylinderGeometry,
+  Euler,
   Group,
   MathUtils,
   Matrix4,
@@ -32,14 +33,14 @@ import {
   Vector3,
 } from "three/webgpu";
 import { getLogger } from "../../../lib/logger";
-import {
-  AxisType,
-  type FixtureGeometry,
-  type GeometryModel,
-  type GeometryNode,
-  type PrimitiveType,
+import type {
+  FixtureGeometry,
+  GeometryModel,
+  GeometryNode,
+  PrimitiveType,
 } from "../../../types";
 import type { EmitterData, FixtureInstance } from "../model/types";
+import { createGdtfJoints } from "./gdtf-joints";
 import { loadMesh } from "./mesh-loader";
 
 const log = getLogger(import.meta.url);
@@ -137,11 +138,15 @@ async function loadAssetModel(
  * Used as fallback when GLB/3DS mesh is not available and no asset model exists.
  */
 function createPrimitiveMesh(model: GeometryModel): Mesh {
-  const { primitiveType, length, width, height } = model;
+  // Model dimensions are metres; the geometry tree is built in millimetres.
+  const { primitiveType } = model;
+  const length = model.length * 1000;
+  const width = model.width * 1000;
+  const height = model.height * 1000;
 
   // GDTF primitive dimensions use Z-up coordinate system:
-  // - Width: X axis (left/right)
-  // - Length: Y axis (forward/back)
+  // - Length: X axis
+  // - Width: Y axis
   // - Height: Z axis (up/down)
   //
   // Three.js primitives use Y-up:
@@ -150,7 +155,7 @@ function createPrimitiveMesh(model: GeometryModel): Mesh {
   //
   // Since we apply coordinate conversion at the group level (-90° X rotation),
   // we need to create primitives in GDTF's Z-up space. This means:
-  // - Box: (width=X, length=Y, height=Z) -> BoxGeometry(width, length, height)
+  // - Box: (length=X, width=Y, height=Z) -> BoxGeometry(length, width, height)
   // - Cylinder: height along Z -> need to rotate the cylinder
 
   let geometry: BoxGeometry | CylinderGeometry | SphereGeometry;
@@ -158,8 +163,8 @@ function createPrimitiveMesh(model: GeometryModel): Mesh {
 
   switch (primitiveType) {
     case "cube":
-      // Box in GDTF: width(X), length(Y), height(Z)
-      geometry = new BoxGeometry(width, length, height);
+      // Box in GDTF: length(X), width(Y), height(Z)
+      geometry = new BoxGeometry(length, width, height);
       break;
 
     case "cylinder":
@@ -190,12 +195,12 @@ function createPrimitiveMesh(model: GeometryModel): Mesh {
     case "head":
     case "scanner":
     case "scanner11":
-      geometry = new BoxGeometry(width, length, height);
+      geometry = new BoxGeometry(length, width, height);
       break;
 
     default:
       // Default to small box for undefined types
-      geometry = new BoxGeometry(0.1, 0.1, 0.1);
+      geometry = new BoxGeometry(100, 100, 100);
       break;
   }
 
@@ -236,8 +241,8 @@ function createEmitterMesh(node: GeometryNode): Mesh {
 
   switch (primitiveType) {
     case "cube":
-      // Box in GDTF: width(X), length(Y), height(Z)
-      geometry = new BoxGeometry(widthMm, lengthMm, heightMm);
+      // Box in GDTF: length(X), width(Y), height(Z)
+      geometry = new BoxGeometry(lengthMm, widthMm, heightMm);
       break;
 
     case "sphere":
@@ -338,14 +343,11 @@ export function buildGeometryTree(
     // Convert position from meters to millimeters to match mesh units
     position.multiplyScalar(1000);
 
-    // Apply transforms
+    // Apply the authored transform unchanged: the whole tree stays in GDTF
+    // Z-up space and is converted to Y-up once at placement.
     obj.position.copy(position);
     obj.quaternion.copy(quaternion);
     obj.scale.copy(scale);
-
-    // When converting from Z-up to Y-up, rotations around the X axis appear
-    // inverted. Negate the X rotation to correct this.
-    obj.rotation.x = -obj.rotation.x;
 
     nodeObjects.set(node.name, obj);
 
@@ -396,7 +398,7 @@ export function buildGeometryTree(
             // We use the largest dimension to avoid distortion
             const maxDim = Math.max(model.width, model.length, model.height);
             if (maxDim > 0) {
-              meshGroup.scale.setScalar(maxDim);
+              meshGroup.scale.setScalar(maxDim * 1000);
             }
             replacePrimitiveWithMesh(obj, node.name, meshGroup);
           }
@@ -443,7 +445,33 @@ export function buildGeometryTree(
     group,
     nodeObjects,
     emitters,
+    joints: createGdtfJoints(nodeObjects, geometry),
   };
+}
+
+/**
+ * Returns the world orientation of a GDTF fixture group for a placement rotation in degrees.
+ *
+ * The user rotation is applied in Three.js world space after the fixed -90°
+ * X rotation that converts the GDTF Z-up tree into Y-up.
+ */
+export function gdtfPlacementQuaternion(rotationDeg: {
+  x: number;
+  y: number;
+  z: number;
+}): Quaternion {
+  const baseRotation = new Quaternion().setFromEuler(
+    new Euler(-Math.PI / 2, 0, 0, "XYZ"),
+  );
+  const userRotation = new Quaternion().setFromEuler(
+    new Euler(
+      MathUtils.degToRad(rotationDeg.x),
+      MathUtils.degToRad(rotationDeg.y),
+      MathUtils.degToRad(rotationDeg.z),
+      "XYZ",
+    ),
+  );
+  return userRotation.multiply(baseRotation);
 }
 
 /**
@@ -510,109 +538,4 @@ export function disposeFixtureInstance(instance: FixtureInstance): void {
       }
     }
   });
-}
-
-/** Default pan/tilt range in degrees for GDTF fixtures without specified ranges */
-const DEFAULT_PAN_RANGE_DEG = 540;
-const DEFAULT_TILT_RANGE_DEG = 270;
-const DEFAULT_PAN_SPEED_DEG_PER_SEC = 180;
-const DEFAULT_TILT_SPEED_DEG_PER_SEC = 180;
-
-type PanTiltSmoothingState = {
-  currentPan: number;
-  currentTilt: number;
-  lastUpdateTime: number;
-  panSpeedDegPerSec: number;
-  tiltSpeedDegPerSec: number;
-};
-
-type FixtureInstanceWithPanTilt = FixtureInstance & {
-  panTiltState?: PanTiltSmoothingState;
-};
-
-function getPanTiltState(
-  instance: FixtureInstanceWithPanTilt,
-): PanTiltSmoothingState {
-  if (!instance.panTiltState) {
-    instance.panTiltState = {
-      currentPan: 0,
-      currentTilt: 0,
-      lastUpdateTime: 0,
-      panSpeedDegPerSec: DEFAULT_PAN_SPEED_DEG_PER_SEC,
-      tiltSpeedDegPerSec: DEFAULT_TILT_SPEED_DEG_PER_SEC,
-    };
-  }
-
-  return instance.panTiltState;
-}
-
-/**
- * Update pan/tilt rotations for GDTF fixture geometry nodes.
- *
- * Finds nodes with axis properties (pan/tilt) in the geometry tree and applies
- * the corresponding rotations based on DMX values.
- *
- * @param instance - The fixture instance to update
- * @param geometry - The GDTF geometry definition containing axis information
- * @param pan - Pan value normalized against the attribute max
- * @param tilt - Tilt value normalized against the attribute max
- */
-export function updateGdtfPanTilt(
-  instance: FixtureInstance,
-  geometry: FixtureGeometry,
-  pan: number,
-  tilt: number,
-): void {
-  const panTiltInstance = instance as FixtureInstanceWithPanTilt;
-  const state = getPanTiltState(panTiltInstance);
-
-  const now = performance.now();
-  const deltaMs = state.lastUpdateTime === 0 ? 0 : now - state.lastUpdateTime;
-  const deltaSeconds = deltaMs / 1000;
-  state.lastUpdateTime = now;
-
-  // Pan/tilt values are normalized against the attribute max, so zero is the
-  // hanging straight-down pose and signed values move away from that pose.
-  const panDegrees = pan * DEFAULT_PAN_RANGE_DEG;
-  const targetPan = (panDegrees * Math.PI) / 180;
-
-  const tiltDegrees = tilt * DEFAULT_TILT_RANGE_DEG;
-  const targetTilt = (tiltDegrees * Math.PI) / 180;
-
-  if (deltaSeconds > 0) {
-    const maxPanStep = MathUtils.degToRad(
-      state.panSpeedDegPerSec * deltaSeconds,
-    );
-    const panDelta = targetPan - state.currentPan;
-    state.currentPan += MathUtils.clamp(panDelta, -maxPanStep, maxPanStep);
-
-    const maxTiltStep = MathUtils.degToRad(
-      state.tiltSpeedDegPerSec * deltaSeconds,
-    );
-    const tiltDelta = targetTilt - state.currentTilt;
-    state.currentTilt += MathUtils.clamp(tiltDelta, -maxTiltStep, maxTiltStep);
-  } else {
-    state.currentPan = targetPan;
-    state.currentTilt = targetTilt;
-  }
-
-  // Find and update nodes with axis properties
-  for (const node of geometry.nodes) {
-    if (!node.axis) continue;
-
-    const obj = instance.nodeObjects.get(node.name);
-    if (!obj) continue;
-
-    switch (node.axis) {
-      case AxisType.Pan:
-        obj.rotation.y = state.currentPan;
-        break;
-      case AxisType.Tilt:
-        obj.rotation.x = state.currentTilt;
-        break;
-      case AxisType.Roll:
-        // Roll not currently supported via DMX
-        break;
-    }
-  }
 }

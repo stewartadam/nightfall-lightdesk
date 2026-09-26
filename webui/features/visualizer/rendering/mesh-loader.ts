@@ -15,10 +15,11 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { TDSLoader } from "three/examples/jsm/loaders/TDSLoader.js";
 import {
   DoubleSide,
-  type Group,
+  Group,
   type Material,
   type Mesh,
   MeshStandardMaterial,
+  type Object3D,
 } from "three/webgpu";
 import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
@@ -31,6 +32,33 @@ const tdsLoader = new TDSLoader();
 
 // Mesh cache: gdtfPath:modelName -> Promise<Group>
 const meshCache = new Map<string, Promise<Group>>();
+
+/**
+ * Converts a glTF scene from a GDTF archive into the geometry tree's space.
+ *
+ * glTF is Y-up and in metres, while the GDTF geometry tree is Z-up and built
+ * in millimetres (3DS meshes already are). The scene is wrapped in a group
+ * that rotates Y-up back to Z-up and scales metres to millimetres. Cameras and
+ * lights exported alongside the model are removed so they cannot affect the
+ * visualizer scene.
+ */
+export function normalizeGdtfGltfScene(scene: Group): Group {
+  const strays: Object3D[] = [];
+  scene.traverse((object) => {
+    const flags = object as Object3D & {
+      isCamera?: boolean;
+      isLight?: boolean;
+    };
+    if (flags.isCamera || flags.isLight) strays.push(object);
+  });
+  for (const object of strays) object.removeFromParent();
+
+  const wrapper = new Group();
+  wrapper.rotation.x = Math.PI / 2;
+  wrapper.scale.setScalar(1000);
+  wrapper.add(scene);
+  return wrapper;
+}
 
 /**
  * Create a MeshStandardMaterial that preserves transparency from the original material.
@@ -123,7 +151,7 @@ export async function loadMesh(
       url,
       (gltf) => {
         applyFixtureMaterial(gltf.scene);
-        resolve(gltf.scene);
+        resolve(normalizeGdtfGltfScene(gltf.scene));
       },
       undefined,
       () => {

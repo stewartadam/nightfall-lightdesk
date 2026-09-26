@@ -11,7 +11,7 @@
  * Handles fixture lifecycle (add/remove/update) and synchronization with stores.
  */
 
-import { Euler, MathUtils, Quaternion, type Scene } from "three/webgpu";
+import { MathUtils, type Scene } from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../lib/feature-flags";
 import { createLogger } from "../../../lib/logger";
 import type { RenderableFixture } from "../model/types";
@@ -21,6 +21,7 @@ import {
   disposeFixtureWithRenderer,
   type ExtendedFixtureInstance,
 } from "./fixture-renderers";
+import { gdtfPlacementQuaternion } from "./geometry-builder";
 
 const log = createLogger("visualizer:fixture-manager");
 
@@ -210,23 +211,7 @@ export class FixtureManager {
     rotation: { x: number; y: number; z: number },
   ): void {
     if (instance.rendererType === "gdtf") {
-      // GDTF fixtures need Z-up to Y-up conversion
-      const baseRotation = new Quaternion().setFromEuler(
-        new Euler(-Math.PI / 2, 0, 0, "XYZ"),
-      );
-
-      // User rotation in Three.js world space (Y-up)
-      const userRotation = new Quaternion().setFromEuler(
-        new Euler(
-          MathUtils.degToRad(rotation.x),
-          MathUtils.degToRad(rotation.y),
-          MathUtils.degToRad(rotation.z),
-          "XYZ",
-        ),
-      );
-
-      // Apply user rotation first (in world space), then base conversion
-      instance.group.quaternion.copy(userRotation).multiply(baseRotation);
+      instance.group.quaternion.copy(gdtfPlacementQuaternion(rotation));
     } else {
       // Non-GDTF fixtures (LED bars, strobe panels) are built in Y-up space
       // Apply rotation directly using ZYX order (same as V1 visualizer)
