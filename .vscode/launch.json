@@ -28,11 +28,11 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug executable 'nightfall-app'",
+      "name": "Debug executable 'nightfall-headless'",
       "cargo": {
-        "args": ["build", "--bin=nightfall-app", "--package=nightfall-app"],
+        "args": ["build", "--bin=nightfall-headless", "--package=app-runtime"],
         "filter": {
-          "name": "nightfall-app",
+          "name": "nightfall-headless",
           "kind": "bin"
         }
       },
@@ -43,16 +43,16 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug unit tests in executable 'nightfall-app'",
+      "name": "Debug unit tests in executable 'nightfall-headless'",
       "cargo": {
         "args": [
           "test",
           "--no-run",
-          "--bin=nightfall-app",
-          "--package=nightfall-app"
+          "--bin=nightfall-headless",
+          "--package=app-runtime"
         ],
         "filter": {
-          "name": "nightfall-app",
+          "name": "nightfall-headless",
           "kind": "bin"
         }
       },

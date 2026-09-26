@@ -23,8 +23,8 @@ runs:
       run: |
         seed_dir=$(mktemp -d "$RUNNER_TEMP/nightfall-ci-seed.XXXXXX")
         mkdir -p "$seed_dir/default.nightfall-show" "$seed_dir/sample.nightfall-show"
-        cp crates/app/tests/data/procedural-showfile-parse-data.json "$seed_dir/default.nightfall-show/showfile.json"
-        cp crates/app/tests/data/procedural-showfile-parse-data.json "$seed_dir/sample.nightfall-show/showfile.json"
+        cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/default.nightfall-show/showfile.json"
+        cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/sample.nightfall-show/showfile.json"
         echo "data-dir=$seed_dir" >> "$GITHUB_OUTPUT"
 
     - name: Test startup, showfiles, navigation, patching, and playback
@@ -36,7 +36,7 @@ runs:
 
     - name: Upload Playwright report and failure artifacts
       if: always()
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       with:
         name: ${{ inputs.artifact-name }}
         path: |

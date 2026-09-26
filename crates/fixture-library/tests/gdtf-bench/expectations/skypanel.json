@@ -1,0 +1,19 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Mode 1  CCT+RGBW 8Bit": [
+      "Beam · Intensity · b1 · 1",
+      "Beam · Custom { label: \"CTC\" } · b1 · 2",
+      "Beam · Custom { label: \"Tint\" } · b1 · 3",
+      "Beam · Custom { label: \"Color XF\" } · b1 · 4",
+      "Beam · Red · b1 · 5",
+      "Beam · Green · b1 · 6",
+      "Beam · Blue · b1 · 7",
+      "Beam · White · b1 · 8",
+      "Body · Custom { label: \"FanMode\" } · b1 · 9",
+      "Body · Custom { label: \"Favorite\" } · b1 · 10",
+      "Body · StrobeShutter · b1 · 11",
+      "Body · Custom { label: \"NoFeature\" } · b1 · 12"
+    ]
+  }
+}

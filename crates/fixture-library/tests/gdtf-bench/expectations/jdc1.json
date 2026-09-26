@@ -1,0 +1,19 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Mode 1 (Compressed)": [
+      "HEAD · Tilt · b1 · 1,2",
+      "BEAM Main · Intensity · b1 · 3",
+      "BEAM Main · Custom { label: \"StrobeDuration\" } · b1 · 4",
+      "BEAM Main · StrobeRate · b1 · 5",
+      "BEAM Main · Custom { label: \"StrobeModeShutter\" } · b1 · 6",
+      "MAIN PLATE · Intensity · b1 · 8",
+      "MAIN PLATE · Custom { label: \"StrobeDuration\" } · b1 · 9",
+      "MAIN PLATE · StrobeRate · b1 · 10",
+      "MAIN PLATE · Custom { label: \"StrobeModeShutter\" } · b1 · 11",
+      "MAIN PLATE · Red · b1 · 12",
+      "MAIN PLATE · Green · b1 · 13",
+      "MAIN PLATE · Blue · b1 · 14"
+    ]
+  }
+}

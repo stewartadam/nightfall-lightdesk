@@ -38,6 +38,11 @@ type TestFixtures = {
   experimentalFlows: boolean;
   /** Ignores installed shows and generates repository-owned sample data for this test. */
   sampleDataOnly: boolean;
+  /**
+   * Starts the backend with no world loaded (AppState Initialized) even when the
+   * seed lacks the stable E2E showfiles, so startup draft and showfile prompts run.
+   */
+  emptyStartupWorld: boolean;
   backendSlot: BackendSlot;
 };
 
@@ -57,6 +62,7 @@ function requiredEnvironment(name: string): string {
 export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   experimentalFlows: [false, { option: true }],
   sampleDataOnly: [false, { option: true }],
+  emptyStartupWorld: [false, { option: true }],
   /** Keeps one Vite proxy and fixed port pair alive for a Playwright worker. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -77,15 +83,22 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   /** Gives each test a freshly seeded backend and destroys it afterward. */
   backendSlot: [
     async (
-      { workerSlot, experimentalFlows, sampleDataOnly },
+      { workerSlot, experimentalFlows, sampleDataOnly, emptyStartupWorld },
       use,
       testInfo,
     ) => {
+      if (sampleDataOnly && emptyStartupWorld) {
+        // sampleDataOnly relies on the sample-data fallback that emptyStartupWorld disables.
+        throw new Error(
+          "sampleDataOnly and emptyStartupWorld cannot be combined: the backend would start with neither sample data nor a world",
+        );
+      }
       const emptySeed = sampleDataOnly
         ? await mkdtemp(join(tmpdir(), "nightfall-owned-sample-"))
         : undefined;
       try {
         const backendSlot = await startPlaywrightTestBackend({
+          emptyStartupWorld,
           experimentalFlows,
           seedDataDir:
             emptySeed ??
@@ -129,11 +142,19 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   },
 });
 
+/** Options for backend-free browser tests. */
+type FrontendOnlyOptions = {
+  /** Serves the packaged demo showfile and audio instead of the tracked test show (preview mode only). */
+  packagedDemoShow: boolean;
+};
+
 /** Playwright fixture that starts only Vite, leaving the backend port deliberately empty. */
 export const frontendOnlyTest = playwrightTest.extend<
-  Record<never, never>,
+  FrontendOnlyOptions,
   WorkerFixtures
 >({
+  packagedDemoShow: [false, { option: true }],
+
   /** Own one Vite service and port pair for a backend-free browser test worker. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -156,9 +177,15 @@ export const frontendOnlyTest = playwrightTest.extend<
     await use(workerSlot.baseURL);
   },
 
-  /** Use packaged release resources in preview mode and deterministic fixtures in development. */
-  context: async ({ context }, use) => {
-    if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview") {
+  /**
+   * Serve the tracked test show and generated audio so product flows stay deterministic
+   * while the packaged demo show changes; opted-in preview tests see the packaged show.
+   */
+  context: async ({ context, packagedDemoShow }, use) => {
+    if (
+      packagedDemoShow &&
+      process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+    ) {
       await use(context);
       return;
     }

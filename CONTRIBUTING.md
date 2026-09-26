@@ -3,6 +3,12 @@
 
 For desktop artifact builds and the tagged-release procedure, see [Desktop builds and releases](docs/desktop-releases.md).
 
+Every PR must include user-facing `Notes:` in its description, or explicitly omit
+them with `Notes: none (specific reason)`. See [PR release notes](docs/contributing/release-notes.md)
+for examples and the required check. No changelog fragment files are needed.
+
+Detailed contribution guides live in [`docs/contributing/`](docs/contributing/).
+
 - [Legal](#legal)
 - [Getting started](#getting-started)
   - [Required setup](#required-setup)
@@ -59,10 +65,11 @@ Install Git, [Git LFS](https://git-lfs.com/), [rustup](https://rustup.rs/), and 
 
 Rustup reads `rust-toolchain.toml`, which pins the nightly compiler and installs rustfmt, Clippy, and the `wasm32-unknown-unknown` target. Do not substitute a stable compiler or set `RUSTUP_TOOLCHAIN` when validating a change. Update the pin deliberately with native and WASM validation.
 
-Install the command-line type generator used by `npm run typeshare`:
+Install the command-line type generator used by `npm run typeshare`, and the Rust test runner used by the push hook:
 
 ```sh
 cargo install --locked typeshare-cli --version 1.13.3
+cargo install --locked cargo-nextest --version 0.9.146
 ```
 
 Vite, Tauri CLI, wasm-pack, Playwright, and prek are project npm dependencies; `npm ci` installs them. No global npm packages are required for an ordinary contribution.
@@ -74,6 +81,8 @@ Install Apple's command-line developer tools for the native linker and SDK:
 ```sh
 xcode-select --install
 ```
+
+Add your terminal application (and any IDE or Git client you push from) under **System Settings → Privacy & Security → Developer Tools**, then quit and reopen it. macOS otherwise scans every newly built executable the first time it runs, and because each Rust rebuild produces fresh test binaries, that scan dominates test time: on an Apple Silicon Mac it added 25–45 seconds to every push-hook test run. The setting only applies to processes the application starts after it is relaunched, and hooks inherit it from whichever application runs `git push`.
 
 #### Linux
 
@@ -369,10 +378,27 @@ npm run check:crate-boundaries
 npm test
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked
-cargo test --workspace --locked
+node scripts/run-native-cargo.mjs nextest
+node scripts/run-native-cargo.mjs test --doc
 ```
 
+Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. The wrapper selects the same feature graph as CI. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `npx prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
+
+```sh
+node scripts/run-native-cargo.mjs nextest -E 'rdeps(nightfall-cues)'
+node scripts/run-native-cargo.mjs nextest autocomplete::
+```
+
+Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file becomes its own executable. The main reason is macOS: without the [Developer Tools setting](#macos), macOS scans each newly built executable the first time it runs, so every extra test binary adds to each test run after a rebuild (74 integration-test binaries became 20). Each binary also links its own copy of Bevy and the workspace; the link-time saving is smaller and has not been measured separately on Linux. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.
+
 After changing Rust command parsing or shared types, regenerate with `npm run typeshare` and `npm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
+
+CI runs source checks and script tests independently of native compilation and
+WASM builds. TypeScript and WebUI Node checks wait for the WASM assets; Chromium
+smoke tests additionally wait for the tested native backend, but not Clippy or
+the UI checks. The required `Run prek hooks` check aggregates all these results
+and fails if any required job fails or is unexpectedly skipped. Local hook
+commands are unchanged.
 
 Install test browsers once per shared browser cache:
 
@@ -427,7 +453,7 @@ If your default app data directory is not writable in your environment, set
 1. Seed and save
 
 ```sh
-NIGHTFALL_SAMPLE_DATA=1 cargo run -p nightfall-app
+NIGHTFALL_SAMPLE_DATA=1 cargo run -p app-runtime
 ```
 
 Then run `save`, followed by `quit`.
@@ -435,7 +461,7 @@ Then run `save`, followed by `quit`.
 2. Restart without sample data and load
 
 ```sh
-NIGHTFALL_SAMPLE_DATA=0 cargo run -p nightfall-app
+NIGHTFALL_SAMPLE_DATA=0 cargo run -p app-runtime
 ```
 
 Then run `load`, wait for restart, then run `save`, followed by `quit`.
@@ -459,10 +485,10 @@ Useful workflows when changing the parser:
 cargo test -p nightfall-cmd-parse
 
 # autocomplete behavior/spec tests
-cargo test -p nightfall-cmd-parse --test autocomplete
+cargo test -p nightfall-cmd-parse --test it autocomplete::
 
 # command validation diagnostics tests
-cargo test -p nightfall-cmd-parse --test validation
+cargo test -p nightfall-cmd-parse --test it validation::
 ```
 
 ### Performance profiling
@@ -472,7 +498,7 @@ Consider reducing the sample rate with `-r sample_hz` if running a long profilin
 
 ```sh
 cargo build --profile profiling
-samply record cargo run --profile profiling --bin nightfall-app "$@"
+samply record cargo run --profile profiling --bin nightfall-headless "$@"
 ```
 
 Clip lookup scaling has a Criterion suite covering snapshot construction,

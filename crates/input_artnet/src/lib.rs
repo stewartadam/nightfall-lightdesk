@@ -1040,7 +1040,7 @@ mod tests {
                             mode: ArtNetDelivery::Broadcast,
                         },
                         universe: 2,
-                        address: 1,
+                        addresses: vec![1],
                     }],
                 },
             ))
@@ -1062,7 +1062,7 @@ mod tests {
                 },
                 targets: vec![ResolvedInputTarget {
                     entity: parameter_entity,
-                    offset: 0,
+                    offsets: vec![0],
                 }],
             },
         }];

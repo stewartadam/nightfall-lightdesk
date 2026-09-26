@@ -28,11 +28,8 @@ import {
   type ExtendedFixtureInstance,
   updateFixtureColors,
 } from "./fixture-renderers";
-import {
-  type EmitterColor,
-  updateEmitterColors,
-  updateGdtfPanTilt,
-} from "./geometry-builder";
+import { updateGdtfJoints } from "./gdtf-joints";
+import { type EmitterColor, updateEmitterColors } from "./geometry-builder";
 import type {
   FixtureElementDmxMap,
   VisualizerScreenPoint,
@@ -45,27 +42,6 @@ import {
 } from "./visualizer-dmx";
 
 const log = createLogger("visualizer:scene-manager");
-
-function getPanTiltFromElements(
-  elementDmx: Map<
-    string,
-    {
-      pan?: number;
-      tilt?: number;
-    }
-  >,
-): { pan: number; tilt: number } {
-  for (const dmx of elementDmx.values()) {
-    if (dmx.pan !== undefined || dmx.tilt !== undefined) {
-      return {
-        pan: dmx.pan ?? 0,
-        tilt: dmx.tilt ?? 0,
-      };
-    }
-  }
-
-  return { pan: 0, tilt: 0 };
-}
 
 /** Returns the strongest fixture-level strobe shutter value in an element map. */
 function getFixtureStrobeShutter(
@@ -513,10 +489,9 @@ export class SceneManager {
       // GDTF renderer uses label-based emitter mapping
       updateEmitterColors(instance, colorMap);
 
-      // Apply pan/tilt rotations to GDTF geometry axis nodes
-      if (instance.geometry) {
-        const { pan, tilt } = getPanTiltFromElements(colorMap);
-        updateGdtfPanTilt(instance, instance.geometry, pan, tilt);
+      // Move each GDTF joint from its own element's pan/tilt
+      if (instance.joints) {
+        updateGdtfJoints(instance.joints, colorMap, performance.now());
       }
 
       // Update beam for this fixture
@@ -548,6 +523,7 @@ export class SceneManager {
       frost: number;
       white?: number;
       strobeShutter?: number;
+      gobo?: number;
     },
     fixtureElements: Map<string, FixtureElement[]>,
   ): void {
@@ -656,6 +632,7 @@ export class SceneManager {
             tilt: dmx.tilt,
             zoom: dmx.zoom,
             frost: dmx.frost,
+            gobo: dmx.gobo,
           });
         }
 
@@ -669,11 +646,9 @@ export class SceneManager {
         }
         updateEmitterColors(instance, emitterColors);
 
-        // Apply pan/tilt rotations to GDTF geometry axis nodes
-        // Use the first element that provides pan/tilt values.
-        if (instance.geometry) {
-          const { pan, tilt } = getPanTiltFromElements(elementColors);
-          updateGdtfPanTilt(instance, instance.geometry, pan, tilt);
+        // Move each GDTF joint from its own element's pan/tilt
+        if (instance.joints) {
+          updateGdtfJoints(instance.joints, elementColors, performance.now());
         }
 
         // Update beam for this fixture using shared BeamUpdater

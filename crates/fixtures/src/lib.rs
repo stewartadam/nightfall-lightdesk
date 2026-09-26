@@ -28,6 +28,7 @@ pub mod selection;
 pub mod undo;
 pub mod universe;
 pub mod websocket;
+pub mod wire_layout;
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
@@ -82,7 +83,10 @@ pub mod prelude {
         GeometryProviderResource, GeometryType, MeshFormat, MeshResource, PrimitiveType, Transform,
     };
     pub use crate::input_apply::{ParameterAssertion, ParameterAssertionSource};
-    pub use crate::parameter::{MergeStrategy, Parameter, ParameterMetadata, ParameterValues};
+    pub use crate::parameter::{
+        CieColor, DmxSlots, MergeStrategy, Parameter, ParameterFunction, ParameterFunctionSet,
+        ParameterMetadata, ParameterValues,
+    };
     pub use crate::physical::{BeamType, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
@@ -90,6 +94,7 @@ pub mod prelude {
         ConsoleChannelOrigin, ConsoleDmxUniverses, DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS,
         InputDmxUniverses, InputUniverseStaleTimeout, UniverseTransportMap,
     };
+    pub use crate::wire_layout::{PlacedParameter, WireLayout};
     pub use crate::{
         BindingEndpoint, DmxAction, FixtureCommand, FixturePlacementPositionUpdate,
         FixturePlacementRotationUpdate, FixturePlugin,

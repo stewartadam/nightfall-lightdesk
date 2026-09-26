@@ -259,8 +259,8 @@ pub enum ResolvedInputSource {
 pub struct ResolvedInputTarget {
     /// Target entity.
     pub entity: Entity,
-    /// Channel offset into the source address.
-    pub offset: u16,
+    /// Channel offset of every byte into the source address, most significant first.
+    pub offsets: Vec<u16>,
 }
 
 /// Resolved console target metadata for input->console mappings.
@@ -335,8 +335,8 @@ pub struct OutputDestination {
     pub transport: OutputTransport,
     /// Output universe.
     pub universe: u16,
-    /// Output address.
-    pub address: u16,
+    /// Output address of every byte, most significant first.
+    pub addresses: Vec<u16>,
 }
 
 /// Component storing resolved output destinations for a fixture or parameter.

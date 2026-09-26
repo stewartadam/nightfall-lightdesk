@@ -1,0 +1,226 @@
+name: Isolated signing and publication
+
+on:
+  workflow_call:
+    secrets:
+      APPLE_CERTIFICATE:
+        required: true
+      APPLE_CERTIFICATE_PASSWORD:
+        required: true
+      APPLE_SIGNING_IDENTITY:
+        required: true
+      APPLE_ID:
+        required: true
+      APPLE_PASSWORD:
+        required: true
+      APPLE_TEAM_ID:
+        required: true
+
+permissions: {}
+
+# These jobs treat artifacts as data. Never checkout source, restore build caches,
+# install dependencies, or execute an artifact here. See docs/ci-security.md.
+jobs:
+  sign:
+    name: Sign and notarize the macOS release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: unsigned-macos-${{ github.sha }}
+          path: incoming
+      - name: Validate and unpack the unsigned app as data
+        id: app
+        shell: python
+        run: |
+          import os
+          import pathlib
+          import plistlib
+          import re
+          import shutil
+          import tarfile
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          if os.environ["GITHUB_EVENT_NAME"] != "push" or os.environ["GITHUB_REF"] != f"refs/tags/{tag}":
+              raise ValueError("Signing requires a version-tag push")
+          if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?", tag, re.ASCII):
+              raise ValueError("Invalid release tag")
+          root = pathlib.Path("payload")
+          root.mkdir()
+          with tarfile.open("incoming/unsigned-macos.tar") as archive:
+              members = archive.getmembers()
+              seen = set()
+              for member in members:
+                  path = pathlib.PurePosixPath(member.name)
+                  if (path.is_absolute() or ".." in path.parts or not path.parts
+                          or path.parts[0] != "Nightfall.app" or "\\" in member.name
+                          or any(ord(char) < 32 for char in member.name)
+                          or not (member.isdir() or member.isfile()) or path in seen):
+                      raise ValueError("Unexpected app archive entry")
+                  seen.add(path)
+              # No archive extraction API: reject links/devices and copy regular bytes only.
+              for member in members:
+                  destination = root / member.name
+                  if member.isdir():
+                      destination.mkdir(parents=True, exist_ok=True)
+                  else:
+                      destination.parent.mkdir(parents=True, exist_ok=True)
+                      with archive.extractfile(member) as source, destination.open("xb") as output:
+                          shutil.copyfileobj(source, output)
+                      destination.chmod(0o755 if member.mode & 0o111 else 0o644)
+          app = root / "Nightfall.app"
+          with (app / "Contents/Info.plist").open("rb") as source:
+              info = plistlib.load(source)
+          if (info.get("CFBundleIdentifier") != "com.stewartadam.nightfall"
+                  or info.get("CFBundleShortVersionString") != tag[1:]
+                  or info.get("CFBundleExecutable") != "nightfall-app"
+                  or not (app / "Contents/MacOS/nightfall-app").is_file()):
+              raise ValueError("App identity, executable or version differs from the release")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"filename=nightfall-{tag}-aarch64-apple-darwin.dmg\n")
+      - name: Sign, notarize, and assemble the installer using system tools
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          INSTALLER_FILENAME: ${{ steps.app.outputs.filename }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required signing secret: $name"
+              exit 1
+            fi
+          done
+          [[ "$APPLE_SIGNING_IDENTITY" == "Developer ID Application: "* ]]
+          keychain="$RUNNER_TEMP/nightfall-signing.keychain-db"
+          certificate="$RUNNER_TEMP/nightfall-signing.p12"
+          keychain_password=$(openssl rand -hex 32)
+          # Remove the imported identity and certificate even when signing/notarization fails.
+          cleanup() {
+            security delete-keychain "$keychain" || true
+            rm -f "$certificate"
+          }
+          trap cleanup EXIT
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          xcrun notarytool store-credentials nightfall --keychain "$keychain" \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID"
+
+          app="$GITHUB_WORKSPACE/payload/Nightfall.app"
+          # Sign nested Mach-O files before the outer bundle; never run the app or its helpers.
+          while IFS= read -r -d '' binary; do
+            if file -b "$binary" | grep -q 'Mach-O'; then
+              codesign --force --timestamp --options runtime --keychain "$keychain" \
+                --sign "$APPLE_SIGNING_IDENTITY" "$binary"
+            fi
+          done < <(find "$app" -type f -print0)
+          codesign --force --timestamp --options runtime --keychain "$keychain" \
+            --sign "$APPLE_SIGNING_IDENTITY" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/Nightfall.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/Nightfall.zip" --keychain "$keychain" \
+            --keychain-profile nightfall --wait --timeout 20m --output-format json > "$RUNNER_TEMP/app-notary.json"
+          jq -e '.status == "Accepted"' "$RUNNER_TEMP/app-notary.json"
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+
+          ln -s /Applications payload/Applications
+          mkdir signed
+          dmg="$GITHUB_WORKSPACE/signed/$INSTALLER_FILENAME"
+          hdiutil create -volname Nightfall -srcfolder payload -format UDZO "$dmg"
+          codesign --timestamp --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
+          xcrun notarytool submit "$dmg" --keychain "$keychain" \
+            --keychain-profile nightfall --wait --timeout 20m --output-format json > "$RUNNER_TEMP/dmg-notary.json"
+          jq -e '.status == "Accepted"' "$RUNNER_TEMP/dmg-notary.json"
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          codesign --verify --strict --verbose=2 "$dmg"
+      - name: Upload the signed installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          path: signed/*.dmg
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish version-tag release
+    needs: sign
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: nightfall-${{ github.ref_name }}-*
+          path: release-assets
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: THIRD-PARTY-NOTICES-${{ github.ref_name }}.txt
+          path: release-assets
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-notes-${{ github.sha }}
+          path: release-notes
+      - name: Validate the release inventory
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$ ]]
+          expected=(
+            aarch64-apple-darwin.dmg
+            x86_64-pc-windows-msvc.exe
+            x86_64-unknown-linux-gnu.deb
+            x86_64-unknown-linux-gnu.AppImage
+          )
+          [[ $(find release-assets -mindepth 1 | wc -l) -eq $((${#expected[@]} + 1)) ]]
+          for suffix in "${expected[@]}"; do
+            asset="release-assets/nightfall-$RELEASE_TAG-$suffix"
+            [[ -f "$asset" && -s "$asset" && ! -L "$asset" ]]
+          done
+          notices="release-assets/THIRD-PARTY-NOTICES-$RELEASE_TAG.txt"
+          [[ -f "$notices" && -s "$notices" && ! -L "$notices" ]]
+          [[ -f release-notes/release-notes.md && -s release-notes/release-notes.md && ! -L release-notes/release-notes.md ]]
+      - name: Publish only the complete installer set
+        working-directory: release-assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          sha256sum ./* > SHA256SUMS
+          if state=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft); then
+            if [ "$state" != true ]; then
+              echo "Release $RELEASE_TAG is already public; refusing to replace its assets."
+              exit 1
+            fi
+          else
+            prerelease_args=()
+            if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then prerelease_args+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "Nightfall ${RELEASE_TAG#v}" \
+              --notes-file "$GITHUB_WORKSPACE/release-notes/release-notes.md" \
+              "${prerelease_args[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" ./* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

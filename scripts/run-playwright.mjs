@@ -51,7 +51,9 @@ function playwrightBackendExecutable() {
     }),
   );
   const executableName =
-    process.platform === "win32" ? "nightfall-app.exe" : "nightfall-app";
+    process.platform === "win32"
+      ? "nightfall-headless.exe"
+      : "nightfall-headless";
   return join(metadata.target_directory, "debug", executableName);
 }
 
@@ -102,7 +104,7 @@ try {
           nativeCargoArgs("build", [
             ...(process.env.CI ? ["--timings"] : ["--quiet"]),
             "--bin",
-            "nightfall-app",
+            "nightfall-headless",
           ]),
           { spawnOptions: { stdio: "inherit" } },
         );

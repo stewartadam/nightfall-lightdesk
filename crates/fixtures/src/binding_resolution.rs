@@ -26,13 +26,6 @@ use crate::prelude::*;
 
 const DEFAULT_UNIVERSE_MAX: u16 = 512;
 
-/// Resolved fixture parameter target used during binding resolution.
-#[derive(Debug, Clone)]
-struct ParameterTarget {
-    entity: Entity,
-    width: u16,
-}
-
 fn parse_attribute(name: &str) -> Attribute {
     Attribute::from_str(name).unwrap_or_else(|_| Attribute::Custom {
         label: name.to_string(),
@@ -57,6 +50,12 @@ fn range_contains(range: Option<DmxRange>, value: u16) -> bool {
     }
 }
 
+/// Lays out the DMX slots of a fixture's parameters selected by a binding.
+///
+/// Whole-fixture selections keep the profile's footprint offsets. Element or
+/// parameter selections are rebased so the first selected byte lands on the
+/// binding's address. `VirtualIntensity` parameters are included only for
+/// input bindings that request them; they are placed as sequential bytes.
 fn collect_fixture_parameters(
     data_provider: &FixtureDataProviderExt,
     param_query: &Query<InstanceRef<Parameter>>,
@@ -64,61 +63,61 @@ fn collect_fixture_parameters(
     element: Option<u16>,
     param: Option<&str>,
     include_virtual: bool,
-) -> Vec<ParameterTarget> {
-    let mut results = Vec::new();
+) -> WireLayout<Entity> {
     let element_indices: Vec<u32> = if let Some(element) = element {
         vec![element as u32]
     } else {
         fixture_element_indices_in_dmx_order(data_provider, fixture_uid)
     };
 
-    if let Some(param_name) = param {
-        for element_index in element_indices {
-            let fixture_ref = FixtureRef {
-                fixture_uid,
-                index: Some(element_index),
-            };
-            let attribute = parse_attribute(param_name);
-            if let Some(resolved_parameter) =
-                data_provider.try_parameter_for_logical_attribute(&fixture_ref, &attribute)
-            {
-                let param_instance = resolved_parameter.instance;
-                if let Ok(param_ref) = param_query.get(param_instance.entity()) {
-                    if !include_virtual
-                        && param_ref.metadata.attribute == Attribute::VirtualIntensity
-                    {
-                        continue;
-                    }
-                    results.push(ParameterTarget {
-                        entity: param_instance.entity(),
-                        width: param_ref.metadata.resolution.channel_width(),
-                    });
-                }
-            }
-        }
-        return results;
-    }
-
+    let mut selected: Vec<(Entity, ParameterMetadata)> = Vec::new();
     for element_index in element_indices {
         let fixture_ref = FixtureRef {
             fixture_uid,
             index: Some(element_index),
         };
-        let params = data_provider.parameter_entities_for_element(&fixture_ref);
-        for param_instance in params {
-            if let Ok(param_ref) = param_query.get(param_instance.entity()) {
-                if !include_virtual && param_ref.metadata.attribute == Attribute::VirtualIntensity {
+        let instances = match param {
+            Some(param_name) => data_provider
+                .try_parameter_for_logical_attribute(&fixture_ref, &parse_attribute(param_name))
+                .map(|resolved| vec![resolved.instance])
+                .unwrap_or_default(),
+            None => data_provider.parameter_entities_for_element(&fixture_ref),
+        };
+        for instance in instances {
+            let Ok(param_ref) = param_query.get(instance.entity()) else {
+                continue;
+            };
+            let mut metadata = param_ref.metadata.clone();
+            if metadata.attribute == Attribute::VirtualIntensity {
+                if !include_virtual {
                     continue;
                 }
-                results.push(ParameterTarget {
-                    entity: param_instance.entity(),
-                    width: param_ref.metadata.resolution.channel_width(),
-                });
+                // Input bindings may drive virtual intensity from a console slot.
+                metadata.attribute = Attribute::Intensity;
+                metadata.dmx_slots = DmxSlots::Sequential;
             }
+            selected.push((instance.entity(), metadata));
         }
     }
 
-    results
+    let layout = WireLayout::new(
+        selected
+            .iter()
+            .map(|(entity, metadata)| (*entity, metadata)),
+    );
+    if element.is_some() || param.is_some() {
+        layout.rebased()
+    } else {
+        layout
+    }
+}
+
+/// Offsets every slot of a laid-out parameter by `base`.
+fn offset_slots(slots: &[u16], base: u16) -> Vec<u16> {
+    slots
+        .iter()
+        .map(|slot| base.saturating_add(*slot))
+        .collect()
 }
 
 /// Resolves logical element positions to the declared physical wiring layout.
@@ -394,7 +393,7 @@ pub fn derive_console_addresses(
                 param.as_deref(),
                 false,
             );
-            if params.is_empty() {
+            if params.parameters.is_empty() {
                 continue;
             }
 
@@ -407,8 +406,7 @@ pub fn derive_console_addresses(
             );
 
             if !binding.clone {
-                let footprint: u16 = params.iter().map(|param| param.width).sum();
-                running_address = running_address.saturating_add(footprint);
+                running_address = running_address.saturating_add(params.footprint());
             }
         }
     }
@@ -723,21 +721,21 @@ fn resolve_input_targets(
                     param.as_deref(),
                     include_virtual,
                 );
-                if params.is_empty() {
+                if params.parameters.is_empty() {
                     continue;
                 }
 
-                let mut fixture_offset = if clone { 0 } else { running_offset };
-                for param in params {
+                let fixture_offset = if clone { 0 } else { running_offset };
+                let footprint = params.footprint();
+                for param in params.parameters {
                     targets.push(ResolvedInputTarget {
-                        entity: param.entity,
-                        offset: fixture_offset,
+                        entity: param.target,
+                        offsets: offset_slots(&param.slots, fixture_offset),
                     });
-                    fixture_offset = fixture_offset.saturating_add(param.width);
                 }
 
                 if !clone {
-                    running_offset = fixture_offset;
+                    running_offset = fixture_offset.saturating_add(footprint);
                 }
             }
 
@@ -767,18 +765,12 @@ fn resolve_input_targets(
 
                 let params =
                     collect_fixture_parameters(data_provider, param_query, uid, None, None, false);
-                if params.is_empty() {
-                    continue;
-                }
-
                 let base_offset = console_address.address - base_address;
-                let mut param_offset = base_offset;
-                for param in params {
+                for param in params.parameters {
                     targets.push(ResolvedInputTarget {
-                        entity: param.entity,
-                        offset: param_offset,
+                        entity: param.target,
+                        offsets: offset_slots(&param.slots, base_offset),
                     });
-                    param_offset = param_offset.saturating_add(param.width);
                 }
             }
 
@@ -893,30 +885,29 @@ pub fn resolve_output_bindings(
                         param.as_deref(),
                         false,
                     );
-                    if params.is_empty() {
+                    if params.parameters.is_empty() {
                         continue;
                     }
 
-                    let mut fixture_offset = if binding.clone {
-                        0
+                    let fixture_address = if binding.clone {
+                        base_address
                     } else {
-                        running_address - base_address
+                        running_address
                     };
-                    for param in params {
-                        let dest_address = base_address.saturating_add(fixture_offset);
+                    let footprint = params.footprint();
+                    for param in params.parameters {
                         destinations
-                            .entry(param.entity)
+                            .entry(param.target)
                             .or_default()
                             .push(OutputDestination {
                                 transport: output_transport.clone(),
                                 universe: target_universe,
-                                address: dest_address,
+                                addresses: offset_slots(&param.slots, fixture_address),
                             });
-                        fixture_offset = fixture_offset.saturating_add(param.width);
                     }
 
                     if !binding.clone {
-                        running_address = base_address.saturating_add(fixture_offset);
+                        running_address = fixture_address.saturating_add(footprint);
                     }
                 }
             }
@@ -991,22 +982,17 @@ pub fn resolve_output_bindings(
                             None,
                             false,
                         );
-                        if params.is_empty() {
-                            continue;
-                        }
-
-                        let mut param_offset = console_addr.address - source_base_address;
-                        for param in params {
-                            let dest_address = target_base_address.saturating_add(param_offset);
+                        let fixture_address = target_base_address
+                            .saturating_add(console_addr.address - source_base_address);
+                        for param in params.parameters {
                             destinations
-                                .entry(param.entity)
+                                .entry(param.target)
                                 .or_default()
                                 .push(OutputDestination {
                                     transport: output_transport.clone(),
                                     universe: target_universe_value,
-                                    address: dest_address,
+                                    addresses: offset_slots(&param.slots, fixture_address),
                                 });
-                            param_offset = param_offset.saturating_add(param.width);
                         }
                     }
                 }

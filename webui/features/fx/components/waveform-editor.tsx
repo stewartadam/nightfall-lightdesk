@@ -14,7 +14,7 @@ import {
 } from "../../../components/ui/form-controls";
 import { RangeSlider } from "../../../components/ui/range-slider";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
-import type { FlowWaveform, WaveformKind } from "../../../types";
+import { type FlowWaveform, WaveformKind } from "../../../types";
 import { WaveformCanvas } from "./waveform-canvas";
 import { WaveformPresets } from "./waveform-presets";
 
@@ -24,8 +24,6 @@ export interface WaveformEditorProps {
   waveform: FlowWaveform;
   /** Callback when waveform fields are updated */
   onWaveformChange: (updates: Partial<FlowWaveform>) => void;
-  /** Callback when waveform kind is changed */
-  onKindChange: (kind: WaveformKind) => void;
   /** Whether to show the Relative checkbox (FX editor only) */
   showRelative?: boolean;
   /** Current is_relative value (FX editor only) */
@@ -57,6 +55,16 @@ export function WaveformEditor(props: WaveformEditorProps) {
   const isDisabled = (field: keyof NonNullable<typeof props.disabledFields>) =>
     props.disabledFields?.[field] ?? false;
 
+  /** Applies the selected shape and resets an editable square duty cycle. */
+  const selectKind = (kind: WaveformKind) => {
+    if (isDisabled("kind")) return;
+    props.onWaveformChange(
+      kind === WaveformKind.Square && !isDisabled("dutyCycle")
+        ? { kind, duty_cycle: 0.5 }
+        : { kind },
+    );
+  };
+
   return (
     <div class="waveform-editor flex flex-col gap-3 p-3 bg-neutral-800/50 rounded-lg">
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -69,7 +77,7 @@ export function WaveformEditor(props: WaveformEditorProps) {
           <WaveformPresets
             attribute={props.title ?? "Waveform"}
             currentKind={props.waveform.kind}
-            onSelect={props.onKindChange}
+            onSelect={selectKind}
           />
         </div>
       </div>

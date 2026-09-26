@@ -9,8 +9,8 @@
 use std::borrow::Cow;
 
 use bevy_ecs::prelude::Commands;
-use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
+use nightfall_fixtures::library::instantiate::add_fixture_parameters;
 use nightfall_fixtures::library::normalize_fixture_profile;
 use nightfall_fixtures::prelude::*;
 #[cfg(feature = "midi")]
@@ -18,7 +18,6 @@ use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
 
-use super::snapshot_values::initial_parameter_values;
 use super::{ShowfileContribution, ShowfileLoadContributor, ShowfileSaveContributor};
 use crate::{BindingsSnapshot, ShowfileLoadDomain, ShowfileLoadPhase};
 
@@ -138,32 +137,7 @@ impl<'a> FixturesPatchLoadContributor<'a> {
         for stored_fixture in contribution.fixtures.iter() {
             let mut fixture = stored_fixture.clone();
             normalize_fixture_profile(&mut fixture);
-            for (idx, element) in fixture.elements.iter().enumerate() {
-                let element_ref = FixtureRef {
-                    index: Some(idx as u32 + 1),
-                    fixture_uid: fixture.identifiers.uid,
-                };
-                for parameter_metadata in &element.parameters {
-                    let parameter_cmds = commands.spawn_instance(Parameter {
-                        metadata: parameter_metadata.clone(),
-                        values: initial_parameter_values(parameter_metadata),
-                    });
-                    let parameter_entity = parameter_cmds.instance();
-
-                    tracing::trace!(
-                        ?parameter_entity,
-                        ?element_ref,
-                        attribute = ?parameter_metadata.attribute,
-                        "Spawning parameter entity for fixture"
-                    );
-
-                    self.fixture_data_provider.add_parameter(
-                        element_ref.clone(),
-                        parameter_metadata.attribute.clone(),
-                        parameter_entity,
-                    );
-                }
-            }
+            add_fixture_parameters(commands, self.fixture_data_provider, &fixture);
         }
     }
 }

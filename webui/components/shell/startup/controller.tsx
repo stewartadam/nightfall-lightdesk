@@ -88,15 +88,20 @@ export function StartupController(props: StartupControllerProps) {
       restartAppLifecycleForBackendSessionReset();
       return;
     }
-    if (state.phase === "interactive") return;
+    // Prompt and world-swap phases are owned by the user's recovery choice.
+    // The old world's Ready state can remain visible while a swap is in
+    // flight or after it fails back to a prompt.
+    if (
+      state.phase !== "backend-connecting" &&
+      state.phase !== "startup-checking-draft"
+    )
+      return;
     if (backendState === types.AppState.Ready) {
       transitionAppLifecycle({ type: "interactive" });
       return;
     }
     if (
       draftCheckInFlight ||
-      (state.phase !== "backend-connecting" &&
-        state.phase !== "startup-checking-draft") ||
       backendState !== types.AppState.Initialized ||
       (!bypassBackendReadinessForE2E() &&
         connectionStatus() !== EngineRuntimeStatus.Connected)

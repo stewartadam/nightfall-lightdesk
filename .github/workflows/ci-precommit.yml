@@ -8,9 +8,14 @@ on:
       - develop
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      distribution:
+        description: Distributions to package
+        type: choice
+        default: all
+        options: [all, desktop, browser]
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -18,195 +23,286 @@ concurrency:
 
 jobs:
   scope:
+    name: Acquire source and select validation
+    # Run standalone PRs and the lowest unmerged/top PRs of a stack.
+    if: >-
+      github.event.pull_request.stack == null ||
+      github.event.pull_request.stack.base.ref == github.event.pull_request.base.ref ||
+      github.event.pull_request.stack.position == github.event.pull_request.stack.size
     runs-on: ubuntu-latest
-    outputs:
-      distributions: ${{ steps.scope.outputs.distributions }}
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          fetch-depth: 2
-      - name: Select distribution validation
-        id: scope
+          fetch-depth: ${{ startsWith(github.ref, 'refs/tags/') && '0' || '2' }}
+          lfs: true
+          persist-credentials: false
+      - name: Capture changed paths as data
         env:
           EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
-          distributions=true
+          : > .ci-changed-files
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            distributions=false
-            git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/ci-changed-files"
-            while IFS= read -r file; do
-              case "$file" in
-                .github/actions/wasm-assets/*|.github/workflows/*|.github/desktop-release-notes.md|.gitignore|webui/index.html|webui/public/*|webui/lib/engine-runtime*|webui/lib/runtime-config.ts|scripts/*browser-demo*|scripts/desktop-artifacts*|scripts/package-sample-audio*|scripts/*notices*|scripts/check-distribution-wasm*|config/notices/*|about.toml|Cargo.lock|package.json|package-lock.json|vite.config.ts|crates/app/*|crates/wasm-bridge/*|crates/browser-runtime/*)
-                  distributions=true ;;
-              esac
-            done < "$RUNNER_TEMP/ci-changed-files"
+            git diff --no-renames --name-only -z HEAD^1 HEAD > .ci-changed-files
           fi
-          # Develop pushes warm caches available to subsequent PRs without packaging releases.
-          if [[ "$EVENT_NAME" == push && "$REF_NAME" == develop ]]; then
-            distributions=false
+      # This job never executes repository scripts, installs dependencies, or restores caches.
+      - name: Archive credential-free source and Git history
+        run: |
+          if git config --local --get-regexp '(^credential\.|\.extraheader$)' > /dev/null; then
+            echo '::error::Refusing to archive Git authentication configuration'
+            exit 1
           fi
-          echo "distributions=$distributions" >> "$GITHUB_OUTPUT"
+          tar --exclude='./.git/hooks' --exclude='./.git/lfs' \
+            -cf "$RUNNER_TEMP/source.tar" .
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: source-${{ github.sha }}
+          path: ${{ runner.temp }}/source.tar
+          if-no-files-found: error
+          retention-days: 7
+      - name: Snapshot published releases as data
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" | jq 'add' > "$RUNNER_TEMP/releases.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: published-releases-${{ github.sha }}
+          path: ${{ runner.temp }}/releases.json
+          if-no-files-found: error
+          retention-days: 7
+
+  selection:
+    name: Select distribution validation
+    needs: scope
+    runs-on: ubuntu-latest
+    outputs:
+      desktop_check: ${{ steps.select.outputs.desktop_check }}
+      desktop_package: ${{ steps.select.outputs.desktop_package }}
+      browser_package: ${{ steps.select.outputs.browser_package }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore credential-free source
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - name: Test and select validation
+        id: select
+        env:
+          DISTRIBUTION: ${{ inputs.distribution }}
+        run: |
+          node --test scripts/ci-scope.node.test.mjs
+          node scripts/ci-scope.mjs
+
+  desktop-check:
+    needs: [scope, selection]
+    if: needs.selection.outputs.desktop_check == 'true'
+    uses: ./.github/workflows/desktop-check.yml
 
   wasm-bridge:
+    needs: scope
     uses: ./.github/workflows/wasm.yml
     with:
       package: wasm-bridge
       directory: wasm
 
   browser-runtime:
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     uses: ./.github/workflows/wasm.yml
     with:
       package: browser-runtime
       directory: browser-runtime
 
   desktop:
-    needs: [scope, wasm-bridge]
-    if: needs.scope.outputs.distributions == 'true'
+    needs: [scope, selection, wasm-bridge]
+    if: needs.selection.outputs.desktop_package == 'true'
     uses: ./.github/workflows/desktop-artifacts.yml
+    # Permission ceiling for the metadata-only job; all build/render jobs use {}.
+    permissions:
+      contents: read
+      pull-requests: read
+
+  release:
+    needs: desktop
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/release.yml
     permissions:
       contents: write
-    secrets: inherit
+    secrets:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
   browser-demo:
-    needs: [scope, wasm-bridge, browser-runtime]
-    if: needs.scope.outputs.distributions == 'true'
+    needs: [scope, selection, wasm-bridge, browser-runtime]
+    if: needs.selection.outputs.browser_package == 'true'
     uses: ./.github/workflows/browser-demo.yml
 
-  native:
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - stage: pre-commit
-            name: Rust Clippy and source checks
-          - stage: pre-push
-            name: Rust tests and backend
+  source-checks:
+    name: Source checks and script tests
+    needs: scope
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      CARGO_PROFILE_DEV_OPT_LEVEL: "0"
-      SKIP: npm-typecheck,node-tests
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          lfs: true
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-
-      # selecting a toolchain either by action or manual `rustup` calls should happen
-      # before the plugin, as the cache uses the current rustc version as its cache key
-      - name: Show Rust toolchain
-        run: rustup show
-
-      - name: Cache native dependencies and tools
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Matrix legs produce different artifacts. Stable stage keys also let
-          # develop pushes warm caches that PRs can restore from their base branch.
-          shared-key: native-${{ matrix.stage }}-${{ hashFiles('Cargo.toml', 'scripts/run-native-cargo.mjs') }}
-          cache-on-failure: true
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libasound2-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev
-
-      - name: Install Node dependencies
-        run: npm clean-install
-
-      - name: Install typeshare for source checks
-        if: matrix.stage == 'pre-commit'
-        run: cargo install --locked typeshare-cli --version 1.13.3
-
-      - name: Run native ${{ matrix.stage }} hooks
-        # Each stage runs once, on its own runner and with its own build cache.
-        run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage ${{ matrix.stage }}
-
-      - name: Stage the tested native backend
-        if: matrix.stage == 'pre-push'
-        run: |
-          node scripts/run-native-cargo.mjs build --bin nightfall-app
-          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
-          mkdir -p ci-artifacts
-          cp "$target_dir/debug/nightfall-app" ci-artifacts/nightfall-app
-      - uses: actions/upload-artifact@v6
-        if: matrix.stage == 'pre-push'
-        with:
-          name: native-test-backend-${{ github.sha }}
-          path: ci-artifacts/nightfall-app
-          if-no-files-found: error
-          retention-days: 1
-
-  precommit:
-    name: Run prek hooks
-    needs: [native, wasm-bridge, browser-runtime]
-    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/') }}
-    runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # These hooks have dedicated jobs; all other pre-commit hooks run here.
+      SKIP: cargo-clippy,npm-typecheck
     steps:
-      - name: Require successful native checks and WASM builds
-        env:
-          NATIVE_RESULT: ${{ needs.native.result }}
-          BRIDGE_RESULT: ${{ needs.wasm-bridge.result }}
-          DEMO_RESULT: ${{ needs.browser-runtime.result }}
-        run: |
-          test "$NATIVE_RESULT" = success
-          test "$BRIDGE_RESULT" = success
-          test "$DEMO_RESULT" = success
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
       - run: rustup show
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: source-tools
+          cache-targets: false
+      - run: npm ci
+      - name: Run script tests
+        run: npm run test:scripts
+      - run: cargo install --locked typeshare-cli --version 1.13.3
+      - name: Run source pre-commit hooks
+        run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
+
+  native:
+    name: Rust Clippy
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/native-validation.yml
+    with:
+      stage: pre-commit
+      hook: cargo-clippy
+
+  native-tests:
+    name: Rust tests and backend
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/native-validation.yml
+    with:
+      stage: pre-push
+      hook: cargo-nextest
+
+  webui:
+    name: TypeScript and WebUI Node tests
+    needs: [scope, wasm-bridge, browser-runtime]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: webui-tools
           cache-targets: false
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
           npm ci
           cargo install --locked typeshare-cli --version 1.13.3
           npm run typeshare
       - name: Download shared release bridge
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
       - name: Download shared release demo engine
-        id: wasm
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-browser-runtime-${{ github.sha }}
           path: webui/assets/browser-runtime
+      - name: Run TypeScript pre-commit hook
+        run: npx prek run npm-typecheck --all-files --show-diff-on-failure --color always --stage pre-commit
+      - name: Run WebUI Node tests
+        # Script tests run independently in source-checks.
+        run: npm run test:webui-node
+
+  browser-smoke:
+    name: Chromium product flows
+    needs: [scope, native-tests, wasm-bridge, browser-runtime]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: webui-tools
+          cache-targets: false
+      - name: Install dependencies
+        run: |
+          npm ci
+          cargo install --locked typeshare-cli --version 1.13.3
+          npm run typeshare
+      - name: Download shared release bridge
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-wasm-bridge-${{ github.sha }}
+          path: webui/assets/wasm
+      - name: Download shared release demo engine
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-browser-runtime-${{ github.sha }}
+          path: webui/assets/browser-runtime
+      - name: Install native runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
       - name: Download the tested native backend
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: native-test-backend-${{ github.sha }}
           path: ci-artifacts
-      - name: Run TypeScript pre-commit hook
-        run: npx prek run npm-typecheck --all-files --show-diff-on-failure --color always --stage pre-commit
-      - name: Run Node pre-push hook
-        run: npx prek run node-tests --all-files --verbose --show-diff-on-failure --color always --stage pre-push
       - name: Run Chromium product flows
-        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
         env:
-          NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-app
+          NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-headless
         uses: ./.github/actions/playwright-smoke
+
+  precommit:
+    # Keep the required check name stable while individual jobs report earlier.
+    name: Run prek hooks
+    needs: [scope, source-checks, native, native-tests, wasm-bridge, browser-runtime, webui, browser-smoke]
+    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all validation jobs to succeed
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$JOB_RESULTS" | jq -e 'all(.[]; .result == "success")'

@@ -248,6 +248,10 @@ fn convert_channel_to_parameter(
     };
 
     Some(ParameterMetadata {
+        dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
         attribute,
@@ -310,6 +314,10 @@ fn convert_template_channel_to_parameter(
     };
 
     Some(ParameterMetadata {
+        dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
         attribute,

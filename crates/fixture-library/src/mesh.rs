@@ -150,3 +150,52 @@ pub fn decode_gdtf_path(encoded: &str) -> Result<String, MeshExtractionError> {
     String::from_utf8(bytes)
         .map_err(|_| MeshExtractionError::ParseError("Invalid UTF-8 in path".to_string()))
 }
+
+/// Extract a wheel slot image (PNG) from a GDTF file.
+///
+/// `media_name` is a wheel slot's `MediaFileName`, with or without the
+/// `.png` extension some archives include.
+pub fn extract_wheel_media_from_gdtf(
+    gdtf_path: &Path,
+    media_name: &str,
+) -> Result<Vec<u8>, MeshExtractionError> {
+    let file = std::fs::File::open(gdtf_path)
+        .map_err(|_| MeshExtractionError::FileNotFound(gdtf_path.display().to_string()))?;
+    let mut gdtf_file = gdtf::GdtfFile::new(file)
+        .map_err(|e| MeshExtractionError::ParseError(format!("{:?}", e)))?;
+
+    let name = media_name.strip_suffix(".png").unwrap_or(media_name);
+    let mut resource = gdtf_file
+        .resources
+        .read_wheel_media(name)
+        .map_err(|_| MeshExtractionError::MeshNotFound(media_name.to_string()))?;
+    let mut data = Vec::with_capacity(resource.size() as usize);
+    resource.read_to_end(&mut data)?;
+    Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{GdtfBuilder, GeometrySpec};
+
+    /// Verifies wheel images are found with or without a `.png` suffix in the media name.
+    #[test]
+    fn wheel_media_resolves_with_and_without_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gobo.gdtf");
+        GdtfBuilder::new("Test", "Gobo")
+            .geometry(GeometrySpec::generic("Base"))
+            .file("wheels/stars.png", b"\x89PNG-bytes")
+            .write_to(&path);
+        assert_eq!(
+            extract_wheel_media_from_gdtf(&path, "stars").unwrap(),
+            b"\x89PNG-bytes"
+        );
+        assert!(extract_wheel_media_from_gdtf(&path, "stars.png").is_ok());
+        assert!(matches!(
+            extract_wheel_media_from_gdtf(&path, "missing"),
+            Err(MeshExtractionError::MeshNotFound(_))
+        ));
+    }
+}

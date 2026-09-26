@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  combinedDesktopNotices,
   desktopArtifactPlan,
   desktopReleasePolicy,
   desktopTargets,
@@ -117,9 +118,9 @@ test("rejects incomplete and ambiguous installer sets", () => {
 test("stages an installer from the Tauri JSON output", () => {
   const directory = mkdtempSync(join(tmpdir(), "nightfall-desktop-artifacts-"));
   try {
-    mkdirSync(join(directory, "crates/app"), { recursive: true });
+    mkdirSync(join(directory, "crates/app-tauri"), { recursive: true });
     writeFileSync(
-      join(directory, "crates/app/tauri.conf.json"),
+      join(directory, "crates/app-tauri/tauri.conf.json"),
       JSON.stringify({ version: "0.1.0" }),
     );
     const installer = join(directory, "Nightfall.dmg");
@@ -159,15 +160,119 @@ test("stages an installer from the Tauri JSON output", () => {
       "installer bytes",
     );
     assert.equal(
-      readFileSync(
-        join(
-          directory,
-          "desktop-artifacts/nightfall-v0.1.0-aarch64-apple-darwin-THIRD-PARTY-NOTICES.txt",
+      JSON.parse(
+        readFileSync(
+          join(
+            directory,
+            "desktop-artifacts/notices-aarch64-apple-darwin.json",
+          ),
+          "utf8",
         ),
-        "utf8",
-      ),
-      "license bytes",
+      ).distribution,
+      "Desktop — aarch64-apple-darwin",
     );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/** Produce a complete matrix fixture with one shared package and a platform-specific text variant. */
+function noticeDocuments() {
+  return desktopTargets.map(({ target }, index) => ({
+    schemaVersion: 1,
+    distribution: `Desktop — ${target}`,
+    entries: [
+      {
+        name: "example",
+        version: "1.0.0",
+        license: "MIT",
+        source: "https://example.com",
+        text: index === 2 ? "Linux attribution" : "Shared attribution",
+      },
+    ],
+  }));
+}
+
+/** Aggregation preserves legal variants while collapsing shared entries deterministically. */
+test("combines platform inventories without dropping distinct notices", () => {
+  const documents = noticeDocuments();
+  const combined = combinedDesktopNotices(documents);
+  assert.equal(combined.entries.length, 2);
+  const shared = combined.entries.find(({ text }) =>
+    text.includes("Shared attribution"),
+  );
+  assert.match(shared.text, /aarch64-apple-darwin/);
+  assert.match(shared.text, /x86_64-pc-windows-msvc/);
+  assert.doesNotMatch(shared.text, /x86_64-unknown-linux-gnu/);
+  assert.deepEqual(combinedDesktopNotices(documents.toReversed()), combined);
+  documents[2].entries.push({ ...documents[0].entries[0], version: "2.0.0" });
+  documents[2].entries.push({
+    ...documents[0].entries[0],
+    source: "https://other.example.com",
+  });
+  documents[2].entries.push({
+    ...documents[0].entries[0],
+    license: "BSD-3-Clause",
+  });
+  assert.equal(combinedDesktopNotices(documents).entries.length, 5);
+});
+
+/** Partial or malformed inventories must fail instead of publishing incomplete release notices. */
+test("requires a complete valid desktop notice matrix", () => {
+  assert.throws(
+    () => combinedDesktopNotices(noticeDocuments().slice(1)),
+    /Missing notice targets/,
+  );
+  const documents = noticeDocuments();
+  assert.throws(
+    () => combinedDesktopNotices([...documents, documents[0]]),
+    /duplicate notice target/,
+  );
+  documents[0].schemaVersion = 2;
+  assert.throws(
+    () => combinedDesktopNotices(documents),
+    /Invalid notice inventory/,
+  );
+  documents[0].schemaVersion = 1;
+  documents[0].entries[0].text = "";
+  assert.throws(
+    () => combinedDesktopNotices(documents),
+    /Incomplete notice entry/,
+  );
+});
+
+/** The aggregation CLI writes a distinctly named release asset containing every platform's notices. */
+test("writes a single combined release notice", () => {
+  const directory = mkdtempSync(join(tmpdir(), "nightfall-combined-notices-"));
+  try {
+    mkdirSync(join(directory, "crates/app-tauri"), { recursive: true });
+    writeFileSync(
+      join(directory, "crates/app-tauri/tauri.conf.json"),
+      JSON.stringify({ version: "0.1.0" }),
+    );
+    mkdirSync(join(directory, "desktop-notices"));
+    for (const document of noticeDocuments()) {
+      const target = document.distribution.replace("Desktop — ", "");
+      writeFileSync(
+        join(directory, "desktop-notices", `notices-${target}.json`),
+        JSON.stringify(document),
+      );
+    }
+    execFileSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL("./desktop-artifacts.mjs", import.meta.url)),
+        "combine-notices",
+      ],
+      { cwd: directory },
+    );
+    const text = readFileSync(
+      join(directory, "release-notices/THIRD-PARTY-NOTICES-v0.1.0.txt"),
+      "utf8",
+    );
+    assert.match(text, /Shared attribution/);
+    assert.match(text, /Linux attribution/);
+    for (const { target } of desktopTargets) assert.ok(text.includes(target));
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

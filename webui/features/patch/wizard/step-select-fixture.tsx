@@ -10,7 +10,8 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
 import { Table, TableScroll } from "../../../components/ui/table";
-import { fixtureLibrary } from "../../../state/appStores";
+import { libraryDefinitionId } from "../../../lib/fixture-service";
+import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
 import type { AvailableFixtureInfo } from "../../../types";
 import { LibraryFixturePreview } from "../../fixture-library";
 import { usePatchWizard } from "./wizard-context";
@@ -18,7 +19,18 @@ import { usePatchWizard } from "./wizard-context";
 export function StepSelectFixture() {
   const { state, updateState } = usePatchWizard();
   const $fixtureLibrary = useStore(fixtureLibrary);
+  const capabilities = useStore(runtimeCapabilities);
   const [filterText, setFilterText] = createSignal("");
+
+  /** Whether the runtime can import fixture definition files into its library. */
+  const canImportFixtures = createMemo(
+    () => capabilities()?.fixture_library === "Native",
+  );
+
+  /** Whether the runtime only offers compiled built-in profiles without file import. */
+  const builtInProfilesOnly = createMemo(
+    () => capabilities()?.fixture_library === "BuiltInOnly",
+  );
 
   const filteredFixtures = createMemo(() => {
     const rawFixtures = $fixtureLibrary();
@@ -44,11 +56,11 @@ export function StepSelectFixture() {
   const selectedFixture = createMemo(() => {
     const defId = state().fixtureDefinitionId;
     if (!defId) return null;
-    return $fixtureLibrary().find((f) => `${f.make}:${f.model}` === defId);
+    return $fixtureLibrary().find((f) => libraryDefinitionId(f) === defId);
   });
 
   const handleFixtureSelect = (fixture: AvailableFixtureInfo) => {
-    const fixtureId = `${fixture.make}:${fixture.model}`;
+    const fixtureId = libraryDefinitionId(fixture);
     const defaultMode = fixture.modes.length > 0 ? fixture.modes[0] : null;
     updateState({
       fixtureDefinitionId: fixtureId,
@@ -85,7 +97,12 @@ export function StepSelectFixture() {
                   when={$fixtureLibrary().length === 0}
                   fallback="No fixtures match your search"
                 >
-                  No fixtures in library. Upload GDTF files to get started.
+                  <Show
+                    when={canImportFixtures()}
+                    fallback="No fixture profiles are available."
+                  >
+                    No fixtures in library. Upload GDTF files to get started.
+                  </Show>
                 </Show>
               </div>
             }
@@ -110,7 +127,7 @@ export function StepSelectFixture() {
               <tbody>
                 <For each={filteredFixtures()}>
                   {(fixture) => {
-                    const fixtureId = () => `${fixture.make}:${fixture.model}`;
+                    const fixtureId = () => libraryDefinitionId(fixture);
 
                     const isSelected = () =>
                       state().fixtureDefinitionId === fixtureId();
@@ -133,6 +150,12 @@ export function StepSelectFixture() {
             </Table>
           </Show>
         </TableScroll>
+        <Show when={builtInProfilesOnly()}>
+          <p class="mt-2 text-xs text-gray-500">
+            Only built-in profiles are available here. Importing GDTF files
+            requires the desktop app.
+          </p>
+        </Show>
       </div>
 
       {/* Preview panel */}
@@ -156,6 +179,7 @@ export function StepSelectFixture() {
                 make={fixture().make}
                 model={fixture().model}
                 mode={state().fixtureMode ?? undefined}
+                assetEtag={fixture().asset_etag}
               />
             )}
           </Show>

@@ -11,9 +11,11 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
+use nightfall_fixtures::library::commands::{
+    finish_fixture_library_commands, register_fixture_library_commands,
+};
 use nightfall_websocket::WebsocketPlugin;
 
-use crate::commands::FixtureLibraryCommand;
 use crate::manager::FixtureLibraryManager;
 use crate::watcher::{FixtureLibraryEvent, FixtureLibraryWatcher};
 
@@ -35,20 +37,20 @@ impl Plugin for FixtureLibraryPlugin {
         app.add_message::<FixtureLibraryEvent>();
 
         // Register fixture library commands with the engine
-        register_ingress_command::<FixtureLibraryCommand>(app);
-        app.add_message::<crate::websocket::FixtureLibraryCommandResult>();
-        register_command_deserializer::<FixtureLibraryCommand>(
-            app,
-            crate::websocket::deserialize_fixture_library_command,
-        );
+        register_fixture_library_commands(app);
 
-        // Register HTTP routes for mesh serving
-        app.world_mut()
-            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>()
-            .register(
-                "/api/mesh/{gdtf_path}/{model_name}",
-                axum::routing::get(crate::http_routes::serve_mesh),
-            );
+        // Register HTTP routes for mesh and wheel image serving
+        let mut routes = app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>();
+        routes.register(
+            "/api/mesh/{gdtf_path}/{model_name}",
+            axum::routing::get(crate::http_routes::serve_mesh),
+        );
+        routes.register(
+            "/api/gdtf-wheel/{gdtf_path}/{media_name}",
+            axum::routing::get(crate::http_routes::serve_wheel_media),
+        );
 
         // Try to initialize the file watcher (optional - may fail if library path doesn't exist)
         if let Ok(manager) = FixtureLibraryManager::new() {
@@ -82,7 +84,7 @@ impl Plugin for FixtureLibraryPlugin {
             Update,
             (
                 crate::websocket::handle_fixture_library_commands,
-                crate::websocket::finish_fixture_library_commands,
+                finish_fixture_library_commands,
             )
                 .chain()
                 .in_set(EventHandling),
@@ -98,18 +100,42 @@ impl Plugin for FixtureLibraryPlugin {
     }
 }
 
-/// Wrapper that implements GeometryProvider using the fixture library.
-struct LibraryGeometryProvider(std::sync::Arc<std::sync::RwLock<FixtureLibraryManager>>);
+/// Geometry cache key: make, model, mode and recorded library revision.
+type GeometryCacheKey = (String, String, String, Option<String>);
+
+/// Wrapper that implements GeometryProvider using a snapshot of the fixture library.
+///
+/// Geometry is cached per fixture definition and mode, so broadcasting many
+/// fixtures of one type parses its archive once. A new provider (and cache)
+/// is created whenever the library changes.
+struct LibraryGeometryProvider {
+    library: std::sync::Arc<std::sync::RwLock<FixtureLibraryManager>>,
+    cache: std::sync::Mutex<
+        std::collections::HashMap<
+            GeometryCacheKey,
+            Option<nightfall_fixtures::prelude::FixtureGeometry>,
+        >,
+    >,
+}
 
 impl nightfall_fixtures::prelude::GeometryProvider for LibraryGeometryProvider {
-    /// Resolves geometry against the current installed and packaged fixture index.
+    /// Resolves geometry for a fixture's own library revision.
     fn get_geometry(
         &self,
-        make: &str,
-        model: &str,
-        mode: &str,
+        fixture: &nightfall_fixtures::prelude::Fixture,
     ) -> Option<nightfall_fixtures::prelude::FixtureGeometry> {
-        self.0.read().ok()?.get_geometry(make, model, mode)
+        let key = (
+            fixture.make.clone(),
+            fixture.model.clone(),
+            fixture.mode.clone(),
+            fixture.library_asset_etag.clone(),
+        );
+        if let Some(cached) = self.cache.lock().ok()?.get(&key) {
+            return cached.clone();
+        }
+        let geometry = self.library.read().ok()?.geometry_for_fixture(fixture);
+        self.cache.lock().ok()?.insert(key, geometry.clone());
+        geometry
     }
 }
 
@@ -121,7 +147,10 @@ fn register_geometry_provider(mut commands: Commands, library: Res<FixtureLibrar
     let library_arc = std::sync::Arc::new(std::sync::RwLock::new(library.clone()));
 
     commands.insert_resource(nightfall_fixtures::prelude::GeometryProviderResource::new(
-        LibraryGeometryProvider(library_arc),
+        LibraryGeometryProvider {
+            library: library_arc,
+            cache: Default::default(),
+        },
     ));
     tracing::debug!(
         "Registered geometry provider from fixture library ({} fixtures)",

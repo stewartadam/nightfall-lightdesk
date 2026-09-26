@@ -122,6 +122,9 @@ Application data (fixtures, fx modules, showfiles, etc) can be found at:
   - Commit messages should have a one-line summary alongside a description of changes.
 - When opening pull requests, use the same conventional commit naming style for the PR title.
   - Do not prefix PR titles with `[codex]` or other agent markers.
+  - Every PR description must include a `## Release notes` section with a `Notes:` declaration for the release changelog. Write concise, user-facing prose describing the resulting behavior, or put one entry per bullet after an empty `Notes:` line.
+  - For changes with no user-visible impact, explicitly use `Notes: none (specific reason)`; do not omit the declaration.
+  - Keep the release notes current when updating a PR's scope, and verify the declaration before creating or handing off the PR.
 - If commit fails, resolve and retry until it succeeds
 - Use 'bd' for tracking work you skipped for implementation later
 

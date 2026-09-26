@@ -13,10 +13,11 @@ import {
   mkdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { noticesJson, noticesText } from "./distribution-notices.mjs";
+import { noticesJson, renderNotices } from "./distribution-notices.mjs";
 
 export const desktopTargets = [
   {
@@ -90,7 +91,8 @@ export function desktopArtifactPlan(target, version, artifactPaths) {
 
 /** Reads the application version used by Tauri and the frontend build. */
 function appVersion() {
-  return JSON.parse(readFileSync("crates/app/tauri.conf.json", "utf8")).version;
+  return JSON.parse(readFileSync("crates/app-tauri/tauri.conf.json", "utf8"))
+    .version;
 }
 
 /** Exposes validated release policy and the shared platform matrix to GitHub Actions. */
@@ -101,7 +103,7 @@ function prepareDesktopBuild() {
     }),
   );
   const crateVersion = metadata.packages.find(
-    (pkg) => pkg.name === "nightfall-app",
+    (pkg) => pkg.name === "app-tauri",
   )?.version;
   const policy = desktopReleasePolicy(
     appVersion(),
@@ -141,11 +143,71 @@ function stageDesktopBuild() {
   for (const artifact of plan)
     copyFileSync(artifact.source, join("desktop-artifacts", artifact.filename));
   copyFileSync(
-    join("webui/dist/notices", noticesText),
-    join(
-      "desktop-artifacts",
-      `nightfall-v${appVersion()}-${process.env.DESKTOP_TARGET}-THIRD-PARTY-NOTICES.txt`,
+    join("webui/dist/notices", noticesJson),
+    join("desktop-artifacts", `notices-${process.env.DESKTOP_TARGET}.json`),
+  );
+}
+
+/** Merge the complete desktop matrix, retaining distinct legal text and platform applicability. */
+export function combinedDesktopNotices(documents) {
+  const expected = new Set(
+    desktopTargets.map(({ target }) => `Desktop — ${target}`),
+  );
+  const merged = new Map();
+  for (const document of documents) {
+    if (!expected.delete(document.distribution))
+      throw new Error(
+        `Unexpected or duplicate notice target: ${document.distribution}`,
+      );
+    if (
+      document.schemaVersion !== 1 ||
+      !Array.isArray(document.entries) ||
+      !document.entries.length
+    )
+      throw new Error(`Invalid notice inventory: ${document.distribution}`);
+    const target = document.distribution.replace("Desktop — ", "");
+    for (const entry of document.entries) {
+      const fields = [
+        entry.name,
+        entry.version,
+        entry.license,
+        entry.source,
+        entry.text,
+      ];
+      if (fields.some((field) => typeof field !== "string" || !field.trim()))
+        throw new Error(`Incomplete notice entry: ${document.distribution}`);
+      const key = JSON.stringify(fields);
+      if (!merged.has(key)) merged.set(key, { ...entry, targets: new Set() });
+      merged.get(key).targets.add(target);
+    }
+  }
+  if (expected.size)
+    throw new Error(`Missing notice targets: ${[...expected].join(", ")}`);
+  const entries = [...merged.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, "en"))
+    .map(([, { targets, ...entry }]) => ({
+      ...entry,
+      text: `Platforms: ${[...targets].sort().join(", ")}\n\n${entry.text}`,
+    }));
+  return {
+    schemaVersion: 1,
+    distribution: "Desktop — all released platforms",
+    entries,
+  };
+}
+
+/** Write one release asset from the platform inventories downloaded by the aggregation job. */
+function stageCombinedNotices() {
+  const documents = desktopTargets.map(({ target }) =>
+    JSON.parse(
+      readFileSync(join("desktop-notices", `notices-${target}.json`), "utf8"),
     ),
+  );
+  const document = combinedDesktopNotices(documents);
+  mkdirSync("release-notices", { recursive: true });
+  writeFileSync(
+    join("release-notices", `THIRD-PARTY-NOTICES-v${appVersion()}.txt`),
+    renderNotices(document),
   );
 }
 
@@ -155,6 +217,9 @@ if (
 ) {
   if (process.argv[2] === "prepare") prepareDesktopBuild();
   else if (process.argv[2] === "stage") stageDesktopBuild();
+  else if (process.argv[2] === "combine-notices") stageCombinedNotices();
   else
-    throw new Error("Usage: node scripts/desktop-artifacts.mjs prepare|stage");
+    throw new Error(
+      "Usage: node scripts/desktop-artifacts.mjs prepare|stage|combine-notices",
+    );
 }

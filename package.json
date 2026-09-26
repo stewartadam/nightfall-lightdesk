@@ -16,12 +16,13 @@
     "worktree:dashboard:ui": "vite dev --open /worktree-dashboard.html",
     "worktree:mcp": "node worktree-dashboard/worktree-dashboard-mcp.mjs",
     "fx-module:install": "node scripts/install-fx-module.mjs",
-    "generate:showfile-parse-data": "cargo run -p nightfall-app --bin sample-data-showfile-parse-data --",
+    "generate:showfile-parse-data": "cargo run -p app-runtime --bin sample-data-showfile-parse-data --",
     "generate:browser-demo-audio": "node scripts/generate-browser-demo-audio.mjs",
     "start": "vite dev",
     "tauri": "tauri",
     "test:webui-node": "node scripts/run-webui-node-tests.mjs",
     "test:scripts": "node --test scripts/*.node.test.mjs",
+    "test:gdtf-bench": "cargo test -p nightfall-fixture-library --lib gdtf_bench -- --ignored",
     "playwright:install": "node scripts/run-playwright.mjs install chromium firefox",
     "report:browser-demo-size": "node scripts/report-browser-demo-size.mjs",
     "package:browser-demo": "node scripts/package-browser-demo-artifact.mjs",
@@ -105,6 +106,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vite-plugin-solid": "^2.11.6",
-    "wasm-pack": "^0.15.0"
+    "wasm-pack": "^0.15.0",
+    "yaml": "^2.9.0"
   }
 }

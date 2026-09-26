@@ -24,6 +24,7 @@ import { getLogger } from "../../../../lib/logger";
 import { setStoreAction } from "../../../../lib/nanostore-action";
 import { currentShowfileRevision } from "../../../../lib/showfile-loading";
 import { WorkspaceActivityContext } from "../../../../lib/workspace-activity";
+import { appLifecycle } from "../../../../state/app-lifecycle";
 import { dockApi } from "../../../../state/appStores";
 import {
   activeLayoutId,
@@ -264,6 +265,7 @@ export default function DockWorkspaces() {
   );
 
   const editingLayouts = useStore(layoutEditPending);
+  const lifecycle = useStore(appLifecycle);
   const restoredRevision = useStore(dockviewLayoutShowfileRevision);
   const restoredSettings = useStore(dockviewLayoutSettingsSnapshotRevision);
   const showfileRevision = useStore(currentShowfileRevision);
@@ -272,6 +274,7 @@ export default function DockWorkspaces() {
   createEffect(() => {
     const revision = restoredRevision();
     if (
+      lifecycle().phase !== "interactive" ||
       editingLayouts() ||
       !restoredSettings() ||
       revision !== showfileRevision() ||

@@ -210,6 +210,90 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "app-runtime"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "axum",
+ "bevy",
+ "bevy_state",
+ "clonetree",
+ "flate2",
+ "gdt-cpus",
+ "jiff",
+ "moonshine-kind",
+ "nightfall",
+ "nightfall-actions",
+ "nightfall-audio",
+ "nightfall-clips",
+ "nightfall-compositor",
+ "nightfall-config",
+ "nightfall-cues",
+ "nightfall-desk",
+ "nightfall-desk-audio",
+ "nightfall-dmx",
+ "nightfall-engine",
+ "nightfall-fixture-library",
+ "nightfall-fixtures",
+ "nightfall-flow",
+ "nightfall-framepace",
+ "nightfall-fx",
+ "nightfall-fx-module",
+ "nightfall-input-artnet",
+ "nightfall-input-midi",
+ "nightfall-input-osc",
+ "nightfall-input-sacn",
+ "nightfall-instances",
+ "nightfall-io",
+ "nightfall-object-library",
+ "nightfall-output-artnet",
+ "nightfall-output-sacn",
+ "nightfall-output-usb",
+ "nightfall-programmer",
+ "nightfall-scene-objects",
+ "nightfall-selection",
+ "nightfall-showfile",
+ "nightfall-timecode",
+ "nightfall-timeline",
+ "nightfall-undo",
+ "nightfall-waveform",
+ "nightfall-websocket",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+ "zip",
+]
+
+[[package]]
+name = "app-tauri"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "app-runtime",
+ "jiff",
+ "nightfall",
+ "nightfall-config",
+ "nightfall-desk",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4919,72 +5003,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nightfall-app"
-version = "0.1.0-alpha.2"
-dependencies = [
- "axum",
- "bevy",
- "bevy_state",
- "clonetree",
- "flate2",
- "gdt-cpus",
- "jiff",
- "moonshine-kind",
- "nightfall",
- "nightfall-actions",
- "nightfall-audio",
- "nightfall-clips",
- "nightfall-compositor",
- "nightfall-config",
- "nightfall-cues",
- "nightfall-desk",
- "nightfall-desk-audio",
- "nightfall-dmx",
- "nightfall-engine",
- "nightfall-fixture-library",
- "nightfall-fixtures",
- "nightfall-flow",
- "nightfall-framepace",
- "nightfall-fx",
- "nightfall-fx-module",
- "nightfall-input-artnet",
- "nightfall-input-midi",
- "nightfall-input-osc",
- "nightfall-input-sacn",
- "nightfall-instances",
- "nightfall-io",
- "nightfall-object-library",
- "nightfall-output-artnet",
- "nightfall-output-sacn",
- "nightfall-output-usb",
- "nightfall-programmer",
- "nightfall-scene-objects",
- "nightfall-selection",
- "nightfall-showfile",
- "nightfall-timecode",
- "nightfall-timeline",
- "nightfall-undo",
- "nightfall-waveform",
- "nightfall-websocket",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tempfile",
- "tokio",
- "tokio-util",
- "tower-http 0.7.1",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
- "zip",
-]
-
-[[package]]
 name = "nightfall-audio"
 version = "0.1.0-alpha.2"
 dependencies = [
@@ -5270,7 +5288,6 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "gdtf",
- "moonshine-kind",
  "nightfall",
  "nightfall-dmx",
  "nightfall-engine",
@@ -5280,12 +5297,13 @@ dependencies = [
  "open-fixture-library",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
- "typeshare",
  "uuid",
+ "zip",
 ]
 
 [[package]]

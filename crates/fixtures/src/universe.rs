@@ -23,6 +23,7 @@ use nightfall_io::OutputTransport;
 use web_time::Instant;
 
 use crate::prelude::*;
+use crate::wire_layout::{dmx_max, split_dmx_value};
 
 /// Default timeout before an input universe is treated as stale.
 pub const DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS: u32 = 2000;
@@ -389,7 +390,8 @@ impl ConsoleDmxUniverses {
     }
 }
 
-fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
+/// Converts a parameter's physical output value to a DMX integer at its resolution.
+pub fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
     let physical_value = parameter.get_raw_value();
     let min = parameter.metadata.logical_min();
     let max = parameter.metadata.logical_max();
@@ -401,80 +403,29 @@ fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
         0.0
     };
 
-    let dmx_max: u32 = match parameter.metadata.resolution {
-        DmxValueResolution::Coarse => 255,
-        DmxValueResolution::Fine => 65535,
-        DmxValueResolution::UltraFine => 16777215,
-        DmxValueResolution::Uber => u32::MAX,
-    };
-
-    (normalized * dmx_max as ParameterDmxValue).round() as u32
+    (normalized * dmx_max(parameter.metadata.resolution) as ParameterDmxValue).round() as u32
 }
 
+/// Writes a parameter's bytes to the console universe at the destination's byte addresses.
 fn write_parameter_to_console_universe(
     universes: &mut ConsoleDmxUniverses,
-    transport: Option<&OutputTransport>,
-    universe_id: u16,
-    address: u16,
+    destination: &OutputDestination,
     parameter: &Parameter,
     origin: ConsoleChannelOrigin,
 ) {
-    let dmx_value = parameter_to_dmx_value(parameter);
-
-    if parameter.metadata.resolution >= DmxValueResolution::Coarse {
-        let coarse = match parameter.metadata.resolution {
-            DmxValueResolution::Coarse => dmx_value as ChannelDmxValue,
-            DmxValueResolution::Fine => (dmx_value >> 8) as ChannelDmxValue,
-            DmxValueResolution::UltraFine => (dmx_value >> 16) as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 24) as ChannelDmxValue,
-        };
-        universes.set_value(universe_id, address, coarse, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address, coarse, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::Fine {
-        let fine = match parameter.metadata.resolution {
-            DmxValueResolution::Fine => dmx_value as ChannelDmxValue,
-            DmxValueResolution::UltraFine => (dmx_value >> 8) as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 16) as ChannelDmxValue,
-            _ => 0,
-        };
-        universes.set_value(universe_id, address + 1, fine, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address + 1, fine, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::UltraFine {
-        let ultra = match parameter.metadata.resolution {
-            DmxValueResolution::UltraFine => dmx_value as ChannelDmxValue,
-            DmxValueResolution::Uber => (dmx_value >> 8) as ChannelDmxValue,
-            _ => 0,
-        };
-        universes.set_value(universe_id, address + 2, ultra, origin);
-        if let Some(transport) = transport {
-            universes.set_output_value(transport.clone(), universe_id, address + 2, ultra, origin);
-        }
-    }
-
-    if parameter.metadata.resolution >= DmxValueResolution::Uber {
-        universes.set_value(
-            universe_id,
-            address + 3,
-            dmx_value as ChannelDmxValue,
+    let bytes = split_dmx_value(
+        parameter_to_dmx_value(parameter),
+        parameter.metadata.resolution,
+    );
+    for (address, byte) in destination.addresses.iter().zip(bytes) {
+        universes.set_value(destination.universe, *address, byte, origin);
+        universes.set_output_value(
+            destination.transport.clone(),
+            destination.universe,
+            *address,
+            byte,
             origin,
         );
-        if let Some(transport) = transport {
-            universes.set_output_value(
-                transport.clone(),
-                universe_id,
-                address + 3,
-                dmx_value as ChannelDmxValue,
-                origin,
-            );
-        }
     }
 }
 
@@ -489,7 +440,7 @@ pub fn dmx_universes(
         };
 
         for destination in &destinations.destinations {
-            if destination.address == 0 {
+            if destination.addresses.contains(&0) {
                 tracing::warn!(
                     attribute = ?parameter.metadata.attribute,
                     universe = destination.universe,
@@ -499,9 +450,7 @@ pub fn dmx_universes(
 
             write_parameter_to_console_universe(
                 &mut universes,
-                Some(&destination.transport),
-                destination.universe,
-                destination.address,
+                destination,
                 &parameter,
                 ConsoleChannelOrigin::OutputBinding,
             );

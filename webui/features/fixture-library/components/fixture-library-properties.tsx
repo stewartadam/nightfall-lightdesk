@@ -23,7 +23,8 @@ import {
   on,
   Show,
 } from "solid-js";
-import { getResolutionChannelWidth } from "../../../lib/dmx";
+import { fixtureWireLayout } from "../../../lib/dmx";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
 import { fixtureProfile } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -75,45 +76,48 @@ function parameterValueLabel(value: types.ParameterValue): string {
 }
 
 /**
- * Returns true when the parameter occupies hardware DMX channels.
+ * Formats 1-based footprint channels, collapsing contiguous bytes into a range.
  */
-function parameterUsesDmx(parameter: types.ParameterMetadata): boolean {
-  return parameter.attribute.type !== "VirtualIntensity";
+function channelListLabel(channels: number[]): string {
+  const contiguous = channels.every(
+    (channel, index) => index === 0 || channel === channels[index - 1] + 1,
+  );
+  if (channels.length === 1) return `${channels[0]}`;
+  return contiguous
+    ? `${channels[0]}-${channels[channels.length - 1]}`
+    : channels.join(", ");
 }
 
 /**
- * Builds display rows with inferred contiguous DMX order from the typed fixture profile.
+ * Builds display rows with the DMX channels each parameter occupies in the fixture footprint.
  */
 function buildElementParameterGroups(
   fixture: types.Fixture | null,
 ): ElementDisplayGroup[] {
   if (!fixture) return [];
 
-  let channel = 1;
+  const slotsByParameter = new Map<string, number[]>();
+  for (const placed of fixtureWireLayout(fixture).parameters) {
+    slotsByParameter.set(
+      `${placed.elementIndex}:${placed.parameterIndex}`,
+      placed.slots,
+    );
+  }
   let order = 1;
 
   return fixture.elements.map((element, elementIndex) => {
-    const parameters = element.parameters.map((parameter) => {
-      const width = parameterUsesDmx(parameter)
-        ? getResolutionChannelWidth(parameter.resolution)
-        : 0;
-      const startChannel = width > 0 ? channel : null;
-      const endChannel =
-        startChannel === null ? null : startChannel + width - 1;
-
-      if (width > 0) {
-        channel += width;
-      }
+    const parameters = element.parameters.map((parameter, parameterIndex) => {
+      const channels = (
+        slotsByParameter.get(`${elementIndex}:${parameterIndex}`) ?? []
+      ).map((slot) => slot + 1);
+      const width = channels.length;
+      const startChannel = channels[0] ?? null;
 
       return {
         parameter,
         attributeLabel: attributeLabel(parameter.attribute),
         channelLabel:
-          startChannel === null
-            ? "Virtual"
-            : endChannel === startChannel
-              ? `${startChannel}`
-              : `${startChannel}-${endChannel}`,
+          startChannel === null ? "Virtual" : channelListLabel(channels),
         offsetLabel: startChannel === null ? "n/a" : `${startChannel - 1}`,
         order: order++,
         width,
@@ -129,18 +133,10 @@ function buildElementParameterGroups(
 }
 
 /**
- * Counts the hardware DMX channels represented by the flattened parameter groups.
+ * Counts the hardware DMX channels spanned by a fixture mode, including unused gaps.
  */
-function totalDmxChannels(groups: ElementDisplayGroup[]): number {
-  return groups.reduce(
-    (total, group) =>
-      total +
-      group.parameters.reduce(
-        (elementTotal, parameter) => elementTotal + parameter.width,
-        0,
-      ),
-    0,
-  );
+function totalDmxChannels(fixture: types.Fixture | null): number {
+  return fixture ? fixtureWireLayout(fixture).footprint : 0;
 }
 
 /**
@@ -151,13 +147,7 @@ function profileMatchesSelection(
   fixture: types.AvailableFixtureInfo | null,
   mode: string | undefined,
 ): boolean {
-  if (!profile || !fixture) return false;
-  if (
-    profile.info.make !== fixture.make ||
-    profile.info.model !== fixture.model
-  ) {
-    return false;
-  }
+  if (!profileMatchesRevision(profile, fixture)) return false;
   if (!mode) return true;
   if (profile.fixture) {
     return profile.fixture.mode === mode;
@@ -198,7 +188,12 @@ export default function FixtureLibraryProperties(
       () => [selectedFixture(), selectedMode()] as const,
       ([fixture, mode]) => {
         if (!fixture) return;
-        fetchFixtureProfile(fixture.make, fixture.model, mode);
+        fetchFixtureProfile(
+          fixture.make,
+          fixture.model,
+          mode,
+          fixture.asset_etag,
+        );
       },
     ),
   );
@@ -220,7 +215,7 @@ export default function FixtureLibraryProperties(
   );
 
   /** Provides the mode's hardware DMX footprint from visible parameter rows. */
-  const channelCount = createMemo(() => totalDmxChannels(elementGroups()));
+  const channelCount = createMemo(() => totalDmxChannels(modeFixture()));
 
   return (
     <div class="flex h-full flex-col space-y-4 overflow-auto p-4">
@@ -237,6 +232,7 @@ export default function FixtureLibraryProperties(
                 make={fixture().make}
                 model={fixture().model}
                 mode={selectedMode()}
+                assetEtag={fixture().asset_etag}
               />
             </div>
 
@@ -457,6 +453,49 @@ export default function FixtureLibraryProperties(
                                                   </span>
                                                 </Show>
                                               </div>
+                                              <Show
+                                                when={
+                                                  (row.parameter.functions
+                                                    ?.length ?? 0) > 1 ||
+                                                  (row.parameter.functions?.[0]
+                                                    ?.sets?.length ?? 0) > 0
+                                                }
+                                              >
+                                                <ul
+                                                  class="mt-1 space-y-0.5 text-neutral-400"
+                                                  aria-label="DMX functions"
+                                                >
+                                                  <For
+                                                    each={
+                                                      row.parameter.functions
+                                                    }
+                                                  >
+                                                    {(fn) => (
+                                                      <li>
+                                                        <span class="text-neutral-200">
+                                                          {fn.dmx_from}-
+                                                          {fn.dmx_to}
+                                                        </span>{" "}
+                                                        {fn.name}
+                                                        <Show
+                                                          when={
+                                                            (fn.sets?.length ??
+                                                              0) > 0
+                                                          }
+                                                        >
+                                                          {": "}
+                                                          {fn.sets
+                                                            ?.map(
+                                                              (set) =>
+                                                                `${set.name} ${set.dmx_from}-${set.dmx_to}`,
+                                                            )
+                                                            .join(", ")}
+                                                        </Show>
+                                                      </li>
+                                                    )}
+                                                  </For>
+                                                </ul>
+                                              </Show>
                                             </td>
                                           </tr>
                                         )}

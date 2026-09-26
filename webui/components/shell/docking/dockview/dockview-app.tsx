@@ -1285,7 +1285,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
     addEdgePanel(
       "bottom",
       DEFAULT_EDGE_GROUP_IDS.bottom,
-      panelDefinitionByName("CommandLine"),
+      panelDefinitionByName("StatusDisplay"),
       260,
     );
 
@@ -1299,7 +1299,8 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
     for (const componentName of [
       "ProgrammerGrid",
       "SelectionVisualizer",
-      "TapPattern",
+      "FixtureGrid",
+      "PatchEditor",
     ] as const) {
       addPanel(
         panelDefinitionByName(componentName),
@@ -1313,9 +1314,8 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
     }
 
     for (const componentName of [
-      "StatusDisplay",
-      "FixtureGrid",
-      "PatchEditor",
+      "TapPattern",
+      "CommandLine",
       "Instrumentation",
     ] as const) {
       addPanel(

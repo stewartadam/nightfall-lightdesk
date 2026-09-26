@@ -374,9 +374,13 @@ export function packageNotices(outDir, target, embeddedDemo = false) {
     );
   }
   if (target) {
-    const config = JSON.parse(read("crates/app/tauri.conf.json"));
+    const config = JSON.parse(read("crates/app-tauri/tauri.conf.json"));
     entries.push(
-      ...collectRust("crates/app/Cargo.toml", target, config.build.features),
+      ...collectRust(
+        "crates/app-tauri/Cargo.toml",
+        target,
+        config.build.features,
+      ),
     );
     entries.push({
       name: "bevy_framepace (Nightfall fork)",

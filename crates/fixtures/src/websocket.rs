@@ -403,10 +403,10 @@ pub fn send_fixtures_on_change(
         return;
     }
 
-    send_fixtures(&fixture_data_provider, &broadcaster, |make, model, mode| {
+    send_fixtures(&fixture_data_provider, &broadcaster, |fixture| {
         geometry_provider
             .as_ref()
-            .and_then(|p| p.get_geometry(make, model, mode))
+            .and_then(|p| p.get_geometry(fixture))
     });
 }
 
@@ -416,13 +416,13 @@ pub fn send_fixtures_on_change(
 /// - `FixtureDefinitions`: All fixtures (without geometry)
 /// - `FixtureGeometries`: Geometry data keyed by fixture UID (only for fixtures with geometry)
 ///
-/// The `geometry_provider` closure receives (make, model, mode) and returns geometry if available.
+/// The `geometry_provider` closure receives each fixture and returns its geometry if available.
 pub fn send_fixtures<'a, F>(
     fixture_data_provider: &'a FixtureDataProviderExt,
     broadcaster: &ClientEventSink,
     geometry_provider: F,
 ) where
-    F: Fn(&str, &str, &str) -> Option<FixtureGeometry> + 'a,
+    F: Fn(&Fixture) -> Option<FixtureGeometry> + 'a,
 {
     let fixtures: Vec<Fixture> = fixture_data_provider
         .inner
@@ -433,7 +433,7 @@ pub fn send_fixtures<'a, F>(
     // Build geometry map keyed by fixture UID
     let mut geometries: HashMap<SimpleUuid, FixtureGeometry> = HashMap::new();
     for fixture in &fixtures {
-        if let Some(geometry) = geometry_provider(&fixture.make, &fixture.model, &fixture.mode) {
+        if let Some(geometry) = geometry_provider(fixture) {
             geometries.insert(SimpleUuid(fixture.identifiers.uid), geometry);
         }
     }
@@ -739,7 +739,8 @@ fn send_input_contribution_trace(
             let Ok(parameter) = parameter_query.get(target.entity) else {
                 continue;
             };
-            let source_address = address.saturating_add(target.offset);
+            let source_address =
+                address.saturating_add(target.offsets.first().copied().unwrap_or(0));
             if source_address == 0 {
                 continue;
             }
@@ -891,10 +892,10 @@ pub fn handle_resync_state(
     }
 
     // Send fixtures with geometry if provider is available
-    send_fixtures(&fixture_data_provider, &broadcaster, |make, model, mode| {
+    send_fixtures(&fixture_data_provider, &broadcaster, |fixture| {
         geometry_provider
             .as_ref()
-            .and_then(|p| p.get_geometry(make, model, mode))
+            .and_then(|p| p.get_geometry(fixture))
     });
     send_bindings(
         &input_bindings,

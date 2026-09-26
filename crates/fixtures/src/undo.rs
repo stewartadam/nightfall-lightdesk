@@ -506,6 +506,10 @@ mod tests {
                 .map(|i| FixtureElement {
                     label: format!("Pixel {}", i + 1),
                     parameters: vec![ParameterMetadata {
+                        dmx_slots: Default::default(),
+                        functions: Vec::new(),
+                        default_dmx: None,
+                        highlight_dmx: None,
                         resolution: DmxValueResolution::Coarse,
                         attribute: Attribute::Intensity,
                         native_unit: Attribute::Intensity.native_unit(),
@@ -687,6 +691,10 @@ mod tests {
                 FixtureElement {
                     label: "Pixel 1".to_string(),
                     parameters: vec![ParameterMetadata {
+                        dmx_slots: Default::default(),
+                        functions: Vec::new(),
+                        default_dmx: None,
+                        highlight_dmx: None,
                         resolution: DmxValueResolution::Coarse,
                         attribute: Attribute::Intensity,
                         native_unit: Attribute::Intensity.native_unit(),
@@ -703,6 +711,10 @@ mod tests {
                 FixtureElement {
                     label: "Pixel 2".to_string(),
                     parameters: vec![ParameterMetadata {
+                        dmx_slots: Default::default(),
+                        functions: Vec::new(),
+                        default_dmx: None,
+                        highlight_dmx: None,
                         resolution: DmxValueResolution::Coarse,
                         attribute: Attribute::Intensity,
                         native_unit: Attribute::Intensity.native_unit(),
@@ -719,6 +731,10 @@ mod tests {
                 FixtureElement {
                     label: "Pixel 3".to_string(),
                     parameters: vec![ParameterMetadata {
+                        dmx_slots: Default::default(),
+                        functions: Vec::new(),
+                        default_dmx: None,
+                        highlight_dmx: None,
                         resolution: DmxValueResolution::Coarse,
                         attribute: Attribute::Intensity,
                         native_unit: Attribute::Intensity.native_unit(),

@@ -10,7 +10,7 @@ import type { FixtureLibraryCommand } from "../types/index";
 import * as types from "../types/index";
 import { normalizeFixtureUid } from "./binding-utils";
 import { commandEnvelope } from "./command-envelope";
-import { getResolutionChannelWidth } from "./dmx";
+import { fixtureWireLayout } from "./dmx";
 import { engineRuntime } from "./engine-runtime";
 import { getLogger } from "./logger";
 
@@ -23,19 +23,11 @@ function bindingTransportToTargetId(transport: types.BindingTransport): string {
 }
 
 /**
- * Compute the total DMX channel count for a fixture from its elements and parameters.
+ * Compute the DMX footprint of a fixture, including gaps between explicitly placed channels.
  * This provides a deterministic channel count based on the fixture profile metadata.
  */
 export function computeFixtureChannelCount(fixture: types.Fixture): number {
-  let total = 0;
-  for (const element of fixture.elements) {
-    for (const param of element.parameters) {
-      // Skip virtual parameters that don't occupy DMX channels
-      if (param.attribute.type === "VirtualIntensity") continue;
-      total += getResolutionChannelWidth(param.resolution);
-    }
-  }
-  return total;
+  return fixtureWireLayout(fixture).footprint;
 }
 
 export function sendFixturePlacementUpdate(
@@ -403,6 +395,18 @@ export function removePatchBindingsForFixtureIds(
 }
 
 /**
+ * Returns the identifier of one library fixture revision. Several revisions
+ * of a make/model can coexist, so the revision fingerprint is part of the id.
+ */
+export function libraryDefinitionId(info: {
+  make: string;
+  model: string;
+  asset_etag: string;
+}): string {
+  return JSON.stringify([info.make, info.model, info.asset_etag]);
+}
+
+/**
  * Create a fixture from the library and wait for completion.
  * Returns a promise that resolves when the fixture is created.
  * Use this when you need to perform follow-up operations like patching.
@@ -415,6 +419,7 @@ export async function createFixtureFromLibrary(
   label?: string,
   updateExistingIds?: number[],
   updateExistingOnly = false,
+  assetEtag?: string,
 ): Promise<types.CommandResult> {
   const command: FixtureLibraryCommand = {
     type: "CreateFixtureFromLibrary",
@@ -423,6 +428,7 @@ export async function createFixtureFromLibrary(
       make,
       model,
       mode,
+      asset_etag: assetEtag,
       label: label || undefined,
       update_existing_ids: updateExistingIds?.length
         ? updateExistingIds
@@ -451,6 +457,7 @@ export function fetchFixtureProfile(
   make: string,
   model: string,
   mode?: string,
+  assetEtag?: string,
 ) {
   const command: FixtureLibraryCommand = {
     type: "GetFixtureProfile",
@@ -458,6 +465,7 @@ export function fetchFixtureProfile(
       make,
       model,
       mode,
+      asset_etag: assetEtag,
     },
   };
 

@@ -18,7 +18,9 @@ use axum::{
     response::Response,
 };
 
-use crate::mesh::{MeshExtractionError, decode_gdtf_path, extract_mesh_from_gdtf};
+use crate::mesh::{
+    MeshExtractionError, decode_gdtf_path, extract_mesh_from_gdtf, extract_wheel_media_from_gdtf,
+};
 
 /// Serve a mesh file from a GDTF archive.
 ///
@@ -83,6 +85,47 @@ pub async fn serve_mesh(Path((gdtf_path_encoded, model_name)): Path<(String, Str
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::from("IO error extracting mesh"))
+                .unwrap()
+        }
+    }
+}
+
+/// Serve a wheel slot image (gobo, animation wheel) from a GDTF archive as PNG.
+///
+/// The GDTF path is base64url-encoded in the URL to handle special characters.
+pub async fn serve_wheel_media(
+    Path((gdtf_path_encoded, media_name)): Path<(String, String)>,
+) -> Response {
+    let gdtf_path = match decode_gdtf_path(&gdtf_path_encoded) {
+        Ok(path) => path,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("{}", e)))
+                .unwrap();
+        }
+    };
+
+    match extract_wheel_media_from_gdtf(std::path::Path::new(&gdtf_path), &media_name) {
+        Ok(data) => Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "image/png")
+            .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+            .body(Body::from(data))
+            .unwrap(),
+        Err(error) => {
+            tracing::warn!(media = media_name, %error, "Wheel media not served");
+            let status = match error {
+                MeshExtractionError::FileNotFound(_) | MeshExtractionError::MeshNotFound(_) => {
+                    StatusCode::NOT_FOUND
+                }
+                MeshExtractionError::ParseError(_) | MeshExtractionError::IoError(_) => {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            };
+            Response::builder()
+                .status(status)
+                .body(Body::from("Wheel media not available"))
                 .unwrap()
         }
     }

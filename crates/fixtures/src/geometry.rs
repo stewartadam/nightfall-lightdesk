@@ -69,15 +69,15 @@ pub enum GeometryType {
 /// Axis type for articulated geometry nodes.
 ///
 /// Determines which axis the geometry rotates around.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(rename_all = "camelCase")]
 pub enum AxisType {
-    /// Rotation around vertical axis (Y in Three.js).
+    /// Rotation around the node's local GDTF Z axis.
     Pan,
-    /// Rotation around horizontal axis (X in Three.js).
+    /// Rotation around the node's local GDTF X axis.
     Tilt,
-    /// Rotation around forward axis (Z in Three.js).
+    /// Rotation around the node's local GDTF Y axis.
     Roll,
 }
 
@@ -158,7 +158,9 @@ pub struct GeometryNode {
     /// Model definition if this node has visual geometry.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<GeometryModel>,
-    /// Axis type if this is an articulated node.
+    /// Rotation this node applies when its `controlled_element` moves: pan
+    /// rotates about the local Z axis and tilt about the local X axis, on top
+    /// of the node's authored transform.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub axis: Option<AxisType>,
     /// Index of parent node in the nodes array (-1 for root).
@@ -166,7 +168,8 @@ pub struct GeometryNode {
     /// Indices of child nodes in the nodes array.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<u32>,
-    /// Element name this node controls (for element-to-geometry mapping).
+    /// Label of the element driving this node: the element whose color and
+    /// intensity a beam emits, or whose pan/tilt parameter rotates an axis node.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub controlled_element: Option<String>,
 }
@@ -219,11 +222,12 @@ pub struct FixtureGeometry {
 /// The fixtures crate uses this to materialize fixtures with geometry
 /// without directly depending on the fixture-library crate.
 pub trait GeometryProvider: Send + Sync {
-    /// Get geometry for a fixture by its library identifiers.
+    /// Get geometry for a patched fixture from the library revision it was created from.
     ///
-    /// Returns `None` if the fixture source doesn't have geometry (e.g., OFL)
-    /// or if the fixture is not found in the library.
-    fn get_geometry(&self, make: &str, model: &str, mode: &str) -> Option<FixtureGeometry>;
+    /// Returns `None` if the fixture source doesn't have geometry (e.g., OFL),
+    /// or if its revision is unavailable and no available revision has the
+    /// same element structure.
+    fn get_geometry(&self, fixture: &crate::fixture::Fixture) -> Option<FixtureGeometry>;
 }
 
 /// Resource wrapper for a geometry provider.
@@ -239,8 +243,8 @@ impl GeometryProviderResource {
         Self(Box::new(provider))
     }
 
-    /// Get geometry for a fixture.
-    pub fn get_geometry(&self, make: &str, model: &str, mode: &str) -> Option<FixtureGeometry> {
-        self.0.get_geometry(make, model, mode)
+    /// Get geometry for a patched fixture.
+    pub fn get_geometry(&self, fixture: &crate::fixture::Fixture) -> Option<FixtureGeometry> {
+        self.0.get_geometry(fixture)
     }
 }

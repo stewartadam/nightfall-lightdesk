@@ -12,6 +12,14 @@ use nightfall_dmx::prelude::{Attribute, ParameterUnit};
 use nightfall_fixtures::prelude::ParameterMetadata;
 
 pub mod gdtf;
+#[cfg(test)]
+mod gdtf_bench_tests;
+mod gdtf_functions;
+#[cfg(test)]
+mod gdtf_joint_tests;
+pub mod gdtf_resolve;
+#[cfg(test)]
+mod gdtf_wire_tests;
 pub mod ofl;
 
 /// Apply a physical angular range to position metadata, or retain percentage semantics.

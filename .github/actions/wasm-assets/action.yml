@@ -36,7 +36,7 @@ runs:
     # Hash whole crate trees to cover non-Rust build inputs as well as source files.
     - name: Restore generated WASM packages
       id: cache
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: webui/assets/${{ steps.compiler.outputs.directory }}/
         key: wasm-assets-v2-${{ inputs.package }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.profile }}-${{ steps.compiler.outputs.hash }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain*', '.cargo/**', 'crates/**', 'config/**', 'test-fixtures/**', 'scripts/**', 'package.json', 'package-lock.json', 'LICENSE', '.github/workflows/**', '.github/actions/wasm-assets/**') }}
@@ -67,7 +67,7 @@ runs:
     # Save immediately after a successful build, even if a later unrelated check fails.
     - name: Save generated WASM packages
       if: steps.cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v5
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: webui/assets/${{ steps.compiler.outputs.directory }}/
         key: ${{ steps.cache.outputs.cache-primary-key }}

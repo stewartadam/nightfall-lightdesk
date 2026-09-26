@@ -759,3 +759,112 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
     fullPage: true,
   });
 });
+
+/** Lists the distinct timeline audio paths a showfile references, in timeline order. */
+function referencedAudioPaths(showfile: {
+  timelines?: { audio_path?: unknown }[];
+}): string[] {
+  const paths: string[] = [];
+  for (const timeline of showfile.timelines ?? []) {
+    const path = timeline.audio_path;
+    if (typeof path === "string" && path && !paths.includes(path)) {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+/** Counts fixtures the running app has loaded from its showfile. */
+async function loadedFixtureCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      Object.keys((window as any).appStores?.fixtures?.get?.() ?? {}).length,
+  );
+}
+
+/** Resolves the loaded timeline that plays the given showfile-relative audio path. */
+async function timelineUidForAudio(
+  page: Page,
+  audioPath: string,
+): Promise<string | undefined> {
+  return page.evaluate((path) => {
+    const timelines = Object.values(
+      (window as any).appStores.timelines.get(),
+    ) as any[];
+    return timelines.find((timeline) => timeline.audio_path === path)
+      ?.identifiers?.uid;
+  }, audioPath);
+}
+
+/** Opens one timeline, confirms its audio decodes and plays, then stops it and waits for unload. */
+async function expectTimelineAudioPlays(
+  page: Page,
+  timelineUid: string,
+  screenshotPath: string,
+): Promise<void> {
+  await openDemoTimeline(page, timelineUid);
+  const surface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  await expect(surface.locator(".waveform-container")).toHaveAttribute(
+    "data-waveform-state",
+    "decoded",
+  );
+  try {
+    await surface.getByRole("button", { name: "Play timeline" }).click();
+    await expect
+      .poll(() => readDemoAudioState(page))
+      .toMatchObject({ status: "playing" });
+    await expect
+      .poll(() => timelinePositionMs(page, timelineUid))
+      .toBeGreaterThan(100);
+    await surface.screenshot({ path: screenshotPath });
+  } finally {
+    await surface.getByRole("button", { name: "Stop timeline" }).click();
+  }
+  await expect
+    .poll(() => readDemoAudioState(page))
+    .toMatchObject({ status: "unloaded" });
+}
+
+test.describe("packaged demo show", () => {
+  test.use({ packagedDemoShow: true });
+
+  /** Verifies the shipped demo show loads completely and every timeline's audio is packaged and playable. */
+  test("packaged demo loads its show and plays bundled timeline audio", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview",
+      "Only the packaged artifact serves the shipped demo show",
+    );
+    await page.goto(
+      "/demo/app/?startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false",
+    );
+    const showfileUrl = new URL(
+      "nightfall-demo.nightfall-show/showfile.json",
+      page.url(),
+    );
+    const showfile = await (await page.request.get(showfileUrl.href)).json();
+    const audioPaths = referencedAudioPaths(showfile);
+    expect(showfile.fixtures.length).toBeGreaterThan(0);
+    expect(audioPaths.length).toBeGreaterThan(0);
+    await expect
+      .poll(() => loadedFixtureCount(page))
+      .toBe(showfile.fixtures.length);
+
+    for (const [index, audioPath] of audioPaths.entries()) {
+      const response = await page.request.get(
+        new URL(audioPath, showfileUrl).href,
+      );
+      expect(response.status(), audioPath).toBe(200);
+      const timelineUid = await timelineUidForAudio(page, audioPath);
+      expect(timelineUid, audioPath).toBeTruthy();
+      await expectTimelineAudioPlays(
+        page,
+        timelineUid!,
+        testInfo.outputPath(`packaged-demo-playback-${index + 1}.png`),
+      );
+    }
+  });
+});

@@ -134,6 +134,11 @@ import {
 } from "./console-scrollback";
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 import { applyFlowDeltaToDefinition } from "./flow-delta";
+import {
+  carriesParameterState,
+  queuedWorkerMessageData,
+  type WorkerQueuedMessage,
+} from "./parameter-state-transfer";
 import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
 import type { AnyWsMessage } from "./ws/types";
@@ -170,12 +175,6 @@ function cueDurationProfileArrayToMap(
   return Object.fromEntries(
     profiles.map((profile) => [profile.cue_uid, profile]),
   );
-}
-
-interface WorkerQueuedMessage {
-  data: AnyWsMessage;
-  postedAtMs?: unknown;
-  deliveryMessageId?: unknown;
 }
 
 type WebsocketPullHandle =
@@ -314,8 +313,7 @@ function recordWebsocketPullResponse(messages: unknown): void {
   }
 
   for (const message of messages) {
-    const data = (message as WorkerQueuedMessage | undefined)?.data;
-    if (data?.type === "ParameterState") {
+    if (carriesParameterState(message)) {
       websocketPullMetrics.parameterStatesSinceSample++;
     }
   }
@@ -423,7 +421,8 @@ function applyWorkerQueuedMessage(message: WorkerQueuedMessage): void {
   if (typeof message.deliveryMessageId === "number") {
     lastSeenDeliveryMessageId = message.deliveryMessageId;
   }
-  queueWorkerMessage(message.data);
+  const data = queuedWorkerMessageData(message);
+  if (data) queueWorkerMessage(data);
 }
 
 /** Applies a pulled worker batch and schedules the next frame pull. */
@@ -1387,9 +1386,7 @@ function dispatchMessage(raw: AnyWsMessage) {
       if (correlationKey) {
         const showfileUpdate = settledCommand.resultMetadata;
         if (showfileUpdate && result.outcome.type === "Succeeded") {
-          persistCurrentShowfileName(showfileUpdate.name, {
-            bumpRevision: showfileUpdate.bumpRevision,
-          });
+          persistCurrentShowfileName(showfileUpdate.name);
         }
         if (!flattenRetry) {
           const displayCorrelationKey =
@@ -2554,7 +2551,6 @@ function rejectPendingCommandWaiters(error: Error): void {
 
 interface PendingCurrentShowfileName {
   name: string;
-  bumpRevision: boolean;
 }
 
 const pendingCurrentShowfileNames = new Map<
@@ -2583,7 +2579,7 @@ function currentShowfileNameFromCommand(
   switch (command?.type) {
     case "NewShowfile":
     case "LoadShowfile":
-      return { name: "default", bumpRevision: true };
+      return { name: "default" };
     case "NewNamedShowfile":
       return command.data &&
         typeof command.data === "object" &&
@@ -2591,7 +2587,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.name === "string"
         ? {
             name: normalizedShowfileName(command.data.name),
-            bumpRevision: true,
           }
         : null;
     case "LoadNamedShowfile":
@@ -2599,7 +2594,6 @@ function currentShowfileNameFromCommand(
       return typeof command.data === "string"
         ? {
             name: normalizedShowfileName(command.data),
-            bumpRevision: true,
           }
         : null;
     case "LoadShowfileRevision":
@@ -2609,7 +2603,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.showfileName === "string"
         ? {
             name: normalizedShowfileName(command.data.showfileName),
-            bumpRevision: true,
           }
         : null;
     case "SaveNamedShowfile":
@@ -2619,7 +2612,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.name === "string"
         ? {
             name: normalizedShowfileName(command.data.name),
-            bumpRevision: false,
           }
         : null;
     default:
@@ -2715,14 +2707,15 @@ export const engineRuntime = {
               type: "ResyncState",
             } as types.EngineCommand,
           });
+          // Native backends and the embedded demo both serve fixture profiles.
+          this.sendCommand({
+            module: "FixtureLibraryCommand",
+            command: {
+              type: "ListAvailableFixtures",
+            } satisfies types.FixtureLibraryCommand,
+          });
           if (this.config?.mode === "remote") {
             // Request native-only catalog state from the remote backend.
-            this.sendCommand({
-              module: "FixtureLibraryCommand",
-              command: {
-                type: "ListAvailableFixtures",
-              } as any,
-            });
             this.sendCommand({
               module: "ObjectLibraryCommand",
               command: {
