@@ -8,10 +8,10 @@
 
 //! Domain-owned bindable actions for desk clips, controls, and command evaluation.
 
+use std::collections::BTreeSet;
+
 use bevy_app::App;
-use bevy_ecs::prelude::{
-    Changed, Local, Query, RemovedComponents, Res, World, resource_exists_and_changed,
-};
+use bevy_ecs::prelude::{Changed, DetectChanges, Local, Query, RemovedComponents, Res, World};
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionInputKind, ActionInvocation, ActionParameter,
@@ -369,7 +369,7 @@ pub fn register_desk_actions(app: &mut App) {
 
 /// Registers how stored bindings check that their clip, master, and control targets exist.
 ///
-/// Binding diagnostics are recomputed when clip entities, master definitions, or the number
+/// Binding diagnostics are recomputed when clip entities, the set of masters, or the number
 /// of control slots change.
 fn register_desk_target_validators(app: &mut App) {
     app.register_action_target_validator::<Uuid, _>(ActionParameterKind::Clip, |world, uid| {
@@ -380,8 +380,28 @@ fn register_desk_target_validators(app: &mut App) {
     })
     .register_action_target_validator::<u32, _>(ActionParameterKind::Control, validate_control)
     .invalidate_action_targets_when(clips_changed)
-    .invalidate_action_targets_when(resource_exists_and_changed::<DataProvider<Master>>)
+    .invalidate_action_targets_when(master_set_changed)
     .invalidate_action_targets_when(control_slot_count_changed);
+}
+
+/// Run condition reporting whether masters were added or removed.
+///
+/// Master levels change on every fader move and master targets only need to exist, so this
+/// compares the set of master UIDs, and only on frames where masters changed at all.
+fn master_set_changed(
+    masters: Option<Res<DataProvider<Master>>>,
+    mut last_uids: Local<Option<BTreeSet<Uuid>>>,
+) -> bool {
+    let Some(masters) = masters else {
+        return last_uids.take().is_some();
+    };
+    if !masters.is_changed() && last_uids.is_some() {
+        return false;
+    }
+    let uids: BTreeSet<Uuid> = masters.iter().map(|entry| *entry.key()).collect();
+    let changed = last_uids.as_ref() != Some(&uids);
+    *last_uids = Some(uids);
+    changed
 }
 
 /// Run condition reporting whether any clip was added, edited, or removed.
@@ -829,6 +849,57 @@ mod tests {
                 .last_changed()
                 .is_newer_than(unchanged, app.world().read_change_tick()),
             "clip removal should mark action targets changed"
+        );
+    }
+
+    /// Verifies changing a master's level leaves action targets untouched, so dragging a
+    /// master fader does not recompute binding diagnostics, while adding a master marks them.
+    #[test]
+    fn only_master_set_changes_mark_action_targets_changed() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        app.update();
+        app.update();
+        /// Returns when action targets were last marked changed.
+        fn targets_changed(app: &App) -> bevy_ecs::change_detection::Tick {
+            app.world()
+                .resource_ref::<nightfall_actions::ActionTargets>()
+                .last_changed()
+        }
+        let settled = targets_changed(&app);
+
+        let mut masters = app.world_mut().resource_mut::<DataProvider<Master>>();
+        let mut master = masters.remove(&uid).expect("master should exist");
+        master.level_percent = 40.0;
+        masters.add(master).expect("master should store");
+        app.update();
+        assert_eq!(
+            targets_changed(&app),
+            settled,
+            "a level change is not a target change"
+        );
+
+        let second = Master {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 5,
+                uid: Uuid::from_u128(42),
+                label: "Second".to_string(),
+            },
+            ..app
+                .world()
+                .resource::<DataProvider<Master>>()
+                .get(uid)
+                .expect("master should exist")
+                .clone()
+        };
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(second)
+            .expect("master should store");
+        app.update();
+        assert!(
+            targets_changed(&app).is_newer_than(settled, app.world().read_change_tick()),
+            "adding a master should mark action targets changed"
         );
     }
 
