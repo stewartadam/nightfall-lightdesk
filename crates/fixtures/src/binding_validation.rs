@@ -705,23 +705,53 @@ fn fixture_shape_for_binding(
 /// Parameters selected by a binding, used to validate patch binding spans.
 #[derive(Debug, Clone)]
 struct FixtureShape {
-    /// Selected parameters in element order.
-    parameters: Vec<ParameterMetadata>,
+    /// Selected parameters of each selected element, in fixture order.
+    elements: Vec<Vec<ParameterMetadata>>,
     /// Whether the binding selects only part of the fixture and starts at its first selected byte.
     partial: bool,
 }
 
 impl FixtureShape {
-    /// Returns whether two selections carry the same attributes at the same resolutions in order.
+    /// Lays out the selection's bytes, keyed by `(element, parameter)` position.
+    ///
+    /// Partial selections are rebased so their first byte sits at slot zero,
+    /// matching how the binding patches them at its address.
+    fn layout(&self) -> WireLayout<(usize, usize)> {
+        let layout = WireLayout::new(self.elements.iter().enumerate().flat_map(
+            |(element_index, parameters)| {
+                parameters
+                    .iter()
+                    .enumerate()
+                    .map(move |(parameter_index, metadata)| {
+                        ((element_index, parameter_index), metadata)
+                    })
+            },
+        ));
+        if self.partial {
+            layout.rebased()
+        } else {
+            layout
+        }
+    }
+
+    /// Returns whether bytes copied from one selection land on the same parameters in the other.
+    ///
+    /// Both selections must have the same element structure, the same
+    /// attributes at the same resolutions within each element, and every
+    /// parameter byte at the same footprint slot.
     fn matches(&self, other: &Self) -> bool {
-        self.parameters.len() == other.parameters.len()
+        self.elements.len() == other.elements.len()
             && self
-                .parameters
+                .elements
                 .iter()
-                .zip(&other.parameters)
+                .zip(&other.elements)
                 .all(|(left, right)| {
-                    left.attribute == right.attribute && left.resolution == right.resolution
+                    left.len() == right.len()
+                        && left.iter().zip(right).all(|(left, right)| {
+                            left.attribute == right.attribute && left.resolution == right.resolution
+                        })
                 })
+            && self.layout() == other.layout()
     }
 }
 
@@ -744,10 +774,10 @@ fn fixture_shape(
         None => (0..fixture.elements.len()).collect(),
     };
 
-    let mut parameters = Vec::new();
+    let mut elements = Vec::new();
     for idx in element_indices {
         let element = &fixture.elements[idx];
-        if let Some(param_name) = param {
+        let parameters = if let Some(param_name) = param {
             let attribute = attribute_from_param(param_name);
             let metadata = element
                 .parameters
@@ -759,26 +789,22 @@ fn fixture_shape(
                         fixture.identifiers.uid, attribute
                     ))
                 })?;
-            parameters.push(metadata.clone());
+            vec![metadata.clone()]
         } else {
-            parameters.extend(element.parameters.iter().cloned());
-        }
+            element.parameters.clone()
+        };
+        elements.push(parameters);
     }
 
     Ok(FixtureShape {
-        parameters,
+        elements,
         partial: element.is_some() || param.is_some(),
     })
 }
 
 /// Returns the number of DMX slots a binding's selection spans.
 fn shape_footprint(shape: &FixtureShape) -> u16 {
-    let layout = WireLayout::new(shape.parameters.iter().map(|metadata| ((), metadata)));
-    if shape.partial {
-        layout.rebased().footprint()
-    } else {
-        layout.footprint()
-    }
+    shape.layout().footprint()
 }
 
 fn attribute_from_param(name: &str) -> Attribute {
@@ -1777,5 +1803,129 @@ mod tests {
 
         let issues = validate_fixture_to_fixture_shapes(&input_bindings, &provider);
         assert!(!issues.is_empty());
+    }
+
+    /// Builds a fixture whose elements hold the given parameter lists.
+    fn make_fixture_with_elements(
+        uid: Uuid,
+        id: u32,
+        elements: Vec<Vec<ParameterMetadata>>,
+    ) -> Fixture {
+        let mut fixture = make_fixture(uid, id, Vec::new());
+        fixture.elements = elements
+            .into_iter()
+            .enumerate()
+            .map(|(index, parameters)| crate::fixture::FixtureElement {
+                label: format!("element-{index}"),
+                parameters,
+            })
+            .collect();
+        fixture
+    }
+
+    /// Builds parameter metadata whose bytes sit at explicit 1-based break-1 slots.
+    fn param_at_slots(
+        attribute: Attribute,
+        resolution: DmxValueResolution,
+        offsets: &[u16],
+    ) -> ParameterMetadata {
+        ParameterMetadata {
+            dmx_slots: crate::parameter::DmxSlots::Explicit {
+                dmx_break: 1,
+                offsets: offsets.to_vec(),
+            },
+            ..param_with_resolution(attribute, resolution)
+        }
+    }
+
+    /// Validates a whole-fixture binding from `source` to `target` and returns the shape issues.
+    fn fixture_to_fixture_issues(source: Fixture, target: Fixture) -> Vec<BindingValidationIssue> {
+        let source_uid = source.identifiers.uid;
+        let target_uid = target.identifiers.uid;
+        let mut provider = FixtureDataProviderExt::default();
+        provider.inner.add(source).unwrap();
+        provider.inner.add(target).unwrap();
+        let input_bindings = InputBindings {
+            bindings: vec![InputBinding {
+                source: InputSource::Fixture {
+                    uids: vec![source_uid],
+                    element: None,
+                    param: None,
+                },
+                target: InputTarget::Fixture {
+                    uids: vec![target_uid],
+                    element: None,
+                    param: None,
+                },
+                priority: 0,
+                clone: false,
+            }],
+        };
+        validate_fixture_to_fixture_shapes(&input_bindings, &provider)
+    }
+
+    /// Verifies one `[Pan, Tilt]` element does not match separate `[Pan]` and `[Tilt]` elements,
+    /// even though their flattened parameters and bytes line up.
+    #[test]
+    fn fixture_to_fixture_shape_rejects_different_element_boundaries() {
+        let source = make_fixture_with_elements(
+            Uuid::new_v4(),
+            1,
+            vec![vec![param(Attribute::Pan), param(Attribute::Tilt)]],
+        );
+        let target = make_fixture_with_elements(
+            Uuid::new_v4(),
+            2,
+            vec![vec![param(Attribute::Pan)], vec![param(Attribute::Tilt)]],
+        );
+
+        assert_eq!(fixture_to_fixture_issues(source, target).len(), 1);
+    }
+
+    /// Verifies fixtures with the same attributes and resolutions but different byte slots
+    /// do not match, since copied bytes would land on the wrong parameter bytes.
+    #[test]
+    fn fixture_to_fixture_shape_rejects_different_slot_layouts() {
+        let source = make_fixture_with_elements(
+            Uuid::new_v4(),
+            1,
+            vec![vec![
+                param_at_slots(Attribute::Pan, DmxValueResolution::Fine, &[1, 2]),
+                param_at_slots(Attribute::Tilt, DmxValueResolution::Coarse, &[3]),
+            ]],
+        );
+        let target = make_fixture_with_elements(
+            Uuid::new_v4(),
+            2,
+            vec![vec![
+                param_at_slots(Attribute::Pan, DmxValueResolution::Fine, &[1, 3]),
+                param_at_slots(Attribute::Tilt, DmxValueResolution::Coarse, &[2]),
+            ]],
+        );
+
+        assert_eq!(fixture_to_fixture_issues(source, target).len(), 1);
+    }
+
+    /// Verifies fixtures with identical element structure and slot layout match.
+    #[test]
+    fn fixture_to_fixture_shape_accepts_identical_layouts() {
+        let elements = || {
+            vec![
+                vec![param_at_slots(
+                    Attribute::Pan,
+                    DmxValueResolution::Fine,
+                    &[1, 3],
+                )],
+                vec![param_at_slots(
+                    Attribute::Tilt,
+                    DmxValueResolution::Coarse,
+                    &[2],
+                )],
+            ]
+        };
+        let source = make_fixture_with_elements(Uuid::new_v4(), 1, elements());
+        let target = make_fixture_with_elements(Uuid::new_v4(), 2, elements());
+
+        assert!(fixture_to_fixture_issues(source, target).is_empty());
     }
 }
