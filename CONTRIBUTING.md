@@ -382,7 +382,7 @@ node scripts/run-native-cargo.mjs nextest
 node scripts/run-native-cargo.mjs test --doc
 ```
 
-Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. The wrapper selects the same feature graph as CI. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
+Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. The wrapper selects the same feature graph as CI. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `npx prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
 
 ```sh
 node scripts/run-native-cargo.mjs nextest -E 'rdeps(nightfall-cues)'
