@@ -120,7 +120,7 @@ export async function bindArmedSource(
     replaced = mapping ? await upsertMidiMapping(mapping) : null;
   }
   if (replaced === null) return false;
-  disarmMappingSource();
+  disarmMappingSource(armed);
   pushToast(
     "success",
     formatBindConfirmation({

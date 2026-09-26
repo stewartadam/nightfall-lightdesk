@@ -8,7 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { PlugsConnectedIcon } from "@squidlab/phosphor-solid/plugs-connected";
-import { createEffect, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, on, onCleanup, Show } from "solid-js";
 import { useUiAction } from "../../../components/providers/command-registry";
 import { Button } from "../../../components/ui/visual-language/button";
 import { commandFailure } from "../../../lib/command-result";
@@ -107,17 +107,20 @@ export function MappingModeController() {
     unsubscribeGeneration();
   });
 
+  /**
+   * Tracks only whether mapping mode is active. The mapping state changes on every touch,
+   * and effects keyed on it directly would re-run, restarting the renewal timer each time.
+   */
+  const active = createMemo(() => $mode().active);
+
   /** Enters or leaves backend mapping mode whenever this client's mapping mode toggles. */
   createEffect(
-    on(
-      () => $mode().active,
-      (active, wasActive) => {
-        if (active !== (wasActive ?? false)) sendMappingMode(active);
-        if (active) {
-          observeShowGeneration(controllerMappingMode.get().show_generation);
-        }
-      },
-    ),
+    on(active, (active, wasActive) => {
+      if (active !== (wasActive ?? false)) sendMappingMode(active);
+      if (active) {
+        observeShowGeneration(controllerMappingMode.get().show_generation);
+      }
+    }),
   );
 
   /**
@@ -125,23 +128,20 @@ export function MappingModeController() {
    * while this window keeps responding.
    */
   createEffect(
-    on(
-      () => $mode().active,
-      (active) => {
-        if (!active) return;
-        const timer = setInterval(
-          () => void renewMappingMode(),
-          MAPPING_MODE_RENEW_INTERVAL_MS,
-        );
-        onCleanup(() => clearInterval(timer));
-      },
-    ),
+    on(active, (active) => {
+      if (!active) return;
+      const timer = setInterval(
+        () => void renewMappingMode(),
+        MAPPING_MODE_RENEW_INTERVAL_MS,
+      );
+      onCleanup(() => clearInterval(timer));
+    }),
   );
 
   /**
    * Renews backend mapping mode after a resync. A reconnected session has no hold, so the
-   * renewal enters it again; after a show load the renewal fails and this client leaves
-   * mapping mode, instead of re-entering on a show it was not mapping.
+   * renewal enters it again; a renewal after the lease lapsed fails and this client leaves.
+   * Show loads are detected from the show generation instead.
    */
   createEffect(
     on(
@@ -167,7 +167,9 @@ export function MappingModeController() {
     {
       key: "Escape",
       handler: () => {
-        if ($mode().active) exitMappingMode();
+        if (!active()) return false;
+        exitMappingMode();
+        return true;
       },
       description: "Exit controller mapping mode",
     },

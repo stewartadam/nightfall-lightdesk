@@ -315,13 +315,15 @@ function isJustBound(source: ArmedSource): boolean {
  * Clears the armed control after it was bound, keeping mapping mode active.
  *
  * Messages from the same control are ignored briefly, so the release that follows a touch
- * does not arm it again.
+ * does not arm it again. When `bound` names the control that was bound, a different control
+ * touched while the binding was being saved stays armed.
  */
-export function disarmMappingSource(): void {
+export function disarmMappingSource(bound?: ArmedSource): void {
   const state = $mappingMode.get();
   const { armed, ...unarmed } = state;
-  if (armed) lastBound = { key: sourceKey(armed), at: Date.now() };
-  $mappingMode.set(unarmed);
+  const boundKey = bound ? sourceKey(bound) : armed && sourceKey(armed);
+  if (boundKey) lastBound = { key: boundKey, at: Date.now() };
+  if (armed && sourceKey(armed) === boundKey) $mappingMode.set(unarmed);
 }
 
 /** Describes an armed source for status text. */
