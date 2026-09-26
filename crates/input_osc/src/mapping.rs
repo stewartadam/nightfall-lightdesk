@@ -183,6 +183,25 @@ impl OscMapping {
     pub fn reports_release(&self) -> bool {
         self.release_value.is_some() || (self.arg_value.is_none() && self.arg_index.is_some())
     }
+
+    /// Explains in plain language why matched messages cannot drive the action `label`.
+    ///
+    /// Describes what the mapping reads from each message and how to change it: a mapping
+    /// matching one exact value only fires, and one without an argument index reads nothing.
+    pub fn explain_undrivable(&self, label: &str) -> String {
+        match self.arg_value.as_deref() {
+            Some(value) => format!(
+                "OSC {} only matches the value {value}, so it cannot set '{label}'. Clear the \
+                 argument match so the mapping reads the value.",
+                self.address
+            ),
+            None => format!(
+                "OSC {} is not set to read a value, so it cannot set '{label}'. Send a number \
+                 with the message, such as 0.5, and map it again.",
+                self.address
+            ),
+        }
+    }
 }
 
 /// Returns whether two mappings match exactly the same messages.
