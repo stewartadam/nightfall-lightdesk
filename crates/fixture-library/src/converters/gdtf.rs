@@ -95,13 +95,16 @@ pub fn convert_gdtf_mode(
             mode: mode_name.to_string(),
         })?;
 
-    let Some(resolved) = ResolvedMode::new(fixture_type, dmx_mode) else {
-        let fixture = build_fixture(metadata, mode_name, id, Vec::new(), None, "Main");
-        return Ok(ConvertedGdtfMode {
-            fixture,
-            geometry: None,
-            diagnostics: Vec::new(),
-        });
+    let resolved = match ResolvedMode::new(fixture_type, dmx_mode) {
+        Ok(resolved) => resolved,
+        Err(diagnostics) => {
+            let fixture = build_fixture(metadata, mode_name, id, Vec::new(), None, "Main");
+            return Ok(ConvertedGdtfMode {
+                fixture,
+                geometry: None,
+                diagnostics,
+            });
+        }
     };
 
     let built = build_elements(&resolved, fixture_type);

@@ -80,6 +80,8 @@ struct SweepReport {
     modes_with_violations: usize,
     panics: usize,
     timeouts: usize,
+    /// Directories or entries that could not be read, with the error; their archives were not swept.
+    unreadable_paths: Vec<String>,
     /// Rejection reasons with occurrence counts, most common first.
     rejection_reasons: Vec<(String, usize)>,
     /// Per-archive outcomes keyed by file name.
@@ -156,15 +158,34 @@ fn sweep_archive_guarded(path: PathBuf) -> ArchiveOutcome {
 }
 
 /// Recursively collects `.gdtf` files under a directory in a stable order.
-fn collect_archives(dir: &Path, archives: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+///
+/// A directory or entry that cannot be read is logged as a warning and
+/// recorded in `unreadable` so the sweep reports what it skipped, and the
+/// walk continues with the rest of the collection.
+fn collect_archives(dir: &Path, archives: &mut Vec<PathBuf>, unreadable: &mut Vec<String>) {
+    let mut skip = |path: &Path, error: std::io::Error| {
+        tracing::warn!(path = %path.display(), %error, "gdtf_sweep_path_unreadable");
+        eprintln!("warning: skipping unreadable {}: {error}", path.display());
+        unreadable.push(format!("{}: {error}", path.display()));
     };
-    let mut entries: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
-    entries.sort();
-    for path in entries {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            skip(dir, error);
+            return;
+        }
+    };
+    let mut paths = Vec::new();
+    for entry in entries {
+        match entry {
+            Ok(entry) => paths.push(entry.path()),
+            Err(error) => skip(dir, error),
+        }
+    }
+    paths.sort();
+    for path in paths {
         if path.is_dir() {
-            collect_archives(&path, archives);
+            collect_archives(&path, archives, unreadable);
         } else if path
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("gdtf"))
@@ -181,8 +202,9 @@ fn gdtf_corpus_sweep() {
     let dirs = std::env::var_os("NIGHTFALL_GDTF_CORPUS_DIR")
         .expect("NIGHTFALL_GDTF_CORPUS_DIR must list GDTF collection directories");
     let mut archives = Vec::new();
+    let mut unreadable_paths = Vec::new();
     for dir in std::env::split_paths(&dirs) {
-        collect_archives(&dir, &mut archives);
+        collect_archives(&dir, &mut archives, &mut unreadable_paths);
     }
     assert!(!archives.is_empty(), "no .gdtf archives found");
 
@@ -210,6 +232,7 @@ fn gdtf_corpus_sweep() {
 
     let mut report = SweepReport {
         archives: results.len(),
+        unreadable_paths,
         ..Default::default()
     };
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
@@ -254,14 +277,15 @@ fn gdtf_corpus_sweep() {
             .expect("write sweep report");
     }
     println!(
-        "GDTF sweep: {} archives, {} rejected archives, {} modes accepted, {} modes rejected, {} modes with violations, {} panics, {} timeouts",
+        "GDTF sweep: {} archives, {} rejected archives, {} modes accepted, {} modes rejected, {} modes with violations, {} panics, {} timeouts, {} unreadable paths skipped",
         report.archives,
         report.rejected_archives,
         report.modes_accepted,
         report.modes_rejected,
         report.modes_with_violations,
         report.panics,
-        report.timeouts
+        report.timeouts,
+        report.unreadable_paths.len()
     );
     assert!(
         failures.is_empty(),
@@ -278,4 +302,33 @@ fn reason_key(error: &str) -> String {
         key.truncate(index);
     }
     key
+}
+
+/// Verifies an unreadable subdirectory is recorded and skipped while archives
+/// elsewhere in the collection are still collected.
+#[cfg(unix)]
+#[test]
+fn collect_archives_skips_unreadable_directories() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let locked = root.path().join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    std::fs::write(locked.join("hidden.gdtf"), b"").unwrap();
+    std::fs::write(root.path().join("visible.gdtf"), b"").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_dir(&locked).is_ok() {
+        // Privileged users (e.g. root in CI containers) ignore directory permissions.
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+
+    let mut archives = Vec::new();
+    let mut unreadable = Vec::new();
+    collect_archives(root.path(), &mut archives, &mut unreadable);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(archives, [root.path().join("visible.gdtf")]);
+    assert_eq!(unreadable.len(), 1, "{unreadable:?}");
+    assert!(unreadable[0].starts_with(&locked.display().to_string()));
 }

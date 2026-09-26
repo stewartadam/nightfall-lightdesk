@@ -156,8 +156,16 @@ pub struct ResolvedMode<'a> {
 }
 
 impl<'a> ResolvedMode<'a> {
-    /// Resolves `mode` of `fixture_type`, or returns `None` when the fixture type has no geometry.
-    pub fn new(fixture_type: &'a FixtureType, mode: &'a DmxMode) -> Option<Self> {
+    /// Resolves `mode` of `fixture_type`.
+    ///
+    /// Fails when the mode root yields no geometry instance: the fixture type
+    /// has no geometry, or the root is a reference that cannot be expanded.
+    /// The error carries the diagnostics explaining why, which is empty only
+    /// for a fixture type without geometry whose mode names no root.
+    pub fn new(
+        fixture_type: &'a FixtureType,
+        mode: &'a DmxMode,
+    ) -> Result<Self, Vec<GdtfDiagnostic>> {
         let mut resolved = Self {
             instances: Vec::new(),
             channels: Vec::new(),
@@ -172,12 +180,14 @@ impl<'a> ResolvedMode<'a> {
         {
             Some(root) => root,
             None => {
-                let fallback = fixture_type.geometries.first()?;
                 if let Some(root) = root_name {
                     resolved
                         .diagnostics
                         .push(GdtfDiagnostic::MissingModeRoot { root });
                 }
+                let Some(fallback) = fixture_type.geometries.first() else {
+                    return Err(resolved.diagnostics);
+                };
                 fallback
             }
         };
@@ -194,11 +204,11 @@ impl<'a> ResolvedMode<'a> {
             &mut active_templates,
         );
         if resolved.instances.is_empty() {
-            return None;
+            return Err(resolved.diagnostics);
         }
         resolved.rename_duplicates();
         resolved.resolve_channels(mode);
-        Some(resolved)
+        Ok(resolved)
     }
 
     /// Adds an instance for `geometry` and its descendants, expanding references.
@@ -693,6 +703,26 @@ mod tests {
             resolved.diagnostics[0],
             GdtfDiagnostic::DanglingReference { .. }
         ));
+    }
+
+    /// Verifies a mode rooted at a dangling reference fails with the
+    /// diagnostic explaining why no geometry was resolved.
+    #[test]
+    fn dangling_mode_root_reports_its_diagnostic() {
+        let gdtf = GdtfBuilder::new("Test", "Dangling Root")
+            .geometry(GeometrySpec::reference("Root", "Missing", &[]))
+            .mode(ModeSpec::new("Mode", "Root").channel(ChannelSpec::new("Root", "Dimmer", &[1])))
+            .parse();
+        let fixture_type = &gdtf.description.fixture_types[0];
+        let diagnostics = ResolvedMode::new(fixture_type, &fixture_type.dmx_modes[0])
+            .expect_err("a dangling root resolves no geometry");
+        assert_eq!(
+            diagnostics,
+            vec![GdtfDiagnostic::DanglingReference {
+                reference: "Root".to_string(),
+                target: "Missing".to_string(),
+            }]
+        );
     }
 
     /// Verifies nested references accumulate their break offsets.
