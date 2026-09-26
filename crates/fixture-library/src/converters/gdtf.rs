@@ -8,9 +8,9 @@
 
 //! GDTF to Fixture conversion
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use gdtf::geometry::AnyGeometry;
+use gdtf::geometry::{AnyGeometry, Geometry};
 use nightfall::prelude::Identifiers;
 use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
@@ -70,9 +70,15 @@ pub fn convert_gdtf_to_fixture(
     //   - Each pixel has its own RGB channels
     //   - This creates 100 elements, each with Red/Green/Blue parameters
     let mut geometry_params: HashMap<String, Vec<ParameterMetadata>> = HashMap::new();
+    let templated_geometries = templated_geometry_names(fixture_type);
+    let mut skipped_template_channels = 0usize;
 
     for channel in &dmx_mode.dmx_channels {
         let geometry_name = channel.geometry.to_string();
+        if templated_geometries.contains(&geometry_name) {
+            skipped_template_channels += 1;
+            continue;
+        }
 
         // Logical channels of one DMX channel are mutually exclusive views of the
         // same bytes, so only the first becomes the output-bearing parameter.
@@ -87,6 +93,15 @@ pub fn convert_gdtf_to_fixture(
                 .or_default()
                 .push(param);
         }
+    }
+    if skipped_template_channels > 0 {
+        tracing::warn!(
+            make = %metadata.manufacturer,
+            model = %metadata.model,
+            mode = mode_name,
+            skipped = skipped_template_channels,
+            "Skipped DMX channels on GeometryReference templates; per-reference expansion is not supported"
+        );
     }
 
     // Create elements in the order geometries first appeared in DMX channels.
@@ -234,10 +249,10 @@ fn convert_logical_channel_to_parameter(
 
 /// Resolves a DMX channel's byte resolution and footprint slots from its GDTF `Offset` and `DMXBreak`.
 ///
-/// Channels without an `Offset` are virtual and occupy no slots. `Overwrite`
-/// breaks are supplied per geometry reference and default to break 1 here.
-/// Returns `None` for offsets that cannot be represented (more than four
-/// bytes, or slots outside `1..=512`).
+/// Channels without an `Offset` are virtual and occupy no slots. Returns `None`
+/// for offsets that cannot be represented (more than four bytes, or slots
+/// outside `1..=512`) and for `Overwrite` breaks, whose break and offset only
+/// exist per `GeometryReference`.
 pub(super) fn gdtf_channel_slots(
     dmx_channel: &gdtf::dmx_mode::DmxChannel,
 ) -> Option<(DmxValueResolution, DmxSlots)> {
@@ -261,9 +276,49 @@ pub(super) fn gdtf_channel_slots(
         .collect::<Option<Vec<u16>>>()?;
     let dmx_break = match dmx_channel.dmx_break {
         gdtf::dmx_mode::DmxBreak::Value(value) => u16::try_from(value).ok()?.max(1),
-        gdtf::dmx_mode::DmxBreak::Overwrite => 1,
+        gdtf::dmx_mode::DmxBreak::Overwrite => return None,
     };
     Some((resolution, DmxSlots::Explicit { dmx_break, offsets }))
+}
+
+/// Collects the names of geometries instanced by a `GeometryReference`, including their descendants.
+///
+/// DMX channels on these template geometries carry offsets relative to each
+/// reference's `Break` rather than absolute footprint slots. Until channels are
+/// expanded per reference, the converter skips them so they cannot land on
+/// slots owned by the fixture's regular channels.
+fn templated_geometry_names(fixture_type: &gdtf::fixture_type::FixtureType) -> HashSet<String> {
+    /// Appends the template names targeted by every `GeometryReference` in the subtree.
+    fn collect_reference_targets(geometries: &[Geometry], targets: &mut Vec<String>) {
+        for geometry in geometries {
+            if let Geometry::Reference(reference) = geometry
+                && let Some(target) = &reference.geometry
+            {
+                targets.push(target.to_string());
+            }
+            collect_reference_targets(geometry.children(), targets);
+        }
+    }
+
+    /// Inserts the name of a geometry and all of its descendants.
+    fn collect_subtree(geometry: &Geometry, names: &mut HashSet<String>) {
+        if let Some(name) = geometry.name() {
+            names.insert(name.to_string());
+        }
+        for child in geometry.children() {
+            collect_subtree(child, names);
+        }
+    }
+
+    let mut targets = Vec::new();
+    collect_reference_targets(&fixture_type.geometries, &mut targets);
+    let mut names = HashSet::new();
+    for target in &targets {
+        if let Some(template) = fixture_type.root_geometry(target) {
+            collect_subtree(template, &mut names);
+        }
+    }
+    names
 }
 
 /// Resolve an angular physical range from a GDTF logical channel.
@@ -374,8 +429,6 @@ fn extract_physical_properties(
 fn find_beam_geometry(
     geometries: &[gdtf::geometry::Geometry],
 ) -> Option<&gdtf::geometry::BeamGeometry> {
-    use gdtf::geometry::{AnyGeometry, Geometry};
-
     for geom in geometries {
         match geom {
             Geometry::Beam(beam) => return Some(beam),

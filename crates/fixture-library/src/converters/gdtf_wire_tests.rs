@@ -19,7 +19,7 @@ use nightfall_fixtures::wire_layout::{dmx_max, split_dmx_value};
 
 use super::gdtf::convert_gdtf_to_fixture;
 use crate::testing::reference::{ReferenceChannel, reference_channels};
-use crate::testing::{ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
+use crate::testing::{BreakSpec, ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
 
 /// Converts a mode of a synthetic archive and returns the fixture with the reference channels.
 fn convert(builder: &GdtfBuilder, mode: &str) -> (Fixture, Vec<ReferenceChannel>) {
@@ -246,4 +246,43 @@ fn random_layouts_round_trip_through_reference_decoder() {
         let (fixture, references) = convert(&builder, "Random");
         assert_round_trip(&fixture, &references, case);
     }
+}
+
+/// Verifies channels on `GeometryReference` templates are skipped instead of being placed
+/// at their reference-relative offsets, where they would collide with the fixture's own
+/// break-1 channels.
+#[test]
+fn template_geometry_channels_do_not_collide_with_regular_channels() {
+    let builder = GdtfBuilder::new("Test", "Pixel Bar")
+        .geometry(
+            GeometrySpec::generic("Body")
+                .child(GeometrySpec::reference("Pixel 1", "Pixel", &[(1, 2)]))
+                .child(GeometrySpec::reference("Pixel 2", "Pixel", &[(1, 3)])),
+        )
+        .geometry(GeometrySpec::generic("Pixel").child(GeometrySpec::beam("Pixel Beam")))
+        .mode(
+            ModeSpec::new("Bar", "Body")
+                .channel(ChannelSpec::new("Body", "Dimmer", &[1]))
+                .channel(ChannelSpec::new("Pixel", "ColorAdd_R", &[1]))
+                .channel(
+                    ChannelSpec::new("Pixel Beam", "ColorAdd_G", &[2])
+                        .on_break(BreakSpec::Overwrite),
+                ),
+        );
+    let (fixture, _) = convert(&builder, "Bar");
+
+    let parameters: Vec<_> = fixture
+        .elements
+        .iter()
+        .flat_map(|element| element.parameters.iter())
+        .collect();
+    assert_eq!(parameters.len(), 1, "only the Body dimmer is placed");
+    assert_eq!(parameters[0].attribute, Attribute::Intensity);
+    assert_eq!(
+        parameters[0].dmx_slots,
+        DmxSlots::Explicit {
+            dmx_break: 1,
+            offsets: vec![1],
+        }
+    );
 }
