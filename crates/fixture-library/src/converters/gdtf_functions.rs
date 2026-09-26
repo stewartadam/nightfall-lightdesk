@@ -309,24 +309,14 @@ mod tests {
     /// Verifies gobo wheel sets carry their slot image name.
     #[test]
     fn wheel_sets_carry_slot_media() {
-        use crate::testing::WheelSlotSpec;
+        use crate::testing::{SlotSpec, WheelSpec};
 
         let dir = tempfile::tempdir().unwrap();
         let metadata = GdtfBuilder::new("Test", "Gobos")
             .wheel(
-                "Gobo Wheel",
-                vec![
-                    WheelSlotSpec {
-                        name: "Open".to_string(),
-                        color: None,
-                        media: None,
-                    },
-                    WheelSlotSpec {
-                        name: "Stars".to_string(),
-                        color: None,
-                        media: Some("stars".to_string()),
-                    },
-                ],
+                WheelSpec::new("Gobo Wheel")
+                    .slot(SlotSpec::new("Open"))
+                    .slot(SlotSpec::new("Stars").media("stars")),
             )
             .geometry(GeometrySpec::generic("Base"))
             .mode(
