@@ -17,7 +17,16 @@
 
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Inspector } from "three/examples/jsm/inspector/Inspector.js";
-import { Mesh, PerspectiveCamera, Scene, WebGPURenderer } from "three/webgpu";
+import {
+  ACESFilmicToneMapping,
+  InspectorBase,
+  Mesh,
+  PerspectiveCamera,
+  Scene,
+  WebGPURenderer,
+} from "three/webgpu";
+import { isVisualizerInspectorEnabled } from "../../../lib/feature-flags";
+import { getLogger } from "../../../lib/logger";
 import {
   cancelControlsInteraction,
   createControls,
@@ -38,9 +47,18 @@ import {
   createPostProcessing,
   disposePostProcessing,
   type PostProcessingState,
+  preparePostProcessing,
   renderWithPostProcessing,
 } from "./effects/post-processing";
 import { consumeDueFrame } from "./frame-rate-limiter";
+import {
+  GpuFrameTimer,
+  type InspectorGpuFrame,
+  readInspectorGpuSample,
+  type TimestampRenderer,
+} from "./gpu-frame-timer";
+import { type QualityProfile, resolveQualityProfile } from "./quality-profile";
+import type { CameraState } from "./renderers/renderer-api";
 import {
   createSceneEnvironment,
   type SceneEnvironment,
@@ -59,6 +77,15 @@ export {
   setControlsRotationMode,
   zoomCameraToGroups,
 };
+
+const log = getLogger(import.meta.url);
+
+/**
+ * Upper bound on waiting for in-flight GPU timestamp readback during disposal.
+ * Device loss can leave a buffer mapping unresolved forever, so teardown must
+ * proceed without it after this deadline.
+ */
+export const GPU_READBACK_DISPOSAL_TIMEOUT_MS = 2000;
 
 /**
  * Frame timing state for framerate limiting.
@@ -88,11 +115,13 @@ export interface RendererConfig {
 export function createRenderer(config: RendererConfig): WebGPURenderer {
   const renderer = new WebGPURenderer({
     canvas: config.canvas as HTMLCanvasElement, // Cast for Three.js types
-    antialias: true,
+    // The scene pass owns multisampling; fullscreen composition and outline filters do not need it.
+    antialias: false,
     alpha: true,
   });
   renderer.setPixelRatio(Math.min(config.devicePixelRatio ?? 2, 2));
   renderer.setClearColor(config.clearColor ?? 0x1a1a2e, 1);
+  renderer.toneMapping = ACESFilmicToneMapping;
   return renderer;
 }
 
@@ -141,7 +170,9 @@ interface CoreRendererState {
  * Renderer state containing all Three.js objects.
  */
 export interface RendererState extends CoreRendererState {
-  inspector: Inspector;
+  inspector?: Inspector;
+  /** Bounded timing for normal playback; the developer inspector owns its own queries. */
+  gpuTimer?: GpuFrameTimer;
   /** Post-processing state (optional, enabled by default) */
   postProcessing: PostProcessingState | null;
   updateInspector?: () => void;
@@ -153,22 +184,23 @@ export interface RendererState extends CoreRendererState {
  */
 export async function initRenderer(
   canvas: HTMLCanvasElement,
+  profile: QualityProfile = resolveQualityProfile("high"),
+  initialCameraState?: CameraState,
 ): Promise<RendererState> {
   // Create WebGPU renderer (falls back to WebGL if WebGPU unavailable)
-  const renderer = new WebGPURenderer({
+  const renderer = createRenderer({
     canvas,
-    antialias: true,
-    alpha: true,
+    devicePixelRatio: window.devicePixelRatio,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0x1a1a2e, 1); // Dark blue-gray background
 
-  // Create inspector and attach to renderer
-  const { Inspector } = await import(
-    "three/examples/jsm/inspector/Inspector.js"
-  );
-  const inspector = new Inspector();
-  renderer.inspector = inspector;
+  let inspector: Inspector | undefined;
+  if (isVisualizerInspectorEnabled()) {
+    const { Inspector } = await import(
+      "three/examples/jsm/inspector/Inspector.js"
+    );
+    inspector = new Inspector();
+    renderer.inspector = inspector;
+  }
 
   // Create scene
   const scene = new Scene();
@@ -186,8 +218,8 @@ export async function initRenderer(
   // Create orbit controls with configurable rotation mode and dolly-through zoom
   const controls = createControls(camera, canvas);
 
-  // Load saved camera state or use defaults
-  const savedState = loadCameraState();
+  // A replaced renderer hands over its live pose; otherwise restore the persisted one.
+  const savedState = initialCameraState ?? loadCameraState();
   if (savedState) {
     camera.position.set(
       savedState.position.x,
@@ -222,17 +254,23 @@ export async function initRenderer(
   const environment = createSceneEnvironment(scene);
 
   // Setup post-processing with bloom
-  const postProcessing = createPostProcessing(renderer, scene, camera);
+  await renderer.init();
+  const postProcessing = createPostProcessing(renderer, scene, camera, {
+    profile,
+  });
+  await preparePostProcessing(postProcessing);
 
   // Setup inspector parameters
-  const updateInspector = setupInspectorParams(
-    renderer,
-    inspector,
-    camera,
-    controls,
-    environment,
-    postProcessing,
-  );
+  const updateInspector = inspector
+    ? setupInspectorParams(
+        renderer,
+        inspector,
+        camera,
+        controls,
+        environment,
+        postProcessing,
+      )
+    : undefined;
 
   return {
     renderer,
@@ -240,6 +278,7 @@ export async function initRenderer(
     camera,
     controls,
     inspector,
+    gpuTimer: inspector ? undefined : new GpuFrameTimer(),
     environment,
     isPaused: false,
     frameTiming: { lastTime: 0, accumulator: 0 },
@@ -252,6 +291,11 @@ export async function initRenderer(
  * Frame timing metrics passed to instrumentation callback.
  */
 interface FrameTimingMetrics {
+  /** Actual animation callback entry and submission completion, using the performance clock. */
+  startedAt: number;
+  completedAt: number;
+  /** Completed asynchronous GPU query sample from the active timing owner. */
+  gpu?: { id: number; milliseconds: number; passes?: Record<string, number> };
   /** Current frame timestamp (ms) */
   time: number;
   /** Time spent in update callback (ms) */
@@ -284,6 +328,7 @@ export function startRenderLoop(
   state.frameTiming.accumulator = 0;
 
   state.renderer.setAnimationLoop((time: number) => {
+    const startedAt = performance.now();
     if (state.isPaused) {
       return;
     }
@@ -318,22 +363,42 @@ export function startRenderLoop(
     callbacks?.onUpdate?.();
     const updateEnd = performance.now();
 
-    // Render scene and track timing
+    // Render scene and track timing. `inspector.frames` and the pools'
+    // `frameIntervals` are three.js internals (the latter added by
+    // patches/three+0.185.1.patch), guarded by scripts/three-timestamp-query.node.test.mjs.
+    const gpu = state.inspector
+      ? readInspectorGpuSample(
+          (state.inspector as unknown as { frames: InspectorGpuFrame[] })
+            .frames,
+          (state.renderer as unknown as TimestampRenderer).backend
+            .timestampQueryPool,
+        )
+      : state.gpuTimer?.sample;
     const renderStart = performance.now();
+    const timedRenderer = state.renderer as unknown as TimestampRenderer;
+    state.gpuTimer?.begin(timedRenderer);
     if (state.postProcessing) {
       // Render with post-processing (bloom, etc.)
-      renderWithPostProcessing(state.postProcessing);
+      renderWithPostProcessing(
+        state.postProcessing,
+        gpu,
+        updateEnd - updateStart,
+      );
     } else {
       // Direct rendering without post-processing
-      state.renderer.renderAsync(state.scene, state.camera);
+      state.renderer.render(state.scene, state.camera);
     }
+    state.gpuTimer?.end(timedRenderer);
     const renderEnd = performance.now();
 
     // Report timing metrics
     callbacks?.onFrame?.({
+      startedAt,
+      completedAt: renderEnd,
       time,
       updateMs: updateEnd - updateStart,
       renderMs: renderEnd - renderStart,
+      gpu,
     });
   });
 }
@@ -364,28 +429,59 @@ export function handleResize(
 }
 
 /**
+ * Waits for scheduled GPU timestamp readback so mapped query buffers are not
+ * destroyed mid-map, but gives up after {@link GPU_READBACK_DISPOSAL_TIMEOUT_MS}
+ * so a lost device cannot block the rest of teardown. Rejections propagate.
+ */
+async function drainTimestampReadback(state: RendererState): Promise<void> {
+  const readback = (async () => {
+    // `resolveTimestamp` is public on Three's RendererInspector but missing
+    // from the addon's type declarations (see scripts/three-timestamp-query.node.test.mjs).
+    if (state.inspector) {
+      await (
+        state.inspector as unknown as { resolveTimestamp(): Promise<void> }
+      ).resolveTimestamp();
+    }
+    await state.gpuTimer?.dispose();
+  })();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      log.warn(
+        `GPU timestamp readback did not settle within ${GPU_READBACK_DISPOSAL_TIMEOUT_MS}ms; disposing without it`,
+      );
+      resolve();
+    }, GPU_READBACK_DISPOSAL_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([readback, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Dispose all renderer resources.
  */
-export function disposeRenderer(state: RendererState): void {
+export async function disposeRenderer(state: RendererState): Promise<void> {
   stopRenderLoop(state);
-
-  disposeControlsBehavior(state.controls);
-  state.controls.dispose();
-  disposePostProcessing(state.postProcessing);
-
-  // Dispose scene objects
-  state.scene.traverse((object) => {
-    if (object instanceof Mesh) {
-      object.geometry?.dispose();
-      if (Array.isArray(object.material)) {
-        for (const mat of object.material) {
-          mat.dispose();
+  try {
+    await drainTimestampReadback(state);
+  } finally {
+    state.renderer.inspector = new InspectorBase();
+    disposeControlsBehavior(state.controls);
+    state.controls.dispose();
+    disposePostProcessing(state.postProcessing);
+    state.scene.traverse((object) => {
+      if (object instanceof Mesh) {
+        object.geometry?.dispose();
+        if (Array.isArray(object.material)) {
+          for (const mat of object.material) mat.dispose();
+        } else if (object.material) {
+          object.material.dispose();
         }
-      } else if (object.material) {
-        object.material.dispose();
       }
-    }
-  });
-
-  state.renderer.dispose();
+    });
+    state.renderer.dispose();
+  }
 }

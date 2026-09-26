@@ -18,8 +18,10 @@
 
 import {
   BoxGeometry,
-  Color,
+  type BufferGeometry,
+  type Color,
   Group,
+  type Material,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
@@ -27,6 +29,12 @@ import {
 } from "three/webgpu";
 import type { FixtureElement } from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
+import { EMITTER_RADIANCE } from "../emitter-radiance";
+import {
+  createEmitterBatches,
+  type EmitterBatch,
+  updateEmitterBatches,
+} from "./emitter-batches";
 
 /** Strobe panel dimensions (meters) */
 const STROBE_PANEL_WIDTH = 0.515;
@@ -70,6 +78,8 @@ export interface StrobePanelData {
   panelGroup: Group;
   pixelMeshes: Mesh[];
   whiteSegmentMeshes: Mesh[];
+  /** Shared draws retain independent source meshes for optical state and element outlines. */
+  emitterBatches: EmitterBatch[];
   /** Element labels for DMX lookup (index -> label) */
   elementLabels: string[];
   pixelElementLabels: string[];
@@ -253,10 +263,12 @@ function createRgbStrobeBarSegmentMesh(
 /**
  * Build a strobe panel fixture.
  * Creates a hardcoded strobe panel layout (doesn't use GDTF geometry).
+ * `displayGain` scales the batched emitter faces for the active quality preset.
  */
 export function buildStrobePanelFixture(
   fixtureUid: string,
   elements: FixtureElement[],
+  displayGain = 1,
 ): FixtureInstance & { strobePanelData: StrobePanelData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -361,6 +373,11 @@ export function buildStrobePanelFixture(
     strobePanelData: {
       type: "strobe-panel",
       layout: "matrix",
+      emitterBatches: createEmitterBatches(
+        panelGroup,
+        [pixelMeshes, whiteSegmentMeshes],
+        displayGain,
+      ),
       panelGroup,
       pixelMeshes,
       whiteSegmentMeshes,
@@ -375,9 +392,14 @@ export function buildStrobePanelFixture(
   };
 }
 
+/**
+ * Build an RGB strobe bar with its pixel row above independently controlled white segments.
+ * `displayGain` scales the batched emitter faces for the active quality preset.
+ */
 export function buildRgbStrobeBarFixture(
   fixtureUid: string,
   elements: FixtureElement[],
+  displayGain = 1,
 ): FixtureInstance & { strobePanelData: StrobePanelData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -487,6 +509,11 @@ export function buildRgbStrobeBarFixture(
     strobePanelData: {
       type: "strobe-panel",
       layout: "rgb-strobe-bar",
+      emitterBatches: createEmitterBatches(
+        panelGroup,
+        [pixelMeshes, whiteSegmentMeshes],
+        displayGain,
+      ),
       panelGroup,
       pixelMeshes,
       whiteSegmentMeshes,
@@ -501,14 +528,12 @@ export function buildRgbStrobeBarFixture(
   };
 }
 
-function boostColor(baseColor: Color, intensity: number, cap = 1.15): Color {
-  const boosted = baseColor.clone().multiplyScalar(intensity * 2.0);
-  boosted.r = Math.min(boosted.r, cap);
-  boosted.g = Math.min(boosted.g, cap);
-  boosted.b = Math.min(boosted.b, cap);
-  return boosted;
+/** Applies display gain in place without allocating a color for each emitter on every update. */
+function boostColor(baseColor: Color, intensity: number): Color {
+  return baseColor.multiplyScalar(intensity * EMITTER_RADIANCE);
 }
 
+/** Resolves independent RGB cell output into its persistent linear material color. */
 function updateRgbEmitterMesh(
   mesh: Mesh,
   dmx:
@@ -527,11 +552,12 @@ function updateRgbEmitterMesh(
     return;
   }
 
-  const baseColor = new Color(dmx.red, dmx.green, dmx.blue);
+  const baseColor = material.color.setRGB(dmx.red, dmx.green, dmx.blue);
   baseColor.convertSRGBToLinear();
-  material.color.copy(boostColor(baseColor, dmx.intensity));
+  boostColor(baseColor, dmx.intensity);
 }
 
+/** Resolves a white cell without allocating temporary colors or retaining stale output after blackout. */
 function updateWhiteEmitterMesh(
   mesh: Mesh,
   dmx:
@@ -549,9 +575,9 @@ function updateWhiteEmitterMesh(
   }
 
   const level = dmx.white ?? dmx.intensity;
-  const whiteColor = new Color(level, level, level);
+  const whiteColor = material.color.setRGB(level, level, level);
   whiteColor.convertSRGBToLinear();
-  material.color.copy(boostColor(whiteColor, dmx.intensity));
+  boostColor(whiteColor, dmx.intensity);
 }
 
 /**
@@ -618,6 +644,7 @@ export function updateStrobePanelColors(
       updateRgbEmitterMesh(pixelMeshes[i], dmx);
     }
 
+    updateEmitterBatches(data);
     return;
   }
 
@@ -702,6 +729,7 @@ export function updateStrobePanelColors(
       updateWhiteEmitterMesh(whiteSegmentMeshes[i], undefined);
     }
   }
+  updateEmitterBatches(data);
 }
 
 /**
@@ -710,29 +738,20 @@ export function updateStrobePanelColors(
 export function disposeStrobePanel(
   instance: FixtureInstance & { strobePanelData: StrobePanelData },
 ): void {
-  const { pixelMeshes, whiteSegmentMeshes } = instance.strobePanelData;
-
-  for (const mesh of pixelMeshes) {
-    mesh.geometry?.dispose();
-    (mesh.material as MeshBasicMaterial)?.dispose();
-  }
-
-  for (const mesh of whiteSegmentMeshes) {
-    mesh.geometry?.dispose();
-    (mesh.material as MeshBasicMaterial)?.dispose();
-  }
-
-  // Dispose arms and face
+  for (const { mesh } of instance.strobePanelData.emitterBatches)
+    mesh.dispose();
+  const geometries = new Set<BufferGeometry>();
+  const materials = new Set<Material>();
   instance.group.traverse((child) => {
     if (child instanceof Mesh) {
-      child.geometry?.dispose();
+      geometries.add(child.geometry);
       if (Array.isArray(child.material)) {
-        for (const mat of child.material) {
-          mat.dispose();
-        }
+        for (const material of child.material) materials.add(material);
       } else if (child.material) {
-        child.material.dispose();
+        materials.add(child.material);
       }
     }
   });
+  for (const geometry of geometries) geometry.dispose();
+  for (const material of materials) material.dispose();
 }

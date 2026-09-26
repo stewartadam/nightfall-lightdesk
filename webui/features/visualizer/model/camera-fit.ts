@@ -15,27 +15,10 @@ import { getCameraState, saveCameraState } from "./camera-state";
 const ZOOM_PADDING_FACTOR = 1.2;
 
 /**
- * Check if an object should be excluded from bounding box calculation.
- * Excludes beam meshes, spotlights, and their targets that extend far from fixtures.
- */
-function shouldExcludeFromBoundingBox(object: { name: string }): boolean {
-  const name = object.name;
-  return (
-    name === "Beam" ||
-    name === "BeamFootprint" ||
-    name.startsWith("Beam_") ||
-    name === "SpotLight" ||
-    name.startsWith("SpotLight_") ||
-    name === "SpotLightTarget" ||
-    name.startsWith("SpotLightTarget_")
-  );
-}
-
-/**
  * Zoom camera to frame the given fixture groups.
  * Computes bounding box of all groups and positions camera to see them all.
  * Preserves the current camera viewing angle - only adjusts distance and target.
- * Excludes beam meshes from bounding box calculation to avoid extreme zoom-out.
+ * Beams live in the scene's shared optical batch, so fixture groups hold only physical geometry.
  *
  * @param camera - The perspective camera to position
  * @param controls - OrbitControls to update target
@@ -53,11 +36,6 @@ export function zoomCameraToGroups(
   const box = new Box3();
   for (const group of groups) {
     group.traverse((object) => {
-      // Skip beam-related objects - they extend far and would cause extreme zoom-out
-      if (shouldExcludeFromBoundingBox(object)) {
-        return;
-      }
-
       // Only include Mesh objects with geometry in the bounding box
       if (object instanceof Mesh && object.geometry) {
         // Update world matrix to get correct world position

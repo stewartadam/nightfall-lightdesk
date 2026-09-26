@@ -10,7 +10,7 @@
 
 use nightfall::prelude::Identifiers;
 use nightfall_dmx::DmxValueResolution;
-use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_dmx::prelude::{Attribute, ParameterUnit, ParameterValue};
 use uuid::Uuid;
 
 use crate::prelude::*;
@@ -19,6 +19,17 @@ use crate::prelude::*;
 pub(super) fn normalize_fixture_profile(fixture: &mut Fixture) {
     if fixture.layout != Some(FixtureLayout::RotatingWashBeam) {
         return;
+    }
+    if fixture.physical.is_none() {
+        fixture.physical = Some(rotating_wash_physical());
+    }
+    if let Some(zoom) = fixture.elements.first_mut().and_then(|control| {
+        control
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.attribute == Attribute::Zoom)
+    }) {
+        *zoom = rotating_wash_zoom_parameter();
     }
 
     let vdim_parameter = parameter(
@@ -83,12 +94,7 @@ pub(super) fn create_rotating_wash_beam_194(id: u32, make: &str, model: &str) ->
                 use_grandmaster: false,
             },
             custom_parameter("Tilt Speed"),
-            parameter(
-                Attribute::Zoom,
-                DmxValueResolution::Coarse,
-                MergeStrategy::LTP,
-                false,
-            ),
+            rotating_wash_zoom_parameter(),
             parameter(
                 Attribute::Intensity,
                 DmxValueResolution::Coarse,
@@ -217,10 +223,44 @@ pub(super) fn create_rotating_wash_beam_194(id: u32, make: &str, model: &str) ->
         model: model.to_owned(),
         mode: String::new(),
         elements,
-        physical: None,
+        physical: Some(rotating_wash_physical()),
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::RotatingWashBeam),
         library_asset_etag: None,
+    }
+}
+
+/// Narrowest full beam angle of the built-in wash's zoom travel, in degrees.
+const ROTATING_WASH_ZOOM_NARROW_DEGREES: f32 = 1.0;
+/// Widest full beam angle of the built-in wash's zoom travel, in degrees.
+const ROTATING_WASH_ZOOM_WIDE_DEGREES: f32 = 34.0;
+
+/// Defines the built-in linear wash's narrow parallel apertures at their focused zoom.
+fn rotating_wash_physical() -> crate::physical::FixturePhysical {
+    crate::physical::FixturePhysical {
+        beam_angle: 1.0,
+        field_angle: 1.2,
+        lumens: Some(12000.0),
+        color_temperature: None,
+        beam_type: crate::physical::BeamType::Wash,
+    }
+}
+
+/// Describes the wash's zoom channel in degrees, as GDTF angular zoom channels are imported.
+///
+/// DMX 0 selects the narrowest beam and DMX 255 the widest; the visualizer reads the output
+/// value directly as the rendered full beam angle.
+fn rotating_wash_zoom_parameter() -> ParameterMetadata {
+    ParameterMetadata {
+        native_unit: ParameterUnit::Degrees,
+        min: ROTATING_WASH_ZOOM_NARROW_DEGREES.into(),
+        max: ROTATING_WASH_ZOOM_WIDE_DEGREES.into(),
+        ..parameter(
+            Attribute::Zoom,
+            DmxValueResolution::Coarse,
+            MergeStrategy::LTP,
+            false,
+        )
     }
 }
 

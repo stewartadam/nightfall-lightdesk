@@ -90,6 +90,7 @@ export const getSelectionMeshes = (
           if (
             child instanceof Mesh &&
             child.name !== "Pixel" &&
+            child.userData.visualizerCellBatch !== true &&
             child.name !== "WhiteSegment" &&
             child.name !== "TopRgbSegment" &&
             child.name !== "BottomRgbSegment"
@@ -106,6 +107,7 @@ export const getSelectionMeshes = (
         if (
           child instanceof Mesh &&
           !child.name.startsWith("Lens_") &&
+          child.userData.visualizerCellBatch !== true &&
           !child.name.startsWith("Beam_") &&
           !child.name.includes("StripPixel")
         ) {

@@ -16,12 +16,15 @@ pub mod gdtf;
 mod gdtf_wire_tests;
 pub mod ofl;
 
-/// Apply a physical angular range to position metadata, or retain percentage semantics.
-fn apply_position_physical_range(
+/// Apply a physical angular range to position or zoom metadata, or retain percentage semantics.
+fn apply_angular_physical_range(
     metadata: &mut ParameterMetadata,
     physical_range: Option<(f32, f32)>,
 ) {
-    if !matches!(metadata.attribute, Attribute::Pan | Attribute::Tilt) {
+    if !matches!(
+        metadata.attribute,
+        Attribute::Pan | Attribute::Tilt | Attribute::Zoom
+    ) {
         return;
     }
 

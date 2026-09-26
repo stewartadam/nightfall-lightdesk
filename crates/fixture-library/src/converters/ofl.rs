@@ -13,7 +13,7 @@ use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
 use uuid::Uuid;
 
-use crate::converters::apply_position_physical_range;
+use crate::converters::apply_angular_physical_range;
 use crate::{FixtureLibraryError, Result};
 
 /// Convert an OFL fixture to a nightfall Fixture.
@@ -93,7 +93,7 @@ fn apply_ofl_position_ranges(
             Attribute::Tilt => tilt_max.map(|max| (0.0, max)),
             _ => None,
         };
-        apply_position_physical_range(parameter, physical_range);
+        apply_angular_physical_range(parameter, physical_range);
     }
 }
 

@@ -8,271 +8,129 @@
 
 /**
  * Beam manager for visualizer fixtures.
- * Creates and updates volumetric light beams attached to fixture emitters.
+ * Publishes every emitter aperture into the scene's shared optical batch.
  */
 
-import { Mesh, Object3D, Quaternion, SpotLight, Vector3 } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
+import type { Object3D, Scene } from "three/webgpu";
+import { getBackendUrl } from "../../../../lib/api";
+import type { BeamOptics } from "../../../../types";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
-import { DEFAULT_STAGE_FLOOR_TOP_Y } from "../scene-environment";
+import type { ApertureControls } from "./emitter-optical-state";
 import {
-  type BeamMaterial,
-  type BeamParameters,
-  createBeamGeometry,
-  createBeamMaterial,
-  defaultBeamParameters,
-  disposeBeamMaterial,
-  updateBeamMaterial,
-} from "./beam-material";
-import { beamConeAngleDegrees } from "./beam-zoom";
+  emitterZoomScale,
+  type ResolvedEmitterOptics,
+  resolveEmitterOptics,
+} from "./emitter-optics";
+import { EmitterVolumeBatch } from "./emitter-volume-batch";
+import type { GoboAtlasSlot } from "./gobo-atlas";
 
-/** Beam specification for a fixture */
-export interface BeamSpec {
-  beamAngle: number;
-  fieldAngle: number;
-  lumens: number;
-}
-
-/** Data for a single beam instance */
-export interface BeamInstance {
-  mesh: Mesh;
-  material: BeamMaterial;
-  spotLight: SpotLight;
-  spotlightTarget: Object3D;
-  /** The parent object this beam is attached to */
-  parent: Object3D;
-  /** Current beam length in meters */
-  beamLength: number;
-}
-
-/** Map of fixture UID to beam instances */
-type BeamInstanceMap = Map<string, BeamInstance>;
+/** Slot returned for gobo media the active quality profile never projects. */
+const UNPROJECTED_GOBO: GoboAtlasSlot = { index: 0, status: "failed" };
 
 /**
- * BeamManager creates and updates volumetric light beams for fixtures.
+ * BeamManager routes fixture apertures into the scene's shared atmospheric and surface batch.
  */
 export class BeamManager {
-  private beams: BeamInstanceMap = new Map();
-  private beamQuality: VisualizerBeamQuality;
-  /** Default beam specification when fixture doesn't provide one */
-  private defaultBeamSpec: BeamSpec = {
-    beamAngle: 15,
-    fieldAngle: 30,
-    lumens: 10000,
-  };
+  private readonly volumeBatch: EmitterVolumeBatch;
+  /** Resolved distributions per imported optics record; Glow apertures resolve to undefined. */
+  private readonly resolvedOptics = new WeakMap<
+    BeamOptics,
+    ResolvedEmitterOptics | undefined
+  >();
 
-  constructor(beamQuality: VisualizerBeamQuality = "high") {
-    this.beamQuality = beamQuality;
+  /** Creates the scene's shared batch, which adopts the quality profile of the scene's pipeline. */
+  constructor(scene: Scene) {
+    this.volumeBatch = new EmitterVolumeBatch(scene);
+  }
+
+  /** Reports illuminated emitters whose active masks exceed the shader sampling budget. */
+  get reducedGoboEmitters(): number {
+    return this.volumeBatch.goboAtlas?.stacks.reducedStacks ?? 0;
+  }
+
+  /** Resolves a source image once during fixture setup, including non-ASCII archive paths. */
+  loadGobo(path: string, media: string): GoboAtlasSlot {
+    const atlas = this.volumeBatch.goboAtlas;
+    if (!atlas) return UNPROJECTED_GOBO;
+    const bytes = new TextEncoder().encode(path);
+    const encoded = btoa(
+      Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""),
+    )
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    return atlas.load(
+      `${getBackendUrl()}/api/wheel-media/${encoded}/${encodeURIComponent(media)}`,
+    );
+  }
+
+  /** Allocates imported prism capacity while fixture geometry is being synchronized. */
+  reserveOpticalBeam(id: string, maxFacetCount: number): void {
+    this.volumeBatch.reserve(
+      id,
+      this.volumeBatch.profile.prismFacets ? maxFacetCount : 1,
+    );
   }
 
   /**
-   * Get or create a beam for a fixture.
-   * The beam is attached to the provided parent object.
+   * Publishes one imported aperture to the shared atmospheric draw. A degree-valued zoom
+   * channel takes precedence over the zoom angle the fixture renderer published with its color.
    */
-  getOrCreateBeam(fixtureUid: string, parent: Object3D): BeamInstance {
-    let beam = this.beams.get(fixtureUid);
-    if (beam) {
-      return beam;
-    }
-
-    // Create new beam
-    const material = createBeamMaterial(this.beamQuality);
-    const geometry = createBeamGeometry(this.beamQuality);
-    const mesh = new Mesh(geometry, material);
-    mesh.name = `Beam_${fixtureUid}`;
-    // ConeGeometry has tip at +Y, base at -Y. We want beam to extend downward (-Y).
-    // No rotation needed - just position so tip is at origin.
-    mesh.position.set(0, -0.5, 0); // Temporary position (updated dynamically in updateBeam)
-    mesh.castShadow = false;
-    mesh.frustumCulled = false;
-    // Render beams after opaque geometry but before UI overlays
-    // This prevents z-fighting with floor transparency at certain camera angles
-    mesh.renderOrder = 100;
-
-    // Create spotlight for ground illumination
-    const spotLight = new SpotLight(0xffffff, 0);
-    spotLight.name = `SpotLight_${fixtureUid}`;
-    spotLight.angle = Math.PI / 6;
-    spotLight.penumbra = 0.5;
-    spotLight.decay = 2;
-    spotLight.distance = 50;
-    spotLight.castShadow = false;
-
-    const spotlightTarget = new Object3D();
-    spotlightTarget.name = `SpotLightTarget_${fixtureUid}`;
-    // Target along -Z (GDTF beam direction), scaled for parent hierarchy (0.001)
-    spotlightTarget.position.set(0, 0, -50000);
-    spotLight.target = spotlightTarget;
-
-    // Add to parent
-    parent.add(mesh);
-    parent.add(spotLight);
-    parent.add(spotlightTarget);
-
-    beam = {
-      mesh,
-      material,
-      spotLight,
-      spotlightTarget,
-      parent,
-      beamLength: defaultBeamParameters.beamLength,
-    };
-    this.beams.set(fixtureUid, beam);
-    return beam;
-  }
-
-  /**
-   * Update a beam's appearance based on DMX values.
-   */
-  updateBeam(
-    fixtureUid: string,
+  updateOpticalBeam(
+    id: string,
+    parent: Object3D,
+    optics: BeamOptics,
     color: EmitterColor,
-    options?: {
-      beamSpec?: BeamSpec;
-      zoom?: number;
-      frost?: number;
-    },
+    controls: ApertureControls,
   ): void {
-    const beam = this.beams.get(fixtureUid);
-    if (!beam) return;
+    const resolved = this.resolve(optics);
+    if (!resolved) {
+      this.volumeBatch.remove(id);
+      return;
+    }
+    const { profile } = this.volumeBatch;
+    this.volumeBatch.update(id, parent, {
+      optics: resolved,
+      color,
+      zoomScale: emitterZoomScale(
+        optics.physical,
+        controls.zoomDegrees ?? color.zoomDegrees,
+      ),
+      gobos: profile.gobos ? controls.gobos : undefined,
+      facets: profile.prismFacets ? controls.prism : undefined,
+      prismRotation: controls.prismRotation,
+      focusDistance: controls.focusDistance,
+    });
+  }
 
-    const beamSpec = options?.beamSpec ?? this.defaultBeamSpec;
-    const zoom = options?.zoom ?? 0.5;
-    const frost = options?.frost ?? 0;
+  /** Resolves an optics record once and reuses it for every later frame. */
+  private resolve(optics: BeamOptics): ResolvedEmitterOptics | undefined {
+    if (!this.resolvedOptics.has(optics))
+      this.resolvedOptics.set(optics, resolveEmitterOptics(optics));
+    return this.resolvedOptics.get(optics);
+  }
 
-    const coneAngleDeg = beamConeAngleDegrees(
-      beamSpec.beamAngle,
-      beamSpec.fieldAngle,
-      zoom,
-    );
-    const halfAngleRad = (coneAngleDeg * Math.PI) / 360;
-
-    // Calculate beam origin world position and direction
-    // The beam mesh is parented to the emitter node, so it inherits transforms automatically.
-    // We still need world-space values for the shader's lighting calculations.
-    const beamOrigin = new Vector3();
-    const beamDirection = new Vector3(0, 0, -1); // Local -Z direction (GDTF beam output)
-    const worldQuaternion = new Quaternion();
-
-    beam.parent.updateMatrixWorld(true);
-    beam.parent.getWorldPosition(beamOrigin);
-    beam.parent.getWorldQuaternion(worldQuaternion);
-
-    // Transform beam direction from local to world space for shader
-    beamDirection.applyQuaternion(worldQuaternion);
-
-    // Use default beam length and let clipping/depth handle the floor.
-    // This keeps the cone cap away from the floor so angled beams do not show
-    // a moving circular cutoff where they intersect the stage.
-    const beamLength = defaultBeamParameters.beamLength;
-
-    // Calculate base radius from cone angle
-    const baseRadius = Math.min(
-      beamLength * Math.tan(halfAngleRad),
-      beamLength * 2,
-    );
-
-    // Scale beam mesh and rotate to point along -Z (GDTF beam direction)
-    // ConeGeometry tip at +Y, base at -Y. Rotate +90° around X to point tip toward -Z.
-    // The beam is parented inside the GDTF geometry tree which has 0.001 scale (mm to m).
-    // We need to compensate by scaling the mesh by 1000x.
-    const parentScale = 1000;
-    beam.mesh.rotation.x = Math.PI / 2;
-    beam.mesh.scale.set(
-      baseRadius * parentScale,
-      beamLength * parentScale,
-      baseRadius * parentScale,
-    );
-    // After rotation, cone extends along Z. Position so tip is at origin.
-    // Position is also affected by parent scale, so we scale it too.
-    beam.mesh.position.set(0, 0, (-beamLength / 2) * parentScale);
-    beam.beamLength = beamLength;
-
-    // Build beam parameters with world-space direction
-    const params: BeamParameters = {
-      ...defaultBeamParameters,
-      intensity: color.intensity,
-      color: [color.red, color.green, color.blue, 0.6],
-      coneAngleDegrees: coneAngleDeg,
-      frostAmount: frost,
-      beamDirection,
-      beamOrigin,
-      clipY: DEFAULT_STAGE_FLOOR_TOP_Y,
-      softIntersectionFade: 0.0,
-      beamLength,
-    };
-
-    updateBeamMaterial(beam.material, params);
-
-    // Update spotlight
-    beam.spotLight.angle = halfAngleRad;
-    beam.spotLight.intensity =
-      this.beamQuality === "low" ? 0 : color.intensity * beamSpec.lumens * 0.02;
-    beam.spotLight.color.setRGB(color.red, color.green, color.blue);
-    // Target along -Z (GDTF beam direction), scaled for parent hierarchy
-    beam.spotlightTarget.position.set(0, 0, -beamLength * parentScale);
-
-    // Set visibility
-    beam.mesh.visible = color.intensity > 0.01;
-    beam.spotLight.visible =
-      this.beamQuality !== "low" && color.intensity > 0.01;
+  /** Removes an aperture immediately on blackout rather than retaining stale scattering. */
+  removeOpticalBeam(id: string): void {
+    this.volumeBatch.remove(id);
   }
 
   /**
-   * Remove a beam for a fixture.
-   */
-  removeBeam(fixtureUid: string): void {
-    const beam = this.beams.get(fixtureUid);
-    if (!beam) return;
-
-    beam.parent.remove(beam.mesh);
-    beam.parent.remove(beam.spotLight);
-    beam.parent.remove(beam.spotlightTarget);
-
-    beam.mesh.geometry?.dispose();
-    disposeBeamMaterial(beam.material);
-    beam.spotLight.dispose();
-
-    this.beams.delete(fixtureUid);
-  }
-
-  /**
-   * Check if a fixture has a beam.
-   */
-  hasBeam(fixtureUid: string): boolean {
-    return this.beams.has(fixtureUid);
-  }
-
-  /**
-   * Get beam for a fixture.
-   */
-  getBeam(fixtureUid: string): BeamInstance | undefined {
-    return this.beams.get(fixtureUid);
-  }
-
-  /**
-   * Update all beams for fixtures.
-   * Call this when fixture instances change.
-   * Beam IDs use format "fixtureUid:emitterName" for multi-emitter fixtures.
+   * Drops apertures whose fixture or emitter no longer exists after fixture instances change.
+   * Aperture IDs use the format "fixtureUid:emitterName".
    */
   syncWithFixtures(fixtures: Map<string, ExtendedFixtureInstance>): void {
-    // Remove beams for fixtures that no longer exist
-    for (const beamId of this.beams.keys()) {
-      // Extract fixture UID from composite beam ID (format: "fixtureUid:emitterName")
-      const fixtureUid = beamId.split(":")[0];
-      if (!fixtures.has(fixtureUid)) {
-        this.removeBeam(beamId);
-      }
-    }
+    this.volumeBatch.sync(fixtures);
   }
 
-  /**
-   * Dispose all beams.
-   */
+  /** Hides every aperture while keeping the shared batch's GPU buffers for reuse. */
+  clear(): void {
+    this.volumeBatch.clear();
+  }
+
+  /** Releases the shared batch's GPU resources when the owning scene is destroyed. */
   dispose(): void {
-    for (const fixtureUid of [...this.beams.keys()]) {
-      this.removeBeam(fixtureUid);
-    }
+    this.volumeBatch.dispose();
   }
 }

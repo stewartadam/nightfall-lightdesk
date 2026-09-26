@@ -131,6 +131,7 @@ interface shared {
     fresnel,
     pc,
     glow,
+    rectangle,
   }
 
   record fixture-physical {

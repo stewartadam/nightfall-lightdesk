@@ -6,20 +6,33 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+/** Normalized zoom assumed when a fixture reports none: halfway between focused and unfocused. */
+export const DEFAULT_NORMALIZED_ZOOM = 0.5;
+
 /**
  * Maps a normalized zoom value to a rendered cone angle.
  *
  * Visualizer zoom follows fixture operator semantics: 1 is fully zoomed in and
- * focused, while 0 is zoomed out and unfocused.
+ * focused, while 0 is zoomed out and unfocused. Fixtures with degree-valued
+ * zoom metadata supply their angle directly and bypass this interpolation.
+ * Missing or non-finite zoom falls back to DEFAULT_NORMALIZED_ZOOM instead of producing NaN.
  */
 export function beamConeAngleDegrees(
   beamAngleDegrees: number,
   fieldAngleDegrees: number,
-  zoom: number,
+  zoom: number | undefined,
 ): number {
   const focusedAngleDegrees = Math.min(beamAngleDegrees, fieldAngleDegrees);
   const unfocusedAngleDegrees = Math.max(beamAngleDegrees, fieldAngleDegrees);
-  const normalizedZoom = Math.max(0, Math.min(1, zoom));
+  const normalizedZoom = Math.max(
+    0,
+    Math.min(
+      1,
+      zoom !== undefined && Number.isFinite(zoom)
+        ? zoom
+        : DEFAULT_NORMALIZED_ZOOM,
+    ),
+  );
 
   return (
     unfocusedAngleDegrees -

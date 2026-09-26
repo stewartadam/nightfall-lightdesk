@@ -21,6 +21,7 @@ pub mod commands;
 pub mod converters;
 pub mod gdtf_metadata;
 pub mod http_routes;
+pub mod library_archives;
 pub mod manager;
 pub mod mesh;
 pub mod plugin;
@@ -29,6 +30,7 @@ pub mod scanner;
 pub mod testing;
 pub mod watcher;
 pub mod websocket;
+pub mod wheel_media;
 
 pub use gdtf_metadata::GdtfMetadata;
 pub use manager::{FixtureLibraryManager, FixtureProfile, FixtureSource};

@@ -19,7 +19,6 @@ const MIN_OVERLAP_FPS = 35;
 const WEBGL_FALLBACK_MIN_OVERLAP_FPS = 1;
 const WEBGL_FALLBACK_FPS_TOLERANCE = 0.25;
 const VISUALIZER_SETTLE_MS = 2_000;
-const BEAM_PREWARM_TIMEOUT_MS = 60_000;
 const OVERLAP_SAMPLE_DURATION_MS = 10_000;
 const OVERLAP_CAMERA_STATE = {
   position: {
@@ -62,7 +61,6 @@ async function openSampleHighQualityVisualizer(page: Page): Promise<void> {
   await expect(page.locator(inputSelector)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".fps-label")).toBeVisible({ timeout: 30_000 });
   await waitForSampleWashFixtures(page);
-  await waitForBeamPrewarm(page);
 }
 
 /** Activates the 3D Visualizer panel so its canvas and FPS overlay are rendered. */
@@ -122,28 +120,6 @@ async function waitForSampleWashFixtures(page: Page): Promise<void> {
       ", ",
     )}; saw fixture IDs ${(await fixtureIds(page)).join(", ")}`,
   );
-}
-
-/**
- * Waits until invisible high-quality beam meshes have rendered once for pipeline prewarming.
- */
-async function waitForBeamPrewarm(page: Page): Promise<void> {
-  await expect
-    .poll(
-      () =>
-        page.evaluate(() => {
-          const scene = (window as any).visualizerApi?.getScene?.();
-          let pending = 0;
-          scene?.traverse?.((object: any) => {
-            if (object.userData?.beamPrewarmPending === true) {
-              pending += 1;
-            }
-          });
-          return pending;
-        }),
-      { timeout: BEAM_PREWARM_TIMEOUT_MS },
-    )
-    .toBe(0);
 }
 
 /**

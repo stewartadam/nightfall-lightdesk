@@ -12,7 +12,6 @@
  */
 
 import { Euler, MathUtils, Quaternion, type Scene } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../lib/feature-flags";
 import { createLogger } from "../../../lib/logger";
 import type { RenderableFixture } from "../model/types";
 import {
@@ -21,6 +20,7 @@ import {
   disposeFixtureWithRenderer,
   type ExtendedFixtureInstance,
 } from "./fixture-renderers";
+import type { QualityProfile } from "./quality-profile";
 
 const log = createLogger("visualizer:fixture-manager");
 
@@ -29,18 +29,17 @@ const log = createLogger("visualizer:fixture-manager");
  * It synchronizes reactive fixture data from stores with Three.js objects.
  */
 export class FixtureManager {
-  private scene: Scene;
-  private beamQuality: VisualizerBeamQuality;
   private fixtureInstances: Map<string, ExtendedFixtureInstance> = new Map();
   /** Maps fixture UID -> element label -> element index (0-based) */
   private elementLabelMaps: Map<string, Map<string, number>> = new Map();
   /** Maps fixture UID -> ordered element labels (for strobe panel updates) */
   private elementLabelLists: Map<string, string[]> = new Map();
 
-  constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
-    this.scene = scene;
-    this.beamQuality = beamQuality;
-  }
+  /** Builds fixtures into `scene` with the renderer's resolved quality profile. */
+  constructor(
+    private readonly scene: Scene,
+    private readonly profile: QualityProfile,
+  ) {}
 
   /**
    * Synchronize fixtures in the scene with the provided fixture data.
@@ -77,10 +76,12 @@ export class FixtureManager {
         addedCount += 1;
       } else {
         const layoutChanged = existing.layout !== fixture.layout;
+        const physicalChanged =
+          existing.physicalSignature !== fixture.physicalSignature;
         const geometryArrived =
           !fixture.layout && !existing.geometry && !!fixture.geometry;
 
-        if (layoutChanged || geometryArrived) {
+        if (layoutChanged || geometryArrived || physicalChanged) {
           log.debug(
             `Re-creating fixture ${fixture.uid} after its rendering definition changed`,
           );
@@ -114,8 +115,9 @@ export class FixtureManager {
         fixture.geometry,
         fixture.elements,
         fixture.beamType,
-        this.beamQuality,
+        this.profile,
         fixture.layout,
+        fixture.physical,
       );
     } else {
       // Try to build without geometry (simple LED bars, strobe panels, etc.)
@@ -123,8 +125,9 @@ export class FixtureManager {
         fixture.uid,
         fixture.elements,
         fixture.beamType,
-        this.beamQuality,
+        this.profile,
         fixture.layout,
+        fixture.physical,
       );
     }
 
@@ -134,6 +137,7 @@ export class FixtureManager {
     }
 
     instance.layout = fixture.layout;
+    instance.physicalSignature = fixture.physicalSignature;
 
     // Apply fixture placement transform
     this.applyPlacement(instance, fixture);

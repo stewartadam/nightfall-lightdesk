@@ -132,7 +132,7 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
    */
   setElementDmxBatch(batch: FixtureDmxBatch): void {
     for (const [fixtureUid, elements] of batch) {
-      this.setElementDmx(fixtureUid, new Map(elements));
+      this.setElementDmx(fixtureUid, elements);
     }
   }
 
@@ -225,6 +225,8 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   }
 
   abstract setGridEnabled(enabled: boolean): void;
+  /** Changes ambient rig visibility without changing fixture output. */
+  abstract setDarkness(darkness: number): void;
   abstract setOrbitTargetIndicatorEnabled(enabled: boolean): void;
 
   setSnapPointsEnabled(enabled: boolean): void {

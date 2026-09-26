@@ -1,4 +1,4 @@
-# Three.js WebGPU lighting lookup
+# Three.js WebGPU fixes
 
 `three+0.185.1.patch` materializes the two-channel DFG lookup as a TSL variable
 before the lighting code reads its individual components. This preserves the
@@ -25,6 +25,26 @@ install hook runs this step explicitly as well.
 
 The Three.js version is pinned so an upgrade requires checking this patch.
 The minified distribution files are not used by Nightfall.
+
+The patch also clears `timestampWrites` before `initTimestampQuery` returns when
+tracking is disabled. Three reuses the canvas render-pass descriptor without
+resetting it; otherwise a sampled frame leaves GPU timestamp writes enabled on
+subsequent unsampled frames. Nightfall samples at 10 Hz to limit profiling
+overhead. The regression test in `scripts/three-timestamp-query.node.test.mjs`
+checks enabled/disabled/enabled sampling with a reused descriptor against the
+source and both distribution entry points, without requiring a GPU.
+
+Timestamp readback also preserves copied raw interval bounds before unmapping:
+`lastInterval` covers the sampled batch and `frameIntervals` separates frames
+when the developer inspector resolves several together. Nightfall budgets GPU
+work using the earliest start and latest end across render and compute passes.
+Summing individual durations can double-count overlapping work. Missing bounds
+remain unavailable, and each readback replaces the frame map to bound retention.
+
+The WebGL fallback maps `MaxEquation` to WebGL 2's `MAX` operation. Without
+this mapping, Low's overlapping schematic beams incorrectly use additive
+blending. The visualizer antialias browser tests check coincident beams on
+both WebGPU and WebGL, while confirming Medium remains additive.
 
 Regression coverage:
 

@@ -505,6 +505,7 @@ fn to_wit_beam_type(beam_type: BeamType) -> bindings::nightfall::fx_module::shar
         BeamType::Fresnel => bindings::nightfall::fx_module::shared::BeamType::Fresnel,
         BeamType::Pc => bindings::nightfall::fx_module::shared::BeamType::Pc,
         BeamType::Glow => bindings::nightfall::fx_module::shared::BeamType::Glow,
+        BeamType::Rectangle => bindings::nightfall::fx_module::shared::BeamType::Rectangle,
     }
 }
 

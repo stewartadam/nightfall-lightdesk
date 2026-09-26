@@ -21,20 +21,19 @@ nightfall-websocket = { path = "../websocket" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
-zip = { version = "8.6", default-features = false, features = ["deflate"], optional = true }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [features]
 # Exposes the synthetic GDTF archive builder to other crates' tests.
-test-support = ["dep:zip"]
+test-support = []
 
 [dev-dependencies]
 async-channel.workspace = true
 tempfile.workspace = true
-tokio.workspace = true
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true

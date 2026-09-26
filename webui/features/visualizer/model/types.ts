@@ -12,12 +12,18 @@
 
 import type { Group, Mesh, Object3D } from "three/webgpu";
 import type {
+  BeamOptics,
   BeamType,
   FixtureElement,
   FixtureGeometry,
+  FixtureLayout,
+  FixturePhysical,
+  OpticalChannel,
+  OpticalWheel,
   SceneObjectProperties,
   SceneObjectType,
 } from "../../../types";
+import type { EmitterColor } from "../rendering/geometry-builder";
 
 /**
  * Fixture data prepared for rendering.
@@ -42,14 +48,28 @@ export interface RenderableFixture {
   elements: FixtureElement[];
   /** Beam type for determining spotlight rendering */
   beamType?: BeamType;
+  /** Source photometry retained for fixtures rendered without an imported geometry tree. */
+  physical?: FixturePhysical;
+  /** Change-detection key for `physical`, from {@link fixturePhysicalSignature}. */
+  physicalSignature: string;
   /** Explicit physical layout independent of fixture display names. */
-  layout?: import("../../../types").FixtureLayout;
+  layout?: FixtureLayout;
 }
 
 /**
  * Emitter data for a single beam/pixel.
  */
 export interface EmitterData {
+  /** Resolved output from a built-in optical control adapter, shared with the atmosphere pass. */
+  beamColor?: EmitterColor;
+  /** Imported optical distribution for this aperture, independent of fixture layout. */
+  optics?: BeamOptics;
+  /** Source optical controls inherited through the geometry hierarchy. */
+  opticalChannels?: OpticalChannel[];
+  /** Source wheel definitions shared by this fixture's apertures. */
+  opticalWheels?: OpticalWheel[];
+  /** Source archive for resolving wheel media during setup. */
+  gdtfPath?: string;
   /** The mesh used to render this emitter */
   mesh: Mesh;
   /** Element name this emitter belongs to (for DMX mapping) */

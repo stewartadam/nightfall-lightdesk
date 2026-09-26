@@ -34,17 +34,23 @@ import type {
   RenderableFixture,
   RenderableSceneObject,
 } from "../../model/types";
+import { Instrumentation } from "../../services/instrumentation";
 import {
   createPostProcessing,
   disposePostProcessing,
   type PostProcessingState,
+  preparePostProcessing,
   renderWithPostProcessing,
   setActiveSpanOutlineSelectedObjects,
   setEditSelectionOutlineSelectedObjects,
   setOutlineSelectedObjects,
   setProgrammerValueOutlineSelectedObjects,
 } from "../effects/post-processing";
+import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
 import { consumeDueFrame } from "../frame-rate-limiter";
+import { GpuFrameTimer, type TimestampRenderer } from "../gpu-frame-timer";
+import { LatestFrameMailbox } from "../latest-frame-mailbox";
+import { resolveQualityProfile } from "../quality-profile";
 import {
   cancelControlsInteraction,
   createCamera,
@@ -53,6 +59,7 @@ import {
   createScene,
   DEFAULT_CAMERA_ROTATION_MODE,
   DEFAULT_CAMERA_TARGET,
+  GPU_READBACK_DISPOSAL_TIMEOUT_MS,
   loadCameraState,
   saveCameraState,
   setControlsRotationMode,
@@ -61,19 +68,14 @@ import {
 import {
   createSceneEnvironment,
   type SceneEnvironment,
+  setSceneDarkness,
   updateFloorTransparency,
   updateOrbitTargetIndicator,
 } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
-import {
-  extractElementDmxData,
-  fixtureIntensityValueFromOutputs,
-  resetDmxPool,
-} from "../visualizer-dmx";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
   CameraState,
-  ElementDmxData,
   FixtureDmxBatch,
   FixtureElementDmxMap,
   IVisualizerRenderer,
@@ -95,6 +97,10 @@ const log = createLogger("visualizer:worker-renderer");
  * Runs on the main thread and forwards to the worker.
  */
 export class WorkerRendererProxy implements IVisualizerRenderer {
+  private readonly dmxMailbox: LatestFrameMailbox<FixtureDmxBatch>;
+  private readonly dmxSnapshot = new FixtureDmxSnapshot();
+  /** Snapshot revision last handed to the mailbox; -1 forces the next post. */
+  private postedDmxRevision = -1;
   private worker: Worker;
   private workerApi: Comlink.Remote<VisualizerWorkerApi>;
   private proxy: ElementProxy | undefined;
@@ -106,18 +112,32 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
     DEFAULT_CAMERA_ROTATION_MODE;
   private cameraDragEnabled = true;
   private orbitTargetIndicatorEnabled = false;
+  private disposed = false;
+  private resizeObserver: ResizeObserver | undefined;
 
   constructor(worker: Worker, workerApi: Comlink.Remote<VisualizerWorkerApi>) {
     this.worker = worker;
     this.workerApi = workerApi;
+    this.dmxMailbox = new LatestFrameMailbox(
+      (batch) => this.workerApi.setElementDmxBatch(batch),
+      (error) => log.warn("Visualizer lighting update failed", { error }),
+    );
 
     // Push initial log config to worker
     this.workerApi.setLogConfig(getConfig());
 
     // Subscribe to log config changes and sync to worker
     this.unsubscribeLogConfig = subscribeToConfigChanges((config) => {
-      this.workerApi.setLogConfig(config);
+      this.liveApi?.setLogConfig(config);
     });
+  }
+
+  /**
+   * Returns the worker API while the worker is owned, or `undefined` after
+   * disposal so late callers become no-ops instead of messaging a terminated worker.
+   */
+  private get liveApi(): Comlink.Remote<VisualizerWorkerApi> | undefined {
+    return this.disposed ? undefined : this.workerApi;
   }
 
   async init(config: VisualizerInitConfig): Promise<void> {
@@ -129,8 +149,9 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
     // Create element proxy for event forwarding
     this.proxy = new ElementProxy(canvas, this.worker);
 
-    // Load saved camera state from localStorage (main thread has access)
-    const initialCameraState = loadCameraState() ?? undefined;
+    // A replaced renderer hands over its live pose; otherwise restore the persisted one.
+    const initialCameraState =
+      config.initialCameraState ?? loadCameraState() ?? undefined;
 
     // Initialize renderer with transferred canvas
     const initConfig = {
@@ -140,21 +161,22 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
       devicePixelRatio: config.devicePixelRatio,
       proxyId: this.proxy.id,
       initialCameraState,
+      diagnostics: config.diagnostics,
       beamQuality: config.beamQuality,
     };
     await this.workerApi.init(
       // Use Comlink.transfer to ensure the OffscreenCanvas is transferred, not cloned
       Comlink.transfer(initConfig, [offscreen]) as VisualizerInitConfig,
     );
-    this.workerApi.setInteractionMode(this.interactionMode);
-    this.workerApi.setCameraRotationMode(this.cameraRotationMode);
-    this.workerApi.setCameraDragEnabled(this.cameraDragEnabled);
-    this.workerApi.setOrbitTargetIndicatorEnabled(
+    this.liveApi?.setInteractionMode(this.interactionMode);
+    this.liveApi?.setCameraRotationMode(this.cameraRotationMode);
+    this.liveApi?.setCameraDragEnabled(this.cameraDragEnabled);
+    this.liveApi?.setOrbitTargetIndicatorEnabled(
       this.orbitTargetIndicatorEnabled,
     );
 
     // Set up camera change callback to persist to localStorage
-    this.workerApi.setCameraChangeCallback(
+    this.liveApi?.setCameraChangeCallback(
       Comlink.proxy((state: CameraState) => {
         saveCameraState(state);
       }),
@@ -170,7 +192,8 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
    * Setup resize observer for automatic resizing.
    */
   setupResizeObserver(container: HTMLDivElement): void {
-    const resizeObserver = new ResizeObserver((entries) => {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
         if (width > 0 && height > 0) {
@@ -178,58 +201,60 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
         }
       }
     });
-    resizeObserver.observe(container);
+    this.resizeObserver.observe(container);
   }
 
   resize(width: number, height: number, devicePixelRatio: number): void {
-    this.workerApi.resize(width, height, devicePixelRatio);
+    this.liveApi?.resize(width, height, devicePixelRatio);
   }
 
   setFixtures(fixtures: readonly RenderableFixture[]): void {
+    if (this.disposed) return;
     log.trace(`setFixtures called with ${fixtures.length} fixtures`);
     // Use JSON serialization to ensure data is clonable
     const serialized = JSON.parse(JSON.stringify(fixtures));
-    this.workerApi.setFixtures(serialized);
+    this.liveApi?.setFixtures(serialized);
   }
 
   setSceneObjects(sceneObjects: readonly RenderableSceneObject[]): void {
+    if (this.disposed) return;
     log.trace(
       `setSceneObjects called with ${sceneObjects.length} scene objects`,
     );
     // Use JSON serialization to ensure data is clonable
     const serialized = JSON.parse(JSON.stringify(sceneObjects));
-    this.workerApi.setSceneObjects(serialized);
+    this.liveApi?.setSceneObjects(serialized);
   }
 
   setElementDmx(fixtureUid: string, elementDmx: FixtureElementDmxMap): void {
     // Convert Map to serializable array to avoid clone errors
     const dmxArray = Array.from(elementDmx.entries());
-    this.workerApi.setElementDmx(fixtureUid, new Map(dmxArray));
+    this.liveApi?.setElementDmx(fixtureUid, new Map(dmxArray));
   }
 
   /**
    * Sends all fixture element DMX updates for one frame across the worker boundary.
    */
   setElementDmxBatch(batch: FixtureDmxBatch): void {
-    this.workerApi.setElementDmxBatch(batch);
+    this.dmxMailbox.publish(batch);
   }
 
   setSelection(selectedUids: string[]): void {
-    this.workerApi.setSelection([...selectedUids]);
+    this.liveApi?.setSelection([...selectedUids]);
   }
 
   /**
    * Set panel edit-target UIDs for yellow visualizer highlighting.
    */
   setEditSelection(selectedUids: string[]): void {
-    this.workerApi.setEditSelection([...selectedUids]);
+    this.liveApi?.setEditSelection([...selectedUids]);
   }
 
   /**
    * Set fixture UIDs that currently have values in the programmer.
    */
   setProgrammerValues(fixtureUids: string[]): void {
-    this.workerApi.setProgrammerValues([...fixtureUids]);
+    this.liveApi?.setProgrammerValues([...fixtureUids]);
   }
 
   /**
@@ -237,49 +262,52 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
    */
   setActiveSelectionTargets(targets: SelectionTarget[]): void {
     const serialized = targets.map((target) => ({ ...target }));
-    this.workerApi.setActiveSelectionTargets(serialized);
+    this.liveApi?.setActiveSelectionTargets(serialized);
   }
 
   setFixturePosition(fixtureUid: string, position: Vec3): void {
     log.trace(
       `setFixturePosition uid=${fixtureUid} x=${position.x.toFixed(3)} y=${position.y.toFixed(3)} z=${position.z.toFixed(3)}`,
     );
-    this.workerApi.setFixturePosition(fixtureUid, position);
+    this.liveApi?.setFixturePosition(fixtureUid, position);
   }
 
   setFixtureRotation(fixtureUid: string, rotation: Vec3): void {
     log.trace(
       `setFixtureRotation uid=${fixtureUid} x=${rotation.x.toFixed(3)} y=${rotation.y.toFixed(3)} z=${rotation.z.toFixed(3)}`,
     );
-    this.workerApi.setFixtureRotation(fixtureUid, rotation);
+    this.liveApi?.setFixtureRotation(fixtureUid, rotation);
   }
 
   setSceneObjectPosition(sceneObjectUid: string, position: Vec3): void {
-    this.workerApi.setSceneObjectPosition(sceneObjectUid, position);
+    this.liveApi?.setSceneObjectPosition(sceneObjectUid, position);
   }
 
   setSceneObjectRotation(sceneObjectUid: string, rotation: Vec3): void {
-    this.workerApi.setSceneObjectRotation(sceneObjectUid, rotation);
+    this.liveApi?.setSceneObjectRotation(sceneObjectUid, rotation);
   }
 
   setHighlightSelection(enabled: boolean): void {
-    this.workerApi.setHighlightSelection(enabled);
+    this.liveApi?.setHighlightSelection(enabled);
   }
 
   pause(): void {
-    if (this._isPaused) return;
+    if (this.disposed || this._isPaused) return;
+    this.dmxMailbox.clear();
+    // A cleared, unsent snapshot must be re-posted on resume.
+    this.postedDmxRevision = -1;
     this._isPaused = true;
     if (this.colorUpdateRafId !== null) {
       cancelAnimationFrame(this.colorUpdateRafId);
       this.colorUpdateRafId = null;
     }
-    this.workerApi.pause();
+    this.liveApi?.pause();
   }
 
   resume(): void {
-    if (!this._isPaused) return;
+    if (this.disposed || !this._isPaused) return;
     this._isPaused = false;
-    this.workerApi.resume();
+    this.liveApi?.resume();
     if (this.colorUpdateRafId === null) {
       this.startColorUpdateLoop();
     }
@@ -290,52 +318,57 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
   }
 
   toggleEmitterDebug(): void {
-    this.workerApi.toggleEmitterDebug();
+    this.liveApi?.toggleEmitterDebug();
   }
 
   setEmitterDebugEnabled(enabled: boolean): void {
-    this.workerApi.setEmitterDebugEnabled(enabled);
+    this.liveApi?.setEmitterDebugEnabled(enabled);
   }
 
   toggleBeams(): void {
-    this.workerApi.toggleBeams();
+    this.liveApi?.toggleBeams();
   }
 
   setGridEnabled(enabled: boolean): void {
-    this.workerApi.setGridEnabled(enabled);
+    this.liveApi?.setGridEnabled(enabled);
+  }
+
+  /** Forwards ambient visibility changes to the rendering worker. */
+  setDarkness(darkness: number): void {
+    this.liveApi?.setDarkness(darkness);
   }
 
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {
     this.orbitTargetIndicatorEnabled = enabled;
-    this.workerApi.setOrbitTargetIndicatorEnabled(enabled);
+    this.liveApi?.setOrbitTargetIndicatorEnabled(enabled);
   }
 
   setSnapPointsEnabled(enabled: boolean): void {
-    this.workerApi.setSnapPointsEnabled(enabled);
+    this.liveApi?.setSnapPointsEnabled(enabled);
   }
 
   setFixtureLabels(labels: Record<string, string>): void {
-    this.workerApi.setFixtureLabels(labels);
+    this.liveApi?.setFixtureLabels(labels);
   }
 
   setInteractionMode(mode: VisualizerInteractionMode): void {
     this.interactionMode = mode;
-    this.workerApi.setInteractionMode(mode);
+    this.liveApi?.setInteractionMode(mode);
   }
 
   setCameraRotationMode(mode: VisualizerCameraRotationMode): void {
     this.cameraRotationMode = mode;
-    this.workerApi.setCameraRotationMode(mode);
+    this.liveApi?.setCameraRotationMode(mode);
   }
 
   setCameraDragEnabled(enabled: boolean): void {
     this.cameraDragEnabled = enabled;
-    this.workerApi.setCameraDragEnabled(enabled);
+    this.liveApi?.setCameraDragEnabled(enabled);
   }
 
   /** Cancel any active camera-control pointer drag in the worker. */
   cancelCameraInteraction(): void {
-    this.workerApi.cancelCameraInteraction();
+    this.liveApi?.cancelCameraInteraction();
   }
 
   getInteractionMode(): VisualizerInteractionMode {
@@ -345,36 +378,55 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
   pickFixtureAtScreenPoint(
     point: VisualizerScreenPoint,
   ): Promise<string | null> {
-    return this.workerApi.pickFixtureAtScreenPoint(point);
+    return (
+      this.liveApi?.pickFixtureAtScreenPoint(point) ?? Promise.resolve(null)
+    );
   }
 
   pickSceneObjectAtScreenPoint(
     point: VisualizerScreenPoint,
   ): Promise<string | null> {
-    return this.workerApi.pickSceneObjectAtScreenPoint(point);
+    return (
+      this.liveApi?.pickSceneObjectAtScreenPoint(point) ?? Promise.resolve(null)
+    );
   }
 
   pickFixturesInScreenRect(rect: VisualizerScreenRect): Promise<string[]> {
-    return this.workerApi.pickFixturesInScreenRect(rect);
+    return this.liveApi?.pickFixturesInScreenRect(rect) ?? Promise.resolve([]);
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.dmxMailbox.dispose();
     if (this.colorUpdateRafId !== null) {
       cancelAnimationFrame(this.colorUpdateRafId);
+      this.colorUpdateRafId = null;
     }
+    this.resizeObserver?.disconnect();
     this.unsubscribeLogConfig?.();
     this.proxy?.dispose();
-    this.workerApi.dispose();
-    this.worker.terminate();
+    // Allow pending GPU mappings to finish before terminating the worker.
+    const timeout = setTimeout(
+      () => this.worker.terminate(),
+      GPU_READBACK_DISPOSAL_TIMEOUT_MS,
+    );
+    void this.workerApi
+      .dispose()
+      .catch(() => {})
+      .finally(() => {
+        clearTimeout(timeout);
+        this.worker.terminate();
+      });
   }
 
   setStatsCallback(
     callback: ((stats: VisualizerStats | null) => void) | null,
   ): void {
     if (callback) {
-      this.workerApi.setStatsCallback(Comlink.proxy(callback));
+      this.liveApi?.setStatsCallback(Comlink.proxy(callback));
     } else {
-      this.workerApi.setStatsCallback(null);
+      this.liveApi?.setStatsCallback(null);
     }
   }
 
@@ -392,76 +444,60 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
    * If no UIDs provided, zooms to all fixtures in the scene.
    */
   zoomToFit(uids?: string[]): void {
-    this.workerApi.zoomToFit(uids);
+    this.liveApi?.zoomToFit(uids);
   }
 
   /**
    * Returns the camera state from the renderer running inside the worker.
    */
   getCameraState(): Promise<CameraState> {
-    return this.workerApi.getCameraState();
+    return (
+      this.liveApi?.getCameraState() ??
+      Promise.reject(new Error("Visualizer worker renderer was disposed"))
+    );
   }
 
   setCameraPosition(position: Vec3): void {
-    this.workerApi.setCameraPosition(position);
+    this.liveApi?.setCameraPosition(position);
   }
 
   setCameraTarget(target: Vec3): void {
-    this.workerApi.setCameraTarget(target);
+    this.liveApi?.setCameraTarget(target);
   }
 
   setCameraState(state: CameraState): void {
-    this.workerApi.setCameraState(state);
+    this.liveApi?.setCameraState(state);
   }
 
   resetCamera(): void {
-    this.workerApi.resetCamera();
+    this.liveApi?.resetCamera();
   }
 
   /**
    * Start the color update loop.
-   * Polls DMX parameters and sends colors to the worker at frame rate.
+   * Polls DMX parameters every animation frame, but converts and posts a
+   * snapshot to the worker only when the engine output or fixture definitions
+   * changed; the worker replays its retained snapshot for time-based effects.
    */
   private startColorUpdateLoop(): void {
+    if (this.disposed) return;
     const updateColors = () => {
-      if (this._isPaused) {
+      if (this.disposed || this._isPaused) {
         this.colorUpdateRafId = null;
         return;
       }
 
-      // Reset DMX pool at start of frame
-      resetDmxPool();
-
-      const parametersImmediate = getParametersImmediate();
-      const fixtureMap = fixturesStore.get();
-
-      const dmxBatch: FixtureDmxBatch = [];
-      for (const [uid, fixture] of Object.entries(fixtureMap)) {
-        const elementOutputs = parametersImmediate.get(uid);
-        if (!elementOutputs) continue;
-
-        // Build element DMX map using element labels as keys
-        const elementDmx: Array<[string, ElementDmxData]> = [];
-        const fixtureIntensity = fixtureIntensityValueFromOutputs(
-          elementOutputs,
-          fixture.elements,
+      // Sample current DMX on the next frame after acknowledgement instead of building discarded snapshots.
+      if (!this.dmxMailbox.busy) {
+        const snapshot = this.dmxSnapshot.read(
+          getParametersImmediate(),
+          fixturesStore.get(),
         );
-
-        for (let i = 0; i < fixture.elements.length; i++) {
-          const element = fixture.elements[i];
-          const output = elementOutputs[i];
-          if (!output) continue;
-
-          elementDmx.push([
-            element.label,
-            extractElementDmxData(output, element, fixtureIntensity),
-          ]);
+        if (this.dmxSnapshot.revision !== this.postedDmxRevision) {
+          this.postedDmxRevision = this.dmxSnapshot.revision;
+          this.setElementDmxBatch(snapshot);
         }
-
-        if (elementDmx.length > 0) dmxBatch.push([uid, elementDmx]);
       }
-
-      if (dmxBatch.length > 0) this.setElementDmxBatch(dmxBatch);
 
       this.colorUpdateRafId = requestAnimationFrame(updateColors);
     };
@@ -492,17 +528,25 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   private cameraDragEnabled = true;
   private orbitTargetIndicatorEnabled = false;
 
-  // Stats tracking
-  private readonly STATS_WINDOW_SIZE = 60;
-  private readonly STATS_PUBLISH_INTERVAL = 10;
-  private frameTimesMs: number[] = [];
-  private renderTimesMs: number[] = [];
-  private statsFrameCount = 0;
-  private statsLastFrameTime = 0;
+  // Stats tracking; instrumentation exists once init() knows the diagnostics flag.
+  private instrumentation: Instrumentation | undefined;
+  private gpuTimer = new GpuFrameTimer();
+  /** Latest DMX snapshot from the main thread, re-applied every rendered frame. */
+  private dmxSnapshot: FixtureDmxBatch = new Map();
 
   // Render loop timing
   private lastTime = 0;
   private accumulator = 0;
+
+  /**
+   * Retains the main thread's latest snapshot instead of applying it on
+   * arrival. The render loop replays it every frame, which keeps strobes and
+   * wheel rotation advancing when the engine output has not changed and
+   * charges DMX application to the frame's update budget.
+   */
+  override setElementDmxBatch(batch: FixtureDmxBatch): void {
+    this.dmxSnapshot = batch;
+  }
 
   /**
    * Initializes the worker-side renderer implementation behind the shared renderer API.
@@ -516,6 +560,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       proxyId,
       initialCameraState,
     } = config;
+
+    this.instrumentation = new Instrumentation({
+      renderMode: "worker",
+      diagnostics: config.diagnostics,
+    });
+    this.instrumentation.setStatsCallback(this.statsCallback);
 
     // Create renderer
     this.renderer = createRenderer({
@@ -532,12 +582,6 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
     // Setup scene environment
     this.environment = createSceneEnvironment(this.scene);
-
-    // Create scene manager (handles fixtures, beams, selection)
-    this.sceneManager = new SceneManager(this.scene, config.beamQuality);
-
-    // Create debug overlays (from base class)
-    this.initDebugOverlays();
 
     // Create camera with initial state if provided
     this.camera = createCamera(width / height);
@@ -577,11 +621,16 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     this.setCameraRotationMode(this.cameraRotationMode);
     this.setOrbitTargetIndicatorEnabled(this.orbitTargetIndicatorEnabled);
 
+    const profile = resolveQualityProfile(config.beamQuality);
     this.postProcessing = createPostProcessing(
       this.renderer,
       this.scene,
       this.camera,
+      { profile },
     );
+    await preparePostProcessing(this.postProcessing);
+    this.sceneManager = new SceneManager(this.scene, profile);
+    this.initDebugOverlays();
     setOutlineSelectedObjects(
       this.postProcessing,
       this.sceneManager.getSelectionOutlineObjects(),
@@ -636,15 +685,14 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     if (this._isPaused) return;
     this._isPaused = true;
     this.renderer?.setAnimationLoop(null);
-
-    // Send zeroed stats to indicate paused state
-    this.publishStats(true);
+    // Publishes zeroed stats to indicate the paused state.
+    this.instrumentation?.pause();
   }
 
   resume(): void {
     if (!this._isPaused) return;
     this._isPaused = false;
-    this.resetStats();
+    this.instrumentation?.resume();
     this.startRenderLoop();
   }
 
@@ -652,15 +700,17 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     return this._isPaused;
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.renderer?.setAnimationLoop(null);
+    this.setStatsCallback(null);
+    this.instrumentation?.clear();
+    this.cameraChangeCallback = null;
+    await this.gpuTimer.dispose();
     this.debugOverlays?.dispose();
     this.sceneManager?.dispose();
     disposePostProcessing(this.postProcessing);
     this.postProcessing = null;
     this.renderer?.dispose();
-    this.statsCallback = null;
-    this.cameraChangeCallback = null;
   }
 
   /**
@@ -683,6 +733,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     callback: ((stats: VisualizerStats | null) => void) | null,
   ): void {
     this.statsCallback = callback;
+    this.instrumentation?.setStatsCallback(callback);
   }
 
   /**
@@ -799,6 +850,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     this.environment.axesHelper.visible = enabled;
   }
 
+  /** Updates ambient lighting and background without rebuilding the renderer. */
+  setDarkness(darkness: number): void {
+    if (this.scene && this.environment)
+      setSceneDarkness(this.scene, this.environment, darkness);
+  }
+
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {
     this.orbitTargetIndicatorEnabled = enabled;
     if (!this.environment) return;
@@ -841,6 +898,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
     // Use setAnimationLoop for proper WebGPU async rendering
     this.renderer.setAnimationLoop((time: number) => {
+      const startedAt = performance.now();
       if (this._isPaused || !this.scene || !this.camera || !this.controls) {
         return;
       }
@@ -855,15 +913,9 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       if (remainingFrameTime === null) return;
       this.accumulator = remainingFrameTime;
 
-      // Track frame-to-frame timing for stats
-      const frameToFrameMs =
-        this.statsLastFrameTime > 0 ? time - this.statsLastFrameTime : 0;
-      this.statsLastFrameTime = time;
-      if (frameToFrameMs > 0) {
-        this.pushToWindow(this.frameTimesMs, frameToFrameMs);
-      }
-
       // Update controls
+      const updateStarted = performance.now();
+      for (const [uid, dmx] of this.dmxSnapshot) this.setElementDmx(uid, dmx);
       this.controls.update();
 
       // Update floor transparency based on camera position
@@ -878,79 +930,34 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
       // Render and track timing
       const renderStart = performance.now();
+      const updateMs = renderStart - updateStarted;
+      const timedRenderer = this.renderer! as unknown as TimestampRenderer;
+      this.gpuTimer.begin(timedRenderer);
       if (this.postProcessing) {
-        renderWithPostProcessing(this.postProcessing);
+        renderWithPostProcessing(
+          this.postProcessing,
+          this.gpuTimer.sample,
+          updateMs,
+        );
       } else {
         this.renderer!.render(this.scene, this.camera);
       }
+      this.gpuTimer.end(timedRenderer);
       const renderEnd = performance.now();
-      this.pushToWindow(this.renderTimesMs, renderEnd - renderStart);
-
-      // Publish stats periodically
-      this.statsFrameCount++;
-      if (this.statsFrameCount % this.STATS_PUBLISH_INTERVAL === 0) {
-        this.publishStats(false);
-      }
-    });
-  }
-
-  private pushToWindow(window: number[], value: number): void {
-    window.push(value);
-    if (window.length > this.STATS_WINDOW_SIZE) {
-      window.shift();
-    }
-  }
-
-  private average(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((a, b) => a + b, 0) / values.length;
-  }
-
-  private publishStats(zeroed: boolean): void {
-    if (!this.statsCallback) return;
-
-    if (zeroed) {
-      this.statsCallback({
-        fps: 0,
-        frameToFrameMs: 0,
-        updateFixturesMs: 0,
-        totalRenderMs: 0,
-        postProcessMs: 0,
-        gpuMs: 0,
-        scenePassMs: 0,
-        volumetricPassMs: 0,
-        gaussianBlurMs: 0,
-        bloomMs: 0,
-        renderMode: "worker",
+      this.instrumentation?.recordFrame(time, {
+        completedAt: renderEnd,
+        startedAt,
+        updateMs,
+        renderMs: renderEnd - renderStart,
+        gpu: this.gpuTimer.sample,
+        reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
+        reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
+        omittedSurfaceLights:
+          this.postProcessing?.surfaceLighting.omittedPointLights,
+        atmosphereScale: this.postProcessing?.volumePass.getResolutionScale(),
+        sceneScale: this.postProcessing?.scenePass.getResolutionScale(),
       });
-      return;
-    }
-
-    if (this.frameTimesMs.length === 0) return;
-
-    const avgFrameTime = this.average(this.frameTimesMs);
-    const fps = avgFrameTime > 0 ? 1000 / avgFrameTime : 0;
-
-    this.statsCallback({
-      fps,
-      frameToFrameMs: avgFrameTime,
-      updateFixturesMs: 0,
-      totalRenderMs: this.average(this.renderTimesMs),
-      postProcessMs: 0,
-      gpuMs: 0,
-      scenePassMs: this.average(this.renderTimesMs),
-      volumetricPassMs: 0,
-      gaussianBlurMs: 0,
-      bloomMs: 0,
-      renderMode: "worker",
     });
-  }
-
-  private resetStats(): void {
-    this.frameTimesMs.length = 0;
-    this.renderTimesMs.length = 0;
-    this.statsFrameCount = 0;
-    this.statsLastFrameTime = 0;
   }
 
   private applyControlInteractionState(): void {
@@ -1011,6 +1018,8 @@ const workerApi = {
     renderer.setEmitterDebugEnabled(enabled),
   toggleBeams: () => renderer.toggleBeams(),
   setGridEnabled: (enabled: boolean) => renderer.setGridEnabled(enabled),
+  /** Applies the main thread's persisted environment preference. */
+  setDarkness: (darkness: number) => renderer.setDarkness(darkness),
   setOrbitTargetIndicatorEnabled: (enabled: boolean) =>
     renderer.setOrbitTargetIndicatorEnabled(enabled),
   setSnapPointsEnabled: (enabled: boolean) =>

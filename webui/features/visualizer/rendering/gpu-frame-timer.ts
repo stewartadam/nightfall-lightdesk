@@ -1,0 +1,316 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+import { InspectorBase } from "three/webgpu";
+import { getLogger } from "../../../lib/logger";
+
+const log = getLogger(import.meta.url);
+
+/** Consecutive failed readbacks tolerated before GPU timing is disabled. */
+export const MAX_READBACK_RETRIES = 5;
+/** First retry delay after a failed readback; doubles per consecutive failure. */
+export const READBACK_RETRY_BASE_MS = 1000;
+/** Ceiling on the retry delay so a transient fault recovers within a bounded time. */
+const READBACK_RETRY_MAX_MS = 30_000;
+
+/** One resolved frame's GPU work, grouped by render target or compute operation. */
+export interface GpuTimingSample {
+  id: number;
+  milliseconds: number;
+  passes?: Record<string, number>;
+}
+
+/** Labels only the frame being sampled, without the full inspector's UI or frame history. */
+class GpuPassLabels extends InspectorBase {
+  recording = false;
+  readonly labels = new Map<string, string>();
+
+  /** Associates render queries with the pass's named output texture. */
+  override beginRender(
+    ...[uid, scene, , target]: Parameters<InspectorBase["beginRender"]>
+  ): void {
+    if (this.recording)
+      this.labels.set(uid, target?.texture.name || scene.name || "output");
+  }
+
+  /** Associates compute queries with their kernel, including clustered-light assignment. */
+  override beginCompute(
+    ...[uid, node]: Parameters<InspectorBase["beginCompute"]>
+  ): void {
+    if (this.recording) this.labels.set(uid, node.name || "compute");
+  }
+}
+
+/**
+ * Minimal renderer interface keeps GPU timing testable without creating a device.
+ * `timestampQueryPool`, `trackTimestamp` and the inspector are three.js
+ * internals; `lastInterval` and `frameIntervals` only exist via
+ * patches/three+0.185.1.patch. scripts/three-timestamp-query.node.test.mjs
+ * fails when a three upgrade drops any of them.
+ */
+export interface TimestampRenderer {
+  backend: {
+    trackTimestamp: boolean;
+    timestampQueryPool?: Partial<
+      Record<
+        "render" | "compute",
+        {
+          timestamps: Map<string, number>;
+          currentQueryIndex?: number;
+          lastInterval?: readonly [bigint, bigint];
+          frameIntervals?: ReadonlyMap<number, readonly [bigint, bigint]>;
+        } | null
+      >
+    >;
+  };
+  inspector?: InspectorBase;
+  hasFeature(name: string): boolean;
+  resolveTimestampsAsync(
+    type: "render" | "compute",
+  ): Promise<number | undefined>;
+}
+
+/** Measures elapsed GPU time across overlapping or disjoint queue intervals without double-counting passes. */
+export function gpuIntervalSpan(
+  intervals: readonly (readonly [bigint, bigint])[],
+): number | undefined {
+  let start: bigint | undefined;
+  let end: bigint | undefined;
+  for (const [first, last] of intervals) {
+    if (last < first) return undefined;
+    if (start === undefined || first < start) start = first;
+    if (end === undefined || last > end) end = last;
+  }
+  return start === undefined || end === undefined
+    ? undefined
+    : Number(end - start) / 1e6;
+}
+
+/** The timestamp-bearing subset of Three's inspector frame records. */
+export interface InspectorGpuFrame {
+  frameId: number;
+  gpu?: number;
+  resolvedRender: boolean;
+  resolvedCompute: boolean;
+  renders: { gpuNotAvailable?: boolean }[];
+  computes: { gpuNotAvailable?: boolean }[];
+}
+
+/** Reuses frame-specific inspector readbacks, excluding other frames and overlapping pass double-counting. */
+export function readInspectorGpuSample(
+  frames: readonly InspectorGpuFrame[],
+  pools: TimestampRenderer["backend"]["timestampQueryPool"],
+): { id: number; milliseconds: number } | undefined {
+  for (let i = frames.length - 1; i >= Math.max(0, frames.length - 60); i--) {
+    const frame = frames[i];
+    if (!frame.resolvedRender || !frame.resolvedCompute) continue;
+    if (
+      frame.renders.some((pass) => pass.gpuNotAvailable) ||
+      frame.computes.some((pass) => pass.gpuNotAvailable)
+    )
+      return undefined;
+    const render = pools?.render?.frameIntervals?.get(frame.frameId);
+    const compute = pools?.compute?.frameIntervals?.get(frame.frameId);
+    if (!render || (frame.computes.length > 0 && !compute)) continue;
+    const milliseconds = gpuIntervalSpan(
+      frame.computes.length > 0 && compute ? [render, compute] : [render],
+    );
+    return milliseconds === undefined
+      ? undefined
+      : { id: frame.frameId, milliseconds };
+  }
+  return undefined;
+}
+
+/**
+ * Measures GPU execution without awaiting readback in the animation loop.
+ * Only one frame is recorded per pending readback, so a slow GPU cannot create
+ * an unbounded promise queue or mix several frames into one duration.
+ */
+export class GpuFrameTimer {
+  private pending = false;
+  private readback: Promise<void> = Promise.resolve();
+  private recording = false;
+  private disposed = false;
+  /** Set once consecutive readback failures exceed the retry budget. */
+  private exhausted = false;
+  private consecutiveFailures = 0;
+  /** Backoff chosen by a failed readback, applied on the next `begin` using its clock. */
+  private pendingBackoffMs: number | undefined;
+  private supported: boolean | undefined;
+  private latest: number | undefined;
+  private sampleId = 0;
+  private readonly passLabels = new GpuPassLabels();
+  private passes: Record<string, number> | undefined;
+  private nextSampleAt = -Infinity;
+
+  /** Bounds query mapping overhead independently of the display's refresh rate. */
+  constructor(private readonly sampleIntervalMs = 100) {}
+
+  /**
+   * Whether GPU samples are currently expected to arrive. False when the
+   * device lacks timestamp queries, while recovering from a failed readback,
+   * after retries are exhausted, or once disposed, so callers can stop
+   * waiting for samples instead of treating their absence as zero cost.
+   */
+  get available(): boolean {
+    return (
+      !this.disposed &&
+      !this.exhausted &&
+      this.consecutiveFailures === 0 &&
+      this.supported !== false
+    );
+  }
+
+  /** Reports the last completed GPU sample; unavailable timing is never zero. */
+  get sample(): GpuTimingSample | undefined {
+    return this.latest === undefined
+      ? undefined
+      : {
+          id: this.sampleId,
+          milliseconds: this.latest,
+          ...(this.passes ? { passes: this.passes } : {}),
+        };
+  }
+
+  /** Enables timestamp writes only when the previous sample has finished. */
+  begin(renderer: TimestampRenderer, now = performance.now()): void {
+    if (renderer.inspector?.constructor === InspectorBase)
+      renderer.inspector = this.passLabels;
+    if (this.pendingBackoffMs !== undefined && !this.pending) {
+      this.nextSampleAt = now + this.pendingBackoffMs;
+      this.pendingBackoffMs = undefined;
+    }
+    this.supported = renderer.hasFeature("timestamp-query");
+    this.recording =
+      !this.disposed &&
+      !this.exhausted &&
+      !this.pending &&
+      now >= this.nextSampleAt &&
+      this.supported;
+    renderer.backend.trackTimestamp = this.recording;
+    this.passLabels.recording = this.recording;
+    if (this.recording) {
+      this.nextSampleAt = now + this.sampleIntervalMs;
+      this.passLabels.labels.clear();
+    }
+  }
+
+  /** Starts bounded asynchronous readback after all passes of the frame are submitted. */
+  end(renderer: TimestampRenderer): void {
+    if (!this.recording) return;
+    this.recording = false;
+    this.passLabels.recording = false;
+    this.pending = true;
+    // Three returns the previous duration when a pool has no queries this frame.
+    const hasRenderQueries =
+      !!renderer.backend.timestampQueryPool?.render &&
+      renderer.backend.timestampQueryPool.render.currentQueryIndex !== 0;
+    const hasComputeQueries =
+      !!renderer.backend.timestampQueryPool?.compute &&
+      renderer.backend.timestampQueryPool.compute.currentQueryIndex !== 0;
+    // Calling before disabling tracking lets the backend enqueue the resolve.
+    const result = Promise.allSettled([
+      renderer.resolveTimestampsAsync("render"),
+      renderer.resolveTimestampsAsync("compute"),
+    ]);
+    renderer.backend.trackTimestamp = false;
+    this.readback = result
+      .then(([renderResult, computeResult]) => {
+        if (renderResult.status === "rejected") throw renderResult.reason;
+        if (computeResult.status === "rejected") throw computeResult.reason;
+        this.consecutiveFailures = 0;
+        const render = hasRenderQueries ? renderResult.value : undefined;
+        const compute = hasComputeQueries ? computeResult.value : undefined;
+        const pools = renderer.backend.timestampQueryPool;
+        const renderInterval = pools?.render?.lastInterval;
+        const computeInterval = pools?.compute?.lastInterval;
+        const milliseconds =
+          render === undefined ||
+          !renderInterval ||
+          (compute !== undefined && !computeInterval)
+            ? undefined
+            : gpuIntervalSpan(
+                compute !== undefined && computeInterval
+                  ? [renderInterval, computeInterval]
+                  : [renderInterval],
+              );
+        if (
+          !this.disposed &&
+          milliseconds !== undefined &&
+          Number.isFinite(milliseconds) &&
+          milliseconds >= 0
+        ) {
+          this.latest = milliseconds;
+          const passes: Record<string, number> = {};
+          for (const pool of Object.values(
+            renderer.backend.timestampQueryPool ?? {},
+          )) {
+            if (!pool) continue;
+            for (const [uid, duration] of pool.timestamps) {
+              const label = this.passLabels.labels.get(uid);
+              if (
+                label !== undefined &&
+                Number.isFinite(duration) &&
+                duration >= 0
+              )
+                passes[label] = (passes[label] ?? 0) + duration;
+            }
+          }
+          this.passes = Object.keys(passes).length ? passes : undefined;
+          this.sampleId++;
+        }
+      })
+      .catch((error: unknown) => this.recordReadbackFailure(error))
+      .finally(() => {
+        // This timer owns readback; retain no per-frame keys after consuming them.
+        for (const pool of Object.values(
+          renderer.backend.timestampQueryPool ?? {},
+        ))
+          pool?.timestamps.clear();
+        this.pending = false;
+      });
+  }
+
+  /**
+   * Clears the stale sample after a rejected readback and schedules a retry
+   * with exponential backoff. Device loss or failed mapping must not break
+   * playback, so timing is disabled after {@link MAX_READBACK_RETRIES}
+   * consecutive failures. Logs only the first failure of each failing streak
+   * and the final give-up, never once per retry.
+   */
+  private recordReadbackFailure(error: unknown): void {
+    this.latest = undefined;
+    this.passes = undefined;
+    if (this.disposed) return;
+    this.consecutiveFailures++;
+    if (this.consecutiveFailures === 1)
+      log.warn("GPU timestamp readback failed; retrying with backoff", {
+        error,
+      });
+    if (this.consecutiveFailures > MAX_READBACK_RETRIES) {
+      this.exhausted = true;
+      log.warn(
+        `GPU timing disabled after ${this.consecutiveFailures} consecutive readback failures`,
+      );
+      return;
+    }
+    this.pendingBackoffMs = Math.min(
+      READBACK_RETRY_BASE_MS * 2 ** (this.consecutiveFailures - 1),
+      READBACK_RETRY_MAX_MS,
+    );
+  }
+
+  /** Stops recording and lets the owner drain mapping before destroying GPU buffers. */
+  dispose(): Promise<void> {
+    this.disposed = true;
+    this.latest = undefined;
+    this.passes = undefined;
+    return this.readback;
+  }
+}

@@ -28,12 +28,53 @@ import {
   Object3D,
   Vector3,
 } from "three/webgpu";
-import type { FixtureElement, FixtureGeometry } from "../../../../types";
+import type { FixtureElement, FixturePhysical } from "../../../../types";
 import type { EmitterData, FixtureInstance } from "../../model/types";
+import { FilteredEmitterRow } from "../effects/filtered-emitter-row";
+import { EMITTER_RADIANCE } from "../emitter-radiance";
 
 const LED_BAR_HOUSING_HEIGHT = 0.06;
 const LED_BAR_HANGING_HOUSING_Y = -LED_BAR_HOUSING_HEIGHT / 2;
 const LED_BAR_CELL_Y = -0.07;
+
+/** Uses a shared filtered surface only when the actual cell positions form a regular straight row. */
+function createFilteredRow(
+  group: Group,
+  cellMesh: InstancedMesh<BoxGeometry>,
+  positions: readonly { x: number; y: number; z: number }[],
+): FilteredEmitterRow | undefined {
+  if (positions.length < 2) return undefined;
+  const first = positions[0];
+  const spacing = positions[1].x - first.x;
+  if (
+    spacing <= 0 ||
+    positions.some(
+      (position, index) =>
+        Math.abs(position.x - first.x - index * spacing) > spacing * 0.001 ||
+        Math.abs(position.y - first.y) > spacing * 0.001 ||
+        Math.abs(position.z - first.z) > spacing * 0.001,
+    )
+  )
+    return undefined;
+  const { width, height, depth } = cellMesh.geometry.parameters;
+  if (width > spacing) return undefined;
+  const row = new FilteredEmitterRow(
+    positions.length,
+    spacing,
+    width,
+    height,
+    depth,
+  );
+  row.mesh.position.set(
+    (first.x + positions[positions.length - 1].x) / 2,
+    first.y,
+    first.z,
+  );
+  group.add(row.mesh);
+  // Keep the physical cells for opaque depth and dark lenses; the row supplies their emission.
+  (cellMesh.material as MeshBasicMaterial).color.setScalar(0);
+  return row;
+}
 
 /**
  * LED bar specific data stored on the fixture instance.
@@ -41,6 +82,8 @@ const LED_BAR_CELL_Y = -0.07;
 export interface LedBarData {
   type: "led-bar";
   cellMesh: InstancedMesh;
+  /** Spatially filtered luminous surface for regular rows; original cells retain DMX and selection indexing. */
+  filteredRow?: FilteredEmitterRow;
   cellCount: number;
   /** Per-cell proxy meshes used by outline selection passes. */
   cellSelectionMeshes: Mesh[];
@@ -65,6 +108,8 @@ function addCellSelectionMeshes(
   const cellSelectionMeshes = cellPositions.map((position, index) => {
     const mesh = new Mesh(cellGeometry, cellSelectionMaterial);
     mesh.name = `PixelSelection_${index}`;
+    mesh.userData.visualizerOutlineOnly = true;
+    mesh.visible = false;
     mesh.position.copy(position);
     mesh.raycast = () => {};
     group.add(mesh);
@@ -72,159 +117,6 @@ function addCellSelectionMeshes(
   });
 
   return { cellSelectionMeshes, cellSelectionMaterial };
-}
-
-/**
- * Build an LED bar fixture from GDTF geometry.
- * Detects beam geometry nodes and creates an instanced mesh for all cells.
- */
-export function buildLedBarFixture(
-  fixtureUid: string,
-  geometry: FixtureGeometry,
-): FixtureInstance & { ledBarData: LedBarData } {
-  const group = new Group();
-  group.name = `Fixture_${fixtureUid}`;
-
-  // Collect all beam nodes (emitters) to determine cell layout
-  const beamNodes = geometry.nodes.filter(
-    (node) => node.geometryType === "beam" && node.controlledElement,
-  );
-
-  const cellCount = beamNodes.length;
-  if (cellCount === 0) {
-    throw new Error("LED bar fixture has no beam geometry nodes");
-  }
-
-  // Calculate bar dimensions from beam positions
-  const positions: Vector3[] = [];
-  const elementToCellIndex = new Map<string, number>();
-
-  for (let i = 0; i < beamNodes.length; i++) {
-    const node = beamNodes[i];
-    // Extract position from transform matrix
-    const pos = new Vector3();
-    const matrix = new Matrix4().fromArray(node.transform.elements);
-    pos.setFromMatrixPosition(matrix);
-    // Convert from meters to scene units (meters)
-    positions.push(pos);
-
-    if (node.controlledElement) {
-      elementToCellIndex.set(node.controlledElement, i);
-    }
-  }
-
-  // Calculate bounding box for bar dimensions
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let avgY = 0;
-  let avgZ = 0;
-
-  for (const pos of positions) {
-    minX = Math.min(minX, pos.x);
-    maxX = Math.max(maxX, pos.x);
-    avgY += pos.y;
-    avgZ += pos.z;
-  }
-  avgY /= positions.length;
-  avgZ /= positions.length;
-
-  const barWidth = maxX - minX + 0.05; // Add padding
-  const cellSpacing = barWidth / cellCount;
-  const cellWidth = cellSpacing * 0.6;
-
-  // Create bar housing (dark metal frame)
-  const housingGeometry = new BoxGeometry(
-    barWidth + 0.04,
-    LED_BAR_HOUSING_HEIGHT,
-    0.04,
-  );
-  const housingMaterial = new MeshStandardMaterial({
-    color: 0x1a1a1a,
-    metalness: 0.7,
-    roughness: 0.3,
-  });
-  const housing = new Mesh(housingGeometry, housingMaterial);
-  housing.name = "Housing";
-  housing.position.set(
-    (minX + maxX) / 2,
-    avgY + LED_BAR_HANGING_HOUSING_Y,
-    avgZ,
-  );
-  group.add(housing);
-
-  // Create instanced mesh for LED cells
-  const cellGeometry = new BoxGeometry(cellWidth, 0.02, 0.03);
-  const cellMaterial = new MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: false,
-    vertexColors: true,
-  });
-  const cellMesh = new InstancedMesh(cellGeometry, cellMaterial, cellCount);
-  cellMesh.name = "Pixels";
-
-  // Initialize instance colors (black = off)
-  cellMesh.instanceColor = new InstancedBufferAttribute(
-    new Float32Array(cellCount * 3),
-    3,
-  );
-
-  // Position each cell instance
-  const instanceMatrix = new Matrix4();
-  const cellPositions: Vector3[] = [];
-  for (let i = 0; i < cellCount; i++) {
-    const pos = positions[i];
-    const cellPosition = new Vector3(pos.x, pos.y + LED_BAR_CELL_Y, pos.z);
-    cellPositions.push(cellPosition);
-    instanceMatrix.setPosition(cellPosition.x, cellPosition.y, cellPosition.z);
-    cellMesh.setMatrixAt(i, instanceMatrix);
-  }
-  cellMesh.instanceMatrix.needsUpdate = true;
-
-  group.add(cellMesh);
-  const { cellSelectionMeshes, cellSelectionMaterial } = addCellSelectionMeshes(
-    group,
-    cellGeometry,
-    cellPositions,
-  );
-
-  // Scale from GDTF millimeters to scene meters
-  group.scale.setScalar(0.001);
-
-  // Create emitter map for DMX updates
-  // Each emitter needs its own positioned Object3D so debug overlays can place markers correctly.
-  // We create invisible anchor objects at each cell position.
-  const emitters = new Map<string, EmitterData>();
-  for (let i = 0; i < beamNodes.length; i++) {
-    const node = beamNodes[i];
-    if (node.controlledElement) {
-      // Create an invisible anchor mesh at the cell position for debug overlay support
-      const anchor = new Object3D();
-      anchor.name = `EmitterAnchor_${node.name}`;
-      const pos = positions[i];
-      anchor.position.set(pos.x, pos.y + LED_BAR_CELL_Y, pos.z);
-      group.add(anchor);
-
-      emitters.set(node.name, {
-        mesh: anchor as unknown as Mesh, // Anchor for debug overlays to attach markers
-        controlledElement: node.controlledElement,
-      });
-    }
-  }
-
-  return {
-    uid: fixtureUid,
-    group,
-    nodeObjects: new Map(), // LED bars don't use node hierarchy
-    emitters,
-    ledBarData: {
-      type: "led-bar",
-      cellMesh,
-      cellCount,
-      cellSelectionMeshes,
-      cellSelectionMaterial,
-      elementToCellIndex,
-    },
-  };
 }
 
 /**
@@ -256,18 +148,14 @@ export function updateLedBarColors(
     color.setRGB(dmx.red, dmx.green, dmx.blue);
     color.convertSRGBToLinear();
 
-    // Boost color brightness for emissive-like effect
-    const boostFactor = dmx.intensity * 2.0;
-    const maxValue = 1.15; // Just under bloom threshold
-    const r = Math.min(color.r * boostFactor, maxValue);
-    const g = Math.min(color.g * boostFactor, maxValue);
-    const b = Math.min(color.b * boostFactor, maxValue);
-
-    const alpha = Math.max(0.2, dmx.intensity);
-    instanceColor.setXYZ(cellIndex, r * alpha, g * alpha, b * alpha);
+    // Preserve HDR output so saturated cells participate in the shared haze glow.
+    color.multiplyScalar(dmx.intensity * EMITTER_RADIANCE);
+    instanceColor.setXYZ(cellIndex, color.r, color.g, color.b);
   }
 
-  instanceColor.needsUpdate = true;
+  const { filteredRow } = instance.ledBarData;
+  if (filteredRow) filteredRow.update(instanceColor.array);
+  else instanceColor.needsUpdate = true;
 }
 
 /**
@@ -280,6 +168,7 @@ export function disposeLedBar(
   cellMesh.geometry?.dispose();
   (cellMesh.material as MeshBasicMaterial)?.dispose();
   cellSelectionMaterial.dispose();
+  instance.ledBarData.filteredRow?.dispose();
 
   // Dispose housing (first child of group)
   const housing = instance.group.children[0] as Mesh | undefined;
@@ -294,10 +183,13 @@ export function disposeLedBar(
  * Creates a simple linear arrangement of pixels based on element count.
  *
  * This is used for fixtures patched without GDTF data, like generic pixel tapes.
+ * `displayGain` scales the luminous cells for the active quality preset.
  */
 export function buildSimpleLedBar(
   fixtureUid: string,
   elements: FixtureElement[],
+  physical?: FixturePhysical,
+  displayGain = 1,
 ): FixtureInstance & { ledBarData: LedBarData } {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
@@ -375,6 +267,10 @@ export function buildSimpleLedBar(
 
   // Create emitter map for DMX updates
   // Each emitter needs its own positioned Object3D so debug overlays can place markers correctly.
+  const filteredRow = createFilteredRow(group, cellMesh, cellPositions);
+  // A filtered row supplies the emission, leaving the physical cells as dark lenses.
+  if (filteredRow) filteredRow.mesh.material.color.setScalar(displayGain);
+  else cellMaterial.color.setScalar(displayGain);
   const emitters = new Map<string, EmitterData>();
   for (let i = 0; i < elements.length; i++) {
     const pos = cellPositions[i];
@@ -383,11 +279,28 @@ export function buildSimpleLedBar(
     const anchor = new Object3D();
     anchor.name = `EmitterAnchor_${i}`;
     anchor.position.set(pos.x, pos.y, pos.z);
+    anchor.rotation.x = -Math.PI / 2;
     group.add(anchor);
 
     emitters.set(String(i), {
       mesh: anchor as unknown as Mesh,
+      nodeGroup: anchor,
       controlledElement: elements[i].label,
+      optics: physical
+        ? {
+            physical: {
+              ...physical,
+              // Fixture-level flux is shared across independently controlled cells.
+              lumens:
+                physical.lumens === undefined
+                  ? undefined
+                  : physical.lumens / cellCount,
+            },
+            radius: Math.min(cellWidth, 0.03) / 2,
+            throwRatio: 1,
+            rectangleRatio: 1,
+          }
+        : undefined,
     });
   }
 
@@ -399,6 +312,7 @@ export function buildSimpleLedBar(
     ledBarData: {
       type: "led-bar",
       cellMesh,
+      filteredRow,
       cellCount,
       cellSelectionMeshes,
       cellSelectionMaterial,

@@ -39,6 +39,7 @@ interface UseVisualizerRendererSyncOptions {
   showEmitters: () => boolean;
   showGrid: () => boolean;
   showOrbitTargetIndicator: () => boolean;
+  darkness: () => number;
   showLabels: () => boolean;
   toolMode: () => VisualizerInteractionMode;
   rotationMode: () => VisualizerCameraRotationMode;
@@ -49,6 +50,7 @@ interface FixtureSyncSnapshot {
   make: string;
   model: string;
   beamType: string | undefined;
+  physicalSignature: string;
   layout: RenderableFixture["layout"];
   elementSignature: string;
   geometrySignature: string;
@@ -80,6 +82,7 @@ function toFixtureSyncSnapshot(
     make: fixture.make,
     model: fixture.model,
     beamType: fixture.beamType,
+    physicalSignature: fixture.physicalSignature,
     layout: fixture.layout,
     elementSignature: buildElementSignature(fixture),
     geometrySignature: buildGeometrySignature(fixture),
@@ -96,6 +99,7 @@ function requiresFullFixtureSync(
     previous.make !== next.make ||
     previous.model !== next.model ||
     previous.beamType !== next.beamType ||
+    previous.physicalSignature !== next.physicalSignature ||
     previous.layout !== next.layout ||
     previous.elementSignature !== next.elementSignature ||
     previous.geometrySignature !== next.geometrySignature
@@ -274,6 +278,12 @@ export function useVisualizerRendererSync(
     if (!workspaceActive()) return;
     const r = options.renderer();
     r?.setOrbitTargetIndicatorEnabled(options.showOrbitTargetIndicator());
+  });
+
+  /** Applies darkness live after renderer initialization or workspace reactivation. */
+  createEffect(() => {
+    if (!workspaceActive()) return;
+    options.renderer()?.setDarkness(options.darkness());
   });
 
   createEffect(() => {

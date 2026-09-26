@@ -13,6 +13,27 @@ import { Instrumentation } from "./instrumentation";
 
 const FRAME_INTERVAL_MS = 1000 / 60;
 
+/** Slow readbacks are counted once, without overweighting repeated reports of the same frame. */
+test("instrumentation averages distinct GPU samples and exposes unavailable timing", () => {
+  const instrumentation = new Instrumentation({ renderMode: "main-thread" });
+  const stats: VisualizerStats[] = [];
+  instrumentation.setStatsCallback((value) => {
+    if (value) stats.push(value);
+  });
+  recordSteadyFrames(instrumentation, 1000, 10);
+  assert.equal(stats.at(-1)?.gpuMs, undefined);
+  for (let i = 0; i < 10; i++) {
+    instrumentation.recordFrame(1200 + i * FRAME_INTERVAL_MS, {
+      updateMs: 1,
+      renderMs: 2,
+      gpu: i === 0 ? { id: 1, milliseconds: 8 } : { id: 2, milliseconds: 2 },
+    });
+  }
+  assert.equal(stats.at(-1)?.gpuMs, 5);
+  instrumentation.pause();
+  assert.equal(stats.at(-1)?.gpuMs, undefined);
+});
+
 /** Records the requested number of steady 60 FPS frames. */
 function recordSteadyFrames(
   instrumentation: Instrumentation,
@@ -29,7 +50,7 @@ function recordSteadyFrames(
 
 /** Ensures the initial timing baseline does not inflate measured FPS. */
 test("instrumentation excludes the initial timing baseline from FPS", () => {
-  const instrumentation = new Instrumentation();
+  const instrumentation = new Instrumentation({ renderMode: "main-thread" });
   const publishedStats: VisualizerStats[] = [];
   instrumentation.setStatsCallback((stats) => {
     if (stats) publishedStats.push(stats);
@@ -44,7 +65,7 @@ test("instrumentation excludes the initial timing baseline from FPS", () => {
 
 /** Ensures resuming establishes a new baseline without adding a zero sample. */
 test("instrumentation preserves stable FPS across resume", () => {
-  const instrumentation = new Instrumentation();
+  const instrumentation = new Instrumentation({ renderMode: "main-thread" });
   const publishedStats: VisualizerStats[] = [];
   instrumentation.setStatsCallback((stats) => {
     if (stats) publishedStats.push(stats);
@@ -57,4 +78,47 @@ test("instrumentation preserves stable FPS across resume", () => {
   const latestStats = publishedStats.at(-1);
   assert.ok(latestStats);
   assert.ok(Math.abs(latestStats.fps - 60) < 0.001);
+});
+
+/** Developer diagnostics are published only when requested, while core stats are always present. */
+test("instrumentation gates pacing, resolution scales and GPU passes behind diagnostics", () => {
+  for (const diagnostics of [false, true]) {
+    const instrumentation = new Instrumentation({
+      renderMode: "worker",
+      diagnostics,
+    });
+    let latest: VisualizerStats | null = null;
+    instrumentation.setStatsCallback((stats) => {
+      latest = stats;
+    });
+    for (let index = 0; index < 10; index += 1) {
+      instrumentation.recordFrame(1_000 + index * FRAME_INTERVAL_MS, {
+        updateMs: 1,
+        renderMs: 2,
+        sceneScale: 0.75,
+        atmosphereScale: 0.5,
+        omittedSurfaceLights: 3,
+        gpu: { id: 1, milliseconds: 4, passes: { scene: 4 } },
+      });
+    }
+    const stats = latest as VisualizerStats | null;
+    assert.ok(stats);
+    assert.equal(stats.renderMode, "worker");
+    assert.equal(stats.gpuMs, 4);
+    assert.equal(stats.omittedSurfaceLights, 3);
+    if (diagnostics) {
+      assert.equal(stats.sceneScale, 0.75);
+      assert.equal(stats.atmosphereScale, 0.5);
+      assert.deepEqual(stats.gpuPasses, { scene: 4 });
+      assert.equal(stats.framePacing?.frames, 10);
+    } else {
+      for (const key of [
+        "framePacing",
+        "sceneScale",
+        "atmosphereScale",
+        "gpuPasses",
+      ] as const)
+        assert.equal(key in stats, false, key);
+    }
+  }
 });

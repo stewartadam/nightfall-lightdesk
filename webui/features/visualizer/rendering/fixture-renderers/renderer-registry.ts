@@ -16,15 +16,16 @@
  * 3. Default GDTF geometry builder (fallback for all other fixtures)
  */
 
-import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import type {
   BeamType,
   FixtureElement,
   FixtureGeometry,
   FixtureLayout,
+  FixturePhysical,
 } from "../../../../types";
 import type { FixtureInstance } from "../../model/types";
 import { buildGeometryTree, disposeFixtureInstance } from "../geometry-builder";
+import type { QualityProfile } from "../quality-profile";
 import {
   buildSimpleLedBar,
   disposeLedBar,
@@ -69,11 +70,13 @@ export type ExtendedFixtureInstance = FixtureInstance & {
   rendererType: RendererType;
   /** Physical layout used to construct this instance. */
   layout?: FixtureLayout;
+  /** Photometry revision used when deciding whether fixture resources need rebuilding. */
+  physicalSignature?: string;
   ledBarData?: LedBarData;
   strobePanelData?: StrobePanelData;
   movingHeadData?: MovingHeadData;
   rotatingWashBeamData?: RotatingWashBeamData;
-  /** Beam type from fixture physical data, used to determine spotlight rendering */
+  /** Beam type from fixture physical data */
   beamType?: BeamType;
   /** Element labels by one-based fixture element index. */
   elementLabels?: string[];
@@ -102,21 +105,29 @@ export function detectRendererType(layout?: FixtureLayout): RendererType {
 }
 
 /**
- * Build a fixture instance using the appropriate renderer.
+ * Build a fixture instance using the appropriate renderer, applying the quality profile's
+ * emitter display gain to luminous faces.
  */
 export function buildFixtureWithRenderer(
   fixtureUid: string,
   geometry: FixtureGeometry,
   elements: FixtureElement[],
-  beamType?: BeamType,
-  beamQuality: VisualizerBeamQuality = "high",
+  beamType: BeamType | undefined,
+  profile: QualityProfile,
   layout?: FixtureLayout,
+  physical?: FixturePhysical,
 ): ExtendedFixtureInstance {
   const rendererType = detectRendererType(layout);
+  const displayGain = profile.emitterDisplayGain;
 
   switch (rendererType) {
     case "led-bar": {
-      const instance = buildSimpleLedBar(fixtureUid, elements);
+      const instance = buildSimpleLedBar(
+        fixtureUid,
+        elements,
+        physical,
+        displayGain,
+      );
       return {
         ...instance,
         rendererType: "led-bar",
@@ -128,8 +139,8 @@ export function buildFixtureWithRenderer(
     case "strobe-panel": {
       const instance =
         layout === "rgb-strobe-bar"
-          ? buildRgbStrobeBarFixture(fixtureUid, elements)
-          : buildStrobePanelFixture(fixtureUid, elements);
+          ? buildRgbStrobeBarFixture(fixtureUid, elements, displayGain)
+          : buildStrobePanelFixture(fixtureUid, elements, displayGain);
       return {
         ...instance,
         rendererType: "strobe-panel",
@@ -142,8 +153,8 @@ export function buildFixtureWithRenderer(
       const instance = buildRotatingWashBeamFixture(
         fixtureUid,
         elements,
-        beamQuality,
         layout === "linear-wash-bar" ? 10 : 12,
+        physical,
       );
       return {
         ...instance,
@@ -158,7 +169,7 @@ export function buildFixtureWithRenderer(
         fixtureUid,
         elements,
         geometry,
-        beamQuality,
+        physical,
       );
       return {
         ...instance,
@@ -182,18 +193,25 @@ export function buildFixtureWithRenderer(
 }
 
 /**
- * Build a fixture without GDTF geometry using element data.
+ * Build a fixture without GDTF geometry using element data, applying the quality profile's
+ * emitter display gain to luminous faces.
  * Returns null if no appropriate renderer is available.
  */
 export function buildFixtureWithoutGeometry(
   fixtureUid: string,
   elements: FixtureElement[],
-  beamType?: BeamType,
-  beamQuality: VisualizerBeamQuality = "high",
+  beamType: BeamType | undefined,
+  profile: QualityProfile,
   layout?: FixtureLayout,
+  physical?: FixturePhysical,
 ): ExtendedFixtureInstance | null {
+  const displayGain = profile.emitterDisplayGain;
   if (layout === "rgb-strobe-bar") {
-    const instance = buildRgbStrobeBarFixture(fixtureUid, elements);
+    const instance = buildRgbStrobeBarFixture(
+      fixtureUid,
+      elements,
+      displayGain,
+    );
     return {
       ...instance,
       rendererType: "strobe-panel",
@@ -206,8 +224,8 @@ export function buildFixtureWithoutGeometry(
     const instance = buildRotatingWashBeamFixture(
       fixtureUid,
       elements,
-      beamQuality,
       layout === "linear-wash-bar" ? 10 : 12,
+      physical,
     );
     return {
       ...instance,
@@ -219,7 +237,7 @@ export function buildFixtureWithoutGeometry(
 
   // Explicit layouts render without imported geometry.
   if (layout === "strobe-matrix") {
-    const instance = buildStrobePanelFixture(fixtureUid, elements);
+    const instance = buildStrobePanelFixture(fixtureUid, elements, displayGain);
     return {
       ...instance,
       rendererType: "strobe-panel",
@@ -241,7 +259,7 @@ export function buildFixtureWithoutGeometry(
       fixtureUid,
       elements,
       undefined,
-      beamQuality,
+      physical,
     );
     return {
       ...instance,
@@ -253,7 +271,12 @@ export function buildFixtureWithoutGeometry(
 
   // Check if this is a simple LED bar (8+ RGB elements)
   if (layout === "led-bar" || isSimpleLedBar(elements)) {
-    const instance = buildSimpleLedBar(fixtureUid, elements);
+    const instance = buildSimpleLedBar(
+      fixtureUid,
+      elements,
+      physical,
+      displayGain,
+    );
     return {
       ...instance,
       rendererType: "led-bar",

@@ -13,7 +13,21 @@ mod native_unit_tests {
     use nightfall_dmx::prelude::{Attribute, ParameterUnit};
     use nightfall_fixtures::prelude::ParameterMetadata;
 
-    use super::super::apply_position_physical_range;
+    use super::super::apply_angular_physical_range;
+
+    /// Preserves angular zoom values instead of treating them as raw DMX percentages.
+    #[test]
+    fn zoom_bounds_enable_degree_units() {
+        let mut metadata = ParameterMetadata {
+            attribute: Attribute::Zoom,
+            max: 255.0,
+            ..Default::default()
+        };
+        apply_angular_physical_range(&mut metadata, Some((5.0, 45.0)));
+        assert_eq!(metadata.native_unit, ParameterUnit::Degrees);
+        assert_eq!(metadata.min, 5.0);
+        assert_eq!(metadata.max, 45.0);
+    }
 
     /// Verifies position imports without physical bounds retain percentage semantics.
     #[test]
@@ -25,7 +39,7 @@ mod native_unit_tests {
             ..Default::default()
         };
 
-        apply_position_physical_range(&mut metadata, None);
+        apply_angular_physical_range(&mut metadata, None);
 
         assert_eq!(metadata.native_unit, ParameterUnit::Percent);
         assert_eq!(metadata.min, 0.0);
@@ -42,7 +56,7 @@ mod native_unit_tests {
             ..Default::default()
         };
 
-        apply_position_physical_range(&mut metadata, Some((270.0, 0.0)));
+        apply_angular_physical_range(&mut metadata, Some((270.0, 0.0)));
 
         assert_eq!(metadata.native_unit, ParameterUnit::Degrees);
         assert_eq!(metadata.min, 0.0);
@@ -57,6 +71,297 @@ mod gdtf_tests {
     use nightfall_fixtures::prelude::*;
 
     use super::super::gdtf::*;
+
+    /// Parses a minimal fixture type declaring an angular Zoom and length Focus attribute plus one
+    /// DMX profile, so optical conversion resolves units and curves as it does for real archives.
+    fn optical_fixture_type() -> gdtf::fixture_type::FixtureType {
+        use std::str::FromStr;
+        let description = gdtf::Description::from_str(
+            r#"<GDTF DataVersion="1.2">
+  <FixtureType Name="Optic" ShortName="Optic" LongName="Optic" Manufacturer="Test" Description=""
+      FixtureTypeID="6A2B1B4C-3C11-4C3E-8B8D-0F6D7C1A2B3C" RefFT="" CanHaveChildren="Yes">
+    <AttributeDefinitions>
+      <ActivationGroups/>
+      <FeatureGroups>
+        <FeatureGroup Name="Focus" Pretty="Focus"><Feature Name="Focus"/></FeatureGroup>
+      </FeatureGroups>
+      <Attributes>
+        <Attribute Name="Zoom" Pretty="Zoom" Feature="Focus.Focus" PhysicalUnit="Angle"/>
+        <Attribute Name="Focus1" Pretty="Focus1" Feature="Focus.Focus" PhysicalUnit="Length"/>
+      </Attributes>
+    </AttributeDefinitions>
+    <PhysicalDescriptions>
+      <DMXProfiles>
+        <DMXProfile Name="Curve"><Point DMXPercentage="0" CFC0="0" CFC1="1"/></DMXProfile>
+      </DMXProfiles>
+    </PhysicalDescriptions>
+    <Geometries>
+      <Geometry Name="Head" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}"/>
+    </Geometries>
+    <DMXModes>
+      <DMXMode Name="Mode" Geometry="Head"><DMXChannels/></DMXMode>
+    </DMXModes>
+  </FixtureType>
+</GDTF>"#,
+        )
+        .unwrap();
+        description.fixture_types.into_iter().next().unwrap()
+    }
+
+    /// Mirrors bytes by default and zero-pads only for shifted values, per the GDTF spec.
+    #[test]
+    fn test_channel_resolution_mirrors_unshifted_values() {
+        let value = |source: &str| -> gdtf::values::DmxValue {
+            serde_json::from_value(serde_json::json!(source)).unwrap()
+        };
+        let fine = ChannelResolution {
+            bytes: 2,
+            max: 65535,
+        };
+        let coarse = ChannelResolution { bytes: 1, max: 255 };
+        assert_eq!(fine.value(value("255/1")), 65535);
+        assert_eq!(fine.value(value("128/1")), 32896);
+        assert_eq!(fine.value(value("255/1s")), 65280);
+        assert_eq!(coarse.value(value("32896/2")), 128);
+    }
+
+    /// Resolves units and transfer curves into typed values, keeping dangling links explicit.
+    #[test]
+    fn test_optical_function_units_and_profiles_are_typed() {
+        let fixture_type = optical_fixture_type();
+        let mode: gdtf::dmx_mode::DmxMode = serde_json::from_value(serde_json::json!({
+            "@Name": "Mode", "@Geometry": "Head",
+            "DMXChannels": [{ "DMXChannel": [
+                { "@Geometry": "Head", "@Offset": "1", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Zoom", "ChannelFunction": [
+                    { "@Attribute": "Zoom", "@DMXFrom": "0/1", "@PhysicalFrom": 5, "@PhysicalTo": 40 }
+                  ] }] },
+                { "@Geometry": "Head", "@Offset": "2", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Focus1", "ChannelFunction": [
+                    { "@Attribute": "Focus1", "@DMXFrom": "0/1", "@DMXProfile": "Curve",
+                      "@PhysicalFrom": 1, "@PhysicalTo": 20 },
+                    { "@Attribute": "Focus1", "@DMXFrom": "128/1", "@DMXProfile": "Missing",
+                      "@PhysicalFrom": 1, "@PhysicalTo": 20 }
+                  ] }] },
+                { "@Geometry": "Head", "@Offset": "3", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Gobo1", "ChannelFunction": [
+                    { "@Attribute": "Gobo1", "@DMXFrom": "0/1",
+                      "@ModeMaster": "Head_Absent", "@ModeFrom": "0/1", "@ModeTo": "10/1" }
+                  ] }] }
+            ] }]
+        }))
+        .unwrap();
+        let channels = convert_optical_channels(&mode, &fixture_type);
+        let zoom = &channels[0].functions[0];
+        assert_eq!(zoom.physical_unit, PhysicalUnit::Angle);
+        assert_eq!(zoom.profile, OpticalProfile::Linear);
+        assert_eq!(zoom.mode_master, OpticalModeMaster::None);
+        let focus = &channels[1].functions;
+        assert_eq!(focus[0].physical_unit, PhysicalUnit::Length);
+        assert!(
+            matches!(&focus[0].profile, OpticalProfile::Curve(curve) if curve.points.len() == 1)
+        );
+        assert_eq!(focus[1].profile, OpticalProfile::Unresolved);
+        let gobo = &channels[2].functions[0];
+        assert_eq!(gobo.physical_unit, PhysicalUnit::None);
+        assert_eq!(gobo.mode_master, OpticalModeMaster::Unresolved);
+    }
+
+    /// Converts coarse-encoded boundaries to a fine channel without losing inclusive slot ends.
+    #[test]
+    fn test_optical_function_resolution_and_slots() {
+        let mode: gdtf::dmx_mode::DmxMode = serde_json::from_value(serde_json::json!({
+            "@Name": "Mode", "@Geometry": "Head",
+            "DMXChannels": [{ "DMXChannel": [{
+                "@Geometry": "Head", "@Offset": "1,2", "@Highlight": "None",
+                "LogicalChannel": [{ "@Attribute": "Gobo1", "ChannelFunction": [
+                    { "@Attribute": "Gobo1", "@DMXFrom": "0/1", "@Wheel": "Gobos", "@PhysicalFrom": 1, "@PhysicalTo": 2,
+                      "ChannelSet": [
+                        { "@DMXFrom": "0/1", "@WheelSlotIndex": 1 },
+                        { "@DMXFrom": "64/1", "@WheelSlotIndex": 2 }
+                      ] },
+                    { "@Attribute": "Gobo1PosRotate", "@DMXFrom": "128/1", "@PhysicalFrom": -60, "@PhysicalTo": 60 }
+                ] }]
+            }] }]
+        })).unwrap();
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
+        assert_eq!(channels.len(), 1);
+        let channel = &channels[0];
+        assert_eq!(channel.dmx_max, 65535);
+        assert_eq!(channel.functions[0].dmx_to, 32895);
+        assert_eq!(channel.functions[1].dmx_from, 32896);
+        assert_eq!(channel.functions[1].dmx_to, 65535);
+        assert_eq!(channel.functions[0].sets[0].dmx_to, 16447);
+        assert_eq!(channel.functions[0].sets[1].dmx_from, 16448);
+        assert_eq!(channel.functions[0].sets[1].wheel_slot, Some(2));
+        assert_eq!(channel.functions[1].physical_from, -60.0);
+    }
+
+    /// Conditional alternatives at the same DMX boundary must both survive import.
+    #[test]
+    fn test_optical_mode_alternatives_share_the_full_interval() {
+        let mode: gdtf::dmx_mode::DmxMode = serde_json::from_value(serde_json::json!({
+            "@Name": "Mode", "@Geometry": "Head",
+            "DMXChannels": [{ "DMXChannel": [
+                { "@Geometry": "Head", "@Offset": "1", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Control", "ChannelFunction": [
+                    { "@Attribute": "Control", "@DMXFrom": "0/1" }
+                  ] }] },
+                { "@Geometry": "Head", "@Offset": "2", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Gobo1Pos", "ChannelFunction": [
+                    { "@Attribute": "Gobo1Pos", "@DMXFrom": "0/1", "@PhysicalFrom": 0, "@PhysicalTo": 360,
+                      "@ModeMaster": "Head_Control", "@ModeFrom": "0/1", "@ModeTo": "127/1" },
+                    { "@Attribute": "Gobo1PosRotate", "@DMXFrom": "0/1", "@PhysicalFrom": -180, "@PhysicalTo": 180,
+                      "@ModeMaster": "Head_Control", "@ModeFrom": "128/1", "@ModeTo": "255/1" }
+                  ] }] }
+            ] }]
+        })).unwrap();
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].functions.len(), 2);
+        for function in &channels[0].functions {
+            assert_eq!((function.dmx_from, function.dmx_to), (0, 255));
+            assert!(matches!(
+                function.mode_master,
+                OpticalModeMaster::Resolved(_)
+            ));
+        }
+        assert_eq!(channels[0].functions[0].attribute, "Gobo1Pos");
+        assert_eq!(channels[0].functions[1].attribute, "Gobo1PosRotate");
+        let OpticalModeMaster::Resolved(conditions) = &channels[0].functions[1].mode_master else {
+            panic!("expected resolved mode master");
+        };
+        let condition = &conditions[0];
+        assert_eq!(condition.geometry, "Head");
+        assert_eq!(condition.parameter_key, "Control");
+        assert_eq!(
+            (condition.dmx_from, condition.dmx_to, condition.dmx_max),
+            (128, 255, 255)
+        );
+
+        // A speed breakpoint in the rotation container must not shorten indexed positioning.
+        let mut mode = mode;
+        let functions = &mut mode.dmx_channels[1].logical_channels[0].channel_functions;
+        let mut second_speed = functions[1].clone();
+        second_speed.dmx_from = serde_json::from_value(serde_json::json!("128/1")).unwrap();
+        functions.push(second_speed);
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
+        assert_eq!(channels[0].functions[0].dmx_to, 255);
+        assert_eq!(channels[0].functions[1].dmx_to, 127);
+        assert_eq!(channels[0].functions[2].dmx_to, 255);
+    }
+
+    /// Resolves nested function masters at each channel's resolution and rejects cyclic links.
+    #[test]
+    fn test_optical_nested_mode_conditions() {
+        let mut mode: gdtf::dmx_mode::DmxMode = serde_json::from_value(serde_json::json!({
+            "@Name": "Mode", "@Geometry": "Head",
+            "DMXChannels": [{ "DMXChannel": [
+                { "@Geometry": "Base", "@Offset": "1,2", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Control", "ChannelFunction": [
+                    { "@Name": "Enable", "@Attribute": "Control", "@DMXFrom": "0/1" }
+                  ] }] },
+                { "@Geometry": "Head", "@Offset": "3", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Gobo1", "ChannelFunction": [
+                    { "@Name": "Indexed", "@Attribute": "Gobo1", "@DMXFrom": "0/1",
+                      "@ModeMaster": "Base_Control", "@ModeFrom": "128/1", "@ModeTo": "255/1" },
+                    { "@Name": "Rotating", "@Attribute": "Gobo1", "@DMXFrom": "100/1",
+                      "@ModeMaster": "Base_Control", "@ModeFrom": "128/1", "@ModeTo": "255/1" }
+                  ] }] },
+                { "@Geometry": "Head", "@Offset": "4", "@Highlight": "None",
+                  "LogicalChannel": [{ "@Attribute": "Gobo1Pos", "ChannelFunction": [
+                    { "@Name": "Position", "@Attribute": "Gobo1Pos", "@DMXFrom": "0/1",
+                      "@ModeMaster": "Head_Gobo1.Gobo1.Indexed", "@ModeFrom": "20/1", "@ModeTo": "200/1" }
+                  ] }] }
+            ] }]
+        })).unwrap();
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
+        let OpticalModeMaster::Resolved(conditions) = &channels[1].functions[0].mode_master else {
+            panic!("expected resolved mode master");
+        };
+        assert_eq!(conditions.len(), 2);
+        assert_eq!((conditions[0].dmx_from, conditions[0].dmx_to), (20, 99));
+        assert_eq!(conditions[0].geometry, "Head");
+        assert_eq!(
+            (
+                conditions[1].dmx_from,
+                conditions[1].dmx_to,
+                conditions[1].dmx_max
+            ),
+            (32896, 65535, 65535)
+        );
+        assert_eq!(conditions[1].geometry, "Base");
+
+        mode.dmx_channels[1].logical_channels[0].channel_functions[0].mode_master =
+            mode.dmx_channels[2].logical_channels[0].channel_functions[0]
+                .mode_master
+                .clone();
+        let channels = convert_optical_channels(&mode, &optical_fixture_type());
+        assert_eq!(
+            channels[1].functions[0].mode_master,
+            OpticalModeMaster::Unresolved
+        );
+    }
+
+    /// Sorts profile segments without dropping nonlinear coefficients or physical limits.
+    #[test]
+    fn test_optical_profile_preserves_segments_and_physical_limits() {
+        let profile: gdtf::physical_descriptions::DmxProfile = serde_json::from_value(serde_json::json!({
+            "@Name": "FocusCurve",
+            "Point": [
+                { "@DMXPercentage": 75, "@CFC0": 20, "@CFC1": -2, "@CFC2": 0.5, "@CFC3": -0.01 },
+                { "@DMXPercentage": 0, "@CFC0": 2, "@CFC1": 1 }
+            ]
+        })).unwrap();
+        let converted = convert_optical_profile(&profile, 2.0, 30.0);
+        assert_eq!((converted.min, converted.max), (2.0, 30.0));
+        assert_eq!(converted.points[0].dmx_percentage, 0.0);
+        assert_eq!(converted.points[1].dmx_percentage, 75.0);
+        assert_eq!(converted.points[1].coefficients, [20.0, -2.0, 0.5, -0.01]);
+        assert_eq!(converted.points[0].coefficients, [2.0, 1.0, 0.0, 0.0]);
+    }
+
+    /// Preserves open slots, gobo resource references, and non-symmetric prism matrices.
+    #[test]
+    fn test_convert_optical_wheel_slots() {
+        let wheel: gdtf::wheel::Wheel = serde_json::from_value(serde_json::json!({
+            "@Name": "Optics",
+            "Slot": [
+                { "@Name": "Open", "@Color": "0.3127,0.329,100" },
+                { "@Name": "Gobo", "@Color": "0.3127,0.329,100", "@MediaFileName": "pattern" },
+                { "@Name": "Prism", "@Color": "0.3127,0.329,100", "Facet": [
+                    { "@Color": "0.3,0.4,100", "@Rotation": "{1,2,3}{4,5,6}{7,8,9}" }
+                ] }
+            ]
+        }))
+        .unwrap();
+        let converted = convert_optical_wheels(&[wheel]);
+        assert_eq!(converted.len(), 1);
+        assert_eq!(converted[0].name, "Optics");
+        assert_eq!(converted[0].slots.len(), 3);
+        assert!(converted[0].slots[0].media_name.is_none());
+        assert!(converted[0].slots[0].facets.is_empty());
+        assert_eq!(converted[0].slots[1].media_name.as_deref(), Some("pattern"));
+        assert_eq!(
+            converted[0].slots[2].facets[0].transform,
+            [1., 4., 7., 2., 5., 8., 3., 6., 9.]
+        );
+        assert_eq!(converted[0].slots[2].facets[0].color_cie, [0.3, 0.4, 100.]);
+    }
+
+    /// Keeps lens focus distinct from beam-angle zoom during import.
+    #[test]
+    fn test_map_gdtf_focus() {
+        assert_eq!(
+            map_gdtf_attribute_to_nightfall(&"Focus1"),
+            Some(Attribute::Focus)
+        );
+        assert_eq!(
+            map_gdtf_attribute_to_nightfall(&"Focus"),
+            Some(Attribute::Focus)
+        );
+        assert_eq!(Attribute::Focus.category(), AttributeCategory::Focus);
+    }
 
     #[test]
     fn test_map_gdtf_attribute_dimmer() {
@@ -126,6 +431,7 @@ mod gdtf_tests {
         assert!(matches!(attr, Some(Attribute::Custom { label }) if label == "CustomAttr"));
     }
 
+    /// Rectangular projectors must retain their distribution instead of becoming glow-only pixels.
     #[test]
     fn test_map_gdtf_beam_type() {
         use gdtf::geometry::BeamType as GdtfBeamType;
@@ -137,10 +443,50 @@ mod gdtf_tests {
             BeamType::Fresnel
         );
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Pc), BeamType::Pc);
-        // None, Glow, Rectangle should map to Glow (no spotlight rendering)
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::None), BeamType::Glow);
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Glow), BeamType::Glow);
-        assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Rectangle), BeamType::Glow);
+        assert_eq!(
+            map_gdtf_beam_type(&GdtfBeamType::Rectangle),
+            BeamType::Rectangle
+        );
+    }
+
+    /// Different apertures keep their own distribution and photometry through conversion.
+    #[test]
+    fn test_convert_per_emitter_optics() {
+        let mut beam = gdtf::geometry::BeamGeometry {
+            name: None,
+            model: None,
+            position: gdtf::values::Matrix::identity(),
+            children: Vec::new(),
+            lamp_type: gdtf::geometry::LampType::Led,
+            power_consumption: 10.0,
+            luminous_flux: 700.0,
+            color_temperature: 5600.0,
+            beam_angle: 2.0,
+            field_angle: 4.0,
+            throw_ratio: 2.5,
+            rectangle_ratio: 12.0,
+            beam_radius: 0.012,
+            beam_type: gdtf::geometry::BeamType::Rectangle,
+            color_rendering_index: 90,
+            emitter_spectrum: None,
+        };
+        let rectangle = convert_beam_optics(&beam);
+        beam.beam_type = gdtf::geometry::BeamType::Wash;
+        beam.beam_angle = 40.0;
+        beam.luminous_flux = 1200.0;
+        let wash = convert_beam_optics(&beam);
+        assert_eq!(rectangle.physical.beam_type, BeamType::Rectangle);
+        assert_eq!(rectangle.physical.beam_angle, 2.0);
+        assert_eq!(rectangle.physical.field_angle, 4.0);
+        assert_eq!(rectangle.physical.lumens, Some(700.0));
+        assert_eq!(rectangle.radius, 0.012);
+        assert_eq!(rectangle.throw_ratio, 2.5);
+        assert_eq!(rectangle.rectangle_ratio, 12.0);
+        assert_eq!(wash.physical.beam_type, BeamType::Wash);
+        assert_eq!(wash.physical.beam_angle, 40.0);
+        assert_eq!(wash.physical.lumens, Some(1200.0));
     }
 }
 
