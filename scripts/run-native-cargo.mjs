@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { exitWithOutcome, runOwnedCommand } from "./owned-process.mjs";
 
 /**
- * Select one static workspace graph for linting, tests, and the browser-test backend.
+ * Select one runtime workspace graph, using every crate's default features, for
+ * linting, tests, and the browser-test backend.
  * `nextest` expands to `cargo nextest run`; `test` remains for doctests, which nextest cannot run.
  */
 export function nativeCargoArgs(command, args = []) {
@@ -22,9 +23,6 @@ export function nativeCargoArgs(command, args = []) {
     "--workspace",
     "--exclude",
     "app-tauri",
-    "--no-default-features",
-    "--features",
-    "app-runtime/full,app-runtime/beatgrid-detect,nightfall-flow/fx-module",
     ...args,
   ];
 }

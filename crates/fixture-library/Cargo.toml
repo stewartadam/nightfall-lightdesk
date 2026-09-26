@@ -35,5 +35,8 @@ tempfile.workspace = true
 tokio.workspace = true
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
 [lints]
 workspace = true

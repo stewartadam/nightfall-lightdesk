@@ -25,11 +25,9 @@ Browser manifests record raw byte sizes, SHA-256 hashes, and SHA-384 integrity.
 The size report uses packaged file sizes. Neither script compresses assets to
 estimate transfer size; actual HTTP compression belongs to the hosting service.
 
-`run-native-cargo.mjs` selects the same static workspace feature graph for
-Clippy, workspace tests, and the Playwright backend. It explicitly retains the
-app's full and beat-detection features and the flow crate's default FX-module
-feature, while excluding dynamic Bevy linking. Local default application builds
-remain unchanged. When adding workspace default features, update this selection.
+`run-native-cargo.mjs` selects one runtime workspace feature graph, using every
+crate's default features and excluding `app-tauri`, for Clippy, workspace tests,
+and the Playwright backend.
 The backend build and the `cargo nextest` run both select `--tests`, so they share
 dev-dependency feature unification and compiled units. Already-built test
 harnesses are reused; final executable linking still requires distinct Cargo
@@ -47,3 +45,16 @@ every failure instead of stopping at the first, and uploads
 `target/nextest/ci/junit.xml` as the `rust-test-junit-<commit SHA>` artifact for
 per-test timings. Doctests run after the backend artifact is uploaded, so they
 do not delay browser tests, and they still run when nextest fails.
+
+The hakari-generated `crates/workspace-hack` makes partial builds such as
+`cargo run` and `cargo test -p <crate>` resolve the same third-party features
+as that graph, including features that only dev dependencies enable. Crates
+depend on it for native targets only, because it carries features that do not
+compile for `wasm32`. `app-tauri` is excluded from hakari's traversal so Tauri
+crates never enter runtime builds, and so are proc-macro crates such as
+`nightfall-engine-derive`: they compile for the host even in a `wasm32` build,
+where the native-only gate holds, so a workspace-hack dependency would build
+Tokio, axum, and wasmtime for every browser build. The source checks job runs `cargo hakari generate --diff`
+and `cargo hakari manage-deps --dry-run`, and a script test rejects any crate
+that declares the workspace-hack outside its native-only dependency table and
+any proc-macro crate missing from hakari's traversal excludes.

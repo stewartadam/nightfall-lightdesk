@@ -68,4 +68,4 @@ jobs:
           # Tests do not embed the frontend or copy distribution resources.
           TAURI_CONFIG: '{"build":{"frontendDist":null},"bundle":{"resources":[]}}'
         # Native validation excludes app-tauri, so its unit tests run only here.
-        run: cargo test -p app-tauri --all-targets --no-default-features --features full,beatgrid-detect --locked
+        run: cargo test -p app-tauri --all-targets --locked
