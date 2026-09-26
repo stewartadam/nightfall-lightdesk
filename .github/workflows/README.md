@@ -45,7 +45,9 @@ scripts never execute in the credentialed acquisition job.
 All non-tag events still run native and WebUI validation. Desktop checks use
 `cargo check --all-targets` on macOS, Windows, and Linux, without release
 optimization, frontend generation, or installer creation. A check-only Tauri
-configuration omits bundled resources; packaging validates the actual resources.
+configuration clears frontendDist and omits bundled resources, so checks need no
+webui/dist output even without a development URL. Packaging validates the actual
+frontend and resources using the normal configuration.
 The check and release packaging caches are separate.
 
 Compilation checks do not validate linking or installers. Full main-branch and
