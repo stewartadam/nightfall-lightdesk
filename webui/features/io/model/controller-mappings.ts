@@ -7,11 +7,11 @@
  */
 
 import {
-  commandFailureMessage,
   commandOutputValue,
   commandSucceeded,
 } from "../../../lib/command-result";
 import { engineRuntime } from "../../../lib/engine-runtime";
+import { getLogger } from "../../../lib/logger";
 import { pushToast } from "../../../state/appStores";
 import type * as types from "../../../types";
 import {
@@ -27,25 +27,31 @@ import {
   formatReplacedNotice,
 } from "./mapping-replacements";
 
+const log = getLogger(import.meta.url);
+
 /**
- * Sends a mapping command and surfaces rejected edits as a toast.
+ * Sends a mapping command.
  *
  * Returns the command's output value on success (undefined when it carries none), or null
- * when the command failed.
+ * when the command failed or could not be sent. Rejected commands are already shown by the
+ * generic command failure toast; a command that could not be sent is reported here.
  */
 async function submitMappingCommand(
   module: "MidiCommand" | "OscCommand",
   command: types.MidiCommand | types.OscCommand,
 ): Promise<unknown | null> {
-  const result = await engineRuntime.sendCommandAndAwait({
-    module,
-    command: plain(command),
-  });
-  if (!commandSucceeded(result)) {
-    pushToast("error", commandFailureMessage(result));
+  let result: types.CommandResult;
+  try {
+    result = await engineRuntime.sendCommandAndAwait({
+      module,
+      command: plain(command),
+    });
+  } catch (error) {
+    log.warn("Could not send mapping command", error);
+    pushToast("error", "Couldn't save the mapping: not connected to the desk.");
     return null;
   }
-  return commandOutputValue(result);
+  return commandSucceeded(result) ? commandOutputValue(result) : null;
 }
 
 /**
