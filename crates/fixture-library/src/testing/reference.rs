@@ -32,11 +32,14 @@ pub struct ReferenceChannel {
     pub dmx_break: Option<i32>,
     /// 1-based footprint slots, most significant first; empty for virtual channels.
     pub slots: Vec<u16>,
-    /// Whether the channel's geometry lies in the mode's geometry tree. The
-    /// specification requires it, but some published archives name geometries
-    /// outside the tree. Only [`reference_mode_channels`] resolves the tree;
-    /// [`reference_channels`] reports `true`.
-    pub in_mode_tree: bool,
+    /// Geometry the file names when it lies outside the mode's geometry tree.
+    ///
+    /// The specification forbids this, but some published archives do it.
+    /// [`reference_mode_channels`] then attributes a slot-bearing channel to
+    /// the mode root, which is where Nightfall binds it, and leaves a virtual
+    /// one under its declared name. Only [`reference_mode_channels`] resolves
+    /// the tree; [`reference_channels`] reports `None`.
+    pub outside_mode_tree: Option<String>,
 }
 
 impl ReferenceChannel {
@@ -92,8 +95,13 @@ pub fn reference_mode_channels(
             .filter(|occurrence| occurrence.geometry == channel.geometry)
             .collect();
         if matching.is_empty() {
+            let geometry = match root.and_then(|root| root.name()) {
+                Some(root) if !channel.slots.is_empty() => root.to_string(),
+                _ => channel.geometry.clone(),
+            };
             expanded.push(ReferenceChannel {
-                in_mode_tree: false,
+                geometry,
+                outside_mode_tree: Some(channel.geometry.clone()),
                 ..channel
             });
             continue;
@@ -226,7 +234,7 @@ pub fn reference_channels(mode: &DmxMode) -> Vec<ReferenceChannel> {
                     .as_ref()
                     .map(|offsets| offsets.iter().map(|offset| *offset as u16).collect())
                     .unwrap_or_default(),
-                in_mode_tree: true,
+                outside_mode_tree: None,
             };
             *ordinal += 1;
             reference

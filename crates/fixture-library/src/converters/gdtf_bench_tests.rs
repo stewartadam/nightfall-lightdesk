@@ -68,9 +68,9 @@ struct BenchExpectations {
     #[serde(default)]
     charts: BTreeMap<String, Vec<String>>,
     /// Channels per mode whose geometry lies outside the mode's geometry
-    /// tree, as `geometry · attribute · break · slots` rows. The archive is
-    /// defective there and the converter drops them, so they are pinned for
-    /// review instead of being compared. Modes without any are omitted.
+    /// tree, as `geometry · attribute · break · slots` rows, with `→ element`
+    /// when the channel is bound to the mode root. The archive is defective
+    /// there, so they are pinned for review. Modes without any are omitted.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     unreachable_channels: BTreeMap<String, Vec<String>>,
 }
@@ -189,11 +189,8 @@ fn gdtf_bench_modes_meet_expectations() {
                     .insert(mode.clone(), chart(&converted.fixture));
             }
             let disagreement = mode_references(&gdtf, mode).and_then(|references| {
-                let unreachable: Vec<String> = references
-                    .iter()
-                    .filter(|reference| !reference.in_mode_tree)
-                    .map(unreachable_row)
-                    .collect();
+                let unreachable: Vec<String> =
+                    references.iter().filter_map(unreachable_row).collect();
                 if !unreachable.is_empty() {
                     actual
                         .unreachable_channels
@@ -229,8 +226,10 @@ fn gdtf_bench_modes_meet_expectations() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// Renders a reference channel outside its mode's geometry tree in the chart row format.
-fn unreachable_row(reference: &ReferenceChannel) -> String {
+/// Renders a reference channel outside its mode's geometry tree in the chart
+/// row format, or returns `None` for a channel inside the tree.
+fn unreachable_row(reference: &ReferenceChannel) -> Option<String> {
+    let declared = reference.outside_mode_tree.as_ref()?;
     let placement = if reference.slots.is_empty() {
         "virtual".to_string()
     } else {
@@ -245,10 +244,15 @@ fn unreachable_row(reference: &ReferenceChannel) -> String {
             None => format!("overwrite · {slots}"),
         }
     };
-    format!(
-        "{} · {} · {placement}",
-        reference.geometry, reference.attribute
-    )
+    let bound = if &reference.geometry == declared {
+        String::new()
+    } else {
+        format!(" → {}", reference.geometry)
+    };
+    Some(format!(
+        "{declared} · {} · {placement}{bound}",
+        reference.attribute
+    ))
 }
 
 /// Lists a mode's channels as the independent reference decoder places them.
@@ -268,16 +272,18 @@ fn mode_references(gdtf: &gdtf::GdtfFile, mode: &str) -> Result<Vec<ReferenceCha
 
 /// Compares converted placement with the independent reference decoder's.
 ///
-/// Parameters are paired with reference channels in the mode's geometry
-/// tree by element and ordinal within the element, as the wire tests do.
-/// Every such channel must have a converted parameter with the same
-/// attribute, the same break and slots on any break, or a virtual placement
-/// when the reference has no slots; every converted parameter must have a
-/// reference channel. Returns a description of the first disagreement.
+/// Parameters are paired with reference channels by element and ordinal
+/// within the element, as the wire tests do. Every channel inside the mode's
+/// geometry tree, and every slot-bearing channel bound to the mode root from
+/// outside it, must have a converted parameter with the same attribute, the
+/// same break and slots on any break, or a virtual placement when the
+/// reference has no slots; every converted parameter must have a reference
+/// channel. Virtual channels outside the tree are dropped by the converter
+/// and not compared. Returns a description of the first disagreement.
 fn reference_disagreement(references: &[ReferenceChannel], fixture: &Fixture) -> Option<String> {
     let references: Vec<&ReferenceChannel> = references
         .iter()
-        .filter(|reference| reference.in_mode_tree)
+        .filter(|reference| reference.outside_mode_tree.is_none() || !reference.slots.is_empty())
         .collect();
 
     for reference in &references {

@@ -76,7 +76,7 @@
   },
   "unreachable_channels": {
     "16: Effect Mode RGB": [
-      "1/1 Pixel 1 · ColorMacro1 · b1 · 3"
+      "1/1 Pixel 1 · ColorMacro1 · b1 · 3 → Base 4 LED 3"
     ],
     "49: RGB*RGBS": [
       "4/4 Pixel Beam · Dimmer · virtual"
