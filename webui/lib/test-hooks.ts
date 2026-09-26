@@ -18,6 +18,7 @@
 
 import type { ReadableAtom } from "nanostores";
 import { createEffect, createRoot, createSignal } from "solid-js";
+import { registerUiAction } from "../components/providers/command-registry";
 import {
   dockviewLayoutSettingsSnapshotRevision,
   dockviewLayoutShowfileRevision,
@@ -133,6 +134,12 @@ export type NightfallTestHooks = {
     ): Promise<void>;
     /** Returns the desk command that saves the current show under a name. */
     saveNamedCommand: typeof saveNamedShowfileCommand;
+  };
+  uiActions: {
+    /**
+     * Registers a UI action as a mounted panel would, returning the disposer its unmount runs.
+     */
+    register: typeof registerUiAction;
   };
 };
 
@@ -346,6 +353,9 @@ function createTestHooks(): NightfallTestHooks {
       ensureLoaded: ensureShowfileLoaded,
       swapWorld,
       saveNamedCommand: saveNamedShowfileCommand,
+    },
+    uiActions: {
+      register: registerUiAction,
     },
   };
 }
