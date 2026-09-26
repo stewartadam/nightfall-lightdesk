@@ -719,3 +719,32 @@ test("rebinding a control names the replaced binding and undo restores it", asyn
     .poll(() => oscMappingActions(page))
     .toEqual(["programmer.clear"]);
 });
+
+/**
+ * Verifies loading a show ends controller mapping mode: the backend resumes controller
+ * actions, and the mapping client leaves mapping mode and says why instead of re-entering
+ * on the new show.
+ */
+test("loading a show ends controller mapping mode", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  await enterMapping(page);
+
+  await page.evaluate(async () => {
+    const { newShowfileAndAwait } = await import("/lib/showfile-actions.ts");
+    await newShowfileAndAwait({
+      name: `e2e-mapping-${Date.now()}`,
+      includeSampleData: false,
+    });
+  });
+
+  await expect(page.locator("[data-mapping-mode-banner]")).toBeHidden();
+  await expect(page.getByText("a show was loaded").first()).toBeVisible();
+  await expect.poll(() => mappingClients(page)).toBe(0);
+  // The client stays out of mapping mode across later renewal intervals.
+  await page.waitForTimeout(6_000);
+  await expect(page.locator("[data-mapping-mode-banner]")).toBeHidden();
+  await expect.poll(() => mappingClients(page)).toBe(0);
+});

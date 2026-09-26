@@ -15,7 +15,7 @@ use serde_json::Value;
 
 use crate::descriptor::ActionSurface;
 use crate::invocation::{ActionInvocation, ActionReference, InvocationOutcome};
-use crate::mapping_mode::ControllerMappingMode;
+use crate::mapping_mode::{ControllerMappingMode, MappingLeaseExpired};
 
 /// Commands clients send to invoke backend actions from keybindings or the palette.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
@@ -32,11 +32,29 @@ pub enum ActionCommand {
     },
     /// Pauses MIDI and OSC actions while the sending client binds controllers.
     ///
-    /// Held per client session until it sends [`ActionCommand::LeaveControllerMappingMode`]
-    /// or disconnects. Entering again is harmless, so clients re-send it after reconnecting.
+    /// Held per client session until it sends [`ActionCommand::LeaveControllerMappingMode`],
+    /// disconnects, stops renewing, or a show is loaded. Entering again is harmless, so
+    /// clients re-send it after reconnecting.
     EnterControllerMappingMode,
+    /// Extends the sending client's mapping mode lease.
+    ///
+    /// Fails when this client's lease lapsed, so the client stops showing mapping mode
+    /// instead of silently pausing controllers again. Otherwise it enters mapping mode when
+    /// the client does not hold it, as after reconnecting.
+    RenewControllerMappingMode,
     /// Releases the sending client's hold on controller mapping mode.
     LeaveControllerMappingMode,
+}
+
+/// Mapping mode change a client command requests for its own session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MappingModeRequest {
+    /// Enter, or refresh the lease when already mapping.
+    Enter,
+    /// Extend the lease, failing when mapping mode was ended.
+    Renew,
+    /// Leave mapping mode.
+    Leave,
 }
 
 impl IngressCommand for ActionCommand {}
@@ -73,8 +91,9 @@ pub fn handle_action_commands(
     mut mode: ResMut<ControllerMappingMode>,
     mut responder: CommandResponder,
 ) {
+    let now = web_time::Instant::now();
     for event in events.read() {
-        let entering = match &event.command {
+        let request = match &event.command {
             ActionCommand::Invoke { action, surface } => {
                 invocations.write(
                     ActionInvocation::trigger(action.clone(), *surface)
@@ -83,26 +102,16 @@ pub fn handle_action_commands(
                 );
                 continue;
             }
-            ActionCommand::EnterControllerMappingMode => true,
-            ActionCommand::LeaveControllerMappingMode => false,
+            ActionCommand::EnterControllerMappingMode => MappingModeRequest::Enter,
+            ActionCommand::RenewControllerMappingMode => MappingModeRequest::Renew,
+            ActionCommand::LeaveControllerMappingMode => MappingModeRequest::Leave,
         };
         let command_id = event.command_id;
         let result = match responder.connection(command_id) {
-            Some(client) => {
-                if entering != mode.contains(client) {
-                    if entering {
-                        mode.enter(client);
-                    } else {
-                        mode.leave(client);
-                    }
-                    tracing::info!(
-                        connection = client.0,
-                        entering,
-                        "controller_mapping_mode_changed"
-                    );
-                }
-                responder.succeed(command_id)
-            }
+            Some(client) => match apply_mapping_mode_request(&mut mode, client, request, now) {
+                Ok(()) => responder.succeed(command_id),
+                Err(error) => responder.fail(command_id, error),
+            },
             None => responder.fail(
                 command_id,
                 CommandError::new(
@@ -115,6 +124,49 @@ pub fn handle_action_commands(
             tracing::error!(%command_id, %error, "action_command_completion_failed");
         }
     }
+}
+
+/// Applies one session's mapping mode request.
+///
+/// Refreshing a lease bypasses change detection, so renewals do not republish mapping mode
+/// state to every client; only entering, leaving, and ending mapping mode do.
+fn apply_mapping_mode_request(
+    mode: &mut ResMut<ControllerMappingMode>,
+    client: ClientConnectionId,
+    request: MappingModeRequest,
+    now: web_time::Instant,
+) -> Result<(), CommandError> {
+    let changed = match request {
+        MappingModeRequest::Enter if mode.contains(client) => {
+            mode.bypass_change_detection().enter(client, now);
+            false
+        }
+        MappingModeRequest::Enter => mode.enter(client, now),
+        MappingModeRequest::Renew => {
+            let entered = mode.bypass_change_detection().renew(client, now).map_err(
+                |MappingLeaseExpired| {
+                    CommandError::new("action.mapping_mode_ended", MappingLeaseExpired::MESSAGE)
+                },
+            )?;
+            if entered {
+                mode.set_changed();
+            }
+            entered
+        }
+        MappingModeRequest::Leave if mode.contains(client) => mode.leave(client),
+        MappingModeRequest::Leave => {
+            mode.bypass_change_detection().leave(client);
+            false
+        }
+    };
+    if changed {
+        tracing::info!(
+            connection = client.0,
+            entering = request == MappingModeRequest::Enter,
+            "controller_mapping_mode_changed"
+        );
+    }
+    Ok(())
 }
 
 /// Finishes a client invoke command with the dispatched invocation's immediate outcome.

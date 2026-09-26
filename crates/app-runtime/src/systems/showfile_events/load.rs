@@ -77,6 +77,8 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
     pub(in crate::systems::showfile_events) global_variables: Res<'w, GlobalVariables>,
     pub(in crate::systems::showfile_events) desk_settings: ResMut<'w, DeskSettings>,
     pub(in crate::systems::showfile_events) io_settings: ResMut<'w, IoRuntimeSettings>,
+    pub(in crate::systems::showfile_events) controller_mapping_mode:
+        Option<ResMut<'w, nightfall_actions::ControllerMappingMode>>,
 }
 
 /// Replaces current runtime showfile state with a provided snapshot.
@@ -229,7 +231,17 @@ pub(super) fn load_showfile_snapshot_from_state(
         global_variables,
         desk_settings,
         io_settings,
+        controller_mapping_mode,
     } = showfile_load_state;
+
+    // A loaded show replaces every target a client may be about to bind, so mapping mode
+    // ends for everyone instead of letting a pending bind land on the new show.
+    if let Some(mode) = controller_mapping_mode {
+        if mode.is_active() {
+            tracing::info!("controller_mapping_mode_released_on_show_load");
+        }
+        mode.end_for_show_load();
+    }
 
     load_showfile_in_place(
         showfile_snapshot,

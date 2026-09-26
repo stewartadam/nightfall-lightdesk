@@ -47,7 +47,9 @@ pub use invocation::{
     InvocationId, InvocationOutcome, InvocationResult,
 };
 pub use lowering::{ActionAppExt, submit_command};
-pub use mapping_mode::{ControllerMappingMode, ControllerMappingModeState};
+pub use mapping_mode::{
+    ControllerMappingMode, ControllerMappingModeState, MAPPING_MODE_LEASE, MappingLeaseExpired,
+};
 use nightfall_engine::prelude::{
     ClientDisconnected, ClientOutput, CommandDeserializerRegistry, CommandIngressRouter,
     EventHandling, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
@@ -106,6 +108,9 @@ impl Plugin for ActionsPlugin {
                 websocket::send_mapping_mode_on_change.in_set(ClientOutput),
                 websocket::handle_resync_state.in_set(ResyncHandling),
                 mapping_mode::release_disconnected_mapping_clients.in_set(EventHandling),
+                mapping_mode::expire_mapping_mode_leases
+                    .in_set(EventHandling)
+                    .after(mapping_mode::release_disconnected_mapping_clients),
             ),
         );
         // Client invoke commands need the engine's command routing, which focused test apps
