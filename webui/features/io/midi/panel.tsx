@@ -404,6 +404,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                   <div class="flex flex-wrap items-center gap-2">
                     <ActionPicker
                       label="Action for last input"
+                      value={lastEventAction()}
                       inputKinds={MIDI_INPUT_KINDS}
                       surface={ActionSurface.Midi}
                       includeUiActions

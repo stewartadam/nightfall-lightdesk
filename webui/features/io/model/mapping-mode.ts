@@ -11,6 +11,7 @@ import type * as types from "../../../types";
 import {
   type OscGesture,
   trackOscGesture,
+  withTouchLevel,
 } from "./controller-mapping-builders";
 
 /** A hardware or network control captured while mapping mode waits for a UI target. */
@@ -26,40 +27,12 @@ export type ArmedSource = (
       kind: "osc";
     } & OscGesture)
 ) & {
-  /** Distinct numeric levels the control sent during this touch, oldest first. */
+  /**
+   * Distinct numeric levels the control sent during this touch, oldest first. OSC touches
+   * record them in their gesture.
+   */
   levels?: number[];
 };
-
-/** Most distinct levels remembered per touch: enough to tell a fader from a button. */
-const MAX_TOUCH_LEVELS = 4;
-
-/** Returns the levels a touch sent with one more, ignoring repeats. */
-function withLevel(
-  levels: readonly number[] | undefined,
-  level: number | undefined,
-): number[] | undefined {
-  if (level === undefined || !Number.isFinite(level)) return levels?.slice();
-  const known = levels ?? [];
-  if (known.includes(level) || known.length >= MAX_TOUCH_LEVELS) {
-    return known.slice();
-  }
-  return [...known, level];
-}
-
-/** Returns the numeric level carried by an OSC message's first argument, if any. */
-function oscLevel(event: types.OscLastEvent): number | undefined {
-  const [arg] = event.args;
-  switch (arg?.type) {
-    case "Int":
-    case "Float":
-    case "Double":
-      return arg.data;
-    case "Long":
-      return Number(arg.data);
-    default:
-      return undefined;
-  }
-}
 
 /**
  * Returns whether the armed control behaves like a fader rather than a button, judged from
@@ -203,7 +176,7 @@ export function armMidiSource(event: types.MidiLastEvent): void {
   if (!state.active || isJustBound(armed)) return;
   const sameControl =
     state.armed?.kind === "midi" && sourceKey(state.armed) === sourceKey(armed);
-  armed.levels = withLevel(
+  armed.levels = withTouchLevel(
     sameControl ? state.armed?.levels : undefined,
     event.velocity,
   );
@@ -255,17 +228,9 @@ export function armOscSource(event: types.OscLastEvent): void {
   const state = $mappingMode.get();
   if (!state.active || isJustBound({ kind: "osc", event })) return;
   const current = state.armed?.kind === "osc" ? state.armed : undefined;
-  const sameControl = current?.event.address === event.address;
   $mappingMode.set({
     ...withoutUnmappable(state),
-    armed: {
-      kind: "osc",
-      ...trackOscGesture(current, event),
-      levels: withLevel(
-        sameControl ? current?.levels : undefined,
-        oscLevel(event),
-      ),
-    },
+    armed: { kind: "osc", ...trackOscGesture(current, event) },
   });
 }
 
