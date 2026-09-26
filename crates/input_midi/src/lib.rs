@@ -934,7 +934,8 @@ mod tests {
     #[test]
     fn input_received_before_mapping_mode_is_not_a_touch() {
         let (mut app, tx) = midi_touch_app();
-        let stale = raw_message(0xB0, 7, 64);
+        let mut stale = raw_message(0xB0, 7, 64);
+        stale.received_at -= std::time::Duration::from_millis(5);
 
         set_mapping_mode(&mut app, true);
         tx.send(stale).unwrap();
