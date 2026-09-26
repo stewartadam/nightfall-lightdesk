@@ -128,104 +128,63 @@ jobs:
     if: needs.scope.outputs.distributions == 'true'
     uses: ./.github/workflows/browser-demo.yml
 
-  native:
+  source-checks:
+    name: Source checks and script tests
     needs: scope
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - stage: pre-commit
-            name: Rust Clippy and source checks
-          - stage: pre-push
-            name: Rust tests and backend
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
     env:
-      CARGO_TERM_COLOR: always
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      CARGO_PROFILE_DEV_OPT_LEVEL: "0"
-      SKIP: npm-typecheck,node-tests
+      # These hooks have dedicated jobs; all other pre-commit hooks run here.
+      SKIP: cargo-clippy,npm-typecheck
     steps:
-      - name: Download credential-free source
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: source-${{ github.sha }}
           path: .ci-source
       - name: Restore source and Git history
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
-
-      - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
-
-      # selecting a toolchain either by action or manual `rustup` calls should happen
-      # before the plugin, as the cache uses the current rustc version as its cache key
-      - name: Show Rust toolchain
-        run: rustup show
-
-      - name: Cache native dependencies and tools
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # Matrix legs produce different artifacts. Stable stage keys also let
-          # develop pushes warm caches that PRs can restore from their base branch.
-          shared-key: native-${{ matrix.stage }}-${{ hashFiles('Cargo.toml', 'scripts/run-native-cargo.mjs') }}
-          cache-on-failure: true
+          key: source-tools
+          cache-targets: false
+      - run: npm ci
+      - name: Run script tests
+        run: npm run test:scripts
+      - run: cargo install --locked typeshare-cli --version 1.13.3
+      - name: Run source pre-commit hooks
+        run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libasound2-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev
+  native:
+    name: Rust Clippy
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/native-validation.yml
+    with:
+      stage: pre-commit
+      hook: cargo-clippy
 
-      - name: Install Node dependencies
-        run: npm clean-install
+  native-tests:
+    name: Rust tests and backend
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/native-validation.yml
+    with:
+      stage: pre-push
+      hook: cargo-test
 
-      - name: Install typeshare for source checks
-        if: matrix.stage == 'pre-commit'
-        run: cargo install --locked typeshare-cli --version 1.13.3
-
-      - name: Run native ${{ matrix.stage }} hooks
-        # Each stage runs once, on its own runner and with its own build cache.
-        run: npx prek run --all-files --verbose --show-diff-on-failure --color always --stage ${{ matrix.stage }}
-
-      - name: Stage the tested native backend
-        if: matrix.stage == 'pre-push'
-        run: |
-          node scripts/run-native-cargo.mjs build --bin nightfall-app
-          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
-          mkdir -p ci-artifacts
-          cp "$target_dir/debug/nightfall-app" ci-artifacts/nightfall-app
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: matrix.stage == 'pre-push'
-        with:
-          name: native-test-backend-${{ github.sha }}
-          path: ci-artifacts/nightfall-app
-          if-no-files-found: error
-          retention-days: 1
-
-  precommit:
-    name: Run prek hooks
-    needs: [scope, native, wasm-bridge, browser-runtime]
-    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
+  webui:
+    name: TypeScript and WebUI Node tests
+    needs: [scope, wasm-bridge, browser-runtime]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Require successful native checks and WASM builds
-        env:
-          NATIVE_RESULT: ${{ needs.native.result }}
-          BRIDGE_RESULT: ${{ needs.wasm-bridge.result }}
-          DEMO_RESULT: ${{ needs.browser-runtime.result }}
-        run: |
-          test "$NATIVE_RESULT" = success
-          test "$BRIDGE_RESULT" = success
-          test "$DEMO_RESULT" = success
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: source-${{ github.sha }}
@@ -243,8 +202,6 @@ jobs:
           cache-targets: false
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
           npm ci
           cargo install --locked typeshare-cli --version 1.13.3
           npm run typeshare
@@ -254,22 +211,77 @@ jobs:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
       - name: Download shared release demo engine
-        id: wasm
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-browser-runtime-${{ github.sha }}
           path: webui/assets/browser-runtime
+      - name: Run TypeScript pre-commit hook
+        run: npx prek run npm-typecheck --all-files --show-diff-on-failure --color always --stage pre-commit
+      - name: Run WebUI Node tests
+        # Script tests run independently in source-checks.
+        run: npm run test:webui-node
+
+  browser-smoke:
+    name: Chromium product flows
+    needs: [scope, native-tests, wasm-bridge, browser-runtime]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: webui-tools
+          cache-targets: false
+      - name: Install dependencies
+        run: |
+          npm ci
+          cargo install --locked typeshare-cli --version 1.13.3
+          npm run typeshare
+      - name: Download shared release bridge
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-wasm-bridge-${{ github.sha }}
+          path: webui/assets/wasm
+      - name: Download shared release demo engine
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-browser-runtime-${{ github.sha }}
+          path: webui/assets/browser-runtime
+      - name: Install native runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
       - name: Download the tested native backend
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: native-test-backend-${{ github.sha }}
           path: ci-artifacts
-      - name: Run TypeScript pre-commit hook
-        run: npx prek run npm-typecheck --all-files --show-diff-on-failure --color always --stage pre-commit
-      - name: Run Node pre-push hook
-        run: npx prek run node-tests --all-files --verbose --show-diff-on-failure --color always --stage pre-push
       - name: Run Chromium product flows
-        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
         env:
           NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-app
         uses: ./.github/actions/playwright-smoke
+
+  precommit:
+    # Keep the required check name stable while individual jobs report earlier.
+    name: Run prek hooks
+    needs: [scope, source-checks, native, native-tests, wasm-bridge, browser-runtime, webui, browser-smoke]
+    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all validation jobs to succeed
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$JOB_RESULTS" | jq -e 'all(.[]; .result == "success")'

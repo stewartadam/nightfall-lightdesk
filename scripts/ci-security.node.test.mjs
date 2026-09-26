@@ -224,9 +224,9 @@ test("source handoff retains Git metadata and media without hooks or credentials
     join(directory, "source.tar"),
     join(restored, ".ci-source"),
   ]);
-  const restore = workflows["ci-precommit.yml"].jobs.native.steps.find(
-    (step) => step.name === "Restore source and Git history",
-  ).run;
+  const restore = workflows["ci-precommit.yml"].jobs[
+    "source-checks"
+  ].steps.find((step) => step.name === "Restore source and Git history").run;
   execFileSync("bash", ["-e", "-c", restore], { ...options, cwd: restored });
   assert.equal(
     execFileSync("git", ["rev-parse", "HEAD"], { ...options, cwd: restored }),
