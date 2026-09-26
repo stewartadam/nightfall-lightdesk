@@ -86,15 +86,23 @@ impl OscMappings {
     /// Returns the mappings bound to the control that sent an OSC message.
     ///
     /// The first mapping whose criteria match identifies the control; every mapping with the
-    /// same criteria is returned with it, at most one per edge.
-    pub fn lookup(&self, event: &OscLastEvent) -> impl Iterator<Item = &OscMapping> {
-        let control = self
+    /// same criteria that also matches the message is returned with it, at most one per edge.
+    /// A pulse mapping on a value therefore does not fire on the release value that a
+    /// neighbouring button mapping on the same control matches.
+    pub fn lookup(&self, event: &OscLastEvent) -> Vec<&OscMapping> {
+        let Some(control) = self
             .mappings
             .iter()
-            .find(|mapping| mapping_matches_event(mapping, event));
+            .find(|mapping| mapping_matches_event(mapping, event))
+        else {
+            return Vec::new();
+        };
         self.mappings
             .iter()
-            .filter(move |mapping| control.is_some_and(|control| same_criteria(control, mapping)))
+            .filter(|mapping| {
+                same_criteria(control, mapping) && mapping_matches_event(mapping, event)
+            })
+            .collect()
     }
 }
 
@@ -286,7 +294,10 @@ mod tests {
         mappings: &'a OscMappings,
         event: &OscLastEvent,
     ) -> Option<&'a ActionReference> {
-        mappings.lookup(event).next().map(|mapping| &mapping.action)
+        mappings
+            .lookup(event)
+            .first()
+            .map(|mapping| &mapping.action)
     }
 
     fn test_event(args: Vec<OscType>) -> OscLastEvent {
@@ -444,8 +455,38 @@ mod tests {
         assert!(displaced.is_empty());
         let actions = mappings
             .lookup(&test_event(vec![OscType::Int(0)]))
+            .into_iter()
             .map(|mapping| mapping.action.id.as_str())
             .collect::<Vec<_>>();
         assert_eq!(actions, vec!["test.start", "test.stop"]);
+    }
+
+    /// Verifies a pulse mapping on the pressed value does not fire on the release value that
+    /// a button mapping with the same criteria matches.
+    #[test]
+    fn pulse_mapping_ignores_a_neighbouring_release_value() {
+        let triggers = |_: &ActionReference| Some(ActionInputKind::Trigger);
+        let mut mappings = OscMappings::new();
+        mappings.upsert(
+            button_mapping(1, ControlBehavior::Release, "test.stop"),
+            triggers,
+        );
+        mappings.upsert(
+            OscMapping {
+                release_value: None,
+                ..button_mapping(2, ControlBehavior::Press, "test.start")
+            },
+            triggers,
+        );
+
+        let actions = |value| {
+            mappings
+                .lookup(&test_event(vec![OscType::Int(value)]))
+                .into_iter()
+                .map(|mapping| mapping.action.id.as_str().to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(actions(0), vec!["test.stop"]);
+        assert_eq!(actions(1), vec!["test.stop", "test.start"]);
     }
 }
