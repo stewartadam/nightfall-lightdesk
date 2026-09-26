@@ -64,12 +64,26 @@ pub struct EncodedClientMessage {
     pub payload: Vec<u8>,
 }
 
+/// Encodes a payload as CBOR for clients, the one encoding every client transport uses.
+///
+/// Unit values encode as CBOR `null`. The encoder's default writes them as an empty array,
+/// which would turn every JSON `null` nested in opaque values, such as action arguments or
+/// command outputs, into `[]` for clients that decode back to JSON.
+///
+/// Returns `None` if CBOR serialization fails.
+pub fn encode_client_cbor<T: Serialize + ?Sized>(payload: &T) -> Option<Vec<u8>> {
+    let mut serializer = minicbor_serde::Serializer::new(Vec::new());
+    serializer.serialize_unit_as_null(true);
+    payload.serialize(&mut serializer).ok()?;
+    Some(serializer.into_encoder().into_writer())
+}
+
 impl EncodedClientMessage {
     /// Create a new encoded message from a discriminator and serializable payload.
     ///
     /// Returns `None` if CBOR serialization fails.
     pub fn new<T: Serialize>(discriminator: u8, payload: &T) -> Option<Self> {
-        minicbor_serde::to_vec(payload).ok().map(|cbor_data| Self {
+        encode_client_cbor(payload).map(|cbor_data| Self {
             discriminator,
             payload: cbor_data,
         })
@@ -526,6 +540,20 @@ mod client_bridge_tests {
                 112, 108, 101, 116, 101,
             ]
         );
+    }
+
+    /// Verifies JSON nulls nested in opaque values, such as action arguments, reach clients
+    /// as null rather than as empty arrays.
+    #[test]
+    fn nested_json_nulls_encode_as_null() {
+        let payload = serde_json::json!({
+            "action": { "id": "programmer.clear", "arguments": null },
+            "details": { "source": null, "values": [null, 1] },
+        });
+        let message = EncodedClientMessage::new(DISCRIMINATOR_NON_DROPPABLE, &payload)
+            .expect("payload should encode");
+
+        assert_eq!(decode_message(&message.to_bytes()), payload);
     }
 
     /// Verifies notices preserve ordering ahead of same-frame terminal results.

@@ -28,7 +28,6 @@ use axum::{
 };
 use futures_util::SinkExt;
 use futures_util::StreamExt;
-use minicbor_serde;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -106,7 +105,7 @@ async fn handle_socket(
 
 /// Encodes a non-droppable CBOR payload using the websocket binary wire format.
 fn non_droppable_binary_message<T: Serialize>(payload: &T) -> Option<Message> {
-    minicbor_serde::to_vec(payload).ok().map(|cbor_data| {
+    encode_client_cbor(payload).map(|cbor_data| {
         let mut encoded = Vec::with_capacity(1 + cbor_data.len());
         encoded.push(DISCRIMINATOR_NON_DROPPABLE);
         encoded.extend(cbor_data);
