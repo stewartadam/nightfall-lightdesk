@@ -56,7 +56,7 @@ use nightfall_engine::prelude::{
     register_command_deserializer, register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
-pub use source::{BindingTarget, ControlBehavior, SourceEdgeStates, SourceSignal};
+pub use source::{BindingTarget, ControlBehavior, EdgeKey, SourceEdgeStates, SourceSignal};
 pub use targets::{
     ActionTargetTracking, ActionTargets, BindingDiagnostic, bindings_need_diagnosis,
     collect_binding_diagnostics, mark_action_targets_changed,

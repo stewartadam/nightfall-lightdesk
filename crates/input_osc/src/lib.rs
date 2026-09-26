@@ -19,7 +19,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
     ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, BindingDiagnostic,
-    ControllerMappingMode, ExternalCommandInvocation, InvocationError, SourceEdgeStates,
+    ControllerMappingMode, EdgeKey, ExternalCommandInvocation, InvocationError, SourceEdgeStates,
     bindings_need_diagnosis, collect_binding_diagnostics, register_binding_undo,
 };
 use nightfall_engine::prelude::*;
@@ -197,8 +197,19 @@ fn osc_event_system(
     }
 }
 
+/// Returns the host part of an `ip:port` OSC source, or the whole source when it has no port.
+fn sender_host(source: &str) -> String {
+    source
+        .parse::<SocketAddr>()
+        .map_or_else(|_| source.to_string(), |address| address.ip().to_string())
+}
+
 /// Invokes the action bound to each matching OSC message, adapted to its input kind and
 /// behavior.
+///
+/// Press state is tracked per sending host, since a mapping without a source filter matches
+/// every sender on its address. Hosts rather than ports identify senders, because many
+/// senders send each message from a fresh port.
 ///
 /// While controller mapping mode is active, input is suppressed as described by
 /// [`SourceEdgeStates`]: nothing new fires, but releases completing live presses still do.
@@ -216,7 +227,7 @@ fn handle_osc_events(
         for mapping in mappings.lookup(osc_event) {
             let Some((action, input)) = edges.resolve(
                 &registry,
-                mapping.id,
+                EdgeKey::new(mapping.id).with_sender(sender_host(&osc_event.source)),
                 &mapping.action,
                 mapping.behavior,
                 mapping.signal(osc_event),
@@ -754,6 +765,39 @@ mod tests {
                 nightfall_actions::ActionInput::Trigger
             )]
         );
+    }
+
+    /// Verifies two senders pressing and releasing a source-less Release binding in an
+    /// interleaved order each fire the action once.
+    #[test]
+    fn interleaved_osc_senders_fire_their_own_releases() {
+        let release = OscMapping {
+            id: Uuid::from_u128(4),
+            arg_index: Some(0),
+            behavior: nightfall_actions::ControlBehavior::Release,
+            ..test_mapping()
+        };
+        let mut app = osc_dispatch_app(vec![release]);
+        let mut send_from = |source: &str, value: f32| {
+            app.world_mut().write_message(OscInput(OscLastEvent {
+                source: source.to_string(),
+                ..test_event(OscType::Float(value))
+            }));
+            app.update();
+            app.world_mut()
+                .resource_mut::<Messages<ActionInvocation>>()
+                .drain()
+                .count()
+        };
+
+        assert_eq!(send_from("10.0.0.1:9000", 1.0), 0);
+        assert_eq!(send_from("10.0.0.2:9000", 1.0), 0);
+        assert_eq!(send_from("10.0.0.1:9000", 0.0), 1);
+        assert_eq!(send_from("10.0.0.2:9000", 0.0), 1);
+
+        // A sender using a fresh port per message is still one sender.
+        assert_eq!(send_from("10.0.0.3:50001", 1.0), 0);
+        assert_eq!(send_from("10.0.0.3:50002", 0.0), 1);
     }
 
     /// Verifies touches skip repeated values on an address but keep press and release.
