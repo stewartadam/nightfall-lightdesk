@@ -160,29 +160,6 @@ test("loads the app shell after choosing a real startup draft", async ({
     await dialog.getByRole("button", { name: "Load Draft" }).click();
     await expect(dialog).toBeHidden();
     await expect(page.locator("button[title='Menu']")).toBeVisible();
-    // A previously ready world must not complete a newly requested world swap.
-    const loadingPhases = await page.evaluate(async () => {
-      const { appLifecycle, transitionAppLifecycle } = await import(
-        "/state/app-lifecycle.ts"
-      );
-      const phases: string[] = [];
-      try {
-        for (const type of ["loading-saved", "loading-draft"] as const) {
-          transitionAppLifecycle({ type });
-          await new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-          );
-          phases.push(appLifecycle.get().phase);
-        }
-      } finally {
-        transitionAppLifecycle({ type: "interactive" });
-      }
-      return phases;
-    });
-    expect(loadingPhases).toEqual([
-      "startup-loading-saved",
-      "startup-loading-draft",
-    ]);
   } finally {
     if (existsSync(seed.savedDir) || existsSync(seed.draftDir)) {
       await prepareFreshBackendShowfile(backendSlot.backendPort).catch(
@@ -191,6 +168,49 @@ test("loads the app shell after choosing a real startup draft", async ({
     }
     cleanupSeededStartupDraft(seed);
   }
+});
+
+/** Verifies an already-Ready backend world cannot complete a newly requested swap or hide its failure prompt. */
+test("keeps world-swap phases owned while the old world is Ready", async ({
+  backendSlot,
+  page,
+}) => {
+  const showfileName = await prepareFreshBackendShowfile(
+    backendSlot.backendPort,
+  );
+  await setStartupShowfile(page, showfileName);
+  await page.goto("/");
+  await expect(page.locator("button[title='Menu']")).toBeVisible();
+
+  const heldPhases = await page.evaluate(async () => {
+    const { appLifecycle, transitionAppLifecycle } = await import(
+      "/state/app-lifecycle.ts"
+    );
+    const { backendAppState } = await import("/lib/engine-runtime.ts");
+    const phases: string[] = [backendAppState()];
+    try {
+      for (const type of [
+        "loading-saved",
+        "loading-draft",
+        "showfile-prompt",
+      ] as const) {
+        transitionAppLifecycle({ type });
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+        phases.push(appLifecycle.get().phase);
+      }
+    } finally {
+      transitionAppLifecycle({ type: "interactive" });
+    }
+    return phases;
+  });
+  expect(heldPhases).toEqual([
+    "Ready",
+    "startup-loading-saved",
+    "startup-loading-draft",
+    "startup-showfile-prompt",
+  ]);
 });
 
 for (const scenario of [
