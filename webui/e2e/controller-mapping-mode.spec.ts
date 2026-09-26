@@ -430,6 +430,103 @@ test("fader slots with an assigned master offer both mapping targets", async ({
       ),
     )
     .toEqual([{ id: "control.level", arguments: { control_index: 1 } }]);
+  await leaveMapping(page);
+
+  /** Returns each master's level keyed by numeric ID. */
+  const levels = () =>
+    page.evaluate(
+      () =>
+        Object.fromEntries(
+          Object.values((window as any).appStores.masters.get()).map(
+            (master: any) => [master.identifiers.id, master.level_percent],
+          ),
+        ) as Record<number, number>,
+    );
+  await sendOsc(port, "/e2e/map/fader", [0.3]);
+  await expect.poll(async () => (await levels())[masterId]).toBeCloseTo(30, 3);
+
+  // The binding follows the slot: reassigning another master moves what the fader drives.
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await expect.poll(async () => Object.keys(await levels()).length).toBe(2);
+  const secondId = Number(
+    Object.keys(await levels()).find((id) => Number(id) !== masterId),
+  );
+  await page.evaluate(
+    (masterId) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command: {
+          type: "AssignMaster",
+          data: { control_index: 1, master_id: masterId },
+        },
+      }),
+    secondId,
+  );
+  await sendOsc(port, "/e2e/map/fader", [0.6]);
+  await expect.poll(async () => (await levels())[secondId]).toBeCloseTo(60, 3);
+  expect((await levels())[masterId]).toBeCloseTo(30, 3);
+});
+
+/**
+ * Verifies an empty slot's Go button can be mapped, and that the binding runs whatever is
+ * assigned to the slot later.
+ */
+test("mapping an empty slot's Go follows what is assigned later", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  await openPanel(page, "Clips");
+
+  await enterMapping(page);
+  await sendOsc(port, "/e2e/map/empty-go");
+  await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
+    "OSC /e2e/map/empty-go",
+  );
+  await expect(
+    page.getByRole("button", { name: "Go control 2" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Map control 2 Go" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.oscMappings
+          .get()
+          .map((mapping: any) => mapping.action),
+      ),
+    )
+    .toEqual([{ id: "control.go", arguments: { control_index: 2 } }]);
+  await leaveMapping(page);
+
+  // Assign a toggle master to slot 2; Go on a toggle master flips it.
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page))?.mode.type)
+    .toBe("Toggle");
+  const masterId = (await onlyMaster(page)).identifiers.id;
+  await page.evaluate(
+    (masterId) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command: {
+          type: "AssignMaster",
+          data: { control_index: 2, master_id: masterId },
+        },
+      }),
+    masterId,
+  );
+
+  await sendOsc(port, "/e2e/map/empty-go");
+  await expect
+    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .toBe(true);
 });
 
 test("a mapped OSC button toggles timeline playback", async ({
@@ -519,6 +616,28 @@ test("a mapped OSC button toggles timeline playback", async ({
   await leaveMapping(page);
 
   // A level-reporting button toggles once per press: 1 plays, 0 releases, 1 pauses.
+  await sendOsc(port, "/e2e/map/play", [0]);
+  await sendOsc(port, "/e2e/map/play", [1]);
+  await expect.poll(isRunning).toBe(true);
+  await sendOsc(port, "/e2e/map/play", [0]);
+  await sendOsc(port, "/e2e/map/play", [1]);
+  await expect.poll(isRunning).toBe(false);
+
+  // The binding targets the backend timeline, so it keeps working with its panel closed.
+  const panelId = `panel-Timeline-mapping-${ids.timelineUid}`;
+  await page.evaluate((panelId) => {
+    (window as any).appStores.dockApi.get().getPanel(panelId)?.api.close();
+  }, panelId);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (panelId) =>
+          (window as any).appStores.dockApi.get().getPanel(panelId) !==
+          undefined,
+        panelId,
+      ),
+    )
+    .toBe(false);
   await sendOsc(port, "/e2e/map/play", [0]);
   await sendOsc(port, "/e2e/map/play", [1]);
   await expect.poll(isRunning).toBe(true);
