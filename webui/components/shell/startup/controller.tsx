@@ -88,12 +88,12 @@ export function StartupController(props: StartupControllerProps) {
       restartAppLifecycleForBackendSessionReset();
       return;
     }
-    // World-swap operations own completion after canonical resync. The old
-    // world's Ready state can remain visible while their command is in flight.
+    // Prompt and world-swap phases are owned by the user's recovery choice.
+    // The old world's Ready state can remain visible while a swap is in
+    // flight or after it fails back to a prompt.
     if (
-      state.phase === "interactive" ||
-      state.phase === "startup-loading-saved" ||
-      state.phase === "startup-loading-draft"
+      state.phase !== "backend-connecting" &&
+      state.phase !== "startup-checking-draft"
     )
       return;
     if (backendState === types.AppState.Ready) {
@@ -102,8 +102,6 @@ export function StartupController(props: StartupControllerProps) {
     }
     if (
       draftCheckInFlight ||
-      (state.phase !== "backend-connecting" &&
-        state.phase !== "startup-checking-draft") ||
       backendState !== types.AppState.Initialized ||
       (!bypassBackendReadinessForE2E() &&
         connectionStatus() !== EngineRuntimeStatus.Connected)
