@@ -460,9 +460,13 @@ export const midiControlTouches = atom<types.MidiLastEvent[]>([]);
  * Unlike `oscLastEvent`, every batch is delivered, so mapping mode arms from these.
  */
 export const oscControlTouches = atom<types.OscLastEvent[]>([]);
-/** How many clients are mapping controllers; MIDI and OSC actions pause while non-zero. */
+/**
+ * How many clients are mapping controllers, which pauses MIDI and OSC actions while
+ * non-zero, and the loaded show's generation (empty until the backend reports it).
+ */
 export const controllerMappingMode = atom<types.ControllerMappingModeState>({
   mapping_clients: 0,
+  show_generation: "",
 });
 
 // DMX Universe data for raw channel visualization (input + output)

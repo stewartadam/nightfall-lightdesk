@@ -49,7 +49,9 @@ pub use invocation::{
     InvocationId, InvocationOutcome, InvocationResult,
 };
 pub use lowering::{ActionAppExt, submit_command};
-pub use mapping_mode::{ControllerMappingMode, ControllerMappingModeState};
+pub use mapping_mode::{
+    ControllerMappingMode, ControllerMappingModeState, MAPPING_MODE_LEASE, MappingLeaseExpired,
+};
 use nightfall_engine::prelude::{
     ClientDisconnected, ClientFeedback, CommandDeserializerRegistry, CommandIngressRouter,
     EventHandling, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
@@ -99,6 +101,9 @@ impl Plugin for ActionsPlugin {
             (
                 websocket::handle_resync_state.in_set(ResyncHandling),
                 mapping_mode::release_disconnected_mapping_clients.in_set(EventHandling),
+                mapping_mode::expire_mapping_mode_leases
+                    .in_set(EventHandling)
+                    .after(mapping_mode::release_disconnected_mapping_clients),
             ),
         );
         // Client publications run in ClientFeedback so they pause while a staged world is swapped in.

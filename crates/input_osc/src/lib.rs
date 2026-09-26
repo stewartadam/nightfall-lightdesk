@@ -712,7 +712,7 @@ mod tests {
     fn set_mapping_mode(app: &mut App, active: bool) {
         let mut mode = app.world_mut().resource_mut::<ControllerMappingMode>();
         if active {
-            mode.enter(ClientId(1));
+            mode.enter(ClientId(1), std::time::Instant::now());
         } else {
             mode.leave(ClientId(1));
         }
