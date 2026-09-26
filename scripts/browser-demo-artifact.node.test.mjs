@@ -47,7 +47,7 @@ test("browser packaging preserves integrity and reports only packaged byte sizes
     const wasm = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
     write("LICENSE", "Nightfall license");
     write(
-      "webui/assets/browser-demo/nightfall-demo-click.LICENSE.txt",
+      "webui/assets/browser-demo/sample-audio.LICENSE.txt",
       "Sample license",
     );
     write("webui/dist/index.html", "<html>demo</html>");
