@@ -13,6 +13,16 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import {
+  ActionBindingOptionsProvider,
+  ActionMappingProvider,
+} from "../../../features/action-mapping";
+import {
+  createClipActionBindingChoices,
+  createControlActionBindingChoices,
+} from "../../../features/clips";
+import { createMasterActionBindingChoices } from "../../../features/masters";
+import { createTimelineActionBindingChoices } from "../../../features/timeline";
 import { getLogger } from "../../../lib/logger";
 import AppProviders from "./app-providers";
 import { initializeApplicationRuntime, initializePreline } from "./app-runtime";
@@ -69,13 +79,24 @@ export default function InteractiveApp(props: InteractiveAppProps) {
         </Show>
       }
     >
-      <ErrorBoundary
-        fallback={(error) => <InteractiveAppError error={error} />}
+      <ActionBindingOptionsProvider
+        factories={[
+          createClipActionBindingChoices,
+          createControlActionBindingChoices,
+          createMasterActionBindingChoices,
+          createTimelineActionBindingChoices,
+        ]}
       >
-        <AppProviders>
-          <AppShell />
-        </AppProviders>
-      </ErrorBoundary>
+        <ErrorBoundary
+          fallback={(error) => <InteractiveAppError error={error} />}
+        >
+          <AppProviders>
+            <ActionMappingProvider>
+              <AppShell />
+            </ActionMappingProvider>
+          </AppProviders>
+        </ErrorBoundary>
+      </ActionBindingOptionsProvider>
     </Show>
   );
 }

@@ -630,6 +630,16 @@ const TrackContents = (props: TrackListProps) => {
               y={intent().y}
               targets={actionTargets()}
               onClose={() => setPickerIntent(undefined)}
+              onRegisteredInsert={(option) => {
+                ctx.actions.insertAction(intent().trackId, {
+                  id: createActionId(),
+                  label: option.label,
+                  position: msToDuration(intent().positionMs),
+                  duration: msToDuration(DEFAULT_ACTION_DURATION_MS),
+                  action: { type: "RegisteredAction", data: option.action },
+                });
+                setPickerIntent(undefined);
+              }}
               onInsert={({
                 actionType,
                 targetUid,

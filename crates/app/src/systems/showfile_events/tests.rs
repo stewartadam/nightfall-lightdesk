@@ -2397,6 +2397,8 @@ fn seed_world(world: &mut World) {
         .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
             device_name: "Grid".to_string(),
+            id: uuid::Uuid::from_u128(1),
+            input: nightfall_input_midi::command::MidiBindingInput::Continuous,
             channel: 176,
             note: 36,
             velocity: None,
@@ -2408,6 +2410,11 @@ fn seed_world(world: &mut World) {
         .set_mappings(vec![OscMapping {
             source: Some("127.0.0.1:9000".to_string()),
             address: "/grid/fader".to_string(),
+            id: uuid::Uuid::new_v4(),
+            input: nightfall_input_osc::command::OscBindingInput::Continuous {
+                minimum: 0.0,
+                maximum: 1.0,
+            },
             arg_index: Some(1),
             arg_value: Some("0.5".to_string()),
             action: set_control_action(2),
@@ -2706,6 +2713,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     pending_commands,
                     scheduled_commands,
                     undo_manager,
+                    controller_learning,
                     programmer,
                     global_variables,
                     desk_settings,
@@ -2746,6 +2754,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     pending_commands.as_mut(),
                     scheduled_commands.as_deref_mut(),
                     undo_manager.as_deref_mut(),
+                    controller_learning.as_deref_mut(),
                     programmer.as_deref_mut(),
                     global_variables.as_ref(),
                     desk_settings.as_mut(),
@@ -3981,6 +3990,183 @@ fn backup_show_data_directory_ignores_invalid_unicode_backup_names() {
     );
 
     std::fs::remove_dir_all(temp_root).expect("remove temp test directory");
+}
+
+/// File loading retains unavailable bindings for repair and ends the previous learning interaction.
+#[cfg(all(feature = "midi", feature = "osc"))]
+#[test]
+fn file_load_retains_mapping_diagnostics_and_ends_learning() {
+    use nightfall_actions::{ActionReference, ActionRegistry, ActionSurface};
+    use nightfall_engine::controller_learning::{
+        ControllerLearning, ControllerLearningCommand, LearnedControllerSource, LearnedGesture,
+    };
+    let _guard = crate::process_config_lock().lock().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let mut source_world = setup_world();
+    seed_world(&mut source_world);
+    let mut midi = source_world.resource::<MidiMappings>().mappings().to_vec();
+    midi[0].action = ActionReference::new("missing.midi", serde_json::json!({}));
+    let missing_master_uid = Uuid::new_v4();
+    let master_action = ActionReference::new(
+        nightfall_desk::automation_actions::MASTER_SET_ACTION_ID,
+        serde_json::json!({"master_uid": missing_master_uid}),
+    );
+    let mut master_midi = midi[0].clone();
+    master_midi.id = Uuid::new_v4();
+    master_midi.channel = 0xb0;
+    master_midi.note = 7;
+    master_midi.velocity = None;
+    master_midi.input = nightfall_input_midi::command::MidiBindingInput::Continuous;
+    master_midi.action = master_action.clone();
+    midi.push(master_midi);
+    source_world
+        .resource_mut::<MidiMappings>()
+        .set_mappings(midi.clone());
+    let mut osc = source_world.resource::<OscMappings>().mappings().to_vec();
+    osc[0].action = ActionReference::new("missing.osc", serde_json::json!({}));
+    let mut master_osc = osc[0].clone();
+    master_osc.id = Uuid::new_v4();
+    master_osc.address = "/missing-master".into();
+    master_osc.arg_index = Some(0);
+    master_osc.arg_value = None;
+    master_osc.input = nightfall_input_osc::command::OscBindingInput::Continuous {
+        minimum: 0.0,
+        maximum: 1.0,
+    };
+    master_osc.action = master_action;
+    osc.push(master_osc);
+    source_world
+        .resource_mut::<OscMappings>()
+        .set_mappings(osc.clone());
+    let snapshot = collect_snapshot(&mut source_world);
+    std::fs::write(
+        source.path().join(SHOWFILE_SNAPSHOT_FILENAME),
+        serialize_showfile_snapshot_json(&snapshot).unwrap(),
+    )
+    .unwrap();
+
+    let mut learning_app = App::new();
+    learning_app.add_plugins(nightfall_engine::EnginePlugin);
+    learning_app.init_resource::<PendingCommandBuffer>();
+    learning_app.add_plugins(ClientBridgePlugin);
+    let session_id = Uuid::new_v4();
+    let command = CommandEnvelope::new(
+        ControllerLearningCommand::Begin {
+            session_id,
+            surface: ActionSurface::Midi,
+        },
+        CommandOrigin::WebUi,
+        ReplyTarget::Detached,
+    );
+    learning_app
+        .world_mut()
+        .resource_mut::<CommandTracker>()
+        .register(&command)
+        .unwrap();
+    learning_app.world_mut().write_message(command);
+    learning_app.update();
+    let held = LearnedControllerSource {
+        surface: ActionSurface::Midi,
+        selector: serde_json::json!({"note":42}),
+        label: "Held button".into(),
+        gesture: LearnedGesture::Press,
+    };
+    assert!(
+        learning_app
+            .world_mut()
+            .resource_mut::<ControllerLearning>()
+            .capture(held.clone())
+    );
+    let mut world = setup_world();
+    world.insert_resource(
+        learning_app
+            .world_mut()
+            .remove_resource::<ControllerLearning>()
+            .unwrap(),
+    );
+    load::load_showfile_into_world(
+        &mut world,
+        Some("Mapping restore"),
+        source.path().to_path_buf(),
+    )
+    .unwrap();
+    assert_eq!(world.resource::<MidiMappings>().mappings(), midi);
+    assert_eq!(world.resource::<OscMappings>().mappings(), osc);
+    let mut registration_app = App::new();
+    registration_app.init_resource::<ActionRegistry>();
+    nightfall_desk::automation_actions::register_desk_actions(&mut registration_app);
+    let registry = registration_app
+        .world_mut()
+        .remove_resource::<ActionRegistry>()
+        .unwrap();
+    assert_eq!(
+        world
+            .resource::<MidiMappings>()
+            .validation_errors(&registry)[0]
+            .as_ref()
+            .unwrap()
+            .code,
+        "action.not_registered"
+    );
+    assert_eq!(
+        world.resource::<OscMappings>().validation_errors(&registry)[0]
+            .as_ref()
+            .unwrap()
+            .code,
+        "action.not_registered"
+    );
+    for restored in [false, true] {
+        if restored {
+            let mut master = Master::default();
+            master.identifiers.uid = missing_master_uid;
+            master.identifiers.id = 99;
+            world
+                .resource_mut::<DataProvider<Master>>()
+                .add(master)
+                .unwrap();
+        }
+        let midi_mappings = world.resource::<MidiMappings>();
+        let osc_mappings = world.resource::<OscMappings>();
+        let errors = [
+            midi_mappings.target_validation_errors(
+                &world,
+                &registry,
+                &midi_mappings.validation_errors(&registry),
+            ),
+            osc_mappings.target_validation_errors(
+                &world,
+                &registry,
+                &osc_mappings.validation_errors(&registry),
+            ),
+        ];
+        for errors in errors {
+            assert_eq!(errors[0].as_ref().unwrap().code, "action.not_registered");
+            if restored {
+                assert!(errors[1].is_none());
+            } else {
+                assert_eq!(errors[1].as_ref().unwrap().code, "master.not_found");
+            }
+        }
+        assert_eq!(midi_mappings.mappings(), midi);
+        assert_eq!(osc_mappings.mappings(), osc);
+    }
+    let mut learning = world.resource_mut::<ControllerLearning>();
+    assert_eq!(
+        learning
+            .captured(session_id, ActionSurface::Midi)
+            .unwrap_err()
+            .code,
+        "mapping.learning_expired"
+    );
+    assert!(learning.capture(LearnedControllerSource {
+        gesture: LearnedGesture::Release,
+        ..held
+    }));
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
 }
 
 /// Verify loading a snapshot replaces stale definitions and settings in an existing world.

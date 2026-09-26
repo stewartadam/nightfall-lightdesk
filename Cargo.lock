@@ -5236,6 +5236,7 @@ dependencies = [
  "dashmap",
  "minicbor-serde",
  "nightfall",
+ "nightfall-actions",
  "nightfall-cmd-parse",
  "nightfall-dmx",
  "nightfall-engine-derive",
@@ -5450,33 +5451,40 @@ dependencies = [
 name = "nightfall-input-midi"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "async-channel",
  "bevy_app",
  "bevy_ecs",
  "midir",
+ "minicbor-serde",
  "nightfall",
  "nightfall-actions",
  "nightfall-coremidi-hotplug",
  "nightfall-engine",
  "nightfall-service-host",
+ "nightfall-undo",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
  "typeshare",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
 name = "nightfall-input-osc"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "async-channel",
  "bevy_app",
  "bevy_ecs",
+ "minicbor-serde",
  "nightfall",
  "nightfall-actions",
  "nightfall-config",
  "nightfall-engine",
  "nightfall-service-host",
+ "nightfall-undo",
  "rosc",
  "serde",
  "serde_json",
@@ -5484,6 +5492,7 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -5647,6 +5656,7 @@ dependencies = [
  "bevy_ecs",
  "moonshine-kind",
  "nightfall",
+ "nightfall-actions",
  "nightfall-cmd-parse",
  "nightfall-compositor",
  "nightfall-cues",
@@ -5748,6 +5758,7 @@ dependencies = [
 name = "nightfall-timeline"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "async-channel",
  "axum",
  "bevy_app",
  "bevy_diagnostic",

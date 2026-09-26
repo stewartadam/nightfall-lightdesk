@@ -15,6 +15,8 @@ use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
 /// Raw MIDI event emitted by the process-lifetime MIDI service.
 #[derive(Debug, Clone)]
 pub struct MidiInputEvent {
+    /// Monotonic receipt time, retained across bridge and engine queues.
+    pub received_at: web_time::Instant,
     /// Device name that generated the event.
     pub device: String,
     /// MIDI status byte (channel + message type).
@@ -347,6 +349,7 @@ fn connect_to_port(
         move |_timestamp, message, _| {
             if message.len() >= 3 {
                 let _ = event_tx.send(MidiInputEvent {
+                    received_at: web_time::Instant::now(),
                     device: device_name_for_callback.clone(),
                     channel: message[0],
                     note: message[1],
@@ -354,6 +357,7 @@ fn connect_to_port(
                 });
             } else if message.len() >= 2 {
                 let _ = event_tx.send(MidiInputEvent {
+                    received_at: web_time::Instant::now(),
                     device: device_name_for_callback.clone(),
                     channel: message[0],
                     note: message[1],

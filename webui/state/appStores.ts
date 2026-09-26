@@ -279,6 +279,14 @@ export const fixtureLibrary = atom<types.AvailableFixtureInfo[]>([]);
 /** Canonical backend-provided attribute presentation metadata. */
 export const attributeMetadata = atom<types.AttributeMetadata[]>([]);
 
+/** Domain action definitions supplied by the connected engine. */
+export const actionCatalog = atom<types.ActionDescriptor[]>([]);
+
+/** Backend-owned controller source capture, independent of mounted panels. */
+export const controllerLearning = atom<types.ControllerLearningSnapshot | null>(
+  null,
+);
+
 /**
  * Latest fixture profile response (for fixture library preview).
  * Updated when GetFixtureProfile command returns.
@@ -382,6 +390,10 @@ export const programmerResolvedSelection = atom<types.ResolvedSelection | null>(
 export const activeSelectionSpanTargets = atom<SelectionTarget[]>([]);
 export const timecodes = deepMap<TimecodeMap>({});
 export const timelines = deepMap<TimelineMap>({});
+/** Current validation errors for saved timeline actions, independent of panel lifetime. */
+export const timelineActionDiagnostics = atom<types.TimelineActionDiagnostic[]>(
+  [],
+);
 export const timelineStopEvent = atom<TimelineStopEvent | undefined>();
 export const timelineRecordingStates = deepMap<TimelineRecordingStateMap>({});
 export const timelineRecordingPreviews = deepMap<TimelineRecordingPreviewMap>(
@@ -414,9 +426,11 @@ export const engineMetrics = atom<EngineMetrics | null>(null);
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);
 export const midiMappings = atom<types.MidiMapping[]>([]);
+export const midiMappingDiagnostics = atom<(types.CommandError | null)[]>([]);
 export const midiLastEvent = atom<types.MidiLastEvent | null>(null);
 export const oscSources = atom<types.OscSource[]>([]);
 export const oscMappings = atom<types.OscMapping[]>([]);
+export const oscMappingDiagnostics = atom<(types.CommandError | null)[]>([]);
 export const oscLastEvent = atom<types.OscLastEvent | null>(null);
 export const oscListenerStatus = atom<types.OscListenerStatus | null>(null);
 
@@ -992,6 +1006,8 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     sceneObjects,
     fixtureLibrary,
     attributeMetadata,
+    actionCatalog,
+    controllerLearning,
     fixtureGeometries,
     objectLibrary,
     objectProfile,
@@ -1026,6 +1042,7 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     timelineRecordingStates,
     timelineRecordingPreviews,
     timelineLookaheadActionStatuses,
+    timelineActionDiagnostics,
     timelineBeatgridProposals,
     timelineBeatgridDetectionStatus,
     timelineBeatgridPreview,
@@ -1053,9 +1070,11 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     flowTriggerTicks,
     midiDevices,
     midiMappings,
+    midiMappingDiagnostics,
     midiLastEvent,
     oscSources,
     oscMappings,
+    oscMappingDiagnostics,
     oscLastEvent,
     oscListenerStatus,
     consoleScrollback,

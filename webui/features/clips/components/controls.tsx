@@ -17,11 +17,9 @@ import { engineRuntime } from "../../../lib/engine-runtime";
 import { controls, masters, pushToast } from "../../../state/appStores";
 import type {
   Clip,
-  ClipCommand,
   ControlCommand,
   ControlUpdate,
   Master,
-  MasterCommand,
 } from "../../../types";
 import { Control } from "./control";
 
@@ -63,16 +61,6 @@ export function Controls(props: ControlsProps): JSX.Element {
     engineRuntime.sendUpdate("ControlUpdate", update, false);
   };
 
-  /** Sends an clip command to the backend command bus. */
-  const sendClipCommand = (command: ClipCommand) => {
-    engineRuntime.sendCommand({ module: "ClipCommand", command });
-  };
-
-  /** Sends a master command to the backend command bus. */
-  const sendMasterCommand = (command: MasterCommand) => {
-    engineRuntime.sendCommand({ module: "MasterCommand", command });
-  };
-
   return (
     <div class="controls h-full min-h-0">
       <div class="flex h-full min-h-0 gap-1 overflow-x-auto pb-2">
@@ -107,38 +95,11 @@ export function Controls(props: ControlsProps): JSX.Element {
             /** Returns whether the assigned clip is currently active. */
             const isClipActive = () => getAssignedClipEntry()?.[1] ?? false;
 
-            /** Runs the assigned clip or toggles a toggle-mode master. */
+            /** Activates the backend's current assignment for this control slot. */
             const handleGo = () => {
-              const master = getAssignedMaster();
-              if (master) {
-                if (master.mode?.type === "Toggle") {
-                  sendMasterCommand({
-                    type: "ToggleMaster",
-                    data: { id: master.identifiers.id },
-                  });
-                }
-                return;
-              }
-
-              const clip = getAssignedClip();
-              if (!clip) return;
-              if (!clip.source) return;
-
-              if (clip.source?.type === "Sequence") {
-                sendClipCommand({
-                  type: isClipActive() ? "GoClip" : "StartClip",
-                  data: { type: "Single", data: clip.identifiers.id },
-                });
-                return;
-              }
-
-              if (isClipActive()) {
-                return;
-              }
-
-              sendClipCommand({
-                type: "StartClip",
-                data: { type: "Single", data: clip.identifiers.id },
+              void sendCommand({
+                type: "Go",
+                data: { control_index: controlIndex },
               });
             };
 

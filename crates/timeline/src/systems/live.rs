@@ -483,6 +483,16 @@ pub fn process_actions_system(
             if normalized_action.is_none()
                 && let ActionKind::RegisteredAction(registered_action) = &timeline_action.action
             {
+                if !registered_action_allows_live_dispatch(
+                    registered_action,
+                    action_registry.as_deref(),
+                ) {
+                    tracing::warn!(
+                        action_id = registered_action.id.as_str(),
+                        "Skipping invalid registered timeline action; deterministic planning must not fall back to live execution"
+                    );
+                    continue;
+                }
                 if let Some(action_invocations) = action_invocations.as_mut() {
                     action_invocations.write(
                         ActionInvocation::trigger(

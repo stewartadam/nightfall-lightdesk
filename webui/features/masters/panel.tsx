@@ -16,6 +16,7 @@ import { Button } from "../../components/ui/visual-language/button";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { clips, groups, masters } from "../../state/appStores";
 import * as types from "../../types";
+import { createActionMappingTarget } from "../action-mapping";
 import {
   allFixturesTarget,
   allInstancesTarget,
@@ -294,6 +295,14 @@ export default function MastersPanel(
                   <td>
                     <div class="flex items-center gap-2">
                       <input
+                        ref={createActionMappingTarget(() => ({
+                          action: {
+                            id: "master.set-level",
+                            arguments: { master_uid: master.identifiers.uid },
+                          },
+                          label: `${master.identifiers.label} level`,
+                        }))}
+                        aria-label={`${master.identifiers.label} level`}
                         type="range"
                         min="0"
                         max={masterLevelMax(master)}

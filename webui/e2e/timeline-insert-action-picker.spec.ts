@@ -22,17 +22,30 @@ async function openOwnedTimelineApp(page: Page): Promise<string> {
   const showfileName = `${SHOWFILE_NAME_PREFIX}-${testInfo.workerIndex}-${testInfo.retry}-${Date.now()}`;
   await page.addInitScript(() => {
     window.localStorage.removeItem("nightfall.currentShowfileName");
-    window.localStorage.removeItem("nightfall.e2eAutoOpenStartupShowfile");
+    window.localStorage.setItem(
+      "nightfall.e2eAutoOpenStartupShowfile",
+      "false",
+    );
   });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
-  const openDialog = page.getByRole("dialog", { name: "Open Showfile" });
-  await expect(openDialog).toBeVisible();
-  await openDialog.getByRole("button", { name: "New showfile" }).click();
+  await waitForDockviewApp(page);
+  const initialGeneration = await page.evaluate(async () =>
+    (await import("/lib/engine-runtime.ts")).resyncGeneration(),
+  );
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await page.getByRole("button", { name: /New Showfile/ }).click();
   const newDialog = page.getByRole("dialog", { name: "New Showfile" });
   await expect(newDialog).toBeVisible();
   await newDialog.getByLabel("Show name").fill(showfileName);
   await newDialog.getByRole("button", { name: "Create Show" }).click();
   await expect(newDialog).not.toBeVisible({ timeout: 10_000 });
+  await expect
+    .poll(() =>
+      page.evaluate(async () =>
+        (await import("/lib/engine-runtime.ts")).resyncGeneration(),
+      ),
+    )
+    .toBeGreaterThan(initialGeneration);
   await waitForDockviewApp(page);
 
   const timelineUid = await page.evaluate(async () => {
@@ -123,10 +136,6 @@ async function openOwnedTimelineApp(page: Page): Promise<string> {
       component: "Timeline",
       title: timeline.identifiers.label,
       params: { initialTimelineUid: uid },
-      position: {
-        referencePanel: "panel-FixtureGrid",
-        direction: "within",
-      },
     });
     panel.api.setActive();
     panel.focus();
@@ -417,7 +426,7 @@ test("insert action picker keeps keyboard selection visible", async ({
   await page.getByPlaceholder("Insert action...").fill("Start Clip");
   await page.keyboard.press("Enter");
   await expect(
-    page.getByPlaceholder(/Select target for Start Clip/),
+    page.getByPlaceholder(/Select target for Start Clip/i),
   ).toBeVisible();
 
   for (let index = 0; index < 24; index += 1) {
@@ -470,13 +479,17 @@ test("insert action picker keeps filter focused after pointer selection", async 
 
   await page.keyboard.press("i");
   await page.getByPlaceholder("Insert action...").fill("Start Clip");
-  await page.getByRole("button", { name: /Start Clip/ }).click();
+  await page.getByRole("button", { name: /Start Clip/i }).click();
 
-  const targetFilter = page.getByPlaceholder(/Select target for Start Clip/);
+  const targetFilter = page.getByPlaceholder(/Select target for Start Clip/i);
   await expect(targetFilter).toBeFocused();
   await page.keyboard.type("7");
   await expect(targetFilter).toHaveValue("7");
-  await expect(page.getByRole("button", { name: /Exec 7:/ })).toBeVisible();
+  await expect(
+    page
+      .locator('[data-component="InsertActionPicker"]')
+      .getByRole("button", { name: /^7: Insert Picker Clip/ }),
+  ).toBeVisible();
 });
 
 /** Verifies Jump To Cue lets operators choose a concrete sequence cue target. */

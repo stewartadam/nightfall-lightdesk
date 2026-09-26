@@ -28,7 +28,6 @@ use axum::{
 };
 use futures_util::SinkExt;
 use futures_util::StreamExt;
-use minicbor_serde;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -102,12 +101,8 @@ async fn handle_socket(
 
 /// Encodes a non-droppable CBOR payload using the websocket binary wire format.
 fn non_droppable_binary_message<T: Serialize>(payload: &T) -> Option<Message> {
-    minicbor_serde::to_vec(payload).ok().map(|cbor_data| {
-        let mut encoded = Vec::with_capacity(1 + cbor_data.len());
-        encoded.push(DISCRIMINATOR_NON_DROPPABLE);
-        encoded.extend(cbor_data);
-        Message::Binary(encoded.into())
-    })
+    EncodedClientMessage::new(DISCRIMINATOR_NON_DROPPABLE, payload)
+        .map(|encoded| Message::Binary(encoded.to_bytes().into()))
 }
 
 /// Returns a direct websocket heartbeat response for transport-owned latency probes.
@@ -120,6 +115,8 @@ fn encode_transport_heartbeat_response(data: &TransportHeartbeatData) -> Option<
 
 /// Handle a new client connection (post upgrade)
 async fn client_ws(mut socket: WebSocket, state: AxumAppState, local: bool, generation: u64) {
+    let connection_lease = ClientConnectionLease::default();
+    let connection = connection_lease.connection();
     tracing::debug!("WebSocket client connected");
 
     // Get the current crate version to send to the client
@@ -176,7 +173,8 @@ async fn client_ws(mut socket: WebSocket, state: AxumAppState, local: bool, gene
             while let Some(Ok(msg)) = ws_receiver.next().await {
                 if let Message::Text(text) = msg {
                     match serde_json::from_str::<InboundWebsocketText>(&text) {
-                        Ok(InboundWebsocketText::Command(json_envelope)) => {
+                        Ok(InboundWebsocketText::Command(mut json_envelope)) => {
+                            json_envelope.client_connection = Some(connection.clone());
                             tracing::trace!(
                                 "Parsed command envelope from websocket (module={})",
                                 json_envelope.module
@@ -216,6 +214,7 @@ async fn client_ws(mut socket: WebSocket, state: AxumAppState, local: bool, gene
     });
 
     supervise_client_tasks(send_task, recv_task, cancellation_rx).await;
+    drop(connection_lease);
 
     let mut guard = clients.lock().unwrap();
     guard.retain(|c| !c.sender.same_channel(&tx));

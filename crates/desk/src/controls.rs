@@ -8,14 +8,15 @@
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
+use nightfall_clips::Source;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceControlUpdate, InstanceControls, InstanceId};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    clips::{Clip, ClipAction, MaterializedClip},
+    clips::{Clip, ClipAction, ClipCommand, MaterializedClip},
     instances::InstanceIndex,
-    masters::{Master, MasterUpdate},
+    masters::{Master, MasterCommand, MasterMode, MasterUpdate},
 };
 
 const CONTROL_EPSILON: f32 = 0.0001;
@@ -27,9 +28,21 @@ pub const DEFAULT_CONTROL_COUNT: usize = 10;
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
 pub enum ControlCommand {
-    AssignClip { control_index: u32, clip_id: u32 },
-    AssignMaster { control_index: u32, master_id: u32 },
-    ClearClip { control_index: u32 },
+    /// Activates the slot's current assignment, preserving control reassignment semantics.
+    Go {
+        control_index: u32,
+    },
+    AssignClip {
+        control_index: u32,
+        clip_id: u32,
+    },
+    AssignMaster {
+        control_index: u32,
+        master_id: u32,
+    },
+    ClearClip {
+        control_index: u32,
+    },
 }
 
 impl IngressCommand for ControlCommand {}
@@ -376,6 +389,14 @@ impl Default for Controls {
 }
 
 impl Controls {
+    /// Reports whether a one-based slot exists, independently of its current assignment.
+    pub(crate) fn contains_slot(&self, control_index: u32) -> bool {
+        control_index
+            .checked_sub(1)
+            .and_then(|index| usize::try_from(index).ok())
+            .is_some_and(|index| index < self.slots.len())
+    }
+
     /// Copy each slot's assignment in fader order without transient playback or hardware state.
     pub fn assignments(&self) -> Vec<Option<ControlAssignment>> {
         self.slots
@@ -559,6 +580,7 @@ pub fn handle_control_commands(
 ) {
     for event in events.read() {
         let result = match &event.command {
+            ControlCommand::Go { .. } => continue,
             ControlCommand::AssignClip {
                 control_index,
                 clip_id,
@@ -580,6 +602,111 @@ pub fn handle_control_commands(
             }
         };
         finish_control_command(&mut responder, event.command_id, result);
+    }
+}
+
+/// Domain resources used to resolve the current control assignment at execution time.
+#[derive(bevy_ecs::system::SystemParam)]
+pub struct ControlGoTargets<'w, 's> {
+    controls: Res<'w, Controls>,
+    clips: Query<'w, 's, &'static Clip>,
+    masters: Res<'w, DataProvider<Master>>,
+    materialized_clips: Query<'w, 's, &'static MaterializedClip>,
+    instance_index: Res<'w, InstanceIndex>,
+    instance_controls: Query<'w, 's, &'static InstanceControls>,
+}
+
+/// Runs the same assignment-specific Go behavior for UI clicks and controller mappings.
+pub fn handle_control_go(
+    mut events: MessageReader<CommandEnvelope<ControlCommand>>,
+    targets: ControlGoTargets,
+    mut pending: ResMut<PendingCommandBuffer>,
+    mut responder: CommandResponder,
+) {
+    for event in events.read() {
+        let ControlCommand::Go { control_index } = event.command else {
+            continue;
+        };
+        let Some(slot) = control_index
+            .checked_sub(1)
+            .and_then(|index| targets.controls.slots.get(index as usize))
+        else {
+            finish_control_command(
+                &mut responder,
+                event.command_id,
+                Err(CommandError::new(
+                    "control.not_found",
+                    "The control slot does not exist",
+                )),
+            );
+            continue;
+        };
+        if let Some(id) = slot.assigned_master_id {
+            match targets.masters.from_id(id) {
+                Ok(master) if matches!(master.mode, MasterMode::Toggle { .. }) => {
+                    pending.push(PayloadEnvelope::with_context(
+                        event.command_id,
+                        event.undo_id,
+                        Box::new(MasterCommand::ToggleMaster { id }),
+                    ));
+                }
+                Ok(_) => finish_control_command(&mut responder, event.command_id, Ok(())),
+                Err(_) => finish_control_command(
+                    &mut responder,
+                    event.command_id,
+                    Err(CommandError::new(
+                        "master.not_found",
+                        "The assigned master does not exist",
+                    )),
+                ),
+            }
+            continue;
+        }
+        let Some(id) = slot.assigned_clip_id else {
+            finish_control_command(
+                &mut responder,
+                event.command_id,
+                Err(CommandError::new(
+                    "control.unassigned",
+                    "The control slot has no assignment",
+                )),
+            );
+            continue;
+        };
+        let Some(clip) = targets.clips.iter().find(|clip| clip.identifiers.id == id) else {
+            finish_control_command(
+                &mut responder,
+                event.command_id,
+                Err(CommandError::new(
+                    "clip.not_found",
+                    "The assigned clip does not exist",
+                )),
+            );
+            continue;
+        };
+        let active = runtime_state_for_clip(
+            id,
+            &targets.clips,
+            &targets.materialized_clips,
+            &targets.instance_index,
+            &targets.instance_controls,
+        )
+        .is_some_and(|state| state.is_clip_active);
+        let command = match (&clip.source, active) {
+            (None, _) => None,
+            (Some(Source::Sequence(_)), true) => Some(ClipCommand::GoClip(IdExpr::Single(id))),
+            (Some(_), false) => Some(ClipCommand::StartClip(IdExpr::Single(id))),
+            _ => None,
+        };
+        if let Some(command) = command {
+            pending.push(PayloadEnvelope::with_context(
+                event.command_id,
+                event.undo_id,
+                Box::new(command),
+            ));
+        } else {
+            finish_control_command(&mut responder, event.command_id, Ok(()));
+        }
     }
 }
 
@@ -992,6 +1119,41 @@ mod tests {
         app.add_message::<CommandNotice>();
         app.add_systems(Update, handle_control_commands);
         app
+    }
+
+    /// Go resolves the current slot assignment and forwards the original completion context.
+    #[test]
+    fn control_go_follows_reassignment_and_preserves_command_identity() {
+        let mut app = control_command_app();
+        app.init_resource::<PendingCommandBuffer>();
+        app.add_systems(Update, handle_control_go);
+        for id in [1, 2] {
+            let mut clip = Clip::default();
+            clip.identifiers.id = id;
+            clip.source = Some(Source::Sequence(uuid::Uuid::new_v4()));
+            app.world_mut().spawn(clip);
+        }
+        for id in [1, 2] {
+            app.world_mut()
+                .resource_mut::<Controls>()
+                .slot_mut(1)
+                .unwrap()
+                .assigned_clip_id = Some(id);
+            let command_id =
+                submit_control_command(&mut app, ControlCommand::Go { control_index: 1 });
+            app.update();
+            let forwarded = app
+                .world_mut()
+                .resource_mut::<PendingCommandBuffer>()
+                .drain();
+            assert_eq!(forwarded.len(), 1);
+            assert_eq!(forwarded[0].command_id, command_id);
+            assert_eq!(forwarded[0].undo_id, command_id.into());
+            assert!(
+                matches!(forwarded[0].payload.as_any().downcast_ref::<ClipCommand>(), Some(ClipCommand::StartClip(IdExpr::Single(value))) if *value == id)
+            );
+            assert!(app.world().resource::<Messages<CommandResult>>().is_empty());
+        }
     }
 
     /// Registers and submits one control command to the focused app.

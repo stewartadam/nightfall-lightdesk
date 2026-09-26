@@ -331,6 +331,7 @@ async fn save_current_showfile_draft(
     let save_options = options.map(|Json(options)| options).unwrap_or_default();
     let command_id = CommandId::new();
     let envelope = CommandJsonEnvelope {
+        client_connection: None,
         command_id,
         undo_id: Some(command_id.into()),
         module: "DeskCommand".to_string(),

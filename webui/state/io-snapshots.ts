@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { decodeCorrelationId } from "../lib/console-scrollback";
 import {
   replaceStoredLayoutsFromShowfile,
   type StoredPanelLayout,
@@ -114,7 +115,14 @@ export function applyMidiDeviceListSnapshot(devices: types.MidiDevice[]): void {
 
 /** Applies the current MIDI mapping list to the MIDI store. */
 export function applyMidiMappingsSnapshot(mappings: types.MidiMapping[]): void {
-  setStoreAction(midiMappings, "Receive MidiMappings", mappings);
+  setStoreAction(
+    midiMappings,
+    "Receive MidiMappings",
+    mappings.map((mapping) => ({
+      ...mapping,
+      id: decodeCorrelationId(mapping.id) ?? mapping.id,
+    })),
+  );
 }
 
 /** Applies the last observed MIDI event to the MIDI store. */
@@ -131,7 +139,14 @@ export function applyOscSourcesSnapshot(sources: types.OscSource[]): void {
 
 /** Applies the current OSC mapping list to the OSC store. */
 export function applyOscMappingsSnapshot(mappings: types.OscMapping[]): void {
-  setStoreAction(oscMappings, "Receive OscMappings", mappings);
+  setStoreAction(
+    oscMappings,
+    "Receive OscMappings",
+    mappings.map((mapping) => ({
+      ...mapping,
+      id: decodeCorrelationId(mapping.id) ?? mapping.id,
+    })),
+  );
 }
 
 /** Applies the last observed OSC event to the OSC store. */

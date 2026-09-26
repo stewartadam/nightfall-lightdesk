@@ -61,6 +61,7 @@ const mainThreadMessageHandlers = createMainThreadMessageHandlerRegistry();
 
 import EngineRuntimeWorker from "#engine-runtime-worker?worker";
 import {
+  actionCatalog,
   addConsoleSendError,
   addExternalConsoleCommand,
   addPendingConsoleCommand,
@@ -75,6 +76,7 @@ import {
   clips,
   colorPathDefaults,
   colorPaths,
+  controllerLearning,
   cueDefinitionsLoaded,
   cueDurationProfiles,
   cues,
@@ -92,6 +94,8 @@ import {
   inputContributionTrace,
   layerStack,
   masters,
+  midiMappingDiagnostics,
+  oscMappingDiagnostics,
   type ParameterOutputMap,
   parameters,
   parameterUpdateTimestamp,
@@ -111,6 +115,7 @@ import {
   setParametersImmediate,
   stepFx,
   timecodes,
+  timelineActionDiagnostics,
   timelineBeatgridDetectionStatus,
   timelineBeatgridPreview,
   timelineBeatgridProposals,
@@ -587,6 +592,57 @@ function dispatchMessage(raw: AnyWsMessage) {
       break;
     }
 
+    case "ActionCatalog": {
+      setStoreAction(actionCatalog, "Receive ActionCatalog", raw.data);
+      break;
+    }
+
+    case "MidiMappingDiagnostics": {
+      setStoreAction(
+        midiMappingDiagnostics,
+        "Receive MIDI mapping diagnostics",
+        raw.data,
+      );
+      break;
+    }
+
+    case "OscMappingDiagnostics": {
+      setStoreAction(
+        oscMappingDiagnostics,
+        "Receive OSC mapping diagnostics",
+        raw.data,
+      );
+      break;
+    }
+
+    case "InvocationResult": {
+      const result = raw.data;
+      if (result.outcome.type === "Failed") {
+        const label = actionCatalog
+          .get()
+          .find((action) => action.id === result.action_id)?.label;
+        pushToast(
+          "error",
+          `${label ?? result.action_id}: ${result.outcome.data.message}`,
+        );
+      }
+      break;
+    }
+
+    case "ControllerLearning": {
+      setStoreAction(
+        controllerLearning,
+        "Receive ControllerLearning",
+        raw.data
+          ? {
+              ...raw.data,
+              session_id: normalizeBackendUid(raw.data.session_id),
+            }
+          : null,
+      );
+      break;
+    }
+
     case "SceneObjectDefinitions": {
       setStoreAction(
         sceneObjects,
@@ -1004,6 +1060,17 @@ function dispatchMessage(raw: AnyWsMessage) {
       break;
     }
 
+    case "TimelineActionDiagnostics": {
+      setStoreAction(
+        timelineActionDiagnostics,
+        "Receive TimelineActionDiagnostics",
+        raw.data.map((diagnostic) => ({
+          ...diagnostic,
+          timeline_uid: normalizeBackendUid(diagnostic.timeline_uid),
+        })),
+      );
+      break;
+    }
     case "TimelineLookaheadActionStatuses": {
       const statusMap: Record<
         string,
@@ -2210,6 +2277,11 @@ function markResyncPending(): void {
   setStoreAction(sequenceDefinitionsLoaded, "Start Resync", false);
   setStoreAction(timelineDefinitionsLoaded, "Start Resync", false);
   setStoreAction(runtimeCapabilities, "Start Resync", null);
+  setStoreAction(actionCatalog, "Start Resync", []);
+  setStoreAction(timelineActionDiagnostics, "Start Resync", []);
+  setStoreAction(midiMappingDiagnostics, "Start Resync", []);
+  setStoreAction(oscMappingDiagnostics, "Start Resync", []);
+  setStoreAction(controllerLearning, "Start Resync", null);
 }
 
 /** Publishes the latest queued parameter state to reactive UI stores. */

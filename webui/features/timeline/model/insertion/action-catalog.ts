@@ -7,6 +7,23 @@
  */
 
 import type * as types from "../../../../types";
+import { ActionInputKind, ActionSurface } from "../../../../types";
+
+/** Discovers domain actions that support deterministic timeline planning and discrete invocation. */
+export function getPlannableActionDescriptors(
+  catalog: types.ActionDescriptor[],
+): types.ActionDescriptor[] {
+  return catalog.filter(
+    (descriptor) =>
+      descriptor.input_kind === ActionInputKind.Trigger &&
+      descriptor.allowed_surfaces.includes(ActionSurface.Timeline) &&
+      descriptor.capabilities.some(
+        (capability) =>
+          capability.id === "timeline.playback.v1" &&
+          capability.surface === ActionSurface.Timeline,
+      ),
+  );
+}
 
 export const DEFAULT_ACTION_DURATION_MS = 1000;
 

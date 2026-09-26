@@ -55,19 +55,44 @@ pub enum ActionSurface {
     Websocket,
 }
 
+/// Runtime input accepted by an action, independently of its persisted arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub enum ActionInputKind {
+    /// One discrete activation, after the transport has interpreted button edges.
+    Trigger,
+    /// An absolute, finite value in the inclusive range `0.0..=1.0`.
+    Scalar,
+}
+
 /// Metadata describing one action available to automation surfaces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct ActionDescriptor {
+    /// Capabilities installed through typed registry registration, never inferred from the action ID.
+    pub capabilities: Vec<ActionCapabilityDescriptor>,
     /// Stable action identifier.
     pub id: ActionId,
     /// User-facing action label.
     pub label: String,
     /// Surfaces allowed to store or invoke the action.
     pub allowed_surfaces: Vec<ActionSurface>,
+    /// Input a hardware binding must produce before invoking this action.
+    pub input_kind: ActionInputKind,
     /// JSON Schema describing the action's persisted arguments.
     #[typeshare(serialized_as = "unknown")]
     pub argument_schema: Value,
+}
+
+/// Stable discovery metadata paired with a typed capability resolver.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ActionCapabilityDescriptor {
+    /// Contract identifier owned by the capability's defining module.
+    pub id: String,
+    /// Surface permitted to resolve this capability.
+    pub surface: ActionSurface,
 }
 
 /// Failure reported while resolving or invoking a registered action.
@@ -181,7 +206,7 @@ impl ActionInvocation {
             invocation_id: InvocationId::new(),
             action,
             surface,
-            input: ActionInput::Scalar(value.clamp(0.0, 1.0)),
+            input: ActionInput::Scalar(value),
             source: None,
         }
     }
@@ -237,7 +262,8 @@ pub enum InvocationOutcome {
 }
 
 /// Invocation state observable by an automation surface after dispatch or completion.
-#[derive(Debug, Clone, Message)]
+#[derive(Debug, Clone, Message, Serialize, Deserialize)]
+#[typeshare::typeshare]
 pub struct InvocationResult {
     /// Invocation whose dispatch completed.
     pub invocation_id: InvocationId,
@@ -268,13 +294,22 @@ type RegisteredInvoker = Box<
         + Sync,
 >;
 
-type RegisteredCapability = Box<
+type CapabilityResolver = Box<
     dyn Fn(&ActionReference) -> Result<Box<dyn Any + Send + Sync>, InvocationError> + Send + Sync,
 >;
+
+type TargetValidator = Box<dyn Fn(&World, &Value) -> Result<(), InvocationError> + Send + Sync>;
+
+struct RegisteredCapability {
+    surface: ActionSurface,
+    resolve: CapabilityResolver,
+}
 
 struct RegisteredAction {
     descriptor: ActionDescriptor,
     invoker: RegisteredInvoker,
+    validate_arguments: Box<dyn Fn(&Value) -> Result<(), InvocationError> + Send + Sync>,
+    validate_target: Option<TargetValidator>,
     capabilities: HashMap<TypeId, RegisteredCapability>,
 }
 
@@ -298,6 +333,10 @@ impl ActionRegistry {
             + Sync
             + 'static,
     {
+        assert!(
+            descriptor.capabilities.is_empty(),
+            "capability metadata must be installed with its typed resolver"
+        );
         assert!(
             !self.actions.contains_key(&descriptor.id),
             "action '{}' is already registered",
@@ -323,18 +362,63 @@ impl ActionRegistry {
             RegisteredAction {
                 descriptor,
                 invoker: Box::new(registered_invoker),
+                validate_arguments: Box::new(|arguments| {
+                    serde_json::from_value::<A>(arguments.clone())
+                        .map(|_| ())
+                        .map_err(|error| {
+                            InvocationError::new("action.invalid_arguments", error.to_string())
+                        })
+                }),
                 capabilities: HashMap::new(),
+                validate_target: None,
             },
         );
+    }
+
+    /// Registers read-only domain target checks for saved bindings and live dispatch.
+    ///
+    /// Validators inspect current domain storage without mutating it or executing the action.
+    /// They must not depend on a mounted UI panel or transient playback state.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the action is missing or already has a target validator.
+    pub fn register_target_validator<A, F>(&mut self, action_id: &str, validator: F)
+    where
+        A: DeserializeOwned + 'static,
+        F: Fn(&World, A) -> Result<(), InvocationError> + Send + Sync + 'static,
+    {
+        let registered = self
+            .actions
+            .get_mut(&ActionId::new(action_id))
+            .unwrap_or_else(|| {
+                panic!("action '{action_id}' must be registered before its target validator")
+            });
+        assert!(
+            registered.validate_target.is_none(),
+            "action '{action_id}' already has a target validator"
+        );
+        registered.validate_target = Some(Box::new(move |world, arguments| {
+            let arguments = serde_json::from_value::<A>(arguments.clone()).map_err(|error| {
+                InvocationError::new("action.invalid_arguments", error.to_string())
+            })?;
+            validator(world, arguments)
+        }));
     }
 
     /// Registers a typed, deterministic capability separately from live invocation.
     ///
     /// # Panics
     ///
-    /// Panics when the action ID is unknown or the capability output type is already registered.
-    pub fn register_capability<A, C, F>(&mut self, action_id: &str, capability: F)
-    where
+    /// Panics when the action is unknown, the surface is disallowed, or the capability's
+    /// output type or nonempty identifier is already registered for the action.
+    pub fn register_capability<A, C, F>(
+        &mut self,
+        action_id: &str,
+        capability_id: &str,
+        surface: ActionSurface,
+        capability: F,
+    ) where
         A: DeserializeOwned + 'static,
         C: Send + Sync + 'static,
         F: Fn(A) -> Result<C, InvocationError> + Send + Sync + 'static,
@@ -344,6 +428,19 @@ impl ActionRegistry {
             panic!("action '{action_id}' must be registered before capabilities")
         });
         let capability_type = TypeId::of::<C>();
+        assert!(
+            registered.descriptor.allowed_surfaces.contains(&surface),
+            "capability surface must be allowed by its action"
+        );
+        assert!(
+            !capability_id.is_empty()
+                && !registered
+                    .descriptor
+                    .capabilities
+                    .iter()
+                    .any(|entry| entry.id == capability_id),
+            "capability identifier must be nonempty and unique within its action"
+        );
         assert!(
             !registered.capabilities.contains_key(&capability_type),
             "action '{action_id}' already has capability '{}'",
@@ -362,15 +459,27 @@ impl ActionRegistry {
                 })?;
             capability(arguments).map(|value| Box::new(value) as Box<dyn Any + Send + Sync>)
         };
+        registered.capabilities.insert(
+            capability_type,
+            RegisteredCapability {
+                surface,
+                resolve: Box::new(registered_capability),
+            },
+        );
         registered
+            .descriptor
             .capabilities
-            .insert(capability_type, Box::new(registered_capability));
+            .push(ActionCapabilityDescriptor {
+                id: capability_id.into(),
+                surface,
+            });
     }
 
     /// Resolves one deterministic capability without invoking live domain behavior.
     pub fn resolve_capability<C>(
         &self,
         action: &ActionReference,
+        surface: ActionSurface,
     ) -> Result<Option<C>, InvocationError>
     where
         C: Send + Sync + 'static,
@@ -381,10 +490,17 @@ impl ActionRegistry {
                 format!("Action '{}' is not registered", action.id.as_str()),
             ));
         };
+        self.validate_binding(action, surface, registered.descriptor.input_kind)?;
         let Some(capability) = registered.capabilities.get(&TypeId::of::<C>()) else {
             return Ok(None);
         };
-        let value = capability(action)?;
+        if capability.surface != surface {
+            return Err(InvocationError::new(
+                "action.capability_surface_not_allowed",
+                "This capability is not available on the requested surface",
+            ));
+        }
+        let value = (capability.resolve)(action)?;
         value
             .downcast::<C>()
             .map(|value| Some(*value))
@@ -409,35 +525,96 @@ impl ActionRegistry {
         self.actions.values().map(|action| &action.descriptor)
     }
 
+    /// Checks a stored binding without executing domain behavior or requiring a live target.
+    /// Use `validate_resolved_binding` when current domain storage is available.
+    pub fn validate_binding(
+        &self,
+        action: &ActionReference,
+        surface: ActionSurface,
+        input_kind: ActionInputKind,
+    ) -> Result<(), InvocationError> {
+        let registered = self.actions.get(&action.id).ok_or_else(|| {
+            InvocationError::new(
+                "action.not_registered",
+                format!("Action '{}' is not registered", action.id.as_str()),
+            )
+        })?;
+        if !registered.descriptor.allowed_surfaces.contains(&surface) {
+            return Err(InvocationError::new(
+                "action.surface_not_allowed",
+                format!(
+                    "Action '{}' cannot be invoked from {surface:?}",
+                    action.id.as_str()
+                ),
+            ));
+        }
+        if registered.descriptor.input_kind != input_kind {
+            return Err(InvocationError::new(
+                "action.input_not_allowed",
+                format!(
+                    "Action '{}' requires {:?} input",
+                    action.id.as_str(),
+                    registered.descriptor.input_kind
+                ),
+            ));
+        }
+        (registered.validate_arguments)(&action.arguments)
+    }
+
+    /// Checks the binding contract and current target availability without executing the action.
+    pub fn validate_resolved_binding(
+        &self,
+        world: &World,
+        action: &ActionReference,
+        surface: ActionSurface,
+        input_kind: ActionInputKind,
+    ) -> Result<(), InvocationError> {
+        self.validate_binding(action, surface, input_kind)?;
+        self.validate_target(world, action)
+    }
+
+    /// Checks domain arguments and target existence independently of transport input conversion.
+    pub fn validate_target(
+        &self,
+        world: &World,
+        action: &ActionReference,
+    ) -> Result<(), InvocationError> {
+        let registered = self.actions.get(&action.id).ok_or_else(|| {
+            InvocationError::new(
+                "action.not_registered",
+                format!("Action '{}' is not registered", action.id.as_str()),
+            )
+        })?;
+        (registered.validate_arguments)(&action.arguments)?;
+        if let Some(validate) = &registered.validate_target {
+            validate(world, &action.arguments)?;
+        }
+        Ok(())
+    }
+
     /// Resolves and invokes one action through its owning domain registration.
     pub fn invoke(
         &self,
         world: &mut World,
         invocation: &ActionInvocation,
     ) -> Result<InvocationDispatch, InvocationError> {
-        let Some(registered) = self.actions.get(&invocation.action.id) else {
-            return Err(InvocationError::new(
-                "action.not_registered",
-                format!(
-                    "Action '{}' is not registered",
-                    invocation.action.id.as_str()
-                ),
-            ));
+        let input_kind = match invocation.input {
+            ActionInput::Trigger => ActionInputKind::Trigger,
+            ActionInput::Scalar(value) => {
+                if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                    return Err(InvocationError::new(
+                        "action.invalid_input",
+                        "Scalar input must be finite and between zero and one",
+                    ));
+                }
+                ActionInputKind::Scalar
+            }
         };
-        if !registered
-            .descriptor
-            .allowed_surfaces
-            .contains(&invocation.surface)
-        {
-            return Err(InvocationError::new(
-                "action.surface_not_allowed",
-                format!(
-                    "Action '{}' cannot be invoked from {:?}",
-                    invocation.action.id.as_str(),
-                    invocation.surface
-                ),
-            ));
-        }
+        self.validate_resolved_binding(world, &invocation.action, invocation.surface, input_kind)?;
+        let registered = self
+            .actions
+            .get(&invocation.action.id)
+            .expect("validated action remains registered during immutable lookup");
         (registered.invoker)(world, invocation)
     }
 }
@@ -520,8 +697,10 @@ mod tests {
     fn test_descriptor() -> ActionDescriptor {
         ActionDescriptor {
             id: ActionId::new("test.apply"),
+            capabilities: Vec::new(),
             label: "Apply test action".to_string(),
             allowed_surfaces: vec![ActionSurface::Midi],
+            input_kind: ActionInputKind::Trigger,
             argument_schema: json!({ "type": "object" }),
         }
     }
@@ -537,9 +716,156 @@ mod tests {
             });
         app.world_mut()
             .resource_mut::<ActionRegistry>()
-            .register_capability::<TestArguments, TestCapability, _>("test.apply", |arguments| {
-                Ok(TestCapability(arguments.value))
+            .register_capability::<TestArguments, TestCapability, _>(
+                "test.apply",
+                "test.capability.v1",
+                ActionSurface::Midi,
+                |arguments| Ok(TestCapability(arguments.value)),
+            );
+    }
+
+    /// Saving a binding validates its arguments and input without executing it.
+    #[test]
+    fn binding_validation_is_side_effect_free() {
+        let mut app = App::new();
+        app.add_plugins(ActionsPlugin);
+        register_test_action(&mut app);
+        let registry = app.world().resource::<ActionRegistry>();
+        let action = ActionReference::new("test.apply", json!({ "value": 42 }));
+        assert!(
+            registry
+                .validate_binding(&action, ActionSurface::Midi, ActionInputKind::Trigger)
+                .is_ok()
+        );
+        assert_eq!(
+            registry
+                .validate_binding(&action, ActionSurface::Midi, ActionInputKind::Scalar)
+                .unwrap_err()
+                .code,
+            "action.input_not_allowed"
+        );
+        assert_eq!(
+            registry
+                .validate_binding(
+                    &ActionReference::new("test.apply", json!({})),
+                    ActionSurface::Midi,
+                    ActionInputKind::Trigger
+                )
+                .unwrap_err()
+                .code,
+            "action.invalid_arguments"
+        );
+        assert!(
+            app.world()
+                .resource::<Messages<TestActionApplied>>()
+                .is_empty()
+        );
+    }
+
+    /// Domain checks observe current storage and reject dispatch without applying side effects.
+    #[test]
+    fn resolved_binding_validation_tracks_domain_storage_without_invocation() {
+        #[derive(Resource)]
+        struct Target(u32);
+
+        let mut app = App::new();
+        app.add_plugins(ActionsPlugin);
+        register_test_action(&mut app);
+        app.insert_resource(Target(42));
+        app.world_mut()
+            .resource_mut::<ActionRegistry>()
+            .register_target_validator::<TestArguments, _>("test.apply", |world, arguments| {
+                if world
+                    .get_resource::<Target>()
+                    .is_some_and(|target| target.0 == arguments.value)
+                {
+                    Ok(())
+                } else {
+                    Err(InvocationError::new(
+                        "test.target_missing",
+                        "Target is unavailable",
+                    ))
+                }
             });
+        let action = ActionReference::new("test.apply", json!({"value": 42}));
+        assert!(
+            app.world()
+                .resource::<ActionRegistry>()
+                .validate_resolved_binding(
+                    app.world(),
+                    &action,
+                    ActionSurface::Midi,
+                    ActionInputKind::Trigger,
+                )
+                .is_ok()
+        );
+        assert!(
+            app.world()
+                .resource::<Messages<TestActionApplied>>()
+                .is_empty()
+        );
+        app.world_mut().remove_resource::<Target>();
+        assert_eq!(
+            app.world()
+                .resource::<ActionRegistry>()
+                .validate_resolved_binding(
+                    app.world(),
+                    &action,
+                    ActionSurface::Midi,
+                    ActionInputKind::Trigger,
+                )
+                .unwrap_err()
+                .code,
+            "test.target_missing"
+        );
+        app.world_mut()
+            .write_message(ActionInvocation::trigger(action, ActionSurface::Midi));
+        app.update();
+        assert!(
+            app.world()
+                .resource::<Messages<TestActionApplied>>()
+                .is_empty()
+        );
+        let result = app
+            .world_mut()
+            .resource_mut::<Messages<InvocationResult>>()
+            .drain()
+            .next()
+            .unwrap();
+        assert!(
+            matches!(result.outcome, InvocationOutcome::Failed(error) if error.code == "test.target_missing")
+        );
+    }
+
+    /// Invalid continuous values are rejected rather than clamped or passed to domain code.
+    #[test]
+    fn scalar_invocations_reject_nonfinite_and_out_of_range_values() {
+        let mut registry = ActionRegistry::default();
+        let mut descriptor = test_descriptor();
+        descriptor.input_kind = ActionInputKind::Scalar;
+        registry.register::<TestArguments, _>(descriptor, |_, _, _| {
+            Ok(InvocationDispatch::succeeded())
+        });
+        let mut world = World::new();
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.1, 1.1] {
+            let invocation = ActionInvocation::scalar(
+                ActionReference::new("test.apply", json!({ "value": 42 })),
+                ActionSurface::Midi,
+                value,
+            );
+            assert_eq!(
+                registry.invoke(&mut world, &invocation).unwrap_err().code,
+                "action.invalid_input"
+            );
+        }
+        for value in [0.0, 0.5, 1.0] {
+            let invocation = ActionInvocation::scalar(
+                ActionReference::new("test.apply", json!({ "value": 42 })),
+                ActionSurface::Midi,
+                value,
+            );
+            assert!(registry.invoke(&mut world, &invocation).is_ok());
+        }
     }
 
     /// Verifies deterministic capability resolution does not invoke live domain behavior.
@@ -553,11 +879,25 @@ mod tests {
         let capability = app
             .world()
             .resource::<ActionRegistry>()
-            .resolve_capability::<TestCapability>(&action)
+            .resolve_capability::<TestCapability>(&action, ActionSurface::Midi)
             .expect("valid arguments should resolve")
             .expect("test action should expose its deterministic capability");
 
         assert_eq!(capability, TestCapability(42));
+        let registry = app.world().resource::<ActionRegistry>();
+        assert_eq!(
+            registry.get(&action.id).unwrap().capabilities,
+            vec![ActionCapabilityDescriptor {
+                id: "test.capability.v1".into(),
+                surface: ActionSurface::Midi,
+            }]
+        );
+        assert!(
+            registry
+                .resolve_capability::<TestCapability>(&action, ActionSurface::Timeline)
+                .is_err(),
+            "typed resolution must enforce the action surface"
+        );
         assert!(
             app.world_mut()
                 .resource_mut::<Messages<TestActionApplied>>()
@@ -566,6 +906,20 @@ mod tests {
                 .is_none(),
             "capability resolution must not execute the live invoker"
         );
+    }
+
+    /// Capability metadata cannot claim support without a corresponding resolver.
+    #[test]
+    #[should_panic(expected = "capability metadata must be installed")]
+    fn action_cannot_advertise_unregistered_capability() {
+        let mut descriptor = test_descriptor();
+        descriptor.capabilities.push(ActionCapabilityDescriptor {
+            id: "claimed".into(),
+            surface: ActionSurface::Midi,
+        });
+        ActionRegistry::default().register::<TestArguments, _>(descriptor, |_, _, _| {
+            Ok(InvocationDispatch::succeeded())
+        });
     }
 
     /// Verifies a surface invokes registered domain behavior through opaque arguments.

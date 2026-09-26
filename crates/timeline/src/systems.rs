@@ -106,6 +106,89 @@ fn lookahead_override_for_timeline(timeline: &MaterializedTimeline) -> Option<bo
     }
 }
 
+/// Verifies that timeline dispatch respects registration and deterministic capability failures.
+#[cfg(test)]
+mod registered_action_gate_tests {
+    use nightfall_desk::automation_actions::{
+        ClipTarget, desk_eval_action, go_clip_action, register_desk_actions,
+    };
+
+    use super::*;
+
+    /// A rejected deterministic reference stays rejected, while explicitly live-only eval retains policy handling.
+    #[test]
+    fn rejected_plans_never_fall_back_to_live_dispatch() {
+        let mut app = bevy_app::App::new();
+        app.init_resource::<ActionRegistry>();
+        register_desk_actions(&mut app);
+        let registry = app.world().resource::<ActionRegistry>();
+        let unknown =
+            nightfall_actions::ActionReference::new("missing.domain-action", serde_json::json!({}));
+        assert!(!registered_action_allows_live_dispatch(
+            &unknown,
+            Some(registry)
+        ));
+        assert!(!registered_action_allows_live_dispatch(
+            &desk_eval_action("clear"),
+            None
+        ));
+        let numeric = go_clip_action(ClipTarget::Id(1));
+        assert!(
+            normalized_registered_action_kind(
+                &ActionKind::RegisteredAction(numeric.clone()),
+                Some(registry)
+            )
+            .is_none()
+        );
+        assert!(!registered_action_allows_live_dispatch(
+            &numeric,
+            Some(registry)
+        ));
+        let uid = Uuid::new_v4();
+        assert!(
+            matches!(normalized_registered_action_kind(&ActionKind::RegisteredAction(go_clip_action(ClipTarget::Uid(uid))), Some(registry)), Some(ActionKind::AdvanceSequence(target)) if target == uid)
+        );
+        assert!(registered_action_allows_live_dispatch(
+            &desk_eval_action("clear"),
+            Some(registry)
+        ));
+        let hardware_only = nightfall_actions::ActionReference::new(
+            "control.go",
+            serde_json::json!({"control_index":1}),
+        );
+        assert!(!registered_action_allows_live_dispatch(
+            &hardware_only,
+            Some(registry)
+        ));
+    }
+}
+
+/// Allows explicitly live-only timeline actions but never substitutes live execution for a failed plan.
+fn registered_action_allows_live_dispatch(
+    action: &nightfall_actions::ActionReference,
+    registry: Option<&ActionRegistry>,
+) -> bool {
+    let Some(registry) = registry else {
+        return false;
+    };
+    if registry
+        .validate_binding(
+            action,
+            ActionSurface::Timeline,
+            nightfall_actions::ActionInputKind::Trigger,
+        )
+        .is_err()
+    {
+        return false;
+    }
+    registry.get(&action.id).is_some_and(|descriptor| {
+        !descriptor.capabilities.iter().any(|capability| {
+            capability.id == nightfall_playback_planner::TIMELINE_PLAYBACK_CAPABILITY_ID
+                && capability.surface == ActionSurface::Timeline
+        })
+    })
+}
+
 /// Converts timeline-supported registered actions into native timeline action kinds.
 fn normalized_registered_action_kind(
     action: &ActionKind,
@@ -116,7 +199,7 @@ fn normalized_registered_action_kind(
     };
 
     let capability = action_registry?
-        .resolve_capability::<TimelinePlaybackActionPlan>(action)
+        .resolve_capability::<TimelinePlaybackActionPlan>(action, ActionSurface::Timeline)
         .ok()
         .flatten()?;
     match capability.operation {

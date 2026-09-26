@@ -16,6 +16,7 @@ import PanelToolbar, {
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
+import { createActionMappingTarget } from "../../action-mapping";
 
 interface ProgrammerToolbarProps {
   storeCue: () => void;
@@ -27,6 +28,10 @@ interface ProgrammerToolbarProps {
 
 /** Renders programmer store/clear actions and grid view controls. */
 export function ProgrammerToolbar(props: ProgrammerToolbarProps) {
+  const clearMapping = createActionMappingTarget(() => ({
+    action: { id: "programmer.clear", arguments: {} },
+    label: "Clear programmer",
+  }));
   return (
     <PanelToolbar
       left={
@@ -52,6 +57,7 @@ export function ProgrammerToolbar(props: ProgrammerToolbarProps) {
           <ToolbarSeparator />
 
           <ToolbarButton
+            ref={clearMapping}
             tooltip={"Clear programmer (selection first, then values)"}
             type="button"
             label="Clear programmer"

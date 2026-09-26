@@ -27,6 +27,8 @@ use crate::command::{OscColor, OscLastEvent, OscListenerStatus, OscMidiMessage, 
 /// Raw OSC event decoded from UDP packets.
 #[derive(Debug, Clone)]
 pub struct RawOscEvent {
+    /// Monotonic receipt time shared by messages decoded from one packet.
+    pub received_at: web_time::Instant,
     /// Source UDP address (`ip:port`).
     pub source: String,
     /// OSC address.
@@ -156,6 +158,7 @@ pub fn start_listener(
 
 /// Decode OSC packet bytes into flattened events.
 pub fn decode_packet(payload: &[u8], source_addr: SocketAddr) -> Result<Vec<RawOscEvent>, String> {
+    let received_at = web_time::Instant::now();
     let (remainder, packet) = decoder::decode_udp(payload)
         .map_err(|error| format!("Failed to decode OSC packet: {error}"))?;
     if !remainder.is_empty() {
@@ -167,20 +170,27 @@ pub fn decode_packet(payload: &[u8], source_addr: SocketAddr) -> Result<Vec<RawO
 
     let source = source_addr.to_string();
     let mut events = Vec::new();
-    flatten_packet(packet, &source, &mut events);
+    flatten_packet(packet, &source, received_at, &mut events);
     Ok(events)
 }
 
-fn flatten_packet(packet: RoscPacket, source: &str, output: &mut Vec<RawOscEvent>) {
+/// Preserves packet receipt time while flattening nested bundles in source order.
+fn flatten_packet(
+    packet: RoscPacket,
+    source: &str,
+    received_at: web_time::Instant,
+    output: &mut Vec<RawOscEvent>,
+) {
     match packet {
         RoscPacket::Message(message) => output.push(RawOscEvent {
+            received_at,
             source: source.to_string(),
             address: message.addr,
             args: message.args.into_iter().map(convert_arg).collect(),
         }),
         RoscPacket::Bundle(bundle) => {
             for packet in bundle.content {
-                flatten_packet(packet, source, output);
+                flatten_packet(packet, source, received_at, output);
             }
         }
     }

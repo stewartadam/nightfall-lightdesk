@@ -23,6 +23,7 @@ use crate::resources::Programmer;
 
 pub mod action_model;
 pub mod ast_conv;
+pub mod automation_actions;
 pub mod command_planner;
 pub mod events;
 pub mod painter;
@@ -51,6 +52,7 @@ pub struct ProgrammerPlugin;
 impl Plugin for ProgrammerPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering ProgrammerPlugin");
+        automation_actions::register_programmer_actions(app);
         register_ingress_command::<events::ProgrammerCommand>(app);
         register_ingress_command::<UserCommand>(app);
         register_engine_action::<ProgrammerAction>(app);

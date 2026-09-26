@@ -77,6 +77,7 @@ export interface PanelOpenDockApi {
   getEdgeGroup?: (
     position: EdgeGroupPosition,
   ) => ExpandableEdgeGroup | undefined;
+  setEdgeGroupVisible?: (position: EdgeGroupPosition, visible: boolean) => void;
   addPanel: (params: AddPanelParams) => unknown;
 }
 
@@ -334,6 +335,7 @@ function expandPanelEdgeGroup(
     return;
   }
 
+  api.setEdgeGroupVisible?.(location.position, true);
   api.getEdgeGroup?.(location.position)?.expand();
 }
 

@@ -264,6 +264,7 @@ impl Plugin for DeskPlugin {
                     .before(event_handlers::instance_events::handle_playback_control_updates),
                 event_handlers::instance_events::handle_playback_control_updates,
                 controls::handle_control_commands,
+                controls::handle_control_go.after(controls::handle_control_commands),
                 controls::handle_control_updates,
                 #[cfg(feature = "fx-module-host")]
                 event_handlers::forward_fx_module_runtime_notifications,
@@ -293,6 +294,7 @@ impl Plugin for DeskPlugin {
             )
                 .chain()
                 .after(controls::handle_control_commands)
+                .after(controls::handle_control_go)
                 .in_set(EventHandling),
         );
 

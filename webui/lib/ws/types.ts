@@ -50,6 +50,10 @@ export type AnyCommand =
 
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
+  | types.ActionCatalogMessage
+  | types.ActionResultMessage
+  | types.TimelineActionValidationMessage
+  | types.ControllerLearningMessage
   | types.CueWsMessage
   | types.FixtureWsMessage
   | types.FixtureLibraryWsMessage

@@ -316,6 +316,8 @@ fn add_input_mappings(world: &mut World) {
         .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
             device_name: "Parser Grid".to_owned(),
+            id: uuid::Uuid::from_u128(1),
+            input: nightfall_input_midi::command::MidiBindingInput::Continuous,
             channel: 176,
             note: 36,
             velocity: None,
@@ -328,6 +330,11 @@ fn add_input_mappings(world: &mut World) {
         .set_mappings(vec![OscMapping {
             source: Some("127.0.0.1:9000".to_owned()),
             address: "/parser/fader".to_owned(),
+            id: uuid::Uuid::new_v4(),
+            input: nightfall_input_osc::command::OscBindingInput::Continuous {
+                minimum: 0.0,
+                maximum: 1.0,
+            },
             arg_index: Some(0),
             arg_value: Some("0.5".to_owned()),
             action: set_control_action(2),

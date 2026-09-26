@@ -8,6 +8,7 @@
 
 import { EraserIcon } from "@squidlab/phosphor-solid/eraser";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createActionMappingTarget } from "../../action-mapping";
 
 interface CommandClearButtonProps {
   variant: "panel" | "nav";
@@ -16,8 +17,13 @@ interface CommandClearButtonProps {
 
 /** Renders the shared programmer action and preserves command-input focus when clicked. */
 export const CommandClearButton = (props: CommandClearButtonProps) => {
+  const mapping = createActionMappingTarget(() => ({
+    action: { id: "programmer.clear", arguments: {} },
+    label: "Clear programmer",
+  }));
   return (
     <Button
+      ref={mapping}
       size="icon"
       type="button"
       class="shrink-0"

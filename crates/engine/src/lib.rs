@@ -14,11 +14,15 @@ use nightfall_cmd_parse::prelude::*;
 
 use crate::prelude::*;
 
+mod action_catalog;
+pub mod action_commands;
 mod client;
 pub mod client_bridge;
 pub mod client_ingress;
 pub mod command_lifecycle;
 pub mod command_traits;
+pub mod controller_input;
+pub mod controller_learning;
 pub mod data_provider;
 pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
@@ -67,9 +71,10 @@ pub mod prelude {
 
     pub use crate::EnginePlugin;
     pub use crate::client_bridge::{
-        ClientBridgeHost, ClientBridgePlugin, ClientEventSink, CommandDeserializerRegistry,
-        CommandJsonEnvelope, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
-        EncodedClientMessage, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        ClientBridgeHost, ClientBridgePlugin, ClientConnection, ClientConnectionLease,
+        ClientEventSink, CommandDeserializerRegistry, CommandJsonEnvelope, DISCRIMINATOR_DROPPABLE,
+        DISCRIMINATOR_NON_DROPPABLE, EncodedClientMessage, UpdateDeserializerRegistry,
+        UpdateJsonEnvelope,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
@@ -143,6 +148,7 @@ impl Plugin for EnginePlugin {
         app.init_resource::<CommandDeserializerRegistry>();
         app.init_resource::<UpdateDeserializerRegistry>();
         app.init_resource::<CommandTracker>();
+        app.init_resource::<action_commands::ActionCommandInvocations>();
         app.init_resource::<CommandIngressRouter>();
         app.init_resource::<EngineActionRouter>();
         app.add_message::<CommandResult>();
@@ -164,6 +170,11 @@ impl Plugin for EnginePlugin {
                 broadcast_app_state_on_resync.before(ResyncHandling),
                 send_runtime_capabilities_on_resync.before(ResyncHandling),
                 send_attribute_metadata_on_resync.before(ResyncHandling),
+                action_catalog::publish_action_catalog.in_set(ResyncHandling),
+                action_commands::finish_action_commands.in_set(ClientOutput),
+                action_commands::publish_action_results
+                    .after(action_commands::finish_action_commands)
+                    .in_set(ClientOutput),
                 broadcast_app_state_on_change.in_set(ClientOutput),
                 send_resync_complete
                     .after(ResyncHandling)
@@ -178,6 +189,7 @@ impl Plugin for EnginePlugin {
             crate::client::deserialize_engine_commands,
         );
         app.add_systems(Update, begin_resync.in_set(InputHandling));
+        controller_learning::install(app);
     }
 }
 

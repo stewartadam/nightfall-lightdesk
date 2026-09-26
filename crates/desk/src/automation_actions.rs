@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::clips::{Clip, ClipAction};
+use crate::clips::{Clip, ClipCommand};
 use crate::controls::ControlUpdate;
 use crate::desk_command::DeskCommand;
 
@@ -38,6 +38,20 @@ pub const CLIP_GO_ACTION_ID: &str = "clip.go";
 
 /// Stable action ID for setting a control from external hardware input.
 pub const CONTROL_SET_ACTION_ID: &str = "control.set-external";
+
+/// Activates the assignment currently occupying a control slot.
+pub const CONTROL_GO_ACTION_ID: &str = "control.go";
+
+/// Sets a specific master's level using its persistent UID.
+pub const MASTER_SET_ACTION_ID: &str = "master.set-level";
+
+/// A direct master binding retains this identity across renumbering and panel closure.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MasterActionArguments {
+    /// Persistent identity; deletion never retargets a reused numeric ID.
+    pub master_uid: Uuid,
+}
 
 /// Stable action ID for evaluating a desk command.
 pub const DESK_EVAL_ACTION_ID: &str = "desk.eval";
@@ -136,40 +150,110 @@ pub fn desk_eval_command_for_action(action: &ActionReference) -> Option<&str> {
 /// Registers every automation capability owned by the desk domain.
 pub fn register_desk_actions(app: &mut App) {
     let mut registry = app.world_mut().resource_mut::<ActionRegistry>();
+    registry.register::<MasterActionArguments, _>(
+        descriptor(
+            MASTER_SET_ACTION_ID,
+            "Set master level",
+            nightfall_actions::ActionInputKind::Scalar,
+            vec![ActionSurface::Midi, ActionSurface::Osc],
+            object_schema("master_uid", "string"),
+        ),
+        invoke_master,
+    );
+    registry.register_target_validator::<MasterActionArguments, _>(
+        MASTER_SET_ACTION_ID,
+        |world, arguments| {
+            let masters = world
+                .get_resource::<DataProvider<crate::masters::Master>>()
+                .ok_or_else(|| {
+                    InvocationError::new("master.unavailable", "Master storage is unavailable")
+                })?;
+            masters.get(arguments.master_uid).map(|_| ()).map_err(|_| {
+                InvocationError::new("master.not_found", "The mapped master no longer exists")
+            })
+        },
+    );
+    registry.register::<ControlActionArguments, _>(
+        descriptor(
+            CONTROL_GO_ACTION_ID,
+            "Go control",
+            nightfall_actions::ActionInputKind::Trigger,
+            vec![
+                ActionSurface::Midi,
+                ActionSurface::Osc,
+                ActionSurface::Websocket,
+            ],
+            object_schema("control_index", "integer"),
+        ),
+        |world, arguments, invocation| {
+            nightfall_engine::action_commands::invoke_action_command(
+                world,
+                invocation,
+                crate::controls::ControlCommand::Go {
+                    control_index: arguments.control_index,
+                },
+            )
+        },
+    );
     register_clip_action(
         &mut registry,
         CLIP_START_ACTION_ID,
         "Start clip",
-        ClipAction::Start,
+        ClipCommand::StartClip,
         TimelinePlaybackActionOperation::Start,
     );
     register_clip_action(
         &mut registry,
         CLIP_STOP_ACTION_ID,
         "Stop clip",
-        ClipAction::Stop,
+        ClipCommand::StopClip,
         TimelinePlaybackActionOperation::Stop,
     );
     register_clip_action(
         &mut registry,
         CLIP_GO_ACTION_ID,
         "Go clip",
-        ClipAction::Go,
+        ClipCommand::GoClip,
         TimelinePlaybackActionOperation::Intervene(PlannedPlaybackInterventionKind::SequenceGo),
     );
     registry.register::<ControlActionArguments, _>(
         descriptor(
             CONTROL_SET_ACTION_ID,
             "Set control",
+            nightfall_actions::ActionInputKind::Scalar,
             vec![ActionSurface::Midi, ActionSurface::Osc],
             object_schema("control_index", "integer"),
         ),
         invoke_control,
     );
+    for action_id in [CONTROL_GO_ACTION_ID, CONTROL_SET_ACTION_ID] {
+        registry.register_target_validator::<ControlActionArguments, _>(
+            action_id,
+            |world, arguments| {
+                let controls = world
+                    .get_resource::<crate::controls::Controls>()
+                    .ok_or_else(|| {
+                        InvocationError::new(
+                            "control.unavailable",
+                            "Control storage is unavailable",
+                        )
+                    })?;
+                if controls.contains_slot(arguments.control_index) {
+                    Ok(())
+                } else {
+                    Err(InvocationError::new(
+                        "control.not_found",
+                        format!("Control {} does not exist", arguments.control_index),
+                    ))
+                }
+            },
+        );
+    }
     registry.register::<DeskEvalActionArguments, _>(
         descriptor(
             DESK_EVAL_ACTION_ID,
             "Evaluate command",
+            nightfall_actions::ActionInputKind::Trigger,
             vec![ActionSurface::Osc, ActionSurface::Timeline],
             object_schema("command", "string"),
         ),
@@ -188,13 +272,14 @@ fn register_clip_action(
     registry: &mut ActionRegistry,
     action_id: &'static str,
     label: &'static str,
-    action: fn(IdExpr) -> ClipAction,
+    command: fn(IdExpr) -> ClipCommand,
     timeline_operation: TimelinePlaybackActionOperation,
 ) {
     registry.register::<ClipActionArguments, _>(
         descriptor(
             action_id,
             label,
+            nightfall_actions::ActionInputKind::Trigger,
             vec![
                 ActionSurface::Midi,
                 ActionSurface::Osc,
@@ -206,22 +291,22 @@ fn register_clip_action(
                 "properties": { "target": { "type": "object" } }
             }),
         ),
-        move |world, arguments, _invocation| {
+        move |world, arguments, invocation| {
             let id = resolve_clip_id(world, arguments.target)?;
-            let Some(mut messages) =
-                world.get_resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
-            else {
-                return Err(InvocationError::new(
-                    "clip.dispatch_unavailable",
-                    "Clip action dispatch is unavailable",
-                ));
-            };
-            messages.write(EngineActionEnvelope::detached(action(IdExpr::Single(id))));
-            Ok(InvocationDispatch::Accepted)
+            nightfall_engine::action_commands::invoke_action_command(
+                world,
+                invocation,
+                command(IdExpr::Single(id)),
+            )
         },
     );
+    registry.register_target_validator::<ClipActionArguments, _>(action_id, |world, arguments| {
+        resolve_clip_id(world, arguments.target).map(|_| ())
+    });
     registry.register_capability::<ClipActionArguments, TimelinePlaybackActionPlan, _>(
         action_id,
+        nightfall_playback_planner::TIMELINE_PLAYBACK_CAPABILITY_ID,
+        ActionSurface::Timeline,
         move |arguments| {
             let ClipTarget::Uid(owner_uid) = arguments.target else {
                 return Err(InvocationError::new(
@@ -244,19 +329,24 @@ fn resolve_clip_id(
 ) -> Result<u32, InvocationError> {
     match target {
         ClipTarget::Id(id) => Ok(id),
-        ClipTarget::Uid(uid) => world
-            .get_resource::<DataProvider<Clip>>()
-            .ok_or_else(|| {
-                InvocationError::new("clip.registry_unavailable", "Clip storage is unavailable")
-            })?
-            .get(uid)
-            .map(|clip| clip.identifiers.id)
-            .map_err(|_| {
+        ClipTarget::Uid(uid) => {
+            let missing = || {
                 InvocationError::new(
                     "clip.not_found",
                     format!("Clip with UID {uid} does not exist"),
                 )
-            }),
+            };
+            let mut query = world.try_query::<&Clip>().ok_or_else(missing)?;
+            let mut matches = query.iter(world).filter(|clip| clip.identifiers.uid == uid);
+            let clip = matches.next().ok_or_else(missing)?;
+            if matches.next().is_some() {
+                return Err(InvocationError::new(
+                    "clip.ambiguous",
+                    "Multiple clips have the mapped UID",
+                ));
+            }
+            Ok(clip.identifiers.id)
+        }
     }
 }
 
@@ -285,32 +375,49 @@ fn invoke_control(
     Ok(InvocationDispatch::Accepted)
 }
 
+/// Applies an absolute hardware value immediately without per-sample commands or undo entries.
+fn invoke_master(
+    world: &mut bevy_ecs::prelude::World,
+    arguments: MasterActionArguments,
+    invocation: &ActionInvocation,
+) -> Result<InvocationDispatch, InvocationError> {
+    use crate::masters::Master;
+    let ActionInput::Scalar(value) = invocation.input else {
+        return Err(InvocationError::new(
+            "master.scalar_required",
+            "Master level requires a scalar input",
+        ));
+    };
+    let mut masters = world
+        .get_resource_mut::<DataProvider<Master>>()
+        .ok_or_else(|| {
+            InvocationError::new("master.unavailable", "Master storage is unavailable")
+        })?;
+    let mut master = masters
+        .get(arguments.master_uid)
+        .map(|master| master.clone())
+        .map_err(|_| {
+            InvocationError::new("master.not_found", "The mapped master no longer exists")
+        })?;
+    master.level_percent = Master::level_percent_from_control(master.kind, value * 100.0);
+    masters
+        .add(master)
+        .map_err(|error| InvocationError::new("master.update_failed", error.to_string()))?;
+    Ok(InvocationDispatch::succeeded())
+}
+
 /// Starts a tracked desk eval command when an automation capability requests one.
 fn invoke_desk_eval(
     world: &mut bevy_ecs::prelude::World,
     arguments: DeskEvalActionArguments,
     invocation: &ActionInvocation,
 ) -> Result<InvocationDispatch, InvocationError> {
-    let eval = CommandEnvelope::new(
+    let command_id = nightfall_engine::action_commands::enqueue_action_command(
+        world,
+        invocation,
         DeskCommand::Eval(arguments.command.clone()),
-        CommandOrigin::Remote(format!("{:?}", invocation.surface)),
         ReplyTarget::ClientBroadcast,
-    );
-    world
-        .get_resource_mut::<CommandTracker>()
-        .ok_or_else(|| {
-            InvocationError::new(
-                "desk.command_tracker_unavailable",
-                "Command tracking is unavailable",
-            )
-        })?
-        .register(&eval)
-        .map_err(|error| {
-            InvocationError::new(
-                "desk.command_registration_failed",
-                format!("Unable to register command: {error}"),
-            )
-        })?;
+    )?;
 
     let source = invocation
         .source
@@ -318,12 +425,11 @@ fn invoke_desk_eval(
         .unwrap_or_else(|| format!("{:?}", invocation.surface));
     world.write_message(ExternalCommandInvocation {
         invocation_id: invocation.invocation_id,
-        command_id: eval.command_id.into(),
+        command_id: command_id.into(),
         command: arguments.command,
         surface: invocation.surface,
         source,
     });
-    world.write_message(eval);
     Ok(InvocationDispatch::Accepted)
 }
 
@@ -331,13 +437,16 @@ fn invoke_desk_eval(
 fn descriptor(
     id: &str,
     label: &str,
+    input_kind: nightfall_actions::ActionInputKind,
     allowed_surfaces: Vec<ActionSurface>,
     argument_schema: Value,
 ) -> ActionDescriptor {
     ActionDescriptor {
+        capabilities: Vec::new(),
         id: ActionId::new(id),
         label: label.to_string(),
         allowed_surfaces,
+        input_kind,
         argument_schema,
     }
 }
@@ -364,13 +473,197 @@ mod tests {
     fn desk_action_app() -> App {
         let mut app = App::new();
         app.add_plugins(ActionsPlugin);
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<CommandEnvelope<ClipCommand>>();
+        app.init_resource::<PendingCommandBuffer>();
         app.add_message::<ControlUpdate>();
         app.add_message::<CommandEnvelope<DeskCommand>>();
-        app.init_resource::<DataProvider<Clip>>();
+        app.init_resource::<crate::controls::Controls>();
         app.init_resource::<CommandTracker>();
         register_desk_actions(&mut app);
         app
+    }
+
+    /// Deterministic clip plans require stable targets and cannot bypass capability surface permissions.
+    #[test]
+    fn deterministic_clip_capability_requires_uid_and_timeline_surface() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<ActionRegistry>();
+        let uid = Uuid::new_v4();
+        let action = go_clip_action(ClipTarget::Uid(uid));
+        let plan = registry
+            .resolve_capability::<TimelinePlaybackActionPlan>(&action, ActionSurface::Timeline)
+            .unwrap()
+            .unwrap();
+        assert_eq!(plan.owner_uid, uid);
+        assert!(
+            registry
+                .resolve_capability::<TimelinePlaybackActionPlan>(&action, ActionSurface::Midi)
+                .is_err()
+        );
+        assert!(
+            registry
+                .resolve_capability::<TimelinePlaybackActionPlan>(
+                    &go_clip_action(ClipTarget::Id(1)),
+                    ActionSurface::Timeline
+                )
+                .is_err()
+        );
+        let dynamic = ActionReference::new(CONTROL_GO_ACTION_ID, json!({"control_index":1}));
+        assert!(
+            registry
+                .resolve_capability::<TimelinePlaybackActionPlan>(&dynamic, ActionSurface::Timeline)
+                .is_err()
+        );
+        assert!(registry.get(&dynamic.id).unwrap().capabilities.is_empty());
+    }
+
+    /// Clip actions resolve ECS identities without a legacy storage resource or ambiguous targets.
+    #[test]
+    fn clip_uid_validation_uses_persistent_entities_and_rejects_duplicates() {
+        let mut app = desk_action_app();
+        let mut clip = Clip::default();
+        clip.identifiers.id = 7;
+        let uid = clip.identifiers.uid;
+        let action = go_clip_action(ClipTarget::Uid(uid));
+        let entity = app.world_mut().spawn(clip.clone()).id();
+        assert_eq!(
+            resolve_clip_id(app.world(), ClipTarget::Uid(uid)).unwrap(),
+            7
+        );
+        assert!(
+            app.world()
+                .resource::<ActionRegistry>()
+                .validate_target(app.world(), &action)
+                .is_ok()
+        );
+        let duplicate = app.world_mut().spawn(clip).id();
+        assert_eq!(
+            resolve_clip_id(app.world(), ClipTarget::Uid(uid))
+                .unwrap_err()
+                .code,
+            "clip.ambiguous"
+        );
+        app.world_mut().despawn(duplicate);
+        app.world_mut().despawn(entity);
+        assert_eq!(
+            resolve_clip_id(app.world(), ClipTarget::Uid(uid))
+                .unwrap_err()
+                .code,
+            "clip.not_found"
+        );
+    }
+
+    /// Empty slots remain mappable while invalid one-based indices are rejected.
+    #[test]
+    fn control_binding_validates_slot_without_requiring_assignment() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<ActionRegistry>();
+        for action_id in [CONTROL_GO_ACTION_ID, CONTROL_SET_ACTION_ID] {
+            for index in [1, crate::controls::DEFAULT_CONTROL_COUNT as u32] {
+                let action = ActionReference::new(action_id, json!({"control_index": index}));
+                assert!(registry.validate_target(app.world(), &action).is_ok());
+            }
+            for index in [
+                0,
+                crate::controls::DEFAULT_CONTROL_COUNT as u32 + 1,
+                u32::MAX,
+            ] {
+                let action = ActionReference::new(action_id, json!({"control_index": index}));
+                assert_eq!(
+                    registry
+                        .validate_target(app.world(), &action)
+                        .unwrap_err()
+                        .code,
+                    "control.not_found"
+                );
+            }
+        }
+    }
+
+    /// Direct master bindings apply domain units and cannot follow a reused numeric ID.
+    #[test]
+    fn master_binding_scales_by_kind_and_retains_uid_identity() {
+        use crate::masters::{Master, MasterKind};
+        let mut app = desk_action_app();
+        app.init_resource::<DataProvider<Master>>();
+        let uid = Uuid::new_v4();
+        let mut master = Master::default();
+        master.identifiers.uid = uid;
+        master.identifiers.id = 7;
+        master.kind = MasterKind::PlaybackRate;
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(master.clone())
+            .unwrap();
+        let action = ActionReference::with_arguments(
+            MASTER_SET_ACTION_ID,
+            &MasterActionArguments { master_uid: uid },
+        )
+        .unwrap();
+        app.world_mut().write_message(ActionInvocation::scalar(
+            action.clone(),
+            ActionSurface::Osc,
+            0.75,
+        ));
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<DataProvider<Master>>()
+                .get(uid)
+                .unwrap()
+                .level_percent,
+            150.0
+        );
+        assert!(matches!(
+            take_invocation_result(&mut app).outcome,
+            InvocationOutcome::Succeeded { .. }
+        ));
+        master.kind = MasterKind::InhibitiveIntensity;
+        master.identifiers.id = 8;
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(master.clone())
+            .unwrap();
+        app.world_mut().write_message(ActionInvocation::scalar(
+            action.clone(),
+            ActionSurface::Midi,
+            0.75,
+        ));
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<DataProvider<Master>>()
+                .get(uid)
+                .unwrap()
+                .level_percent,
+            75.0
+        );
+        take_invocation_result(&mut app);
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .remove(&uid)
+            .unwrap();
+        master.identifiers.uid = Uuid::new_v4();
+        let replacement_uid = master.identifiers.uid;
+        master.level_percent = 25.0;
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(master)
+            .unwrap();
+        app.world_mut()
+            .write_message(ActionInvocation::scalar(action, ActionSurface::Osc, 1.0));
+        app.update();
+        assert!(
+            matches!(take_invocation_result(&mut app).outcome, InvocationOutcome::Failed(error) if error.code == "master.not_found")
+        );
+        assert_eq!(
+            app.world()
+                .resource::<DataProvider<Master>>()
+                .get(replacement_uid)
+                .unwrap()
+                .level_percent,
+            25.0
+        );
     }
 
     /// Drains the immediate result emitted by the generic invocation stage.
@@ -384,7 +677,7 @@ mod tests {
 
     /// Verifies clip action arguments are interpreted only by the desk registration.
     #[test]
-    fn clip_action_invoker_dispatches_runtime_action() {
+    fn clip_action_invoker_dispatches_tracked_command() {
         let mut app = desk_action_app();
         app.world_mut().write_message(ActionInvocation::trigger(
             start_clip_action(ClipTarget::Id(7)),
@@ -395,16 +688,21 @@ mod tests {
 
         let actions = app
             .world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
+            .resource_mut::<PendingCommandBuffer>()
             .drain()
+            .into_iter()
             .collect::<Vec<_>>();
+        assert_eq!(actions.len(), 1);
         assert!(matches!(
-            actions.as_slice(),
-            [EngineActionEnvelope {
-                action: ClipAction::Start(IdExpr::Single(7)),
-                ..
-            }]
+            actions[0].payload.as_any().downcast_ref::<ClipCommand>(),
+            Some(ClipCommand::StartClip(IdExpr::Single(7)))
         ));
+        assert_eq!(actions[0].undo_id, actions[0].command_id.into());
+        assert!(
+            app.world()
+                .resource::<CommandTracker>()
+                .is_active(actions[0].command_id)
+        );
         assert!(matches!(
             take_invocation_result(&mut app).outcome,
             InvocationOutcome::Accepted
@@ -454,16 +752,18 @@ mod tests {
 
         let commands = app
             .world_mut()
-            .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+            .resource_mut::<PendingCommandBuffer>()
             .drain()
+            .into_iter()
             .collect::<Vec<_>>();
         let [command] = commands.as_slice() else {
             panic!("eval invocation should dispatch one desk command");
         };
         assert!(matches!(
-            command.command,
-            DeskCommand::Eval(ref value) if value == "clip 1 go"
+            command.payload.as_any().downcast_ref::<DeskCommand>(),
+            Some(DeskCommand::Eval(value)) if value == "clip 1 go"
         ));
+        assert_eq!(command.undo_id, command.command_id.into());
         assert!(
             app.world()
                 .resource::<CommandTracker>()

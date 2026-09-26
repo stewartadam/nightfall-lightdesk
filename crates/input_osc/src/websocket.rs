@@ -35,6 +35,8 @@ pub enum OscWsMessage<'a> {
     OscSources(&'a [OscSource]),
     /// Configured mappings.
     OscMappings(&'a [OscMapping]),
+    /// Per-row validation failures; null entries remain eligible for dispatch.
+    OscMappingDiagnostics(Vec<Option<CommandError>>),
     /// Last observed OSC event.
     OscLastEvent(&'a OscLastEvent),
     /// Listener bind status.
@@ -66,9 +68,11 @@ pub fn deserialize_osc_command(
 
 /// Send OSC state on resync.
 pub fn handle_resync_state(
+    world: &World,
     mut events: MessageReader<ResyncRequested>,
     sources: Res<OscSources>,
     mappings: Res<OscMappings>,
+    registry: Res<nightfall_actions::ActionRegistry>,
     last_event: Res<LastOscEvent>,
     status: Res<OscRuntimeStatus>,
     broadcaster: Res<ClientEventSink>,
@@ -80,7 +84,11 @@ pub fn handle_resync_state(
     }
 
     send_sources(&sources, &broadcaster);
-    send_mappings(&mappings, &broadcaster);
+    send_mappings(
+        &mappings,
+        mappings.target_validation_errors(world, &registry, &mappings.validation_errors(&registry)),
+        &broadcaster,
+    );
     send_listener_status(&status, &broadcaster);
     if let Some(ref event) = last_event.0 {
         send_last_event(event, &broadcaster);
@@ -89,8 +97,12 @@ pub fn handle_resync_state(
 
 /// Send OSC state updates when resources change.
 pub fn send_osc_state(
+    world: &World,
+    mut contract_errors: Local<Option<Vec<Option<CommandError>>>>,
+    mut published_errors: Local<Option<Vec<Option<CommandError>>>>,
     sources: Res<OscSources>,
     mappings: Res<OscMappings>,
+    registry: Res<nightfall_actions::ActionRegistry>,
     last_event: Res<LastOscEvent>,
     status: Res<OscRuntimeStatus>,
     broadcaster: Res<ClientEventSink>,
@@ -98,8 +110,17 @@ pub fn send_osc_state(
     if sources.is_changed() {
         send_sources(&sources, &broadcaster);
     }
-    if mappings.is_changed() {
-        send_mappings(&mappings, &broadcaster);
+    if contract_errors.is_none() || mappings.is_changed() || registry.is_changed() {
+        *contract_errors = Some(mappings.validation_errors(&registry));
+    }
+    let errors = mappings.target_validation_errors(
+        world,
+        &registry,
+        contract_errors.as_deref().unwrap_or_default(),
+    );
+    if mappings.is_changed() || published_errors.as_ref() != Some(&errors) {
+        send_mappings(&mappings, errors.clone(), &broadcaster);
+        *published_errors = Some(errors);
     }
     if status.is_changed() {
         send_listener_status(&status, &broadcaster);
@@ -131,10 +152,18 @@ fn send_sources(sources: &OscSources, broadcaster: &ClientEventSink) {
     );
 }
 
-fn send_mappings(mappings: &OscMappings, broadcaster: &ClientEventSink) {
+fn send_mappings(
+    mappings: &OscMappings,
+    diagnostics: Vec<Option<CommandError>>,
+    broadcaster: &ClientEventSink,
+) {
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &OscWsMessage::OscMappings(mappings.mappings()),
+    );
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &OscWsMessage::OscMappingDiagnostics(diagnostics),
     );
 }
 
@@ -154,6 +183,145 @@ mod tests {
     use bevy_ecs::message::Messages;
 
     use super::*;
+
+    /// Target deletion and restoration publish diagnostics without changing the saved binding.
+    #[test]
+    fn target_diagnostics_follow_domain_changes_without_repeated_broadcasts() {
+        use nightfall_actions::{
+            ActionDescriptor, ActionId, ActionInputKind, ActionRegistry, ActionSurface,
+            InvocationDispatch, InvocationError,
+        };
+        #[derive(Resource)]
+        struct TargetAvailable;
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "type", content = "data")]
+        enum Snapshot {
+            OscMappings(Vec<OscMapping>),
+        }
+
+        let (sender, receiver) = async_channel::unbounded();
+        let mut app = bevy_app::App::new();
+        app.insert_resource(ClientEventSink::new(sender));
+        app.init_resource::<OscSources>();
+        app.insert_resource(OscRuntimeStatus(OscListenerStatus {
+            is_listening: false,
+            bind_address: "127.0.0.1".into(),
+            port: 0,
+        }));
+        app.init_resource::<LastOscEvent>();
+        app.init_resource::<ActionRegistry>();
+        app.insert_resource(TargetAvailable);
+        let mapping = OscMapping {
+            id: uuid::Uuid::new_v4(),
+            source: None,
+            address: "/button".into(),
+            arg_index: Some(0),
+            arg_value: None,
+            input: crate::command::OscBindingInput::Press,
+            action: nightfall_actions::ActionReference::new("test.target", serde_json::json!({})),
+        };
+        let mut mappings = OscMappings::new();
+        mappings.set_mappings(vec![mapping.clone()]);
+        app.insert_resource(mappings);
+        let mut registry = app.world_mut().resource_mut::<ActionRegistry>();
+        registry.register::<Value, _>(
+            ActionDescriptor {
+                id: ActionId::new("test.target"),
+                label: "Test target".into(),
+                allowed_surfaces: vec![ActionSurface::Osc],
+                input_kind: ActionInputKind::Trigger,
+                argument_schema: serde_json::json!({}),
+                capabilities: vec![],
+            },
+            |_, _, _| Ok(InvocationDispatch::succeeded()),
+        );
+        registry.register_target_validator::<Value, _>("test.target", |world, _| {
+            if world.contains_resource::<TargetAvailable>() {
+                Ok(())
+            } else {
+                Err(InvocationError::new(
+                    "test.target_missing",
+                    "Target was deleted",
+                ))
+            }
+        });
+        app.add_message::<ResyncRequested>();
+        app.add_systems(
+            bevy_app::Update,
+            (send_osc_state, handle_resync_state).chain(),
+        );
+        app.update();
+        while receiver.try_recv().is_ok() {}
+        app.update();
+        assert!(receiver.try_recv().is_err());
+
+        for available in [false, true] {
+            if available {
+                app.world_mut().insert_resource(TargetAvailable);
+            } else {
+                app.world_mut().remove_resource::<TargetAvailable>();
+            }
+            app.update();
+            let bytes = receiver.try_recv().unwrap();
+            let Snapshot::OscMappings(snapshot) = minicbor_serde::from_slice(&bytes[1..]).unwrap();
+            assert_eq!(snapshot, vec![mapping.clone()]);
+            let bytes = receiver.try_recv().unwrap();
+            assert_eq!(bytes[0], DISCRIMINATOR_NON_DROPPABLE);
+            let diagnostic: Value = minicbor_serde::from_slice(&bytes[1..]).unwrap();
+            assert_eq!(diagnostic["type"], "OscMappingDiagnostics");
+            if available {
+                assert!(diagnostic["data"][0].is_null());
+            } else {
+                assert_eq!(diagnostic["data"][0]["code"], "test.target_missing");
+            }
+            assert_eq!(
+                app.world().resource::<OscMappings>().mappings(),
+                &[mapping.clone()]
+            );
+            app.update();
+            assert!(receiver.try_recv().is_err());
+            app.world_mut()
+                .write_message(ResyncRequested { command_id: None });
+            app.update();
+            let resynced: Vec<Value> = std::iter::from_fn(|| receiver.try_recv().ok())
+                .filter_map(|bytes| minicbor_serde::from_slice::<Value>(&bytes[1..]).ok())
+                .filter(|message| message["type"] == "OscMappingDiagnostics")
+                .collect();
+            assert_eq!(resynced, vec![diagnostic]);
+        }
+    }
+
+    /// Loaded unavailable actions retain their row and publish a reliable diagnostic alongside it.
+    #[test]
+    fn mapping_snapshot_includes_validation_diagnostics() {
+        let (sender, receiver) = async_channel::unbounded();
+        let sink = ClientEventSink::new(sender);
+        let mut mappings = OscMappings::new();
+        mappings.set_mappings(vec![OscMapping {
+            id: uuid::Uuid::new_v4(),
+            source: None,
+            address: "/button".into(),
+            arg_index: Some(0),
+            arg_value: None,
+            input: crate::command::OscBindingInput::Press,
+            action: nightfall_actions::ActionReference::new(
+                "missing.action",
+                serde_json::json!({}),
+            ),
+        }]);
+        send_mappings(
+            &mappings,
+            mappings.validation_errors(&nightfall_actions::ActionRegistry::default()),
+            &sink,
+        );
+        assert_eq!(receiver.try_recv().unwrap()[0], DISCRIMINATOR_NON_DROPPABLE);
+        let bytes = receiver.try_recv().unwrap();
+        assert_eq!(bytes[0], DISCRIMINATOR_NON_DROPPABLE);
+        let diagnostic: Value = minicbor_serde::from_slice(&bytes[1..]).unwrap();
+        assert_eq!(diagnostic["type"], "OscMappingDiagnostics");
+        assert_eq!(diagnostic["data"][0]["code"], "action.not_registered");
+        assert_eq!(mappings.mappings().len(), 1);
+    }
 
     #[test]
     fn deserialize_osc_command_writes_semantic_envelope() {

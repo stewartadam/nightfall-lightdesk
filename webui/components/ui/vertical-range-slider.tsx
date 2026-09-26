@@ -18,6 +18,8 @@ import {
 } from "solid-js";
 
 export interface VerticalRangeSliderProps {
+  /** Exposes the slider container for input interception and mapping presentation. */
+  ref?: (element: HTMLDivElement) => void;
   /** Current value (0-100 for percentage sliders) */
   value: number;
   /** Called when value changes */
@@ -143,6 +145,7 @@ export function VerticalRangeSlider(
 
   return (
     <div
+      ref={props.ref}
       class={`vertical-range-slider-container ${props.class ?? ""}`}
       style={{ height: height() }}
     >

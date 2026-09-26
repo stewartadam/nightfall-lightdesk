@@ -20,6 +20,7 @@ import { SunIcon } from "@squidlab/phosphor-solid/sun";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { VideoCameraIcon } from "@squidlab/phosphor-solid/video-camera";
 import { Dynamic } from "solid-js/web";
+import { createActionMappingTarget } from "../../action-mapping";
 /**
  * Toolbar for Visualizer interaction modes and view/debug toggles.
  *
@@ -92,6 +93,10 @@ const TOOL_OPTIONS: ReadonlyArray<{
  * Renders tool mode buttons plus emitter/label/grid toggles.
  */
 export const VisualizerToolToolbar: Component = () => {
+  const clearMapping = createActionMappingTarget(() => ({
+    action: { id: "programmer.clear", arguments: {} },
+    label: "Clear programmer",
+  }));
   const context = useVisualizerContext();
   const { openWizard: openFixtureWizard } = usePatchWizard();
   const { openWizard: openObjectWizard } = useObjectPatchWizard();
@@ -263,6 +268,7 @@ export const VisualizerToolToolbar: Component = () => {
             <ToolbarSeparator />
 
             <ToolbarButton
+              ref={clearMapping}
               label="Clear programmer (selection first, then values)"
               onClick={clearProgrammer}
             >
