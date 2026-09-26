@@ -33,8 +33,9 @@ const desktopPackaging = [
   /^\.github\/workflows\/(desktop-artifacts|desktop-check|release)\.yml$/,
 ];
 const desktopChecks = [
-  /^crates\/app-tauri\/src\//,
-  /^crates\/app-tauri\/tests\//,
+  /^crates\/app-tauri\//,
+  /^crates\/app-runtime\/Cargo\.toml$/,
+  /^\.github\/workflows\/desktop-check\.yml$/,
   /^crates\/app-runtime\/src\/(lib|main|logging|runtime_config|session|shutdown|diagnostic_bundle|diagnostic_logs|diagnostic_showfile)\.rs$/,
   /^crates\/config\//,
 ];
@@ -44,7 +45,11 @@ const browserPackaging = [
   /^\.github\/workflows\/browser-demo\.yml$/,
 ];
 
-/** Select validation by integration risk; packaging jobs already include desktop compilation. */
+/**
+ * Select validation by integration risk. Packaging compiles the desktop app but does not run
+ * its tests, so desktop code or build-configuration changes select the desktop check even when
+ * packaging also runs; shared inputs such as the lockfile rely on packaging alone.
+ */
 export function selectScope({ event, ref, paths = [], distribution = "all" }) {
   let desktopPackage = false;
   let browserPackage = false;
@@ -75,7 +80,7 @@ export function selectScope({ event, ref, paths = [], distribution = "all" }) {
     throw new Error(`Unsupported CI event: ${event}`);
   }
   return {
-    desktop_check: desktopCheck && !desktopPackage,
+    desktop_check: desktopCheck,
     desktop_package: desktopPackage,
     browser_package: browserPackage,
   };

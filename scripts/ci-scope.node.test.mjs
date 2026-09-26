@@ -19,6 +19,7 @@ const desktop = { ...none, desktop_package: true };
 const browser = { ...none, browser_package: true };
 const both = { ...desktop, browser_package: true };
 const check = { ...none, desktop_check: true };
+const desktopWithCheck = { ...desktop, desktop_check: true };
 
 /** Preserve the intended separation between runtime, shell, and distribution validation. */
 test("PR selection follows distribution ownership", () => {
@@ -33,11 +34,13 @@ test("PR selection follows distribution ownership", () => {
     ["crates/app-runtime/src/shutdown.rs", check],
     ["crates/app-runtime/src/diagnostic_logs.rs", check],
     ["crates/config/src/lib.rs", check],
-    ["crates/app-tauri/tauri.conf.json", desktop],
-    ["crates/app-tauri/capabilities/default.json", desktop],
-    ["crates/app-tauri/icons/icon.ico", desktop],
-    ["crates/app-tauri/build.rs", desktop],
-    ["crates/app-runtime/Cargo.toml", desktop],
+    ["crates/app-tauri/tauri.conf.json", desktopWithCheck],
+    ["crates/app-tauri/capabilities/default.json", desktopWithCheck],
+    ["crates/app-tauri/icons/icon.ico", desktopWithCheck],
+    ["crates/app-tauri/build.rs", desktopWithCheck],
+    ["crates/app-tauri/Cargo.toml", desktopWithCheck],
+    ["crates/app-runtime/Cargo.toml", desktopWithCheck],
+    [".github/workflows/desktop-check.yml", desktopWithCheck],
     ["crates/browser-runtime/src/lib.rs", browser],
     ["scripts/browser-demo-audio.mjs", browser],
     [".github/workflows/browser-demo.yml", browser],
@@ -64,15 +67,20 @@ test("PR selection follows distribution ownership", () => {
   }
 });
 
-/** Packaging subsumes desktop compilation, but independent browser changes preserve the shell check. */
+/** Packaging does not run desktop tests, so desktop code keeps the check beside packaging. */
 test("combined changes run each required validation once", () => {
   /** Apply PR selection to a combined change set. */
   const select = (paths) =>
     selectScope({ event: "pull_request", ref: "refs/pull/1/merge", paths });
   assert.deepEqual(
     select(["crates/app-tauri/src/main.rs", "crates/app-tauri/build.rs"]),
-    desktop,
+    desktopWithCheck,
   );
+  assert.deepEqual(select(["crates/app-tauri/src/main.rs", "Cargo.lock"]), {
+    ...both,
+    desktop_check: true,
+  });
+  assert.deepEqual(select(["Cargo.lock"]), both);
   assert.deepEqual(
     select([
       "crates/app-tauri/src/main.rs",
