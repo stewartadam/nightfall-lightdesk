@@ -158,11 +158,12 @@ pub struct GeometryNode {
     /// Model definition if this node has visual geometry.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<GeometryModel>,
-    /// Rotation this node applies when its `controlled_element` moves: pan
-    /// rotates about the local Z axis and tilt about the local X axis, on top
-    /// of the node's authored transform.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub axis: Option<AxisType>,
+    /// Rotations this node applies when its `controlled_element` moves, in
+    /// application order: pan rotates about the local Z axis and tilt about
+    /// the local X axis, on top of the node's authored transform. A node can
+    /// carry both when one geometry holds pan and tilt channels.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub axes: Vec<AxisType>,
     /// Index of parent node in the nodes array (-1 for root).
     pub parent_index: i32,
     /// Indices of child nodes in the nodes array.

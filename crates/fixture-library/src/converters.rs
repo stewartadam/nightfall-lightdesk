@@ -19,6 +19,8 @@ mod gdtf_functions;
 mod gdtf_joint_tests;
 pub mod gdtf_resolve;
 #[cfg(test)]
+mod gdtf_sweep_tests;
+#[cfg(test)]
 mod gdtf_wire_tests;
 pub mod ofl;
 

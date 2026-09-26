@@ -16,7 +16,7 @@
 //! geometry tree, beam bindings) reads from the single [`ResolvedMode`]
 //! produced here instead of re-walking the XML.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use gdtf::dmx_mode::{DmxBreak, DmxChannel, DmxMode};
 use gdtf::fixture_type::FixtureType;
@@ -68,6 +68,25 @@ pub enum GdtfDiagnostic {
         /// Break number the channel uses.
         dmx_break: i32,
     },
+    /// Two geometries in one tree share a name; later ones were renamed and do not bind channels.
+    DuplicateGeometryName {
+        /// Repeated geometry name.
+        name: String,
+    },
+    /// A channel's slots cannot be represented (more than four bytes or outside one universe); it was dropped.
+    UnrepresentableChannel {
+        /// Instance the channel names.
+        instance: String,
+        /// Resolved 1-based slots.
+        offsets: Vec<i64>,
+    },
+    /// A channel reuses slots of an earlier channel; it was kept as a virtual (non-output) parameter.
+    SharedSlots {
+        /// Instance of the later channel.
+        instance: String,
+        /// Shared 1-based slots.
+        offsets: Vec<u16>,
+    },
 }
 
 /// Break offsets supplied by one geometry reference.
@@ -100,6 +119,8 @@ pub struct GeometryInstance<'a> {
     pub children: Vec<usize>,
     /// Innermost reference scope this instance belongs to.
     scope: Option<usize>,
+    /// Whether an earlier instance already had this name; duplicates bind no channels.
+    duplicate: bool,
 }
 
 impl GeometryInstance<'_> {
@@ -135,8 +156,16 @@ pub struct ResolvedMode<'a> {
 }
 
 impl<'a> ResolvedMode<'a> {
-    /// Resolves `mode` of `fixture_type`, or returns `None` when the fixture type has no geometry.
-    pub fn new(fixture_type: &'a FixtureType, mode: &'a DmxMode) -> Option<Self> {
+    /// Resolves `mode` of `fixture_type`.
+    ///
+    /// Fails when the mode root yields no geometry instance: the fixture type
+    /// has no geometry, or the root is a reference that cannot be expanded.
+    /// The error carries the diagnostics explaining why, which is empty only
+    /// for a fixture type without geometry whose mode names no root.
+    pub fn new(
+        fixture_type: &'a FixtureType,
+        mode: &'a DmxMode,
+    ) -> Result<Self, Vec<GdtfDiagnostic>> {
         let mut resolved = Self {
             instances: Vec::new(),
             channels: Vec::new(),
@@ -151,12 +180,14 @@ impl<'a> ResolvedMode<'a> {
         {
             Some(root) => root,
             None => {
-                let fallback = fixture_type.geometries.first()?;
                 if let Some(root) = root_name {
                     resolved
                         .diagnostics
                         .push(GdtfDiagnostic::MissingModeRoot { root });
                 }
+                let Some(fallback) = fixture_type.geometries.first() else {
+                    return Err(resolved.diagnostics);
+                };
                 fallback
             }
         };
@@ -172,8 +203,12 @@ impl<'a> ResolvedMode<'a> {
             0,
             &mut active_templates,
         );
+        if resolved.instances.is_empty() {
+            return Err(resolved.diagnostics);
+        }
+        resolved.rename_duplicates();
         resolved.resolve_channels(mode);
-        Some(resolved)
+        Ok(resolved)
     }
 
     /// Adds an instance for `geometry` and its descendants, expanding references.
@@ -216,6 +251,13 @@ impl<'a> ResolvedMode<'a> {
             Some(scope) => format!("{}/{geometry_name}", self.scopes[scope].name),
             None => geometry_name,
         });
+        let duplicate = self.instances.iter().any(|instance| instance.name == name);
+        if duplicate {
+            let diagnostic = GdtfDiagnostic::DuplicateGeometryName { name: name.clone() };
+            if !self.diagnostics.contains(&diagnostic) {
+                self.diagnostics.push(diagnostic);
+            }
+        }
         let model = placement
             .model_name()
             .or_else(|| geometry.model_name())
@@ -230,6 +272,7 @@ impl<'a> ResolvedMode<'a> {
             parent,
             children: Vec::new(),
             scope,
+            duplicate,
         });
         if let Some(parent) = parent {
             self.instances[parent].children.push(index);
@@ -248,6 +291,32 @@ impl<'a> ResolvedMode<'a> {
             );
         }
         Some(index)
+    }
+
+    /// Gives every duplicate instance a unique `"<name> #<n>"` name.
+    ///
+    /// Runs after expansion, once every authored name is known, so a
+    /// generated suffix never takes a name that a later geometry authored
+    /// itself (children `Cell`, `Cell`, `Cell #2` become `Cell`, `Cell #3`,
+    /// `Cell #2`).
+    fn rename_duplicates(&mut self) {
+        let mut taken: HashSet<String> = self
+            .instances
+            .iter()
+            .map(|instance| instance.name.clone())
+            .collect();
+        for index in 0..self.instances.len() {
+            if !self.instances[index].duplicate {
+                continue;
+            }
+            let base = self.instances[index].name.clone();
+            let name = (2..)
+                .map(|suffix| format!("{base} #{suffix}"))
+                .find(|candidate| !taken.contains(candidate))
+                .expect("suffixes are unbounded");
+            taken.insert(name.clone());
+            self.instances[index].name = name;
+        }
     }
 
     /// Instantiates a reference's template geometry at the reference's position.
@@ -327,6 +396,9 @@ impl<'a> ResolvedMode<'a> {
 
         let mut by_geometry: HashMap<String, Vec<usize>> = HashMap::new();
         for (index, instance) in self.instances.iter().enumerate() {
+            if instance.duplicate {
+                continue;
+            }
             by_geometry
                 .entry(instance.geometry_name().to_string())
                 .or_default()
@@ -631,6 +703,26 @@ mod tests {
             resolved.diagnostics[0],
             GdtfDiagnostic::DanglingReference { .. }
         ));
+    }
+
+    /// Verifies a mode rooted at a dangling reference fails with the
+    /// diagnostic explaining why no geometry was resolved.
+    #[test]
+    fn dangling_mode_root_reports_its_diagnostic() {
+        let gdtf = GdtfBuilder::new("Test", "Dangling Root")
+            .geometry(GeometrySpec::reference("Root", "Missing", &[]))
+            .mode(ModeSpec::new("Mode", "Root").channel(ChannelSpec::new("Root", "Dimmer", &[1])))
+            .parse();
+        let fixture_type = &gdtf.description.fixture_types[0];
+        let diagnostics = ResolvedMode::new(fixture_type, &fixture_type.dmx_modes[0])
+            .expect_err("a dangling root resolves no geometry");
+        assert_eq!(
+            diagnostics,
+            vec![GdtfDiagnostic::DanglingReference {
+                reference: "Root".to_string(),
+                target: "Missing".to_string(),
+            }]
+        );
     }
 
     /// Verifies nested references accumulate their break offsets.
