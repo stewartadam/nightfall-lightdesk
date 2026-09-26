@@ -342,3 +342,29 @@ test("a MIDI CC fader bound to a master level drives the level", async ({
     path: test.info().outputPath("midi-cc-master-level.png"),
   });
 });
+
+/**
+ * Verifies touching a MIDI control that cannot be mapped, such as a program change, says
+ * why nothing armed, until a mappable control is touched.
+ */
+test("an unmappable MIDI message explains why nothing armed", async ({
+  backendSlot,
+  page,
+  virtualMidi,
+}) => {
+  await openMidiApp(page, backendSlot.backendPort, virtualMidi);
+  await enterMapping(page);
+
+  await virtualMidi.send([0xc0, 5]);
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await expect(banner.locator("[data-mapping-unmappable]")).toContainText(
+    `${virtualMidi.name} sent a MIDI program change on channel 1, which can't be mapped.`,
+  );
+  await banner.screenshot({
+    path: test.info().outputPath("midi-unmappable-banner.png"),
+  });
+
+  await touchNote(page, virtualMidi, 65);
+  await expect(banner.locator("[data-mapping-unmappable]")).toHaveCount(0);
+  await leaveMapping(page);
+});

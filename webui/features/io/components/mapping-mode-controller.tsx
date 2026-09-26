@@ -218,7 +218,18 @@ function MappingModeProgress(props: { pause: string | undefined }) {
         <span>
           <Show
             when={$mode().armed}
-            fallback="Controller mapping: move a MIDI or OSC control, then click a highlighted control. Click one without moving a control to review its bindings."
+            fallback={
+              <Show
+                when={$mode().unmappable}
+                fallback="Controller mapping: move a MIDI or OSC control, then click a highlighted control. Click one without moving a control to review its bindings."
+              >
+                {(unmappable) => (
+                  <span data-mapping-unmappable>
+                    Controller mapping: {unmappable()}
+                  </span>
+                )}
+              </Show>
+            }
           >
             {(armed) => (
               <>

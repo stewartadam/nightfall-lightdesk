@@ -46,6 +46,32 @@ afterEach(() => {
   exitMappingMode();
 });
 
+/**
+ * Verifies an unmappable MIDI message explains itself until a control arms, and does not
+ * replace a control that is already armed.
+ */
+test("unmappable MIDI touches explain why nothing armed", () => {
+  enterMappingMode();
+  const programChange: types.MidiLastEvent = {
+    device: "Pad",
+    channel: 0xc2,
+    note: 5,
+    velocity: 0,
+  };
+
+  armMidiTouches([programChange]);
+  assert.equal(
+    $mappingMode.get().unmappable,
+    "Pad sent a MIDI program change on channel 3, which can't be mapped. Move a key, pad, fader, or knob instead.",
+  );
+
+  armMidiTouches([midiTouch(60)]);
+  assert.equal($mappingMode.get().unmappable, undefined);
+  armMidiTouches([programChange]);
+  assert.equal($mappingMode.get().unmappable, undefined);
+  assert.equal($mappingMode.get().armed?.kind, "midi");
+});
+
 /** Builds a MIDI touch from controller `controller` sending `value`. */
 function midiControl(controller: number, value: number): types.MidiLastEvent {
   return {

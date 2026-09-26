@@ -24,7 +24,9 @@ pub struct MidiInputEvent {
     pub note: u8,
     /// Velocity or control value.
     pub velocity: u8,
-    /// When the input callback received the message.
+    /// When the input callback received the message. Tap tempo times taps from it, and
+    /// controller mapping mode uses it so input queued before the mode began is not
+    /// mistaken for a touch.
     pub received_at: Instant,
 }
 
@@ -372,13 +374,14 @@ fn connect_to_port(
         port,
         "nightfall-input",
         move |_timestamp, message, _| {
+            let received_at = Instant::now();
             if message.len() >= 3 {
                 let _ = event_tx.send(MidiInputEvent {
                     device: device_name_for_callback.clone(),
                     channel: message[0],
                     note: message[1],
                     velocity: message[2],
-                    received_at: Instant::now(),
+                    received_at,
                 });
             } else if message.len() >= 2 {
                 let _ = event_tx.send(MidiInputEvent {
@@ -386,7 +389,7 @@ fn connect_to_port(
                     channel: message[0],
                     note: message[1],
                     velocity: 0,
-                    received_at: Instant::now(),
+                    received_at,
                 });
             }
         },

@@ -33,7 +33,9 @@ pub struct RawOscEvent {
     pub address: String,
     /// OSC arguments.
     pub args: Vec<OscType>,
-    /// When the listener received the packet carrying this message.
+    /// When the listener received the packet carrying this message. Tap tempo times taps
+    /// from it, and controller mapping mode uses it so input queued before the mode began is
+    /// not mistaken for a touch.
     pub received_at: Instant,
 }
 
@@ -124,7 +126,7 @@ pub fn start_listener(
                 }
             };
 
-            match decode_packet(&buffer[..len], source_addr) {
+            match decode_packet(&buffer[..len], source_addr, Instant::now()) {
                 Ok(events) => {
                     for event in events {
                         if osc_tx.send(event).is_err() {
@@ -156,8 +158,12 @@ pub fn start_listener(
     )
 }
 
-/// Decode OSC packet bytes into flattened events.
-pub fn decode_packet(payload: &[u8], source_addr: SocketAddr) -> Result<Vec<RawOscEvent>, String> {
+/// Decode OSC packet bytes received at `received_at` into flattened events.
+pub fn decode_packet(
+    payload: &[u8],
+    source_addr: SocketAddr,
+    received_at: Instant,
+) -> Result<Vec<RawOscEvent>, String> {
     let (remainder, packet) = decoder::decode_udp(payload)
         .map_err(|error| format!("Failed to decode OSC packet: {error}"))?;
     if !remainder.is_empty() {
@@ -169,7 +175,7 @@ pub fn decode_packet(payload: &[u8], source_addr: SocketAddr) -> Result<Vec<RawO
 
     let source = source_addr.to_string();
     let mut events = Vec::new();
-    flatten_packet(packet, &source, Instant::now(), &mut events);
+    flatten_packet(packet, &source, received_at, &mut events);
     Ok(events)
 }
 
@@ -272,7 +278,8 @@ mod tests {
             ],
         });
         let bytes = encoder::encode(&packet).expect("packet should encode");
-        let events = decode_packet(&bytes, source_addr()).expect("packet should decode");
+        let events =
+            decode_packet(&bytes, source_addr(), Instant::now()).expect("packet should decode");
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].address, "/exec/start");
@@ -318,7 +325,8 @@ mod tests {
             ],
         });
         let bytes = encoder::encode(&packet).expect("packet should encode");
-        let events = decode_packet(&bytes, source_addr()).expect("packet should decode");
+        let events =
+            decode_packet(&bytes, source_addr(), Instant::now()).expect("packet should decode");
 
         assert_eq!(events.len(), 1);
         assert_eq!(
@@ -368,7 +376,8 @@ mod tests {
         });
         let bytes = encoder::encode(&packet).expect("bundle should encode");
 
-        let events = decode_packet(&bytes, source_addr()).expect("bundle should decode");
+        let events =
+            decode_packet(&bytes, source_addr(), Instant::now()).expect("bundle should decode");
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].address, "/a");
         assert_eq!(events[1].address, "/b");
