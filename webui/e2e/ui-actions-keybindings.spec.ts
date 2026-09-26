@@ -367,3 +367,45 @@ test("OSC mappings to UI actions run on opted-in clients only", async ({
   await page.waitForTimeout(500);
   expect(await isPanelOpen(page, "OSC Input")).toBe(false);
 });
+
+/**
+ * Verifies a panel's UI action stays bindable after its panel closes, and that pressing its
+ * keybinding while the panel is closed tells the operator instead of doing nothing.
+ *
+ * The panel's mount is stood in for by registering and disposing its action directly.
+ */
+test("keybindings to a closed panel's action explain it is unavailable", async ({
+  backendSlot,
+  page,
+}) => {
+  await openApp(page, backendSlot.backendPort);
+  await page.evaluate(async () => {
+    const { registerUiAction } = await import(
+      "/components/providers/command-registry/index.ts"
+    );
+    const dispose = registerUiAction({
+      id: "e2e.panel-scoped",
+      name: "Insert Timeline Action",
+      category: "Timeline",
+      execute: () => {},
+    });
+    dispose();
+  });
+
+  await openKeyboardSettings(page);
+  await addKeybinding(page, "Alt+Shift+KeyI", "ui.e2e.panel-scoped");
+  await expect(
+    page.locator('[data-keybinding="Alt+Shift+KeyI"]'),
+  ).toContainText("Insert Timeline Action");
+  await page.keyboard.press("Escape");
+
+  await page.locator("main#app").click({ position: { x: 900, y: 600 } });
+  await page.keyboard.press("Alt+Shift+KeyI");
+  const toast = page.getByText(
+    "Insert Timeline Action is not available right now",
+  );
+  await expect(toast).toBeVisible();
+  await toast.screenshot({
+    path: test.info().outputPath("unavailable-ui-action-toast.png"),
+  });
+});

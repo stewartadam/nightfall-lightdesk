@@ -16,7 +16,7 @@ import {
   on,
   Show,
 } from "solid-js";
-import { $uiActions as uiActionsStore } from "../../../components/providers/command-registry";
+import { $uiActionCatalog as uiActionCatalogStore } from "../../../components/providers/command-registry";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { actionCatalog } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -60,11 +60,14 @@ export interface ActionPickerProps {
  */
 export function ActionPicker(props: ActionPickerProps): JSX.Element {
   const $backendCatalog = useStore(actionCatalog);
-  const $uiActions = useStore(uiActionsStore);
-  /** Returns the backend catalog, plus this client's UI actions when requested. */
+  const $uiActionCatalog = useStore(uiActionCatalogStore);
+  /**
+   * Returns the backend catalog, plus when requested every UI action this client has seen,
+   * including those whose panel is currently closed.
+   */
   const $catalog = createMemo(() =>
     props.includeUiActions
-      ? [...$backendCatalog(), ...uiActionCatalogEntries($uiActions())]
+      ? [...$backendCatalog(), ...uiActionCatalogEntries($uiActionCatalog())]
       : $backendCatalog(),
   );
   const targets = useActionTargetOptions();

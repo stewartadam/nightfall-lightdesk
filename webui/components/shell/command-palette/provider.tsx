@@ -26,7 +26,6 @@ import {
   registerUiAction,
   type UiAction,
   uiActionId,
-  unregisterUiAction,
 } from "../../providers/command-registry";
 import { useShellOverlayCoordinator } from "../../providers/shell-overlay-coordinator";
 import { CommandPaletteUI } from "./command-palette";
@@ -38,11 +37,11 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
   const [isOpen, setIsOpen] = createSignal(false);
   const [selectedCommandId, setSelectedCommandId] = createSignal<string>();
 
-  /** Registers a UI action in the shared registry with a default category. */
+  /**
+   * Registers a UI action in the shared registry with a default category, returning the
+   * disposer that removes only this registration.
+   */
   const registerAction = (command: UiAction) => registerUiAction(command);
-
-  /** Removes a UI action when its owning component unmounts or re-registers. */
-  const unregisterAction = (id: string) => unregisterUiAction(id);
 
   const $backendCatalog = useStore(actionCatalog);
   const $mode = useStore($mappingMode);
@@ -105,7 +104,6 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
 
   const contextValue: CommandPaletteContextType = {
     registerAction,
-    unregisterAction,
     showPalette,
     hidePalette,
     isOpen,
