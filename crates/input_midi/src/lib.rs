@@ -147,7 +147,9 @@ const MAX_TOUCHES_PER_FRAME: usize = 64;
 ///
 /// Published reliably so a mapping client can arm the touched control even when the
 /// droppable last-event telemetry is coalesced or dropped under load. Each control appears
-/// once per frame, carrying its most recent message.
+/// once per frame, carrying its most recent message. Channel messages that cannot drive
+/// actions, such as program changes, appear without a source so the client can explain
+/// why touching that control did nothing.
 #[derive(Resource, Default, Debug)]
 pub(crate) struct MidiControlTouches(pub(crate) Vec<MidiLastEvent>);
 
@@ -177,10 +179,17 @@ struct MidiInput {
     signal: SourceSignal,
 }
 
+/// Returns whether a status byte is a channel message (note, controller, program change,
+/// pressure, or pitch bend) rather than a system message such as clock or SysEx.
+fn is_channel_message(status: u8) -> bool {
+    (0x80..0xF0).contains(&status)
+}
+
 /// System that polls the MIDI event channel and writes events to the ECS event stream
 ///
-/// While controller mapping mode is active, messages from mappable controls are also
-/// recorded as touches for reliable delivery to mapping clients.
+/// While controller mapping mode is active, channel messages received after it began are
+/// also recorded as touches for reliable delivery to mapping clients. System messages such
+/// as clock are never touches, since they stream continuously.
 fn midi_event_system(
     mut midi_rx: ResMut<MidiEventReceiver>,
     mut last_event: ResMut<LastMidiEvent>,
@@ -207,7 +216,9 @@ fn midi_event_system(
             source: classified.map(|(source, _)| source),
         };
 
-        if mapping_mode.is_active() && midi_last_event.source.is_some() {
+        if is_channel_message(raw_event.channel)
+            && mapping_mode.records_touch(raw_event.received_at)
+        {
             touches.record(&midi_last_event);
         }
 
@@ -878,33 +889,72 @@ mod tests {
         );
     }
 
-    /// Verifies touches are recorded only while mapping mode is active, once per control.
-    #[test]
-    fn touches_are_recorded_only_in_mapping_mode() {
+    /// Creates an app that reads raw MIDI messages from the returned sender.
+    fn midi_touch_app() -> (App, tokio::sync::mpsc::UnboundedSender<MidiInputEvent>) {
         let mut app = midi_command_app();
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(MidiEventReceiver(rx));
         app.init_resource::<LastMidiEvent>();
         app.add_message::<MidiInput>();
         app.add_systems(Update, midi_event_system);
-        let note = |velocity| MidiInputEvent {
-            device: "Pad".to_string(),
-            channel: 0x90,
-            note: 60,
-            velocity,
-        };
+        (app, tx)
+    }
 
-        tx.send(note(100)).unwrap();
+    /// Builds a raw message from the test pad received now.
+    fn raw_message(status: u8, data1: u8, data2: u8) -> MidiInputEvent {
+        MidiInputEvent {
+            device: "Pad".to_string(),
+            channel: status,
+            note: data1,
+            velocity: data2,
+            received_at: std::time::Instant::now(),
+        }
+    }
+
+    /// Verifies touches are recorded only while mapping mode is active, once per control.
+    #[test]
+    fn touches_are_recorded_only_in_mapping_mode() {
+        let (mut app, tx) = midi_touch_app();
+
+        tx.send(raw_message(0x90, 60, 100)).unwrap();
         app.update();
         assert!(app.world().resource::<MidiControlTouches>().0.is_empty());
 
         set_mapping_mode(&mut app, true);
-        tx.send(note(100)).unwrap();
-        tx.send(note(0)).unwrap();
+        tx.send(raw_message(0x90, 60, 100)).unwrap();
+        tx.send(raw_message(0x90, 60, 0)).unwrap();
         app.update();
         let touches = &app.world().resource::<MidiControlTouches>().0;
         assert_eq!(touches.len(), 1);
         assert_eq!(touches[0].velocity, 0);
+    }
+
+    /// Verifies a message received before mapping mode began is not a touch, even when it
+    /// is read after mapping mode began.
+    #[test]
+    fn input_received_before_mapping_mode_is_not_a_touch() {
+        let (mut app, tx) = midi_touch_app();
+        let stale = raw_message(0xB0, 7, 64);
+
+        set_mapping_mode(&mut app, true);
+        tx.send(stale).unwrap();
+        app.update();
+        assert!(app.world().resource::<MidiControlTouches>().0.is_empty());
+    }
+
+    /// Verifies unmappable channel messages are touches without a source, so the client can
+    /// explain them, while system messages such as clock are not touches.
+    #[test]
+    fn unmappable_channel_messages_are_touches_without_a_source() {
+        let (mut app, tx) = midi_touch_app();
+        set_mapping_mode(&mut app, true);
+
+        tx.send(raw_message(0xF8, 0, 0)).unwrap();
+        tx.send(raw_message(0xC0, 5, 0)).unwrap();
+        app.update();
+        let touches = &app.world().resource::<MidiControlTouches>().0;
+        assert_eq!(touches.len(), 1);
+        assert_eq!((touches[0].channel, touches[0].source), (0xC0, None));
     }
 
     /// Verifies Hold bindings are rejected for actions without a release counterpart.

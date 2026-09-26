@@ -167,8 +167,8 @@ impl OscControlTouches {
 
 /// Drains received OSC packets into telemetry, known sources, and mapping dispatch input.
 ///
-/// While controller mapping mode is active, messages are also recorded as touches for
-/// reliable delivery to mapping clients.
+/// While controller mapping mode is active, messages received after it began are also
+/// recorded as touches for reliable delivery to mapping clients.
 fn osc_event_system(
     mut osc_rx: ResMut<OscEventReceiver>,
     mut last_event: ResMut<LastOscEvent>,
@@ -178,6 +178,7 @@ fn osc_event_system(
     mut event_writer: MessageWriter<OscInput>,
 ) {
     while let Ok(raw_event) = osc_rx.0.try_recv() {
+        let is_touch = mapping_mode.records_touch(raw_event.received_at);
         let osc_event: OscLastEvent = raw_event.into();
         if !sources
             .0
@@ -189,7 +190,7 @@ fn osc_event_system(
             });
         }
 
-        if mapping_mode.is_active() {
+        if is_touch {
             touches.record(&osc_event);
         }
         last_event.0 = Some(osc_event.clone());
