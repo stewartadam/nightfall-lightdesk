@@ -14,7 +14,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use nightfall_engine::prelude::{
     DebugPanicTarget, is_process_shutdown_requested, maybe_trigger_debug_worker_panic,
@@ -33,6 +33,9 @@ pub struct RawOscEvent {
     pub address: String,
     /// OSC arguments.
     pub args: Vec<OscType>,
+    /// When the listener received the packet, so input queued before controller mapping
+    /// mode began is not mistaken for a touch.
+    pub received_at: Instant,
 }
 
 /// Background OSC listener thread handle.
@@ -122,7 +125,7 @@ pub fn start_listener(
                 }
             };
 
-            match decode_packet(&buffer[..len], source_addr) {
+            match decode_packet(&buffer[..len], source_addr, Instant::now()) {
                 Ok(events) => {
                     for event in events {
                         if osc_tx.send(event).is_err() {
@@ -154,8 +157,12 @@ pub fn start_listener(
     )
 }
 
-/// Decode OSC packet bytes into flattened events.
-pub fn decode_packet(payload: &[u8], source_addr: SocketAddr) -> Result<Vec<RawOscEvent>, String> {
+/// Decode OSC packet bytes received at `received_at` into flattened events.
+pub fn decode_packet(
+    payload: &[u8],
+    source_addr: SocketAddr,
+    received_at: Instant,
+) -> Result<Vec<RawOscEvent>, String> {
     let (remainder, packet) = decoder::decode_udp(payload)
         .map_err(|error| format!("Failed to decode OSC packet: {error}"))?;
     if !remainder.is_empty() {
@@ -167,20 +174,27 @@ pub fn decode_packet(payload: &[u8], source_addr: SocketAddr) -> Result<Vec<RawO
 
     let source = source_addr.to_string();
     let mut events = Vec::new();
-    flatten_packet(packet, &source, &mut events);
+    flatten_packet(packet, &source, received_at, &mut events);
     Ok(events)
 }
 
-fn flatten_packet(packet: RoscPacket, source: &str, output: &mut Vec<RawOscEvent>) {
+/// Appends every message in a packet, including those nested in bundles, as raw events.
+fn flatten_packet(
+    packet: RoscPacket,
+    source: &str,
+    received_at: Instant,
+    output: &mut Vec<RawOscEvent>,
+) {
     match packet {
         RoscPacket::Message(message) => output.push(RawOscEvent {
             source: source.to_string(),
             address: message.addr,
             args: message.args.into_iter().map(convert_arg).collect(),
+            received_at,
         }),
         RoscPacket::Bundle(bundle) => {
             for packet in bundle.content {
-                flatten_packet(packet, source, output);
+                flatten_packet(packet, source, received_at, output);
             }
         }
     }
@@ -262,7 +276,8 @@ mod tests {
             ],
         });
         let bytes = encoder::encode(&packet).expect("packet should encode");
-        let events = decode_packet(&bytes, source_addr()).expect("packet should decode");
+        let events =
+            decode_packet(&bytes, source_addr(), Instant::now()).expect("packet should decode");
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].address, "/exec/start");
@@ -308,7 +323,8 @@ mod tests {
             ],
         });
         let bytes = encoder::encode(&packet).expect("packet should encode");
-        let events = decode_packet(&bytes, source_addr()).expect("packet should decode");
+        let events =
+            decode_packet(&bytes, source_addr(), Instant::now()).expect("packet should decode");
 
         assert_eq!(events.len(), 1);
         assert_eq!(
@@ -358,7 +374,8 @@ mod tests {
         });
         let bytes = encoder::encode(&packet).expect("bundle should encode");
 
-        let events = decode_packet(&bytes, source_addr()).expect("bundle should decode");
+        let events =
+            decode_packet(&bytes, source_addr(), Instant::now()).expect("bundle should decode");
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].address, "/a");
         assert_eq!(events[1].address, "/b");

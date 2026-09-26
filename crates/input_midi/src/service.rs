@@ -8,7 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use nightfall_engine::prelude::FrameWaker;
 use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
@@ -24,6 +24,9 @@ pub struct MidiInputEvent {
     pub note: u8,
     /// Velocity or control value.
     pub velocity: u8,
+    /// When the service received the message, so input queued before controller mapping
+    /// mode began is not mistaken for a touch.
+    pub received_at: Instant,
 }
 
 /// MIDI input client used inside ECS worlds.
@@ -370,12 +373,14 @@ fn connect_to_port(
         port,
         "nightfall-input",
         move |_timestamp, message, _| {
+            let received_at = Instant::now();
             if message.len() >= 3 {
                 let _ = event_tx.send(MidiInputEvent {
                     device: device_name_for_callback.clone(),
                     channel: message[0],
                     note: message[1],
                     velocity: message[2],
+                    received_at,
                 });
             } else if message.len() >= 2 {
                 let _ = event_tx.send(MidiInputEvent {
@@ -383,6 +388,7 @@ fn connect_to_port(
                     channel: message[0],
                     note: message[1],
                     velocity: 0,
+                    received_at,
                 });
             }
         },

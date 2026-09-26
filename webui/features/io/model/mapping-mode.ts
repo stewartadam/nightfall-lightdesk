@@ -90,6 +90,8 @@ export interface MappingModeState {
    * generation means a show load ended this client's mapping mode.
    */
   showGeneration?: string;
+  /** Why the last touched MIDI message could not arm, until a control arms. */
+  unmappable?: string;
 }
 
 /** Current controller mapping mode state. */
@@ -205,7 +207,42 @@ export function armMidiSource(event: types.MidiLastEvent): void {
     sameControl ? state.armed?.levels : undefined,
     event.velocity,
   );
-  $mappingMode.set({ ...state, armed });
+  $mappingMode.set({ ...withoutUnmappable(state), armed });
+}
+
+/** Returns mapping state without an unmappable-message notice, once a control armed. */
+function withoutUnmappable(state: MappingModeState): MappingModeState {
+  const { unmappable, ...rest } = state;
+  return rest;
+}
+
+/** MIDI channel message kinds that cannot drive actions, by status nibble. */
+const UNMAPPABLE_MIDI_KINDS: Record<number, string> = {
+  160: "polyphonic aftertouch",
+  192: "program change",
+  208: "channel pressure",
+};
+
+/**
+ * Explains why a touched MIDI message cannot be mapped, naming what was sent.
+ *
+ * Only notes, controllers, and pitch bends drive actions.
+ */
+export function describeUnmappableMidi(event: types.MidiLastEvent): string {
+  const kind = UNMAPPABLE_MIDI_KINDS[event.channel & 0xf0] ?? "message";
+  const channel = (event.channel & 0x0f) + 1;
+  return `${event.device} sent a MIDI ${kind} on channel ${channel}, which can't be mapped. Move a key, pad, fader, or knob instead.`;
+}
+
+/**
+ * Notes that a touched MIDI message cannot be mapped, unless a control is already armed.
+ *
+ * Keeping an armed control means stray aftertouch while pressing a pad does not replace it.
+ */
+function noteUnmappableMidi(event: types.MidiLastEvent): void {
+  const state = $mappingMode.get();
+  if (!state.active || state.armed) return;
+  $mappingMode.set({ ...state, unmappable: describeUnmappableMidi(event) });
 }
 
 /**
@@ -220,7 +257,7 @@ export function armOscSource(event: types.OscLastEvent): void {
   const current = state.armed?.kind === "osc" ? state.armed : undefined;
   const sameControl = current?.event.address === event.address;
   $mappingMode.set({
-    ...state,
+    ...withoutUnmappable(state),
     armed: {
       kind: "osc",
       ...trackOscGesture(current, event),
@@ -235,11 +272,16 @@ export function armOscSource(event: types.OscLastEvent): void {
 /**
  * Arms from one frame of MIDI controls the backend reported touched in mapping mode.
  *
- * Touches arrive reliably and in order, so the last mappable control touched wins.
+ * Touches arrive reliably and in order, so the last mappable control touched wins. Messages
+ * without a mappable source, such as program changes, explain why nothing armed.
  */
 export function armMidiTouches(events: readonly types.MidiLastEvent[]): void {
   for (const event of events) {
-    if (event.source) armMidiSource(event);
+    if (event.source) {
+      armMidiSource(event);
+    } else {
+      noteUnmappableMidi(event);
+    }
   }
 }
 

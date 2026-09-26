@@ -224,6 +224,13 @@ export function Mappable(props: MappableProps): JSX.Element {
   });
 
   /**
+   * Returns whether a control is armed that cannot bind to this target at all, so the
+   * overlay can show that before it is clicked.
+   */
+  const incompatible = () =>
+    $mode().armed !== undefined && options().length === 0;
+
+  /**
    * Picks the option the touched control most likely means, judged from what it sent: a
    * fader follows a level, a button fires on press. The popover focuses it so Enter binds it.
    */
@@ -309,11 +316,23 @@ export function Mappable(props: MappableProps): JSX.Element {
         <button
           ref={overlay}
           type="button"
-          class="nf-mappable-overlay absolute inset-0 z-20 cursor-crosshair rounded border-2 border-amber-400/80 bg-amber-400/10 hover:bg-amber-400/25"
+          class={`nf-mappable-overlay absolute inset-0 z-20 rounded border-2 ${
+            incompatible()
+              ? "cursor-not-allowed border-dashed border-neutral-500/60 bg-neutral-950/40"
+              : "cursor-crosshair border-amber-400/80 bg-amber-400/10 hover:bg-amber-400/25"
+          }`}
           aria-label={`Map ${local.label}`}
           aria-expanded={open()}
+          title={
+            incompatible()
+              ? "The touched control can't drive this. Click to see why."
+              : undefined
+          }
           data-mappable-overlay
           data-mapping-armed={$mode().armed ? "true" : "false"}
+          data-mapping-compatible={
+            $mode().armed ? String(!incompatible()) : undefined
+          }
           onPointerDown={(event) => event.stopPropagation()}
           onClick={handleClick}
         >
