@@ -32,6 +32,11 @@ pub struct ReferenceChannel {
     pub dmx_break: Option<i32>,
     /// 1-based footprint slots, most significant first; empty for virtual channels.
     pub slots: Vec<u16>,
+    /// Whether the channel's geometry lies in the mode's geometry tree. The
+    /// specification requires it, but some published archives name geometries
+    /// outside the tree. Only [`reference_mode_channels`] resolves the tree;
+    /// [`reference_channels`] reports `true`.
+    pub in_mode_tree: bool,
 }
 
 impl ReferenceChannel {
@@ -87,7 +92,10 @@ pub fn reference_mode_channels(
             .filter(|occurrence| occurrence.geometry == channel.geometry)
             .collect();
         if matching.is_empty() {
-            expanded.push(channel);
+            expanded.push(ReferenceChannel {
+                in_mode_tree: false,
+                ..channel
+            });
             continue;
         }
         for occurrence in matching {
@@ -218,6 +226,7 @@ pub fn reference_channels(mode: &DmxMode) -> Vec<ReferenceChannel> {
                     .as_ref()
                     .map(|offsets| offsets.iter().map(|offset| *offset as u16).collect())
                     .unwrap_or_default(),
+                in_mode_tree: true,
             };
             *ordinal += 1;
             reference

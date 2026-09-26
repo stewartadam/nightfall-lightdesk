@@ -73,5 +73,13 @@
       "16/4 Pixel 16 · Green · b1 · 62",
       "16/4 Pixel 16 · Blue · b1 · 63"
     ]
+  },
+  "unreachable_channels": {
+    "16: Effect Mode RGB": [
+      "1/1 Pixel 1 · ColorMacro1 · b1 · 3"
+    ],
+    "49: RGB*RGBS": [
+      "4/4 Pixel Beam · Dimmer · virtual"
+    ]
   }
 }

@@ -17,8 +17,10 @@
 //! Expectations live in `tests/gdtf-bench/`:
 //! - `manifest.json` pins each archive's SHA-256, provenance and exact modes.
 //! - `expectations/<id>.json` holds per-mode channel charts for representative
-//!   modes and the exact invariant violations currently known per mode.
-//!   Regenerate with `NIGHTFALL_GDTF_BENCH_UPDATE=1` and review the diff: a
+//!   modes, the exact invariant violations currently known per mode, and the
+//!   channels whose geometry lies outside their mode's geometry tree.
+//!   Regenerate with `NIGHTFALL_GDTF_BENCH_UPDATE=1` and review the diff; an
+//!   archive with a placement disagreement is never rewritten. A
 //!   chart is only trustworthy once checked against the manufacturer's
 //!   documentation for the pinned revision.
 
@@ -29,10 +31,10 @@ use nightfall_fixtures::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::gdtf::convert_gdtf_mode;
+use super::gdtf::{convert_gdtf_mode, map_gdtf_attribute_to_nightfall};
 use crate::GdtfMetadata;
 use crate::testing::invariants::check_invariants;
-use crate::testing::reference::reference_mode_channels;
+use crate::testing::reference::{ReferenceChannel, reference_mode_channels};
 
 /// Pinned bench archive.
 #[derive(Debug, Deserialize)]
@@ -65,6 +67,12 @@ struct BenchExpectations {
     /// Channel charts per chart mode: one `element · attribute · break · slots` row per parameter.
     #[serde(default)]
     charts: BTreeMap<String, Vec<String>>,
+    /// Channels per mode whose geometry lies outside the mode's geometry
+    /// tree, as `geometry · attribute · break · slots` rows. The archive is
+    /// defective there and the converter drops them, so they are pinned for
+    /// review instead of being compared. Modes without any are omitted.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    unreachable_channels: BTreeMap<String, Vec<String>>,
 }
 
 /// Returns the directory holding the bench manifest and expectations.
@@ -160,6 +168,7 @@ fn gdtf_bench_modes_meet_expectations() {
             .unwrap_or_default();
 
         let mut actual = BenchExpectations::default();
+        let failures_before = failures.len();
         for mode in &archive.modes {
             let mut gdtf = metadata.reparse().expect("reparse");
             let converted =
@@ -179,12 +188,30 @@ fn gdtf_bench_modes_meet_expectations() {
                     .charts
                     .insert(mode.clone(), chart(&converted.fixture));
             }
-            if let Some(message) = reference_disagreement(&gdtf, mode, &converted.fixture) {
+            let disagreement = mode_references(&gdtf, mode).and_then(|references| {
+                let unreachable: Vec<String> = references
+                    .iter()
+                    .filter(|reference| !reference.in_mode_tree)
+                    .map(unreachable_row)
+                    .collect();
+                if !unreachable.is_empty() {
+                    actual
+                        .unreachable_channels
+                        .insert(mode.clone(), unreachable);
+                }
+                reference_disagreement(&references, &converted.fixture).map_or(Ok(()), Err)
+            });
+            if let Err(message) = disagreement {
                 failures.push(format!("{}/{mode}: {message}", archive.id));
             }
         }
 
         if updating() {
+            // A placement disagreement means this conversion is wrong, so its
+            // output must not become the committed baseline.
+            if failures.len() > failures_before {
+                continue;
+            }
             std::fs::create_dir_all(expectations_path.parent().unwrap()).unwrap();
             std::fs::write(
                 &expectations_path,
@@ -202,48 +229,120 @@ fn gdtf_bench_modes_meet_expectations() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// Compares converted placement with the independent reference decoder's.
-///
-/// Every channel the reference decoder places on break 1 must appear in the
-/// converted fixture with the same element, slots and attribute name.
-/// Returns a description of the first disagreement.
-fn reference_disagreement(gdtf: &gdtf::GdtfFile, mode: &str, fixture: &Fixture) -> Option<String> {
-    let fixture_type = gdtf.description.fixture_types.first()?;
+/// Renders a reference channel outside its mode's geometry tree in the chart row format.
+fn unreachable_row(reference: &ReferenceChannel) -> String {
+    let placement = if reference.slots.is_empty() {
+        "virtual".to_string()
+    } else {
+        let slots = reference
+            .slots
+            .iter()
+            .map(u16::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        match reference.dmx_break {
+            Some(dmx_break) => format!("b{dmx_break} · {slots}"),
+            None => format!("overwrite · {slots}"),
+        }
+    };
+    format!(
+        "{} · {} · {placement}",
+        reference.geometry, reference.attribute
+    )
+}
+
+/// Lists a mode's channels as the independent reference decoder places them.
+fn mode_references(gdtf: &gdtf::GdtfFile, mode: &str) -> Result<Vec<ReferenceChannel>, String> {
+    let fixture_type = gdtf
+        .description
+        .fixture_types
+        .first()
+        .ok_or("archive has no fixture type")?;
     let dmx_mode = fixture_type
         .dmx_modes
         .iter()
-        .find(|candidate| candidate.name.as_ref().map(|name| name.as_ref()) == Some(mode))?;
-    let converted: Vec<(String, Vec<u16>)> = fixture
-        .elements
+        .find(|candidate| candidate.name.as_ref().map(|name| name.as_ref()) == Some(mode))
+        .ok_or("mode missing from archive")?;
+    Ok(reference_mode_channels(fixture_type, dmx_mode))
+}
+
+/// Compares converted placement with the independent reference decoder's.
+///
+/// Parameters are paired with reference channels in the mode's geometry
+/// tree by element and ordinal within the element, as the wire tests do.
+/// Every such channel must have a converted parameter with the same
+/// attribute, the same break and slots on any break, or a virtual placement
+/// when the reference has no slots; every converted parameter must have a
+/// reference channel. Returns a description of the first disagreement.
+fn reference_disagreement(references: &[ReferenceChannel], fixture: &Fixture) -> Option<String> {
+    let references: Vec<&ReferenceChannel> = references
         .iter()
-        .flat_map(|element| {
-            element
-                .parameters
-                .iter()
-                .filter_map(move |parameter| match &parameter.dmx_slots {
-                    DmxSlots::Explicit {
-                        dmx_break: 1,
-                        offsets,
-                    } => Some((element.label.clone(), offsets.clone())),
-                    _ => None,
-                })
-        })
+        .filter(|reference| reference.in_mode_tree)
         .collect();
-    for reference in reference_mode_channels(fixture_type, dmx_mode) {
-        if reference.slots.is_empty() || reference.dmx_break != Some(1) {
-            continue;
-        }
-        let found = converted
-            .iter()
-            .any(|(element, slots)| element == &reference.geometry && slots == &reference.slots);
-        let reachable = fixture
+
+    for reference in &references {
+        let element = fixture
             .elements
             .iter()
-            .any(|element| element.label == reference.geometry);
-        if reachable && !found {
+            .find(|element| element.label == reference.geometry);
+        let Some(parameter) = element.and_then(|element| element.parameters.get(reference.ordinal))
+        else {
+            let converted = match element {
+                Some(element) => format!("element has {} parameters", element.parameters.len()),
+                None => format!(
+                    "no such element among {:?}",
+                    fixture
+                        .elements
+                        .iter()
+                        .map(|element| element.label.as_str())
+                        .collect::<Vec<_>>()
+                ),
+            };
             return Some(format!(
-                "{} {} expected at slots {:?}",
-                reference.geometry, reference.attribute, reference.slots
+                "{}#{} {} has no converted parameter ({converted})",
+                reference.geometry, reference.ordinal, reference.attribute
+            ));
+        };
+        let attribute = map_gdtf_attribute_to_nightfall(&reference.attribute);
+        if attribute.as_ref() != Some(&parameter.attribute) {
+            return Some(format!(
+                "{}#{} expected attribute {} ({attribute:?}), converted {:?}",
+                reference.geometry, reference.ordinal, reference.attribute, parameter.attribute
+            ));
+        }
+        let placed = match &parameter.dmx_slots {
+            DmxSlots::Explicit { dmx_break, offsets } if !reference.slots.is_empty() => {
+                offsets == &reference.slots
+                    && reference
+                        .dmx_break
+                        .is_none_or(|expected| i32::from(*dmx_break) == expected)
+            }
+            DmxSlots::Virtual => reference.slots.is_empty(),
+            _ => false,
+        };
+        if !placed {
+            return Some(format!(
+                "{}#{} {} expected break {:?} slots {:?}, converted {:?}",
+                reference.geometry,
+                reference.ordinal,
+                reference.attribute,
+                reference.dmx_break,
+                reference.slots,
+                parameter.dmx_slots
+            ));
+        }
+    }
+
+    for element in &fixture.elements {
+        let referenced = references
+            .iter()
+            .filter(|reference| reference.geometry == element.label)
+            .count();
+        if element.parameters.len() > referenced {
+            return Some(format!(
+                "{} has {} converted parameters but {referenced} reference channels",
+                element.label,
+                element.parameters.len()
             ));
         }
     }
