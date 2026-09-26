@@ -12,7 +12,9 @@ import { Button } from "../../../components/ui/visual-language/button";
 import { shouldShowDisparateControlValues } from "../../../lib/control-display";
 import { getLogger } from "../../../lib/logger";
 import { type Clip, type Master, MasterKind } from "../../../types";
+import type { EngineControl } from "../../actions";
 import { Mappable, type MappableChoice } from "../../io";
+import { masterLevelControl } from "../../masters";
 
 export interface ControlProps {
   /** Control index (1-based for display) */
@@ -29,10 +31,10 @@ export interface ControlProps {
   hardwareValue: number;
   /** Backend-authored console value */
   consoleValue: number;
-  /** Called when the control go button is pressed */
-  onGo: () => void;
-  /** Called when control value changes */
-  onConsoleValueChange: (value: number) => void;
+  /** The slot's Go button: its click and its controller binding. */
+  go: EngineControl<{ go: () => void }>;
+  /** The slot's fader: its on-screen drag and its controller binding. */
+  fader: EngineControl<{ setConsoleValue: (value: number) => void }>;
   /** Called when a clip is dropped onto this control */
   onClipAssign: (clip: Clip) => void;
   /** Called when a master is dropped onto this control */
@@ -53,35 +55,17 @@ export function Control(props: ControlProps): JSX.Element {
 
   /** Returns the actions this fader can be mapped to: its slot, or the assigned master. */
   const faderChoices = (): MappableChoice[] => {
-    const choices: MappableChoice[] = [
-      {
-        label: `Fader slot ${props.index}`,
-        action: {
-          id: "control.level",
-          arguments: { control_index: props.index },
-        },
-      },
-    ];
     const master = props.assignedMaster;
-    if (master) {
-      choices.push({
-        label: `Assigned master: ${master.identifiers.label}`,
-        action: {
-          id: "master.level",
-          arguments: { master: master.identifiers.uid },
-        },
-      });
-    }
-    return choices;
+    return master
+      ? [
+          props.fader,
+          masterLevelControl(
+            master,
+            `Assigned master: ${master.identifiers.label}`,
+          ),
+        ]
+      : [props.fader];
   };
-
-  /** Returns the Go action bound when this control's Go button is mapped. */
-  const goChoices = (): MappableChoice[] => [
-    {
-      label: `Go control ${props.index}`,
-      action: { id: "control.go", arguments: { control_index: props.index } },
-    },
-  ];
 
   /** Returns whether the Go button has an assigned action. */
   const canGo = () =>
@@ -169,7 +153,7 @@ export function Control(props: ControlProps): JSX.Element {
           fallback={
             <VerticalRangeSlider
               value={props.displayValue}
-              onChange={props.onConsoleValueChange}
+              onChange={props.fader.handlers.setConsoleValue}
               min={0}
               max={100}
               step={1}
@@ -184,7 +168,7 @@ export function Control(props: ControlProps): JSX.Element {
         >
           <VerticalRangeSlider
             value={props.displayValue}
-            onChange={props.onConsoleValueChange}
+            onChange={props.fader.handlers.setConsoleValue}
             min={0}
             max={100}
             step={1}
@@ -246,7 +230,7 @@ export function Control(props: ControlProps): JSX.Element {
       <Mappable
         class="w-full shrink-0"
         label={`control ${props.index} Go`}
-        choices={goChoices}
+        choices={() => [props.go]}
       >
         <Button
           size="compact"
@@ -255,7 +239,7 @@ export function Control(props: ControlProps): JSX.Element {
           aria-label={`Go control ${props.index}`}
           class="w-full shrink-0"
           disabled={!canGo()}
-          onClick={props.onGo}
+          onClick={() => props.go.handlers.go()}
           title={
             !props.assignedClip
               ? props.assignedMaster?.mode?.type === "Toggle"

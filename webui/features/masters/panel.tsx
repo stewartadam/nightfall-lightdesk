@@ -19,13 +19,17 @@ import { clips, groups, masters } from "../../state/appStores";
 import * as types from "../../types";
 import { Mappable } from "../io";
 import {
+  masterHoldControl,
+  masterLevelControl,
+  masterToggleControl,
+} from "./model/control-actions";
+import {
   allFixturesTarget,
   allInstancesTarget,
   buildCommitMasterLevelCommand,
   buildMasterLevelUpdate,
   buildSetMasterModeCommand,
   buildStoreMasterCommand,
-  buildToggleMasterCommand,
   clipPlaybackTarget,
   groupTarget,
   masterLevelMax,
@@ -107,6 +111,13 @@ export default function MastersPanel(
       buildCommitMasterLevelCommand(id, fromPercent, levelPercent),
     );
   };
+
+  /** Defines a master's level slider, streaming drags and committing one undo per drag. */
+  const levelControl = (master: types.Master) =>
+    masterLevelControl(master, `${master.identifiers.label} level`, {
+      drag: dragMasterLevel,
+      commit: commitMasterLevel,
+    });
 
   /** Creates an all-fixtures master from the panel toolbar. */
   const createGlobalMaster = () => {
@@ -323,15 +334,7 @@ export default function MastersPanel(
                       <Mappable
                         class="flex w-full"
                         label={`${master.identifiers.label} level`}
-                        choices={() => [
-                          {
-                            label: `${master.identifiers.label} level`,
-                            action: {
-                              id: "master.level",
-                              arguments: { master: master.identifiers.uid },
-                            },
-                          },
-                        ]}
+                        choices={() => [levelControl(master)]}
                       >
                         <input
                           type="range"
@@ -341,14 +344,12 @@ export default function MastersPanel(
                           value={master.level_percent}
                           class="w-full"
                           onInput={(event) =>
-                            dragMasterLevel(
-                              master,
+                            levelControl(master).handlers.drag(
                               Number(event.currentTarget.value),
                             )
                           }
                           onChange={(event) =>
-                            commitMasterLevel(
-                              master,
+                            levelControl(master).handlers.commit(
                               Number(event.currentTarget.value),
                             )
                           }
@@ -365,34 +366,18 @@ export default function MastersPanel(
                         class="inline-flex"
                         label={`toggle ${master.identifiers.label}`}
                         choices={() => [
-                          {
-                            label: "Toggle",
-                            action: {
-                              id: "master.toggle",
-                              arguments: { master: master.identifiers.uid },
-                            },
-                            behaviors: [
-                              types.ControlBehavior.Press,
-                              types.ControlBehavior.Release,
-                            ],
-                          },
-                          {
-                            label: "On while held",
-                            action: {
-                              id: "master.on",
-                              arguments: { master: master.identifiers.uid },
-                            },
-                            behaviors: [types.ControlBehavior.Hold],
-                          },
+                          masterToggleControl(master, sendMasterCommand),
+                          masterHoldControl(master),
                         ]}
                       >
                         <Button
                           size="compact"
                           type="button"
                           onClick={() =>
-                            sendMasterCommand(
-                              buildToggleMasterCommand(master.identifiers.id),
-                            )
+                            masterToggleControl(
+                              master,
+                              sendMasterCommand,
+                            ).handlers.toggle()
                           }
                         >
                           Toggle

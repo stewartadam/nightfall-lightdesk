@@ -21,6 +21,10 @@ import type {
   ControlUpdate,
   Master,
 } from "../../../types";
+import {
+  controlFaderControl,
+  controlGoControl,
+} from "../model/control-actions";
 import { Control } from "./control";
 
 const commandClient = new CommandClient(engineRuntime);
@@ -95,14 +99,6 @@ export function Controls(props: ControlsProps): JSX.Element {
             /** Returns whether the assigned clip is currently active. */
             const isClipActive = () => getAssignedClipEntry()?.[1] ?? false;
 
-            /** Runs the backend-owned Go behavior shared with mapped hardware controls. */
-            const handleGo = () => {
-              void sendCommand({
-                type: "Go",
-                data: { control_index: controlIndex },
-              });
-            };
-
             return (
               <Control
                 index={controlIndex}
@@ -112,13 +108,8 @@ export function Controls(props: ControlsProps): JSX.Element {
                 displayValue={getControlState()?.display_value ?? 0}
                 hardwareValue={getControlState()?.hardware_value ?? 0}
                 consoleValue={getControlState()?.console_value ?? 0}
-                onGo={handleGo}
-                onConsoleValueChange={(value) =>
-                  sendUpdate({
-                    type: "SetConsoleValue",
-                    data: { control_index: controlIndex, value },
-                  })
-                }
+                go={controlGoControl(controlIndex, sendCommand)}
+                fader={controlFaderControl(controlIndex, sendUpdate)}
                 onClipAssign={(clip) =>
                   sendCommand({
                     type: "AssignClip",
