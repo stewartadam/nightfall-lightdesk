@@ -102,5 +102,8 @@ bevy_dynamic = ["bevy/dynamic_linking"]  # you opt in to Bevy's "dynamic" featur
 tauri = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-log", "dep:tauri-plugin-dialog"] # meta-feature for enabling Tauri app
 debug = ["nightfall-engine/debug", "nightfall-desk/debug"]
 
+[dev-dependencies]
+nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }
+
 [lints]
 workspace = true

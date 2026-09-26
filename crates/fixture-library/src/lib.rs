@@ -25,6 +25,8 @@ pub mod manager;
 pub mod mesh;
 pub mod plugin;
 pub mod scanner;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
 pub mod watcher;
 pub mod websocket;
 

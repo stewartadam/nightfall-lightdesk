@@ -259,16 +259,11 @@ fn copied_links_are_omitted_before_writing_the_snapshot() {
 /// Writes a small real GDTF archive whose geometry can be materialized after export.
 #[cfg(all(feature = "fixture-library", feature = "object-library"))]
 fn write_gdtf(path: &Path) {
-    use std::io::Write;
-    let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
-    zip.start_file("description.xml", zip::write::SimpleFileOptions::default())
-        .unwrap();
-    zip.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
-<GDTF DataVersion="1.2"><FixtureType Name="ExportFixture" ShortName="Export" LongName="Export Fixture" Manufacturer="Export Test" Description="Export test" FixtureTypeID="00000000-0000-0000-0000-000000000001">
-<AttributeDefinitions><FeatureGroups/><Attributes/></AttributeDefinitions><Geometries><Geometry Name="Base" Position="{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}"/></Geometries>
-<DMXModes><DMXMode Name="Default" Description="Test" Geometry="Base"><DMXChannels/></DMXMode></DMXModes>
-</FixtureType></GDTF>"#).unwrap();
-    zip.finish().unwrap();
+    use nightfall_fixture_library::testing::{GdtfBuilder, GeometrySpec, ModeSpec};
+    GdtfBuilder::new("Export Test", "Export Fixture")
+        .geometry(GeometrySpec::generic("Base"))
+        .mode(ModeSpec::new("Default", "Base"))
+        .write_to(path);
     nightfall_fixture_library::GdtfMetadata::from_file(path).expect("valid test GDTF");
 }
 
