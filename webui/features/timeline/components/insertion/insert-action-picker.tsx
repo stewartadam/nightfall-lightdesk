@@ -350,17 +350,32 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     });
   };
 
+  /**
+   * Returns the accepted range of the clip rate action's `rate` argument from the backend
+   * catalog, so inserted rates stay within what the backend stores.
+   */
+  const rateBounds = () => {
+    const kind = $catalog()
+      .find((entry) => entry.descriptor.id === "clip.set-rate")
+      ?.descriptor.parameters.find(
+        (parameter) => parameter.name === "rate",
+      )?.kind;
+    return kind?.type === "Number" ? kind.data : { min: 0, max: Infinity };
+  };
+
   /** Inserts the selected clip target with the typed playback rate multiplier. */
   const insertRateAction = () => {
     const action = selectedAction();
     const target = pendingTarget();
-    const rate = Number.parseFloat(targetQuery().trim());
-    if (!action || !target || !Number.isFinite(rate)) return;
+    const typed = Number.parseFloat(targetQuery().trim());
+    if (!action || !target || !Number.isFinite(typed)) return;
+    const { min, max } = rateBounds();
+    const rate = Math.min(max, Math.max(min, typed));
     props.onInsert({
       actionType: action.type,
       targetUid: target.uid,
-      targetLabel: `${target.label} @ ${Math.max(0, rate)}x`,
-      rate: Math.max(0, rate),
+      targetLabel: `${target.label} @ ${rate}x`,
+      rate,
     });
   };
 

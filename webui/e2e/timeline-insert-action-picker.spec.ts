@@ -554,6 +554,33 @@ test("insert action picker inserts clip rate actions", async ({ page }) => {
     .toEqual({ uid: CLIP_RATE_UID, rate: 2.5 });
 });
 
+/** Verifies a typed rate above the action's maximum is clamped instead of rejected. */
+test("insert action picker clamps clip rates to the action's range", async ({
+  page,
+}) => {
+  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineSurface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  await expect(timelineSurface).toBeVisible();
+  await seedClipRateTarget(page);
+  await timelineSurface.click();
+
+  await page.keyboard.press("i");
+  await page.getByPlaceholder("Insert action...").fill("Set Clip Rate");
+  await page.keyboard.press("Enter");
+  await page
+    .getByPlaceholder(/Select target for Set Clip Rate/)
+    .fill("E2E Rate Target");
+  await page.keyboard.press("Enter");
+  await page.getByPlaceholder("Rate multiplier...").fill("6");
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(() => insertedClipRateAction(page))
+    .toEqual({ uid: CLIP_RATE_UID, rate: 4 });
+});
+
 /** Keeps retained timeline portals and keyboard handlers scoped to their active layout. */
 test("suspends timeline popouts across layouts with duplicate panel IDs", async ({
   page,

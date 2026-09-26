@@ -22,6 +22,7 @@ use nightfall_timecode::prelude::{Timecode, TimecodeGenerator};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::components::MaterializedTimeline;
 use crate::prelude::{Timeline, TimelineCommand, TimelineTriggerMode};
 
 /// Transport change requested for one timeline.
@@ -31,8 +32,17 @@ enum TransportRequest {
     Play,
     /// Pause playback at the current position.
     Pause,
-    /// Pause when the linked timecode is running, otherwise play.
+    /// Pause when the timeline is playing, otherwise play; see [`timeline_is_playing`].
     Toggle,
+}
+
+/// Returns whether a timeline counts as playing for a toggle.
+///
+/// A timeline following its timecode plays whenever the timecode runs. A manually triggered
+/// timeline also has to have been started, so toggling one of several manual timelines that
+/// share a running timecode starts it rather than pausing the one that is playing.
+fn timeline_is_playing(timecode_running: bool, manual: bool, started: bool) -> bool {
+    timecode_running && (!manual || started)
 }
 
 /// Replaces queued timeline transport commands with the commands they coordinate.
@@ -46,6 +56,7 @@ pub fn expand_timeline_transport_commands(
     timelines: Res<DataProvider<Timeline>>,
     timecodes: Res<DataProvider<Timecode>>,
     generators: Query<&TimecodeGenerator>,
+    materialized: Query<&MaterializedTimeline>,
     mut responder: CommandResponder,
 ) {
     for envelope in pending.drain() {
@@ -63,16 +74,22 @@ pub fn expand_timeline_transport_commands(
             pending.push(envelope);
             continue;
         };
-        let commands =
-            match transport_commands(timeline_id, request, &timelines, &timecodes, &generators) {
-                Ok(commands) => commands,
-                Err(error) => {
-                    if let Err(error) = responder.fail(envelope.command_id, error) {
-                        tracing::error!(%error, "timeline_transport_failure_response_failed");
-                    }
-                    continue;
+        let commands = match transport_commands(
+            timeline_id,
+            request,
+            &timelines,
+            &timecodes,
+            &generators,
+            &materialized,
+        ) {
+            Ok(commands) => commands,
+            Err(error) => {
+                if let Err(error) = responder.fail(envelope.command_id, error) {
+                    tracing::error!(%error, "timeline_transport_failure_response_failed");
                 }
-            };
+                continue;
+            }
+        };
         if let Err(error) = responder.expect_completions(envelope.command_id, commands.len()) {
             tracing::error!(%error, "timeline_transport_completion_join_failed");
             continue;
@@ -94,6 +111,7 @@ fn transport_commands(
     timelines: &DataProvider<Timeline>,
     timecodes: &DataProvider<Timecode>,
     generators: &Query<&TimecodeGenerator>,
+    materialized: &Query<&MaterializedTimeline>,
 ) -> Result<Vec<DynEnginePayload>, CommandError> {
     let timeline = timelines.from_id(timeline_id).map_err(|_| {
         CommandError::new(
@@ -108,15 +126,21 @@ fn transport_commands(
         )
     })?;
     let timecode_id = timecode.identifiers.id;
-    let is_running = generators.iter().any(|generator| {
-        generator.timecode.identifiers.uid == timecode.identifiers.uid && generator.state.is_active
-    });
+    let manual = timeline.trigger_mode == TimelineTriggerMode::Manual;
     let play = match request {
         TransportRequest::Play => true,
         TransportRequest::Pause => false,
-        TransportRequest::Toggle => !is_running,
+        TransportRequest::Toggle => {
+            let timecode_running = generators.iter().any(|generator| {
+                generator.timecode.identifiers.uid == timecode.identifiers.uid
+                    && generator.state.is_active
+            });
+            let started = materialized.iter().any(|materialized| {
+                materialized.timeline.identifiers.id == timeline_id && materialized.is_active
+            });
+            !timeline_is_playing(timecode_running, manual, started)
+        }
     };
-    let manual = timeline.trigger_mode == TimelineTriggerMode::Manual;
     let mut commands: Vec<DynEnginePayload> = Vec::new();
     if play {
         if let Some(loop_range) = timeline.loop_range.as_ref().filter(|range| range.enabled) {
@@ -293,4 +317,20 @@ fn register_fire_cue_action(app: &mut App) {
             })
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies a manual timeline sharing a running timecode with another only counts as
+    /// playing once it was started, so toggling it starts it instead of pausing the other.
+    #[test]
+    fn manual_timelines_play_only_when_started() {
+        assert!(!timeline_is_playing(true, true, false));
+        assert!(timeline_is_playing(true, true, true));
+        assert!(!timeline_is_playing(false, true, true));
+        assert!(timeline_is_playing(true, false, false));
+        assert!(!timeline_is_playing(false, false, false));
+    }
 }

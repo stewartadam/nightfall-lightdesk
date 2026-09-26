@@ -31,6 +31,9 @@ pub struct ActiveCommand {
     pub reply_target: ReplyTarget,
     /// Monotonic time at which lifecycle tracking began for diagnostics.
     pub started_at: Instant,
+    /// Whether the command is an undo or redo replaying captured inverses, which restore
+    /// earlier state as it was rather than submit new edits.
+    pub undo_replay: bool,
     /// Number of operation outcomes required before the command can finish.
     expected_completions: usize,
     /// Operation outcomes already received for this command.
@@ -143,6 +146,7 @@ impl CommandTracker {
                 origin,
                 reply_target,
                 started_at: Instant::now(),
+                undo_replay: false,
                 expected_completions: 1,
                 received_completions: 0,
                 successful_completions: 0,
@@ -197,6 +201,23 @@ impl CommandTracker {
             ReplyTarget::Client(client) => Some(client),
             _ => None,
         }
+    }
+
+    /// Marks an active command as an undo or redo replaying captured inverses.
+    pub fn mark_undo_replay(&mut self, command_id: CommandId) {
+        if let Some(command) = self.active.get_mut(&command_id) {
+            command.undo_replay = true;
+        }
+    }
+
+    /// Returns whether an active command is an undo or redo replaying captured inverses.
+    ///
+    /// Handlers that validate new edits skip that validation for replays, which restore
+    /// state that was already accepted.
+    pub fn is_undo_replay(&self, command_id: CommandId) -> bool {
+        self.active
+            .get(&command_id)
+            .is_some_and(|command| command.undo_replay)
     }
 
     /// Sets how many delegated operation outcomes complete one accepted command.
@@ -427,6 +448,11 @@ impl CommandResponder<'_> {
     /// Returns the client session that submitted an active command, if one was identified.
     pub fn connection(&self, command_id: CommandId) -> Option<ClientId> {
         self.tracker.connection(command_id)
+    }
+
+    /// Returns whether an active command is an undo or redo replaying captured inverses.
+    pub fn is_undo_replay(&self, command_id: CommandId) -> bool {
+        self.tracker.is_undo_replay(command_id)
     }
 
     /// Declares how many delegated outcomes must be joined before completion.
