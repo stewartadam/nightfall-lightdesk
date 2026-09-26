@@ -11,6 +11,7 @@ import { afterEach, test } from "node:test";
 import type * as types from "../../../types";
 import {
   $mappingMode,
+  armedSourceIsContinuous,
   armMidiTouches,
   armOscTouches,
   describeMappingPause,
@@ -43,6 +44,48 @@ function oscTouch(address: string, value: number): types.OscLastEvent {
 
 afterEach(() => {
   exitMappingMode();
+});
+
+/** Builds a MIDI touch from controller `controller` sending `value`. */
+function midiControl(controller: number, value: number): types.MidiLastEvent {
+  return {
+    device: "Pad",
+    channel: 0xb0,
+    note: controller,
+    velocity: value,
+    source: { type: "ControlChange", data: { channel: 0, controller } },
+  };
+}
+
+/** Returns whether the currently armed control reads as a fader. */
+function armedIsContinuous(): boolean {
+  const { armed } = $mappingMode.get();
+  assert.ok(armed, "a control should be armed");
+  return armedSourceIsContinuous(armed);
+}
+
+/**
+ * Verifies armed controls are judged faders or buttons from the levels they sent: buttons
+ * jump between off and full, faders send in-between or many levels, and notes are buttons.
+ */
+test("armedSourceIsContinuous tells faders from buttons by the levels sent", () => {
+  enterMappingMode();
+
+  armMidiTouches([midiControl(7, 127), midiControl(7, 0)]);
+  assert.equal(armedIsContinuous(), false);
+  armMidiTouches([midiControl(8, 64)]);
+  assert.equal(armedIsContinuous(), true);
+  armMidiTouches([midiTouch(60, 90)]);
+  assert.equal(armedIsContinuous(), false);
+
+  armOscTouches([oscTouch("/button", 1), oscTouch("/button", 0)]);
+  assert.equal(armedIsContinuous(), false);
+  armOscTouches([oscTouch("/fader", 0), oscTouch("/fader", 0.25)]);
+  assert.equal(armedIsContinuous(), true);
+  armOscTouches([oscTouch("/steps", 0), oscTouch("/steps", 2)]);
+  assert.equal(armedIsContinuous(), false);
+  armOscTouches([oscTouch("/steps", 3)]);
+  assert.equal(armedIsContinuous(), true);
 });
 
 /**
