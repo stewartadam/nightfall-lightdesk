@@ -255,25 +255,48 @@ fn forward_external_command_invocations(
 #[derive(Resource, Default, Debug, PartialEq)]
 pub struct OscMappingDiagnostics(pub Vec<BindingDiagnostic>);
 
-/// Validates one stored OSC mapping against the registry and the current world.
+/// Validates that an OSC mapping can invoke its action with its behavior.
 ///
-/// Checks the mapping's value range, the action, its arguments, whether the mapping's source
-/// can drive the action and its behavior, and that the action's targets exist.
-fn diagnose_osc_mapping(
+/// Checks the mapping's value range, the action and its arguments, and whether matched
+/// messages can drive the action and its behavior. A mapping that cannot drive its action
+/// is explained from its own argument criteria.
+fn validate_osc_binding(
     registry: &ActionRegistry,
-    world: &World,
     mapping: &OscMapping,
 ) -> Result<(), InvocationError> {
     mapping
         .validate()
         .and_then(|()| {
-            registry.validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
-                mapping.can_drive(kind)
-            })
+            registry
+                .validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
+                    mapping.can_drive(kind)
+                })
+                .map_err(|error| {
+                    if error.code != "action.input_incompatible" {
+                        return error;
+                    }
+                    let label = registry
+                        .get(&mapping.action.id)
+                        .map_or(mapping.action.id.as_str(), |descriptor| {
+                            descriptor.label.as_str()
+                        });
+                    InvocationError::new(error.code, mapping.explain_undrivable(label))
+                })
         })
         .and_then(|()| {
             registry.validate_behavior(&mapping.action, mapping.behavior, mapping.reports_release())
         })
+}
+
+/// Validates one stored OSC mapping against the registry and the current world.
+///
+/// Applies [`validate_osc_binding`] and checks that the action's targets exist.
+fn diagnose_osc_mapping(
+    registry: &ActionRegistry,
+    world: &World,
+    mapping: &OscMapping,
+) -> Result<(), InvocationError> {
+    validate_osc_binding(registry, mapping)
         .and_then(|()| registry.validate_target(world, &mapping.action))
 }
 
@@ -307,35 +330,20 @@ fn handle_osc_crud(
 ) {
     for event in events.read() {
         let result = match &event.command {
-            OscCommand::UpsertMapping(mapping) => {
-                match mapping
-                    .validate()
-                    .and_then(|()| {
-                        registry.validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
-                            mapping.can_drive(kind)
-                        })
-                    })
-                    .and_then(|()| {
-                        registry.validate_behavior(
-                            &mapping.action,
-                            mapping.behavior,
-                            mapping.reports_release(),
-                        )
-                    }) {
-                    Ok(()) => {
-                        edges.forget(mapping.id);
-                        let replaced = mappings.upsert(OscMapping::clone(mapping), |action| {
-                            registry.input_kind(&action.id)
-                        });
-                        for displaced in &replaced {
-                            edges.forget(displaced.id);
-                        }
-                        responder
-                            .succeed_with_output(event.command_id, &OscMappingUpserted { replaced })
+            OscCommand::UpsertMapping(mapping) => match validate_osc_binding(&registry, mapping) {
+                Ok(()) => {
+                    edges.forget(mapping.id);
+                    let replaced = mappings.upsert(OscMapping::clone(mapping), |action| {
+                        registry.input_kind(&action.id)
+                    });
+                    for displaced in &replaced {
+                        edges.forget(displaced.id);
                     }
-                    Err(error) => responder.fail(event.command_id, error.into()),
+                    responder
+                        .succeed_with_output(event.command_id, &OscMappingUpserted { replaced })
                 }
-            }
+                Err(error) => responder.fail(event.command_id, error.into()),
+            },
             OscCommand::DeleteMapping(id) => {
                 if mappings.delete(*id) {
                     edges.forget(*id);
@@ -625,11 +633,16 @@ mod tests {
         app.update();
 
         assert!(app.world().resource::<OscMappings>().mappings().is_empty());
-        assert!(matches!(
-            take_result(&mut app).outcome,
-            CommandOutcome::Failed(CommandError { ref code, .. })
-                if code == "action.input_incompatible"
-        ));
+        let CommandOutcome::Failed(CommandError { code, message, .. }) =
+            take_result(&mut app).outcome
+        else {
+            panic!("an argument-free address should not bind a fader-style action");
+        };
+        assert_eq!(code, "action.input_incompatible");
+        assert!(
+            message.starts_with("OSC /control is not set to read a value"),
+            "{message}"
+        );
     }
 
     /// Verifies an OSC address cannot be bound to an action restricted to other surfaces.

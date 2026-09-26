@@ -24,7 +24,7 @@ import {
   oscMappings,
   pushToast,
 } from "../../../state/appStores";
-import type * as types from "../../../types";
+import * as types from "../../../types";
 import {
   actionReferencesEqual,
   findCatalogEntry,
@@ -45,7 +45,11 @@ import {
   deleteMidiMapping,
   deleteOscMapping,
 } from "../model/controller-mappings";
-import { armedSourceSupports, bindArmedSource } from "../model/mapping-bind";
+import {
+  armedBindingProblem,
+  armedSourceSupports,
+  bindArmedSource,
+} from "../model/mapping-bind";
 import { $mappingMode, describeArmedSource } from "../model/mapping-mode";
 
 /** Width of the binding popover, matching its `w-72` class. */
@@ -240,9 +244,17 @@ export function Mappable(props: MappableProps): JSX.Element {
     if (armed && choices.length === 1) {
       void bind(choices[0]);
     } else if (armed && choices.length === 0) {
+      const [first] = local.choices();
       pushToast(
         "info",
-        `${describeArmedSource(armed, midiSourceLabel)} cannot drive ${local.label}.`,
+        (first &&
+          armedBindingProblem(
+            armed,
+            first.action,
+            first.behaviors?.[0] ?? types.ControlBehavior.Press,
+            actionText(first.action),
+          )) ??
+          `${describeArmedSource(armed, midiSourceLabel)} cannot drive ${local.label}.`,
       );
     } else if (armed || existingBindings().length > 0) {
       setOpen(true);
