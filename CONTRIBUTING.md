@@ -85,6 +85,8 @@ cargo hakari generate && cargo hakari manage-deps --yes
 `manage-deps` adds the dependency as a plain `[dependencies]` line. Move it into the crate's
 `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` section: the workspace-hack carries native-only
 features (such as Tokio's networking) that break the `wasm32` browser builds, so it must never reach them.
+A new proc-macro crate instead belongs in `workspace-members` under `[traversal-excludes]` in `.config/hakari.toml`:
+proc macros compile for the host even during a `wasm32` build, so the gate cannot keep the workspace-hack out.
 
 Vite, Tauri CLI, wasm-pack, Playwright, and prek are project npm dependencies; `npm ci` installs them. No global npm packages are required for an ordinary contribution.
 

@@ -51,6 +51,10 @@ The hakari-generated `crates/workspace-hack` makes partial builds such as
 as that graph, including features that only dev dependencies enable. Crates
 depend on it for native targets only, because it carries features that do not
 compile for `wasm32`. `app-tauri` is excluded from hakari's traversal so Tauri
-crates never enter runtime builds. The source checks job runs `cargo hakari generate --diff`
+crates never enter runtime builds, and so are proc-macro crates such as
+`nightfall-engine-derive`: they compile for the host even in a `wasm32` build,
+where the native-only gate holds, so a workspace-hack dependency would build
+Tokio, axum, and wasmtime for every browser build. The source checks job runs `cargo hakari generate --diff`
 and `cargo hakari manage-deps --dry-run`, and a script test rejects any crate
-that declares the workspace-hack outside its native-only dependency table.
+that declares the workspace-hack outside its native-only dependency table and
+any proc-macro crate missing from hakari's traversal excludes.

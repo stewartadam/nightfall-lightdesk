@@ -24,20 +24,24 @@ function traversalExcludedMembers() {
   return new Set([...(list ?? "").matchAll(/"([^"]+)"/g)].map(([, n]) => n));
 }
 
+/** Reads the workspace packages from Cargo metadata without resolving dependencies. */
+function workspacePackages() {
+  return JSON.parse(
+    execFileSync("cargo", ["metadata", "--no-deps", "--format-version=1"], {
+      encoding: "utf8",
+    }),
+  ).packages;
+}
+
 /**
  * Keeps the hakari workspace-hack out of wasm32 builds: it unifies native-only
  * features (such as Tokio networking via mio) that do not compile for wasm32, so
  * every traversed crate must declare it only as a native-target normal dependency.
  */
 test("every crate depends on the workspace-hack for native targets only", () => {
-  const metadata = JSON.parse(
-    execFileSync("cargo", ["metadata", "--no-deps", "--format-version=1"], {
-      encoding: "utf8",
-    }),
-  );
   const excluded = traversalExcludedMembers();
   assert.ok(excluded.has("app-tauri"));
-  const members = metadata.packages.filter(
+  const members = workspacePackages().filter(
     (pkg) => pkg.name !== HACK && !excluded.has(pkg.name),
   );
   assert.ok(members.length > 0);
@@ -47,6 +51,25 @@ test("every crate depends on the workspace-hack for native targets only", () => 
       declarations.map(({ kind, target }) => ({ kind, target })),
       [{ kind: null, target: NATIVE_ONLY }],
       `${pkg.name} must declare ${HACK} once under [target.'${NATIVE_ONLY}'.dependencies]`,
+    );
+  }
+});
+
+/**
+ * Proc macros compile for the host even in a wasm32 build, where the native-only
+ * gate holds, so a workspace-hack dependency would build the whole native feature
+ * union for every browser build; they must be excluded from hakari's traversal.
+ */
+test("proc-macro crates are excluded from the workspace-hack", () => {
+  const excluded = traversalExcludedMembers();
+  const procMacros = workspacePackages().filter((pkg) =>
+    pkg.targets.some((target) => target.kind.includes("proc-macro")),
+  );
+  assert.ok(procMacros.length > 0);
+  for (const pkg of procMacros) {
+    assert.ok(
+      excluded.has(pkg.name),
+      `${pkg.name} is a proc-macro crate; add it to [traversal-excludes] workspace-members in .config/hakari.toml`,
     );
   }
 });

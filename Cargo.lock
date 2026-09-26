@@ -5278,7 +5278,6 @@ dependencies = [
 name = "nightfall-engine-derive"
 version = "0.1.0-alpha.2"
 dependencies = [
- "nightfall-workspace-hack",
  "proc-macro-crate 3.5.0",
  "proc-macro2",
  "quote",
