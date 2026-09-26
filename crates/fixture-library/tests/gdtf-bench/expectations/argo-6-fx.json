@@ -653,5 +653,9 @@
       "Reference 170 · Blue · b3 · 510",
       "Liquid Effect · Intensity · virtual"
     ]
+  },
+  "beyond_first_universe": {
+    "Extended_Pixel_1_+_Liquid": "444 channels past slot 512, first Reference 171 · ColorAdd_R · b2 · 513",
+    "Extended_Pixel_2_+_Liquid": "444 channels past slot 512, first Reference 171 · ColorAdd_R · b3 · 513"
   }
 }
