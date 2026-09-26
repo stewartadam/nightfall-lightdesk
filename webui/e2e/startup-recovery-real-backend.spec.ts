@@ -13,15 +13,9 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import os from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
-import {
-  type APIRequestContext,
-  expect,
-  type Page,
-  test,
-} from "./playwright-fixtures";
+import { expect, type Page, test } from "./playwright-fixtures";
 
 const SHOWFILE_FIXTURE_PATH =
   "crates/app/tests/data/procedural-showfile-parse-data.json";
@@ -35,45 +29,8 @@ type SeededStartupDraft = {
   draftDir: string;
 };
 
-type ShowfileListResponse = {
-  showfiles?: Array<{ path?: string }>;
-};
-
-/** Resolve the backend data root used by the active test backend. */
-async function resolveBackendDataRoot(
-  request: APIRequestContext,
-): Promise<string> {
-  const response = await request.get("/api/showfiles");
-  const body = (await response.json()) as ShowfileListResponse;
-  const existingPath = body.showfiles?.find(
-    (showfile) => typeof showfile.path === "string",
-  )?.path;
-  if (existingPath) {
-    return dirname(existingPath);
-  }
-
-  if (process.env.NIGHTFALL_DATA_DIR) {
-    return process.env.NIGHTFALL_DATA_DIR;
-  }
-
-  if (process.platform === "darwin") {
-    return join(
-      os.homedir(),
-      "Library",
-      "Application Support",
-      "com.nightfall.nightfall",
-    );
-  }
-
-  if (process.platform === "win32") {
-    return join(
-      process.env.APPDATA ?? join(os.homedir(), "AppData", "Roaming"),
-      "nightfall",
-    );
-  }
-
-  return join(os.homedir(), ".local", "share", "nightfall");
-}
+// Startup prompts only run while the backend has no world loaded (AppState Initialized).
+test.use({ emptyStartupWorld: true });
 
 /** Return a stable folder path for one showfile name under the backend data root. */
 function showfileDir(dataRoot: string, name: string): string {
@@ -144,10 +101,8 @@ async function setStartupShowfile(
 test("loads the app shell after choosing a real startup draft", async ({
   backendSlot,
   page,
-  request,
 }) => {
-  const dataRoot = await resolveBackendDataRoot(request);
-  const seed = seedStartupDraft(dataRoot, "codex-real-load-draft");
+  const seed = seedStartupDraft(backendSlot.dataDir, "codex-real-load-draft");
   await setStartupShowfile(page, seed.name);
 
   try {
@@ -223,12 +178,8 @@ for (const scenario of [
   test(`startup availability: ${scenario}`, async ({
     backendSlot,
     page,
-    request,
   }, testInfo) => {
-    const seed = seedStartupDraft(
-      await resolveBackendDataRoot(request),
-      `startup-${scenario}`,
-    );
+    const seed = seedStartupDraft(backendSlot.dataDir, `startup-${scenario}`);
     await setStartupShowfile(page, seed.name);
     try {
       if (scenario === "draft-only" || scenario === "neither") {
