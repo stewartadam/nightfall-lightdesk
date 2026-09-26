@@ -83,6 +83,13 @@ fn migrate_v17_to_v18(showfile: &mut Value, source: &str) -> Result<(), String> 
         let mut migrated = Vec::with_capacity(mappings.len());
         for mut mapping in mappings {
             let legacy = Value::Object(mapping.clone());
+            for field in ["device_name", "action"] {
+                if !mapping.contains_key(field) {
+                    return Err(format!(
+                        "MIDI mapping {legacy} has no '{field}' and cannot be migrated"
+                    ));
+                }
+            }
             if !migrate_midi_mapping(&mut mapping, &migrate_reference) {
                 tracing::warn!(filename = source, mapping = %legacy, "Dropping MIDI mapping with an unmappable status byte");
                 continue;
@@ -111,6 +118,16 @@ fn migrate_v17_to_v18(showfile: &mut Value, source: &str) -> Result<(), String> 
     }
 
     if let Some(mappings) = mapping_objects(showfile, "oscMappings", source)? {
+        for mapping in &mappings {
+            for field in ["address", "action"] {
+                if !mapping.contains_key(field) {
+                    return Err(format!(
+                        "OSC mapping {} has no '{field}' and cannot be migrated",
+                        Value::Object(mapping.clone())
+                    ));
+                }
+            }
+        }
         let migrated = mappings
             .into_iter()
             .map(|mut mapping| {
@@ -186,7 +203,11 @@ fn is_action_reference(kind: &Value) -> bool {
 fn reads_osc_level_implicitly(mapping: &Map<String, Value>) -> bool {
     mapping.get("arg_index").is_none_or(Value::is_null)
         && mapping.get("arg_value").is_none_or(Value::is_null)
-        && mapping["action"]["id"] == "control.set-external"
+        && mapping
+            .get("action")
+            .and_then(|action| action.get("id"))
+            .and_then(Value::as_str)
+            == Some("control.set-external")
 }
 
 /// Indexes clip UIDs by their user-facing numeric ID, for resolving legacy numeric clip targets.
@@ -311,12 +332,13 @@ fn migrate_midi_mapping(
 
 /// Returns the serialized `ControlBehavior` matching the edge a v17 mapping fired on.
 ///
-/// Note-off statuses and note-on with an exact velocity of zero matched only releases.
+/// Note-off statuses, and note-on or controller mappings matching an exact value of zero,
+/// matched only releases; a controller button pair (127 to start, 0 to stop) keeps both.
 fn legacy_midi_behavior(mapping: &Map<String, Value>) -> &'static str {
     let status = mapping.get("channel").and_then(Value::as_u64).unwrap_or(0);
     let velocity = mapping.get("velocity").and_then(Value::as_u64);
     match (status & 0xF0, velocity) {
-        (0x80, _) | (0x90, Some(0)) => "Release",
+        (0x80, _) | (0x90 | 0xB0, Some(0)) => "Release",
         _ => "Press",
     }
 }
@@ -449,6 +471,49 @@ mod tests {
         assert_eq!(mappings[3]["source"], mappings[1]["source"]);
         assert_eq!(mappings[3]["behavior"], json!("Release"));
         assert_eq!(mappings[3]["action"]["id"], json!("clip.stop"));
+    }
+
+    /// Verifies a v17 controller button pair, one mapping on value 127 and one on value 0,
+    /// keeps both as press and release bindings instead of dropping the release.
+    #[test]
+    fn controller_button_pairs_keep_their_release() {
+        let mut showfile = v17_showfile();
+        showfile["midiMappings"] = json!([
+            {"device_name": "Grid", "channel": 0xB0, "note": 20, "velocity": 127,
+             "action": {"id": "clip.start", "arguments": {"target": {"type": "Uid", "data": "aa"}}}},
+            {"device_name": "Grid", "channel": 0xB0, "note": 20, "velocity": 0,
+             "action": {"id": "clip.stop", "arguments": {"target": {"type": "Uid", "data": "aa"}}}},
+        ]);
+        migrate_showfile_json(&mut showfile, 17, "v17").unwrap();
+
+        let behaviors: Vec<_> = showfile["midiMappings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|mapping| (mapping["action"]["id"].clone(), mapping["behavior"].clone()))
+            .collect();
+        assert_eq!(
+            behaviors,
+            vec![
+                (json!("clip.start"), json!("Press")),
+                (json!("clip.stop"), json!("Release")),
+            ]
+        );
+    }
+
+    /// Verifies mappings missing fields they cannot be migrated without fail the migration
+    /// with a message instead of panicking.
+    #[test]
+    fn mappings_missing_required_fields_fail_migration() {
+        let mut midi = v17_showfile();
+        midi["midiMappings"] = json!([{"channel": 0x90, "note": 60, "velocity": null}]);
+        let error = migrate_showfile_json(&mut midi, 17, "v17").unwrap_err();
+        assert!(error.contains("device_name"), "{error}");
+
+        let mut osc = v17_showfile();
+        osc["oscMappings"] = json!([{"address": "/go", "arg_index": null}]);
+        let error = migrate_showfile_json(&mut osc, 17, "v17").unwrap_err();
+        assert!(error.contains("action"), "{error}");
     }
 
     /// OSC mappings gain IDs, and level mappings name the argument v17 read implicitly.
