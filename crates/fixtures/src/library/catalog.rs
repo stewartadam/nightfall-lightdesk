@@ -72,7 +72,7 @@ impl BuiltinFixtureProfile {
 }
 
 /// Built-in profiles available even when no fixture files are installed.
-const BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 12] = [
+static BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 12] = [
     builtin(
         "100-segment LED Bar",
         "RGB",
