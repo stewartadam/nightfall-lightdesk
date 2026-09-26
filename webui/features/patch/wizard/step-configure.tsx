@@ -85,29 +85,18 @@ function mapUniverseByIndex(universes: number[], index: number): number {
   return universes[universes.length - 1];
 }
 
-function normalizeParamName(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function attributeName(attribute: types.Attribute): string {
-  if (attribute.type === "Custom") {
-    return attribute.data.label;
-  }
-  return attribute.type;
-}
-
+/**
+ * Returns the DMX footprint a patch selection occupies, laid out like the engine so
+ * explicit footprint slots and gaps count toward the next fixture's address.
+ */
 function computeSourceWidth(
   fixture: types.Fixture,
   elementId?: number,
   paramName?: string,
 ): number {
-  const normalizedParam = paramName ? normalizeParamName(paramName) : undefined;
   return fixtureWireLayout(fixture, {
     elementId,
-    includeParameter: normalizedParam
-      ? (param) =>
-          normalizeParamName(attributeName(param.attribute)) === normalizedParam
-      : undefined,
+    parameterName: paramName || undefined,
   }).footprint;
 }
 

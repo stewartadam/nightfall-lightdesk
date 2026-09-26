@@ -102,6 +102,84 @@ test("follows the highest-priority console binding driving a channel", () => {
   );
 });
 
+/**
+ * Verifies binding follow matches the frame composer's precedence: where a console→transport
+ * route and a direct fixture→transport binding cover the same wire channel, direct output is
+ * overlaid last and supplies the value, so follow selects it even when the console route has
+ * the higher binding priority. Channels only the route writes still follow the route.
+ */
+test("follows direct fixture output over a higher-priority console route", () => {
+  const fixtures = {
+    a: makeRgbFixture("a", 1),
+    b: makeRgbFixture("b", 2),
+  };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      consoleBinding(1, 1, 0),
+      {
+        source: { type: "Console", data: { universe: singleUniverse(1) } },
+        target: {
+          type: "Transport",
+          data: { target: "sacn", universe: singleUniverse(1), address: 1 },
+        },
+        priority: 10,
+        clone: false,
+      },
+      {
+        source: { type: "Fixture", data: { uids: ["b"] } },
+        target: {
+          type: "Transport",
+          data: { target: "sacn", universe: singleUniverse(1), address: 3 },
+        },
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, SACN, 1, 3),
+    "output-2",
+  );
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, SACN, 1, 1),
+    "output-1",
+  );
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 3),
+    "output-0",
+  );
+});
+
+/**
+ * Verifies binding follow only matches the channels a parameter-filtered binding writes:
+ * a Red-only console binding at 1.1 owns address 1, not the Green/Blue addresses after it.
+ */
+test("follows only the parameters a filtered binding writes", () => {
+  const fixtures = { a: makeRgbFixture("a", 1) };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      {
+        ...consoleBinding(1, 1, 0),
+        source: { type: "Fixture", data: { uids: ["a"], param: "Red" } },
+      },
+    ],
+  };
+
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 1),
+    "output-0",
+  );
+  assert.equal(
+    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 2),
+    null,
+  );
+});
+
 /** Verifies binding follow ignores bindings overridden by a Fixture→Disabled row. */
 test("does not follow bindings overridden by a disabled row", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };

@@ -199,6 +199,24 @@ export function findInputBindingIdForOutputChannel(
   return null;
 }
 
+/** Returns whether a patch location writes one DMX address through any parameter byte. */
+function patchWritesAddress(patch: FixturePatchEntry, address: number) {
+  return patch.parameterAddresses.some((addresses) =>
+    addresses.includes(address),
+  );
+}
+
+/**
+ * Ranks output bindings by the order the frame composer lets them win a wire channel:
+ * direct fixture→transport output overlays console→transport windows, so it ranks first.
+ */
+function outputBindingPrecedenceTier(binding: types.OutputBinding): number {
+  return binding.source.type === "Fixture" &&
+    binding.target.type === "Transport"
+    ? 0
+    : 1;
+}
+
 /** Returns a key identifying one element patch location across patch maps. */
 function patchLocationKey(
   fixtureUid: string,
@@ -227,8 +245,10 @@ function patchLocationKeys(patchMap: FixturePatchMap): Set<string> {
 /**
  * Finds the output binding row driving one output channel of the selected space.
  *
- * Candidate rows are checked from highest to lowest effective priority (later rows win
- * ties, as in the engine). A row only matches when the location it patches is also part
+ * Candidate rows are checked in the frame composer's precedence: direct fixture→transport
+ * rows first (their output overlays console→transport windows on the wire), then the rest
+ * from highest to lowest effective priority (later rows win ties, as in the engine). A row
+ * only matches when it writes the channel itself and the location it patches is also part
  * of the effective patch map built from the full binding set, so rows overridden by a
  * Fixture→Disabled row, a disabled binding, or a higher-priority console binding are
  * never followed.
@@ -256,7 +276,11 @@ export function findOutputBindingIdForChannel(
   const candidates = snapshot.output
     .map((binding, index) => ({ binding, index }))
     .sort(
-      (a, b) => b.binding.priority - a.binding.priority || b.index - a.index,
+      (a, b) =>
+        outputBindingPrecedenceTier(a.binding) -
+          outputBindingPrecedenceTier(b.binding) ||
+        b.binding.priority - a.binding.priority ||
+        b.index - a.index,
     );
 
   for (const { binding, index } of candidates) {
@@ -289,9 +313,7 @@ export function findOutputBindingIdForChannel(
           if (
             patch.universe === selectedUniverse &&
             outputTransportMatchesSelection(patch.transport, selection) &&
-            patch.parameterAddresses.some((addresses) =>
-              addresses.includes(outputAddress),
-            ) &&
+            patchWritesAddress(patch, outputAddress) &&
             effectiveLocations.has(
               patchLocationKey(fixtureUid, elementId, patch),
             )

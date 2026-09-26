@@ -146,8 +146,8 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
     const visibleUniverseIds = new Set(universeIds());
     if (visibleUniverseIds.size === 0) return [];
     const targets: FixtureJumpTarget[] = [];
-    const seenFixtureUniverses = new Set<string>();
-    const seenElementUniverses = new Set<string>();
+    const fixtureTargets = new Map<string, FixtureJumpTarget>();
+    const elementTargets = new Map<string, FixtureJumpTarget>();
 
     for (const [fixtureUid, patchByElement] of Object.entries(patchData())) {
       const fixture = $fixtures()[fixtureUid];
@@ -163,9 +163,9 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
           if (!patchInSelectedSpace(patch)) continue;
 
           const targetKey = `${fixture.identifiers.id}:${patch.universe}`;
-          if (!seenFixtureUniverses.has(targetKey)) {
-            seenFixtureUniverses.add(targetKey);
-            targets.push({
+          const fixtureTarget = fixtureTargets.get(targetKey);
+          if (!fixtureTarget || patch.address < fixtureTarget.address) {
+            fixtureTargets.set(targetKey, {
               universeId: patch.universe,
               address: patch.address,
               fixtureId: fixture.identifiers.id,
@@ -174,9 +174,9 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
           }
 
           const elementTargetKey = `${targetKey}:${elementId}`;
-          if (!seenElementUniverses.has(elementTargetKey)) {
-            seenElementUniverses.add(elementTargetKey);
-            targets.push({
+          const elementTarget = elementTargets.get(elementTargetKey);
+          if (!elementTarget || patch.address < elementTarget.address) {
+            elementTargets.set(elementTargetKey, {
               universeId: patch.universe,
               address: patch.address,
               fixtureId: fixture.identifiers.id,
@@ -205,6 +205,7 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
       }
     }
 
+    targets.push(...fixtureTargets.values(), ...elementTargets.values());
     return targets.sort(
       (a, b) =>
         a.fixtureId - b.fixtureId ||
