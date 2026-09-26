@@ -68,14 +68,13 @@ import {
   disabledBindingTouchesFixture,
   type FixtureDisplayRow,
   fixtureDisplayCellHasConflict,
+  fixtureOutputOccupancyKey,
   fixtureUidsFromInputSource,
   fixtureUidsFromInputTarget,
-  fixtureUidsFromOutputSource,
   formatFixtureGroupLabel,
   formatGroupWithChevron,
   inputBindingTouchesFixture,
   outputBindingTouchesFixture,
-  stableOutputTargetKey,
 } from "../model/fixtures-model";
 
 export interface PatchFixturesTabProps {
@@ -234,15 +233,10 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
         if (binding.target.type === "Disabled") {
           disabledByBinding = true;
         }
-        if (
-          binding.source.type === "Fixture" &&
-          fixtureUidsFromOutputSource(binding.source).has(uid)
-        ) {
-          const key = stableOutputTargetKey(binding.target);
-          if (key) {
-            if (seenOutputTargets.has(key)) outputOverlap = true;
-            seenOutputTargets.add(key);
-          }
+        const key = fixtureOutputOccupancyKey(binding, uid);
+        if (key) {
+          if (seenOutputTargets.has(key)) outputOverlap = true;
+          seenOutputTargets.add(key);
         }
         outputRows.push(
           toOutputBindingRow(binding, fixtureMap, `output-${index}`),

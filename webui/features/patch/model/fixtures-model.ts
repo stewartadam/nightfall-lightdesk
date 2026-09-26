@@ -103,6 +103,26 @@ export function inputBindingTouchesFixture(
   return targetUids.has(fixtureUid);
 }
 
+/**
+ * Returns the stable key of the output location where a binding sends a
+ * fixture's DMX, or null when it does not output that fixture (another
+ * source, another fixture, or a disabled target).
+ *
+ * Primary (`Fixture`) and additional-break (`FixtureBreak`) sources both
+ * occupy their target, so two breaks of one fixture patched to the same
+ * address share a key and are reported as overlapping, while breaks patched
+ * to different addresses do not.
+ */
+export function fixtureOutputOccupancyKey(
+  binding: types.OutputBinding,
+  fixtureUid: string,
+): string | null {
+  if (!fixtureUidsFromOutputSource(binding.source).has(fixtureUid)) {
+    return null;
+  }
+  return stableOutputTargetKey(binding.target);
+}
+
 export function outputBindingTouchesFixture(
   binding: types.OutputBinding,
   fixtureUid: string,
