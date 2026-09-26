@@ -12,7 +12,8 @@
 //! they rarely isolate a single edge case. [`GdtfBuilder`] writes small,
 //! spec-shaped `description.xml` archives so tests can express exactly the
 //! structure under test: mode roots, geometry references with DMX breaks,
-//! non-contiguous fine bytes, virtual channels, channel functions and sets.
+//! non-contiguous fine bytes, virtual channels, channel functions, sets and
+//! the wheels and slots they reference.
 //!
 //! Enable the `test-support` feature to use this module from other crates.
 
@@ -157,6 +158,65 @@ pub struct ModelSpec {
     pub primitive_type: String,
     /// Length, width and height in metres.
     pub dimensions: [f64; 3],
+}
+
+/// A `<Slot>` on a wheel.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SlotSpec {
+    /// Slot name, unique within the wheel.
+    pub name: String,
+    /// CIE 1931 `(x, y, Y)` colour; always written because the parser rejects slots without one.
+    pub color: [f64; 3],
+    /// Optional PNG name (without extension) under `wheels/` in the archive.
+    pub media: Option<String>,
+}
+
+impl SlotSpec {
+    /// Creates an open (D65 white, full transmission) slot with no media.
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            color: [0.3127, 0.329, 100.0],
+            media: None,
+        }
+    }
+
+    /// Sets the slot colour as CIE 1931 `x`, `y` and luminance `Y`.
+    pub fn color(mut self, x: f64, y: f64, luminance: f64) -> Self {
+        self.color = [x, y, luminance];
+        self
+    }
+
+    /// Links a media file under `wheels/`; add the file itself with [`GdtfBuilder::file`].
+    pub fn media(mut self, media: &str) -> Self {
+        self.media = Some(media.to_string());
+        self
+    }
+}
+
+/// A `<Wheel>` definition referenced by channel functions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WheelSpec {
+    /// Wheel name referenced by [`FunctionSpec::wheel`].
+    pub name: String,
+    /// Slots in order; channel sets address them by 1-based index.
+    pub slots: Vec<SlotSpec>,
+}
+
+impl WheelSpec {
+    /// Creates an empty wheel.
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            slots: Vec::new(),
+        }
+    }
+
+    /// Appends a slot.
+    pub fn slot(mut self, slot: SlotSpec) -> Self {
+        self.slots.push(slot);
+        self
+    }
 }
 
 /// A `<ChannelSet>` inside a channel function.
@@ -372,6 +432,7 @@ impl ModeSpec {
 pub struct GdtfBuilder {
     manufacturer: String,
     name: String,
+    wheels: Vec<WheelSpec>,
     models: Vec<ModelSpec>,
     geometries: Vec<GeometrySpec>,
     modes: Vec<ModeSpec>,
@@ -384,11 +445,18 @@ impl GdtfBuilder {
         Self {
             manufacturer: manufacturer.to_string(),
             name: name.to_string(),
+            wheels: Vec::new(),
             models: Vec::new(),
             geometries: Vec::new(),
             modes: Vec::new(),
             extra_files: Vec::new(),
         }
+    }
+
+    /// Adds a wheel definition.
+    pub fn wheel(mut self, wheel: WheelSpec) -> Self {
+        self.wheels.push(wheel);
+        self
     }
 
     /// Adds a model definition.
@@ -430,7 +498,8 @@ impl GdtfBuilder {
             make = escape(&self.manufacturer),
         );
         self.write_attribute_definitions(&mut xml);
-        xml.push_str("<Wheels/>\n<PhysicalDescriptions/>\n<Models>\n");
+        self.write_wheels(&mut xml);
+        xml.push_str("<PhysicalDescriptions/>\n<Models>\n");
         for model in &self.models {
             let _ = writeln!(
                 xml,
@@ -507,6 +576,29 @@ impl GdtfBuilder {
             );
         }
         xml.push_str("</Attributes>\n</AttributeDefinitions>\n");
+    }
+
+    /// Emits the `<Wheels>` collection with each wheel's slots in declaration order.
+    fn write_wheels(&self, xml: &mut String) {
+        xml.push_str("<Wheels>\n");
+        for wheel in &self.wheels {
+            let _ = writeln!(xml, "<Wheel Name=\"{}\">", escape(&wheel.name));
+            for slot in &wheel.slots {
+                let [x, y, luminance] = slot.color;
+                let media = slot
+                    .media
+                    .as_ref()
+                    .map(|media| format!(" MediaFileName=\"{}\"", escape(media)))
+                    .unwrap_or_default();
+                let _ = writeln!(
+                    xml,
+                    "<Slot Name=\"{}\" Color=\"{x},{y},{luminance}\"{media}/>",
+                    escape(&slot.name)
+                );
+            }
+            xml.push_str("</Wheel>\n");
+        }
+        xml.push_str("</Wheels>\n");
     }
 }
 
@@ -796,6 +888,73 @@ mod tests {
         assert_eq!(sets.len(), 2);
         // The parser stores wheel slot indices zero-based.
         assert_eq!(sets[1].wheel_slot_index, Some(1));
+    }
+
+    /// Verifies channel functions resolve their wheel and channel sets resolve slots, colours and media.
+    #[test]
+    fn builder_output_resolves_wheels_and_slots() {
+        let mut gdtf = GdtfBuilder::new("Test", "Wheels")
+            .wheel(
+                WheelSpec::new("Gobo Wheel")
+                    .slot(SlotSpec::new("Open"))
+                    .slot(SlotSpec::new("Gobo 1").media("gobo1")),
+            )
+            .wheel(WheelSpec::new("Color Wheel").slot(SlotSpec::new("Red").color(0.64, 0.33, 21.3)))
+            .file("wheels/gobo1.png", b"png-bytes")
+            .geometry(GeometrySpec::generic("Base"))
+            .mode(
+                ModeSpec::new("Mode 1", "Base").channel(
+                    ChannelSpec::new("Base", "Gobo1", &[1]).function(
+                        FunctionSpec::new("Gobo1")
+                            .wheel("Gobo Wheel")
+                            .set("Open", 0, Some(1))
+                            .set("Gobo 1", 10, Some(2)),
+                    ),
+                ),
+            )
+            .parse();
+
+        let fixture_type = &gdtf.description.fixture_types[0];
+        let function =
+            &fixture_type.dmx_modes[0].dmx_channels[0].logical_channels[0].channel_functions[0];
+        let wheel = function
+            .wheel(fixture_type)
+            .expect("function resolves its wheel");
+        let slot = function.channel_sets[1]
+            .wheel_slot(wheel)
+            .expect("channel set resolves its slot");
+        assert_eq!(slot.name.as_ref().unwrap().as_ref(), "Gobo 1");
+        assert_eq!(slot.media_name.as_deref(), Some("gobo1"));
+
+        let red = fixture_type
+            .wheel("Color Wheel")
+            .unwrap()
+            .slot("Red")
+            .unwrap();
+        let gdtf::wheel::WheelSlotOptic::Color(color) = &red.optic else {
+            panic!("expected colour optic");
+        };
+        assert_eq!((color.x, color.y, color.z), (0.64, 0.33, 21.3));
+
+        let wheel_errors: Vec<_> = gdtf
+            .validate()
+            .errors
+            .into_iter()
+            .filter(|error| {
+                use gdtf::{ValidationErrorType, ValidationObject};
+                matches!(
+                    error.object,
+                    ValidationObject::Wheel | ValidationObject::WheelSlot
+                ) || matches!(
+                    error.ty,
+                    ValidationErrorType::LinkNotFound(
+                        ValidationObject::Wheel | ValidationObject::WheelSlot,
+                        _
+                    )
+                )
+            })
+            .collect();
+        assert!(wheel_errors.is_empty(), "{wheel_errors:?}");
     }
 
     /// Verifies extra archive entries are readable through the resource map.
