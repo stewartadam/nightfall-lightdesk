@@ -18,7 +18,8 @@
 //! - `manifest.json` pins each archive's SHA-256, provenance and exact modes.
 //! - `expectations/<id>.json` holds per-mode channel charts for representative
 //!   modes, the exact invariant violations currently known per mode, and the
-//!   channels whose geometry lies outside their mode's geometry tree.
+//!   channels whose geometry lies outside their mode's geometry tree or
+//!   whose slots run past the first universe of their break.
 //!   Regenerate with `NIGHTFALL_GDTF_BENCH_UPDATE=1` and review the diff; an
 //!   archive with a placement disagreement is never rewritten. A
 //!   chart is only trustworthy once checked against the manufacturer's
@@ -73,7 +74,17 @@ struct BenchExpectations {
     /// there, so they are pinned for review. Modes without any are omitted.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     unreachable_channels: BTreeMap<String, Vec<String>>,
+    /// Per mode, a summary of channels whose slots run past the first 512 of
+    /// their break: the count and the first such channel. A break's footprint
+    /// may continue into the next universe, but the converter cannot place
+    /// those slots yet and drops them (nightfall-lightdesk-n6ml), so they are
+    /// pinned instead of compared. Modes without any are omitted.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    beyond_first_universe: BTreeMap<String, String>,
 }
+
+/// Slots in one DMX universe; a break's footprint may continue past it.
+const SLOTS_PER_UNIVERSE: u16 = 512;
 
 /// Returns the directory holding the bench manifest and expectations.
 fn bench_root() -> PathBuf {
@@ -196,7 +207,20 @@ fn gdtf_bench_modes_meet_expectations() {
                         .unreachable_channels
                         .insert(mode.clone(), unreachable);
                 }
-                reference_disagreement(&references, &converted.fixture).map_or(Ok(()), Err)
+                let (comparable, beyond) = split_beyond_first_universe(references);
+                if let Some(first) = beyond.first() {
+                    actual.beyond_first_universe.insert(
+                        mode.clone(),
+                        format!(
+                            "{} channels past slot {SLOTS_PER_UNIVERSE}, first {} · {} · {}",
+                            beyond.len(),
+                            first.geometry,
+                            first.attribute,
+                            reference_placement(first)
+                        ),
+                    );
+                }
+                reference_disagreement(&comparable, &converted.fixture).map_or(Ok(()), Err)
             });
             if let Err(message) = disagreement {
                 failures.push(format!("{}/{mode}: {message}", archive.id));
@@ -230,29 +254,57 @@ fn gdtf_bench_modes_meet_expectations() {
 /// row format, or returns `None` for a channel inside the tree.
 fn unreachable_row(reference: &ReferenceChannel) -> Option<String> {
     let declared = reference.outside_mode_tree.as_ref()?;
-    let placement = if reference.slots.is_empty() {
-        "virtual".to_string()
-    } else {
-        let slots = reference
-            .slots
-            .iter()
-            .map(u16::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        match reference.dmx_break {
-            Some(dmx_break) => format!("b{dmx_break} · {slots}"),
-            None => format!("overwrite · {slots}"),
-        }
-    };
     let bound = if &reference.geometry == declared {
         String::new()
     } else {
         format!(" → {}", reference.geometry)
     };
     Some(format!(
-        "{declared} · {} · {placement}{bound}",
-        reference.attribute
+        "{declared} · {} · {}{bound}",
+        reference.attribute,
+        reference_placement(reference)
     ))
+}
+
+/// Renders a reference channel's break and slots in the chart row format.
+fn reference_placement(reference: &ReferenceChannel) -> String {
+    if reference.slots.is_empty() {
+        return "virtual".to_string();
+    }
+    let slots = reference
+        .slots
+        .iter()
+        .map(u16::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    match reference.dmx_break {
+        Some(dmx_break) => format!("b{dmx_break} · {slots}"),
+        None => format!("overwrite · {slots}"),
+    }
+}
+
+/// Separates channels with a slot past the first universe of their break from the rest.
+///
+/// The converter drops such channels, so the remaining channels of an element
+/// close up; their ordinals are renumbered per element to match the
+/// converted parameter positions. Returns `(comparable, beyond)`.
+fn split_beyond_first_universe(
+    references: Vec<ReferenceChannel>,
+) -> (Vec<ReferenceChannel>, Vec<ReferenceChannel>) {
+    let (beyond, mut comparable): (Vec<_>, Vec<_>) =
+        references.into_iter().partition(|reference| {
+            reference
+                .slots
+                .iter()
+                .any(|slot| *slot > SLOTS_PER_UNIVERSE)
+        });
+    let mut ordinals = BTreeMap::<String, usize>::new();
+    for reference in &mut comparable {
+        let ordinal = ordinals.entry(reference.geometry.clone()).or_default();
+        reference.ordinal = *ordinal;
+        *ordinal += 1;
+    }
+    (comparable, beyond)
 }
 
 /// Lists a mode's channels as the independent reference decoder places them.

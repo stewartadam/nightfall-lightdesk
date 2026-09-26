@@ -23,7 +23,7 @@ import {
   on,
   Show,
 } from "solid-js";
-import { fixtureWireLayout } from "../../../lib/dmx";
+import { fixtureWireLayout, parameterDmxBreak } from "../../../lib/dmx";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
 import { fixtureProfile } from "../../../state/appStores";
@@ -90,35 +90,58 @@ function channelListLabel(channels: number[]): string {
 
 /**
  * Builds display rows with the DMX channels each parameter occupies in the fixture footprint.
+ *
+ * Every DMX break is laid out separately since each has its own start
+ * address; channels on breaks after the first are prefixed with their break.
  */
 function buildElementParameterGroups(
   fixture: types.Fixture | null,
 ): ElementDisplayGroup[] {
   if (!fixture) return [];
 
-  const slotsByParameter = new Map<string, number[]>();
-  for (const placed of fixtureWireLayout(fixture).parameters) {
-    slotsByParameter.set(
-      `${placed.elementIndex}:${placed.parameterIndex}`,
-      placed.slots,
-    );
+  const breaks = new Set<number>();
+  for (const element of fixture.elements) {
+    for (const parameter of element.parameters) {
+      const dmxBreak = parameterDmxBreak(parameter);
+      if (dmxBreak !== null) breaks.add(dmxBreak);
+    }
+  }
+  const slotsByParameter = new Map<
+    string,
+    { dmxBreak: number; slots: number[] }
+  >();
+  for (const dmxBreak of breaks) {
+    for (const placed of fixtureWireLayout(fixture, { dmxBreak }).parameters) {
+      slotsByParameter.set(`${placed.elementIndex}:${placed.parameterIndex}`, {
+        dmxBreak,
+        slots: placed.slots,
+      });
+    }
   }
   let order = 1;
 
   return fixture.elements.map((element, elementIndex) => {
     const parameters = element.parameters.map((parameter, parameterIndex) => {
-      const channels = (
-        slotsByParameter.get(`${elementIndex}:${parameterIndex}`) ?? []
-      ).map((slot) => slot + 1);
+      const placement = slotsByParameter.get(
+        `${elementIndex}:${parameterIndex}`,
+      );
+      const channels = (placement?.slots ?? []).map((slot) => slot + 1);
       const width = channels.length;
       const startChannel = channels[0] ?? null;
+      const breakPrefix =
+        placement && placement.dmxBreak !== 1
+          ? `Break ${placement.dmxBreak}: `
+          : "";
 
       return {
         parameter,
         attributeLabel: attributeLabel(parameter.attribute),
         channelLabel:
-          startChannel === null ? "Virtual" : channelListLabel(channels),
-        offsetLabel: startChannel === null ? "n/a" : `${startChannel - 1}`,
+          startChannel === null
+            ? "Virtual"
+            : `${breakPrefix}${channelListLabel(channels)}`,
+        offsetLabel:
+          startChannel === null ? "n/a" : `${breakPrefix}${startChannel - 1}`,
         order: order++,
         width,
       };

@@ -287,6 +287,13 @@ pub enum BindingEndpoint {
         /// Optional parameter name
         param: Option<String>,
     },
+    /// An additional DMX break (2 or higher) of fixtures, patched as a whole
+    FixtureBreak {
+        /// Fixture IDs
+        ids: Vec<u32>,
+        /// DMX break number
+        dmx_break: u16,
+    },
     /// Disabled endpoint (filter)
     Disabled,
 }

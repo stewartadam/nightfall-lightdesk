@@ -761,6 +761,22 @@
       "sha256": "94e33f42cfbcbf6b67e95724ff2c57f4cbf518f04b57fab5a64e9226530d7214",
       "modes": ["Extended", "Standard", "Basic"],
       "chart_modes": ["Extended"]
+    },
+    {
+      "id": "argo-6-fx",
+      "group": "full",
+      "file": "Ayrton@Argo_6_FX@V1.6_Corrected_Atttribute_Names.gdtf",
+      "sha256": "0b718401063b2d5f9f39861412a36d4adfbc031ebc083aacdd40b8aab60feb3e",
+      "modes": [
+        "Extended_Pixel_1",
+        "Standard",
+        "Extended_Pixel_2",
+        "Extended_Pixel_1_+_Liquid",
+        "Extended_Pixel_2_+_Liquid",
+        "Basic",
+        "Extended_Ring"
+      ],
+      "chart_modes": ["Extended_Pixel_2_+_Liquid"]
     }
   ]
 }

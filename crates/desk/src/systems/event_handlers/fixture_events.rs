@@ -284,6 +284,8 @@ enum EndpointKind {
     Transport,
     Console,
     Fixture,
+    /// Additional DMX break of whole fixtures; only valid as an output source.
+    FixtureBreak,
     Disabled,
 }
 
@@ -311,6 +313,10 @@ enum ResolvedBindingEndpoint {
         element: Option<u16>,
         param: Option<String>,
     },
+    FixtureBreak {
+        uids: Vec<Uuid>,
+        dmx_break: u16,
+    },
     Disabled,
 }
 
@@ -319,6 +325,7 @@ fn endpoint_kind(endpoint: &BindingEndpoint) -> EndpointKind {
         BindingEndpoint::Console { .. } => EndpointKind::Console,
         BindingEndpoint::Transport { .. } => EndpointKind::Transport,
         BindingEndpoint::Fixture { .. } => EndpointKind::Fixture,
+        BindingEndpoint::FixtureBreak { .. } => EndpointKind::FixtureBreak,
         BindingEndpoint::Disabled => EndpointKind::Disabled,
     }
 }
@@ -368,6 +375,12 @@ fn resolve_binding_endpoint(
             element: *element,
             param: param.clone(),
         }),
+        BindingEndpoint::FixtureBreak { ids, dmx_break } => {
+            Ok(ResolvedBindingEndpoint::FixtureBreak {
+                uids: resolve_fixture_uids(ids, data_provider)?,
+                dmx_break: *dmx_break,
+            })
+        }
         BindingEndpoint::Disabled => Ok(ResolvedBindingEndpoint::Disabled),
     }
 }
@@ -380,9 +393,14 @@ fn classify_binding_direction(
     let target_kind = endpoint_kind(target);
 
     use BindingDirection::{Input, Output};
-    use EndpointKind::{Console, Disabled, Fixture, Transport};
+    use EndpointKind::{Console, Disabled, Fixture, FixtureBreak, Transport};
 
     match (source_kind, target_kind) {
+        (_, FixtureBreak) => Err("Fixture break endpoint cannot be used as a target".to_string()),
+        (FixtureBreak, Transport | Disabled) => Ok(Output),
+        (FixtureBreak, _) => {
+            Err("Fixture breaks can only be patched to network or USB outputs".to_string())
+        }
         (Transport, _) => Ok(Input),
         (_, Transport) => Ok(Output),
         (Console, Console) => Err("Console -> console bindings are invalid".to_string()),
@@ -405,7 +423,18 @@ fn infer_binding_scopes(
     let source_kind = source.map(endpoint_kind);
     let target_kind = target.map(endpoint_kind);
 
-    use EndpointKind::{Console, Disabled, Fixture, Transport};
+    use EndpointKind::{Console, Disabled, Fixture, FixtureBreak, Transport};
+
+    if target_kind == Some(FixtureBreak) {
+        return Err("Fixture break endpoint cannot be used as a target".to_string());
+    }
+
+    if source_kind == Some(FixtureBreak) {
+        if matches!(target_kind, Some(Console) | Some(Fixture)) {
+            return Err("Fixture breaks can only be patched to network or USB outputs".to_string());
+        }
+        return Ok((false, true));
+    }
 
     if source_kind == Some(Transport) {
         return Ok((true, false));
@@ -485,6 +514,9 @@ fn input_source_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Inpu
             element: *element,
             param: param.clone(),
         }),
+        ResolvedBindingEndpoint::FixtureBreak { .. } => {
+            Err("Fixture break endpoint cannot be used as an input source".to_string())
+        }
         ResolvedBindingEndpoint::Disabled => {
             Err("Disabled endpoint cannot be used as a source".to_string())
         }
@@ -516,6 +548,9 @@ fn input_target_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Inpu
             param: param.clone(),
         }),
         ResolvedBindingEndpoint::Disabled => Ok(InputTarget::Disabled),
+        ResolvedBindingEndpoint::FixtureBreak { .. } => {
+            Err("Fixture break endpoint cannot be used as an input target".to_string())
+        }
     }
 }
 
@@ -534,6 +569,12 @@ fn output_source_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Out
             element: *element,
             param: param.clone(),
         }),
+        ResolvedBindingEndpoint::FixtureBreak { uids, dmx_break } => {
+            Ok(OutputSource::FixtureBreak {
+                uids: uids.clone(),
+                dmx_break: *dmx_break,
+            })
+        }
         ResolvedBindingEndpoint::Transport { .. } => {
             Err("Transport endpoint cannot be used as an output source".to_string())
         }
@@ -559,7 +600,7 @@ fn output_target_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Out
             address: *address,
         }),
         ResolvedBindingEndpoint::Disabled => Ok(OutputTarget::Disabled),
-        ResolvedBindingEndpoint::Fixture { .. } => {
+        ResolvedBindingEndpoint::Fixture { .. } | ResolvedBindingEndpoint::FixtureBreak { .. } => {
             Err("Fixture endpoint cannot be used as an output target".to_string())
         }
     }
@@ -769,6 +810,24 @@ fn output_source_matches_filter(binding: &OutputSource, filter: &OutputSource) -
             *filter_element,
             filter_param.as_deref(),
         ),
+        (
+            OutputSource::FixtureBreak { uids, dmx_break },
+            OutputSource::FixtureBreak {
+                uids: filter_uids,
+                dmx_break: filter_break,
+            },
+        ) => {
+            dmx_break == filter_break
+                && fixture_matches_filter(uids, None, None, filter_uids, None, None)
+        }
+        (
+            OutputSource::FixtureBreak { uids, .. },
+            OutputSource::Fixture {
+                uids: filter_uids,
+                element: None,
+                param: None,
+            },
+        ) => fixture_matches_filter(uids, None, None, filter_uids, None, None),
         _ => false,
     }
 }
@@ -2013,6 +2072,87 @@ mod tests {
                 clone: true,
             }
         );
+    }
+
+    /// Verifies a fixture break patches only to transports and is removed by a whole-fixture unpatch.
+    #[test]
+    fn apply_patch_binding_fixture_break_round_trip() {
+        let fixture = create_test_fixture(12);
+        let fixture_uid = fixture.identifiers.uid;
+        let mut data_provider = FixtureDataProviderExt::default();
+        let _ = data_provider.inner.add(fixture);
+        let source = BindingEndpoint::FixtureBreak {
+            ids: vec![12],
+            dmx_break: 2,
+        };
+        let transport = BindingEndpoint::Transport {
+            target: "sacn".to_string(),
+            universe: Some(DmxRange::single(1)),
+            address: Some(200),
+        };
+        let mut input_bindings = InputBindings::default();
+        let mut output_bindings = OutputBindings::default();
+        let mut disabled_bindings = DisabledBindings::default();
+        let network_outputs = NetworkDmxOutputTargets::default();
+        let usb_outputs = UsbDmxOutputTargets::default();
+
+        let console = BindingEndpoint::Console {
+            universe: None,
+            address: None,
+        };
+        assert!(
+            apply_patch_binding_add(
+                &source,
+                &console,
+                0,
+                false,
+                &mut input_bindings,
+                &mut output_bindings,
+                &mut disabled_bindings,
+                &data_provider,
+                &network_outputs,
+                &usb_outputs,
+            )
+            .is_err()
+        );
+
+        apply_patch_binding_add(
+            &source,
+            &transport,
+            0,
+            false,
+            &mut input_bindings,
+            &mut output_bindings,
+            &mut disabled_bindings,
+            &data_provider,
+            &network_outputs,
+            &usb_outputs,
+        )
+        .expect("fixture break patch should succeed");
+        assert_eq!(
+            output_bindings.bindings[0].source,
+            OutputSource::FixtureBreak {
+                uids: vec![fixture_uid],
+                dmx_break: 2,
+            }
+        );
+
+        apply_patch_binding_remove(
+            Some(&BindingEndpoint::Fixture {
+                ids: vec![12],
+                element: None,
+                param: None,
+            }),
+            None,
+            None,
+            None,
+            &mut input_bindings,
+            &mut output_bindings,
+            &mut disabled_bindings,
+            &data_provider,
+        )
+        .expect("whole-fixture unpatch should succeed");
+        assert!(output_bindings.bindings.is_empty());
     }
 
     #[test]

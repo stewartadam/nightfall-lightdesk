@@ -81,12 +81,15 @@ export function fixtureUidsFromInputTarget(
 }
 
 /**
- * Extracts normalized fixture UIDs from fixture-based output binding sources.
+ * Extracts normalized fixture UIDs from fixture-based output binding sources,
+ * including additional DMX break sources.
  */
 export function fixtureUidsFromOutputSource(
   source: types.OutputSource,
 ): Set<string> {
-  if (source.type !== "Fixture") return new Set();
+  if (source.type !== "Fixture" && source.type !== "FixtureBreak") {
+    return new Set();
+  }
   return new Set(source.data.uids.map((uid) => normalizeFixtureUid(uid)));
 }
 
@@ -98,6 +101,26 @@ export function inputBindingTouchesFixture(
   if (sourceUids.has(fixtureUid)) return true;
   const targetUids = fixtureUidsFromInputTarget(binding.target);
   return targetUids.has(fixtureUid);
+}
+
+/**
+ * Returns the stable key of the output location where a binding sends a
+ * fixture's DMX, or null when it does not output that fixture (another
+ * source, another fixture, or a disabled target).
+ *
+ * Primary (`Fixture`) and additional-break (`FixtureBreak`) sources both
+ * occupy their target, so two breaks of one fixture patched to the same
+ * address share a key and are reported as overlapping, while breaks patched
+ * to different addresses do not.
+ */
+export function fixtureOutputOccupancyKey(
+  binding: types.OutputBinding,
+  fixtureUid: string,
+): string | null {
+  if (!fixtureUidsFromOutputSource(binding.source).has(fixtureUid)) {
+    return null;
+  }
+  return stableOutputTargetKey(binding.target);
 }
 
 export function outputBindingTouchesFixture(

@@ -307,7 +307,7 @@ fn validate_console_address_uniqueness(
                         continue;
                     }
                 };
-                let footprint = shape_footprint(&shape);
+                let footprint = shape_footprint(&shape, 1);
                 if footprint == 0 {
                     continue;
                 }
@@ -613,31 +613,33 @@ fn collect_transport_spans(
     for binding in &output_bindings.bindings {
         match (&binding.source, &binding.target) {
             (
-                OutputSource::Fixture {
-                    uids,
-                    element,
-                    param,
-                },
+                source @ (OutputSource::Fixture { .. } | OutputSource::FixtureBreak { .. }),
                 OutputTarget::Transport {
                     target,
                     universe,
                     address,
                 },
             ) => {
+                let Some(selection) = source.fixture_selection() else {
+                    continue;
+                };
                 let universes = expand_universe_range(*universe, 1);
                 for universe_id in universes {
                     let mut next_address = address.unwrap_or(1);
-                    for uid in uids {
+                    for uid in selection.uids {
                         let fixture = match data_provider.inner.get(*uid) {
                             Ok(fixture) => fixture,
                             Err(_) => continue,
                         };
-                        let shape = match fixture_shape(fixture.value(), *element, param.as_deref())
-                        {
+                        let shape = match fixture_shape(
+                            fixture.value(),
+                            selection.element,
+                            selection.param,
+                        ) {
                             Ok(shape) => shape,
                             Err(_) => continue,
                         };
-                        let footprint = shape_footprint(&shape);
+                        let footprint = shape_footprint(&shape, selection.dmx_break);
                         if footprint == 0 {
                             continue;
                         }
@@ -655,7 +657,14 @@ fn collect_transport_spans(
                             universe: universe_id..=universe_id,
                             address: start..=end,
                             kind: TransportSpanKind::Fixture,
-                            label: format!("fixture {}", fixture.identifiers.id),
+                            label: if selection.dmx_break == 1 {
+                                format!("fixture {}", fixture.identifiers.id)
+                            } else {
+                                format!(
+                                    "fixture {} break {}",
+                                    fixture.identifiers.id, selection.dmx_break
+                                )
+                            },
                             fixtures: vec![*uid],
                         });
                     }
@@ -712,21 +721,31 @@ struct FixtureShape {
 }
 
 impl FixtureShape {
-    /// Lays out the selection's bytes, keyed by `(element, parameter)` position.
-    ///
-    /// Partial selections are rebased so their first byte sits at slot zero,
-    /// matching how the binding patches them at its address.
+    /// Lays out the selection's bytes on the primary DMX break, keyed by `(element, parameter)` position.
     fn layout(&self) -> WireLayout<(usize, usize)> {
-        let layout = WireLayout::new(self.elements.iter().enumerate().flat_map(
-            |(element_index, parameters)| {
-                parameters
-                    .iter()
-                    .enumerate()
-                    .map(move |(parameter_index, metadata)| {
-                        ((element_index, parameter_index), metadata)
-                    })
-            },
-        ));
+        self.layout_for_break(1)
+    }
+
+    /// Lays out the selection's bytes on `dmx_break`, keyed by `(element, parameter)` position.
+    ///
+    /// Slots are relative to that break's own start address. Partial
+    /// selections are rebased so their first byte sits at slot zero,
+    /// matching how the binding patches them at its address.
+    fn layout_for_break(&self, dmx_break: u16) -> WireLayout<(usize, usize)> {
+        let layout = WireLayout::for_break(
+            self.elements
+                .iter()
+                .enumerate()
+                .flat_map(|(element_index, parameters)| {
+                    parameters
+                        .iter()
+                        .enumerate()
+                        .map(move |(parameter_index, metadata)| {
+                            ((element_index, parameter_index), metadata)
+                        })
+                }),
+            dmx_break,
+        );
         if self.partial {
             layout.rebased()
         } else {
@@ -802,9 +821,9 @@ fn fixture_shape(
     })
 }
 
-/// Returns the number of DMX slots a binding's selection spans.
-fn shape_footprint(shape: &FixtureShape) -> u16 {
-    shape.layout().footprint()
+/// Returns the number of DMX slots a binding's selection spans on `dmx_break`.
+fn shape_footprint(shape: &FixtureShape, dmx_break: u16) -> u16 {
+    shape.layout_for_break(dmx_break).footprint()
 }
 
 fn attribute_from_param(name: &str) -> Attribute {

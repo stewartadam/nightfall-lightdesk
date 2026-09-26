@@ -130,10 +130,61 @@ function rangesOverlap(
   return source.start <= disabled.end && disabled.start <= source.end;
 }
 
+/** Fixtures, and the part of each fixture, patched by a fixture output source. */
+type FixtureOutputSelection = {
+  uids: unknown[];
+  element?: number;
+  param?: string;
+  dmxBreak: number;
+};
+
+/**
+ * Returns the fixture selection of a `Fixture` or `FixtureBreak` output source,
+ * mirroring the engine's `OutputSource::fixture_selection`; `Fixture` sources
+ * address the primary break 1. Console sources return null.
+ */
+function fixtureOutputSelection(
+  source: types.OutputSource,
+): FixtureOutputSelection | null {
+  switch (source.type) {
+    case "Fixture":
+      return {
+        uids: source.data.uids as unknown[],
+        element: source.data.element,
+        param: source.data.param,
+        dmxBreak: 1,
+      };
+    case "FixtureBreak":
+      return {
+        uids: source.data.uids as unknown[],
+        dmxBreak: source.data.dmx_break,
+      };
+    case "Console":
+      return null;
+  }
+}
+
 function outputSourceMatches(
   source: types.OutputSource,
   disabled: types.OutputSource,
 ): boolean {
+  if (source.type === "FixtureBreak") {
+    // A whole-fixture disable also silences the fixture's additional breaks.
+    const disabledSelection = fixtureOutputSelection(disabled);
+    if (
+      !disabledSelection ||
+      disabledSelection.element !== undefined ||
+      disabledSelection.param !== undefined ||
+      (disabled.type === "FixtureBreak" &&
+        disabledSelection.dmxBreak !== source.data.dmx_break)
+    ) {
+      return false;
+    }
+    const disabledUids = new Set(normalizeFixtureUids(disabledSelection.uids));
+    return normalizeFixtureUids(source.data.uids as unknown[]).some((uid) =>
+      disabledUids.has(uid),
+    );
+  }
   if (source.type !== disabled.type) return false;
 
   if (source.type === "Fixture" && disabled.type === "Fixture") {
@@ -192,7 +243,8 @@ export function buildFixturePatchMapFromBindings(
 
   for (const binding of snapshot.output) {
     if (binding.target.type !== "Transport") continue;
-    if (binding.source.type !== "Fixture") continue;
+    const sourceData = fixtureOutputSelection(binding.source);
+    if (!sourceData) continue;
 
     if (
       disabledSources.some((source) =>
@@ -217,8 +269,7 @@ export function buildFixturePatchMapFromBindings(
     let runningAddress = baseAddress;
     let lastUniverse = universes[0] ?? DEFAULT_UNIVERSE;
 
-    const sourceData = binding.source.data;
-    const sourceUids = normalizeFixtureUids(sourceData.uids as unknown[]);
+    const sourceUids = normalizeFixtureUids(sourceData.uids);
     for (const [index, uid] of sourceUids.entries()) {
       const fixture = fixtures[uid];
       if (!fixture) continue;
@@ -234,6 +285,7 @@ export function buildFixturePatchMapFromBindings(
         : undefined;
       const layout = fixtureWireLayout(fixture, {
         elementId: sourceData.element,
+        dmxBreak: sourceData.dmxBreak,
         includeParameter: paramFilter
           ? (parameter) =>
               normalizeParamName(attributeName(parameter.attribute)) ===
