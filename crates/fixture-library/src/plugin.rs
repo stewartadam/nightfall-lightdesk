@@ -147,6 +147,21 @@ impl nightfall_fixtures::prelude::GeometryProvider for LibraryGeometryProvider {
     }
 }
 
+/// Returns the files the archive resource routes may open: indexed GDTF archives only.
+///
+/// OFL definitions are indexed files too, but they are not archives, so a
+/// mesh or wheel-media request naming one is refused at the gate instead of
+/// failing later during GDTF parsing.
+fn servable_archives(
+    library: &FixtureLibraryManager,
+) -> impl Iterator<Item = std::path::PathBuf> + '_ {
+    library
+        .list_fixtures()
+        .into_iter()
+        .filter(|profile| matches!(profile.source, crate::manager::FixtureSource::Gdtf(_)))
+        .map(|profile| profile.file_path.clone())
+}
+
 /// Refreshes fixture geometry lookup and the servable archive set when the library or selected showfile package changes.
 fn register_geometry_provider(
     mut commands: Commands,
@@ -157,13 +172,7 @@ fn register_geometry_provider(
         return;
     }
     if let Some(archives) = archives {
-        archives.replace(
-            library
-                .list_fixtures()
-                .into_iter()
-                .filter(|profile| !profile.file_path.as_os_str().is_empty())
-                .map(|profile| profile.file_path.clone()),
-        );
+        archives.replace(servable_archives(&library));
     }
     let library_arc = std::sync::Arc::new(std::sync::RwLock::new(library.clone()));
 
@@ -177,4 +186,53 @@ fn register_geometry_provider(
         "Registered geometry provider from fixture library ({} fixtures)",
         library.fixture_count()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
+
+    /// Verifies only GDTF archives are servable, so an indexed OFL definition
+    /// is refused by the resource routes rather than parsed as an archive.
+    #[test]
+    fn servable_archives_exclude_ofl_definitions() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("fixture.gdtf");
+        GdtfBuilder::new("Test", "Archive")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body").channel(ChannelSpec::new("Body", "Dimmer", &[1])))
+            .write_to(&archive);
+        let ofl = dir.path().join("test-maker@test-fixture.json");
+        std::fs::write(
+            &ofl,
+            serde_json::json!({
+                "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
+                "name": "Test Fixture",
+                "categories": ["Other"],
+                "meta": {
+                    "authors": ["Nightfall"],
+                    "createDate": "2026-09-05",
+                    "lastModifyDate": "2026-09-05"
+                },
+                "availableChannels": {},
+                "modes": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let library = FixtureLibraryManager::with_path(dir.path().to_path_buf()).unwrap();
+        assert!(
+            library
+                .list_fixtures()
+                .iter()
+                .any(|profile| profile.file_path == ofl),
+            "the OFL definition should be indexed"
+        );
+
+        let archives = crate::http_routes::IndexedArchives::default();
+        archives.replace(servable_archives(&library));
+        assert!(archives.contains(&archive.to_string_lossy()));
+        assert!(!archives.contains(&ofl.to_string_lossy()));
+    }
 }

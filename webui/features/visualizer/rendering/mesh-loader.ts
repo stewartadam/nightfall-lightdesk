@@ -118,14 +118,6 @@ function encodeGdtfPath(path: string): string {
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/**
- * Load a fixture mesh from the backend GDTF archive.
- * Tries GLB first, then falls back to 3DS if available.
- *
- * @param gdtfPath - Path to the GDTF file on the server
- * @param modelName - Name of the model/mesh to load (without extension)
- * @returns A cloned Group containing the mesh, or null if loading failed
- */
 /** Returns a query string versioning archive resource URLs by content revision. */
 function revisionQuery(revision?: string): string {
   return revision ? `?v=${encodeURIComponent(revision)}` : "";
@@ -140,6 +132,16 @@ export function gdtfWheelMediaUrl(
   return `${getBackendUrl()}/api/gdtf-wheel/${encodeGdtfPath(gdtfPath)}/${encodeURIComponent(mediaName)}${revisionQuery(revision)}`;
 }
 
+/**
+ * Load a fixture mesh from the backend GDTF archive.
+ * Tries GLB first, then falls back to 3DS if available.
+ *
+ * @param gdtfPath - Path to the GDTF file on the server
+ * @param modelName - Name of the model/mesh to load (without extension)
+ * @param revision - Library revision of the archive; versions the request URL
+ *   and cache key so a replaced archive is not served from a stale cache
+ * @returns A cloned Group containing the mesh, or null if loading failed
+ */
 export async function loadMesh(
   gdtfPath: string,
   modelName: string,
