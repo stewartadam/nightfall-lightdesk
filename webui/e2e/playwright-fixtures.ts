@@ -38,6 +38,11 @@ type TestFixtures = {
   experimentalFlows: boolean;
   /** Ignores installed shows and generates repository-owned sample data for this test. */
   sampleDataOnly: boolean;
+  /**
+   * Starts the backend with no world loaded (AppState Initialized) even when the
+   * seed lacks the stable E2E showfiles, so startup draft and showfile prompts run.
+   */
+  emptyStartupWorld: boolean;
   backendSlot: BackendSlot;
 };
 
@@ -57,6 +62,7 @@ function requiredEnvironment(name: string): string {
 export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   experimentalFlows: [false, { option: true }],
   sampleDataOnly: [false, { option: true }],
+  emptyStartupWorld: [false, { option: true }],
   /** Keeps one Vite proxy and fixed port pair alive for a Playwright worker. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -77,7 +83,7 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   /** Gives each test a freshly seeded backend and destroys it afterward. */
   backendSlot: [
     async (
-      { workerSlot, experimentalFlows, sampleDataOnly },
+      { workerSlot, experimentalFlows, sampleDataOnly, emptyStartupWorld },
       use,
       testInfo,
     ) => {
@@ -86,6 +92,7 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
         : undefined;
       try {
         const backendSlot = await startPlaywrightTestBackend({
+          emptyStartupWorld,
           experimentalFlows,
           seedDataDir:
             emptySeed ??
