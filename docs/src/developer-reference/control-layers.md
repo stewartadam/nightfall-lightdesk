@@ -126,14 +126,28 @@ pauses controller dispatch while any client is mapping:
   `LeaveControllerMappingMode`. `ControllerMappingMode` holds the set of mapping client
   sessions; controllers are paused while it is non-empty, so several clients can map at
   once. Entering again is harmless, and the Web UI re-sends it after reconnecting.
+- Each hold is a lease. The Web UI sends `RenewControllerMappingMode` every 5 seconds
+  while mapping, and the backend ends a hold not renewed within `MAPPING_MODE_LEASE`
+  (15 seconds), so a frozen or throttled window cannot keep controllers paused. Renewals
+  bypass change detection, so they do not rebroadcast mapping state.
 - Sessions are identified by `ClientConnectionId`, which the host adapter stamps on each
   command it submits (`CommandTracker::connection`). The websocket host reports ended
   sessions through `ClientBridgeHost::disconnect_sender`, and the engine turns them into
   `ClientDisconnected` messages that release that session's hold. The embedded browser
   runtime has one session, `ClientConnectionId::EMBEDDED`. Commands without a session,
   such as HTTP routes, cannot hold mapping mode.
-- Mapping mode is not cleared on showfile load: it belongs to client sessions, not to
-  the show, and each client's banner would otherwise disagree with the backend.
+- A lapsed lease is remembered for its session, whose next renewal fails with
+  `action.mapping_mode_ended`; the Web UI then leaves mapping mode and shows why. A
+  renewal from a session without a lapsed lease simply enters, which covers a reconnected
+  client renewing before its re-entry arrives, so the Web UI renews rather than re-enters
+  after a resync.
+- Loading a show ends every session's mapping mode, since it replaces the targets a
+  client may be about to bind. A load that swaps worlds also restarts the websocket
+  sessions, so clients cannot be told by session. Instead `ControllerMappingModeState`
+  carries a `show_generation` that is new for each world and for each in-place load; a
+  client that entered under another generation leaves mapping mode and says a show was
+  loaded. It is published as text, since binary websocket encodings serialize UUIDs as
+  bytes.
 - While paused, `SourceEdgeStates` starts nothing new but finishes what already started
   live. Presses, fader levels, pulses, and `Release`-behavior triggers are swallowed. A
   release completing a press that was dispatched before mapping began still dispatches,

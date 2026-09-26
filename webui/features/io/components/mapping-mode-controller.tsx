@@ -11,6 +11,7 @@ import { PlugsConnectedIcon } from "@squidlab/phosphor-solid/plugs-connected";
 import { createEffect, on, onCleanup, Show } from "solid-js";
 import { useUiAction } from "../../../components/providers/command-registry";
 import { Button } from "../../../components/ui/visual-language/button";
+import { commandFailure } from "../../../lib/command-result";
 import { engineRuntime, resyncGeneration } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
@@ -19,6 +20,8 @@ import {
   midiControlTouches,
   oscControlTouches,
 } from "../../../state/appStores";
+import { pushToast } from "../../../state/notifications";
+import type * as types from "../../../types";
 import { midiSourceLabel } from "../model/controller-mapping-builders";
 import {
   $mappingMode,
@@ -27,7 +30,10 @@ import {
   describeArmedSource,
   describeMappingPause,
   exitMappingMode,
+  MAPPING_MODE_ENDED_CODE,
+  MAPPING_MODE_RENEW_INTERVAL_MS,
   mappingModeCommand,
+  observeShowGeneration,
   toggleMappingMode,
 } from "../model/mapping-mode";
 
@@ -38,7 +44,32 @@ function sendMappingMode(active: boolean): void {
   log.debug(
     `${active ? "Entering" : "Leaving"} backend controller mapping mode`,
   );
-  engineRuntime.sendCommand(mappingModeCommand(active));
+  engineRuntime.sendCommand(mappingModeCommand(active ? "enter" : "leave"));
+}
+
+/**
+ * Renews this client's backend mapping mode hold, and leaves mapping mode locally when the
+ * backend reports the hold's lease lapsed.
+ *
+ * The backend's failure message is shown by the generic command failure toast.
+ */
+async function renewMappingMode(): Promise<void> {
+  let result: types.CommandResult;
+  try {
+    result = await engineRuntime.sendCommandAndAwait(
+      mappingModeCommand("renew"),
+    );
+  } catch (error) {
+    log.debug("Skipped controller mapping renewal while disconnected", error);
+    return;
+  }
+  if (
+    commandFailure(result)?.code === MAPPING_MODE_ENDED_CODE &&
+    $mappingMode.get().active
+  ) {
+    log.info("Backend ended controller mapping mode; leaving it locally");
+    exitMappingMode();
+  }
 }
 
 /**
@@ -59,9 +90,21 @@ export function MappingModeController() {
   const unsubscribeOsc = oscControlTouches.listen((touches) => {
     armOscTouches(structuredClone(touches));
   });
+  // A show load ends every client's mapping mode; the backend says so by publishing a new
+  // show generation, since a load can replace the session this client's hold belonged to.
+  const unsubscribeGeneration = controllerMappingMode.listen((state) => {
+    if (observeShowGeneration(state.show_generation)) {
+      log.info("A show load ended controller mapping mode");
+      pushToast(
+        "warning",
+        "Controller mapping ended because a show was loaded",
+      );
+    }
+  });
   onCleanup(() => {
     unsubscribeMidi();
     unsubscribeOsc();
+    unsubscribeGeneration();
   });
 
   /** Enters or leaves backend mapping mode whenever this client's mapping mode toggles. */
@@ -70,19 +113,41 @@ export function MappingModeController() {
       () => $mode().active,
       (active, wasActive) => {
         if (active !== (wasActive ?? false)) sendMappingMode(active);
+        if (active) {
+          observeShowGeneration(controllerMappingMode.get().show_generation);
+        }
       },
     ),
   );
 
   /**
-   * Re-enters backend mapping mode after reconnecting, because the backend released this
-   * client's hold when the previous connection closed.
+   * Renews the backend hold on an interval while mapping, so controllers stay paused only
+   * while this window keeps responding.
+   */
+  createEffect(
+    on(
+      () => $mode().active,
+      (active) => {
+        if (!active) return;
+        const timer = setInterval(
+          () => void renewMappingMode(),
+          MAPPING_MODE_RENEW_INTERVAL_MS,
+        );
+        onCleanup(() => clearInterval(timer));
+      },
+    ),
+  );
+
+  /**
+   * Renews backend mapping mode after a resync. A reconnected session has no hold, so the
+   * renewal enters it again; after a show load the renewal fails and this client leaves
+   * mapping mode, instead of re-entering on a show it was not mapping.
    */
   createEffect(
     on(
       resyncGeneration,
       () => {
-        if ($mappingMode.get().active) sendMappingMode(true);
+        if ($mappingMode.get().active) void renewMappingMode();
       },
       { defer: true },
     ),

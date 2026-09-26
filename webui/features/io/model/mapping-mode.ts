@@ -32,6 +32,11 @@ export interface MappingModeState {
   active: boolean;
   /** Control that the next click binds, once one has been touched. */
   armed?: ArmedSource;
+  /**
+   * Show generation the backend reported while this client was mapping. A different
+   * generation means a show load ended this client's mapping mode.
+   */
+  showGeneration?: string;
 }
 
 /** Current controller mapping mode state. */
@@ -54,6 +59,25 @@ export function exitMappingMode(): void {
   $mappingMode.set({ active: false });
 }
 
+/**
+ * Records the backend's show generation while mapping, and leaves mapping mode when it
+ * changed since this client entered, because a show load ended the backend's hold.
+ *
+ * Returns whether mapping mode was left. An empty generation means the backend has not
+ * reported one yet and is ignored.
+ */
+export function observeShowGeneration(generation: string): boolean {
+  const state = $mappingMode.get();
+  if (!state.active || !generation) return false;
+  if (state.showGeneration === undefined) {
+    $mappingMode.set({ ...state, showGeneration: generation });
+    return false;
+  }
+  if (state.showGeneration === generation) return false;
+  exitMappingMode();
+  return true;
+}
+
 /** Toggles mapping mode on or off. */
 export function toggleMappingMode(): void {
   if ($mappingMode.get().active) {
@@ -64,24 +88,36 @@ export function toggleMappingMode(): void {
 }
 
 /**
- * Builds the backend command that enters or leaves controller mapping mode.
+ * How often this client renews its mapping mode hold.
  *
- * The backend pauses MIDI and OSC actions while any client holds mapping mode, and releases
- * this client's hold when it disconnects. Entering again is harmless, so the command is
- * re-sent after reconnecting.
+ * The backend ends a hold that is not renewed within 15 seconds, so an unresponsive window
+ * never leaves controllers paused; renewing every 5 seconds tolerates a missed renewal.
  */
-export function mappingModeCommand(active: boolean): {
+export const MAPPING_MODE_RENEW_INTERVAL_MS = 5000;
+
+/** Failure code the backend returns when renewing a hold it already ended. */
+export const MAPPING_MODE_ENDED_CODE = "action.mapping_mode_ended";
+
+/** Mapping mode change this client asks the backend to apply to its own hold. */
+export type MappingModeRequest = "enter" | "renew" | "leave";
+
+/**
+ * Builds the backend command that enters, renews, or leaves controller mapping mode.
+ *
+ * The backend pauses MIDI and OSC actions while any client holds mapping mode. A hold ends
+ * when this client leaves, disconnects, stops renewing, or a show is loaded. Entering again
+ * is harmless, so the command is re-sent after reconnecting.
+ */
+export function mappingModeCommand(request: MappingModeRequest): {
   module: "ActionCommand";
   command: types.ActionCommand;
 } {
-  return {
-    module: "ActionCommand",
-    command: {
-      type: active
-        ? "EnterControllerMappingMode"
-        : "LeaveControllerMappingMode",
-    },
-  };
+  const type = {
+    enter: "EnterControllerMappingMode",
+    renew: "RenewControllerMappingMode",
+    leave: "LeaveControllerMappingMode",
+  } as const;
+  return { module: "ActionCommand", command: { type: type[request] } };
 }
 
 /**
@@ -174,8 +210,9 @@ function isJustBound(source: ArmedSource): boolean {
  */
 export function disarmMappingSource(): void {
   const state = $mappingMode.get();
-  if (state.armed) lastBound = { key: sourceKey(state.armed), at: Date.now() };
-  $mappingMode.set({ active: state.active });
+  const { armed, ...unarmed } = state;
+  if (armed) lastBound = { key: sourceKey(armed), at: Date.now() };
+  $mappingMode.set(unarmed);
 }
 
 /** Describes an armed source for status text. */
