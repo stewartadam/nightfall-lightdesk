@@ -8,6 +8,7 @@
 
 import { atom } from "nanostores";
 import {
+  describeUiAction,
   executeUiAction,
   UI_ACTION_PREFIX,
   type UiActionExecutionContext,
@@ -15,6 +16,7 @@ import {
 import { bestEffortPersistentAtom } from "../../../lib/best-effort-persistent-atom";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
+import { pushToast } from "../../../state/notifications";
 import type * as types from "../../../types";
 import {
   type BuiltInShortcutRef,
@@ -161,6 +163,27 @@ export function removeKeybinding(id: string): void {
 }
 
 /**
+ * Runs a bound `ui.*` action in this client, and tells the operator when it could not run,
+ * such as when the panel providing it is closed.
+ */
+export function runBoundUiAction(
+  id: string,
+  context: UiActionExecutionContext,
+): void {
+  const outcome = executeUiAction(id, context);
+  if (outcome === "succeeded") return;
+  const name = describeUiAction(id)?.name ?? id;
+  if (outcome === "unavailable") {
+    pushToast(
+      "warning",
+      `${name} is not available right now. Open the panel that provides it, then try again.`,
+    );
+  } else {
+    pushToast("error", `${name} failed. See the log for details.`);
+  }
+}
+
+/**
  * Invokes a bound action: `ui.*` actions run in this client, others in the backend.
  */
 export function invokeBoundAction(
@@ -168,7 +191,7 @@ export function invokeBoundAction(
   context: UiActionExecutionContext,
 ): void {
   if (action.id.startsWith(UI_ACTION_PREFIX)) {
-    executeUiAction(action.id, context);
+    runBoundUiAction(action.id, context);
     return;
   }
   engineRuntime.sendCommand({

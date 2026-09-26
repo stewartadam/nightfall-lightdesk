@@ -7,7 +7,6 @@
  */
 
 import { createEffect, onCleanup } from "solid-js";
-import { executeUiAction } from "../../../components/providers/command-registry";
 import { isInputField } from "../../../lib/keyboard-shortcut-targets";
 import {
   addShortcutPreemptor,
@@ -21,6 +20,7 @@ import {
   $respondToControllerUiActions,
   invokeBoundAction,
   keyFromEvent,
+  runBoundUiAction,
 } from "../model/keybindings";
 
 /**
@@ -82,7 +82,7 @@ export function KeybindingController() {
   createEffect(() => {
     const unsubscribe = clientActionInvocation.listen((invocation) => {
       if (!invocation || !$respondToControllerUiActions.get()) return;
-      executeUiAction(invocation.action.id, {
+      runBoundUiAction(invocation.action.id, {
         source: invocation.surface === "osc" ? "osc" : "midi",
       });
     });

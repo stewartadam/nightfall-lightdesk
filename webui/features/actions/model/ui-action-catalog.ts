@@ -9,9 +9,9 @@
 import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo } from "solid-js";
 import {
-  type UiAction,
+  type UiActionDescriptor,
+  $uiActionCatalog as uiActionCatalogStore,
   uiActionId,
-  $uiActions as uiActionsStore,
 } from "../../../components/providers/command-registry";
 import { actionCatalog } from "../../../state/appStores";
 import * as types from "../../../types";
@@ -22,7 +22,7 @@ import * as types from "../../../types";
  * UI actions take no arguments and fire once, on a control's press or its release.
  */
 export function uiActionCatalogEntries(
-  actions: readonly UiAction[],
+  actions: readonly UiActionDescriptor[],
 ): types.ActionCatalogEntry[] {
   return actions.map((action) => ({
     descriptor: {
@@ -39,22 +39,29 @@ export function uiActionCatalogEntries(
   }));
 }
 
-/** Returns every action this client can bind right now, without tracking changes. */
+/**
+ * Returns every action this client can bind, without tracking changes.
+ *
+ * Includes UI actions whose panel is currently closed, since a binding outlives the panel.
+ */
 export function bindableActionCatalogSnapshot(): types.ActionCatalogEntry[] {
   return [
     ...actionCatalog.get(),
-    ...uiActionCatalogEntries(uiActionsStore.get()),
+    ...uiActionCatalogEntries(uiActionCatalogStore.get()),
   ];
 }
 
-/** Tracks every action this client can bind: the backend catalog plus local UI actions. */
+/**
+ * Tracks every action this client can bind: the backend catalog plus every UI action seen
+ * this session, including those whose panel is currently closed.
+ */
 export function useBindableActionCatalog(): Accessor<
   types.ActionCatalogEntry[]
 > {
   const $backendCatalog = useStore(actionCatalog);
-  const $uiActions = useStore(uiActionsStore);
+  const $uiActionCatalog = useStore(uiActionCatalogStore);
   return createMemo(() => [
     ...$backendCatalog(),
-    ...uiActionCatalogEntries($uiActions()),
+    ...uiActionCatalogEntries($uiActionCatalog()),
   ]);
 }
