@@ -56,7 +56,13 @@ fn prepare_group_replays(
 }
 
 /// Queues prepared inverses at their registered command or engine-operation boundary.
-fn queue_group_replays(world: &mut World, replays: Vec<UndoReplay>) {
+///
+/// Marks the undo or redo command as a replay first, so handlers restore the captured state
+/// instead of validating it as a new edit.
+fn queue_group_replays(world: &mut World, command_id: CommandId, replays: Vec<UndoReplay>) {
+    world
+        .resource_mut::<CommandTracker>()
+        .mark_undo_replay(command_id);
     for replay in replays {
         match replay {
             UndoReplay::LegacyCommand(command) => world.commands().queue(command),
@@ -146,7 +152,7 @@ pub fn handle_undo_commands(
                         .resource_mut::<CommandTracker>()
                         .expect_completions(event.command_id, replays.len())
                         .expect("active undo command should join every replay operation");
-                    queue_group_replays(world, replays);
+                    queue_group_replays(world, event.command_id, replays);
                 } else {
                     tracing::debug!("Nothing to undo");
                     finish_command_in_world(
@@ -219,7 +225,7 @@ pub fn handle_undo_commands(
                         .resource_mut::<CommandTracker>()
                         .expect_completions(event.command_id, replays.len())
                         .expect("active redo command should join every replay operation");
-                    queue_group_replays(world, replays);
+                    queue_group_replays(world, event.command_id, replays);
                 } else {
                     tracing::debug!("Nothing to redo");
                     finish_command_in_world(
@@ -430,6 +436,12 @@ mod tests {
         );
         assert!(
             world
+                .resource::<CommandTracker>()
+                .is_undo_replay(command_id),
+            "replayed inverses must be recognizable as restores, not new edits",
+        );
+        assert!(
+            world
                 .resource_mut::<Messages<CommandResult>>()
                 .drain()
                 .next()
@@ -452,5 +464,6 @@ mod tests {
         let mut tracker = world.resource_mut::<CommandTracker>();
         assert!(tracker.record_success(command_id, None).unwrap().is_none());
         assert!(tracker.record_success(command_id, None).unwrap().is_some());
+        assert!(!tracker.is_undo_replay(command_id));
     }
 }
