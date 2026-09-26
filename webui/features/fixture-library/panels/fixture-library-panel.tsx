@@ -179,10 +179,10 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     { priority: 10, autoActivate: true },
   );
 
+  /** Sorts library fixtures by make, model, then revision so revisions of one model keep a stable row order. */
   const sortedFixtures = createMemo(() => {
     const rawFixtures = $fixtureLibrary();
 
-    // Sort by make, then model, then revision so revisions keep a stable order
     return [...rawFixtures].sort(
       (a, b) =>
         a.make.localeCompare(b.make) ||
