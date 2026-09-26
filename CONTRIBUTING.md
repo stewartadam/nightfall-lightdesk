@@ -380,6 +380,13 @@ cargo test --workspace --locked
 
 After changing Rust command parsing or shared types, regenerate with `npm run typeshare` and `npm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
 
+CI runs source checks and script tests independently of native compilation and
+WASM builds. TypeScript and WebUI Node checks wait for the WASM assets; Chromium
+smoke tests additionally wait for the tested native backend, but not Clippy or
+the UI checks. The required `Run prek hooks` check aggregates all these results
+and fails if any required job fails or is unexpectedly skipped. Local hook
+commands are unchanged.
+
 Install test browsers once per shared browser cache:
 
 ```sh
