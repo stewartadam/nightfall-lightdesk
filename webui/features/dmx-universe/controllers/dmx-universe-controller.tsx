@@ -31,7 +31,6 @@ import {
   type DmxChannelValueTone,
   type FixtureJumpTarget,
   getAttributeName,
-  getChannelWidth,
   normalizeFixtureJumpAttributeSearch,
 } from "../model/dmx-universe-model";
 import { createDmxChannelNavigationController } from "./dmx-channel-navigation-controller";
@@ -127,42 +126,24 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
           if (patch.universe !== universeId) continue;
           if (transport && patch.transport?.type !== transport) continue;
 
-          let currentAddress = patch.address;
-
-          // Process each parameter in the element
-          for (const param of element.parameters) {
-            // VirtualIntensity is virtual - it doesn't consume DMX channels
-            if (param.attribute.type === "VirtualIntensity") continue;
-
+          element.parameters.forEach((param, parameterIndex) => {
             const attrName = getAttributeName(param.attribute);
             const attributeKey = normalizeAttributeName(attrName);
-            const channelWidth = getChannelWidth(param.resolution);
+            const addresses = patch.parameterAddresses[parameterIndex] ?? [];
 
-            map.set(currentAddress, {
-              fixtureUid,
-              fixtureId: fixture.identifiers.id,
-              fixtureLabel: fixture.identifiers.label,
-              elementIndex: elementId,
-              elementLabel: element.label,
-              attribute: attrName,
-              attributeKey,
-            });
-
-            // Map additional channels for multi-byte parameters
-            for (let offset = 1; offset < channelWidth; offset++) {
-              map.set(currentAddress + offset, {
+            addresses.forEach((address, byte) => {
+              map.set(address, {
                 fixtureUid,
                 fixtureId: fixture.identifiers.id,
                 fixtureLabel: fixture.identifiers.label,
                 elementIndex: elementId,
                 elementLabel: element.label,
-                attribute: `${attrName} (byte ${offset + 1})`,
+                attribute:
+                  byte === 0 ? attrName : `${attrName} (byte ${byte + 1})`,
                 attributeKey,
               });
-            }
-
-            currentAddress += channelWidth;
-          }
+            });
+          });
         }
       }
     }
@@ -215,14 +196,14 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
             });
           }
 
-          let currentAddress = patch.address;
-          for (const param of element.parameters) {
-            if (param.attribute.type === "VirtualIntensity") continue;
+          element.parameters.forEach((param, parameterIndex) => {
+            const address = patch.parameterAddresses[parameterIndex]?.[0];
+            if (address === undefined) return;
 
             const attributeName = getAttributeName(param.attribute);
             targets.push({
               universeId: patch.universe,
-              address: currentAddress,
+              address,
               fixtureId: fixture.identifiers.id,
               elementIndex: elementId,
               attributeName,
@@ -230,8 +211,7 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
                 normalizeFixtureJumpAttributeSearch(attributeName),
               targetKind: "attribute",
             });
-            currentAddress += getChannelWidth(param.resolution);
-          }
+          });
         }
       }
     }
@@ -278,19 +258,10 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
           if (patch.universe !== universeId) continue;
           if (transport && patch.transport?.type !== transport) continue;
 
-          let currentAddress = patch.address;
-
-          // Process each parameter in the element
-          for (const param of element.parameters) {
-            if (param.attribute.type === "VirtualIntensity") continue;
-
-            const channelWidth = getChannelWidth(param.resolution);
-
-            for (let offset = 0; offset < channelWidth; offset++) {
-              channels.add(currentAddress + offset);
+          for (const addresses of patch.parameterAddresses) {
+            for (const address of addresses) {
+              channels.add(address);
             }
-
-            currentAddress += channelWidth;
           }
         }
       }

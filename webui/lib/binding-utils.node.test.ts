@@ -153,3 +153,87 @@ test("buildFixturePatchMapFromBindings resolves custom network dmx targets", () 
     },
   });
 });
+
+/** Builds parameter metadata placed at explicit 1-based footprint offsets. */
+function makeExplicitParam(
+  attribute: types.Attribute,
+  offsets: number[],
+): types.ParameterMetadata {
+  return {
+    ...makeParam(attribute),
+    resolution:
+      offsets.length === 2
+        ? types.DmxValueResolution.Fine
+        : types.DmxValueResolution.Coarse,
+    dmx_slots: { type: "Explicit", data: { dmx_break: 1, offsets } },
+  };
+}
+
+/** Verifies explicit profile slots yield per-parameter byte addresses and advance by the full footprint. */
+test("buildFixturePatchMapFromBindings places explicit profile slots", () => {
+  const uid = "explicituid";
+  const nextUid = "nextuid";
+  const fixture: types.Fixture = {
+    identifiers: { id: 1, uid, label: "Heads" },
+    make: "Test",
+    model: "Test",
+    mode: "Test",
+    elements: [
+      {
+        label: "Head 1",
+        parameters: [
+          makeExplicitParam({ type: "Tilt" }, [1, 6]),
+          makeExplicitParam({ type: "Intensity" }, [3]),
+        ],
+      },
+      {
+        label: "Head 2",
+        parameters: [
+          makeExplicitParam({ type: "Tilt" }, [2, 7]),
+          {
+            ...makeParam({ type: "Intensity" }),
+            dmx_slots: { type: "Virtual" },
+          },
+        ],
+      },
+    ],
+  };
+  const next: types.Fixture = {
+    ...fixture,
+    identifiers: { id: 2, uid: nextUid, label: "Next" },
+    elements: [{ label: "Main", parameters: [makeParam({ type: "Red" })] }],
+  };
+  const snapshot: types.BindingsSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      {
+        source: { type: "Fixture", data: { uids: [uid, nextUid] } },
+        target: {
+          type: "Transport",
+          data: {
+            target: "sacn",
+            universe: { start: 1, end: 1 },
+            address: 101,
+          },
+        },
+        priority: 0,
+        clone: false,
+      },
+    ],
+  };
+
+  const patchMap = buildFixturePatchMapFromBindings(snapshot, {
+    [uid]: fixture,
+    [nextUid]: next,
+  });
+
+  assert.deepEqual(patchMap[uid]["1"][0].parameterAddresses, [
+    [101, 106],
+    [103],
+  ]);
+  assert.equal(patchMap[uid]["1"][0].address, 101);
+  assert.deepEqual(patchMap[uid]["2"][0].parameterAddresses, [[102, 107], []]);
+  assert.equal(patchMap[uid]["2"][0].address, 102);
+  assert.equal(patchMap[nextUid]["1"][0].address, 108);
+});

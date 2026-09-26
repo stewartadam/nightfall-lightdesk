@@ -69,6 +69,7 @@ pub(super) fn create_rotating_wash_beam_194(id: u32, make: &str, model: &str) ->
         label: "Control".to_owned(),
         parameters: vec![
             ParameterMetadata {
+                dmx_slots: Default::default(),
                 attribute: Attribute::Tilt,
                 native_unit: Attribute::Tilt.native_unit(),
                 value_polarity: Attribute::Tilt.value_polarity(),
@@ -231,6 +232,7 @@ fn parameter(
     use_grandmaster: bool,
 ) -> ParameterMetadata {
     ParameterMetadata {
+        dmx_slots: Default::default(),
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
         attribute,
@@ -373,6 +375,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
 
     let parameters = vec![
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Intensity,
             native_unit: Attribute::Intensity.native_unit(),
             value_polarity: Attribute::Intensity.value_polarity(),
@@ -386,6 +389,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: true,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Pan,
             native_unit: Attribute::Pan.native_unit(),
             value_polarity: Attribute::Pan.value_polarity(),
@@ -399,6 +403,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Tilt,
             native_unit: Attribute::Tilt.native_unit(),
             value_polarity: Attribute::Tilt.value_polarity(),
@@ -412,6 +417,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Red,
             native_unit: Attribute::Red.native_unit(),
             value_polarity: Attribute::Red.value_polarity(),
@@ -425,6 +431,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Green,
             native_unit: Attribute::Green.native_unit(),
             value_polarity: Attribute::Green.value_polarity(),
@@ -438,6 +445,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Blue,
             native_unit: Attribute::Blue.native_unit(),
             value_polarity: Attribute::Blue.value_polarity(),
@@ -451,6 +459,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::White,
             native_unit: Attribute::White.native_unit(),
             value_polarity: Attribute::White.value_polarity(),
@@ -464,6 +473,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
             use_grandmaster: false,
         },
         ParameterMetadata {
+            dmx_slots: Default::default(),
             attribute: Attribute::Zoom,
             native_unit: Attribute::Zoom.native_unit(),
             value_polarity: Attribute::Zoom.value_polarity(),

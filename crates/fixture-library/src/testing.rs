@@ -21,6 +21,8 @@ use std::fmt::Write as _;
 use std::io::{Cursor, Write as _};
 use std::path::Path;
 
+pub mod reference;
+
 /// Row-major 4x4 matrix as written to GDTF `Position` attributes.
 pub type GdtfMatrix = [[f64; 4]; 4];
 

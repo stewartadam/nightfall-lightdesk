@@ -332,7 +332,7 @@ fn first_output_address(world: &World, entity: Entity) -> u16 {
         .destinations
         .first()
         .expect("expected at least one output destination")
-        .address
+        .addresses[0]
 }
 
 #[test]
@@ -455,14 +455,14 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
                     mode: SacnDelivery::Multicast
                 },
                 universe: 1,
-                address: 10,
+                addresses: vec![10],
             },
             OutputDestination {
                 transport: OutputTransport::Sacn {
                     mode: SacnDelivery::Multicast
                 },
                 universe: 1,
-                address: 50,
+                addresses: vec![50],
             },
         ]
     );
@@ -643,7 +643,7 @@ fn resolve_output_bindings_supports_floating_fixtures() {
                 mode: ArtNetDelivery::Broadcast
             },
             universe: 5,
-            address: 7,
+            addresses: vec![7],
         }]
     );
 }
@@ -818,11 +818,11 @@ fn resolve_input_bindings_clone_resets_offsets() {
             targets: vec![
                 ResolvedInputTarget {
                     entity: param_a,
-                    offset: 0
+                    offsets: vec![0]
                 },
                 ResolvedInputTarget {
                     entity: param_b,
-                    offset: 0
+                    offsets: vec![0]
                 }
             ]
         }
@@ -908,7 +908,7 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
             },
             targets: vec![ResolvedInputTarget {
                 entity: param_a,
-                offset: 0
+                offsets: vec![0]
             }]
         }
     );
@@ -957,7 +957,7 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
             },
             targets: vec![ResolvedInputTarget {
                 entity: param_b,
-                offset: 0
+                offsets: vec![0]
             }]
         }
     );
@@ -1063,11 +1063,11 @@ fn resolve_input_bindings_clone_false_offsets_are_contiguous() {
             targets: vec![
                 ResolvedInputTarget {
                     entity: param_a,
-                    offset: 0
+                    offsets: vec![0]
                 },
                 ResolvedInputTarget {
                     entity: param_b,
-                    offset: 1
+                    offsets: vec![1]
                 }
             ]
         }
@@ -1126,7 +1126,7 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
                 mode: SacnDelivery::Multicast
             },
             universe: 1,
-            address: 10,
+            addresses: vec![10],
         }]
     );
     assert_eq!(
@@ -1136,7 +1136,7 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
                 mode: SacnDelivery::Multicast
             },
             universe: 1,
-            address: 10,
+            addresses: vec![10],
         }]
     );
 }
@@ -1206,7 +1206,7 @@ fn resolve_output_bindings_resolves_named_usb_targets() {
                 device: "usb-serial-1".to_string(),
             },
             universe: 1,
-            address: 10,
+            addresses: vec![10],
         }]
     );
 }
@@ -1263,4 +1263,269 @@ fn resolve_output_bindings_applies_disabled_filter_from_target_disabled() {
         .get::<ResolvedOutputDestinations>(parameter_entity)
         .expect("Expected ResolvedOutputDestinations component");
     assert!(destinations.destinations.is_empty());
+}
+
+/// Builds break-1 parameter metadata placed at explicit 1-based footprint slots.
+fn explicit_param(attribute: Attribute, offsets: &[u16]) -> ParameterMetadata {
+    let resolution = match offsets.len() {
+        1 => DmxValueResolution::Coarse,
+        2 => DmxValueResolution::Fine,
+        3 => DmxValueResolution::UltraFine,
+        _ => DmxValueResolution::Uber,
+    };
+    ParameterMetadata {
+        resolution,
+        max: nightfall_fixtures::wire_layout::dmx_max(resolution) as ParameterDmxValue,
+        value_polarity: ParameterValuePolarity::Unsigned,
+        dmx_slots: DmxSlots::Explicit {
+            dmx_break: 1,
+            offsets: offsets.to_vec(),
+        },
+        ..param(attribute)
+    }
+}
+
+/// Spawns a two-element fixture whose parameters use explicit, interleaved slots.
+///
+/// Wire layout (1-based): slot 1 head-1 tilt coarse, 2 head-2 tilt coarse,
+/// 3 head-1 dimmer, 4 unused, 5 head-2 dimmer, 6 head-1 tilt fine,
+/// 7 head-2 tilt fine. Returns entities in element order: `[tilt1, dim1, tilt2, dim2]`.
+fn spawn_interleaved_fixture(world: &mut World, uid: Uuid) -> [Entity; 4] {
+    let elements = [
+        vec![
+            explicit_param(Attribute::Tilt, &[1, 6]),
+            explicit_param(Attribute::Intensity, &[3]),
+        ],
+        vec![
+            explicit_param(Attribute::Tilt, &[2, 7]),
+            explicit_param(Attribute::Intensity, &[5]),
+        ],
+    ];
+    let mut fixture = make_fixture(uid, 1, Vec::new());
+    fixture.elements = elements
+        .iter()
+        .enumerate()
+        .map(|(index, parameters)| FixtureElement {
+            label: format!("Head {}", index + 1),
+            parameters: parameters.clone(),
+        })
+        .collect();
+
+    let mut entities = Vec::new();
+    for (index, parameters) in elements.into_iter().enumerate() {
+        for metadata in parameters {
+            let attribute = metadata.attribute.clone();
+            let entity = world
+                .spawn(Parameter {
+                    metadata,
+                    values: Default::default(),
+                })
+                .id();
+            unsafe {
+                let data_provider = world.resource_mut::<FixtureDataProviderExt>();
+                let parameter: Instance<Parameter> = Instance::from_entity_unchecked(entity);
+                data_provider.add_parameter(
+                    FixtureRef {
+                        fixture_uid: uid,
+                        index: Some(index as u32 + 1),
+                    },
+                    attribute,
+                    parameter,
+                );
+            }
+            entities.push(entity);
+        }
+    }
+    let _ = world
+        .resource_mut::<FixtureDataProviderExt>()
+        .inner
+        .add(fixture);
+    entities.try_into().expect("four parameters")
+}
+
+/// Registers resources needed by output resolution and console DMX rendering.
+fn output_app() -> App {
+    let mut app = App::new();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.init_resource::<OutputBindings>();
+    app.init_resource::<DisabledBindings>();
+    app.init_resource::<ConsoleDmxAddresses>();
+    app.init_resource::<NetworkDmxOutputTargets>();
+    app.init_resource::<UsbDmxOutputTargets>();
+    app.init_resource::<ConsoleDmxUniverses>();
+    app
+}
+
+/// Returns an output binding patching fixtures to sACN universe 1 at `address`.
+fn sacn_binding(uids: Vec<Uuid>, address: u16) -> OutputBinding {
+    OutputBinding {
+        source: OutputSource::Fixture {
+            uids,
+            element: None,
+            param: None,
+        },
+        target: OutputTarget::Transport {
+            target: "sacn".to_string(),
+            universe: Some(DmxRange::single(1)),
+            address: Some(address),
+        },
+        priority: 0,
+        clone: false,
+    }
+}
+
+/// Returns every byte address of a parameter's first output destination.
+fn output_addresses(world: &World, entity: Entity) -> Vec<u16> {
+    world
+        .get::<ResolvedOutputDestinations>(entity)
+        .expect("resolved destinations")
+        .destinations[0]
+        .addresses
+        .clone()
+}
+
+/// Verifies explicit profile slots place interleaved heads and separated fine bytes exactly.
+#[test]
+fn resolve_output_bindings_uses_explicit_profile_slots() {
+    let mut app = output_app();
+    let uid = Uuid::new_v4();
+    let [tilt1, dim1, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
+    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![sacn_binding(vec![uid], 101)];
+
+    app.add_systems(Update, resolve_output_bindings);
+    app.update();
+
+    assert_eq!(output_addresses(app.world(), tilt1), vec![101, 106]);
+    assert_eq!(output_addresses(app.world(), tilt2), vec![102, 107]);
+    assert_eq!(output_addresses(app.world(), dim1), vec![103]);
+    assert_eq!(output_addresses(app.world(), dim2), vec![105]);
+}
+
+/// Verifies the next fixture in a patch run starts after the explicit footprint, gaps included.
+#[test]
+fn resolve_output_bindings_advances_by_explicit_footprint() {
+    let mut app = output_app();
+    let uid = Uuid::new_v4();
+    let next_uid = Uuid::new_v4();
+    spawn_interleaved_fixture(app.world_mut(), uid);
+    let next = spawn_fixture_with_parameter(app.world_mut(), next_uid, 2, Attribute::Red);
+    app.world_mut().resource_mut::<OutputBindings>().bindings =
+        vec![sacn_binding(vec![uid, next_uid], 1)];
+
+    app.add_systems(Update, resolve_output_bindings);
+    app.update();
+
+    assert_eq!(output_addresses(app.world(), next), vec![8]);
+}
+
+/// Verifies patching one element rebases its explicit slots to the binding address.
+#[test]
+fn resolve_output_bindings_rebases_element_selection() {
+    let mut app = output_app();
+    let uid = Uuid::new_v4();
+    let [_, _, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
+    let mut binding = sacn_binding(vec![uid], 20);
+    binding.source = OutputSource::Fixture {
+        uids: vec![uid],
+        element: Some(2),
+        param: None,
+    };
+    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![binding];
+
+    app.add_systems(Update, resolve_output_bindings);
+    app.update();
+
+    assert_eq!(output_addresses(app.world(), tilt2), vec![20, 25]);
+    assert_eq!(output_addresses(app.world(), dim2), vec![23]);
+}
+
+/// Verifies rendered console bytes land on the explicit slots, most significant byte first.
+#[test]
+fn dmx_universes_writes_bytes_to_explicit_slots() {
+    let mut app = output_app();
+    let uid = Uuid::new_v4();
+    let [tilt1, dim1, _, _] = spawn_interleaved_fixture(app.world_mut(), uid);
+    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![sacn_binding(vec![uid], 1)];
+    {
+        let mut tilt = app.world_mut().get_mut::<Parameter>(tilt1).unwrap();
+        tilt.values.current_value = 0x1234 as ParameterDmxValue;
+        let mut dimmer = app.world_mut().get_mut::<Parameter>(dim1).unwrap();
+        dimmer.values.current_value = 200.0;
+    }
+
+    app.add_systems(
+        Update,
+        (
+            resolve_output_bindings,
+            nightfall_fixtures::universe::dmx_universes,
+        )
+            .chain(),
+    );
+    app.update();
+    app.update();
+
+    let universes = app.world().resource::<ConsoleDmxUniverses>();
+    assert_eq!(universes.get_value(1, 1), Some(0x12));
+    assert_eq!(universes.get_value(1, 6), Some(0x34));
+    assert_eq!(universes.get_value(1, 3), Some(200));
+    assert_eq!(universes.get_value(1, 2), Some(0));
+}
+
+/// Verifies input bindings decode explicit slots into per-byte source offsets.
+#[test]
+fn resolve_input_bindings_uses_explicit_profile_slots() {
+    let mut app = App::new();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.init_resource::<InputBindings>();
+    app.init_resource::<DisabledBindings>();
+    app.init_resource::<ConsoleDmxAddresses>();
+    app.init_resource::<NetworkDmxOutputTargets>();
+    app.init_resource::<UsbDmxOutputTargets>();
+    app.init_resource::<ConsoleDmxUniverses>();
+    app.init_resource::<ResolvedInputBindings>();
+
+    let uid = Uuid::new_v4();
+    let [tilt1, dim1, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
+    app.world_mut().resource_mut::<InputBindings>().bindings = vec![InputBinding {
+        source: InputSource::Transport {
+            transport: BindingTransport::Sacn,
+            universe: Some(DmxRange::single(1)),
+            address: None,
+        },
+        target: InputTarget::Fixture {
+            uids: vec![uid],
+            element: None,
+            param: None,
+        },
+        priority: 0,
+        clone: false,
+    }];
+
+    app.add_systems(Update, resolve_input_bindings);
+    app.update();
+
+    let resolved = app.world().resource::<ResolvedInputBindings>();
+    assert_eq!(
+        resolved.bindings[0].destination,
+        ResolvedInputDestination::Fixture {
+            targets: vec![
+                ResolvedInputTarget {
+                    entity: tilt1,
+                    offsets: vec![0, 5]
+                },
+                ResolvedInputTarget {
+                    entity: dim1,
+                    offsets: vec![2]
+                },
+                ResolvedInputTarget {
+                    entity: tilt2,
+                    offsets: vec![1, 6]
+                },
+                ResolvedInputTarget {
+                    entity: dim2,
+                    offsets: vec![4]
+                },
+            ]
+        }
+    );
 }
