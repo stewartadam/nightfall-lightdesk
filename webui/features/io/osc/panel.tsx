@@ -294,10 +294,9 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     actionBehaviors(lastEventEntry()).includes(chosenBehavior())
       ? chosenBehavior()
       : ControlBehavior.Press;
-  const initialEvent = oscLastEvent.get();
-  const [gesture, setGesture] = createSignal<OscGesture | undefined>(
-    initialEvent ? { event: initialEvent } : undefined,
-  );
+  // The touch starts with the first message received while the panel is open. Seeding it
+  // from an earlier message, such as a release, would record the next press as the release.
+  const [gesture, setGesture] = createSignal<OscGesture | undefined>();
   // Every received message extends the touch, even when it repeats the previous one.
   const unsubscribeGesture = oscLastEvent.listen((event) => {
     if (event) setGesture((current) => trackOscGesture(current, event));
@@ -499,7 +498,9 @@ export default function OscInputPanel(props: OscInputPanelProps) {
 
   /** Binds, with the chosen behavior, the last touched OSC control to the action chosen beside it. */
   const applyLastEvent = () => {
-    const touch = gesture();
+    const last = $oscLastEvent();
+    const touch =
+      gesture() ?? (last ? trackOscGesture(undefined, last) : undefined);
     const action = lastEventAction();
     if (!touch || !action) return;
     const inputKind = actionInputKind($actionCatalog(), action);
@@ -577,6 +578,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               <div class="flex flex-wrap items-center gap-2">
                 <ActionPicker
                   label="Action for last input"
+                  value={lastEventAction()}
                   inputKinds={OSC_INPUT_KINDS}
                   surface={ActionSurface.Osc}
                   includeUiActions

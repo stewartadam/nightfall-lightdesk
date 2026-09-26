@@ -114,6 +114,37 @@ test("faders and booleans read the first argument", () => {
   );
 });
 
+/**
+ * Verifies an integer control that only sent 0 and 1 reads through a 0 to 1 range, so it
+ * reaches full level, while an integer fader keeps percent units.
+ */
+test("integer on/off controls read through a 0 to 1 range", () => {
+  const range = (gesture: OscGesture, behavior = Press) =>
+    oscMappingFromGesture(gesture, ACTION, Absolute, behavior).range;
+
+  assert.deepEqual(range(gestureOf(ONE, ZERO)), { min: 0, max: 1 });
+  assert.deepEqual(
+    oscMappingFromGesture(gestureOf(ONE), ACTION, Trigger, Hold).range,
+    { min: 0, max: 1 },
+  );
+  const fader = gestureOf(
+    ZERO,
+    ONE,
+    oscEvent({ type: "Int", data: 2 }),
+    oscEvent({ type: "Int", data: 3 }),
+  );
+  assert.equal(range(fader), undefined);
+  assert.equal(
+    range(
+      gestureOf(
+        oscEvent({ type: "Float", data: 1 }),
+        oscEvent({ type: "Float", data: 0 }),
+      ),
+    ),
+    undefined,
+  );
+});
+
 /** Only mappings that read an argument or name a release value report releases. */
 test("release reporting follows the argument criteria", () => {
   const touch = gestureOf(ONE, ZERO);

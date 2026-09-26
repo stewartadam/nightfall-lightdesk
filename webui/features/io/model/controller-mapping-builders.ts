@@ -142,6 +142,38 @@ export interface OscGesture {
   event: types.OscLastEvent;
   /** First later message on the same address with a different value, such as a release. */
   releaseEvent?: types.OscLastEvent;
+  /** Distinct numeric levels the touch sent, oldest first. */
+  levels?: number[];
+}
+
+/** Most distinct levels remembered per touch: enough to tell a fader from a button. */
+const MAX_TOUCH_LEVELS = 4;
+
+/** Returns the levels a touch sent with one more, ignoring repeats and non-numbers. */
+export function withTouchLevel(
+  levels: readonly number[] | undefined,
+  level: number | undefined,
+): number[] | undefined {
+  if (level === undefined || !Number.isFinite(level)) return levels?.slice();
+  const known = levels ?? [];
+  if (known.includes(level) || known.length >= MAX_TOUCH_LEVELS) {
+    return known.slice();
+  }
+  return [...known, level];
+}
+
+/** Returns the numeric level carried by an OSC argument, if it is a number. */
+function oscArgLevel(arg: types.OscType | undefined): number | undefined {
+  switch (arg?.type) {
+    case "Int":
+    case "Float":
+    case "Double":
+      return arg.data;
+    case "Long":
+      return Number(arg.data);
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -150,22 +182,41 @@ export interface OscGesture {
  * Messages on another address start a new gesture. Senders are not compared, because many
  * send each message from a fresh port and new mappings match any sender. On the same
  * address, the first message with a different first argument is kept as the release, so a
- * button sending `1` then `0` records both values regardless of which arrived last.
+ * button sending `1` then `0` records both values regardless of which arrived last. Every
+ * distinct numeric value is also recorded, to tell a fader from a button.
  */
 export function trackOscGesture(
   gesture: OscGesture | undefined,
   event: types.OscLastEvent,
 ): OscGesture {
+  const level = oscArgLevel(event.args[0]);
   if (!gesture || gesture.event.address !== event.address) {
-    return { event };
+    return { event, levels: withTouchLevel(undefined, level) };
   }
+  const levels = withTouchLevel(gesture.levels, level);
   if (
     gesture.releaseEvent ||
     oscMatchValue(event.args[0]) === oscMatchValue(gesture.event.args[0])
   ) {
-    return gesture;
+    return { ...gesture, levels };
   }
-  return { ...gesture, releaseEvent: event };
+  return { ...gesture, releaseEvent: event, levels };
+}
+
+/**
+ * Returns whether a touch came from an integer button sending only 0 and 1.
+ *
+ * Without an explicit range, integer arguments read as percentages so integer faders work,
+ * which would make such a button reach only 1%.
+ */
+function isIntegerOnOffTouch(gesture: OscGesture): boolean {
+  const [arg] = gesture.event.args;
+  const levels = gesture.levels ?? [];
+  return (
+    (arg?.type === "Int" || arg?.type === "Long") &&
+    levels.length > 0 &&
+    levels.every((level) => level === 0 || level === 1)
+  );
 }
 
 /**
@@ -177,6 +228,8 @@ export function trackOscGesture(
  *   release still fire every time; a recorded release value turns matches into edges.
  * - Other behaviors need releases: they match the recorded pressed and released values,
  *   or read the first argument as a level crossing the press threshold.
+ * - An integer control that only sent 0 and 1 reads its argument through a 0 to 1 range, so
+ *   it reaches full level rather than 1%.
  */
 export function oscMappingFromGesture(
   gesture: OscGesture,
@@ -206,11 +259,16 @@ export function oscMappingFromGesture(
     pressed === undefined ||
     (!press && released === undefined);
   if (readsArgument) {
-    return press &&
+    if (
+      press &&
       inputKind === types.ActionInputKind.Trigger &&
       pressed === undefined &&
       arg.type !== "Bool"
-      ? mapping
+    ) {
+      return mapping;
+    }
+    return isIntegerOnOffTouch(gesture)
+      ? { ...mapping, arg_index: 0, range: { min: 0, max: 1 } }
       : { ...mapping, arg_index: 0 };
   }
   return {
