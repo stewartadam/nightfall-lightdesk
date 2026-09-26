@@ -63,8 +63,9 @@ jobs:
           sudo apt-get install -y build-essential pkg-config libasound2-dev \
             libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
             librsvg2-dev
-      - name: Check the desktop application and tests without creating installers
+      - name: Build and test the desktop application without creating installers
         env:
-          # Compilation checks do not embed the frontend or copy distribution resources.
+          # Tests do not embed the frontend or copy distribution resources.
           TAURI_CONFIG: '{"build":{"frontendDist":null},"bundle":{"resources":[]}}'
-        run: cargo check -p app-tauri --all-targets --no-default-features --features full,beatgrid-detect --locked
+        # Native validation excludes app-tauri, so its unit tests run only here.
+        run: cargo test -p app-tauri --all-targets --no-default-features --features full,beatgrid-detect --locked

@@ -34,23 +34,28 @@ scripts never execute in the credentialed acquisition job.
 | --- | --- | --- | --- |
 | Runtime implementation, runtime tests, ordinary UI changes | No | No | No |
 | Desktop shell or shared startup, shutdown, diagnostics interfaces | Yes | No | No |
-| Desktop configuration, capabilities, icons, installer tooling | Included in packaging | Yes | No |
+| Desktop crate manifest, build script, configuration, capabilities, icons | Yes | Yes | No |
+| Desktop installer tooling | No (packaging compiles only) | Yes | No |
 | Browser runtime or browser packaging tooling | No | No | Yes |
-| Shared distribution inputs, root manifests, lockfiles | Included in packaging | Yes | Yes |
-| Main push | Included in packaging | Yes | Yes |
+| Shared distribution inputs, root manifests, lockfiles | No (packaging compiles only) | Yes | Yes |
+| Main push | No (packaging compiles only) | Yes | Yes |
 | Develop push | No | No | No |
-| Release tag | Included in packaging | Yes | No |
-| Manual dispatch | Included when desktop selected | Selectable | Selectable |
+| Release tag | No (packaging compiles only) | Yes | No |
+| Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
 
-All non-tag events still run native and WebUI validation. Desktop checks use
-`cargo check --all-targets` on macOS, Windows, and Linux, without release
-optimization, frontend generation, or installer creation. A check-only Tauri
+All non-tag events still run native and WebUI validation. Desktop checks run
+`cargo test -p app-tauri --all-targets` on macOS, Windows, and Linux, without release
+optimization, frontend generation, or installer creation. They are the only gate
+that runs `app-tauri` tests, since native validation excludes the crate and
+packaging only compiles it; a desktop code change therefore selects the check even
+when it also selects packaging. A check-only Tauri
 configuration clears frontendDist and omits bundled resources, so checks need no
 webui/dist output even without a development URL. Packaging validates the actual
 frontend and resources using the normal configuration.
 The check and release packaging caches are separate.
 
-Compilation checks do not validate linking or installers. Full main-branch and
+Desktop checks link test binaries but do not validate the release build or
+installers. Full main-branch and
 release builds remain the cross-platform packaging backstop. Use manual dispatch
 with `desktop`, `browser`, or `all` when an artifact is needed before merging.
 Lockfile selection remains conservative; an ordinary lockfile update selects
@@ -67,7 +72,9 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 and pre-push stage (Rust tests) as parallel matrix jobs with `fail-fast: false`.
 Each stage runs once. Both skip TypeScript and Node hooks, which run once in the
 downstream WebUI job after the shared WASM assets are available. Only the native
-test job builds and uploads the tested backend for Playwright. The existing
+test job builds and uploads the tested backend for Playwright, then runs Rust
+doctests through the `manual`-stage `cargo-doctest` hook; the local push hook
+skips doctests because rustdoc processes every library crate. The existing
 `Run prek hooks` check still requires both native stages and both WASM builds
 to succeed before running WebUI validation.
 

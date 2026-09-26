@@ -6,9 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-#[path = "common.rs"]
-mod common;
-
 use nightfall_cmd_parse::parser::analysis::{
     ExpectedToken, GrammarRuleId, ParseStatus, TokenId, ValueKind,
 };

@@ -197,7 +197,7 @@ jobs:
     uses: ./.github/workflows/native-validation.yml
     with:
       stage: pre-push
-      hook: cargo-test
+      hook: cargo-nextest
 
   webui:
     name: TypeScript and WebUI Node tests

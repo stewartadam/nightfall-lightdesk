@@ -1,0 +1,19 @@
+# cargo-nextest configuration: https://nexte.st/docs/configuration/
+#
+# Run through `node scripts/run-native-cargo.mjs nextest` so tests use the same
+# feature graph as Clippy and the Playwright backend build.
+
+[profile.default]
+# Every test currently finishes in a few seconds; flag outliers and stop hangs.
+slow-timeout = { period = "10s", terminate-after = 6 }
+# Show slow tests in the summary so regressions are visible without a flag.
+final-status-level = "slow"
+failure-output = "immediate-final"
+
+[profile.ci]
+# Report every failure in one run instead of stopping at the first.
+fail-fast = false
+
+[profile.ci.junit]
+# Written to target/nextest/ci/junit.xml for per-test timing history.
+path = "junit.xml"

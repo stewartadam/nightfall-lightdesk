@@ -65,10 +65,11 @@ Install Git, [Git LFS](https://git-lfs.com/), [rustup](https://rustup.rs/), and 
 
 Rustup reads `rust-toolchain.toml`, which pins the nightly compiler and installs rustfmt, Clippy, and the `wasm32-unknown-unknown` target. Do not substitute a stable compiler or set `RUSTUP_TOOLCHAIN` when validating a change. Update the pin deliberately with native and WASM validation.
 
-Install the command-line type generator used by `npm run typeshare`:
+Install the command-line type generator used by `npm run typeshare`, and the Rust test runner used by the push hook:
 
 ```sh
 cargo install --locked typeshare-cli --version 1.13.3
+cargo install --locked cargo-nextest --version 0.9.146
 ```
 
 Vite, Tauri CLI, wasm-pack, Playwright, and prek are project npm dependencies; `npm ci` installs them. No global npm packages are required for an ordinary contribution.
@@ -80,6 +81,8 @@ Install Apple's command-line developer tools for the native linker and SDK:
 ```sh
 xcode-select --install
 ```
+
+Add your terminal application (and any IDE or Git client you push from) under **System Settings → Privacy & Security → Developer Tools**, then quit and reopen it. macOS otherwise scans every newly built executable the first time it runs, and because each Rust rebuild produces fresh test binaries, that scan dominates test time: on an Apple Silicon Mac it added 25–45 seconds to every push-hook test run. The setting only applies to processes the application starts after it is relaunched, and hooks inherit it from whichever application runs `git push`.
 
 #### Linux
 
@@ -375,8 +378,18 @@ npm run check:crate-boundaries
 npm test
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked
-cargo test --workspace --locked
+node scripts/run-native-cargo.mjs nextest
+node scripts/run-native-cargo.mjs test --doc
 ```
+
+Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. The wrapper selects the same feature graph as CI. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `npx prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
+
+```sh
+node scripts/run-native-cargo.mjs nextest -E 'rdeps(nightfall-cues)'
+node scripts/run-native-cargo.mjs nextest autocomplete::
+```
+
+Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file becomes its own executable. The main reason is macOS: without the [Developer Tools setting](#macos), macOS scans each newly built executable the first time it runs, so every extra test binary adds to each test run after a rebuild (74 integration-test binaries became 20). Each binary also links its own copy of Bevy and the workspace; the link-time saving is smaller and has not been measured separately on Linux. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.
 
 After changing Rust command parsing or shared types, regenerate with `npm run typeshare` and `npm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
 
@@ -472,10 +485,10 @@ Useful workflows when changing the parser:
 cargo test -p nightfall-cmd-parse
 
 # autocomplete behavior/spec tests
-cargo test -p nightfall-cmd-parse --test autocomplete
+cargo test -p nightfall-cmd-parse --test it autocomplete::
 
 # command validation diagnostics tests
-cargo test -p nightfall-cmd-parse --test validation
+cargo test -p nightfall-cmd-parse --test it validation::
 ```
 
 ### Performance profiling

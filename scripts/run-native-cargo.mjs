@@ -9,12 +9,16 @@
 import { fileURLToPath } from "node:url";
 import { exitWithOutcome, runOwnedCommand } from "./owned-process.mjs";
 
-/** Select one static workspace graph for linting, tests, and the browser-test backend. */
+/**
+ * Select one static workspace graph for linting, tests, and the browser-test backend.
+ * `nextest` expands to `cargo nextest run`; `test` remains for doctests, which nextest cannot run.
+ */
 export function nativeCargoArgs(command, args = []) {
   return [
-    command,
-    // Include dev dependencies when building the backend so Cargo uses the test graph.
-    ...(command === "build" ? ["--tests"] : []),
+    ...(command === "nextest" ? ["nextest", "run"] : [command]),
+    // Select test targets so the backend build and nextest share one unit graph with dev
+    // dependencies. Examples are compiled only by Clippy, since no test executes them.
+    ...(command === "build" || command === "nextest" ? ["--tests"] : []),
     "--workspace",
     "--exclude",
     "app-tauri",
@@ -27,8 +31,8 @@ export function nativeCargoArgs(command, args = []) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [command, ...args] = process.argv.slice(2);
-  if (!["build", "clippy", "test"].includes(command)) {
-    throw new Error("Expected build, clippy, or test");
+  if (!["build", "clippy", "nextest", "test"].includes(command)) {
+    throw new Error("Expected build, clippy, nextest, or test");
   }
   exitWithOutcome(
     await runOwnedCommand("cargo", nativeCargoArgs(command, args), {

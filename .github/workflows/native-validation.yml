@@ -20,6 +20,7 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_DEV_OPT_LEVEL: "0"
+      NEXTEST_PROFILE: ci
     steps:
       - name: Download credential-free source
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -60,8 +61,25 @@ jobs:
       - name: Install Node dependencies
         run: npm clean-install
 
+      - name: Install cargo-nextest for Rust tests
+        if: inputs.stage == 'pre-push'
+        # Prebuilt and checksum-verified; building it from source costs minutes on a cache miss.
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-nextest@0.9.146
+
       - name: Run native ${{ inputs.stage }} hooks
+        id: native-hooks
         run: npx prek run ${{ inputs.hook }} --all-files --verbose --show-diff-on-failure --color always --stage ${{ inputs.stage }}
+
+      - name: Upload Rust test timings
+        if: ${{ !cancelled() && inputs.stage == 'pre-push' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rust-test-junit-${{ github.sha }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Stage the tested native backend
         if: inputs.stage == 'pre-push'
@@ -77,3 +95,10 @@ jobs:
           path: ci-artifacts/nightfall-headless
           if-no-files-found: error
           retention-days: 1
+
+      # nextest cannot run doctests, and the push hook skips them (see cargo-doctest in
+      # .pre-commit-config.yaml). Run them after the backend upload so browser tests are
+      # not delayed, and even when nextest fails so both results report.
+      - name: Run Rust doctests
+        if: ${{ !cancelled() && inputs.stage == 'pre-push' && steps.native-hooks.outcome != 'skipped' }}
+        run: npx prek run cargo-doctest --all-files --verbose --color always --stage manual

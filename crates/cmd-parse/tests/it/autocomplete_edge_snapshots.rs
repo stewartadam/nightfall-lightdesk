@@ -24,7 +24,7 @@ struct SnapshotCase {
 }
 
 fn load_snapshot_cases() -> Vec<SnapshotCase> {
-    serde_json::from_str(include_str!("fixtures/autocomplete_edge_snapshots.json"))
+    serde_json::from_str(include_str!("../fixtures/autocomplete_edge_snapshots.json"))
         .expect("edge-case snapshot fixtures should deserialize")
 }
 

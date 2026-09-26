@@ -53,3 +53,11 @@ test("the full runtime dependency graph excludes Tauri", () => {
   );
   assert.doesNotMatch(graph, /^(?:app-tauri|tauri(?:-[\w-]+)?) v/m);
 });
+
+/** Guard artifact reuse between the Playwright backend build and the nextest run. */
+test("nextest selects the same targets and features as the backend build", () => {
+  const nextestArgs = nativeCargoArgs("nextest");
+  const buildArgs = nativeCargoArgs("build");
+  assert.deepEqual(nextestArgs.slice(0, 2), ["nextest", "run"]);
+  assert.deepEqual(nextestArgs.slice(2), buildArgs.slice(1));
+});

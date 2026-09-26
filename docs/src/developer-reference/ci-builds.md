@@ -30,6 +30,20 @@ Clippy, workspace tests, and the Playwright backend. It explicitly retains the
 app's full and beat-detection features and the flow crate's default FX-module
 feature, while excluding dynamic Bevy linking. Local default application builds
 remain unchanged. When adding workspace default features, update this selection.
-The backend build includes test targets to retain the same dev-dependency feature
-unification as the test run. Already-built test harnesses are reused; final
-executable linking still requires distinct Cargo work.
+The backend build and the `cargo nextest` run both select `--tests`, so they share
+dev-dependency feature unification and compiled units. Already-built test
+harnesses are reused; final executable linking still requires distinct Cargo
+work. No test gate builds or links examples; Clippy only type-checks them, so a
+link-time failure specific to an example goes unnoticed. Doctests run separately
+through `cargo test --doc`, because nextest does not execute them. They run only in CI,
+through the `manual`-stage `cargo-doctest` hook: rustdoc processes every library
+crate even when it has no doctests, and `doctest = false` does not apply to an
+explicit `--doc` run. Selecting only the crates that have doctests changes feature
+unification and recompiles most of the workspace a second time, so it costs more
+than it saves.
+
+CI runs nextest with the `ci` profile from `.config/nextest.toml`, which reports
+every failure instead of stopping at the first, and uploads
+`target/nextest/ci/junit.xml` as the `rust-test-junit-<commit SHA>` artifact for
+per-test timings. Doctests run after the backend artifact is uploaded, so they
+do not delay browser tests, and they still run when nextest fails.

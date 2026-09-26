@@ -6,9 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-#[path = "common.rs"]
-mod common;
-
 use nightfall_cmd_parse::autocomplete::{ParseStatus, complete_command};
 use nightfall_cmd_parse::completion_groups::contracts::CompletionGroupId;
 use nightfall_cmd_parse::parser::analysis::{ExpectedToken, TokenId, ValueKind};

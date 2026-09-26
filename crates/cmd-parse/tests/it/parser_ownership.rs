@@ -158,7 +158,7 @@ fn duration_suffix_edits_preserve_strict_acceptance() {
 
 /// Returns the authoring examples shared with the design-matrix regression suite.
 fn matrix_inputs() -> Vec<String> {
-    let fixture: Value = serde_json::from_str(include_str!("fixtures/design_matrix_cases.json"))
+    let fixture: Value = serde_json::from_str(include_str!("../fixtures/design_matrix_cases.json"))
         .expect("valid design matrix");
     fixture["cases"]
         .as_array()
