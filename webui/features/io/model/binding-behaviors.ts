@@ -18,6 +18,32 @@ export function actionBehaviors(
   return entry?.behaviors.length ? entry.behaviors : FALLBACK_BEHAVIORS;
 }
 
+/**
+ * Picks the binding a touched control most likely means, among those it can bind.
+ *
+ * Follows the operator's usual intent rather than asking: a fader follows an absolute
+ * action ("use the slider"), and a button fires a trigger on press ("button on"). Release,
+ * Hold, and Flash stay one click away for operators who want them.
+ */
+export function recommendedBinding<
+  T extends {
+    behavior: types.ControlBehavior;
+    inputKind: types.ActionInputKind | undefined;
+  },
+>(options: readonly T[], continuous: boolean): T | undefined {
+  const onPress = options.filter(
+    (option) => option.behavior === types.ControlBehavior.Press,
+  );
+  return (
+    onPress.find(
+      (option) =>
+        (option.inputKind === types.ActionInputKind.Absolute) === continuous,
+    ) ??
+    onPress[0] ??
+    options[0]
+  );
+}
+
 /** Returns the short label for a behavior, phrased for the action's input kind. */
 export function behaviorLabel(
   behavior: types.ControlBehavior,
