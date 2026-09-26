@@ -155,6 +155,9 @@ impl From<Uuid> for EdgeKey {
 /// - A press swallowed while suppressed also swallows its release, even when the release
 ///   arrives after suppression ended, so leaving mapping mode never fires a stray release.
 ///
+/// Outside suppression, a release still only fires for a press the binding saw, so a control
+/// held while it was being bound does not fire its release binding when let go.
+///
 /// State is kept per [`EdgeKey`], so senders sharing a binding each keep their own edges.
 #[derive(Debug, Default, Resource)]
 pub struct SourceEdgeStates {
@@ -230,8 +233,8 @@ impl SourceEdgeStates {
     ///
     /// Pulses have no edges, and levels only report an edge when crossing the press threshold.
     /// Press state is tracked even while `suppressed`, but a suppressed press is swallowed along
-    /// with its eventual release, and a suppressed release only passes when it completes a
-    /// press that was dispatched live.
+    /// with its eventual release. A release only passes when it completes a press this binding
+    /// dispatched live, so a control held while it was bound does not fire on letting go.
     fn edge(&mut self, binding: &EdgeKey, signal: SourceSignal, suppressed: bool) -> Option<bool> {
         let (pressed, was_pressed) = match signal {
             SourceSignal::Pulse => return None,
@@ -262,7 +265,7 @@ impl SourceEdgeStates {
             self.swallowed.remove(binding);
             return Some(true);
         }
-        if self.swallowed.remove(binding) || (suppressed && !was_pressed) {
+        if self.swallowed.remove(binding) || !was_pressed {
             return None;
         }
         Some(false)
@@ -423,6 +426,45 @@ mod tests {
         assert_eq!(
             button(&mut states, flash, absolute, false, true),
             Some((BindingTarget::Action, ActionInput::Release))
+        );
+    }
+
+    /// Verifies a release with no press the binding saw, as when a control is bound while
+    /// held, fires nothing, and that the next full press and release behave normally.
+    #[test]
+    fn release_without_a_seen_press_fires_nothing() {
+        let mut states = SourceEdgeStates::default();
+        for behavior in [ControlBehavior::Release, ControlBehavior::Hold] {
+            assert_eq!(
+                button(
+                    &mut states,
+                    behavior,
+                    ActionInputKind::Trigger,
+                    false,
+                    false
+                ),
+                None
+            );
+        }
+        assert_eq!(
+            button(
+                &mut states,
+                ControlBehavior::Release,
+                ActionInputKind::Trigger,
+                true,
+                false
+            ),
+            None
+        );
+        assert_eq!(
+            button(
+                &mut states,
+                ControlBehavior::Release,
+                ActionInputKind::Trigger,
+                false,
+                false
+            ),
+            Some((BindingTarget::Action, ActionInput::Trigger))
         );
     }
 

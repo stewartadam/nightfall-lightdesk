@@ -494,6 +494,45 @@ mod tests {
         );
     }
 
+    /// Verifies a flash released while its target cannot be read still ends its hold, so the
+    /// next flash after the target returns restores the level instead of latching at full.
+    #[test]
+    fn flash_released_while_target_is_missing_ends_its_hold() {
+        let mut app = action_app();
+        app.insert_resource(TestLevel(0.4));
+        app.register_update_action::<TestArguments, TestApplied, _>(
+            ActionDescriptor::new("test.level", "Test level", "Tests")
+                .with_input(ActionInputKind::Absolute),
+            |_world, _arguments, value| Ok(TestApplied(value)),
+        )
+        .register_flash_level::<TestArguments, _>("test.level", |world, _arguments| {
+            world
+                .get_resource::<TestLevel>()
+                .map(|level| Some(level.0))
+                .ok_or_else(|| InvocationError::new("test.missing", "Target is missing"))
+        });
+        let action = ActionReference::new("test.level", json!({ "value": 1 }));
+        let mut flash = |app: &mut App, input| {
+            invoke(
+                app,
+                ActionInvocation::new(action.clone(), ActionSurface::Midi, input),
+            )
+        };
+
+        flash(&mut app, ActionInput::Press);
+        app.world_mut().remove_resource::<TestLevel>();
+        assert!(matches!(
+            flash(&mut app, ActionInput::Release),
+            InvocationOutcome::Failed(InvocationError { ref code, .. }) if code == "test.missing"
+        ));
+        app.insert_resource(TestLevel(0.4));
+        applied(&mut app);
+
+        flash(&mut app, ActionInput::Press);
+        flash(&mut app, ActionInput::Release);
+        assert_eq!(applied(&mut app), vec![TestApplied(1.0), TestApplied(0.4)]);
+    }
+
     /// Verifies triggers with a release counterpart support Hold and resolve the counterpart.
     #[test]
     fn hold_release_counterpart_keeps_the_bound_arguments() {
