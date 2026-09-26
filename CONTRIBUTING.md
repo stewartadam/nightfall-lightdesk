@@ -82,6 +82,8 @@ Install Apple's command-line developer tools for the native linker and SDK:
 xcode-select --install
 ```
 
+Add your terminal application (and any IDE or Git client you push from) under **System Settings → Privacy & Security → Developer Tools**, then quit and reopen it. macOS otherwise scans every newly built executable the first time it runs, and because each Rust rebuild produces fresh test binaries, that scan dominates test time: on an Apple Silicon Mac it added 25–45 seconds to every push-hook test run. The setting only applies to processes the application starts after it is relaunched, and hooks inherit it from whichever application runs `git push`.
+
 #### Linux
 
 On Ubuntu/Debian, install the native build and audio dependencies. GTK and WebKit are also needed for the desktop application and the repository's Tauri-inclusive checks:
