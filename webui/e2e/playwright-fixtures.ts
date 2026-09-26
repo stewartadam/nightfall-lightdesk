@@ -87,6 +87,12 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
       use,
       testInfo,
     ) => {
+      if (sampleDataOnly && emptyStartupWorld) {
+        // sampleDataOnly relies on the sample-data fallback that emptyStartupWorld disables.
+        throw new Error(
+          "sampleDataOnly and emptyStartupWorld cannot be combined: the backend would start with neither sample data nor a world",
+        );
+      }
       const emptySeed = sampleDataOnly
         ? await mkdtemp(join(tmpdir(), "nightfall-owned-sample-"))
         : undefined;
