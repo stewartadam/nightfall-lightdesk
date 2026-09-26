@@ -17,6 +17,7 @@ import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import { Mappable } from "../../io";
 import { useTimelineContext } from "../context/timeline-context";
+import { timelinePlaybackControl } from "../model/control-actions";
 
 /** Controls timeline playback and recording with shared toolbar actions. */
 export const InstanceControls = () => {
@@ -66,24 +67,20 @@ export const InstanceControls = () => {
     }
   };
 
+  /** Defines this timeline's play/pause button and its controller binding. */
+  const playPause = () =>
+    timelinePlaybackControl(ctx.timelineUid, () => void togglePaused());
+
   return (
     <div class="flex items-center gap-1">
       <Mappable
         class="inline-flex"
         label="timeline play/pause"
-        choices={() => [
-          {
-            label: "Play/pause timeline",
-            action: {
-              id: "timeline.toggle-playback",
-              arguments: { timeline: ctx.timelineUid },
-            },
-          },
-        ]}
+        choices={() => [playPause()]}
       >
         <ToolbarButton
           ariaPressed={!ctx.paused()}
-          onClick={() => void togglePaused()}
+          onClick={() => playPause().handlers.toggle()}
           disabled={connectionStatus() !== "connected"}
           label={ctx.paused() ? "Play timeline" : "Pause timeline"}
         >

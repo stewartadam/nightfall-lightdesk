@@ -27,6 +27,11 @@ export {
   useActionTargetOptions,
 } from "./model/action-target-names";
 export {
+  defineEngineControl,
+  type EngineControl,
+  type EngineControlDefinition,
+} from "./model/engine-control";
+export {
   bindableActionCatalogSnapshot,
   uiActionCatalogEntries,
   useBindableActionCatalog,
