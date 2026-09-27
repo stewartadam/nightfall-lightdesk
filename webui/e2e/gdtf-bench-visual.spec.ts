@@ -20,6 +20,7 @@ import { join } from "node:path";
 import type { Fixture, FixtureGeometry } from "../types/index";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
+import { type DecodedPng, decodePng, pixelLuma } from "./png-decode";
 import { waitForDockviewApp } from "./showfile-startup";
 
 const benchDir = process.env.NIGHTFALL_GDTF_BENCH_DIR;
@@ -56,6 +57,12 @@ const MAGIC_PANEL: BenchFixture = {
   file: "Ayrton@MagicPanel_FX@V2.62_Corrected_PanTilt_Rotate.gdtf",
   make: "Ayrton",
   model: "MagicPanel FX",
+  mode: "Extended",
+};
+const MAC_VIPER: BenchFixture = {
+  file: "Martin_Professional@MAC_Viper_Profile@20230516NoMeas.gdtf",
+  make: "Martin Professional",
+  model: "MAC Viper Profile",
   mode: "Extended",
 };
 /** Moving head whose pixel ring and liquid effect sit on DMX breaks 2 and 3. */
@@ -312,13 +319,21 @@ async function attachCanvas(
   page: Page,
   name: string,
   testInfo: import("@playwright/test").TestInfo,
-  options: { compare?: boolean } = {},
+  options: {
+    compare?: boolean;
+    /** Camera state overriding the default fixture close-up. */
+    camera?: {
+      position: { x: number; y: number; z: number };
+      target: { x: number; y: number; z: number };
+    };
+  } = {},
 ): Promise<void> {
-  await page.evaluate(() =>
-    (window as any).visualizerApi.setCameraState({
+  await page.evaluate(
+    (camera) => (window as any).visualizerApi.setCameraState(camera),
+    options.camera ?? {
       position: { x: 1.1, y: 4.4, z: 1.4 },
       target: { x: 0, y: 3.8, z: 0 },
-    }),
+    },
   );
   // Let camera damping settle, then wait for two presented frames.
   await page.waitForTimeout(500);
@@ -548,12 +563,20 @@ test("Sharpy color wheel slot tints the emitter", async ({
   await attachCanvas(page, "sharpy-color-wheel", testInfo);
 });
 
-/** Verifies selecting a Sharpy gobo serves its wheel image and shapes the beam with it. */
-test("Sharpy gobo slot shapes the beam", async ({
-  page,
-  backendSlot,
-}, testInfo) => {
-  const uid = await installBenchFixture(page, backendSlot.dataDir, SHARPY, 1);
+/** A gobo wheel slot of a fixture and the programmer values that select it. */
+type GoboChoice = {
+  attribute: string;
+  percent: number;
+  openPercent: number;
+  slot: string;
+  media: string;
+};
+
+/**
+ * Finds the last image slot of the fixture's first gobo parameter (a
+ * patterned gobo rather than a beam reducer) and that parameter's open slot.
+ */
+async function findGoboSlot(page: Page, uid: string): Promise<GoboChoice> {
   const choice = await page.evaluate((uid) => {
     const fixture = (window as any).appStores.fixtures.get()[uid] as Fixture;
     for (const element of fixture.elements) {
@@ -563,17 +586,20 @@ test("Sharpy gobo slot shapes the beam", async ({
             ? parameter.attribute.data.label
             : parameter.attribute.type;
         for (const fn of parameter.functions ?? []) {
-          // The last image slot is a patterned gobo rather than a beam reducer.
           const slot = fn.sets?.filter((set) => set.media).at(-1);
           if (!slot) continue;
-          const range = parameter.max - parameter.min;
-          const midpoint = (slot.dmx_from + slot.dmx_to) / 2;
+          const open = (parameter.functions ?? [])
+            .flatMap((candidate) => candidate.sets ?? [])
+            .find((set) => !set.media && /open/i.test(set.name));
+          /** Returns the programmer percentage at the middle of a set's DMX range. */
+          const percentOf = (set: { dmx_from: number; dmx_to: number }) =>
+            ((set.dmx_from + set.dmx_to) / 2 / 255) * 100;
           return {
             attribute: label,
-            percent: (midpoint / 255) * 100,
+            percent: percentOf(slot),
+            openPercent: open ? percentOf(open) : 0,
             slot: slot.name,
-            media: slot.media,
-            range,
+            media: slot.media as string,
           };
         }
       }
@@ -581,14 +607,145 @@ test("Sharpy gobo slot shapes the beam", async ({
     return null;
   }, uid);
   expect(choice).not.toBeNull();
+  return choice as GoboChoice;
+}
+
+/** Returns whether any spot light of the fixture projects a gobo image. */
+function projectsGobo(page: Page, uid: string): Promise<boolean> {
+  return page.evaluate((uid) => {
+    const root = (window as any).visualizerApi
+      .getScene()
+      .getObjectByName(`Fixture_${uid}`);
+    let projecting = false;
+    root.traverse((object: any) => {
+      if (object.isSpotLight && object.userData.projectsGobo) projecting = true;
+    });
+    return projecting;
+  }, uid);
+}
+
+/** Camera position and orbit target for a visualizer capture. */
+type CameraState = {
+  position: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+};
+
+/**
+ * Captures the visualizer canvas from `camera` with the fixture's volumetric
+ * beam cones masked, so only light its spot lights put on the floor shows.
+ *
+ * The cones are drawn with color writes disabled rather than hidden, since
+ * the beam manager resets their visibility every frame; the spot lights that
+ * light the floor are unaffected. The capture is attached as `name` for
+ * review. Main-thread renderer only.
+ */
+async function captureFloorLight(
+  page: Page,
+  uid: string,
+  camera: CameraState,
+  testInfo: import("@playwright/test").TestInfo,
+  name: string,
+): Promise<DecodedPng> {
+  const maskCones = (masked: boolean) =>
+    page.evaluate(
+      ({ uid, masked }) => {
+        (window as any).visualizerApi.getScene().traverse((object: any) => {
+          if (object.name?.startsWith(`Beam_${uid}`) && object.material) {
+            object.material.colorWrite = !masked;
+            object.material.needsUpdate = true;
+          }
+        });
+      },
+      { uid, masked },
+    );
+  await maskCones(true);
+  try {
+    await page.evaluate(
+      (camera) => (window as any).visualizerApi.setCameraState(camera),
+      camera,
+    );
+    await page.waitForTimeout(500);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    const path = testInfo.outputPath(`${name}.png`);
+    const png = await page
+      .locator(
+        '[data-panel-id="panel-Visualizer"] canvas[aria-label="3D visualizer viewport"]',
+      )
+      .screenshot({ path });
+    await testInfo.attach(name, { path, contentType: "image/png" });
+    return decodePng(png);
+  } finally {
+    await maskCones(false);
+  }
+}
+
+/** How a gobo shapes the floor spot, relative to the open beam. */
+type FloorSpot = {
+  /** Pixels the open beam lights above the unlit floor. */
+  area: number;
+  /** Fraction of the open spot the gobo beam still lights. */
+  goboLitFraction: number;
+  /** Mean brightness gain inside the spot, open and with the gobo. */
+  openGain: number;
+  goboGain: number;
+};
+
+/** Brightness gain over the unlit floor above which a pixel counts as lit. */
+const LIT_GAIN = 10;
+
+/**
+ * Locates the open beam's floor spot against the unlit floor and measures how
+ * much of it the gobo beam still lights.
+ */
+function floorSpot(
+  unlit: DecodedPng,
+  open: DecodedPng,
+  gobo: DecodedPng,
+): FloorSpot {
+  let area = 0;
+  let goboLit = 0;
+  let openGain = 0;
+  let goboGain = 0;
+  for (let y = 0; y < unlit.height; y++) {
+    for (let x = 0; x < unlit.width; x++) {
+      const base = pixelLuma(unlit, x, y);
+      const openDelta = pixelLuma(open, x, y) - base;
+      if (openDelta <= LIT_GAIN) continue;
+      const goboDelta = pixelLuma(gobo, x, y) - base;
+      area++;
+      openGain += openDelta;
+      goboGain += goboDelta;
+      if (goboDelta > LIT_GAIN) goboLit++;
+    }
+  }
+  return {
+    area,
+    goboLitFraction: area ? goboLit / area : 0,
+    openGain: area ? openGain / area : 0,
+    goboGain: area ? goboGain / area : 0,
+  };
+}
+
+/** Verifies selecting a Sharpy gobo serves its wheel image and shapes the beam with it. */
+test("Sharpy gobo slot shapes the beam", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  const uid = await installBenchFixture(page, backendSlot.dataDir, SHARPY, 1);
+  const choice = await findGoboSlot(page, uid);
   testInfo.annotations.push({
     type: "gobo",
-    description: `${choice?.slot} (${choice?.media})`,
+    description: `${choice.slot} (${choice.media})`,
   });
 
   await submitCommand(
     page,
-    `fix 1 int @ 100 "${choice?.attribute}" @ ${choice?.percent.toFixed(2)}`,
+    `fix 1 int @ 100 "${choice.attribute}" @ ${choice.percent.toFixed(2)}`,
   );
   await expect
     .poll(() =>
@@ -606,7 +763,113 @@ test("Sharpy gobo slot shapes the beam", async ({
       }, uid),
     )
     .toBe(1);
+  await expect.poll(() => projectsGobo(page, uid)).toBe(true);
   await attachCanvas(page, "sharpy-gobo", testInfo);
+});
+
+/**
+ * Verifies a wide-zoom gobo's pattern is projected onto the stage floor while
+ * an open beam lights a solid spot, measured from captures with the volumetric
+ * cones masked.
+ */
+test("MAC Viper gobo projects onto the floor", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  const uid = await installBenchFixture(
+    page,
+    backendSlot.dataDir,
+    MAC_VIPER,
+    1,
+  );
+  const choice = await findGoboSlot(page, uid);
+  testInfo.annotations.push({
+    type: "gobo",
+    description: `${choice.slot} (${choice.media})`,
+  });
+  const floorView: CameraState = {
+    position: { x: 3, y: 3.2, z: 3 },
+    target: { x: 0, y: 0, z: 0 },
+  };
+
+  await submitCommand(
+    page,
+    `fix 1 int @ 100 "Zoom" @ 100 "${choice.attribute}" @ ${choice.percent.toFixed(2)}`,
+  );
+  await expect.poll(() => projectsGobo(page, uid)).toBe(true);
+  await attachCanvas(page, "viper-gobo-floor", testInfo, {
+    camera: floorView,
+  });
+  const goboFloor = await captureFloorLight(
+    page,
+    uid,
+    floorView,
+    testInfo,
+    "viper-gobo-floor-light",
+  );
+
+  await submitCommand(
+    page,
+    `fix 1 int @ 100 "${choice.attribute}" @ ${choice.openPercent.toFixed(2)}`,
+  );
+  await expect.poll(() => projectsGobo(page, uid)).toBe(false);
+  await attachCanvas(page, "viper-open-floor", testInfo, {
+    camera: floorView,
+  });
+  const openFloor = await captureFloorLight(
+    page,
+    uid,
+    floorView,
+    testInfo,
+    "viper-open-floor-light",
+  );
+
+  await submitCommand(page, "fix 1 int @ 0");
+  const unlitFloor = await captureFloorLight(
+    page,
+    uid,
+    floorView,
+    testInfo,
+    "viper-unlit-floor-light",
+  );
+  // The open beam lights a solid spot on the floor. With the gobo, only its
+  // pattern is lit: a missing projection would light the whole spot, and a
+  // broken one none of it.
+  const spot = floorSpot(unlitFloor, openFloor, goboFloor);
+  testInfo.annotations.push({
+    type: "floor-spot",
+    description: JSON.stringify(spot),
+  });
+  expect(spot.area).toBeGreaterThan(500);
+  expect(spot.goboLitFraction).toBeGreaterThan(0.1);
+  expect(spot.goboLitFraction).toBeLessThan(0.85);
+  expect(spot.goboGain).toBeLessThan(spot.openGain * 0.8);
+
+  // The worker renderer shares the beam code but not the inspectable scene,
+  // so it is checked by capture only.
+  await page.goto(
+    "/?startup:draftRecovery=false&visualizer:offscreenCanvas=true",
+  );
+  await waitForDockviewApp(page);
+  await page
+    .getByRole("tab", { name: "3D Visualizer", exact: true })
+    .first()
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Boolean((window as any).visualizerApi?.isUsingWorker?.()),
+      ),
+    )
+    .toBe(true);
+  await submitCommand(
+    page,
+    `fix 1 int @ 100 "Zoom" @ 100 "${choice.attribute}" @ ${choice.percent.toFixed(2)}`,
+  );
+  await page.waitForTimeout(1_500);
+  await attachCanvas(page, "viper-gobo-floor-worker", testInfo, {
+    camera: floorView,
+  });
 });
 
 /** Verifies each DMX break of a multi-break profile is patched from its own start address. */
