@@ -20,6 +20,7 @@ import { join } from "node:path";
 import type { Fixture, FixtureGeometry } from "../types/index";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
+import { type DecodedPng, decodePng, pixelLuma } from "./png-decode";
 import { waitForDockviewApp } from "./showfile-startup";
 
 const benchDir = process.env.NIGHTFALL_GDTF_BENCH_DIR;
@@ -623,6 +624,113 @@ function projectsGobo(page: Page, uid: string): Promise<boolean> {
   }, uid);
 }
 
+/** Camera position and orbit target for a visualizer capture. */
+type CameraState = {
+  position: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+};
+
+/**
+ * Captures the visualizer canvas from `camera` with the fixture's volumetric
+ * beam cones masked, so only light its spot lights put on the floor shows.
+ *
+ * The cones are drawn with color writes disabled rather than hidden, since
+ * the beam manager resets their visibility every frame; the spot lights that
+ * light the floor are unaffected. The capture is attached as `name` for
+ * review. Main-thread renderer only.
+ */
+async function captureFloorLight(
+  page: Page,
+  uid: string,
+  camera: CameraState,
+  testInfo: import("@playwright/test").TestInfo,
+  name: string,
+): Promise<DecodedPng> {
+  const maskCones = (masked: boolean) =>
+    page.evaluate(
+      ({ uid, masked }) => {
+        (window as any).visualizerApi.getScene().traverse((object: any) => {
+          if (object.name?.startsWith(`Beam_${uid}`) && object.material) {
+            object.material.colorWrite = !masked;
+            object.material.needsUpdate = true;
+          }
+        });
+      },
+      { uid, masked },
+    );
+  await maskCones(true);
+  try {
+    await page.evaluate(
+      (camera) => (window as any).visualizerApi.setCameraState(camera),
+      camera,
+    );
+    await page.waitForTimeout(500);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    const path = testInfo.outputPath(`${name}.png`);
+    const png = await page
+      .locator(
+        '[data-panel-id="panel-Visualizer"] canvas[aria-label="3D visualizer viewport"]',
+      )
+      .screenshot({ path });
+    await testInfo.attach(name, { path, contentType: "image/png" });
+    return decodePng(png);
+  } finally {
+    await maskCones(false);
+  }
+}
+
+/** How a gobo shapes the floor spot, relative to the open beam. */
+type FloorSpot = {
+  /** Pixels the open beam lights above the unlit floor. */
+  area: number;
+  /** Fraction of the open spot the gobo beam still lights. */
+  goboLitFraction: number;
+  /** Mean brightness gain inside the spot, open and with the gobo. */
+  openGain: number;
+  goboGain: number;
+};
+
+/** Brightness gain over the unlit floor above which a pixel counts as lit. */
+const LIT_GAIN = 10;
+
+/**
+ * Locates the open beam's floor spot against the unlit floor and measures how
+ * much of it the gobo beam still lights.
+ */
+function floorSpot(
+  unlit: DecodedPng,
+  open: DecodedPng,
+  gobo: DecodedPng,
+): FloorSpot {
+  let area = 0;
+  let goboLit = 0;
+  let openGain = 0;
+  let goboGain = 0;
+  for (let y = 0; y < unlit.height; y++) {
+    for (let x = 0; x < unlit.width; x++) {
+      const base = pixelLuma(unlit, x, y);
+      const openDelta = pixelLuma(open, x, y) - base;
+      if (openDelta <= LIT_GAIN) continue;
+      const goboDelta = pixelLuma(gobo, x, y) - base;
+      area++;
+      openGain += openDelta;
+      goboGain += goboDelta;
+      if (goboDelta > LIT_GAIN) goboLit++;
+    }
+  }
+  return {
+    area,
+    goboLitFraction: area ? goboLit / area : 0,
+    openGain: area ? openGain / area : 0,
+    goboGain: area ? goboGain / area : 0,
+  };
+}
+
 /** Verifies selecting a Sharpy gobo serves its wheel image and shapes the beam with it. */
 test("Sharpy gobo slot shapes the beam", async ({
   page,
@@ -659,7 +767,11 @@ test("Sharpy gobo slot shapes the beam", async ({
   await attachCanvas(page, "sharpy-gobo", testInfo);
 });
 
-/** Verifies a wide-zoom gobo is projected onto the stage floor and an open beam is not. */
+/**
+ * Verifies a wide-zoom gobo's pattern is projected onto the stage floor while
+ * an open beam lights a solid spot, measured from captures with the volumetric
+ * cones masked.
+ */
 test("MAC Viper gobo projects onto the floor", async ({
   page,
   backendSlot,
@@ -675,7 +787,7 @@ test("MAC Viper gobo projects onto the floor", async ({
     type: "gobo",
     description: `${choice.slot} (${choice.media})`,
   });
-  const floorView = {
+  const floorView: CameraState = {
     position: { x: 3, y: 3.2, z: 3 },
     target: { x: 0, y: 0, z: 0 },
   };
@@ -688,6 +800,13 @@ test("MAC Viper gobo projects onto the floor", async ({
   await attachCanvas(page, "viper-gobo-floor", testInfo, {
     camera: floorView,
   });
+  const goboFloor = await captureFloorLight(
+    page,
+    uid,
+    floorView,
+    testInfo,
+    "viper-gobo-floor-light",
+  );
 
   await submitCommand(
     page,
@@ -697,6 +816,34 @@ test("MAC Viper gobo projects onto the floor", async ({
   await attachCanvas(page, "viper-open-floor", testInfo, {
     camera: floorView,
   });
+  const openFloor = await captureFloorLight(
+    page,
+    uid,
+    floorView,
+    testInfo,
+    "viper-open-floor-light",
+  );
+
+  await submitCommand(page, "fix 1 int @ 0");
+  const unlitFloor = await captureFloorLight(
+    page,
+    uid,
+    floorView,
+    testInfo,
+    "viper-unlit-floor-light",
+  );
+  // The open beam lights a solid spot on the floor. With the gobo, only its
+  // pattern is lit: a missing projection would light the whole spot, and a
+  // broken one none of it.
+  const spot = floorSpot(unlitFloor, openFloor, goboFloor);
+  testInfo.annotations.push({
+    type: "floor-spot",
+    description: JSON.stringify(spot),
+  });
+  expect(spot.area).toBeGreaterThan(500);
+  expect(spot.goboLitFraction).toBeGreaterThan(0.1);
+  expect(spot.goboLitFraction).toBeLessThan(0.85);
+  expect(spot.goboGain).toBeLessThan(spot.openGain * 0.8);
 
   // The worker renderer shares the beam code but not the inspectable scene,
   // so it is checked by capture only.
