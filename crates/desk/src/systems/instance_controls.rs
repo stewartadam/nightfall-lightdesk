@@ -16,6 +16,7 @@ use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
+use nightfall_fixture_model::prelude::{DmxSlots, ParameterMetadata};
 use nightfall_fixtures::prelude::*;
 use nightfall_instances::InstanceControls;
 

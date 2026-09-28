@@ -18,7 +18,7 @@ use gdtf::physical_descriptions::EmitterOptic;
 use gdtf::values::{ColorCie, DmxValue};
 use gdtf::wheel::WheelSlotOptic;
 use nightfall_dmx::prelude::DmxValueResolution;
-use nightfall_fixtures::prelude::{
+use nightfall_fixture_model::prelude::{
     CieColor, ParameterFunction, ParameterFunctionSet, ProfilePoint,
 };
 
@@ -234,6 +234,7 @@ pub(super) fn channel_semantics(
 
 #[cfg(test)]
 mod tests {
+    use nightfall_fixture_model::prelude::{DmxSlots, ParameterMetadata};
     use nightfall_fixtures::prelude::*;
 
     use crate::converters::gdtf::convert_gdtf_to_fixture;

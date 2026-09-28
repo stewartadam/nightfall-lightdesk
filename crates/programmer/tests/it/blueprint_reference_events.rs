@@ -14,9 +14,8 @@ use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
 use nightfall_desk::prelude::BlueprintAction;
 use nightfall_dmx::prelude::{Attribute, AttributeCategory, ParameterValue};
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, ParameterMetadata,
-};
+use nightfall_fixture_model::prelude::ParameterMetadata;
+use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_programmer::events::{
     ProgrammerAttributeOperation, ProgrammerAttributeSource, ProgrammerCommand,
     StoreObjectWorkflows, handle_blueprint_events,

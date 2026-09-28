@@ -33,6 +33,7 @@ tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
 web-time.workspace = true
+nightfall-fixture-model = { path = "../fixture-model" }
 
 [dev-dependencies]
 minicbor-serde.workspace = true

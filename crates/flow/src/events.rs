@@ -953,9 +953,9 @@ mod tests {
     };
     use nightfall_clips::MaterializedClip;
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
+    use nightfall_fixture_model::prelude::ParameterMetadata;
     use nightfall_fixtures::prelude::{
-        Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterMetadata,
-        ParameterValues,
+        Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
     };
     use nightfall_instances::{
         InstanceClock, InstanceClockSource, InstanceControls, InstanceDisplayKind, InstanceId,

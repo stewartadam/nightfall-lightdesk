@@ -16,6 +16,7 @@ use std::str::FromStr;
 use bevy_ecs::change_detection::DetectChanges;
 use bevy_ecs::prelude::{Res, Resource};
 use nightfall_dmx::prelude::*;
+use nightfall_fixture_model::prelude::ParameterMetadata;
 use nightfall_io::BindingTransport;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -25,7 +26,6 @@ use crate::bindings::{
 };
 use crate::data_provider_ext::FixtureDataProviderExt;
 use crate::fixture::Fixture;
-use crate::parameter::ParameterMetadata;
 use crate::prelude::DisabledBindings;
 use crate::wire_layout::WireLayout;
 
@@ -884,7 +884,6 @@ mod tests {
 
     use super::*;
     use crate::bindings::{InputBinding, OutputBinding};
-    use crate::prelude::ParameterMetadata;
 
     fn make_fixture(uid: Uuid, id: u32, params: Vec<ParameterMetadata>) -> Fixture {
         Fixture {
@@ -1849,7 +1848,7 @@ mod tests {
         offsets: &[u16],
     ) -> ParameterMetadata {
         ParameterMetadata {
-            dmx_slots: crate::parameter::DmxSlots::Explicit {
+            dmx_slots: nightfall_fixture_model::prelude::DmxSlots::Explicit {
                 dmx_break: 1,
                 offsets: offsets.to_vec(),
             },

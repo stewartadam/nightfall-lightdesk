@@ -83,11 +83,7 @@ pub mod prelude {
         GeometryProviderResource, GeometryType, MeshFormat, MeshResource, PrimitiveType, Transform,
     };
     pub use crate::input_apply::{ParameterAssertion, ParameterAssertionSource};
-    pub use crate::parameter::{
-        CieColor, DmxSlots, ElementParameterRef, FunctionRelation, MergeStrategy,
-        ModeMasterCondition, Parameter, ParameterFunction, ParameterFunctionSet, ParameterMetadata,
-        ParameterValues, ProfilePoint, RelationKind, evaluate_profile,
-    };
+    pub use crate::parameter::{Parameter, ParameterValues};
     pub use crate::physical::{BeamType, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};

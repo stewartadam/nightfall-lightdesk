@@ -368,7 +368,7 @@ fn dmx_value_from_universe(
 /// Maps a DMX integer to the parameter's logical value range.
 fn dmx_value_to_parameter_value(
     dmx_value: u32,
-    metadata: &crate::prelude::ParameterMetadata,
+    metadata: &nightfall_fixture_model::prelude::ParameterMetadata,
 ) -> ParameterDmxValue {
     let dmx_max = metadata.resolution.dmx_max() as ParameterDmxValue;
     let normalized = (dmx_value as ParameterDmxValue / dmx_max).clamp(0.0, 1.0);
@@ -390,7 +390,7 @@ mod tests {
     /// Verifies manual DMX channel assertions decode signed pan/tilt around the midpoint.
     #[test]
     fn manual_dmx_decoding_uses_signed_logical_bounds() {
-        let metadata = crate::prelude::ParameterMetadata {
+        let metadata = nightfall_fixture_model::prelude::ParameterMetadata {
             attribute: Attribute::Pan,
             native_unit: ParameterUnit::Degrees,
             value_polarity: ParameterValuePolarity::Signed,

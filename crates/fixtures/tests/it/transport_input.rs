@@ -13,6 +13,7 @@ use bevy_ecs::prelude::*;
 use nightfall_compositor::types::Layer;
 use nightfall_dmx::prelude::{DmxValueResolution, MAX_CHANNELS_PER_UNIVERSE, ParameterValue};
 use nightfall_engine::{Compositing, LayerGeneration};
+use nightfall_fixture_model::prelude::ParameterMetadata;
 use nightfall_fixtures::{input_apply::TransportInputPlugin, prelude::*};
 use nightfall_io::{
     AcceptedDmxFrame, BindingTransport, DmxInputSet, OutputTransport, SacnDelivery,

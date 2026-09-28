@@ -648,9 +648,8 @@ mod tests {
         TransitionMode, ValueSource,
     };
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
-    use nightfall_fixtures::prelude::{
-        Fixture, FixtureElement, Parameter, ParameterMetadata, ParameterValues,
-    };
+    use nightfall_fixture_model::prelude::ParameterMetadata;
+    use nightfall_fixtures::prelude::{Fixture, FixtureElement, Parameter, ParameterValues};
     use serde::Serialize;
 
     use super::*;

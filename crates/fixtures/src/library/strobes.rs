@@ -11,6 +11,7 @@
 use nightfall::prelude::Identifiers;
 use nightfall_dmx::DmxValueResolution;
 use nightfall_dmx::prelude::{Attribute, ParameterUnit, ParameterValue};
+use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
 use uuid::Uuid;
 
 use crate::prelude::*;

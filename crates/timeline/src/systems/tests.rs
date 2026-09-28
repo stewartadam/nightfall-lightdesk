@@ -34,9 +34,9 @@ use nightfall_engine::prelude::{
     FinishedCommand, OperationResult, PendingCommandBuffer, PendingEngineActionBuffer,
     register_engine_action,
 };
+use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
 use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, MergeStrategy, Parameter, ParameterMetadata,
-    ParameterValues,
+    Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };
 use nightfall_flow::prelude::{FlowDefinition, FlowInstance, FlowNodeRegistry};
 use nightfall_fx::prelude::{ActiveStepFx, Fx, MaterializedFx, StepFx};

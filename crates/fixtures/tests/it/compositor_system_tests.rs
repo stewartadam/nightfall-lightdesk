@@ -25,6 +25,7 @@ use nightfall_engine::prelude::{
     CommandEnvelope, CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker,
     EngineActionEnvelope, FinishedCommand, ReplyTarget,
 };
+use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::undo::{
     ClearDmxChannels, DmxChannelSnapshot, FixtureSnapshot, ParameterSnapshot,

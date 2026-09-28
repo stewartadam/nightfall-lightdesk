@@ -19,9 +19,9 @@ use nightfall::prelude::{
 };
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
+use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
 use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, MergeStrategy, Parameter, ParameterMetadata,
-    ParameterValues,
+    Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };
 
 /// Compositor benchmark assertion styles for validating generated output.

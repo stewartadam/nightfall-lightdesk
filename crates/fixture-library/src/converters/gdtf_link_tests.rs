@@ -9,6 +9,10 @@
 //! Mode master, relation, DMX profile and channel-set physical conversion tests.
 
 use nightfall_dmx::prelude::Attribute;
+use nightfall_fixture_model::prelude::{
+    DmxSlots, ElementParameterRef, FunctionRelation, ParameterMetadata, ProfilePoint, RelationKind,
+    evaluate_profile,
+};
 use nightfall_fixtures::prelude::*;
 
 use super::gdtf_resolve::GdtfDiagnostic;

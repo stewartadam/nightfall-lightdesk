@@ -15,6 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use nightfall_fixture_model::prelude::ElementParameterRef;
 use nightfall_fixtures::prelude::*;
 
 use crate::converters::gdtf_resolve::MAX_GEOMETRY_INSTANCES;
@@ -304,6 +305,8 @@ fn check_bindings(fixture: &Fixture, geometry: &FixtureGeometry) -> Vec<Invarian
 
 #[cfg(test)]
 mod tests {
+    use nightfall_fixture_model::prelude::DmxSlots;
+
     use super::*;
     use crate::converters::gdtf::convert_gdtf_to_fixture;
     use crate::testing::{BreakSpec, ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};

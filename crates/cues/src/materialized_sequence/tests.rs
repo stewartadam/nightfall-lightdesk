@@ -13,6 +13,7 @@ use bevy_ecs::schedule::{ApplyDeferred, IntoScheduleConfigs};
 use bevy_ecs::system::SystemState;
 use nightfall_clips::ClipOptions;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution};
+use nightfall_fixture_model::prelude::ParameterMetadata;
 use nightfall_instances::InstanceClockSource;
 
 use super::tracking::mark_transition_input_complete;

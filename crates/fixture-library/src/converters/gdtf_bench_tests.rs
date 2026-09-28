@@ -28,6 +28,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use nightfall_fixture_model::prelude::DmxSlots;
 use nightfall_fixtures::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

@@ -15,6 +15,10 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_desk::prelude::apply_virtual_relations;
 use nightfall_dmx::prelude::*;
+use nightfall_fixture_model::prelude::{
+    DmxSlots, ElementParameterRef, FunctionRelation, MergeStrategy, ModeMasterCondition,
+    ParameterFunction, ParameterMetadata, RelationKind,
+};
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::universe::dmx_universes;
 use nightfall_io::prelude::*;

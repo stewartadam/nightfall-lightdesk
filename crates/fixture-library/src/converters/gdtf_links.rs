@@ -14,6 +14,10 @@
 
 use gdtf::dmx_mode::{ChannelFunction, DmxChannel, DmxMode, ModeMaster};
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution};
+use nightfall_fixture_model::prelude::{
+    DmxSlots, ElementParameterRef, FunctionRelation, ModeMasterCondition, ParameterMetadata,
+    RelationKind,
+};
 use nightfall_fixtures::prelude::*;
 
 use super::gdtf_functions::{ordered_functions, scaled};

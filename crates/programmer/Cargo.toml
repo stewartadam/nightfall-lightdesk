@@ -31,3 +31,6 @@ nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+nightfall-fixture-model = { path = "../fixture-model" }

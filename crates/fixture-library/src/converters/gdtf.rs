@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use gdtf::geometry::Geometry;
 use nightfall::prelude::Identifiers;
 use nightfall_dmx::prelude::*;
+use nightfall_fixture_model::prelude::{DmxSlots, MergeStrategy, ParameterMetadata};
 use nightfall_fixtures::prelude::*;
 use uuid::Uuid;
 

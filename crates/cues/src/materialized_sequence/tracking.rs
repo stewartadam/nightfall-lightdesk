@@ -8,6 +8,8 @@
 
 use std::collections::HashSet;
 
+use nightfall_fixture_model::prelude::MergeStrategy;
+
 use super::*;
 use crate::materialized_cue::MaterializedCuePartLayer;
 
