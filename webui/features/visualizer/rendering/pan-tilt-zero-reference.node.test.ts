@@ -7,7 +7,7 @@
  */
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { before } from "node:test";
 import {
   Group,
   MathUtils,
@@ -29,6 +29,7 @@ import {
   type Transform,
 } from "../../../types";
 import type { RenderableFixture } from "../model/types";
+import { loadFixtureEvaluation } from "./channel-evaluation";
 import { isLowQualityBeamMaterial } from "./effects/beam-material";
 import { FixtureManager } from "./fixture-manager";
 import { buildSimpleLedBar } from "./fixture-renderers/led-bar-renderer";
@@ -59,6 +60,8 @@ import {
   strobeShutterFrequencyHz,
   strobeShutterOutputScale,
 } from "./visualizer-dmx";
+
+before(() => loadFixtureEvaluation());
 
 /**
  * Asserts that numeric values match within the tolerance used by geometry comparisons.

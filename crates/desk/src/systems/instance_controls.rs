@@ -40,6 +40,16 @@ fn scale_parameter_value(value: &ParameterValue, scale: f32) -> ParameterValue {
     }
 }
 
+/// Returns true when a playback's intensity scale applies to a parameter.
+///
+/// Intensity parameters scale, except virtual dimmers that do not use the
+/// grand master: their light path is already scaled through another dimmer
+/// (see the GDTF converter), so scaling them too would apply the fader twice.
+fn scales_with_playback(metadata: &ParameterMetadata) -> bool {
+    INTENSITY_ATTRIBUTES.contains(&metadata.attribute)
+        && !(metadata.dmx_slots == DmxSlots::Virtual && !metadata.use_grandmaster)
+}
+
 /// System that applies per-playback intensity scaling to layers.
 ///
 /// This runs after layer generation but before compositing, scaling
@@ -59,7 +69,7 @@ pub fn apply_playback_intensity(
         // Scale absolute intensity parameters
         for (param_instance, (value, _transition)) in layer.absolute.iter_mut() {
             if let Ok(param) = param_query.get(param_instance.entity()) {
-                if INTENSITY_ATTRIBUTES.contains(&param.metadata.attribute) {
+                if scales_with_playback(&param.metadata) {
                     *value = scale_parameter_value(value, scale);
                 }
             }
@@ -68,7 +78,7 @@ pub fn apply_playback_intensity(
         // Scale relative intensity parameters
         for (param_instance, (value, _transition)) in layer.relative.iter_mut() {
             if let Ok(param) = param_query.get(param_instance.entity()) {
-                if INTENSITY_ATTRIBUTES.contains(&param.metadata.attribute) {
+                if scales_with_playback(&param.metadata) {
                     *value = scale_parameter_value(value, scale);
                 }
             }
@@ -79,6 +89,28 @@ pub fn apply_playback_intensity(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verifies playback scaling skips only virtual dimmers that do not use
+    /// the grand master, and keeps plain intensity parameters whatever their
+    /// grand master flag.
+    #[test]
+    fn playback_scaling_skips_virtual_dimmers_on_another_path() {
+        let intensity = ParameterMetadata::default();
+        assert!(scales_with_playback(&intensity));
+        let virtual_dimmer = ParameterMetadata {
+            dmx_slots: DmxSlots::Virtual,
+            ..Default::default()
+        };
+        assert!(!scales_with_playback(&virtual_dimmer));
+        assert!(scales_with_playback(&ParameterMetadata {
+            use_grandmaster: true,
+            ..virtual_dimmer
+        }));
+        assert!(!scales_with_playback(&ParameterMetadata {
+            attribute: Attribute::Red,
+            ..Default::default()
+        }));
+    }
 
     #[test]
     fn scale_absolute_value() {

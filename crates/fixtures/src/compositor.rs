@@ -26,7 +26,7 @@ use crate::prelude::{
     Parameter, ParameterAssertion, ParameterAssertionSource, ResolvedInputBindings,
     ResolvedInputDestination, ResolvedInputSource, ResolvedOutputDestinations,
 };
-use crate::wire_layout::{combine_dmx_bytes, dmx_max};
+use crate::wire_layout::combine_dmx_bytes;
 
 /// Priority for the transport input assertion layer.
 pub const TRANSPORT_INPUT_LAYER_PRIORITY: Priority = Priority(-128);
@@ -370,7 +370,7 @@ fn dmx_value_to_parameter_value(
     dmx_value: u32,
     metadata: &crate::prelude::ParameterMetadata,
 ) -> ParameterDmxValue {
-    let dmx_max = dmx_max(metadata.resolution) as ParameterDmxValue;
+    let dmx_max = metadata.resolution.dmx_max() as ParameterDmxValue;
     let normalized = (dmx_value as ParameterDmxValue / dmx_max).clamp(0.0, 1.0);
     let min = metadata.logical_min();
     let max = metadata.logical_max();

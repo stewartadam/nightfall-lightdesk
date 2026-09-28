@@ -9,7 +9,7 @@
 /** Tests for rendering GDTF emitter colors and color wheel slots. */
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { before } from "node:test";
 import { cieChromaticityToFullBrightnessRgb } from "../../../lib/color-path-preview";
 import {
   type Attribute,
@@ -20,11 +20,14 @@ import {
   type ParameterMetadata,
   ParameterValuePolarity,
 } from "../../../types";
+import { loadFixtureEvaluation } from "./channel-evaluation";
 import {
   elementGoboMedia,
   extractVisualizerDmx,
   resetDmxPool,
 } from "./visualizer-dmx";
+
+before(() => loadFixtureEvaluation());
 
 /** Builds 8-bit parameter metadata with optional profile functions. */
 function parameter(

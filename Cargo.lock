@@ -5198,6 +5198,7 @@ dependencies = [
  "nightfall-compositor",
  "nightfall-dmx",
  "nightfall-engine",
+ "nightfall-fixture-model",
  "nightfall-fixtures",
  "nightfall-flow",
  "nightfall-framepace",
@@ -5315,6 +5316,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nightfall-fixture-model"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "nightfall-dmx",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "typeshare",
+]
+
+[[package]]
 name = "nightfall-fixtures"
 version = "0.1.0-alpha.2"
 dependencies = [
@@ -5331,6 +5343,7 @@ dependencies = [
  "nightfall-compositor",
  "nightfall-dmx",
  "nightfall-engine",
+ "nightfall-fixture-model",
  "nightfall-instances",
  "nightfall-io",
  "nightfall-selection",
@@ -5865,6 +5878,7 @@ version = "0.1.0"
 dependencies = [
  "nightfall",
  "nightfall-cmd-parse",
+ "nightfall-fixture-model",
  "nightfall-io",
  "nightfall-lookahead-projection",
  "nightfall-selection",

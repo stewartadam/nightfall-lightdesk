@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-io = { path = "../io" }
 nightfall-lookahead-projection = { path = "../lookahead-projection" }
 nightfall-selection = { path = "../selection" }

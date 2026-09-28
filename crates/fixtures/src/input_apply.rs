@@ -22,7 +22,7 @@ use web_time::Instant;
 
 use crate::compositor::apply_parameter_assertions;
 use crate::prelude::*;
-use crate::wire_layout::{combine_dmx_bytes, dmx_max};
+use crate::wire_layout::combine_dmx_bytes;
 
 /// Registers same-update consumption of frames accepted by IO adapters.
 pub struct TransportInputPlugin;
@@ -327,7 +327,7 @@ fn dmx_value_to_parameter_value(
     dmx_value: ParameterDmxValue,
     metadata: &ParameterMetadata,
 ) -> ParameterValue {
-    let dmx_max = dmx_max(metadata.resolution) as ParameterDmxValue;
+    let dmx_max = metadata.resolution.dmx_max() as ParameterDmxValue;
     let normalized = (dmx_value / dmx_max).clamp(0.0, 1.0);
     let min = metadata.logical_min();
     let max = metadata.logical_max();

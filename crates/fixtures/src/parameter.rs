@@ -8,290 +8,18 @@
 
 //! Parameters are logical representation of DMX channels that hold values to
 //! eventually be sent to fixtures during output.
+//!
+//! The profile-level model of a parameter lives in `nightfall_fixture_model`
+//! so the web visualizer can share it; this module adds its runtime values
+//! and ECS component.
 
 use bevy_ecs::prelude::*;
 use nightfall_compositor::types::CompositorParameter;
 use nightfall_dmx::prelude::*;
+pub use nightfall_fixture_model::parameter::*;
 use nightfall_io::OutputTransport;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
-
-/// Merge strategies for combining parameter values
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[typeshare::typeshare]
-pub enum MergeStrategy {
-    /// Highest Take Priority - the highest value will be used
-    HTP,
-    /// Last Takes Priority - the most recent value will be used
-    LTP,
-}
-
-/// Placement of a parameter's bytes within its fixture's DMX footprint.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-#[serde(tag = "type", content = "data")]
-pub enum DmxSlots {
-    /// Bytes directly follow the previous parameter in fixture DMX order.
-    #[default]
-    Sequential,
-    /// Bytes occupy the given footprint slots.
-    Explicit {
-        /// DMX break (1-based) the slots belong to. Each break has its own start address.
-        dmx_break: u16,
-        /// 1-based footprint slots of every byte, most significant first.
-        offsets: Vec<u16>,
-    },
-    /// The parameter is computed by the desk and never occupies a DMX slot.
-    Virtual,
-}
-
-/// A CIE 1931 color: chromaticity `x`, `y` and relative luminance `Y` (0-100).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct CieColor {
-    /// Chromaticity x.
-    pub x: f32,
-    /// Chromaticity y.
-    pub y: f32,
-    /// Relative luminance, 100 for a white reference.
-    #[serde(rename = "Y")]
-    pub luminance: f32,
-}
-
-/// A named DMX sub-range within a parameter function, e.g. one gobo or color slot.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct ParameterFunctionSet {
-    /// Display name, e.g. "Open" or "Gobo 3".
-    pub name: String,
-    /// First DMX value of the set, at the parameter's resolution.
-    pub dmx_from: u32,
-    /// Last DMX value of the set, inclusive.
-    pub dmx_to: u32,
-    /// 1-based slot of the function's wheel selected by this set.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wheel_slot: Option<u32>,
-    /// Filter color of the selected wheel slot, when it colors the beam.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub color: Option<CieColor>,
-    /// Image of the selected wheel slot (e.g. a gobo), as its archive media name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub media: Option<String>,
-}
-
-/// A DMX range of a parameter with one meaning, e.g. a GDTF channel function.
-///
-/// A single DMX channel can select a gobo in one range and rotate it in
-/// another; each range keeps its own attribute and physical scale.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct ParameterFunction {
-    /// Function name.
-    pub name: String,
-    /// Profile attribute name the range controls, e.g. "Gobo1" or "Gobo1PosRotate".
-    pub attribute: String,
-    /// First DMX value of the range, at the parameter's resolution.
-    pub dmx_from: u32,
-    /// Last DMX value of the range, inclusive.
-    pub dmx_to: u32,
-    /// Physical value at `dmx_from`.
-    pub physical_from: f32,
-    /// Physical value at `dmx_to`.
-    pub physical_to: f32,
-    /// Wheel the range indexes into, when it selects wheel slots.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wheel: Option<String>,
-    /// Measured color of the emitter this range drives, for additive color mixing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub emitter_color: Option<CieColor>,
-    /// Named sub-ranges in ascending DMX order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sets: Vec<ParameterFunctionSet>,
-}
-
-/// Metadata for a parameter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct ParameterMetadata {
-    /// Where this parameter's bytes are placed in the fixture footprint.
-    #[serde(default)]
-    pub dmx_slots: DmxSlots,
-    /// DMX ranges with distinct meanings, in ascending DMX order. Empty means
-    /// the whole range is one linear function.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub functions: Vec<ParameterFunction>,
-    /// DMX value the fixture rests at when nothing controls it, at the parameter's resolution.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_dmx: Option<u32>,
-    /// DMX value to output while the element is highlighted, at the parameter's resolution.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub highlight_dmx: Option<u32>,
-    /// The DMX channel width of this logical parameter
-    pub resolution: DmxValueResolution,
-    /// Which attribute this parameter controls
-    pub attribute: Attribute,
-    /// Unit used for values entered and displayed by operators.
-    #[serde(default)]
-    pub native_unit: ParameterUnit,
-    /// Whether this parameter's logical values are unsigned or centered around zero.
-    #[serde(default)]
-    pub value_polarity: ParameterValuePolarity,
-    /// The minimum value of this parameter. The parameter can hold values
-    /// outside this bound in individual layers, but final output will be
-    /// clamped to this value.
-    pub min: ParameterDmxValue,
-    /// The maximum value of this parameter. The parameter can hold values
-    /// outside this bound in individual layers, but final output will be
-    /// clamped to this value.
-    pub max: ParameterDmxValue,
-    /// Fixed offset applied after merging and before clamping.
-    /// Can be specified as a raw DMX value or as a percentage of the parameter's range.
-    pub offset: ParameterValue,
-    /// Whether low and high values should be inverted upon output. This
-    /// can be useful for pan/tilt if a fixture was mounted rotated 180 degrees,
-    /// for example.
-    pub is_inverted: bool,
-    /// Whether this parameter is a 'snap' parameter (not fade-able)
-    pub is_snap: bool,
-    /// The merge strategy for this parameter
-    pub merge_type: MergeStrategy,
-    /// Whether this parameter should respond to grandmaster intensity
-    pub use_grandmaster: bool,
-}
-
-impl Default for ParameterMetadata {
-    fn default() -> Self {
-        Self {
-            dmx_slots: DmxSlots::Sequential,
-            functions: Vec::new(),
-            default_dmx: None,
-            highlight_dmx: None,
-            resolution: DmxValueResolution::Coarse,
-            attribute: Attribute::Intensity,
-            native_unit: ParameterUnit::Percent,
-            value_polarity: ParameterValuePolarity::Unsigned,
-            min: 0.0,
-            max: ChannelDmxValue::MAX as ParameterDmxValue,
-            offset: ParameterValue::Absolute { value: 0.0 },
-            is_inverted: false,
-            is_snap: false,
-            merge_type: MergeStrategy::HTP,
-            use_grandmaster: false,
-        }
-    }
-}
-
-impl ParameterMetadata {
-    /// Returns the DMX break this parameter writes bytes to, or `None` for virtual parameters.
-    ///
-    /// Sequential parameters always belong to the primary break 1.
-    pub fn dmx_break(&self) -> Option<u16> {
-        if self.attribute == Attribute::VirtualIntensity {
-            return None;
-        }
-        match &self.dmx_slots {
-            DmxSlots::Sequential => Some(1),
-            DmxSlots::Explicit { dmx_break, .. } => Some(*dmx_break),
-            DmxSlots::Virtual => None,
-        }
-    }
-
-    /// Returns the function whose DMX range contains `dmx`.
-    pub fn function_at(&self, dmx: u32) -> Option<&ParameterFunction> {
-        self.functions
-            .iter()
-            .find(|function| (function.dmx_from..=function.dmx_to).contains(&dmx))
-    }
-
-    /// Converts a DMX integer at this parameter's resolution to the logical
-    /// value that outputs it, inverting the output mapping (range and inversion).
-    pub fn logical_value_from_dmx(&self, dmx: u32) -> ParameterDmxValue {
-        let max_dmx = crate::wire_layout::dmx_max(self.resolution) as ParameterDmxValue;
-        let normalized = (dmx as ParameterDmxValue / max_dmx).clamp(0.0, 1.0);
-        let min = self.logical_min();
-        let max = self.logical_max();
-        let value = min + normalized * (max - min);
-        if self.is_inverted {
-            min + max - value
-        } else {
-            value
-        }
-    }
-
-    /// Returns the minimum logical value operators should use for this parameter.
-    pub fn logical_min(&self) -> ParameterDmxValue {
-        if self.value_polarity == ParameterValuePolarity::Signed && self.min >= 0.0 {
-            -(self.max - self.min) / 2.0
-        } else {
-            self.min
-        }
-    }
-
-    /// Returns the maximum logical value operators should use for this parameter.
-    pub fn logical_max(&self) -> ParameterDmxValue {
-        if self.value_polarity == ParameterValuePolarity::Signed && self.min >= 0.0 {
-            (self.max - self.min) / 2.0
-        } else {
-            self.max
-        }
-    }
-
-    /// Returns the logical value span for this parameter.
-    pub fn logical_range(&self) -> ParameterDmxValue {
-        self.logical_max() - self.logical_min()
-    }
-
-    /// Converts an absolute logical parameter value into an absolute percentage.
-    pub fn absolute_value_to_percent(&self, value: ParameterDmxValue) -> Percentage {
-        let min = self.logical_min();
-        let range = self.logical_range();
-        if range <= 0.0 {
-            return 0.0.into();
-        }
-
-        let normalized = ((value.clamp(min, self.logical_max()) - min) / range).clamp(0.0, 1.0);
-        match self.value_polarity {
-            ParameterValuePolarity::Unsigned => normalized.into(),
-            ParameterValuePolarity::Signed => (normalized * 2.0 - 1.0).into(),
-        }
-    }
-
-    /// Converts an absolute percentage into an absolute logical parameter value.
-    pub fn absolute_percent_to_value(&self, value: Percentage) -> ParameterDmxValue {
-        let min = self.logical_min();
-        let range = self.logical_range();
-        match self.value_polarity {
-            ParameterValuePolarity::Unsigned => {
-                let clamped_percent = value.clamp(0.0.into(), 1.0.into());
-                min + range * clamped_percent.as_f32()
-            }
-            ParameterValuePolarity::Signed => {
-                let percent = value.clamp((-1.0).into(), 1.0.into()).as_f32();
-                min + range * ((percent + 1.0) / 2.0)
-            }
-        }
-    }
-
-    /// Converts absolute parameter values to raw logical-value representation.
-    pub fn parameter_value_as_absolute(&self, value: &ParameterValue) -> ParameterValue {
-        match value {
-            ParameterValue::AbsolutePercent { value } => ParameterValue::Absolute {
-                value: self.absolute_percent_to_value(*value),
-            },
-            _ => *value,
-        }
-    }
-
-    /// Converts absolute parameter values to percentage representation.
-    pub fn parameter_value_as_absolute_percent(&self, value: &ParameterValue) -> ParameterValue {
-        match value {
-            ParameterValue::Absolute { value } => ParameterValue::AbsolutePercent {
-                value: self.absolute_value_to_percent(*value),
-            },
-            _ => *value,
-        }
-    }
-}
 
 /// Store current values for a parameter.
 #[derive(Clone, Debug, Serialize, Deserialize, SmartDefault)]
@@ -403,29 +131,14 @@ impl Parameter {
     /// Clamps to valid range and applies inversion if configured.
     /// Use this for UI display that shows logical/conceptual values.
     pub fn get_logical_value(&self) -> ParameterDmxValue {
-        let min = self.metadata.logical_min();
-        let max = self.metadata.logical_max();
-        let value = self.values.current_value.clamp(min, max);
-        if self.metadata.is_inverted {
-            min + max - value
-        } else {
-            value
-        }
+        self.metadata.logical_output(self.values.current_value)
     }
 
     /// Gets the physical output value for DMX output.
     /// Applies the calibration offset and clamps to valid range.
     /// Use this for actual DMX output where offsets should be applied.
     pub fn get_raw_value(&self) -> ParameterDmxValue {
-        let min = self.metadata.logical_min();
-        let max = self.metadata.logical_max();
-        let offset = self.metadata.offset.resolve_as_dmx_offset(min, max);
-        let value = (self.values.current_value + offset).clamp(min, max);
-        if self.metadata.is_inverted {
-            min + max - value
-        } else {
-            value
-        }
+        self.metadata.raw_value(self.values.current_value)
     }
 
     /// Sets the effective output value, honoring parameter metadata settings
@@ -508,26 +221,6 @@ impl CompositorParameter for Parameter {
 mod tests {
     use super::*;
 
-    /// Verifies showfiles written before native units were introduced remain readable.
-    #[test]
-    fn parameter_metadata_defaults_missing_native_unit() {
-        let metadata: ParameterMetadata = serde_json::from_value(serde_json::json!({
-            "resolution": "Coarse",
-            "attribute": { "type": "Intensity" },
-            "value_polarity": "Unsigned",
-            "min": 0.0,
-            "max": 255.0,
-            "offset": { "type": "Absolute", "data": { "value": 0.0 } },
-            "is_inverted": false,
-            "is_snap": false,
-            "merge_type": "HTP",
-            "use_grandmaster": true
-        }))
-        .expect("deserialize legacy parameter metadata");
-
-        assert_eq!(metadata.native_unit, ParameterUnit::Percent);
-    }
-
     /// Builds parameter metadata with overridable polarity for value-resolution tests.
     fn metadata(value_polarity: ParameterValuePolarity) -> ParameterMetadata {
         ParameterMetadata {
@@ -598,75 +291,6 @@ mod tests {
         assert_eq!(parameter.values.current_value, 10.0);
     }
 
-    /// Verifies metadata conversion preserves unsigned absolute values through percentage form.
-    #[test]
-    fn unsigned_absolute_values_round_trip_through_absolute_percent() {
-        let metadata = metadata(ParameterValuePolarity::Unsigned);
-        let percent = metadata
-            .parameter_value_as_absolute_percent(&ParameterValue::Absolute { value: 270.0 });
-        assert_eq!(
-            percent,
-            ParameterValue::AbsolutePercent { value: 0.5.into() }
-        );
-
-        assert_eq!(
-            metadata.parameter_value_as_absolute(&percent),
-            ParameterValue::Absolute { value: 270.0 }
-        );
-    }
-
-    /// Verifies metadata conversion preserves signed absolute values through percentage form.
-    #[test]
-    fn signed_absolute_values_round_trip_through_absolute_percent() {
-        let metadata = metadata(ParameterValuePolarity::Signed);
-        let percent = metadata
-            .parameter_value_as_absolute_percent(&ParameterValue::Absolute { value: 135.0 });
-        assert_eq!(
-            percent,
-            ParameterValue::AbsolutePercent { value: 0.5.into() }
-        );
-
-        assert_eq!(
-            metadata.parameter_value_as_absolute(&percent),
-            ParameterValue::Absolute { value: 135.0 }
-        );
-    }
-
-    /// Verifies the DMX-to-logical inverse reproduces the same DMX on output, including inversion.
-    #[test]
-    fn logical_value_from_dmx_round_trips_through_output() {
-        for (is_inverted, min, max) in [
-            (false, -125.0, 125.0),
-            (true, -270.0, 270.0),
-            (false, 0.0, 65_535.0),
-        ] {
-            let metadata = ParameterMetadata {
-                attribute: Attribute::Tilt,
-                value_polarity: ParameterValuePolarity::Signed,
-                resolution: DmxValueResolution::Fine,
-                min,
-                max,
-                is_inverted,
-                merge_type: MergeStrategy::LTP,
-                ..Default::default()
-            };
-            for dmx in [0u32, 1, 12_345, 32_768, 65_535] {
-                let parameter = Parameter {
-                    values: ParameterValues {
-                        current_value: metadata.logical_value_from_dmx(dmx),
-                        ..Default::default()
-                    },
-                    metadata: metadata.clone(),
-                };
-                assert_eq!(
-                    crate::universe::parameter_to_dmx_value(&parameter),
-                    dmx,
-                    "inverted={is_inverted} range={min}..{max}"
-                );
-            }
-        }
-    }
-
     /// Verifies an inverted parameter's declared default is inverted once:
     /// the default value a cue transition starts from outputs the declared DMX.
     #[test]
@@ -714,31 +338,5 @@ mod tests {
         );
         let plain = ParameterValues::from_metadata(&ParameterMetadata::default());
         assert_eq!((plain.default_value, plain.highlight_value), (0.0, 255.0));
-    }
-
-    /// Verifies function lookup finds the range containing a DMX value.
-    #[test]
-    fn function_at_finds_containing_range() {
-        let function = |name: &str, dmx_from, dmx_to| ParameterFunction {
-            name: name.to_string(),
-            attribute: name.to_string(),
-            dmx_from,
-            dmx_to,
-            physical_from: 0.0,
-            physical_to: 1.0,
-            wheel: None,
-            emitter_color: None,
-            sets: Vec::new(),
-        };
-        let metadata = ParameterMetadata {
-            functions: vec![
-                function("Gobo1", 0, 127),
-                function("Gobo1PosRotate", 128, 255),
-            ],
-            ..Default::default()
-        };
-        assert_eq!(metadata.function_at(10).unwrap().name, "Gobo1");
-        assert_eq!(metadata.function_at(200).unwrap().name, "Gobo1PosRotate");
-        assert!(ParameterMetadata::default().function_at(10).is_none());
     }
 }

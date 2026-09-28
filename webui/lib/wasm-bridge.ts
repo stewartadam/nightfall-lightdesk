@@ -19,12 +19,12 @@ import {
 import { areExperimentalFlowsEnabled } from "./experimental-features";
 import { withoutFlowCompletions } from "./flow-autocomplete";
 import { getLogger } from "./logger";
+import { loadWasmBridge, type WasmBridgeModule } from "./wasm-module";
 
 const log = getLogger(import.meta.url);
 
 // Dynamic import for WASM module - will be loaded at runtime
-let wasmModule: typeof import("../assets/wasm/nightfall_wasm_bridge") | null =
-  null;
+let wasmModule: WasmBridgeModule | null = null;
 let wasmInitialized = false;
 
 interface CommandAutocompleteTextRange {
@@ -276,29 +276,7 @@ async function initWasm() {
   if (wasmInitialized) return;
 
   try {
-    // Import the WASM module
-    wasmModule = await import("../assets/wasm/nightfall_wasm_bridge.js");
-
-    // Initialize the WASM module (required before calling any functions)
-    if (typeof window === "undefined") {
-      const importNodeModule = new Function(
-        "specifier",
-        "return import(specifier)",
-      ) as (
-        specifier: string,
-      ) => Promise<{ readFile(path: URL): Promise<Uint8Array> }>;
-      const { readFile } = await importNodeModule("node:fs/promises");
-      const wasmBytes = await readFile(
-        new URL(
-          "../assets/wasm/nightfall_wasm_bridge_bg.wasm",
-          import.meta.url,
-        ),
-      );
-      await wasmModule.default({ module_or_path: wasmBytes });
-    } else {
-      await wasmModule.default();
-    }
-
+    wasmModule = await loadWasmBridge();
     wasmInitialized = true;
   } catch (error) {
     log.error("Failed to load WASM module:", error);

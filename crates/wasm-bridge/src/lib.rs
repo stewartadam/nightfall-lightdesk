@@ -38,6 +38,10 @@ use nightfall_waveform::prelude::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+mod fixture_evaluation;
+
+pub use fixture_evaluation::{fixture_reading_stride, FixtureChannelEvaluator};
+
 /// JSON-serializable result for spatial projection through the WASM bridge.
 #[derive(Debug, Serialize)]
 struct SpatialProjectionResponse {

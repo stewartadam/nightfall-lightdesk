@@ -15,7 +15,7 @@
 
 use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::wire_layout::{dmx_max, split_dmx_value};
+use nightfall_fixtures::wire_layout::split_dmx_value;
 
 use super::gdtf::convert_gdtf_to_fixture;
 use crate::testing::reference::{ReferenceChannel, reference_mode_channels};
@@ -77,7 +77,7 @@ fn assert_round_trip(fixture: &Fixture, references: &[ReferenceChannel], seed: u
 
     let values: Vec<u32> = parameters
         .iter()
-        .map(|(_, _, metadata)| rng.next_u32() & dmx_max(metadata.resolution))
+        .map(|(_, _, metadata)| rng.next_u32() & metadata.resolution.dmx_max())
         .collect();
     let layout = WireLayout::new(
         parameters

@@ -22,6 +22,7 @@ import {
 } from "../../../../state/appStores";
 import type { DebugOverlayRegistry } from "../../components/debug-overlays";
 import { Instrumentation } from "../../services/instrumentation";
+import { loadFixtureEvaluation } from "../channel-evaluation";
 import {
   setActiveSpanOutlineSelectedObjects,
   setEditSelectionOutlineSelectedObjects,
@@ -44,11 +45,7 @@ import {
   zoomCameraToGroups,
 } from "../renderer";
 import { SceneManager } from "../scene-manager";
-import {
-  extractElementDmxData,
-  fixtureIntensityValueFromOutputs,
-  resetDmxPool,
-} from "../visualizer-dmx";
+import { extractFixtureDmxData, resetDmxPool } from "../visualizer-dmx";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
   CameraState,
@@ -86,8 +83,12 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   async init(config: VisualizerInitConfig): Promise<void> {
     const canvas = config.canvas as HTMLCanvasElement;
 
-    // Initialize renderer using existing initRenderer function
-    this.rendererState = await initRenderer(canvas);
+    // Initialize the renderer and the fixture model that evaluates channel output
+    const [rendererState] = await Promise.all([
+      initRenderer(canvas),
+      loadFixtureEvaluation(),
+    ]);
+    this.rendererState = rendererState;
 
     // Create scene manager
     this.sceneManager = new SceneManager(
@@ -419,22 +420,9 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
       if (!elementOutputs) continue;
 
       // Build element DMX map using element labels as keys
-      const elementDmx = new Map<string, ElementDmxData>();
-      const fixtureIntensity = fixtureIntensityValueFromOutputs(
-        elementOutputs,
-        fixture.elements,
+      const elementDmx = new Map<string, ElementDmxData>(
+        extractFixtureDmxData(fixture.elements, elementOutputs),
       );
-
-      for (let i = 0; i < fixture.elements.length; i++) {
-        const element = fixture.elements[i];
-        const output = elementOutputs[i];
-        if (!output) continue;
-
-        elementDmx.set(
-          element.label,
-          extractElementDmxData(output, element, fixtureIntensity),
-        );
-      }
 
       if (elementDmx.size > 0) {
         this.setElementDmx(uid, elementDmx);
