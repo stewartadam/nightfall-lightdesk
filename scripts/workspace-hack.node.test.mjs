@@ -76,3 +76,26 @@ test("proc-macro crates are excluded from the workspace-hack", () => {
     );
   }
 });
+
+/**
+ * app-tauri is traversed only to unify the features it enables on shared crates;
+ * Tauri's own crates must stay out of the workspace-hack (via hakari's
+ * `[final-excludes]`) so runtime builds never compile them.
+ */
+test("the workspace-hack does not pull Tauri crates into runtime builds", () => {
+  const manifest = readFileSync(
+    new URL("../crates/workspace-hack/Cargo.toml", import.meta.url),
+    "utf8",
+  );
+  const tauriDeps = [
+    ...manifest.matchAll(/^([\w-]+)\s*=\s*\{([^}]*)\}/gm),
+  ].filter(
+    ([, key, spec]) =>
+      key.startsWith("tauri") || /package\s*=\s*"tauri/.test(spec),
+  );
+  assert.deepEqual(
+    tauriDeps.map(([, key]) => key),
+    [],
+    "add these crates to [final-excludes] third-party in .config/hakari.toml",
+  );
+});
