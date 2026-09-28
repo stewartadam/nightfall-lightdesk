@@ -40,7 +40,10 @@ function workspacePackages() {
  */
 test("every crate depends on the workspace-hack for native targets only", () => {
   const excluded = traversalExcludedMembers();
-  assert.ok(excluded.has("app-tauri"));
+  assert.ok(
+    !excluded.has("app-tauri"),
+    "app-tauri must stay traversed so its shared-crate features do not re-key other builds",
+  );
   const members = workspacePackages().filter(
     (pkg) => pkg.name !== HACK && !excluded.has(pkg.name),
   );

@@ -26,10 +26,18 @@ platforms = [
 # Cargo.lock is checked in, so pin exact versions.
 exact-versions = true
 
-# - app-tauri: the desktop shell builds separately from the runtime graph (it is not a default
-#   workspace member); unifying its Tauri dependencies would pull Tauri crates into every runtime build.
 # - nightfall-engine-derive: proc macros compile for the host, where the non-wasm32 gate always
 #   holds, so depending on the workspace-hack would build Tokio, axum, and wasmtime natively for
 #   every wasm32 browser build.
 [traversal-excludes]
-workspace-members = ["app-tauri", "nightfall-engine-derive"]
+workspace-members = ["nightfall-engine-derive"]
+
+# app-tauri is traversed so the features it enables on shared crates (serde "rc", proc-macro2
+# "span-locations", log "kv", ...) are unified into every native build. Without that, adding
+# app-tauri to a build re-keys most of the dependency graph and build caches miss on every switch
+# between default runtime builds and `-p app-tauri` or `--workspace`. Tauri's own crates are
+# excluded from the output so runtime builds still never compile them.
+[final-excludes]
+third-party = [
+    { name = "tauri-utils" },
+]

@@ -59,6 +59,9 @@ wit-component = "0.259"
 [profile.dev]
 incremental = true            # Improve consecutive recompile performance
 opt-level = 1                 # Enable a small amount of optimization in debug mode
+# Keeps breakpoints, stepping and backtraces while skipping variable/type info, which roughly
+# halves the macOS dSYMs that build caches such as kache materialize in every worktree.
+debug = "line-tables-only"
 
 # Enable high optimizations for dependencies (incl. Bevy), but not for our code:
 [profile.dev.package."*"]
