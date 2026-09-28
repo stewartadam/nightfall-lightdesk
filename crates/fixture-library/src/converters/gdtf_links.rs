@@ -89,7 +89,7 @@ pub(super) fn link_functions(
             target.relations = relations;
         }
     }
-    set_virtual_dimmer_master_response(resolved, elements, targets.placements);
+    set_virtual_dimmer_master_response(resolved, elements, targets);
 }
 
 /// Returns the relations whose follower is `function` of resolved channel `index`.
@@ -156,15 +156,21 @@ fn link(
 ///
 /// A virtual dimmer that follows another dimmer receives the master through
 /// it. A virtual dimmer at the root of a chain gives up its master response
-/// only when a physical dimmer covers every channel it masters: each
+/// only when it masters channels and a physical dimmer covers all of them: each
 /// follower controls the physical dimmer's geometry or one below it, whose
-/// output the master already scales through that dimmer. Root virtual
-/// dimmers driving a separate light path keep responding.
+/// output the master already scales through that dimmer. A virtual copy of
+/// a physical dimmer, demoted for sharing its slots, mirrors that dimmer and
+/// gives up its response too. Other virtual dimmers, including root dimmers
+/// driving a separate light path or mastering nothing, keep responding.
 fn set_virtual_dimmer_master_response(
     resolved: &ResolvedMode<'_>,
     elements: &mut [FixtureElement],
-    placements: &[Placement],
+    targets: LinkTargets<'_>,
 ) {
+    let LinkTargets {
+        placements,
+        slot_owners,
+    } = targets;
     let parameter_of = |index: usize| {
         placements[index].map(|(element, parameter)| &elements[element].parameters[parameter])
     };
@@ -183,11 +189,17 @@ fn set_virtual_dimmer_master_response(
             .any(|dimmer| is_within(resolved, instance, *dimmer))
     };
     let mut silenced = Vec::new();
-    for &(element, position) in placements.iter().flatten() {
+    for (index, placement) in placements.iter().enumerate() {
+        let Some((element, position)) = *placement else {
+            continue;
+        };
         let dimmer = &elements[element].parameters[position];
         if !is_dimmer(dimmer, true) {
             continue;
         }
+        let mirrors_physical_dimmer = slot_owners[index]
+            .and_then(parameter_of)
+            .is_some_and(|owner| is_dimmer(owner, false));
         let follows = dimmer
             .functions
             .iter()
@@ -196,19 +208,21 @@ fn set_virtual_dimmer_master_response(
             element: element as u32,
             attribute: dimmer.attribute.clone(),
         };
-        let path_is_covered = !physical_dimmers.is_empty()
-            && (0..placements.len())
-                .filter(|follower| {
-                    parameter_of(*follower).is_some_and(|parameter| {
-                        parameter
-                            .functions
-                            .iter()
-                            .flat_map(|function| &function.relations)
-                            .any(|relation| relation.master == reference)
-                    })
+        let followers: Vec<usize> = (0..placements.len())
+            .filter(|follower| {
+                parameter_of(*follower).is_some_and(|parameter| {
+                    parameter
+                        .functions
+                        .iter()
+                        .flat_map(|function| &function.relations)
+                        .any(|relation| relation.master == reference)
                 })
-                .all(covered);
-        if follows || path_is_covered {
+            })
+            .collect();
+        let path_is_covered = !physical_dimmers.is_empty()
+            && !followers.is_empty()
+            && followers.into_iter().all(covered);
+        if follows || mirrors_physical_dimmer || path_is_covered {
             silenced.push((element, position));
         }
     }

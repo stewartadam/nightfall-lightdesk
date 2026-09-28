@@ -339,8 +339,8 @@ fn links_to_shared_slot_copies_resolve_to_the_owner() {
 }
 
 /// Verifies masters scale each light path once: virtual dimmers that follow
-/// another dimmer, or sit in a fixture with a physical dimmer, stop
-/// responding to masters, while a root virtual dimmer keeps responding.
+/// another dimmer stop responding to masters, while a root virtual dimmer
+/// and a physical dimmer keep responding.
 #[test]
 fn virtual_dimmers_respond_to_masters_once_per_path() {
     let bar = |body_offsets: Option<&[i32]>| {
@@ -417,4 +417,20 @@ fn root_virtual_dimmers_on_a_separate_path_keep_master_response() {
         "the beam dimmer already scales the cell below it"
     );
     assert!(grandmaster("Ring"), "the ring is outside the beam dimmer");
+}
+
+/// Verifies a virtual dimmer that masters no channel keeps responding to
+/// masters in a fixture with a physical dimmer: no light path is covered.
+#[test]
+fn virtual_dimmers_mastering_nothing_keep_master_response() {
+    let builder = GdtfBuilder::new("Test", "Unlinked")
+        .geometry(GeometrySpec::generic("Head").child(GeometrySpec::beam("Beam")))
+        .mode(
+            ModeSpec::new("Mode", "Head")
+                .channel(ChannelSpec::new("Head", "Dimmer", &[1]))
+                .channel(ChannelSpec::virtual_channel("Beam", "Dimmer"))
+                .channel(ChannelSpec::new("Beam", "ColorAdd_R", &[2])),
+        );
+    let (fixture, _) = convert(&builder);
+    assert!(parameter(&fixture, "Beam", &Attribute::Intensity).use_grandmaster);
 }
