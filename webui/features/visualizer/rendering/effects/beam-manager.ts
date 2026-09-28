@@ -21,6 +21,7 @@ import {
 } from "three/webgpu";
 import type { VisualizerBeamQuality } from "../../../../lib/feature-flags";
 import { getLogger } from "../../../../lib/logger";
+import { excludeFromSelection } from "../../model/selection-exclusion";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
 import { DEFAULT_STAGE_FLOOR_TOP_Y } from "../scene-environment";
@@ -162,6 +163,7 @@ export class BeamManager {
     const geometry = createBeamGeometry(this.beamQuality);
     const mesh = new Mesh(geometry, material);
     mesh.name = `Beam_${fixtureUid}`;
+    excludeFromSelection(mesh);
     // ConeGeometry has tip at +Y, base at -Y. We want beam to extend downward (-Y).
     // No rotation needed - just position so tip is at origin.
     mesh.position.set(0, -0.5, 0); // Temporary position (updated dynamically in updateBeam)

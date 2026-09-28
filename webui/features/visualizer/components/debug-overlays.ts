@@ -21,6 +21,7 @@ import {
   Vector3,
 } from "three/webgpu";
 import { getLogger } from "../../../lib/logger";
+import { excludeFromSelection } from "../model/selection-exclusion";
 import type { FixtureInstance, SceneObjectInstance } from "../model/types";
 
 const log = getLogger(import.meta.url);
@@ -111,7 +112,9 @@ export class EmitterDebugOverlay implements DebugOverlay {
       const markerScale = MARKER_RADIUS_METERS / avgScale;
 
       for (const [_nodeName, emitter] of instance.emitters) {
-        const marker = new Mesh(this.geometry, this.material);
+        const marker = excludeFromSelection(
+          new Mesh(this.geometry, this.material),
+        );
         marker.renderOrder = 999;
         marker.position.set(0, 0, 0);
         marker.scale.setScalar(markerScale);
@@ -245,7 +248,9 @@ export class SnapPointsOverlay implements DebugOverlay {
   ): void {
     if (!parent) return;
 
-    const marker = new Mesh(this.geometry!, this.material!);
+    const marker = excludeFromSelection(
+      new Mesh(this.geometry!, this.material!),
+    );
     marker.position.copy(position);
     marker.renderOrder = 998;
     marker.userData.fixtureUid = uid;
