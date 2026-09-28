@@ -38,7 +38,8 @@ mod components;
 mod diagnostics;
 #[cfg(feature = "http")]
 mod http_routes;
-mod planner;
+/// Deterministic, ECS-free timeline playback planning.
+pub mod planner;
 mod recording;
 mod storage;
 mod systems;

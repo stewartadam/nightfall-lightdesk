@@ -25,6 +25,7 @@ Detailed contribution guides live in [`docs/contributing/`](docs/contributing/).
   - [Validating showfile restore idempotency](#validating-showfile-restore-idempotency)
   - [Debugging command parser](#debugging-command-parser)
   - [Performance profiling](#performance-profiling)
+  - [Microbenchmarks](#microbenchmarks)
 
 ## Legal
 
@@ -518,19 +519,37 @@ cargo build --profile profiling
 samply record cargo run --profile profiling --bin nightfall-headless "$@"
 ```
 
-Clip lookup scaling has a Criterion suite covering snapshot construction,
-direct-query crossover, and independently sized persistent and active clip
-sets. The default defined-clip matrix extends through 10,000 definitions:
+### Microbenchmarks
 
-```sh
-cargo bench -p nightfall-desk --bench clip_lookup
-```
+Hot paths have Criterion suites. Run them before and after changes to these
+components to catch performance regressions:
 
-Use comma-separated environment overrides for a focused run:
+| Component | Command | Size overrides |
+| --- | --- | --- |
+| Compositor | `cargo bench -p nightfall-fixtures --bench compositor` | `NIGHTFALL_COMPOSITOR_BENCH_LAYERS`, `NIGHTFALL_COMPOSITOR_BENCH_TRANSITIONS` (`none`, `all`) |
+| Clip lookup | `cargo bench -p nightfall-desk --bench clip_lookup` | `NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS`, `NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS`, `NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS` |
+| Timeline planning and plan evaluation | `cargo bench -p nightfall-timeline --bench planner` | `NIGHTFALL_TIMELINE_BENCH_ACTION_COUNTS` |
+| Sequence lookahead projection and duration summary | `cargo bench -p nightfall-lookahead-projection --bench projection` | `NIGHTFALL_LOOKAHEAD_BENCH_CUE_COUNTS`, `NIGHTFALL_LOOKAHEAD_BENCH_FIXTURE_COUNTS` |
+
+Size overrides take comma-separated counts and replace the default matrix.
+Criterion's `--quick` flag and a benchmark-ID filter keep an iteration loop
+short; drop both for a full run before merging:
 
 ```sh
 NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS=1000,5000 \
-NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS=1,8,64 \
-NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS=0,16,64 \
-cargo bench -p nightfall-desk --bench clip_lookup
+cargo bench -p nightfall-desk --bench clip_lookup -- --quick clip_lookup_strategy
 ```
+
+Criterion compares each run with the previous one on the same machine. To
+compare a branch against `develop`, save a named baseline first:
+
+```sh
+git switch develop
+cargo bench -p nightfall-timeline --bench planner -- --save-baseline develop
+git switch -
+cargo bench -p nightfall-timeline --bench planner -- --baseline develop
+```
+
+Reports are written to `target/criterion/report/index.html`. Treat changes
+within a few percent as noise, and close other heavy processes while
+measuring.

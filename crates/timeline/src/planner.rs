@@ -24,22 +24,37 @@ use uuid::Uuid;
 
 use crate::timeline::ActionKind;
 
+/// One authored timeline action flattened out of its track for planning.
 #[derive(Clone, Debug)]
-pub(crate) struct TimelinePlanningAction {
-    pub(crate) track_id: String,
-    pub(crate) action_id: String,
-    pub(crate) action: ActionKind,
-    pub(crate) position: Duration,
-    pub(crate) duration: Duration,
+pub struct TimelinePlanningAction {
+    /// Track that owns the action.
+    pub track_id: String,
+    /// Action ID, unique within its track.
+    pub action_id: String,
+    /// What the action does when the playhead reaches it.
+    pub action: ActionKind,
+    /// Absolute timeline position of the action.
+    pub position: Duration,
+    /// Authored action length; zero for actions that run until stopped.
+    pub duration: Duration,
 }
 
-pub(crate) trait TimelinePlaybackSourceResolver {
+/// Resolves the playback sources and durations that timeline actions refer to.
+pub trait TimelinePlaybackSourceResolver {
+    /// Returns the playback source played by a clip, or `None` when the clip is unknown.
     fn clip_source(&self, clip_uid: Uuid) -> Option<PlannedPlaybackSource>;
 
+    /// Returns the assertion and release extents of a playback source.
     fn duration_profile(&self, source: PlannedPlaybackSource) -> PlaybackDurationProfile;
 }
 
-pub(crate) fn plan_timeline_at(
+/// Plans which playbacks a timeline has started, released or completed at `target_time`.
+///
+/// Actions are replayed in position order (ties keep input order) up to and including the
+/// target, producing source-agnostic playback intervals, no-ops and diagnostics without
+/// touching ECS state. `action_registry` resolves registered domain actions; without it they
+/// are reported as unsupported.
+pub fn plan_timeline_at(
     timeline_uid: Uuid,
     target_time: Duration,
     actions: impl IntoIterator<Item = TimelinePlanningAction>,

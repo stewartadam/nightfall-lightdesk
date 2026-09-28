@@ -5600,6 +5600,7 @@ dependencies = [
 name = "nightfall-lookahead-projection"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "nightfall",
  "nightfall-dmx",
  "nightfall-workspace-hack",
@@ -5818,6 +5819,7 @@ dependencies = [
  "bevy_app",
  "bevy_diagnostic",
  "bevy_ecs",
+ "criterion",
  "minicbor-serde",
  "moonshine-kind",
  "nightfall",
