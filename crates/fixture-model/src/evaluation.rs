@@ -223,10 +223,11 @@ pub struct ChannelReading {
     /// Index of the active function's channel set containing `dmx`.
     pub set: Option<usize>,
     /// Position within the active function (or the whole range without
-    /// functions), 0-1, after the function's DMX profile.
+    /// functions), 0-1, after the function's DMX profile; 0 when the
+    /// parameter declares functions but none is active.
     pub fraction: f32,
     /// Physical value of the active function, from its set's own range when
-    /// the set declares one. Without functions, the logical output value.
+    /// the set declares one. Without an active function, the logical output value.
     pub physical: f32,
     /// Output level 0-1, the same as `fraction`.
     pub level: f32,
@@ -453,7 +454,11 @@ fn position(dmx: u32, from: u32, to: u32) -> f32 {
 }
 
 /// Reads a parameter's value through the function at `function`, or over
-/// its whole range when it has none.
+/// its whole range when it declares no functions.
+///
+/// When the parameter declares functions but none is active (no range
+/// contains the DMX value, or its mode master condition fails), the fixture
+/// does nothing with the channel, so its fraction and level are 0.
 fn interpret(
     metadata: &ParameterMetadata,
     value: f32,
@@ -467,9 +472,11 @@ fn interpret(
         ..Default::default()
     };
     let Some(function) = function.map(|index| &metadata.functions[index]) else {
-        reading.fraction = position(dmx, 0, metadata.resolution.dmx_max());
         reading.physical = metadata.logical_output(value);
-        reading.level = reading.fraction;
+        if metadata.functions.is_empty() {
+            reading.fraction = position(dmx, 0, metadata.resolution.dmx_max());
+            reading.level = reading.fraction;
+        }
         return reading;
     };
     let linear = position(dmx, function.dmx_from, function.dmx_to);

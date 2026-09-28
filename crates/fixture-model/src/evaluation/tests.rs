@@ -313,6 +313,36 @@ fn relations_follow_the_mode_master_selected_function() {
     );
 }
 
+/// Verifies a channel whose functions are all inactive, because its only
+/// function's mode master condition fails, has no output level.
+#[test]
+fn channels_without_an_active_function_have_no_level() {
+    let model = || {
+        FixtureModel::new(
+            [
+                vec![parameter(control(), Vec::new(), real())],
+                vec![parameter(
+                    Attribute::Red,
+                    vec![under_mode(
+                        function("ColorAdd_R", 0, 255),
+                        0,
+                        control(),
+                        0,
+                        127,
+                    )],
+                    real(),
+                )],
+            ],
+            true,
+        )
+    };
+    let red = |control: f32| read(model(), &[Some(control), Some(255.0)])[1].unwrap();
+    near(Some(red(10.0).level), 1.0, "active function");
+    let inactive = red(200.0);
+    assert_eq!(inactive.function, None);
+    assert_eq!(inactive.level, 0.0, "no function active");
+}
+
 /// Verifies a mode master is read after the relations it follows: a virtual
 /// control scaled to zero selects the related mode although its own value
 /// selects the other one.
