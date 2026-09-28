@@ -56,19 +56,6 @@ pub fn convert_gdtf_to_fixture(
     Ok((converted.fixture, converted.geometry))
 }
 
-/// Extract geometry from a GDTF fixture for runtime materialization.
-///
-/// This extracts only the geometry tree without creating a full fixture,
-/// useful for materializing fixtures that were loaded from a showfile.
-pub fn get_gdtf_geometry(metadata: &GdtfMetadata, mode_name: &str) -> Result<FixtureGeometry> {
-    let mut gdtf = metadata.reparse()?;
-    convert_gdtf_mode(&mut gdtf, metadata, mode_name, 0)?
-        .geometry
-        .ok_or_else(|| {
-            FixtureLibraryError::Conversion("No geometry found in GDTF file".to_string())
-        })
-}
-
 /// Converts one DMX mode of a parsed archive, resolving the mode exactly once.
 ///
 /// Elements are geometry instances in the order their first channel appears

@@ -16,7 +16,7 @@ use nightfall_fixtures::library::commands::{
     publish_available_fixtures, publish_fixture_profile,
 };
 use nightfall_fixtures::library::instantiate::{
-    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixture,
+    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures,
 };
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 
@@ -67,18 +67,40 @@ pub fn handle_fixture_library_commands(
                 label,
                 update_existing_ids,
                 update_existing_only,
-            } => create_fixture_from_library(
+            } => create_fixtures_from_library(
                 &mut commands,
                 &library,
                 &mut fixtures,
-                *id,
                 make,
                 model,
                 asset_etag.as_deref(),
                 mode,
-                label.as_deref(),
+                &LibraryFixtureRequest::single(
+                    *id,
+                    label.as_deref(),
+                    update_existing_ids,
+                    *update_existing_only,
+                ),
+            ),
+            FixtureLibraryCommand::CreateFixturesFromLibrary {
+                make,
+                model,
+                mode,
+                asset_etag,
+                fixtures: instances,
                 update_existing_ids,
-                *update_existing_only,
+            } => create_fixtures_from_library(
+                &mut commands,
+                &library,
+                &mut fixtures,
+                make,
+                model,
+                asset_etag.as_deref(),
+                mode,
+                &LibraryFixtureRequest {
+                    instances: instances.clone(),
+                    update_existing_ids,
+                },
             ),
             FixtureLibraryCommand::UploadFixture { filename, content } => {
                 upload_fixture(&library, filename, content)
@@ -200,34 +222,25 @@ fn delete_fixtures(
     .with_details(serde_json::json!({ "errors": errors })))
 }
 
-/// Prepares, validates, and commits one fixture creation and its requested updates.
-#[allow(clippy::too_many_arguments)]
-fn create_fixture_from_library(
+/// Converts the requested library revision once, then validates and commits every
+/// requested creation and update.
+fn create_fixtures_from_library(
     commands: &mut Commands,
     library: &FixtureLibraryManager,
     fixtures: &mut FixtureDataProviderExt,
-    id: u32,
     make: &str,
     model: &str,
     revision: Option<&str>,
     mode: &str,
-    label: Option<&str>,
-    update_existing_ids: &[u32],
-    update_existing_only: bool,
+    request: &LibraryFixtureRequest<'_>,
 ) -> Result<FixtureLibraryCommandSuccess, CommandError> {
-    let request = LibraryFixtureRequest {
-        id,
-        label,
-        update_existing_ids,
-        update_existing_only,
-    };
-    create_library_fixture(commands, fixtures, request, || {
+    create_library_fixtures(commands, fixtures, request, || {
         let profile = library
             .find_revision(make, model, revision)
             .ok_or_else(|| fixture_profile_not_found(make, model))?;
         let asset_etag = profile.revision.clone();
         let (fixture, _) = library
-            .create_fixture_from_revision(make, model, Some(&asset_etag), mode, id)
+            .create_fixture_from_revision(make, model, Some(&asset_etag), mode, 0)
             .map_err(|error| {
                 CommandError::new(
                     "fixture_library.create_failed",
@@ -423,6 +436,61 @@ mod tests {
         let result = take_result(&mut app);
         assert_eq!(result.command_id, command_id);
         assert_eq!(result.outcome, CommandOutcome::succeeded());
+    }
+
+    /// Verifies a GDTF batch stores every instance, tagged with the revision, before
+    /// terminal success is published.
+    #[test]
+    fn create_fixtures_batch_stores_every_gdtf_instance() {
+        use crate::testing::{ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
+
+        let temp_dir = TempDir::new().expect("temporary library directory should exist");
+        GdtfBuilder::new("Batch Test", "Wash")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body").channel(ChannelSpec::new("Body", "Dimmer", &[1])))
+            .write_to(&temp_dir.path().join("wash.gdtf"));
+        let mut app = fixture_library_app(&temp_dir);
+        let revision = app
+            .world()
+            .resource::<FixtureLibraryManager>()
+            .find_fixture("Batch Test", "Wash")
+            .expect("test GDTF should be indexed")
+            .revision
+            .clone();
+        submit_command(
+            &mut app,
+            FixtureLibraryCommand::CreateFixturesFromLibrary {
+                make: "Batch Test".to_string(),
+                model: "Wash".to_string(),
+                mode: "Mode".to_string(),
+                asset_etag: Some(revision.clone()),
+                fixtures: (10..13)
+                    .map(
+                        |id| nightfall_fixtures::library::commands::LibraryFixtureInstance {
+                            id,
+                            label: Some(format!("Wash {id}")),
+                        },
+                    )
+                    .collect(),
+                update_existing_ids: Vec::new(),
+            },
+        );
+
+        app.update();
+
+        assert_eq!(take_result(&mut app).outcome, CommandOutcome::succeeded());
+        let fixtures = app.world().resource::<FixtureDataProviderExt>();
+        for id in 10..13 {
+            let fixture = fixtures
+                .inner
+                .from_id(id)
+                .expect("batch instance should be stored");
+            assert_eq!(fixture.identifiers.label, format!("Wash {id}"));
+            assert_eq!(
+                fixture.library_asset_etag.as_deref(),
+                Some(revision.as_str())
+            );
+        }
     }
 
     /// Verifies a rejected multi-fixture update leaves earlier valid targets unchanged.

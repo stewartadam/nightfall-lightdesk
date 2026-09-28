@@ -10,11 +10,12 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use bevy_ecs::prelude::*;
 use nightfall_fixtures::library::catalog;
 use nightfall_fixtures::prelude::{Fixture, FixtureGeometry};
+use uuid::Uuid;
 
 use crate::gdtf_metadata::GdtfMetadata;
 use crate::{FixtureLibraryError, Result};
@@ -84,9 +85,9 @@ pub struct FixtureLibraryManager {
     /// Every file whose contents produced each revision key. Identical copies
     /// share one indexed profile, so deleting a revision removes all of them.
     copies: HashMap<(String, String, String), Vec<PathBuf>>,
-    /// Default-revision conversions reused while fixtures fall back from a
-    /// missing revision.
-    fallback_candidates: FallbackCandidates,
+    /// Conversions of file-backed profiles, reused for every fixture created
+    /// from, previewing, or falling back to one revision and mode.
+    conversions: ProfileConversions,
     /// Library directory path
     library_path: PathBuf,
     /// Optional package library overlaid on installed profiles.
@@ -106,7 +107,7 @@ impl FixtureLibraryManager {
             fixtures: HashMap::new(),
             latest: HashMap::new(),
             copies: HashMap::new(),
-            fallback_candidates: FallbackCandidates::default(),
+            conversions: ProfileConversions::default(),
             library_path,
             showfile_directory: None,
         };
@@ -135,7 +136,7 @@ impl FixtureLibraryManager {
             fixtures: HashMap::new(),
             latest: HashMap::new(),
             copies: HashMap::new(),
-            fallback_candidates: FallbackCandidates::default(),
+            conversions: ProfileConversions::default(),
             library_path,
             showfile_directory,
         };
@@ -170,7 +171,7 @@ impl FixtureLibraryManager {
         self.fixtures.clear();
         self.latest.clear();
         self.copies.clear();
-        self.fallback_candidates.clear();
+        self.conversions = ProfileConversions::default();
         self.insert_builtin_profiles();
 
         let scanner = crate::scanner::FixtureScanner::new(&self.library_path);
@@ -299,7 +300,9 @@ impl FixtureLibraryManager {
     /// Create a fixture instance from a specific library revision (or the default when `None`).
     ///
     /// The created fixture records the revision in `library_asset_etag`, so
-    /// its geometry and parameters stay tied to that definition.
+    /// its geometry and parameters stay tied to that definition. File-backed
+    /// profiles are converted once per revision and mode until the next scan;
+    /// each instance copies that conversion with its own ID and UID.
     pub fn create_fixture_from_revision(
         &self,
         make: &str,
@@ -314,10 +317,21 @@ impl FixtureLibraryManager {
                 model: model.to_string(),
             }
         })?;
-        let (mut fixture, geometry) = Self::convert_profile(profile, make, model, mode, id)?;
-        if !matches!(profile.source, FixtureSource::BuiltIn { .. }) {
-            fixture.library_asset_etag = Some(profile.revision.clone());
+        if matches!(profile.source, FixtureSource::BuiltIn { .. }) {
+            return Self::convert_profile(profile, make, model, mode, id);
         }
+
+        let (mut fixture, geometry) = match &*self.conversions.get(profile, mode) {
+            Some(converted) => {
+                let mut fixture = converted.fixture.clone();
+                fixture.identifiers.id = id;
+                fixture.identifiers.uid = Uuid::new_v4();
+                (fixture, converted.geometry.clone())
+            }
+            // Convert again to report why this mode cannot be created.
+            None => Self::convert_profile(profile, make, model, mode, id)?,
+        };
+        fixture.library_asset_etag = Some(profile.revision.clone());
         Ok((
             fixture,
             geometry.map(|geometry| with_revision(geometry, profile)),
@@ -365,7 +379,7 @@ impl FixtureLibraryManager {
     /// `None` when no compatible definition exists or its source has no
     /// geometry.
     pub fn geometry_for_fixture(&self, fixture: &Fixture) -> Option<FixtureGeometry> {
-        Self::profile_geometry(self.profile_for_fixture(fixture)?, &fixture.mode)
+        self.profile_geometry(self.profile_for_fixture(fixture)?, &fixture.mode)
     }
 
     /// Resolves the library definition that backs a patched fixture.
@@ -394,7 +408,13 @@ impl FixtureLibraryManager {
         if matches!(profile.source, FixtureSource::BuiltIn { .. }) {
             return None;
         }
-        if self.fallback_candidates.matches(profile, fixture) {
+        if self
+            .conversions
+            .get(profile, &fixture.mode)
+            .as_ref()
+            .as_ref()
+            .is_some_and(|candidate| same_element_structure(&candidate.fixture, fixture))
+        {
             tracing::info!(
                 make,
                 model,
@@ -417,13 +437,15 @@ impl FixtureLibraryManager {
     }
 
     /// Returns geometry for one mode of a profile, if its source provides geometry.
-    fn profile_geometry(profile: &FixtureProfile, mode: &str) -> Option<FixtureGeometry> {
+    fn profile_geometry(&self, profile: &FixtureProfile, mode: &str) -> Option<FixtureGeometry> {
         match &profile.source {
-            FixtureSource::Gdtf(metadata) => {
-                crate::converters::gdtf::get_gdtf_geometry(metadata, mode)
-                    .ok()
-                    .map(|geometry| with_revision(geometry, profile))
-            }
+            FixtureSource::Gdtf(_) => self
+                .conversions
+                .get(profile, mode)
+                .as_ref()
+                .as_ref()
+                .and_then(|converted| converted.geometry.clone())
+                .map(|geometry| with_revision(geometry, profile)),
             FixtureSource::Ofl(_) => None, // OFL doesn't have geometry
             FixtureSource::BuiltIn { .. } => None,
         }
@@ -518,7 +540,7 @@ impl FixtureLibraryManager {
             .remove(&key)
             .unwrap_or_else(|| vec![indexed_path]);
         self.fixtures.remove(&key);
-        self.fallback_candidates.clear();
+        self.conversions = ProfileConversions::default();
         let identity = (key.0.clone(), key.1.clone());
         if self.latest.get(&identity) == Some(&key.2) {
             self.latest.remove(&identity);
@@ -602,65 +624,77 @@ impl Default for FixtureLibraryManager {
     }
 }
 
-/// Make, model, revision and mode of one cached fallback conversion.
-type FallbackKey = (String, String, String, String);
+/// Make, model, revision and mode of one cached conversion.
+type ConversionKey = (String, String, String, String);
 
-/// Conversions of default revisions, keyed by revision key and mode, that
-/// fixtures whose recorded revision is missing are compared against.
+/// One mode of a file-backed profile, converted once for its revision.
+#[derive(Debug)]
+struct ConvertedMode {
+    /// Fixture template with placeholder identifiers.
+    fixture: Fixture,
+    /// Geometry from the source file, when the format provides one.
+    geometry: Option<FixtureGeometry>,
+}
+
+/// Conversion of one (revision, mode), filled by whichever caller needs it first;
+/// `None` records a mode that failed to convert.
+type ConversionSlot = Arc<OnceLock<Arc<Option<ConvertedMode>>>>;
+
+/// Conversions of file-backed profiles keyed by revision key and mode.
 ///
-/// Converting a GDTF profile parses its archive, so each (revision, mode) is
-/// converted once and every fixture falling back to it reuses the result.
-/// Failed conversions are cached too, so they are not retried per fixture.
-#[derive(Debug, Default)]
-struct FallbackCandidates(Mutex<HashMap<FallbackKey, Option<Fixture>>>);
+/// Converting a GDTF profile parses its archive and probes its meshes, so each
+/// (revision, mode) is converted once: creating many instances, previewing,
+/// fallback compatibility checks and geometry lookup all reuse the result.
+/// Failed conversions are cached too, so geometry lookups do not retry them per
+/// fixture. Clones of the manager share the cache; replacing it after the index
+/// changes leaves clones of the previous index with their own consistent cache.
+#[derive(Debug, Default, Clone)]
+struct ProfileConversions(Arc<Mutex<HashMap<ConversionKey, ConversionSlot>>>);
 
-impl FallbackCandidates {
-    /// Returns whether `profile` converted in the fixture's mode has the
-    /// fixture's element structure, converting only on first use.
-    fn matches(&self, profile: &FixtureProfile, fixture: &Fixture) -> bool {
+impl ProfileConversions {
+    /// Returns one mode of a file-backed profile, converting it on first use.
+    ///
+    /// The map lock is held only to find the mode's slot, so converting one
+    /// archive never blocks lookups of other modes, including from clones.
+    fn get(&self, profile: &FixtureProfile, mode: &str) -> Arc<Option<ConvertedMode>> {
         let key = (
             profile.make.clone(),
             profile.model.clone(),
             profile.revision.clone(),
-            fixture.mode.clone(),
+            mode.to_string(),
         );
-        let mut candidates = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        candidates
+        let slot = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .entry(key)
-            .or_insert_with(|| {
-                FixtureLibraryManager::convert_profile(
-                    profile,
-                    &profile.make,
-                    &profile.model,
-                    &fixture.mode,
-                    0,
-                )
-                .ok()
-                .map(|(candidate, _)| candidate)
-            })
-            .as_ref()
-            .is_some_and(|candidate| same_element_structure(candidate, fixture))
+            .or_default()
+            .clone();
+        slot.get_or_init(|| Arc::new(convert_mode(profile, mode)))
+            .clone()
     }
 
-    /// Drops every cached conversion after the indexed profiles change.
-    fn clear(&mut self) {
-        self.0
-            .get_mut()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clear();
+    /// Returns how many (revision, mode) conversions have been requested.
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
     }
 }
 
-impl Clone for FallbackCandidates {
-    /// Copies the cached conversions into an independent cache.
-    fn clone(&self) -> Self {
-        Self(Mutex::new(
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        ))
-    }
+/// Converts one mode of a file-backed profile, logging why a mode fails.
+fn convert_mode(profile: &FixtureProfile, mode: &str) -> Option<ConvertedMode> {
+    FixtureLibraryManager::convert_profile(profile, &profile.make, &profile.model, mode, 0)
+        .inspect_err(|error| {
+            tracing::debug!(
+                make = profile.make,
+                model = profile.model,
+                mode,
+                %error,
+                "Library fixture mode failed to convert"
+            );
+        })
+        .ok()
+        .map(|(fixture, geometry)| ConvertedMode { fixture, geometry })
 }
 
 /// Returns whether two fixtures expose the same elements and parameter placement.
@@ -890,7 +924,55 @@ mod revision_tests {
             assert!(manager.profile_for_fixture(&fixture).is_some());
             assert!(manager.geometry_for_fixture(&fixture).is_some());
         }
-        assert_eq!(manager.fallback_candidates.0.lock().unwrap().len(), 1);
+        assert_eq!(manager.conversions.len(), 1);
+    }
+
+    /// Verifies repeated instances reuse one conversion, even once the source is
+    /// unreadable, while each still receives its own identifiers and the geometry
+    /// provider's clone shares the cache.
+    #[test]
+    fn repeated_instances_reuse_one_conversion() {
+        let (dir, manager) = library(&[("a.gdtf", revision("Body", 0.0, "Dimmer"))]);
+        let (first, first_geometry) = manager
+            .create_fixture("Rev Test", "Fixture", "Mode", 1)
+            .unwrap();
+        std::fs::remove_file(dir.path().join("a.gdtf")).unwrap();
+
+        let (second, second_geometry) = manager
+            .create_fixture("Rev Test", "Fixture", "Mode", 2)
+            .expect("the cached conversion should not reread the archive");
+        assert_eq!(
+            (first.identifiers.id, second.identifiers.id),
+            (1, 2),
+            "each instance keeps its requested ID"
+        );
+        assert_ne!(first.identifiers.uid, second.identifiers.uid);
+        assert_eq!(first.library_asset_etag, second.library_asset_etag);
+        assert!(first_geometry.is_some());
+        assert_eq!(first_geometry, second_geometry);
+        assert_eq!(
+            manager.clone().geometry_for_fixture(&second),
+            second_geometry
+        );
+        assert_eq!(manager.conversions.len(), 1);
+    }
+
+    /// Verifies a rescan discards cached conversions without disturbing clones
+    /// of the previous index.
+    #[test]
+    fn rescan_replaces_cached_conversions() {
+        let (dir, mut manager) = library(&[("a.gdtf", revision("Body", 0.0, "Dimmer"))]);
+        let (fixture, _) = manager
+            .create_fixture("Rev Test", "Fixture", "Mode", 1)
+            .unwrap();
+        let previous_index = manager.clone();
+        std::fs::remove_file(dir.path().join("a.gdtf")).unwrap();
+
+        manager.scan().unwrap();
+
+        assert!(manager.find_fixture("Rev Test", "Fixture").is_none());
+        assert!(manager.conversions.len() == 0);
+        assert!(previous_index.geometry_for_fixture(&fixture).is_some());
     }
 }
 
