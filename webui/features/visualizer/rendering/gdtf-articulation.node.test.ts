@@ -353,6 +353,27 @@ test("continuous rotation spins and returns along the shorter turn", () => {
   near(350, "settled");
 });
 
+/**
+ * Verifies a spinning joint whose element loses its input holds its pose and,
+ * once input returns, resumes from that pose without applying the held time.
+ */
+test("continuous rotation resumes from its held pose after input returns", () => {
+  const instance = buildGeometryTree("fixture", movingHead());
+  const joints = instance.joints ?? [];
+  const panJoint = joints.find((joint) => joint.axes.includes(AxisType.Pan));
+  assert.ok(panJoint);
+  const degrees = () => MathUtils.radToDeg(panJoint.currentRad[0]);
+
+  const spin = new Map([["Head", { panDegrees: 0, panRotation: 30 }]]);
+  updateGdtfJoints(joints, spin, 0, 180);
+  updateGdtfJoints(joints, spin, 1000, 180);
+  assert.ok(Math.abs(degrees() - 30) < 1e-6, `spun: ${degrees()}`);
+  updateGdtfJoints(joints, new Map(), 5000, 180);
+  assert.ok(Math.abs(degrees() - 30) < 1e-6, `held: ${degrees()}`);
+  updateGdtfJoints(joints, spin, 6000, 180);
+  assert.ok(Math.abs(degrees() - 60) < 1e-6, `resumed: ${degrees()}`);
+});
+
 /** Verifies ordinary position moves travel the full mechanical range, not the shorter turn. */
 test("position moves beyond half a turn keep their travel", () => {
   const instance = buildGeometryTree("fixture", movingHead());

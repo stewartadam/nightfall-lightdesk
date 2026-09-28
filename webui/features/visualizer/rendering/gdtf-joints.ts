@@ -136,8 +136,9 @@ function nearestTurn(angle: number, target: number): number {
  * With `speedDegPerSec` set, each positioned axis moves at most that far per
  * elapsed second of the supplied clock; the first update snaps to the
  * target. Pass `null` to apply targets immediately. Joints whose element has
- * no input keep their pose. A node's orientation is its rest pose followed by
- * each axis rotation in order.
+ * no input keep their pose, and the time they spend held does not count
+ * toward their next movement or spin. A node's orientation is its rest pose
+ * followed by each axis rotation in order.
  */
 export function updateGdtfJoints(
   joints: GdtfJoint[],
@@ -147,7 +148,11 @@ export function updateGdtfJoints(
 ): void {
   for (const joint of joints) {
     const input = inputs.get(joint.element);
-    if (!input) continue;
+    if (!input) {
+      // Holding still consumes the elapsed time so a spin resumes rather than jumps.
+      if (joint.lastUpdateMs !== null) joint.lastUpdateMs = nowMs;
+      continue;
+    }
     const elapsedSeconds =
       joint.lastUpdateMs === null
         ? null
