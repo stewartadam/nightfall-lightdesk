@@ -5302,6 +5302,7 @@ dependencies = [
  "nightfall-workspace-hack",
  "notify",
  "open-fixture-library",
+ "quick-xml 0.41.0",
  "serde",
  "serde_json",
  "sha2",
