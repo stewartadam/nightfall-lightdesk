@@ -126,16 +126,6 @@ impl<T> WireLayout<T> {
     }
 }
 
-/// Returns the largest DMX integer representable at a resolution.
-pub fn dmx_max(resolution: DmxValueResolution) -> u32 {
-    match resolution {
-        DmxValueResolution::Coarse => 0xFF,
-        DmxValueResolution::Fine => 0xFFFF,
-        DmxValueResolution::UltraFine => 0xFF_FFFF,
-        DmxValueResolution::Uber => u32::MAX,
-    }
-}
-
 /// Splits a DMX integer into bytes, most significant first.
 pub fn split_dmx_value(value: u32, resolution: DmxValueResolution) -> Vec<u8> {
     let width = resolution.channel_width();

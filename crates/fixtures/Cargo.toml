@@ -16,6 +16,7 @@ nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-engine = { path = "../engine" }
 nightfall-dmx = { path = "../dmx" }
+nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-io = { path = "../io" }
 nightfall-instances = { path = "../instances" }
 nightfall-selection = { path = "../selection" }

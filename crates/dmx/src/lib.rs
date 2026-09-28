@@ -66,4 +66,14 @@ impl DmxValueResolution {
     pub fn channel_width(&self) -> u16 {
         (*self as u16) / 8
     }
+
+    /// Returns the largest DMX integer representable at this resolution.
+    pub fn dmx_max(&self) -> u32 {
+        match self {
+            DmxValueResolution::Coarse => 0xFF,
+            DmxValueResolution::Fine => 0xFFFF,
+            DmxValueResolution::UltraFine => 0xFF_FFFF,
+            DmxValueResolution::Uber => u32::MAX,
+        }
+    }
 }

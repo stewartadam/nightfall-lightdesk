@@ -23,7 +23,6 @@ import {
   type EvaluatedChannel,
   evaluateElementChannels,
   evaluateFixtureChannels,
-  fixtureDimmerLevel,
 } from "./channel-evaluation";
 
 /** Visualizer-friendly parameter state */
@@ -422,14 +421,16 @@ export type LabelledElementDmx = [label: string, dmx: Record<string, number>];
  *
  * Channels are evaluated together so mode masters and relations can name
  * other elements. Dimmers that master no relation dim the elements that
- * have no dimmer of their own (see {@link fixtureDimmerLevel}).
+ * have no dimmer of their own (see {@link evaluateFixtureChannels}).
  */
 export function extractFixtureDmxData(
   elements: FixtureElement[],
   outputs: (Record<string, number> | undefined)[],
 ): LabelledElementDmx[] {
-  const channels = evaluateFixtureChannels(elements, outputs);
-  const fixtureIntensity = fixtureDimmerLevel(elements, channels);
+  const { channels, dimmerLevel: fixtureIntensity } = evaluateFixtureChannels(
+    elements,
+    outputs,
+  );
   const result: LabelledElementDmx[] = [];
   for (let i = 0; i < elements.length; i++) {
     const output = outputs[i];
@@ -459,10 +460,7 @@ export function fixtureIntensityValueFromOutputs(
   elementOutputs: (Record<string, number> | undefined)[],
   elements: FixtureElement[],
 ): number | undefined {
-  return fixtureDimmerLevel(
-    elements,
-    evaluateFixtureChannels(elements, elementOutputs),
-  );
+  return evaluateFixtureChannels(elements, elementOutputs).dimmerLevel;
 }
 
 /**

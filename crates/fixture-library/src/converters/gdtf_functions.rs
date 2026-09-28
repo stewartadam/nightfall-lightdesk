@@ -21,7 +21,6 @@ use nightfall_dmx::prelude::DmxValueResolution;
 use nightfall_fixtures::prelude::{
     CieColor, ParameterFunction, ParameterFunctionSet, ProfilePoint,
 };
-use nightfall_fixtures::wire_layout::dmx_max;
 
 /// DMX values a parameter declares beyond its byte placement.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -37,7 +36,7 @@ pub(super) struct ChannelSemantics {
 /// Converts a GDTF DMX value to the parameter's resolution.
 pub(super) fn scaled(value: DmxValue, resolution: DmxValueResolution) -> u32 {
     let bytes = resolution.channel_width() as u8;
-    value.to(bytes).min(dmx_max(resolution) as u64) as u32
+    value.to(bytes).min(resolution.dmx_max() as u64) as u32
 }
 
 /// Converts a GDTF CIE color.
@@ -94,7 +93,7 @@ fn function_ranges(
     functions: &[&ChannelFunction],
     resolution: DmxValueResolution,
 ) -> Vec<(u32, u32)> {
-    let max = dmx_max(resolution);
+    let max = resolution.dmx_max();
     let condition = |function: &ChannelFunction| {
         function
             .mode_master

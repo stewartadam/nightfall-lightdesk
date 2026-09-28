@@ -295,7 +295,7 @@ fn convert_channel_to_parameter(
         attribute,
         resolution,
         min: 0.0,
-        max: nightfall_fixtures::wire_layout::dmx_max(resolution) as ParameterDmxValue,
+        max: resolution.dmx_max() as ParameterDmxValue,
         offset: ParameterValue::Absolute { value: 0.0 },
         is_inverted: false,
         is_snap: logical_channel.snap,

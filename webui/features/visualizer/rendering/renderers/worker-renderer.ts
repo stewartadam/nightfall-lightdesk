@@ -34,6 +34,7 @@ import type {
   RenderableFixture,
   RenderableSceneObject,
 } from "../../model/types";
+import { loadFixtureEvaluation } from "../channel-evaluation";
 import {
   createPostProcessing,
   disposePostProcessing,
@@ -506,8 +507,8 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     });
     this.renderer.setSize(width, height, false);
 
-    // Wait for WebGPU to initialize
-    await this.renderer.init();
+    // Wait for WebGPU and the fixture model that evaluates channel output
+    await Promise.all([this.renderer.init(), loadFixtureEvaluation()]);
 
     // Create scene
     this.scene = createScene("VisualizerWorkerScene");

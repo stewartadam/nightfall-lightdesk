@@ -1275,7 +1275,7 @@ fn explicit_param(attribute: Attribute, offsets: &[u16]) -> ParameterMetadata {
     };
     ParameterMetadata {
         resolution,
-        max: nightfall_fixtures::wire_layout::dmx_max(resolution) as ParameterDmxValue,
+        max: resolution.dmx_max() as ParameterDmxValue,
         value_polarity: ParameterValuePolarity::Unsigned,
         dmx_slots: DmxSlots::Explicit {
             dmx_break: 1,

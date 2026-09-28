@@ -22,6 +22,7 @@ import {
 } from "../../../../state/appStores";
 import type { DebugOverlayRegistry } from "../../components/debug-overlays";
 import { Instrumentation } from "../../services/instrumentation";
+import { loadFixtureEvaluation } from "../channel-evaluation";
 import {
   setActiveSpanOutlineSelectedObjects,
   setEditSelectionOutlineSelectedObjects,
@@ -82,8 +83,12 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   async init(config: VisualizerInitConfig): Promise<void> {
     const canvas = config.canvas as HTMLCanvasElement;
 
-    // Initialize renderer using existing initRenderer function
-    this.rendererState = await initRenderer(canvas);
+    // Initialize the renderer and the fixture model that evaluates channel output
+    const [rendererState] = await Promise.all([
+      initRenderer(canvas),
+      loadFixtureEvaluation(),
+    ]);
+    this.rendererState = rendererState;
 
     // Create scene manager
     this.sceneManager = new SceneManager(

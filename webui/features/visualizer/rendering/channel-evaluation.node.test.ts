@@ -9,7 +9,7 @@
 /** Tests for evaluating GDTF mode masters, relations, profiles and channel sets. */
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { before } from "node:test";
 import {
   type Attribute,
   type DmxSlots,
@@ -24,9 +24,11 @@ import {
 import {
   evaluateElementChannels,
   evaluateFixtureChannels,
-  evaluateProfile,
+  loadFixtureEvaluation,
 } from "./channel-evaluation";
 import { extractFixtureDmxData, resetDmxPool } from "./visualizer-dmx";
+
+before(() => loadFixtureEvaluation());
 
 /** Builds 8-bit parameter metadata with optional profile functions and slots. */
 function parameter(
@@ -140,7 +142,7 @@ test("mode masters select overlapping functions across elements", () => {
     evaluateFixtureChannels(elements, [
       { Control: controlValue },
       { StrobeShutter: 200 },
-    ])[1][0]?.function?.name;
+    ]).channels[1][0]?.function?.name;
   assert.equal(shutter(10), "Shutter1");
   assert.equal(shutter(200), "Shutter1Strobe");
 });
@@ -155,13 +157,13 @@ test("physical relation masters scale or replace follower levels", () => {
     evaluateFixtureChannels(pixelBar(slots, kind), [
       { Intensity: 127.5 },
       { Red: 255 },
-    ])[1][0]?.level;
+    ]).channels[1][0]?.level;
   near(red(RelationKind.Multiply), 0.5, "multiply");
   near(red(RelationKind.Override), 0.5, "override");
   const dim = evaluateFixtureChannels(pixelBar(slots, RelationKind.Override), [
     { Intensity: 51 },
     { Red: 0 },
-  ])[1][0]?.level;
+  ]).channels[1][0]?.level;
   near(dim, 0.2, "override ignores follower level");
 });
 
@@ -170,7 +172,7 @@ test("virtual relation masters are not applied again", () => {
   const level = evaluateFixtureChannels(
     pixelBar({ type: "Virtual" }, RelationKind.Multiply),
     [{ Intensity: 0 }, { Red: 255 }],
-  )[1][0]?.level;
+  ).channels[1][0]?.level;
   near(level, 1, "console-scaled follower");
 });
 
@@ -259,7 +261,7 @@ test("physical relation chains compose", () => {
       parameters: [parameter({ type: "Red" }, [fn("R", 0, 255, follow(1))])],
     },
   ];
-  const channels = evaluateFixtureChannels(elements, [
+  const { channels } = evaluateFixtureChannels(elements, [
     { Intensity: 127.5 },
     { Intensity: 127.5 },
     { Red: 255 },
@@ -300,7 +302,7 @@ test("chains through a virtual dimmer are left to the console", () => {
     },
   ];
   // The console output red = 255 × body 0.5.
-  const channels = evaluateFixtureChannels(elements, [
+  const { channels } = evaluateFixtureChannels(elements, [
     { Intensity: 127.5 },
     { Intensity: 255, Red: 127.5 },
   ]);
@@ -496,7 +498,7 @@ test("profiles and channel sets map DMX to physical values", () => {
   near(half?.physical, 20, "physical from profiled fraction", 0.1);
   const narrow = evaluateElementChannels(element, { Zoom: 255 })[0];
   near(narrow?.physical, 5, "set physical range");
-  near(evaluateProfile([], 40), 40, "empty profile is linear");
+  assert.equal(narrow?.set?.name, "Narrow");
 });
 
 /** Verifies signed parameters convert to DMX around their centre like the engine. */
@@ -508,4 +510,19 @@ test("signed outputs convert to DMX around the logical centre", () => {
   const element: FixtureElement = { label: "Head", parameters: [pan] };
   assert.equal(evaluateElementChannels(element, { Pan: 0 })[0]?.dmx, 128);
   assert.equal(evaluateElementChannels(element, { Pan: -127.5 })[0]?.dmx, 0);
+});
+
+/**
+ * Verifies an inverted parameter's reported output, which already carries
+ * the inversion, maps to the DMX value the console sends.
+ */
+test("inverted outputs map to the DMX value the console sends", () => {
+  const dimmer: ParameterMetadata = {
+    ...parameter({ type: "Intensity" }),
+    is_inverted: true,
+  };
+  const element: FixtureElement = { label: "Head", parameters: [dimmer] };
+  const channel = evaluateElementChannels(element, { Intensity: 51 })[0];
+  assert.equal(channel?.dmx, 51);
+  assert.equal(channel?.value, 51);
 });
