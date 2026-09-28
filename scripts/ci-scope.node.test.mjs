@@ -28,17 +28,17 @@ test("PR selection follows distribution ownership", () => {
     ["crates/app-runtime/src/tests.rs", none],
     ["crates/app-runtime/src/sample_data/fixtures.rs", none],
     ["webui/components/example.tsx", none],
-    ["crates/app-tauri/src/desktop_shell.rs", check],
+    ["desktop/app-tauri/src/desktop_shell.rs", check],
     ["crates/app-runtime/src/lib.rs", check],
     ["crates/app-runtime/src/session.rs", check],
     ["crates/app-runtime/src/shutdown.rs", check],
     ["crates/app-runtime/src/diagnostic_logs.rs", check],
     ["crates/config/src/lib.rs", check],
-    ["crates/app-tauri/tauri.conf.json", desktopWithCheck],
-    ["crates/app-tauri/capabilities/default.json", desktopWithCheck],
-    ["crates/app-tauri/icons/icon.ico", desktopWithCheck],
-    ["crates/app-tauri/build.rs", desktopWithCheck],
-    ["crates/app-tauri/Cargo.toml", desktopWithCheck],
+    ["desktop/app-tauri/tauri.conf.json", desktopWithCheck],
+    ["desktop/app-tauri/capabilities/default.json", desktopWithCheck],
+    ["desktop/app-tauri/icons/icon.ico", desktopWithCheck],
+    ["desktop/app-tauri/build.rs", desktopWithCheck],
+    ["desktop/app-tauri/Cargo.toml", desktopWithCheck],
     ["crates/app-runtime/Cargo.toml", desktopWithCheck],
     [".github/workflows/desktop-check.yml", desktopWithCheck],
     ["crates/browser-runtime/src/lib.rs", browser],
@@ -73,17 +73,17 @@ test("combined changes run each required validation once", () => {
   const select = (paths) =>
     selectScope({ event: "pull_request", ref: "refs/pull/1/merge", paths });
   assert.deepEqual(
-    select(["crates/app-tauri/src/main.rs", "crates/app-tauri/build.rs"]),
+    select(["desktop/app-tauri/src/main.rs", "desktop/app-tauri/build.rs"]),
     desktopWithCheck,
   );
-  assert.deepEqual(select(["crates/app-tauri/src/main.rs", "Cargo.lock"]), {
+  assert.deepEqual(select(["desktop/app-tauri/src/main.rs", "Cargo.lock"]), {
     ...both,
     desktop_check: true,
   });
   assert.deepEqual(select(["Cargo.lock"]), both);
   assert.deepEqual(
     select([
-      "crates/app-tauri/src/main.rs",
+      "desktop/app-tauri/src/main.rs",
       "crates/browser-runtime/src/lib.rs",
     ]),
     { ...check, browser_package: true },

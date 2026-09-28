@@ -218,7 +218,7 @@ test("Cargo collection reads its output file and removes temporary reports", () 
       "about",
       "generate",
       "--manifest-path",
-      "crates/app-tauri/Cargo.toml",
+      "desktop/app-tauri/Cargo.toml",
       "--target",
       "x86_64-pc-windows-msvc",
       "--locked",
@@ -244,7 +244,7 @@ test("Cargo collection reads its output file and removes temporary reports", () 
     return "not JSON: diagnostics belong on stdout";
   };
   const [entry] = collectRust(
-    "crates/app-tauri/Cargo.toml",
+    "desktop/app-tauri/Cargo.toml",
     "x86_64-pc-windows-msvc",
     ["desktop", "full"],
     run,
@@ -267,7 +267,7 @@ test("Cargo collection cleans up failed and malformed reports", () => {
     assert.throws(
       () =>
         collectRust(
-          "crates/app-tauri/Cargo.toml",
+          "desktop/app-tauri/Cargo.toml",
           "x86_64-pc-windows-msvc",
           [],
           run,

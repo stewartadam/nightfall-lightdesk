@@ -143,7 +143,7 @@ npm ci
 node scripts/setup-env.mjs
 npm run typeshare
 npm run wasm-build:dev
-cargo build --workspace --locked
+cargo build --tests --locked
 ```
 
 If npm lifecycle scripts are disabled, run `npm run postinstall` after `npm ci`
@@ -395,15 +395,15 @@ npm run check:crate-boundaries
 npm test
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked
-node scripts/run-native-cargo.mjs nextest
-node scripts/run-native-cargo.mjs test --doc
+cargo nextest run --tests
+cargo test --doc
 ```
 
-Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. The wrapper selects the same feature graph as CI. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `npx prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
+Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. Plain `cargo` commands select every crate under `crates/` and leave out the Tauri desktop shell, which builds with `-p app-tauri`; avoid `--workspace`, which adds it back and changes the feature graph CI uses. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `npx prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
 
 ```sh
-node scripts/run-native-cargo.mjs nextest -E 'rdeps(nightfall-cues)'
-node scripts/run-native-cargo.mjs nextest autocomplete::
+cargo nextest run --tests -E 'rdeps(nightfall-cues)'
+cargo nextest run --tests autocomplete::
 ```
 
 Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file becomes its own executable. The main reason is macOS: without the [Developer Tools setting](#macos), macOS scans each newly built executable the first time it runs, so every extra test binary adds to each test run after a rebuild (74 integration-test binaries became 20). Each binary also links its own copy of Bevy and the workspace; the link-time saving is smaller and has not been measured separately on Linux. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.

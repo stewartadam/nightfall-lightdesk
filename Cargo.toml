@@ -1,6 +1,7 @@
 [workspace]
-members = ["crates/*"]
-default-members = ["crates/app-runtime"]
+members = ["crates/*", "desktop/app-tauri"]
+# Plain cargo commands select the runtime crates; the Tauri desktop shell builds only with -p app-tauri.
+default-members = ["crates/*"]
 resolver = "3" # default for rust 2024
 
 [workspace.package]

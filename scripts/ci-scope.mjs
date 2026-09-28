@@ -27,13 +27,13 @@ const sharedPackaging = [
   /^webui\/(index\.html$|public\/|lib\/engine-runtime|lib\/runtime-config\.ts$)/,
 ];
 const desktopPackaging = [
-  /^crates\/app-tauri\/(Cargo\.toml$|build\.rs$|tauri.*\.json$|capabilities\/|icons\/)/,
+  /^desktop\/app-tauri\/(Cargo\.toml$|build\.rs$|tauri.*\.json$|capabilities\/|icons\/)/,
   /^crates\/app-runtime\/Cargo\.toml$/,
   /^scripts\/desktop-artifacts/,
   /^\.github\/workflows\/(desktop-artifacts|desktop-check|release)\.yml$/,
 ];
 const desktopChecks = [
-  /^crates\/app-tauri\//,
+  /^desktop\/app-tauri\//,
   /^crates\/app-runtime\/Cargo\.toml$/,
   /^\.github\/workflows\/desktop-check\.yml$/,
   /^crates\/app-runtime\/src\/(lib|main|logging|runtime_config|session|shutdown|diagnostic_bundle|diagnostic_logs|diagnostic_showfile)\.rs$/,

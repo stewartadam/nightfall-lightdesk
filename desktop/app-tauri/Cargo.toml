@@ -14,11 +14,11 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-app-runtime = { path = "../app-runtime", default-features = false }
+app-runtime = { path = "../../crates/app-runtime", default-features = false }
 jiff.workspace = true
-nightfall = { path = "../common" }
-nightfall-config = { path = "../config" }
-nightfall-desk = { path = "../desk", default-features = false }
+nightfall = { path = "../../crates/common" }
+nightfall-config = { path = "../../crates/config" }
+nightfall-desk = { path = "../../crates/desk", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }
