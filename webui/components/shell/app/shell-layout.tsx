@@ -17,6 +17,7 @@ import FeedbackCommands from "../command-palette/commands/feedback-commands";
 import SettingsCommand from "../command-palette/commands/settings-command";
 import DockviewApp from "../docking/dockview/dockview-workspaces";
 import LayoutCommands from "../docking/layout-commands";
+import ShowfileTransitionVeil from "../docking/showfile-transition-veil";
 import StatusBar from "../status-bar";
 import AppHeader from "./app-header";
 
@@ -43,7 +44,9 @@ function ShellContent() {
   return (
     <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
       <div class="min-h-0 w-full flex-1 overflow-hidden">
-        <DockviewApp />
+        <ShowfileTransitionVeil>
+          <DockviewApp />
+        </ShowfileTransitionVeil>
       </div>
       <StatusBar />
     </div>
