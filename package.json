@@ -51,7 +51,7 @@
     "wasm-build:browser-demo:dev": "wasm-pack build --dev --target web --out-dir ../../webui/assets/browser-runtime crates/browser-runtime",
     "tauri-dev": "pnpm run tauri dev",
     "tauri-build": "pnpm run tauri build",
-    "tauri-build:dev": "pnpm run tauri build -- -d",
+    "tauri-build:dev": "pnpm run tauri build -d",
     "knip": "knip",
     "tauri-bundle": "tauri bundle",
     "package:sample-audio": "node scripts/package-sample-audio.mjs"
