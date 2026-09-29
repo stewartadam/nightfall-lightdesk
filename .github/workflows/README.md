@@ -22,7 +22,7 @@ The application is split into `app-runtime` (shared native runtime and the
 `nightfall-headless` executable) and `app-tauri` (the `nightfall-app` desktop
 executable, in `desktop/app-tauri`). Native validation excludes `app-tauri`, which
 is not a default workspace member; desktop checks explicitly
-enable its `full,beatgrid-detect` features.
+enable its `full,beat-detection` features.
 
 ## Distribution selection
 

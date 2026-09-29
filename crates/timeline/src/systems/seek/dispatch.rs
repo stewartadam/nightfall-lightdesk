@@ -22,7 +22,7 @@ pub struct TimelineSeekDispatch<'w> {
     /// Correlation state for actions emitted on behalf of a timeline.
     pub(super) timeline_command_origins: ResMut<'w, TimelineCommandOrigins>,
     /// Desk actions emitted for opted-in nondeterministic reconstruction.
-    ev_desk: MessageWriter<'w, EngineActionEnvelope<DeskAction>>,
+    ev_desk: MessageWriter<'w, EngineActionEnvelope<EvalAction>>,
 }
 
 /// Inputs that determine whether an active start should be replayed by the live scan.

@@ -8,6 +8,7 @@ edition.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 dyn-clone = "1.0"
+nightfall = { path = "../common" }
 nightfall-engine = { path = "../engine" }
 serde.workspace = true
 serde_json.workspace = true

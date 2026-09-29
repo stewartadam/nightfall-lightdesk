@@ -6,9 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::collections::HashMap;
-
 use bevy_ecs::prelude::*;
+use nightfall_clips::{ClipReleaseAfterInstance, InstanceIndex};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceId, PlaybackAction, PlaybackScope,
@@ -16,77 +15,6 @@ use nightfall_instances::{
 use web_time::Instant;
 
 use crate::clips::{Clip, MaterializedClip};
-
-/// Tracks a stopped clip playback until it despawns so auto-release can run later.
-#[derive(Component)]
-pub struct ClipReleaseAfterInstance {
-    /// Clip ID whose stopped playback is being watched.
-    pub clip_id: u32,
-    /// Playback that must finish releasing before auto-release runs.
-    pub attached_instance: InstanceId,
-}
-
-/// Fast lookup from InstanceId to Entity, maintained on spawn/despawn
-#[derive(Resource, Default)]
-pub struct InstanceIndex(pub HashMap<InstanceId, Entity>);
-
-impl InstanceIndex {
-    pub fn get(&self, id: &InstanceId) -> Option<Entity> {
-        self.0.get(id).copied()
-    }
-
-    pub fn insert(&mut self, id: InstanceId, entity: Entity) {
-        self.0.insert(id, entity);
-    }
-
-    pub fn remove(&mut self, id: &InstanceId) -> Option<Entity> {
-        self.0.remove(id)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&InstanceId, &Entity)> {
-        self.0.iter()
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-/// System to add new instances to the InstanceIndex when they spawn
-pub fn add_instances_to_index(
-    query: Query<(Entity, &InstanceId), Added<InstanceId>>,
-    mut index: ResMut<InstanceIndex>,
-) {
-    for (entity, instance_id) in query.iter() {
-        index.insert(*instance_id, entity);
-    }
-}
-
-/// System to remove instances from the InstanceIndex when they despawn
-pub fn remove_instances_from_index(
-    mut removed: RemovedComponents<InstanceId>,
-    mut index: ResMut<InstanceIndex>,
-) {
-    for entity in removed.read() {
-        // We need to find which InstanceId was on this entity.
-        // Since the component is already removed, we need to scan the index.
-        // This is O(n) but despawns should be infrequent.
-        let mut to_remove = None;
-        for (id, &indexed_entity) in index.iter() {
-            if indexed_entity == entity {
-                to_remove = Some(*id);
-                break;
-            }
-        }
-        if let Some(id) = to_remove {
-            index.remove(&id);
-        }
-    }
-}
 
 /// Adds default real-time playback clocks to playback entities that do not have one yet.
 pub fn add_missing_instance_clocks(

@@ -276,18 +276,6 @@ pub enum DeskCommand {
 
     /// Sleep for a duration before processing subsequent commands
     Sleep(Duration),
-
-    /// Release an active object
-    Release(ObjectRef),
 }
 
 impl IngressCommand for DeskCommand {}
-
-/// Concrete internal desk work initiated by automation or timeline playback.
-#[derive(Debug, Clone, EnginePayload)]
-pub enum DeskAction {
-    /// Parse and dispatch one command-language statement without a user reply lifecycle.
-    Eval(String),
-}
-
-impl EngineAction for DeskAction {}

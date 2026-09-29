@@ -7,6 +7,11 @@
  */
 
 //! Explicit, cancellable installation of optional beat-detection weights.
+//!
+//! These routes live here rather than in `nightfall-beat-detection` so that crate
+//! does not depend on axum, reqwest, or the websocket route registry. Keeping it
+//! free of those dependencies lets it compile early and in parallel with the
+//! domain crates.
 
 use std::{
     path::PathBuf,
@@ -20,7 +25,7 @@ use axum::{
     http::StatusCode,
     routing::{delete, get},
 };
-use nightfall_timeline::beat_model;
+use nightfall_beat_detection::model as beat_model;
 use nightfall_websocket::prelude::HttpRouteRegistry;
 use serde::Serialize;
 use tokio::{io::AsyncWriteExt, sync::watch};

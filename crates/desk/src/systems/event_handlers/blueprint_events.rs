@@ -14,7 +14,6 @@ use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::{UndoEntry, UndoManager, UndoableOperation};
 
 use crate::object_crud::apply_object_crud_command;
-use crate::prelude::*;
 
 /// Rejects deletion of a Blueprint that still has registered live dependents.
 fn validate_blueprint_delete(

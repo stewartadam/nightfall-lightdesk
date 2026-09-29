@@ -127,7 +127,7 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
-    #[cfg(feature = "beatgrid-detect")]
+    #[cfg(feature = "beat-detection")]
     crate::beat_model_http::register_routes(
         &mut app
             .world_mut()

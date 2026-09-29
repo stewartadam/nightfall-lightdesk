@@ -18,7 +18,8 @@ use nightfall_actions::{ActionInvocation, ActionRegistry, ActionSurface};
 #[cfg(feature = "audio")]
 use nightfall_audio::prelude::*;
 use nightfall_clips::{
-    Clip, ClipAction, ClipCommand, ClipLookup, ClipLookupSnapshot, MaterializedClip, Source,
+    Clip, ClipAction, ClipCommand, ClipLookup, ClipLookupSnapshot, ClipReleaseAfterInstance,
+    MaterializedClip, Source,
 };
 use nightfall_compositor::prelude::{Layer, ObjectRefMarker, ReleaseMarker};
 use nightfall_cues::prelude::{
@@ -26,7 +27,6 @@ use nightfall_cues::prelude::{
     Sequence, SequenceTimelineSeekPlayback, sequence_playback_duration_profile,
     spawn_reconstructed_sequence_for_clip, spawn_released_reconstructed_sequence_for_clip,
 };
-use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
 use nightfall_fixtures::selection::SpatialSelectionResolver;

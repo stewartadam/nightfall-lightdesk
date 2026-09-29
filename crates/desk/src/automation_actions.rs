@@ -15,51 +15,25 @@ use nightfall_actions::{
     ActionDescriptor, ActionId, ActionInput, ActionInvocation, ActionReference, ActionRegistry,
     ActionSurface, ExternalCommandInvocation, InvocationDispatch, InvocationError,
 };
+use nightfall_clips::{
+    CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipTarget,
+};
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
     PlannedPlaybackInterventionKind, TimelinePlaybackActionOperation, TimelinePlaybackActionPlan,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use uuid::Uuid;
 
 use crate::clips::{Clip, ClipAction};
 use crate::controls::ControlUpdate;
 use crate::desk_command::DeskCommand;
-
-/// Stable action ID for starting a clip.
-pub const CLIP_START_ACTION_ID: &str = "clip.start";
-
-/// Stable action ID for stopping a clip.
-pub const CLIP_STOP_ACTION_ID: &str = "clip.stop";
-
-/// Stable action ID for advancing a clip.
-pub const CLIP_GO_ACTION_ID: &str = "clip.go";
 
 /// Stable action ID for setting a control from external hardware input.
 pub const CONTROL_SET_ACTION_ID: &str = "control.set-external";
 
 /// Stable action ID for evaluating a desk command.
 pub const DESK_EVAL_ACTION_ID: &str = "desk.eval";
-
-/// Persisted clip target interpreted by desk-owned action registrations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-#[serde(tag = "type", content = "data")]
-pub enum ClipTarget {
-    /// User-facing numeric clip identifier.
-    Id(u32),
-    /// Persistent clip UID.
-    Uid(Uuid),
-}
-
-/// Persisted arguments shared by clip lifecycle actions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct ClipActionArguments {
-    /// Clip addressed by the action.
-    pub target: ClipTarget,
-}
 
 /// Persisted arguments for externally-driven control actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,21 +49,6 @@ pub struct ControlActionArguments {
 pub struct DeskEvalActionArguments {
     /// Command text evaluated by the desk command parser.
     pub command: String,
-}
-
-/// Creates a persisted start-clip action reference.
-pub fn start_clip_action(target: ClipTarget) -> ActionReference {
-    clip_action_reference(CLIP_START_ACTION_ID, target)
-}
-
-/// Creates a persisted stop-clip action reference.
-pub fn stop_clip_action(target: ClipTarget) -> ActionReference {
-    clip_action_reference(CLIP_STOP_ACTION_ID, target)
-}
-
-/// Creates a persisted go-clip action reference.
-pub fn go_clip_action(target: ClipTarget) -> ActionReference {
-    clip_action_reference(CLIP_GO_ACTION_ID, target)
 }
 
 /// Creates a persisted external control action reference.
@@ -175,12 +134,6 @@ pub fn register_desk_actions(app: &mut App) {
         ),
         invoke_desk_eval,
     );
-}
-
-/// Creates a clip action reference for one stable action ID.
-fn clip_action_reference(action_id: &str, target: ClipTarget) -> ActionReference {
-    ActionReference::with_arguments(action_id, &ClipActionArguments { target })
-        .expect("clip action arguments should serialize")
 }
 
 /// Registers one clip lifecycle capability with shared typed argument handling.
@@ -357,6 +310,7 @@ fn object_schema(property: &str, property_type: &str) -> Value {
 mod tests {
     use bevy_ecs::message::Messages;
     use nightfall_actions::{ActionsPlugin, InvocationOutcome, InvocationResult};
+    use nightfall_clips::start_clip_action;
 
     use super::*;
 

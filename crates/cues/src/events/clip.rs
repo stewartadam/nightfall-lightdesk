@@ -173,7 +173,7 @@ pub struct CueClipEventContext<'w, 's> {
     blueprint_data_provider: Option<Res<'w, DataProvider<Blueprint>>>,
     fixture_data_provider: Res<'w, FixtureDataProviderExt>,
     selection_resolver: SpatialSelectionResolver<'w>,
-    desk_events: MessageReader<'w, 's, CommandEnvelope<DeskCommand>>,
+    cue_commands: MessageReader<'w, 's, CommandEnvelope<CueCommand>>,
     cue_lifecycle: CueLifecycleIo<'w, 's>,
     clip_events: MessageReader<'w, 's, EngineActionEnvelope<ClipAction>>,
     outbound: CommandResponder<'w>,
@@ -194,7 +194,7 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
         blueprint_data_provider,
         fixture_data_provider,
         selection_resolver,
-        mut desk_events,
+        mut cue_commands,
         mut cue_lifecycle,
         mut clip_events,
         mut outbound,
@@ -1352,8 +1352,8 @@ pub fn handle_events(context: CueClipEventContext, mut commands: Commands) {
         );
     }
 
-    for event in desk_events.read() {
-        let DeskCommand::Release(object_ref) = &event.command else {
+    for event in cue_commands.read() {
+        let CueCommand::ReleaseCue(object_ref) = &event.command else {
             continue;
         };
         let result = cue_release_uids(object_ref, &cue_data_provider).map(|uids| {

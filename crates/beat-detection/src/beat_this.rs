@@ -67,11 +67,11 @@ struct RtenModel {
 impl BeatThisModelPaths {
     /// Load only verified, explicitly downloaded model weights from application data.
     pub fn resolve() -> Result<Self, String> {
-        let beat_model = crate::beat_model::model_path()?;
-        crate::beat_model::verify(
+        let beat_model = crate::model::model_path()?;
+        crate::model::verify(
             &beat_model,
-            crate::beat_model::manifest().size_bytes,
-            &crate::beat_model::manifest().sha256,
+            crate::model::manifest().size_bytes,
+            &crate::model::manifest().sha256,
         )
         .map_err(|_| {
             "Beat detection model is unavailable. Download it in Settings or select Detect beats."

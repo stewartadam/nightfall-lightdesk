@@ -37,9 +37,9 @@ uuid.workspace = true
 nightfall-workspace-hack = { version = "0.1", path = "../../crates/workspace-hack" }
 
 [features]
-default = ["full", "beatgrid-detect"]
+default = ["full", "beat-detection"]
 full = ["app-runtime/full"]
-beatgrid-detect = ["app-runtime/beatgrid-detect"]
+beat-detection = ["app-runtime/beat-detection"]
 
 [lints]
 workspace = true

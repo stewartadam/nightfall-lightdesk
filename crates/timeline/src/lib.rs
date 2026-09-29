@@ -27,11 +27,6 @@ use crate::prelude::*;
 /// AST converter for timeline commands
 pub mod ast_conv;
 mod audio_integration;
-#[cfg(feature = "beatgrid-detect")]
-pub mod beat_model;
-#[cfg(feature = "beatgrid-detect")]
-#[doc(hidden)]
-pub mod beat_this_detection;
 mod beatgrid_detection;
 mod browser_audio;
 mod components;
@@ -51,6 +46,7 @@ pub mod websocket;
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::TimelinePlugin;
+    pub use crate::beatgrid_detection::{BeatgridDetector, DetectedBeat, DetectedBeatgrid};
     pub use crate::browser_audio::{TimelineAudioDirective, TimelineAudioLoopRange};
     pub use crate::components::{MaterializedTimeline, SpawnedEntityType};
     pub use crate::recording::{
@@ -79,6 +75,7 @@ pub struct TimelinePlugin {
     audio_enabled: bool,
     browser_audio_enabled: bool,
     http_enabled: bool,
+    beatgrid_detector: Option<BeatgridDetector>,
 }
 
 impl TimelinePlugin {
@@ -89,6 +86,7 @@ impl TimelinePlugin {
             audio_enabled,
             browser_audio_enabled: false,
             http_enabled: true,
+            beatgrid_detector: None,
         }
     }
 
@@ -99,7 +97,18 @@ impl TimelinePlugin {
             audio_enabled: false,
             browser_audio_enabled: true,
             http_enabled: false,
+            beatgrid_detector: None,
         }
+    }
+
+    /// Enable beatgrid detection with a host-supplied audio analysis backend.
+    ///
+    /// Without a detector, automatic detection is skipped and manual requests fail with an
+    /// unavailable-in-this-build error.
+    #[must_use]
+    pub const fn with_beatgrid_detector(mut self, detector: BeatgridDetector) -> Self {
+        self.beatgrid_detector = Some(detector);
+        self
     }
 }
 
@@ -126,7 +135,9 @@ impl Plugin for TimelinePlugin {
         );
 
         app.init_resource::<DataProvider<Timeline>>();
-        app.init_resource::<beatgrid_detection::BeatgridDetectionRuntime>();
+        app.insert_resource(beatgrid_detection::BeatgridDetectionRuntime::new(
+            self.beatgrid_detector,
+        ));
         app.init_resource::<recording::TimelineRecordingStates>();
         app.init_resource::<recording::TimelineRecordingSessions>();
         app.init_resource::<recording::TimelineCommandOrigins>();

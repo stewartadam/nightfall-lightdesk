@@ -8,6 +8,8 @@
 
 //! Runtime metrics projection for websocket clients.
 
+use nightfall_engine::diagnostic_paths::*;
+
 use super::*;
 
 /// Send aggregated engine metrics (active layers/universes, network stats) to UI

@@ -12,7 +12,7 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::ApplyDeferred;
-use nightfall::prelude::{ColorPath, ColorPathId, builtin_color_paths};
+use nightfall::prelude::{ColorPath, ColorPathId, ObjectRef, builtin_color_paths};
 use nightfall_engine::prelude::*;
 use nightfall_instances::InstanceId;
 use nightfall_playback_planner::PlaybackReconstructionTiming;
@@ -404,6 +404,9 @@ pub enum CueCommand {
 
     /// Delete a sequence
     DeleteSequence(u32),
+
+    /// Release every active instance of the referenced cue.
+    ReleaseCue(ObjectRef),
 }
 
 impl IngressCommand for CueCommand {}

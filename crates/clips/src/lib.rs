@@ -9,13 +9,22 @@
 //! Shared clip contracts and identifier lookup utilities.
 #![warn(missing_docs)]
 
+mod actions;
 mod command;
+mod instance_index;
 mod lookup;
 mod model;
 mod source_reference;
 mod undo;
 
+pub use actions::{
+    CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipTarget,
+    go_clip_action, start_clip_action, stop_clip_action,
+};
 pub use command::{ClipAction, ClipCommand, clip_action_from_command};
+pub use instance_index::{
+    ClipReleaseAfterInstance, InstanceIndex, add_instances_to_index, remove_instances_from_index,
+};
 pub use lookup::{ClipLookup, ClipLookupError, ClipLookupSnapshot, log_clip_lookup_failure};
 pub use model::{Clip, ClipOptions, ClipSourceRef, MaterializedClip, Source};
 pub use source_reference::UnsupportedClipSource;

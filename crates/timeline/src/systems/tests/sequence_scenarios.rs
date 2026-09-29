@@ -15,7 +15,7 @@ use super::*;
 fn live_repeated_sequence_go_reaches_each_manual_cue() {
     for batched in [false, true] {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<DeskAction>>();
+        app.add_message::<EngineActionEnvelope<EvalAction>>();
         app.add_message::<EngineActionEnvelope<ClipAction>>();
         app.add_message::<TimecodeEvent>();
         app.init_resource::<DataProvider<Cue>>();

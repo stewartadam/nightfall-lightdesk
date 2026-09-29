@@ -324,7 +324,7 @@ pub fn process_actions_system(
     parameter_query: Query<InstanceRef<Parameter>>,
     mut materialized_cues: Query<&mut MaterializedCue>,
     mut commands: Commands,
-    mut ev_desk: MessageWriter<EngineActionEnvelope<DeskAction>>,
+    mut ev_desk: MessageWriter<EngineActionEnvelope<EvalAction>>,
     mut ev_clip: MessageWriter<EngineActionEnvelope<ClipAction>>,
     mut action_invocations: Option<MessageWriter<ActionInvocation>>,
     action_registry: Option<Res<ActionRegistry>>,

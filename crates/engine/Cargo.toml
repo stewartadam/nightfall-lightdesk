@@ -9,6 +9,7 @@ edition.workspace = true
 [dependencies]
 async-channel.workspace = true
 bevy_app.workspace = true
+bevy_diagnostic.workspace = true
 bevy_ecs.workspace = true
 bevy_state.workspace = true
 bimap.workspace = true

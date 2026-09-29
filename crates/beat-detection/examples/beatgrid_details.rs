@@ -6,15 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-#[cfg(feature = "beatgrid-detect")]
 use std::env;
-#[cfg(feature = "beatgrid-detect")]
 use std::error::Error;
-#[cfg(feature = "beatgrid-detect")]
 use std::path::PathBuf;
 
 /// Command-line arguments accepted by this diagnostic example.
-#[cfg(feature = "beatgrid-detect")]
 #[derive(Debug)]
 struct CliArgs {
     audio_path: PathBuf,
@@ -22,13 +18,11 @@ struct CliArgs {
 }
 
 /// Argument parsing outcomes for the beatgrid details example.
-#[cfg(feature = "beatgrid-detect")]
 enum CliParse {
     Run(CliArgs),
     Help,
 }
 
-#[cfg(feature = "beatgrid-detect")]
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     let parsed = match parse_args(&args) {
@@ -44,15 +38,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let model_paths = nightfall_timeline::beat_this_detection::BeatThisModelPaths::resolve()?;
+    let model_paths = nightfall_beat_detection::beat_this::BeatThisModelPaths::resolve()?;
     let analysis =
-        nightfall_timeline::beat_this_detection::analyze_path(&parsed.audio_path, &model_paths)?;
-    let bpm = nightfall_timeline::beat_this_detection::calculate_bpm(&analysis.beats);
-    let beats_per_bar = nightfall_timeline::beat_this_detection::infer_beats_per_bar(
+        nightfall_beat_detection::beat_this::analyze_path(&parsed.audio_path, &model_paths)?;
+    let bpm = nightfall_beat_detection::beat_this::calculate_bpm(&analysis.beats);
+    let beats_per_bar = nightfall_beat_detection::beat_this::infer_beats_per_bar(
         &analysis.beats,
         &analysis.downbeats,
     );
-    let first_downbeat = nightfall_timeline::beat_this_detection::first_downbeat_index(
+    let first_downbeat = nightfall_beat_detection::beat_this::first_downbeat_index(
         &analysis.beats,
         &analysis.downbeats,
     );
@@ -77,10 +71,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("detected beat events:");
     let max_events = parsed.max_events.unwrap_or(analysis.beats.len());
     for (index, beat_time) in analysis.beats.iter().take(max_events).enumerate() {
-        let is_downbeat = nightfall_timeline::beat_this_detection::is_model_downbeat(
-            *beat_time,
-            &analysis.downbeats,
-        );
+        let is_downbeat =
+            nightfall_beat_detection::beat_this::is_model_downbeat(*beat_time, &analysis.downbeats);
         let instant_bpm = if index == 0 {
             None
         } else {
@@ -101,7 +93,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-#[cfg(feature = "beatgrid-detect")]
 fn parse_args(args: &[String]) -> Result<CliParse, String> {
     let mut audio_path: Option<PathBuf> = None;
     let mut max_events: Option<usize> = None;
@@ -143,18 +134,8 @@ fn parse_args(args: &[String]) -> Result<CliParse, String> {
     }))
 }
 
-#[cfg(feature = "beatgrid-detect")]
 fn print_usage(bin_name: &str) {
     eprintln!("Usage: {bin_name} <audio-file> [--max-events N]");
     eprintln!();
     eprintln!("Uses the downloaded model in the application data directory");
-}
-
-#[cfg(not(feature = "beatgrid-detect"))]
-fn main() {
-    eprintln!(
-        "This example requires the `beatgrid-detect` feature. Run with: \n\
-         cargo run -p nightfall-timeline --example beatgrid_details --features beatgrid-detect -- <audio-file>"
-    );
-    std::process::exit(1);
 }

@@ -8,7 +8,9 @@
 
 use bevy::prelude::World;
 
-#[cfg(feature = "beatgrid-detect")]
+#[cfg(feature = "beat-detection")]
+mod beat_detection_backend;
+#[cfg(feature = "beat-detection")]
 mod beat_model_http;
 mod composition;
 mod diagnostic_bundle;

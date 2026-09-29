@@ -5,6 +5,7 @@
       "open-fixture-library",
       "nightfall",
       "nightfall-actions",
+      "nightfall-beat-detection",
       "nightfall-cmd-parse",
       "nightfall-config",
       "nightfall-coremidi-hotplug",
