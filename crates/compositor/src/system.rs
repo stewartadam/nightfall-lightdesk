@@ -7,13 +7,13 @@
  */
 
 //! Compositor system that builds the layer stack and composites all layers.
-use std::time::Duration;
+use std::{ops::Range, time::Duration};
 
 use bevy_ecs::{change_detection::Tick, entity::EntityHashMap, prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
 
 use crate::{
-    pipeline::{CompositedPrefix, CompositorPipeline},
+    pipeline::{CompositeStep, CompositedPrefix, CompositorPipeline, SettledRunTable},
     types::*,
 };
 
@@ -47,9 +47,28 @@ pub struct CompositorRunState {
     layer_count: usize,
     /// Composite of the bottom layers that had finished fading on the last pass.
     settled_prefix: Option<SettledPrefix>,
-    /// Playback position at which each layer's transitions have all finished, keyed by the layer
-    /// entity and valid while the layer's change tick matches.
-    settle_positions: EntityHashMap<(Tick, Duration)>,
+    /// Settle facts of each layer, keyed by the layer entity and valid while the layer's change
+    /// tick matches.
+    settle_facts: EntityHashMap<(Tick, LayerSettleFacts)>,
+    /// Tables of the runs of settled layers above the settled prefix on the last pass.
+    settled_runs: Vec<SettledRun>,
+}
+
+/// Facts about a layer's assertions that decide when and how it can be cached once settled.
+#[derive(Clone, Copy)]
+struct LayerSettleFacts {
+    /// Playback position after which every transition in the layer has finished.
+    settle_position: Duration,
+    /// Whether the layer's settled output can be folded into a [`SettledRunTable`].
+    tabulable: bool,
+}
+
+/// Table of a run of settled layers, with the identity of the layers it was built from.
+struct SettledRun {
+    /// Identity and change ticks of each layer in the run, bottom first.
+    layers: Vec<SettledPrefixLayer>,
+    /// Per-parameter effect of the run.
+    table: SettledRunTable,
 }
 
 /// Composite of a run of bottom layers whose outputs no longer depend on playback position.
@@ -83,6 +102,24 @@ fn layer_settle_position(layer: &Layer) -> Duration {
         })
         .max()
         .unwrap_or_default()
+}
+
+/// Returns the maximal runs of at least two tabulable layers above the settled prefix, as index
+/// ranges into the sorted layer stack.
+fn settled_run_ranges(tabulable: &[bool], settled_prefix_len: usize) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut index = settled_prefix_len;
+    while index < tabulable.len() {
+        let run_len = tabulable[index..]
+            .iter()
+            .take_while(|tabulable| **tabulable)
+            .count();
+        if run_len >= 2 {
+            ranges.push(index..index + run_len);
+        }
+        index += run_len.max(1);
+    }
+    ranges
 }
 
 /// System that builds the layer stack and composites all layers into a single absolute layer.
@@ -150,37 +187,16 @@ pub fn compositor<P: CompositorParameter>(
 
     if layer_query_membership_changed {
         run_state
-            .settle_positions
+            .settle_facts
             .retain(|entity, _| layer_query.contains(*entity));
     }
 
     // A layer is settled once it is not releasing and all its transitions have finished, so its
     // output no longer depends on playback position. The composite of the bottom run of settled
-    // layers is kept, and later passes resume from it while those layers stay unchanged.
-    let settled_prefix_len = layer_stack
-        .iter()
-        .take_while(|(entity, _, layer, release_marker, compositing_context)| {
-            if release_marker.is_some() {
-                return false;
-            }
-            let layer_changed = layer.last_changed();
-            let settle_position = match run_state.settle_positions.get(entity) {
-                Some((tick, position)) if *tick == layer_changed => *position,
-                _ => {
-                    let position = layer_settle_position(layer);
-                    run_state
-                        .settle_positions
-                        .insert(*entity, (layer_changed, position));
-                    position
-                }
-            };
-            let position = compositing_context
-                .as_ref()
-                .map_or(Duration::ZERO, |context| context.position);
-            position >= settle_position
-        })
-        .count();
-    let settled_layers: Vec<_> = layer_stack[..settled_prefix_len]
+    // layers is kept, and later passes resume from it while those layers stay unchanged. Higher
+    // runs of settled layers are folded into per-parameter tables, so a fading layer below them
+    // only pays for its own parameters.
+    let layer_keys: Vec<_> = layer_stack
         .iter()
         .map(
             |(entity, object_ref_marker, layer, _, _)| SettledPrefixLayer {
@@ -190,21 +206,50 @@ pub fn compositor<P: CompositorParameter>(
             },
         )
         .collect();
+    let (settled, tabulable): (Vec<bool>, Vec<bool>) = layer_stack
+        .iter()
+        .map(|(entity, _, layer, release_marker, compositing_context)| {
+            // A layer changed since the last pass is composited as usual this pass, which avoids
+            // scanning every assertion of layers that change every frame. It can be cached from
+            // the next pass on if it stays unchanged.
+            if release_marker.is_some() || layer.is_changed() {
+                return (false, false);
+            }
+            let layer_changed = layer.last_changed();
+            let facts = match run_state.settle_facts.get(entity) {
+                Some((tick, facts)) if *tick == layer_changed => *facts,
+                _ => {
+                    let facts = LayerSettleFacts {
+                        settle_position: layer_settle_position(layer),
+                        tabulable: SettledRunTable::is_tabulable(layer),
+                    };
+                    run_state
+                        .settle_facts
+                        .insert(*entity, (layer_changed, facts));
+                    facts
+                }
+            };
+            let position = compositing_context
+                .as_ref()
+                .map_or(Duration::ZERO, |context| context.position);
+            let is_settled = position >= facts.settle_position;
+            (is_settled, is_settled && facts.tabulable)
+        })
+        .unzip();
+    let settled_prefix_len = settled.iter().take_while(|settled| **settled).count();
     let (reused_len, prefix) = match run_state.settled_prefix.take() {
         Some(cached)
             if !parameter_set_changed
                 && cached.layers.len() <= settled_prefix_len
-                && cached.layers[..] == settled_layers[..cached.layers.len()] =>
+                && cached.layers[..] == layer_keys[..cached.layers.len()] =>
         {
             (cached.layers.len(), cached.composited)
         }
         _ => (0, CompositedPrefix::default()),
     };
     let snapshot_after = (settled_prefix_len > 0).then(|| settled_prefix_len - reused_len);
-
-    let layers_for_pipeline: Vec<_> = layer_stack
+    let pipeline_layers: Vec<_> = layer_stack
         .into_iter()
-        .skip(reused_len)
         .map(
             |(entity, object_ref_marker, layer, release_marker, compositing_context)| {
                 let is_releasing = release_marker.is_some();
@@ -218,23 +263,76 @@ pub fn compositor<P: CompositorParameter>(
             },
         )
         .collect();
+    let settled_run_ranges = settled_run_ranges(&tabulable, settled_prefix_len);
+    let mut previous_runs = std::mem::take(&mut run_state.settled_runs);
+    if parameter_set_changed {
+        previous_runs.clear();
+    }
     let mut param_query = parameters.queries.p2();
 
     // Every layer reads the same parameters, so snapshot their compositing traits once instead of
     // fetching each parameter component once per layer.
-    let (base_layer, attributed_assertions_layer, output_layers, snapshot) = {
+    let (base_layer, attributed_assertions_layer, output_layers, snapshot, settled_runs) = {
         let parameter_traits = ParameterTraitsTable::new(&param_query);
-        CompositorPipeline::compose_resuming(
-            prefix,
-            layers_for_pipeline,
-            snapshot_after,
-            &parameter_traits,
-        )
+        let mut output_layers = Vec::new();
+        let settled_runs: Vec<SettledRun> = settled_run_ranges
+            .iter()
+            .map(|range| {
+                let entry_priority = range
+                    .start
+                    .checked_sub(1)
+                    .map(|below| pipeline_layers[below].2.priority);
+                let keys = &layer_keys[range.clone()];
+                if let Some(index) = previous_runs.iter().position(|run| {
+                    run.layers[..] == keys[..] && run.table.entry_priority() == entry_priority
+                }) {
+                    return previous_runs.swap_remove(index);
+                }
+                let (table, run_output_layers) = SettledRunTable::build(
+                    pipeline_layers[range.clone()].iter().map(
+                        |(entity, object_ref, layer, _, context)| {
+                            (
+                                *entity,
+                                object_ref.clone(),
+                                *layer,
+                                context.unwrap_or_default(),
+                            )
+                        },
+                    ),
+                    entry_priority,
+                    &parameter_traits,
+                );
+                output_layers.extend(run_output_layers);
+                SettledRun {
+                    layers: keys.to_vec(),
+                    table,
+                }
+            })
+            .collect();
+
+        let mut steps = Vec::with_capacity(pipeline_layers.len());
+        let mut runs = settled_run_ranges.iter().zip(&settled_runs).peekable();
+        let mut index = reused_len;
+        while index < pipeline_layers.len() {
+            if let Some((range, run)) = runs.next_if(|(range, _)| range.start == index) {
+                steps.push(CompositeStep::SettledRun(&run.table));
+                index = range.end;
+            } else {
+                steps.push(CompositeStep::Layer(pipeline_layers[index].clone()));
+                index += 1;
+            }
+        }
+
+        let (base, attributed, composed_output_layers, snapshot) =
+            CompositorPipeline::compose_resuming(prefix, steps, snapshot_after, &parameter_traits);
+        output_layers.extend(composed_output_layers);
+        (base, attributed, output_layers, snapshot, settled_runs)
     };
     run_state.settled_prefix = snapshot.map(|composited| SettledPrefix {
-        layers: settled_layers,
+        layers: layer_keys[..settled_prefix_len].to_vec(),
         composited,
     });
+    run_state.settled_runs = settled_runs;
 
     for (entity, output_layer) in output_layers {
         commands.entity(entity).insert(OutputLayer(output_layer));
@@ -317,7 +415,7 @@ mod tests {
             .spawn((
                 ObjectRefMarker(ObjectRef::ById {
                     object_type: ObjectType::Cue,
-                    id: priority as u32 + 1,
+                    id: (priority as u32 + 1) * 1000 + value as u32,
                 }),
                 layer,
                 LayerCompositingContext {
@@ -423,6 +521,86 @@ mod tests {
                 .absolute
                 .get(parameters[2]),
             Some(&10.0)
+        );
+    }
+
+    /// Settled layers above a fading bottom layer, folded into a run table, give the same output
+    /// and attribution as compositing every layer, including same-priority HTP merges, parameters
+    /// the run leaves to the layer below, and after a layer in the run changes.
+    #[test]
+    fn settled_run_table_matches_full_composite() {
+        let mut world = World::new();
+        world.init_resource::<FinalLayerAttributedAssertions>();
+        world.init_resource::<FinalLayerOutput>();
+        let parameters: Vec<_> = [
+            TestMergeMode::Ltp,
+            TestMergeMode::Ltp,
+            TestMergeMode::Htp,
+            TestMergeMode::Htp,
+        ]
+        .into_iter()
+        .map(|merge_mode| {
+            let entity = world
+                .spawn(TestParameter::new(merge_mode, Attribute::Red))
+                .id();
+            unsafe { Instance::<TestParameter>::from_entity_unchecked(entity) }
+        })
+        .collect();
+        let fading = spawn_fading_layer(&mut world, &parameters, 1, 200.0, Duration::ZERO);
+        spawn_fading_layer(
+            &mut world,
+            &parameters[1..],
+            1,
+            120.0,
+            Duration::from_secs(5),
+        );
+        let same_priority = spawn_fading_layer(
+            &mut world,
+            &parameters[2..],
+            1,
+            80.0,
+            Duration::from_secs(5),
+        );
+        spawn_fading_layer(
+            &mut world,
+            &parameters[3..],
+            2,
+            60.0,
+            Duration::from_secs(5),
+        );
+        let mut schedule = Schedule::default();
+        schedule.add_systems(compositor::<TestParameter>);
+
+        for position_ms in [250, 500, 750] {
+            world
+                .get_mut::<LayerCompositingContext>(fading)
+                .expect("fading layer context")
+                .position = Duration::from_millis(position_ms);
+            schedule.run(&mut world);
+            assert_matches_from_scratch(&mut world);
+        }
+
+        world
+            .get_mut::<Layer>(same_priority)
+            .expect("settled layer")
+            .absolute
+            .insert(
+                parameters[2],
+                (ParameterValue::Absolute { value: 250.0 }, None),
+            );
+        world
+            .get_mut::<LayerCompositingContext>(fading)
+            .expect("fading layer context")
+            .position = Duration::from_millis(900);
+        schedule.run(&mut world);
+        assert_matches_from_scratch(&mut world);
+        assert_eq!(
+            world
+                .resource::<FinalLayerOutput>()
+                .0
+                .absolute
+                .get(parameters[2]),
+            Some(&250.0)
         );
     }
 }
