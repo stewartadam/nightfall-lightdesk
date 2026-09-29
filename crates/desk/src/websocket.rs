@@ -72,7 +72,7 @@ pub use diagnostics::{
 use inbound::flush_pending_ui_notifications;
 pub use inbound::*;
 pub use instances::*;
-pub use layers::send_layer_stack;
+pub use layers::{LayerSnapshotData, send_layer_stack};
 #[cfg(test)]
 use layers::{computed_transition_fixture_state, is_transition_active};
 pub use metrics::send_metrics;

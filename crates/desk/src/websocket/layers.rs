@@ -13,7 +13,7 @@ use nightfall_fixture_model::prelude::*;
 use super::*;
 
 /// Layer components projected into websocket layer snapshots.
-pub(super) type LayerSnapshotData = (
+pub type LayerSnapshotData = (
     &'static Layer,
     &'static BaseLayer,
     &'static OutputLayer,
