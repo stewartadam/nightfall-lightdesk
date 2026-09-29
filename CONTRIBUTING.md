@@ -535,6 +535,8 @@ components to catch performance regressions:
 | Step FX sampling and full evaluation | `cargo bench -p nightfall-fx --bench step_fx` | `NIGHTFALL_STEP_FX_BENCH_SELECTION_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_LANE_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_FX_COUNTS` |
 | DMX universe packing, parameter-state broadcast and fixture parameter lookup | `cargo bench -p nightfall-fixtures --bench frame_output` | `NIGHTFALL_FRAME_OUTPUT_BENCH_FIXTURE_COUNTS` |
 | Layer-stack snapshot | `cargo bench -p nightfall-desk --bench layer_stack` | `NIGHTFALL_LAYER_STACK_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_LAYER_STACK_BENCH_LAYER_COUNTS` |
+| Virtual dimmer | `cargo bench -p nightfall-desk --bench vdim` | `NIGHTFALL_VDIM_BENCH_FIXTURE_COUNTS` |
+| Standalone cue and sequence painting | `cargo bench -p nightfall-cues --bench painting` | `NIGHTFALL_PAINT_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_PAINT_BENCH_PLAYBACK_COUNTS` |
 
 The runtime timeline lookahead suite times whole frames of the live backend
 schedule, so compare its `enabled` cases with the matching `disabled` cases to
@@ -547,6 +549,10 @@ encoded bytes each message sends to clients, so watch that number alongside the
 timings. `step_fx_sample` times lane sampling alone, while `step_fx_evaluate`
 runs the whole per-frame evaluator, including selection resolution and
 parameter lookup.
+
+The compositor's `compositor_show_scale` cases change every assertion before
+each frame at sample-show scale, so they measure a full recompute; the steady
+cases in `compositor_update` measure frames whose layers did not change.
 
 Size overrides take comma-separated counts and replace the default matrix.
 Criterion's `--quick` flag and a benchmark-ID filter keep an iteration loop

@@ -36,6 +36,15 @@ pub const BENCH_FIXTURE_PARAMETERS: &[(Attribute, DmxValueResolution)] = &[
     (Attribute::StrobeShutter, DmxValueResolution::Coarse),
 ];
 
+/// Per-element attributes of an RGBW LED fixture dimmed through a virtual intensity channel.
+pub const BENCH_VDIM_FIXTURE_PARAMETERS: &[(Attribute, DmxValueResolution)] = &[
+    (Attribute::VirtualIntensity, DmxValueResolution::Coarse),
+    (Attribute::Red, DmxValueResolution::Coarse),
+    (Attribute::Green, DmxValueResolution::Coarse),
+    (Attribute::Blue, DmxValueResolution::Coarse),
+    (Attribute::White, DmxValueResolution::Coarse),
+];
+
 /// One patched parameter spawned by [`patch_bench_fixtures`].
 #[derive(Clone, Debug)]
 pub struct BenchParameter {
@@ -58,13 +67,23 @@ pub fn patch_bench_fixtures(
     fixture_count: usize,
     transport: &OutputTransport,
 ) -> Vec<BenchParameter> {
+    patch_bench_fixtures_with_profile(world, fixture_count, transport, BENCH_FIXTURE_PARAMETERS)
+}
+
+/// Patches fixtures like [`patch_bench_fixtures`], with one parameter per `profile` entry.
+pub fn patch_bench_fixtures_with_profile(
+    world: &mut World,
+    fixture_count: usize,
+    transport: &OutputTransport,
+    profile: &[(Attribute, DmxValueResolution)],
+) -> Vec<BenchParameter> {
     world.init_resource::<FixtureDataProviderExt>();
-    let footprint = bench_fixture_footprint();
+    let footprint = bench_fixture_footprint(profile);
     let fixtures_per_universe = USABLE_CHANNELS_PER_UNIVERSE / footprint;
-    let mut patched = Vec::with_capacity(fixture_count * BENCH_FIXTURE_PARAMETERS.len());
+    let mut patched = Vec::with_capacity(fixture_count * profile.len());
 
     for fixture_index in 0..fixture_count {
-        let fixture = bench_fixture(fixture_index);
+        let fixture = bench_fixture(fixture_index, profile);
         let fixture_ref = FixtureRef {
             fixture_uid: fixture.identifiers.uid,
             index: Some(1),
@@ -73,9 +92,7 @@ pub fn patch_bench_fixtures(
         let mut address = (fixture_index as u16 % fixtures_per_universe) * footprint + 1;
         let first_parameter = patched.len();
 
-        for (parameter_index, (attribute, resolution)) in
-            BENCH_FIXTURE_PARAMETERS.iter().enumerate()
-        {
+        for (parameter_index, (attribute, resolution)) in profile.iter().enumerate() {
             let byte_count = *resolution as u16 / 8;
             let addresses = (address..address + byte_count).collect();
             address += byte_count;
@@ -122,20 +139,21 @@ pub fn patch_bench_fixtures(
 
 /// Returns the number of universes [`patch_bench_fixtures`] uses for `fixture_count` fixtures.
 pub fn bench_universe_count(fixture_count: usize) -> usize {
-    let fixtures_per_universe = (USABLE_CHANNELS_PER_UNIVERSE / bench_fixture_footprint()) as usize;
+    let fixtures_per_universe =
+        (USABLE_CHANNELS_PER_UNIVERSE / bench_fixture_footprint(BENCH_FIXTURE_PARAMETERS)) as usize;
     fixture_count.div_ceil(fixtures_per_universe)
 }
 
-/// Returns the number of DMX channels one benchmark fixture occupies.
-fn bench_fixture_footprint() -> u16 {
-    BENCH_FIXTURE_PARAMETERS
+/// Returns the number of DMX channels one fixture with `profile` occupies.
+fn bench_fixture_footprint(profile: &[(Attribute, DmxValueResolution)]) -> u16 {
+    profile
         .iter()
         .map(|(_, resolution)| *resolution as u16 / 8)
         .sum()
 }
 
 /// Builds the single-element fixture definition registered for `fixture_index`.
-fn bench_fixture(fixture_index: usize) -> Fixture {
+fn bench_fixture(fixture_index: usize, profile: &[(Attribute, DmxValueResolution)]) -> Fixture {
     Fixture {
         identifiers: Identifiers {
             id: fixture_index as u32 + 1,
@@ -146,7 +164,7 @@ fn bench_fixture(fixture_index: usize) -> Fixture {
         model: "bench spot".to_owned(),
         elements: vec![FixtureElement {
             label: "element 1".to_owned(),
-            parameters: BENCH_FIXTURE_PARAMETERS
+            parameters: profile
                 .iter()
                 .map(|(attribute, resolution)| {
                     bench_parameter_metadata(attribute.clone(), *resolution)

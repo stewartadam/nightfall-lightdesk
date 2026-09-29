@@ -5167,6 +5167,7 @@ version = "0.1.0-alpha.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "criterion",
  "dashmap",
  "enum-flags",
  "minicbor-serde",
@@ -5181,6 +5182,7 @@ dependencies = [
  "nightfall-fixture-model",
  "nightfall-fixtures",
  "nightfall-instances",
+ "nightfall-io",
  "nightfall-lookahead",
  "nightfall-lookahead-projection",
  "nightfall-playback-planner",
