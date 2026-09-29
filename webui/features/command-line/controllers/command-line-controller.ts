@@ -9,7 +9,10 @@
 import { createSignal } from "solid-js";
 import { CommandClient } from "../../../lib/command-client";
 import { CommandSequenceRunner } from "../../../lib/command-sequence";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import {
+  EngineRuntimeCommandDisconnectedError,
+  engineRuntime,
+} from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -112,6 +115,13 @@ export function createCommandLineController(
         try {
           await commandSequenceRunner.run(trimmedInput);
         } catch (error) {
+          // Loads and new shows replace the backend world, which ends the session
+          // before a result can arrive; the command was delivered, so keep going.
+          if (error instanceof EngineRuntimeCommandDisconnectedError) {
+            log.info("Command session ended before its result", trimmedInput);
+            recordSubmittedCommand(trimmedInput);
+            return;
+          }
           const message =
             error instanceof Error
               ? error.message
@@ -124,9 +134,14 @@ export function createCommandLineController(
       }
     }
 
+    recordSubmittedCommand(trimmedInput);
+  };
+
+  /** Appends a delivered command to history and clears the input for the next one. */
+  const recordSubmittedCommand = (submitted: string) => {
     const currentHistory = commandLineHistory.get();
-    if (currentHistory[currentHistory.length - 1] !== trimmedInput) {
-      setCommandHistory([...currentHistory, trimmedInput].slice(-100));
+    if (currentHistory[currentHistory.length - 1] !== submitted) {
+      setCommandHistory([...currentHistory, submitted].slice(-100));
     }
     resetSubmittedCommandInput();
   };
