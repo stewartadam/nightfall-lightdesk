@@ -14,7 +14,7 @@ runs:
   steps:
     - name: Install browsers and system dependencies
       shell: bash
-      run: npm run playwright:install -- --with-deps
+      run: pnpm run playwright:install --with-deps
 
     # Saved fixtures keep each isolated backend at its normal startup picker.
     - name: Seed disposable showfiles from the repository fixture
@@ -32,7 +32,7 @@ runs:
       env:
         NIGHTFALL_PLAYWRIGHT_WORKERS: ${{ inputs.workers }}
         NIGHTFALL_DATA_DIR: ${{ steps.seed.outputs.data-dir }}
-      run: npm run test:webui-smoke -- --max-failures=3
+      run: pnpm run test:webui-smoke --max-failures=3
 
     - name: Upload Playwright report and failure artifacts
       if: always()

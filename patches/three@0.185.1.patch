@@ -1,7 +1,7 @@
-diff --git a/node_modules/three/build/three.webgpu.js b/node_modules/three/build/three.webgpu.js
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
 index 2e49079..75aedfb 100644
---- a/node_modules/three/build/three.webgpu.js
-+++ b/node_modules/three/build/three.webgpu.js
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
 @@ -24270,7 +24270,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
  
  	const uv = vec2( roughness, dotNV );
@@ -12,10 +12,10 @@ index 2e49079..75aedfb 100644
  
  } );
  
-diff --git a/node_modules/three/build/three.webgpu.nodes.js b/node_modules/three/build/three.webgpu.nodes.js
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
 index f707acc..5643135 100644
---- a/node_modules/three/build/three.webgpu.nodes.js
-+++ b/node_modules/three/build/three.webgpu.nodes.js
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
 @@ -24270,7 +24270,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
  
  	const uv = vec2( roughness, dotNV );
@@ -26,10 +26,10 @@ index f707acc..5643135 100644
  
  } );
  
-diff --git a/node_modules/three/src/nodes/functions/BSDF/DFGLUT.js b/node_modules/three/src/nodes/functions/BSDF/DFGLUT.js
+diff --git a/src/nodes/functions/BSDF/DFGLUT.js b/src/nodes/functions/BSDF/DFGLUT.js
 index 464dc5b..7ff0c76 100644
---- a/node_modules/three/src/nodes/functions/BSDF/DFGLUT.js
-+++ b/node_modules/three/src/nodes/functions/BSDF/DFGLUT.js
+--- a/src/nodes/functions/BSDF/DFGLUT.js
++++ b/src/nodes/functions/BSDF/DFGLUT.js
 @@ -49,7 +49,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
  
  	const uv = vec2( roughness, dotNV );

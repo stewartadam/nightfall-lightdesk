@@ -10,7 +10,7 @@ results from earlier runs.
 | Synthetic archives | Each edge case (references, breaks, sparse fine bytes, virtual channels, functions, wheels, emitters) converts as specified | Every PR (`cargo test`) |
 | Structural invariants | No two parameters share a slot, footprints fit a universe, the geometry is a well-formed tree, beams and joints bind to real elements | Every PR, bench and sweep |
 | Reference decoder | Bytes the engine writes land where the GDTF file says, checked by an independent decoder | Every PR (synthetic and 64 random layouts), bench |
-| Scene-graph tests | World-space beam directions and pivots for rest poses, nested pan/tilt, independent heads, mounting and smoothing | Every PR (`npm run test:webui-node`) |
+| Scene-graph tests | World-space beam directions and pivots for rest poses, nested pan/tilt, independent heads, mounting and smoothing | Every PR (`pnpm run test:webui-node`) |
 | Curated bench | 18 pinned archives: every mode converts, invariants and reference decoder agree, channel charts match | On demand |
 | Visual bench | Real archives render with loaded meshes; unlit bodies match reviewed baselines | On demand |
 | Corpus sweep | Every archive in a collection is rejected cleanly or converts without violations | On demand |
@@ -36,8 +36,8 @@ The archives are not redistributed with the repository. Fetch them from
 
 ```sh
 export NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench
-GDTF_SHARE_USER=<user> GDTF_SHARE_PASSWORD=<password> npm run gdtf-bench:fetch
-npm run test:gdtf-bench
+GDTF_SHARE_USER=<user> GDTF_SHARE_PASSWORD=<password> pnpm run gdtf-bench:fetch
+pnpm run test:gdtf-bench
 ```
 
 The fetcher matches each archive to GDTF Share revisions of the same
@@ -59,7 +59,7 @@ a DMX reference.
 ```sh
 NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench \
 NIGHTFALL_GDTF_BENCH_SCREENSHOTS=1 \
-npm run test:webui-playwright -- webui/e2e/gdtf-bench-visual.spec.ts
+pnpm run test:webui-playwright webui/e2e/gdtf-bench-visual.spec.ts
 ```
 
 The spec installs bench archives into an isolated backend, drives fixtures
@@ -84,7 +84,7 @@ it. Shared bench setup lives in `webui/e2e/gdtf-bench-support.ts`.
 ```sh
 NIGHTFALL_GDTF_CORPUS_DIR=/path/to/collection \
 NIGHTFALL_GDTF_CORPUS_REPORT=sweep.json \
-npm run test:gdtf-sweep
+pnpm run test:gdtf-sweep
 ```
 
 `NIGHTFALL_GDTF_CORPUS_DIR` is a platform path list searched recursively. Each

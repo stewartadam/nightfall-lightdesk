@@ -42,7 +42,7 @@ The **Data grid** panel has content tabs for **Editable cues**, **Read-only stat
 Validate through the repository wrapper, which starts an isolated frontend:
 
 ```sh
-NIGHTFALL_PLAYWRIGHT_TARGET=embedded-demo npm run test:webui-playwright -- webui/e2e/design-lab.spec.ts --workers=1
+NIGHTFALL_PLAYWRIGHT_TARGET=embedded-demo pnpm run test:webui-playwright webui/e2e/design-lab.spec.ts --workers=1
 ```
 
 Screenshots are saved under `test-results/playwright/`. The lab shares the live application theme but uses isolated sample content and does not send live output.

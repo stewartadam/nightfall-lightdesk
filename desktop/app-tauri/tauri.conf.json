@@ -5,11 +5,11 @@
   "identifier": "com.stewartadam.nightfall",
   "build": {
     "beforeBuildCommand": {
-      "script": "npm run build",
+      "script": "pnpm run build",
       "cwd": "../../webui"
     },
     "beforeDevCommand": {
-      "script": "npm run dev",
+      "script": "pnpm run dev",
       "cwd": "../../webui"
     },
     "frontendDist": "../../webui/dist",

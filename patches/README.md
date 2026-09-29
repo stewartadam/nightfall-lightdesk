@@ -1,6 +1,6 @@
 # Three.js WebGPU lighting lookup
 
-`three+0.185.1.patch` materializes the two-channel DFG lookup as a TSL variable
+`three@0.185.1.patch` materializes the two-channel DFG lookup as a TSL variable
 before the lighting code reads its individual components. This preserves the
 lookup texture, coordinates, values, and BRDF calculations, while emitting
 `pair = sample.xy; pair.x` instead of `sample.xy.x`.
@@ -11,17 +11,16 @@ This affects standard materials even in an empty visualizer scene. The patch
 covers the upstream source and both unminified WebGPU distribution entry points;
 Nightfall imports `three/webgpu`, which resolves to `build/three.webgpu.js`.
 
-`npm install` / `npm ci` apply the patch through the `postinstall` script. After
-`patch-package --error-on-fail` succeeds, the script updates the patches directory
-modification time, which [Vite includes in its dependency cache key](https://vite.dev/guide/dep-pre-bundling.html#caching).
-This prevents a previously optimized, unpatched Three.js bundle from surviving
-patch installation. Restart any running Vite server after applying patches.
+`three@0.185.1.patch` is registered under `patchedDependencies` in
+`pnpm-workspace.yaml`, so `pnpm install` applies it and fails if it no longer
+applies. pnpm records the patch hash in its installed lockfile
+(`node_modules/.pnpm/lock.yaml`), which Vite includes in its
+[dependency cache key](https://vite.dev/guide/dep-pre-bundling.html#caching),
+so a previously optimized, unpatched Three.js bundle cannot survive a patch
+change. Restart any running Vite server after changing a patch.
 
-If npm lifecycle scripts are disabled (`npm config get ignore-scripts` reports
-`true`, or installation used `--ignore-scripts`), run `npm run postinstall`
-explicitly after installing dependencies. This applies only the repository's
-patch step without enabling lifecycle scripts for other packages. Worktrunk's
-install hook runs this step explicitly as well.
+Edit the patch with `pnpm patch three@0.185.1`, change the extracted copy, then
+run `pnpm patch-commit <directory>`.
 
 The Three.js version is pinned so an upgrade requires checking this patch.
 The minified distribution files are not used by Nightfall.

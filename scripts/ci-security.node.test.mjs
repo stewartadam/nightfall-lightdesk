@@ -133,7 +133,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
         if (exceptions[key]) {
           assert.doesNotMatch(
             step.run ?? "",
-            /\b(?:node|npm|npx|cargo|rustup)\s/,
+            /\b(?:node|npm|npx|pnpm|cargo|rustup)\s/,
           );
         }
         if (step.uses && !step.uses.startsWith("./")) {
@@ -165,7 +165,7 @@ test("signing and publishing only use pinned artifact actions and reviewed inlin
           /^actions\/(?:upload|download)-artifact@[a-f0-9]{40}$/,
         );
       }
-      assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|cargo|rustup)\b/);
+      assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
       assert.equal(step.with?.["run-id"], undefined);
       assert.equal(step.with?.["github-token"], undefined);
     }

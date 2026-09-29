@@ -6,8 +6,8 @@ kill-backend = "WORKTREE_TARGET={{ managed_worktree_path | default(worktree_path
 setup-env = "node ./scripts/setup-env.mjs"
 
 [[pre-start]]
-install = "npm install && npm run postinstall"
-typeshare = "npm run typeshare"
+install = "pnpm install"
+typeshare = "pnpm run typeshare"
 
 [[post-start]]
 copy-target = "node ./scripts/seed-target-from-main.mjs"
@@ -16,7 +16,7 @@ copy-assets = "cp -a {{ primary_worktree_path }}/webui/assets webui"
 
 [[post-start]]
 build = "cargo build --tests --bin nightfall-headless"
-wasm-build = "npm run wasm-build:dev"
+wasm-build = "pnpm run wasm-build:dev"
 
 [pre-remove]
 stop-services = "wt step kill-backend --managed-worktree-path={{ worktree_path }} --yes"

@@ -64,7 +64,7 @@ both distributions. Release-note-only changes do not select packaging.
 
 Keep policy tests in sync with added packaging inputs. Validate them with
 `node --test scripts/ci-scope.node.test.mjs`, and validate workflow syntax with
-`npx prek run actionlint --all-files`. Hosted runs are still needed to measure
+`pnpm exec prek run actionlint --all-files`. Hosted runs are still needed to measure
 wall-time improvements and confirm Windows/Linux toolchain behavior.
 
 ## Native execution and caching
@@ -104,7 +104,7 @@ reuse is deferred pending a verified content-based freshness mechanism for the
 pinned toolchain. Parallel execution reduces wall time at the cost of additional
 runner work, and no particular speedup is assumed until measured on GitHub.
 
-Validate syntax with `npx prek run actionlint --all-files`. On the first hosted
+Validate syntax with `pnpm exec prek run actionlint --all-files`. On the first hosted
 run, confirm that both native jobs overlap, only the test job uploads
 `native-test-backend`, and failures in either stage fail the downstream check.
 After a successful base-branch run, a PR with unchanged Rust inputs should report

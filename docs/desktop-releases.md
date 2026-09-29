@@ -77,15 +77,15 @@ missing files, empty files, and unresolved LFS pointers. New sample shows copy
 these files into their own timeline-audio folders; existing shows retain their
 own copies when application resources change.
 
-After an initial `npm run tauri-build`, audio-only changes can be repackaged with
-`npm run tauri-bundle -- --bundles <formats>` (add `--target <triple>` or `--debug`
+After an initial `pnpm run tauri-build`, audio-only changes can be repackaged with
+`pnpm run tauri-bundle --bundles <formats>` (add `--target <triple>` or `--debug`
 to match the original build). This runs the resource validation and bundler without
 Cargo compilation. Normal `tauri build` may still rerun Tauri's resource staging
 when resources change; use the bundle-only command for audio-only updates.
 Signed desktop resources must be replaced through rebuilding/signing the bundle,
 rather than editing an installed signed application in place.
 
-For a standalone backend, run `npm run package:sample-audio -- <executable-directory>`
+For a standalone backend, run `pnpm run package:sample-audio <executable-directory>`
 and distribute that executable together with the generated `sample-audio` folder.
 These sidecar files can be replaced without compiling the backend. No audio
 resources are needed to create empty shows or load existing self-contained shows.

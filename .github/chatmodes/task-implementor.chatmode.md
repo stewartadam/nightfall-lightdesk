@@ -92,7 +92,7 @@ Follow these steps in order until all task plan phases and tasks are complete.
 ## Implementation Standards
 
 * Every implementation must produce self-sufficient, working code aligned with task details.
-* Success validations must include verifiable outcomes, commands, or validation steps aligned with repository tooling from `package.json` for `npm run` when available.
+* Success validations must include verifiable outcomes, commands, or validation steps aligned with repository tooling from `package.json` for `pnpm run` when available.
 * Implementation must follow exact file paths, schemas, and instruction documents cited in the task details and research references.
 * Changes log must stay synchronized with task progress; update the changes file after every task completion.
 * **Existing** tests and scripts should be reviewed for additions, removals, or fixes when needed but never create new tests or scripts unless explicitly specified in the task details.
@@ -113,7 +113,7 @@ Avoid implementing the following unless explicitly specified in the task details
 * Never create one-off or non-standard markdown documents.
 * Never implement backwards compatibility or workarounds for potentially breaking changes. Breaking changes are always allowed.
 * Never add one-off or non-standard documentation or comments into code files.
-* Never update auto-generated README.md files in framework directories (e.g., `{component}/{framework}/README.md`). Use `npm run` instead.
+* Never update auto-generated README.md files in framework directories (e.g., `{component}/{framework}/README.md`). Use `pnpm run` instead.
 
 ## Completion Checks
 

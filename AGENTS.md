@@ -70,10 +70,10 @@ When work or follow-up work was initiated within a worktree, let the user decide
 
 The backend is accessible on NIGHTFALL_PORT and frontend at http://localhost:{NIGHTFALL_PORT+1}, `.env` defines NIGHTFALL_PORT.
 
-- `npm run lint` - run biome lints
-- `npm run typecheck` - run tsc to validate typescript
-- `npm run typeshare` - export typeshare types from Rust to TS
-- `npm run wasm-build:dev` - rebuild WASM binaries (in particular after adjusting command parsing)
+- `pnpm run lint` - run biome lints
+- `pnpm run typecheck` - run tsc to validate typescript
+- `pnpm run typeshare` - export typeshare types from Rust to TS
+- `pnpm run wasm-build:dev` - rebuild WASM binaries (in particular after adjusting command parsing)
 
 ## Comments
 
@@ -98,15 +98,15 @@ Application data (fixtures, fx modules, showfiles, etc) can be found at:
 ## Interacting with the Browser/UI
 
 - Validate changes in the UI flows with Playwright. If you need interaction instructions, ask.
-- Run browser automation through the repo wrapper instead: `npm run test:webui-playwright -- <spec-or-dir> [--grep <pattern>]`.
+- Run browser automation through the repo wrapper instead: `pnpm run test:webui-playwright <spec-or-dir> [--grep <pattern>]`.
   - Use `--target embedded-demo` for browser-demo tests that do not need a native backend; the default is `--target native`.
   - On macOS, run browser-launching Playwright commands using approved escalated execution outside the agent sandbox, including both headed and headless runs. Request escalation before the first launch.
   - If escalation is unavailable, provide the wrapper command for the user to run in Terminal. Do not retry browser launches inside the sandbox after an application-registration failure (`_RegisterApplication`, `TransformProcessType`, or `SIGABRT`).
-  - The wrapper rejects browser launches on macOS when `CODEX_SANDBOX=seatbelt`. Do not unset or override this indicator to bypass the guard; it does not remove the operating system's restrictions. Help, installation, and test listing remain available inside the sandbox; put `--help` or `--list` immediately after the command (for example, `npm run test:webui-playwright -- --list`).
+  - The wrapper rejects browser launches on macOS when `CODEX_SANDBOX=seatbelt`. Do not unset or override this indicator to bypass the guard; it does not remove the operating system's restrictions. Help, installation, and test listing remain available inside the sandbox; put `--help` or `--list` immediately after the command (for example, `pnpm run test:webui-playwright --list`).
   - Playwright browser path is already configured in `.env`, don't try to override it.
   - Do not use ad hoc Playwright invocations such as `node -e 'const { chromium } = require("playwright"); ...'`.
   - Remember to stop timeline playback once at the end of your test if you start it for a test so it doesn't keep running in the background.
-- For one-off interactive checks, add or update a spec under `playwright/tests/` and run it with `npm run test:webui-playwright -- --headed <spec>`.
+- For one-off interactive checks, add or update a spec under `playwright/tests/` and run it with `pnpm run test:webui-playwright --headed <spec>`.
 - Reuse Playwright artifacts under `test-results/playwright/` for screenshots, traces, and debugging instead of hand-rolled scripts.
 - The frontend takes 2-3s on page load to connect to the backend.
 - Clicking the Search icon in the top toolbar (or Ctrl/Cmd+Shift+P) opens the Command Palette, which is the primary way of opening panels.

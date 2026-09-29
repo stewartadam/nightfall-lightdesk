@@ -804,7 +804,7 @@ async function fetchDashboard(path, options) {
       );
     }
     throw new Error(
-      `Unable to reach worktree dashboard at ${DASHBOARD_BASE_URL}. Start it with: npm run worktree:dashboard`,
+      `Unable to reach worktree dashboard at ${DASHBOARD_BASE_URL}. Start it with: pnpm run worktree:dashboard`,
       { cause: error },
     );
   }

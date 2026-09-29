@@ -122,7 +122,7 @@ still query GitHub directly when `--metadata` is omitted. See
 
 ```sh
 node --test scripts/release-notes.node.test.mjs scripts/desktop-artifacts.node.test.mjs
-npx prek run actionlint --all-files
+pnpm exec prek run actionlint --all-files
 ```
 
 Tests cover prose and omission parsing, actual Git promotion ancestry, duplicate

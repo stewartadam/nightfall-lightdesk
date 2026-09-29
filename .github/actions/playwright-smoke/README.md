@@ -7,7 +7,7 @@ Run the Chromium product smoke suite in an existing Linux build-and-test job:
   uses: ./.github/actions/playwright-smoke
 ```
 
-The caller must check out this repository, set up Node.js and Rust, install npm
+The caller must check out this repository, set up Node.js, pnpm and Rust, install Node
 and native backend dependencies, generate TypeScript shared types, and download
 the shared release WASM artifacts. `ci-precommit.yml` supplies those artifacts
 and the backend executable produced by its native-check job.
@@ -17,7 +17,7 @@ preparation succeeded and the job has not been cancelled.
 
 The action installs Playwright browsers and their system dependencies, seeds
 disposable showfiles in the runner's temporary directory, runs
-`npm run test:webui-smoke -- --max-failures=3`, and uploads reports even when tests
+`pnpm run test:webui-smoke --max-failures=3`, and uploads reports even when tests
 fail. The three-failure cap stops repeated setup failures before they exhaust the
 job timeout. It uses two
 workers by default; set the `workers` input to override this. Set a unique

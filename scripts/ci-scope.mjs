@@ -11,7 +11,8 @@ import { pathToFileURL } from "node:url";
 
 const sharedPackaging = [
   /^Cargo\.(toml|lock)$/,
-  /^package(-lock)?\.json$/,
+  /^package\.json$/,
+  /^pnpm-(lock|workspace)\.yaml$/,
   /^rust-toolchain\.toml$/,
   /^\.cargo\//,
   /^vite\.config\.ts$/,

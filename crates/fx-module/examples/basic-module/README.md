@@ -5,7 +5,7 @@ This example is a minimal fx module guest crate that renders a seeded intensity 
 Build, package, and install it:
 
 ```bash
-npm run fx-module:install -- crates/fx-module/examples/basic-module
+pnpm run fx-module:install crates/fx-module/examples/basic-module
 ```
 
 That installs the componentized module at:

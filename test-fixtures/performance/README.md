@@ -4,7 +4,7 @@ Run with an empty seed directory and one worker:
 
 ```sh
 mkdir -p /private/tmp/nightfall-owned-performance-empty
-npm run test:webui-playwright -- --data-dir /private/tmp/nightfall-owned-performance-empty webui/e2e/owned-performance.spec.ts --workers=1 --repeat-each=3
+pnpm run test:webui-playwright --data-dir /private/tmp/nightfall-owned-performance-empty webui/e2e/owned-performance.spec.ts --workers=1 --repeat-each=3
 ```
 
 The `sampleDataOnly` fixture also forces an empty source directory per test, even when the caller has configured personal data. The backend creates the repository's sample/default shows. No private backups, external media, installed fixture libraries, or availability skips are used. The tests install the repository basic-module component into their own disposable data directory, resolving its input WASM from Cargo JSON artifact output.

@@ -44,7 +44,7 @@ cargo run
 ```
 
 ```sh
-npm run dev
+pnpm run dev
 ```
 
 Open the local URL printed by Vite. The development backend defaults to port 3030 and the frontend to 3031; a worktree's `.env` can select another port pair.
