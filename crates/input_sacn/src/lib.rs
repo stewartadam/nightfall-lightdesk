@@ -205,7 +205,7 @@ mod tests {
     use bevy_ecs::system::RunSystemOnce;
     use nightfall_compositor::prelude::Layer;
     use nightfall_dmx::prelude::{DmxValueResolution, ParameterValue};
-    use nightfall_fixture_model::prelude::ParameterMetadata;
+    use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::input_apply::TransportInputPlugin;
     use nightfall_fixtures::prelude::TRANSPORT_INPUT_LAYER_PRIORITY;
     use nightfall_fixtures::prelude::*;

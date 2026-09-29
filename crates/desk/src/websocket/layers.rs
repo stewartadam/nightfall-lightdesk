@@ -8,7 +8,7 @@
 
 //! Layer-stack projection and transition-state derivation.
 
-use nightfall_fixture_model::prelude::MergeStrategy;
+use nightfall_fixture_model::prelude::*;
 
 use super::*;
 

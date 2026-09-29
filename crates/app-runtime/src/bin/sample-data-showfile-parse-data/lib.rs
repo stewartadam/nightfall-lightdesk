@@ -30,7 +30,7 @@ use nightfall_desk::{
 };
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::placement::{FixturePlacement, PlacementPosition, PlacementRotation};
 use nightfall_fixtures::prelude::*;
 use nightfall_flow::{builtin_nodes as flow_nodes, prelude::*};

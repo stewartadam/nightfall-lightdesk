@@ -16,7 +16,7 @@ use nightfall::prelude::*;
 use nightfall_compositor::pipeline::CompositorPipeline;
 use nightfall_compositor::types::{ComputedLayer, Layer, LayerCompositingContext};
 use nightfall_dmx::prelude::*;
-use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 
 fn create_test_parameter(

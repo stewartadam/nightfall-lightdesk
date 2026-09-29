@@ -19,7 +19,7 @@ use nightfall::prelude::{
 use nightfall_clips::{Clip, Source};
 use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::DataProvider;
-use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, ResolvedElementParameter};
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_playback_planner::{
@@ -868,7 +868,7 @@ mod tests {
     };
     use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
     use nightfall_engine::prelude::DataProvider;
-    use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+    use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::prelude::{
         Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
     };

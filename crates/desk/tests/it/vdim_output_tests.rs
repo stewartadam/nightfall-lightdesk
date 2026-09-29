@@ -13,7 +13,7 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_desk::prelude::{DEFAULT_GAMMA, apply_vdim};
 use nightfall_dmx::prelude::*;
-use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::universe::dmx_universes;
 use nightfall_io::prelude::*;

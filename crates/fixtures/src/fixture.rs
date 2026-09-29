@@ -8,7 +8,7 @@
 
 //! A fixture is a physical device that can be controlled by the lighting desk.
 use nightfall::prelude::*;
-use nightfall_fixture_model::prelude::ParameterMetadata;
+use nightfall_fixture_model::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::physical::FixturePhysical;

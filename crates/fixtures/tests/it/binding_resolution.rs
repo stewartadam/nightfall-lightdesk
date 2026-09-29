@@ -11,7 +11,7 @@ use bevy_ecs::prelude::*;
 use moonshine_kind::Instance;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
-use nightfall_fixture_model::prelude::{DmxSlots, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::binding_resolution::{
     derive_console_addresses, resolve_input_bindings, resolve_output_bindings,
 };

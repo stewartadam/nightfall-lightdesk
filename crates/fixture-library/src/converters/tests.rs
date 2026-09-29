@@ -11,7 +11,7 @@
 #[cfg(test)]
 mod native_unit_tests {
     use nightfall_dmx::prelude::{Attribute, ParameterUnit};
-    use nightfall_fixture_model::prelude::ParameterMetadata;
+    use nightfall_fixture_model::prelude::*;
 
     use super::super::apply_position_physical_range;
 

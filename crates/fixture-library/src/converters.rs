@@ -9,7 +9,7 @@
 //! Converters from GDTF/OFL to nightfall-fixtures types
 
 use nightfall_dmx::prelude::{Attribute, ParameterUnit};
-use nightfall_fixture_model::prelude::ParameterMetadata;
+use nightfall_fixture_model::prelude::*;
 
 pub mod gdtf;
 #[cfg(test)]

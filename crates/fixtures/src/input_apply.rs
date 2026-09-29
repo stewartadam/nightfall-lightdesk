@@ -16,7 +16,7 @@ use moonshine_kind::prelude::*;
 use nightfall_compositor::types::Layer;
 use nightfall_dmx::prelude::{MAX_CHANNELS_PER_UNIVERSE, ParameterDmxValue, ParameterValue};
 use nightfall_engine::LayerGeneration;
-use nightfall_fixture_model::prelude::ParameterMetadata;
+use nightfall_fixture_model::prelude::*;
 use nightfall_io::BindingTransport;
 use nightfall_io::{AcceptedDmxFrame, DmxInputSet};
 use web_time::Instant;

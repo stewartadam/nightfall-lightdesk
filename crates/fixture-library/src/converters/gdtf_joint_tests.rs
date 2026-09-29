@@ -8,7 +8,7 @@
 
 //! Joint binding tests: pan and tilt bind to the geometry their channels name.
 
-use nightfall_fixture_model::prelude::DmxSlots;
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 
 use super::gdtf::convert_gdtf_to_fixture;

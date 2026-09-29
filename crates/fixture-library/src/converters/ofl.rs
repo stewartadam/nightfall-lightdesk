@@ -10,7 +10,7 @@
 
 use nightfall::prelude::Identifiers;
 use nightfall_dmx::prelude::*;
-use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use uuid::Uuid;
 

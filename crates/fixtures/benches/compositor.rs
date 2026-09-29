@@ -19,7 +19,7 @@ use nightfall::prelude::{
 };
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
-use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };

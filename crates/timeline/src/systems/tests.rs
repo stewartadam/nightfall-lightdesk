@@ -34,7 +34,7 @@ use nightfall_engine::prelude::{
     FinishedCommand, OperationResult, PendingCommandBuffer, PendingEngineActionBuffer,
     register_engine_action,
 };
-use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };

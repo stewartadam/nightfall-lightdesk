@@ -366,7 +366,7 @@ impl FixtureDataProviderExt {
 #[cfg(test)]
 mod tests {
     use bevy_ecs::world::World;
-    use nightfall_fixture_model::prelude::ParameterMetadata;
+    use nightfall_fixture_model::prelude::*;
 
     use super::*;
 

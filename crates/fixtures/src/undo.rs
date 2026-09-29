@@ -12,7 +12,7 @@ use nightfall::command_types::DmxChannelExpr;
 use nightfall::prelude::{ColorPathDefault, FixtureRef};
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_fixture_model::prelude::ParameterMetadata;
+use nightfall_fixture_model::prelude::*;
 #[cfg(test)]
 use nightfall_io::prelude::{OutputTransport, SacnDelivery};
 use nightfall_undo::prelude::*;
@@ -487,7 +487,6 @@ mod tests {
     use bevy_ecs::world::World;
     use moonshine_kind::Instance;
     use nightfall::prelude::{ColorPathId, Identifiers};
-    use nightfall_fixture_model::prelude::MergeStrategy;
     use uuid::Uuid;
 
     use super::*;

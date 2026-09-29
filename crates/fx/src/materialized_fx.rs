@@ -204,7 +204,7 @@ mod tests {
     use bevy_ecs::{system::SystemState, world::World};
     use moonshine_kind::prelude::Instance;
     use nightfall_engine::prelude::DataProvider;
-    use nightfall_fixture_model::prelude::ParameterMetadata;
+    use nightfall_fixture_model::prelude::*;
     use nightfall_waveform::prelude::WaveformKind;
     use uuid::Uuid;
 

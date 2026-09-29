@@ -16,7 +16,7 @@ use std::str::FromStr;
 use bevy_ecs::change_detection::DetectChanges;
 use bevy_ecs::prelude::{Res, Resource};
 use nightfall_dmx::prelude::*;
-use nightfall_fixture_model::prelude::ParameterMetadata;
+use nightfall_fixture_model::prelude::*;
 use nightfall_io::BindingTransport;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -1848,7 +1848,7 @@ mod tests {
         offsets: &[u16],
     ) -> ParameterMetadata {
         ParameterMetadata {
-            dmx_slots: nightfall_fixture_model::prelude::DmxSlots::Explicit {
+            dmx_slots: DmxSlots::Explicit {
                 dmx_break: 1,
                 offsets: offsets.to_vec(),
             },

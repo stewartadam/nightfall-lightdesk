@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use nightfall_fixture_model::prelude::MergeStrategy;
+use nightfall_fixture_model::prelude::*;
 use uuid::Uuid;
 
 use super::*;

@@ -1174,7 +1174,7 @@ mod tests {
     use fixture::test_component_bytes;
     use moonshine_kind::prelude::Instance;
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
-    use nightfall_fixture_model::prelude::ParameterMetadata;
+    use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::prelude::{FixtureElement, Parameter};
     use uuid::Uuid;
 

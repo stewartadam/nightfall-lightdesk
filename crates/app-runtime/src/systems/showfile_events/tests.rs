@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use bevy::ecs::system::RunSystemOnce;
 use nightfall_clips::Clip;
 use nightfall_dmx::prelude::Attribute;
-use nightfall_fixture_model::prelude::ParameterMetadata;
+use nightfall_fixture_model::prelude::*;
 use nightfall_io::BindingTransport;
 use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, TransportRuntimePolicy};
 #[cfg(feature = "object-library")]

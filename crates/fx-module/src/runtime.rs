@@ -13,7 +13,7 @@ use nightfall::prelude::{FadeCurve, Identifiers};
 use nightfall_dmx::prelude::{
     Attribute, DmxValueResolution, ParameterUnit, ParameterValue, Percentage,
 };
-use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     BeamType, Fixture, FixtureElement, FixturePhysical, FixturePlacement,
 };
