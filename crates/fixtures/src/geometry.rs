@@ -173,6 +173,9 @@ pub struct GeometryNode {
     /// intensity a beam emits, or whose pan/tilt parameter rotates an axis node.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub controlled_element: Option<String>,
+    /// Optical distribution of this aperture, preserved independently of other emitters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beam: Option<crate::physical::BeamOptics>,
 }
 
 /// Format of a mesh resource file.

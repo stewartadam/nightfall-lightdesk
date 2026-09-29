@@ -26,9 +26,25 @@ pub enum BeamType {
     Fresnel,
     /// Soft-edged beam with plano-convex lens characteristics
     Pc,
-    /// Glow/pixel fixtures that emit light but shouldn't render volumetric beams
-    /// (e.g., LED bars, pixel fixtures, GDTF Glow/Rectangle/None beam types)
+    /// Rectangular projected distribution described by throw and aspect ratios.
+    Rectangle,
+    /// Self-emitting geometry without a projected beam (GDTF Glow/None).
     Glow,
+}
+
+/// Optical properties of one emitting aperture, independent of fixture layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct BeamOptics {
+    /// Distribution, flux and color temperature of this emitter alone.
+    pub physical: FixturePhysical,
+    /// Radius of the emitting aperture in meters.
+    pub radius: f32,
+    /// Projection distance divided by projected width for rectangular beams.
+    pub throw_ratio: f32,
+    /// Projected width divided by height for rectangular beams.
+    pub rectangle_ratio: f32,
 }
 
 /// Physical fixture characteristics from GDTF/OFL profiles.

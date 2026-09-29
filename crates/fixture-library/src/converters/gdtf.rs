@@ -415,8 +415,25 @@ pub(super) fn map_gdtf_beam_type(gdtf_beam_type: &gdtf::geometry::BeamType) -> B
         GdtfBeamType::Wash => BeamType::Wash,
         GdtfBeamType::Fresnel => BeamType::Fresnel,
         GdtfBeamType::Pc => BeamType::Pc,
-        // Glow, Rectangle, and None are pixel/LED fixtures that shouldn't render spotlights
-        GdtfBeamType::Glow | GdtfBeamType::Rectangle | GdtfBeamType::None => BeamType::Glow,
+        GdtfBeamType::Rectangle => BeamType::Rectangle,
+        GdtfBeamType::Glow | GdtfBeamType::None => BeamType::Glow,
+    }
+}
+
+/// Preserves each GDTF aperture's photometry and shape without inferring fixture identity.
+pub(super) fn convert_beam_optics(beam: &gdtf::geometry::BeamGeometry) -> BeamOptics {
+    BeamOptics {
+        radius: beam.beam_radius as f32,
+        throw_ratio: beam.throw_ratio as f32,
+        rectangle_ratio: beam.rectangle_ratio as f32,
+        physical: FixturePhysical {
+            beam_angle: beam.beam_angle as f32,
+            field_angle: beam.field_angle as f32,
+            lumens: (beam.luminous_flux > 0.0).then_some(beam.luminous_flux as f32),
+            color_temperature: (beam.color_temperature > 0.0)
+                .then_some(beam.color_temperature as f32),
+            beam_type: map_gdtf_beam_type(&beam.beam_type),
+        },
     }
 }
 
@@ -471,13 +488,7 @@ fn extract_physical_properties(resolved: &ResolvedMode<'_>) -> Option<FixturePhy
             _ => None,
         })?;
 
-    Some(FixturePhysical {
-        beam_angle: beam.beam_angle as f32,
-        field_angle: beam.field_angle as f32,
-        lumens: (beam.luminous_flux > 0.0).then_some(beam.luminous_flux as f32),
-        color_temperature: (beam.color_temperature > 0.0).then_some(beam.color_temperature as f32),
-        beam_type: map_gdtf_beam_type(&beam.beam_type),
-    })
+    Some(convert_beam_optics(beam).physical)
 }
 
 /// Returns, for every instance, the element label controlling its emitted light.
@@ -577,6 +588,10 @@ fn build_geometry_tree(
                     _ => None,
                 },
                 axes,
+                beam: match instance.geometry {
+                    Geometry::Beam(beam) => Some(convert_beam_optics(beam)),
+                    _ => None,
+                },
             }
         })
         .collect();

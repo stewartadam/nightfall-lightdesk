@@ -140,6 +140,7 @@ mod gdtf_tests {
         assert!(matches!(attr, Some(Attribute::Custom { label }) if label == "CustomAttr"));
     }
 
+    /// Rectangular projectors must retain their distribution instead of becoming glow-only pixels.
     #[test]
     fn test_map_gdtf_beam_type() {
         use gdtf::geometry::BeamType as GdtfBeamType;
@@ -151,10 +152,79 @@ mod gdtf_tests {
             BeamType::Fresnel
         );
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Pc), BeamType::Pc);
-        // None, Glow, Rectangle should map to Glow (no spotlight rendering)
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::None), BeamType::Glow);
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Glow), BeamType::Glow);
-        assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Rectangle), BeamType::Glow);
+        assert_eq!(
+            map_gdtf_beam_type(&GdtfBeamType::Rectangle),
+            BeamType::Rectangle
+        );
+    }
+
+    /// Different apertures keep their own distribution and photometry through conversion.
+    #[test]
+    fn test_convert_per_emitter_optics() {
+        let mut beam = gdtf::geometry::BeamGeometry {
+            name: None,
+            model: None,
+            position: gdtf::values::Matrix::identity(),
+            children: Vec::new(),
+            lamp_type: gdtf::geometry::LampType::Led,
+            power_consumption: 10.0,
+            luminous_flux: 700.0,
+            color_temperature: 5600.0,
+            beam_angle: 2.0,
+            field_angle: 4.0,
+            throw_ratio: 2.5,
+            rectangle_ratio: 12.0,
+            beam_radius: 0.012,
+            beam_type: gdtf::geometry::BeamType::Rectangle,
+            color_rendering_index: 90,
+            emitter_spectrum: None,
+        };
+        let rectangle = convert_beam_optics(&beam);
+        beam.beam_type = gdtf::geometry::BeamType::Wash;
+        beam.beam_angle = 40.0;
+        beam.luminous_flux = 1200.0;
+        let wash = convert_beam_optics(&beam);
+        assert_eq!(rectangle.physical.beam_type, BeamType::Rectangle);
+        assert_eq!(rectangle.physical.beam_angle, 2.0);
+        assert_eq!(rectangle.physical.field_angle, 4.0);
+        assert_eq!(rectangle.physical.lumens, Some(700.0));
+        assert_eq!(rectangle.radius, 0.012);
+        assert_eq!(rectangle.throw_ratio, 2.5);
+        assert_eq!(rectangle.rectangle_ratio, 12.0);
+        assert_eq!(wash.physical.beam_type, BeamType::Wash);
+        assert_eq!(wash.physical.beam_angle, 40.0);
+        assert_eq!(wash.physical.lumens, Some(1200.0));
+    }
+
+    /// Beam nodes of the geometry tree carry their own aperture optics; other nodes carry none.
+    #[test]
+    fn test_geometry_tree_carries_beam_optics() {
+        use crate::testing::{ChannelSpec, FunctionSpec, GdtfBuilder, GeometrySpec, ModeSpec};
+
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Optics")
+            .geometry(GeometrySpec::generic("Base").child(GeometrySpec::beam("Lens")))
+            .mode(ModeSpec::new("Mode", "Base").channel(
+                ChannelSpec::new("Base", "Dimmer", &[1]).function(FunctionSpec::new("Dimmer")),
+            ))
+            .write_metadata(dir.path());
+        let (fixture, geometry) = convert_gdtf_to_fixture(&metadata, "Mode", 1).unwrap();
+        let geometry = geometry.unwrap();
+        let node = |name: &str| {
+            geometry
+                .nodes
+                .iter()
+                .find(|node| node.name == name)
+                .unwrap()
+        };
+        assert!(node("Base").beam.is_none());
+        let optics = node("Lens").beam.as_ref().unwrap();
+        assert_eq!(optics.radius, 0.05);
+        assert_eq!(optics.physical.beam_angle, 20.0);
+        assert_eq!(optics.physical.beam_type, BeamType::Spot);
+        assert_eq!(fixture.physical.as_ref(), Some(&optics.physical));
     }
 }
 

@@ -60,6 +60,73 @@ fn cie(color: &ColorCie) -> CieColor {
     }
 }
 
+/// Maps a GDTF attribute definition's unit onto the unit carried by parameter functions.
+pub(super) fn map_gdtf_physical_unit(unit: gdtf::attribute::PhysicalUnit) -> PhysicalUnit {
+    use gdtf::attribute::PhysicalUnit as Gdtf;
+    match unit {
+        Gdtf::None => PhysicalUnit::None,
+        Gdtf::Percent => PhysicalUnit::Percent,
+        Gdtf::Length => PhysicalUnit::Length,
+        Gdtf::Mass => PhysicalUnit::Mass,
+        Gdtf::Time => PhysicalUnit::Time,
+        Gdtf::Temperature => PhysicalUnit::Temperature,
+        Gdtf::LuminousIntensity => PhysicalUnit::LuminousIntensity,
+        Gdtf::Angle => PhysicalUnit::Angle,
+        Gdtf::Force => PhysicalUnit::Force,
+        Gdtf::Frequency => PhysicalUnit::Frequency,
+        Gdtf::Current => PhysicalUnit::Current,
+        Gdtf::Voltage => PhysicalUnit::Voltage,
+        Gdtf::Power => PhysicalUnit::Power,
+        Gdtf::Energy => PhysicalUnit::Energy,
+        Gdtf::Area => PhysicalUnit::Area,
+        Gdtf::Volume => PhysicalUnit::Volume,
+        Gdtf::Speed => PhysicalUnit::Speed,
+        Gdtf::Acceleration => PhysicalUnit::Acceleration,
+        Gdtf::AngularSpeed => PhysicalUnit::AngularSpeed,
+        Gdtf::AngularAccc => PhysicalUnit::AngularAcceleration,
+        Gdtf::WaveLength => PhysicalUnit::WaveLength,
+        Gdtf::ColorComponent => PhysicalUnit::ColorComponent,
+    }
+}
+
+/// Converts a prism facet, or returns `None` when its rotation is not a finite 3x3 matrix.
+///
+/// gdtf-rs exposes the rotation only through its serializer, which writes the `{…}{…}{…}`
+/// groups in file order. Each GDTF group is a column of a homogeneous 2D transform, the
+/// third holding the translation (e.g. `{0.97,0,0}{0,0.97,0}{0.5,0.5,1}`), so the groups
+/// are copied straight into the column-major array without transposing.
+fn prism_facet(facet: &gdtf::wheel::PrismFacet) -> Option<PrismFacet> {
+    let encoded = serde_json::to_value(facet.rotation).ok()?;
+    let columns: Vec<Vec<f32>> = encoded
+        .as_str()?
+        .split('{')
+        .filter(|column| !column.is_empty())
+        .map(|column| {
+            column
+                .trim_end_matches('}')
+                .split(',')
+                .map(|value| value.trim().parse::<f32>())
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if columns.len() != 3
+        || columns
+            .iter()
+            .any(|column| column.len() != 3 || column.iter().any(|value| !value.is_finite()))
+    {
+        return None;
+    }
+    let mut transform = [0.0; 9];
+    for (slot, value) in transform.iter_mut().zip(columns.into_iter().flatten()) {
+        *slot = value;
+    }
+    Some(PrismFacet {
+        transform,
+        color: cie(&facet.color),
+    })
+}
+
 /// Returns the measured color of the emitter a function drives, if it declares one.
 fn emitter_color(fixture_type: &FixtureType, function: &ChannelFunction) -> Option<CieColor> {
     match &function.emitter(fixture_type)?.optic {
@@ -200,6 +267,11 @@ pub(super) fn channel_semantics(
                 dmx_to,
                 physical_from: function.physical_from as f32,
                 physical_to: function.physical_to as f32,
+                physical_unit: function
+                    .attribute(fixture_type)
+                    .map_or(PhysicalUnit::None, |attribute| {
+                        map_gdtf_physical_unit(attribute.physical_unit)
+                    }),
                 wheel: function.wheel.as_ref().map(|wheel| wheel.to_string()),
                 emitter_color: emitter_color(fixture_type, function),
                 sets: sets
@@ -225,6 +297,9 @@ pub(super) fn channel_semantics(
                             media: slot
                                 .and_then(|slot| slot.media_name.clone())
                                 .filter(|media| !media.is_empty()),
+                            facets: slot.map_or_else(Vec::new, |slot| {
+                                slot.facets.iter().filter_map(prism_facet).collect()
+                            }),
                             physical_from: set.physical_from.map(|value| value as f32),
                             physical_to: set.physical_to.map(|value| value as f32),
                         }
@@ -447,5 +522,66 @@ mod tests {
             0x1234_1234
         );
         assert_eq!(scaled(value("255/1"), DmxValueResolution::Uber), u32::MAX);
+    }
+
+    /// Verifies functions carry the physical unit of their attribute definition, so angular
+    /// zoom is distinguishable from unitless ranges.
+    #[test]
+    fn functions_carry_attribute_physical_units() {
+        let zoom = parameter(
+            ChannelSpec::new("Base", "Zoom", &[1])
+                .function(FunctionSpec::new("Zoom").physical(5.0, 40.0)),
+        );
+        assert_eq!(zoom.functions[0].physical_unit, PhysicalUnit::Angle);
+        let custom = parameter(
+            ChannelSpec::new("Base", "Control1", &[1]).function(FunctionSpec::new("Control1")),
+        );
+        assert_eq!(custom.functions[0].physical_unit, PhysicalUnit::None);
+    }
+
+    /// Verifies prism sets carry each facet's column-major transform (GDTF groups kept in
+    /// file order, translation in the third column) and color, and that slots without
+    /// facets carry none.
+    #[test]
+    fn prism_sets_carry_slot_facets() {
+        use crate::testing::{SlotSpec, WheelSpec};
+
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Prism")
+            .wheel(
+                WheelSpec::new("Prism Wheel")
+                    .slot(SlotSpec::new("Open"))
+                    .slot(SlotSpec::new("Prism").facet(
+                        [0.3, 0.4, 100.0],
+                        [[0.97, 0.0, 0.0], [0.0, 0.97, 0.0], [0.5, 0.5, 1.0]],
+                    )),
+            )
+            .geometry(GeometrySpec::generic("Base"))
+            .mode(
+                ModeSpec::new("Mode", "Base").channel(
+                    ChannelSpec::new("Base", "Prism1", &[1]).function(
+                        FunctionSpec::new("Prism1")
+                            .wheel("Prism Wheel")
+                            .set("Open", 0, Some(1))
+                            .set("Prism", 10, Some(2)),
+                    ),
+                ),
+            )
+            .write_metadata(dir.path());
+        let (fixture, _) = convert_gdtf_to_fixture(&metadata, "Mode", 1).unwrap();
+        let sets = &fixture.elements[0].parameters[0].functions[0].sets;
+        assert!(sets[0].facets.is_empty());
+        assert_eq!(sets[1].facets.len(), 1);
+        let facet = sets[1].facets[0];
+        assert_eq!(
+            facet.transform,
+            [0.97, 0.0, 0.0, 0.0, 0.97, 0.0, 0.5, 0.5, 1.0]
+        );
+        assert_eq!((facet.transform[6], facet.transform[7]), (0.5, 0.5));
+        assert_eq!((facet.transform[2], facet.transform[5]), (0.0, 0.0));
+        assert_eq!(
+            (facet.color.x, facet.color.y, facet.color.luminance),
+            (0.3, 0.4, 100.0)
+        );
     }
 }
