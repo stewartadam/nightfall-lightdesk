@@ -14,6 +14,7 @@ use nightfall_cmd_parse::prelude::*;
 
 use crate::prelude::*;
 
+pub mod blueprint;
 mod client;
 pub mod client_bridge;
 pub mod client_ingress;
@@ -69,6 +70,9 @@ pub mod prelude {
     pub use nightfall_engine_derive::EnginePayload;
 
     pub use crate::EnginePlugin;
+    pub use crate::blueprint::{
+        BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
+    };
     pub use crate::client_bridge::{
         ClientBridgeHost, ClientBridgePlugin, ClientEventSink, CommandDeserializerRegistry,
         CommandJsonEnvelope, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,

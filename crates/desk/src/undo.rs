@@ -12,7 +12,6 @@ use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;
 
-use crate::blueprint_command::BlueprintCommand;
 use crate::group_command::GroupCommand;
 use crate::masters::{Master, MasterCommand};
 
@@ -66,62 +65,6 @@ impl UndoableOperation for MasterCommand {
             }
             MasterCommand::SetMasterMode { id, .. } => format!("Set Master {} Mode", id),
             MasterCommand::ToggleMaster { id } => format!("Toggle Master {}", id),
-        }
-    }
-}
-
-// ============================================================================
-// Blueprint Commands
-// ============================================================================
-
-fn inverse_for_store_blueprint(
-    blueprint: &Blueprint,
-    blueprints: &DataProvider<Blueprint>,
-) -> Option<Box<dyn UndoableOperation>> {
-    match blueprints.get(blueprint.identifiers.uid) {
-        Ok(existing) => {
-            let old_blueprint: Blueprint = (*existing).clone();
-            Some(Box::new(BlueprintCommand::StoreBlueprint(old_blueprint)))
-        }
-        Err(_) => Some(Box::new(BlueprintCommand::DeleteBlueprint(
-            blueprint.identifiers.id,
-        ))),
-    }
-}
-
-impl UndoableOperation for BlueprintCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
-        let blueprints = ctx.world.resource::<DataProvider<Blueprint>>();
-        match self {
-            BlueprintCommand::StoreBlueprint(blueprint) => {
-                inverse_for_store_blueprint(blueprint, blueprints)
-            }
-            BlueprintCommand::DeleteBlueprint(id) => {
-                // Capture full blueprint before deletion
-                blueprints.from_id(*id).ok().map(|blueprint_ref| {
-                    let blueprint: Blueprint = (*blueprint_ref).clone();
-                    Box::new(BlueprintCommand::StoreBlueprint(blueprint))
-                        as Box<dyn UndoableOperation>
-                })
-            }
-            BlueprintCommand::RenameBlueprint { id, new_id } => {
-                Some(Box::new(BlueprintCommand::RenameBlueprint {
-                    id: *new_id,
-                    new_id: *id,
-                }))
-            }
-        }
-    }
-
-    fn description(&self) -> String {
-        match self {
-            BlueprintCommand::StoreBlueprint(blueprint) => {
-                format!("Store Blueprint {}", blueprint.identifiers.id)
-            }
-            BlueprintCommand::DeleteBlueprint(id) => format!("Delete Blueprint {}", id),
-            BlueprintCommand::RenameBlueprint { id, new_id } => {
-                format!("Rename Blueprint {} → {}", id, new_id)
-            }
         }
     }
 }

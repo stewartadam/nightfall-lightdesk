@@ -6,75 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Commands for blueprint CRUD operations
-
-use std::collections::{HashMap, HashSet};
+//! Desk-side Blueprint persistence and Step FX dependency indexing
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fx::prelude::StepFx;
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
-/// Describes a committed Blueprint definition mutation.
-#[derive(Clone, Debug, Message)]
-pub struct BlueprintDefinitionChange {
-    /// Stable identity of the Blueprint that changed.
-    pub uid: Uuid,
-}
-
-/// Tracks authored objects that currently contain live Blueprint references.
-#[derive(Debug, Default, Resource)]
-pub struct BlueprintReferenceIndex {
-    references: HashMap<Uuid, HashSet<String>>,
-}
-
-impl BlueprintReferenceIndex {
-    /// Replaces every dependency reported by one indexing subsystem.
-    pub fn replace_source(
-        &mut self,
-        source: &str,
-        references: impl IntoIterator<Item = (Uuid, String)>,
-    ) {
-        let prefix = format!("{source}:");
-        self.references.retain(|_, dependents| {
-            dependents.retain(|dependent| !dependent.starts_with(&prefix));
-            !dependents.is_empty()
-        });
-        for (uid, dependent) in references {
-            self.references
-                .entry(uid)
-                .or_default()
-                .insert(format!("{prefix}{dependent}"));
-        }
-    }
-
-    /// Returns sorted descriptions of objects that reference one Blueprint.
-    pub fn dependents(&self, uid: Uuid) -> Vec<String> {
-        let mut dependents = self
-            .references
-            .get(&uid)
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect::<Vec<_>>();
-        dependents.sort();
-        dependents
-    }
-
-    /// Returns every indexed Blueprint dependency in stable UUID and description order.
-    pub fn snapshot(&self) -> Vec<(Uuid, Vec<String>)> {
-        let mut entries = self
-            .references
-            .keys()
-            .copied()
-            .map(|uid| (uid, self.dependents(uid)))
-            .collect::<Vec<_>>();
-        entries.sort_by_key(|(uid, _)| *uid);
-        entries
-    }
-}
 
 /// Rebuilds Step FX dependencies whenever a stored FX is added, changed, or removed.
 pub fn rebuild_step_fx_blueprint_reference_index(
@@ -105,40 +42,12 @@ pub fn rebuild_step_fx_blueprint_reference_index(
     reference_index.replace_source("step_fx", references);
 }
 
-/// Commands for blueprint CRUD operations
-#[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-#[typeshare::typeshare]
-#[serde(tag = "type", content = "data")]
-#[serde(deny_unknown_fields)]
-pub enum BlueprintCommand {
-    /// Store or update a blueprint
-    StoreBlueprint(Blueprint),
-
-    /// Rename a blueprint (change numeric ID)
-    RenameBlueprint {
-        /// ID of the blueprint
-        id: u32,
-        /// New ID for the blueprint
-        new_id: u32,
-    },
-    /// Delete a blueprint by ID
-    DeleteBlueprint(u32),
-}
-
-impl IngressCommand for BlueprintCommand {}
-
-/// Runtime actions for blueprint operations derived from user command plans.
-#[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub enum BlueprintAction {
-    /// Store or update a blueprint payload prepared by planner/runtime handlers.
-    StoreBlueprint(Blueprint),
-}
-
 #[cfg(test)]
 mod tests {
     use bevy_app::{App, Update};
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
     use nightfall_fx::prelude::{CurveType, FxLane, FxStep, FxTrack, Linear};
+    use uuid::Uuid;
 
     use super::*;
 
@@ -191,8 +100,6 @@ mod tests {
         );
     }
 }
-
-impl EngineAction for BlueprintAction {}
 
 impl crate::object_crud::ObjectCrud for Blueprint {
     type Command = BlueprintCommand;

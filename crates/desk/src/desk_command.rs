@@ -276,9 +276,6 @@ pub enum DeskCommand {
 
     /// Sleep for a duration before processing subsequent commands
     Sleep(Duration),
-
-    /// Release an active object
-    Release(ObjectRef),
 }
 
 impl IngressCommand for DeskCommand {}

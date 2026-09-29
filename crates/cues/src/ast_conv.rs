@@ -10,7 +10,6 @@
 use nightfall::prelude::{ColorInterpolationSpace, ColorPath, ColorPathId, IdExpr};
 use nightfall_cmd_parse::ast;
 use nightfall_cmd_parse::conv;
-use nightfall_desk::prelude::BlueprintCommand;
 use nightfall_engine::prelude::*;
 
 use crate::prelude::CueCommand;

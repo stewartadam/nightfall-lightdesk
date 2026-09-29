@@ -25,10 +25,9 @@ use nightfall_clips::{
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_cues::events::handle_events;
 use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueInstruction, CueLifecycleAction, MaterializedSequence, Sequence,
-    SequencePlaybackAction,
+    BoundCueInstruction, Cue, CueCommand, CueInstruction, CueLifecycleAction, MaterializedSequence,
+    Sequence, SequencePlaybackAction,
 };
-use nightfall_desk::prelude::*;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin, CommandOutcome,
@@ -72,7 +71,7 @@ fn clip_action(command: ClipCommand) -> EngineActionEnvelope<ClipAction> {
 
 fn setup_app() -> App {
     let mut app = App::new();
-    app.add_message::<CommandEnvelope<DeskCommand>>();
+    app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<CommandResult>();

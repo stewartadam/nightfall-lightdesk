@@ -14,7 +14,6 @@ partially.workspace = true
 nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
-nightfall-desk = { path = "../desk" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
 nightfall-dmx = { path = "../dmx" }
@@ -36,6 +35,7 @@ web-time.workspace = true
 nightfall-fixture-model = { path = "../fixture-model" }
 
 [dev-dependencies]
+nightfall-desk = { path = "../desk" }
 minicbor-serde.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

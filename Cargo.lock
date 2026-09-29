@@ -5890,6 +5890,7 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "dyn-clone",
+ "nightfall",
  "nightfall-engine",
  "nightfall-workspace-hack",
  "serde",

@@ -536,6 +536,7 @@ fn setup_sequence_timeline_app_with_stop(
 fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
+    app.add_message::<CommandEnvelope<nightfall_cues::prelude::CueCommand>>();
     app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();

@@ -18,9 +18,10 @@ use nightfall_cues::events::handle_events;
 use nightfall_cues::materialized_sequence::{
     despawn_materialized_sequences, release_materialized_sequences,
 };
-use nightfall_cues::prelude::{Cue, CueLifecycleAction, MaterializedSequence, Sequence};
+use nightfall_cues::prelude::{
+    Cue, CueCommand, CueLifecycleAction, MaterializedSequence, Sequence,
+};
 use nightfall_desk::instances::sync_active_state_on_instance_despawn;
-use nightfall_desk::prelude::DeskCommand;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandNotice, CommandReply, CommandResult, CommandTracker,
     DataProvider, EngineActionEnvelope, FinishedCommand, OperationResult, PendingCommandBuffer,
@@ -73,7 +74,7 @@ fn build_sequence(id: u32, uid: Uuid, label: &str, steps: Vec<Uuid>) -> Sequence
 #[test]
 fn same_frame_stop_start_go_goto_keeps_sequence_linked_and_not_releasing() {
     let mut app = App::new();
-    app.add_message::<CommandEnvelope<DeskCommand>>();
+    app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackAction>>();
@@ -211,7 +212,7 @@ fn same_frame_stop_start_go_goto_keeps_sequence_linked_and_not_releasing() {
 #[test]
 fn orphan_cleanup_before_sequence_restart_spawns_fresh_clip_link() {
     let mut app = App::new();
-    app.add_message::<CommandEnvelope<DeskCommand>>();
+    app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackAction>>();
@@ -277,7 +278,7 @@ fn orphan_cleanup_before_sequence_restart_spawns_fresh_clip_link() {
 #[test]
 fn same_frame_sequence_restart_does_not_release_reactivated_cues() {
     let mut app = App::new();
-    app.add_message::<CommandEnvelope<DeskCommand>>();
+    app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     add_command_lifecycle(&mut app);

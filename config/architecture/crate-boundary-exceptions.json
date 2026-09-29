@@ -2,19 +2,6 @@
   "note": "Curated architectural exceptions. New or stale dependency edges fail the crate-boundary check.",
   "exceptions": [
     {
-      "id": "cues-desk-orchestration",
-      "reason": "Cue runtime orchestration uses desk-owned integration services that do not yet have lower-layer contracts.",
-      "edges": [
-        {
-          "from": "nightfall-cues",
-          "to": "nightfall-desk",
-          "fromRole": "domain",
-          "toRole": "integration",
-          "rule": "domain-crate-must-not-depend-on-integration-or-composition"
-        }
-      ]
-    },
-    {
       "id": "flow-fx-module-runtime",
       "reason": "Flow directly hosts FX module nodes and therefore depends on the FX module domain runtime.",
       "edges": [

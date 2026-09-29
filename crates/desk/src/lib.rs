@@ -51,9 +51,6 @@ pub mod prelude {
         DeskEvalActionArguments, clip_target_for_action, desk_eval_action,
         desk_eval_command_for_action, set_control_action,
     };
-    pub use crate::blueprint_command::{
-        BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
-    };
     pub use crate::controls::{
         ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
     };

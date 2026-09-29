@@ -1876,6 +1876,7 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
 fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
+    app.add_message::<CommandEnvelope<nightfall_cues::prelude::CueCommand>>();
     app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();

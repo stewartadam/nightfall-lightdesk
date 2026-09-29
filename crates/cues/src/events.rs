@@ -22,7 +22,6 @@ use nightfall_clips::{
     log_clip_lookup_failure,
 };
 use nightfall_compositor::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
@@ -72,13 +71,7 @@ pub(crate) fn register_event_systems(app: &mut App) {
     app.add_systems(
         Update,
         (
-            handle_events
-                .after(
-                    nightfall_desk::systems::event_handlers::clip_events::forward_clip_ingress_actions,
-                )
-                .after(
-                    nightfall_desk::systems::event_handlers::clip_events::forward_clip_playback_requests,
-                ),
+            handle_events.after(DeskEventSet::ClipForwarding),
             cue_store_operations,
             cue_action_events.before(cue_crud_events),
             cue_crud_events,
@@ -90,12 +83,10 @@ pub(crate) fn register_event_systems(app: &mut App) {
             crate::materialized_sequence::rebuild_blueprint_reference_index
                 .after(cue_crud_events)
                 .after(sequence_crud_events)
-                .before(
-                    nightfall_desk::systems::event_handlers::blueprint_events::crud_events,
-                ),
+                .before(DeskEventSet::BlueprintCrud),
             crate::materialized_sequence::rematerialize_after_blueprint_definition_change
-                .after(nightfall_desk::systems::event_handlers::blueprint_events::crud_events)
-                .after(nightfall_desk::systems::event_handlers::blueprint_events::action_events),
+                .after(DeskEventSet::BlueprintCrud)
+                .after(DeskEventSet::BlueprintActions),
             handle_sequence_playback_actions,
             handle_restore_sequence_position,
         )
@@ -103,9 +94,9 @@ pub(crate) fn register_event_systems(app: &mut App) {
     );
     app.add_systems(
         Update,
-        handle_cue_preview_commands.in_set(EventHandling).after(
-            nightfall_desk::systems::event_handlers::instance_events::handle_playback_commands,
-        ),
+        handle_cue_preview_commands
+            .in_set(EventHandling)
+            .after(DeskEventSet::InstancePlayback),
     );
 }
 
