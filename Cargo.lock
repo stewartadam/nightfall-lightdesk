@@ -217,6 +217,7 @@ dependencies = [
  "bevy",
  "bevy_state",
  "clonetree",
+ "criterion",
  "flate2",
  "gdt-cpus",
  "jiff",
