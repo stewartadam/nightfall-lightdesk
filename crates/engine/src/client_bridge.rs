@@ -164,6 +164,45 @@ impl ClientBridgeHost {
     }
 }
 
+/// Process-scoped bridge channels shared by every world a host builds.
+///
+/// Inserting this resource before [`ClientBridgePlugin`] builds makes the new
+/// world publish to and receive from the same channels as earlier worlds, so a
+/// host transport attached once keeps its clients across world replacement.
+/// Without it the plugin creates channels private to one world.
+#[derive(Resource, Clone)]
+pub struct SharedClientBridge {
+    command_tx: Sender<CommandJsonEnvelope>,
+    command_rx: Receiver<CommandJsonEnvelope>,
+    update_tx: Sender<UpdateJsonEnvelope>,
+    update_rx: Receiver<UpdateJsonEnvelope>,
+    output_tx: Sender<Vec<u8>>,
+    output_rx: Receiver<Vec<u8>>,
+}
+
+impl SharedClientBridge {
+    /// Create unbounded command, update, and output channels.
+    pub fn new() -> Self {
+        let (command_tx, command_rx) = async_channel::unbounded();
+        let (update_tx, update_rx) = async_channel::unbounded();
+        let (output_tx, output_rx) = async_channel::unbounded();
+        Self {
+            command_tx,
+            command_rx,
+            update_tx,
+            update_rx,
+            output_tx,
+            output_rx,
+        }
+    }
+}
+
+impl Default for SharedClientBridge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Installs transport-neutral command ingress and encoded client event egress.
 pub struct ClientBridgePlugin;
 
@@ -179,9 +218,18 @@ impl Plugin for ClientBridgePlugin {
             "ClientBridgePlugin requires an initialized PendingCommandBuffer"
         );
 
-        let (command_tx, command_rx) = async_channel::unbounded();
-        let (update_tx, update_rx) = async_channel::unbounded();
-        let (output_tx, output_rx) = async_channel::unbounded();
+        let SharedClientBridge {
+            command_tx,
+            command_rx,
+            update_tx,
+            update_rx,
+            output_tx,
+            output_rx,
+        } = app
+            .world()
+            .get_resource::<SharedClientBridge>()
+            .cloned()
+            .unwrap_or_default();
 
         app.insert_resource(ClientEventSink::new(output_tx));
         app.insert_resource(CommandJsonEnvelopeReceiver(command_rx));

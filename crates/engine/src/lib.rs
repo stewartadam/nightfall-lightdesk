@@ -69,7 +69,7 @@ pub mod prelude {
     pub use crate::client_bridge::{
         ClientBridgeHost, ClientBridgePlugin, ClientEventSink, CommandDeserializerRegistry,
         CommandJsonEnvelope, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
-        EncodedClientMessage, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        EncodedClientMessage, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{

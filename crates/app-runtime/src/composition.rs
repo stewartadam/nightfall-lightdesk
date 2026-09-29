@@ -67,7 +67,18 @@ pub fn init_bevy(log_config: LogConfig, runtime_config: RuntimeConfig) -> App {
         factory.log_config,
         factory.transport_policy,
         &factory.runtime_config,
+        &factory.client_transport,
     )
+}
+
+/// Process-scoped client transport shared by every world a backend session builds.
+///
+/// Keeping the bridge channels and the websocket server outside any one world
+/// lets showfile loads replace the world without disconnecting clients.
+#[derive(Clone, Default)]
+pub(super) struct ClientTransport {
+    bridge: SharedClientBridge,
+    websocket: nightfall_websocket::prelude::WebsocketHost,
 }
 
 /// Builds and configures a Bevy app with process-scoped runtime settings.
@@ -75,6 +86,7 @@ pub(super) fn init_bevy_with_transport_policy(
     log_config: LogConfig,
     transport_policy: TransportRuntimePolicy,
     runtime_config: &RuntimeConfig,
+    client_transport: &ClientTransport,
 ) -> App {
     tracing::debug!("Initializing...");
     tracing::debug!(
@@ -85,6 +97,8 @@ pub(super) fn init_bevy_with_transport_policy(
     );
 
     let mut app = App::new();
+    app.insert_resource(client_transport.bridge.clone());
+    app.insert_resource(client_transport.websocket.clone());
     app.insert_resource(transport_policy);
     app.insert_resource(native_runtime_capabilities(
         runtime_config,

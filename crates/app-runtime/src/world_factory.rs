@@ -16,7 +16,10 @@ use nightfall_desk::{
 use nightfall_engine::prelude::AppState;
 use nightfall_io::TransportRuntimePolicy;
 
-use crate::{composition::init_bevy_with_transport_policy, sample_data};
+use crate::{
+    composition::{ClientTransport, init_bevy_with_transport_policy},
+    sample_data,
+};
 
 /// Marks an in-memory sample world whose draft and bundled media must be installed before runtime starts.
 #[derive(Resource)]
@@ -47,12 +50,14 @@ pub enum WorldBootstrap {
 /// Builds fresh app worlds with deterministic startup configuration.
 ///
 /// A `WorldFactory` can be reused to create multiple isolated worlds that
-/// share the same process-scoped transport permissions.
+/// share the same process-scoped transport permissions and client transport,
+/// so clients stay connected while one world replaces another.
 #[derive(Clone)]
 pub struct WorldFactory {
     pub(super) log_config: LogConfig,
     pub(super) transport_policy: TransportRuntimePolicy,
     pub(super) runtime_config: RuntimeConfig,
+    pub(super) client_transport: ClientTransport,
 }
 
 impl WorldFactory {
@@ -66,6 +71,7 @@ impl WorldFactory {
                 runtime_config.transports.usb_output_enabled,
             ),
             runtime_config,
+            client_transport: ClientTransport::default(),
         }
     }
 
@@ -85,6 +91,7 @@ impl WorldFactory {
                 usb_output_enabled,
             ),
             runtime_config,
+            client_transport: ClientTransport::default(),
         }
     }
 
@@ -94,6 +101,7 @@ impl WorldFactory {
             self.log_config.clone(),
             self.transport_policy,
             &self.runtime_config,
+            &self.client_transport,
         );
 
         let clean_hash_result: Result<(), String> = match bootstrap {
