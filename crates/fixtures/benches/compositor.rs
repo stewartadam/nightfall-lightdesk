@@ -190,6 +190,42 @@ fn bench_compositor_frame_throughput(c: &mut Criterion) {
     group.finish();
 }
 
+/// Times compositor frames at sample-show scale, with every assertion changing and mid-fade.
+///
+/// Profiling the sample show under load found 17 to 47 active layers over about 1,500 fixture
+/// elements, with transition application and attributed merging dominating the frame. These
+/// cases use 1,536 eight-parameter elements and dense, fading layers to reproduce that shape.
+fn bench_compositor_show_scale(c: &mut Criterion) {
+    let mut group = c.benchmark_group("compositor_show_scale");
+    for layer_count in [16, 32] {
+        let case = BenchmarkCase {
+            parameter_count: 1_536 * 8,
+            layer_count,
+            assertion_shape: AssertionShape::Dense,
+            transition_mode: BenchTransitionMode::All,
+        };
+        group.throughput(Throughput::Elements(
+            (case.parameter_count * case.layer_count) as u64,
+        ));
+        group.bench_function(BenchmarkId::from_parameter(case.id()), |b| {
+            let mut app = changing_compositor_app(case);
+            app.update();
+
+            b.iter(|| {
+                app.update();
+                black_box(
+                    app.world()
+                        .resource::<FinalLayerAttributedAssertions>()
+                        .0
+                        .absolute
+                        .len(),
+                );
+            });
+        });
+    }
+    group.finish();
+}
+
 fn configured_layer_counts() -> Vec<usize> {
     env::var("NIGHTFALL_COMPOSITOR_BENCH_LAYERS")
         .ok()
@@ -411,5 +447,10 @@ fn register_fixture_data(app: &mut App, parameters: &[Instance<Parameter>]) {
     }
 }
 
-criterion_group!(benches, bench_compositor, bench_compositor_frame_throughput);
+criterion_group!(
+    benches,
+    bench_compositor,
+    bench_compositor_frame_throughput,
+    bench_compositor_show_scale
+);
 criterion_main!(benches);
