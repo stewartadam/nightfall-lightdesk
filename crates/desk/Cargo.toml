@@ -60,7 +60,16 @@ async-channel.workspace = true
 nightfall-programmer = { path = "../programmer" }
 criterion.workspace = true
 minicbor-serde.workspace = true
+nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
 
 [[bench]]
 name = "clip_lookup"
+harness = false
+
+[[bench]]
+name = "layer_stack"
+harness = false
+
+[[bench]]
+name = "vdim"
 harness = false

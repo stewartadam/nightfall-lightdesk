@@ -26,6 +26,8 @@ pub mod parameter_index;
 pub mod physical;
 pub mod placement;
 pub mod selection;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
 pub mod undo;
 pub mod universe;
 pub mod websocket;

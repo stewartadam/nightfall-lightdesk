@@ -169,15 +169,19 @@ impl std::fmt::Display for Limiter {
 #[derive(Debug, Default, Clone, Resource)]
 pub struct FrametimeLimit(pub Arc<Mutex<Duration>>);
 
-/// Tracks the instant of the end of the previous frame.
+/// Tracks the end of the previous frame and how late it finished.
 #[derive(Debug, Clone, Resource)]
 pub struct FrameTimer {
     sleep_end: Instant,
+    /// How far the previous frame (work plus sleep) ran past the frame target. The next sleep is
+    /// shortened by this amount so a late frame is caught up on the following one.
+    lateness: Duration,
 }
 impl Default for FrameTimer {
     fn default() -> Self {
         FrameTimer {
             sleep_end: Instant::now(),
+            lateness: Duration::ZERO,
         }
     }
 }
@@ -187,6 +191,7 @@ impl Default for FrameTimer {
 pub struct FramePaceStats {
     frametime: Arc<Mutex<Duration>>,
     oversleep: Arc<Mutex<Duration>>,
+    overrun: Arc<Mutex<Duration>>,
     /// EMA of sleep error (actual - requested) in nanoseconds.
     avg_sleep_error_ns: Arc<AtomicI64>,
 }
@@ -196,6 +201,7 @@ impl Default for FramePaceStats {
         FramePaceStats {
             frametime: Arc::new(Mutex::new(Duration::ZERO)),
             oversleep: Arc::new(Mutex::new(Duration::ZERO)),
+            overrun: Arc::new(Mutex::new(Duration::ZERO)),
             avg_sleep_error_ns: Arc::new(AtomicI64::new(0)),
         }
     }
@@ -207,9 +213,16 @@ impl FramePaceStats {
         self.frametime.try_lock().ok().map(|guard| *guard)
     }
 
-    /// Returns the oversleep duration, or None if the lock cannot be acquired
+    /// Returns how much longer the limiter's last sleep took than it requested, or None if the
+    /// lock cannot be acquired. This is zero when the limiter did not need to sleep.
     pub fn oversleep(&self) -> Option<Duration> {
         self.oversleep.try_lock().ok().map(|guard| *guard)
+    }
+
+    /// Returns how far the last frame's work exceeded the frame target, or None if the lock cannot
+    /// be acquired. This is zero when the frame fit its budget or the limiter is off.
+    pub fn overrun(&self) -> Option<Duration> {
+        self.overrun.try_lock().ok().map(|guard| *guard)
     }
 
     /// Returns the current EMA sleep error in nanoseconds.
@@ -227,7 +240,7 @@ impl FramePaceStats {
 /// `spin_sleep` sleeps as long as possible given the platform's sleep accuracy, and spins for the
 /// remainder. The dependency is however not WASM compatible, which is fine, because frame limiting
 /// should not be used in a browser; this would compete with the browser's frame limiter.
-#[allow(unused_variables)]
+#[allow(unused_variables, unused_mut)]
 fn framerate_limiter(
     mut timer: ResMut<FrameTimer>,
     stats: Res<FramePaceStats>,
@@ -239,14 +252,10 @@ fn framerate_limiter(
     };
 
     let frame_time = timer.sleep_end.elapsed();
+    let mut oversleep = Duration::ZERO;
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let oversleep = stats
-            .oversleep
-            .try_lock()
-            .as_deref()
-            .cloned()
-            .unwrap_or_default();
+        let lateness = timer.lateness;
 
         // Read EMA of previous sleep error (ns). We'll treat negative avg as zero compensation.
         let avg_err_ns = stats.avg_sleep_error_ns.load(Ordering::Relaxed);
@@ -257,17 +266,18 @@ fn framerate_limiter(
         };
 
         // Compensate requested sleep by EMA of previous sleep error.
-        let sleep_time = frame_target.saturating_sub(frame_time + oversleep + compensation);
+        let sleep_time = frame_target.saturating_sub(frame_time + lateness + compensation);
         if settings.limiter.is_enabled() {
             let before_sleep = Instant::now();
             spin_sleep::sleep(sleep_time);
             let after_sleep = Instant::now();
             let actual_sleep = after_sleep.duration_since(before_sleep);
+            oversleep = actual_sleep.saturating_sub(sleep_time);
 
             tracing::trace!(
                 ?frame_target,
                 ?frame_time,
-                prev_oversleep = ?oversleep,
+                prev_lateness = ?lateness,
                 compensation_ns = avg_err_ns,
                 requested_sleep = ?sleep_time,
                 ?actual_sleep,
@@ -286,11 +296,19 @@ fn framerate_limiter(
 
     let frame_time_total = timer.sleep_end.elapsed();
     timer.sleep_end = Instant::now();
+    timer.lateness = frame_time_total.saturating_sub(frame_target);
     if let Ok(mut frametime) = stats.frametime.try_lock() {
         *frametime = frame_time;
     }
-    if let Ok(mut oversleep) = stats.oversleep.try_lock() {
-        *oversleep = frame_time_total.saturating_sub(frame_target);
+    if let Ok(mut stat) = stats.oversleep.try_lock() {
+        *stat = oversleep;
+    }
+    if let Ok(mut overrun) = stats.overrun.try_lock() {
+        *overrun = if settings.limiter.is_enabled() {
+            frame_time.saturating_sub(frame_target)
+        } else {
+            Duration::ZERO
+        };
     }
 }
 
@@ -334,5 +352,62 @@ mod tests {
             .next()
             .expect("set fps should publish one result");
         assert_eq!(result.outcome, CommandOutcome::succeeded());
+    }
+
+    /// Builds an app that runs `work` of busy time each frame, followed by the frame limiter
+    /// capped at `fps`.
+    fn limited_app(fps: f64, work: Duration) -> App {
+        let mut app = App::new();
+        app.insert_resource(
+            FramepaceSettings::default().with_limiter(Limiter::from_framerate(fps)),
+        );
+        app.insert_resource(FrameTimer::default());
+        app.insert_resource(FramePaceStats::default());
+        app.add_systems(Update, move || std::thread::sleep(work));
+        app.add_systems(PostUpdate, framerate_limiter);
+        app
+    }
+
+    /// Verifies that frames exceeding their budget report the excess as overrun, not oversleep,
+    /// since the limiter requests no sleep for them.
+    #[test]
+    fn over_budget_frames_report_overrun_not_oversleep() {
+        let mut app = limited_app(100.0, Duration::from_millis(30));
+        for _ in 0..5 {
+            app.update();
+        }
+
+        let stats = app.world().resource::<FramePaceStats>();
+        let oversleep = stats.oversleep().unwrap();
+        let overrun = stats.overrun().unwrap();
+        assert!(
+            oversleep < Duration::from_millis(5),
+            "limiter should not sleep past an over-budget frame, got {oversleep:?}"
+        );
+        assert!(
+            overrun >= Duration::from_millis(15),
+            "30 ms of work against a 10 ms target should overrun by about 20 ms, got {overrun:?}"
+        );
+    }
+
+    /// Verifies that frames within budget are paced to the target frame time with no overrun.
+    #[test]
+    fn under_budget_frames_are_paced_to_target() {
+        let mut app = limited_app(50.0, Duration::from_millis(2));
+        app.update();
+
+        let frames = 10;
+        let start = Instant::now();
+        for _ in 0..frames {
+            app.update();
+        }
+        let average = start.elapsed() / frames;
+
+        let stats = app.world().resource::<FramePaceStats>();
+        assert_eq!(stats.overrun().unwrap(), Duration::ZERO);
+        assert!(
+            average >= Duration::from_millis(18) && average <= Duration::from_millis(25),
+            "frames should average about 20 ms, got {average:?}"
+        );
     }
 }

@@ -274,6 +274,96 @@ test("patch wizard uses shared forms to create fixtures at narrow width", async 
     .toBe(2);
 });
 
+/** Creates a batch of fixtures in one wizard pass and verifies each is labelled and patched to consecutive console addresses. */
+test("patch wizard creates and patches a fixture batch in one pass", async ({
+  page,
+}, testInfo) => {
+  const quantity = 8;
+  await openApp(page);
+  await addPatchPanel(page);
+  await page.getByRole("button", { name: "Add fixture", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Patch Wizard" });
+  await dialog
+    .getByRole("textbox", { name: "Filter fixtures" })
+    .fill("Moving Head RGBW");
+  await dialog
+    .getByRole("row")
+    .filter({ hasText: "Generic" })
+    .filter({ hasText: "Moving Head RGBW" })
+    .click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.getByRole("button", { name: "Spot", exact: true }).click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  const label = `Batch wizard ${Date.now()}`;
+  await dialog.getByRole("textbox", { name: "Label (optional)" }).fill(label);
+  await dialog
+    .getByRole("spinbutton", { name: "Quantity", exact: true })
+    .fill(String(quantity));
+  await dialog.getByRole("checkbox", { name: "Assign Console DMX" }).check();
+  await dialog.getByRole("spinbutton", { name: "Universe" }).fill("1");
+  await dialog.getByRole("spinbutton", { name: "Start address" }).fill("1");
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.getByRole("button", { name: "Finish", exact: true }).click();
+  await expect(dialog).toBeHidden();
+
+  /** Reads the created fixtures in ID order with their console patch as "universe.address". */
+  const readBatch = () =>
+    page.evaluate((label) => {
+      const stores = (window as any).appStores;
+      /** Normalizes a binding UID, received as a string or a byte map, to undashed hex. */
+      const uidHex = (uid: string | Record<string, number>) =>
+        typeof uid === "string"
+          ? uid.replaceAll("-", "")
+          : Array.from({ length: 16 }, (_, index) =>
+              uid[index].toString(16).padStart(2, "0"),
+            ).join("");
+      return Object.values(stores.fixtures.get())
+        .filter((fixture: any) => fixture.identifiers.label.startsWith(label))
+        .sort((a: any, b: any) => a.identifiers.id - b.identifiers.id)
+        .map((fixture: any) => {
+          const fixtureUid = uidHex(fixture.identifiers.uid);
+          const binding = stores.bindings
+            .get()
+            ?.output.find(
+              (candidate: any) =>
+                candidate.source.type === "Fixture" &&
+                candidate.target.type === "Console" &&
+                candidate.source.data.uids.some(
+                  (uid: string | Record<string, number>) =>
+                    uidHex(uid) === fixtureUid,
+                ),
+            );
+          return {
+            label: fixture.identifiers.label as string,
+            address: binding
+              ? `${binding.target.data.universe?.start}.${binding.target.data.address}`
+              : null,
+          };
+        });
+    }, label);
+  await expect
+    .poll(async () =>
+      (await readBatch()).filter((fixture) => fixture.address !== null),
+    )
+    .toHaveLength(quantity);
+
+  const batch = await readBatch();
+  expect(batch.map((fixture) => fixture.label)).toEqual(
+    Array.from({ length: quantity }, (_, index) => `${label} ${index + 1}`),
+  );
+  const footprint = Number(batch[1].address!.split(".")[1]) - 1;
+  expect(footprint).toBeGreaterThan(0);
+  expect(batch.map((fixture) => fixture.address)).toEqual(
+    batch.map((_, index) => `1.${1 + index * footprint}`),
+  );
+
+  await page
+    .locator(
+      '[data-component="PatchEditor"][data-panel-id="panel-PatchEditor-modal-e2e"]',
+    )
+    .screenshot({ path: testInfo.outputPath("batch-patch-panel.png") });
+});
+
 /** Creates a built-in scene object using the shared searchable wizard at a narrow viewport. */
 test("object wizard filters selects and creates with shared controls", async ({
   page,
