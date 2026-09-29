@@ -37,6 +37,10 @@ type StartupTiming = {
   marks: Record<string, number>;
   /** Total main-thread time spent in long tasks after the click. */
   blockedMs: number;
+  /** Long-task time after the dock became visible, which operators feel as jank. */
+  blockedAfterVisibleMs: number;
+  /** Longest single long task after the dock became visible. */
+  longestAfterVisibleMs: number;
   /** Fixtures in the loaded show. */
   fixtureCount: number;
 };
@@ -264,16 +268,24 @@ for (let run = 0; run < RUNS; run++) {
         for (const key of Object.keys(marks))
           marks[key] = Math.round(marks[key]);
         const fixtures = (window as any).appStores?.fixtures?.get() ?? {};
+        const visibleAt = clickAt + (state.marks.dockVisible ?? 0);
+        const afterVisible = tasks.filter((task) => task.start >= visibleAt);
         return {
           marks,
           blockedMs: Math.round(
             tasks.reduce((sum, task) => sum + task.duration, 0),
           ),
+          blockedAfterVisibleMs: Math.round(
+            afterVisible.reduce((sum, task) => sum + task.duration, 0),
+          ),
+          longestAfterVisibleMs: Math.round(
+            Math.max(0, ...afterVisible.map((task) => task.duration)),
+          ),
           fixtureCount: Object.keys(fixtures).length,
         };
       });
       console.log(
-        `run ${run}: ${JSON.stringify(result.marks)} blocked=${result.blockedMs}ms fixtures=${result.fixtureCount}`,
+        `run ${run}: ${JSON.stringify(result.marks)} blocked=${result.blockedMs}ms afterVisible=${result.blockedAfterVisibleMs}ms longestAfterVisible=${result.longestAfterVisibleMs}ms fixtures=${result.fixtureCount}`,
       );
       await page.screenshot({ path: testInfo.outputPath("settled.png") });
       await writeFile(
