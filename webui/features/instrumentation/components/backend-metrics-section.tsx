@@ -68,6 +68,10 @@ export function BackendMetricsSection(props: BackendMetricsSectionProps) {
           value={formatNumber(props.metrics.framepaceOversleepMs, 2, " ms")}
         />
         <MetricCard
+          label="Over budget"
+          value={formatNumber(props.metrics.framepaceOverrunMs, 2, " ms")}
+        />
+        <MetricCard
           label="ParameterState Build"
           value={formatNumber(props.metrics.parameterStateBuildMs, 2, " ms")}
         />

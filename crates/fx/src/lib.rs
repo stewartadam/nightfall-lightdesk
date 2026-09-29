@@ -58,6 +58,7 @@ pub mod prelude {
 
 pub mod events;
 pub use ast_conv::stepfx_commands_from_ast;
+pub use systems::evaluate_step_fx;
 
 /// Plugin for handling FX
 pub struct FxPlugin;

@@ -170,8 +170,10 @@ pub struct DeskMetrics {
     pub entity_count: Option<u32>,
     /// Time spent in frame pacing in milliseconds
     pub framepace_time_ms: Option<f64>,
-    /// Oversleep duration from frame pacing in milliseconds
+    /// How much longer the frame limiter's last sleep took than requested, in milliseconds
     pub framepace_oversleep_ms: Option<f64>,
+    /// How far the last frame's work exceeded the frame target, in milliseconds
+    pub framepace_overrun_ms: Option<f64>,
     /// Number of active compositor layers
     pub active_layers: u32,
     /// Number of active DMX universes
