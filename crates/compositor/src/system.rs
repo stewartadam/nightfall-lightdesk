@@ -105,7 +105,6 @@ pub fn compositor<P: CompositorParameter>(
     let span = tracing::trace_span!("composited_layers").entered();
     tracing::trace!("Compositing {} layers", layer_stack.len());
 
-    // Convert to format expected by pipeline
     let layers_for_pipeline: Vec<_> = layer_stack
         .into_iter()
         .map(
@@ -114,7 +113,7 @@ pub fn compositor<P: CompositorParameter>(
                 (
                     entity,
                     object_ref_marker.0.clone(),
-                    (*layer).clone(),
+                    layer.into_inner(),
                     is_releasing,
                     compositing_context.map(|context| *context),
                 )
@@ -130,11 +129,7 @@ pub fn compositor<P: CompositorParameter>(
             &param_query,
         );
 
-    // Write BaseLayer and OutputLayer components to entities
     for (entity, output_layer) in output_layers {
-        commands
-            .entity(entity)
-            .insert(BaseLayer(base_layer.clone()));
         commands.entity(entity).insert(OutputLayer(output_layer));
     }
 

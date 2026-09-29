@@ -754,7 +754,6 @@ pub fn cleanup_released_flow_instances(
 
         commands.entity(entity).remove::<Layer>();
         commands.entity(entity).remove::<ObjectRefMarker>();
-        commands.entity(entity).remove::<BaseLayer>();
         commands.entity(entity).remove::<OutputLayer>();
         commands.entity(entity).remove::<ReleaseMarker>();
         commands.entity(entity).remove::<InstanceClock>();
@@ -1523,7 +1522,6 @@ mod tests {
                     object_type: ObjectType::Flow,
                     id: 1,
                 }),
-                BaseLayer(ComputedLayer::default()),
                 OutputLayer(ComputedLayer::default()),
                 ReleaseMarker {
                     start_time: Instant::now(),
@@ -1545,7 +1543,6 @@ mod tests {
             .expect("flow instance should remain after cleanup");
         assert!(entity_ref.get::<Layer>().is_none());
         assert!(entity_ref.get::<ObjectRefMarker>().is_none());
-        assert!(entity_ref.get::<BaseLayer>().is_none());
         assert!(entity_ref.get::<OutputLayer>().is_none());
         assert!(entity_ref.get::<ReleaseMarker>().is_none());
         assert!(entity_ref.get::<InstanceClock>().is_none());

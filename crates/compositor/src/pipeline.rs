@@ -7,6 +7,8 @@
  */
 
 //! Core compositor pipeline implementation.
+use std::borrow::Borrow;
+
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
@@ -21,14 +23,8 @@ impl CompositorPipeline {
     ///
     /// Layers with transitions and no context are evaluated at zero elapsed instead of falling back
     /// to host time, so runtime playback evaluation remains deterministic.
-    pub fn compose_with_layer_compositing_contexts<P: CompositorParameter>(
-        layers: Vec<(
-            Entity,
-            ObjectRef,
-            Layer,
-            bool,
-            Option<LayerCompositingContext>,
-        )>,
+    pub fn compose_with_layer_compositing_contexts<P: CompositorParameter, L: Borrow<Layer>>(
+        layers: Vec<(Entity, ObjectRef, L, bool, Option<LayerCompositingContext>)>,
         param_query: &Query<InstanceMut<P>>,
     ) -> (
         ComputedLayer,
@@ -39,14 +35,8 @@ impl CompositorPipeline {
     }
 
     /// Compose a stack of layers after each layer's compositing context has been selected.
-    fn compose_layers<P: CompositorParameter>(
-        layers: Vec<(
-            Entity,
-            ObjectRef,
-            Layer,
-            bool,
-            Option<LayerCompositingContext>,
-        )>,
+    fn compose_layers<P: CompositorParameter, L: Borrow<Layer>>(
+        layers: Vec<(Entity, ObjectRef, L, bool, Option<LayerCompositingContext>)>,
         param_query: &Query<InstanceMut<P>>,
     ) -> (
         ComputedLayer,
@@ -55,12 +45,12 @@ impl CompositorPipeline {
     ) {
         let absolute_capacity = layers
             .iter()
-            .map(|(_, _, layer, _, _)| layer.absolute.len())
+            .map(|(_, _, layer, _, _)| layer.borrow().absolute.len())
             .max()
             .unwrap_or(0);
         let relative_capacity = layers
             .iter()
-            .map(|(_, _, layer, _, _)| layer.relative.len())
+            .map(|(_, _, layer, _, _)| layer.borrow().relative.len())
             .max()
             .unwrap_or(0);
 
@@ -70,16 +60,17 @@ impl CompositorPipeline {
         let mut output_layers = Vec::with_capacity(layers.len());
         let mut prev_priority: Option<Priority> = None;
 
-        for (entity, object_ref, mut layer, is_releasing, compositing_context) in layers {
+        for (entity, object_ref, layer, is_releasing, compositing_context) in layers {
+            let layer = layer.borrow();
             let compositing_context = match compositing_context {
                 Some(compositing_context) => compositing_context,
                 None => {
-                    warn_missing_compositing_context(entity, &layer);
+                    warn_missing_compositing_context(entity, layer);
                     LayerCompositingContext::default()
                 }
             };
-            let computed_layer = stages::apply_transitions_with_compositing_context(
-                &mut layer,
+            let (computed_layer, skipped) = stages::evaluate_transitions_with_compositing_context(
+                layer,
                 &base_layer,
                 param_query,
                 is_releasing,
@@ -87,10 +78,11 @@ impl CompositorPipeline {
             );
 
             output_layers.push((entity, computed_layer.to_effective()));
-            stages::merge_layer_with_attribution(
+            stages::merge_layer_with_attribution_skipping(
                 &mut attributed_assertions_layer,
-                &layer,
+                layer,
                 object_ref,
+                &skipped,
             );
             let same_priority = prev_priority.is_some_and(|p| p == layer.priority);
             stages::merge(&mut base_layer, &computed_layer, same_priority, param_query);

@@ -188,8 +188,8 @@ impl Parameter {
 }
 
 impl CompositorParameter for Parameter {
-    fn attribute(&self) -> Attribute {
-        self.metadata.attribute.clone()
+    fn attribute(&self) -> &Attribute {
+        &self.metadata.attribute
     }
 
     fn uses_htp_merge(&self) -> bool {
@@ -212,8 +212,12 @@ impl CompositorParameter for Parameter {
         Parameter::set_raw_value(self, value);
     }
 
-    fn resolve_value(&self, value: &ParameterValue) -> ParameterDmxValue {
-        Parameter::resolve_value(self, value)
+    fn resolve_value_with_current(
+        &self,
+        value: &ParameterValue,
+        current_value: ParameterDmxValue,
+    ) -> ParameterDmxValue {
+        Parameter::resolve_value_with_current(self, value, current_value)
     }
 }
 

@@ -145,7 +145,7 @@ impl From<&ParameterRef> for ParameterRef {
 /// identity, not on fixture storage or fixture parameter component types.
 pub trait CompositorParameter: Component<Mutability = Mutable> + Clone {
     /// Attribute controlled by this parameter.
-    fn attribute(&self) -> Attribute;
+    fn attribute(&self) -> &Attribute;
 
     /// Whether this parameter uses highest-takes-priority merging.
     fn uses_htp_merge(&self) -> bool;
@@ -162,8 +162,13 @@ pub trait CompositorParameter: Component<Mutability = Mutable> + Clone {
     /// Set the current effective value used by compositor math.
     fn set_raw_value(&mut self, value: ParameterDmxValue);
 
-    /// Resolve an asserted value against the parameter's current value.
-    fn resolve_value(&self, value: &ParameterValue) -> ParameterDmxValue;
+    /// Resolve an asserted value against an explicit current value, such as the value composited
+    /// below the asserting layer, without mutating the parameter.
+    fn resolve_value_with_current(
+        &self,
+        value: &ParameterValue,
+        current_value: ParameterDmxValue,
+    ) -> ParameterDmxValue;
 }
 
 #[cfg(test)]
@@ -211,8 +216,8 @@ pub(crate) mod test_support {
     }
 
     impl CompositorParameter for TestParameter {
-        fn attribute(&self) -> Attribute {
-            self.attribute.clone()
+        fn attribute(&self) -> &Attribute {
+            &self.attribute
         }
 
         fn uses_htp_merge(&self) -> bool {
@@ -235,15 +240,19 @@ pub(crate) mod test_support {
             self.current_value = value;
         }
 
-        fn resolve_value(&self, value: &ParameterValue) -> ParameterDmxValue {
+        fn resolve_value_with_current(
+            &self,
+            value: &ParameterValue,
+            current_value: ParameterDmxValue,
+        ) -> ParameterDmxValue {
             match value {
                 ParameterValue::Absolute { value } => *value,
                 ParameterValue::AbsolutePercent { value } => {
                     self.min + (self.max - self.min) * value.as_f32()
                 }
-                ParameterValue::Relative { offset } => self.current_value + *offset,
+                ParameterValue::Relative { offset } => current_value + *offset,
                 ParameterValue::RelativePercent { offset } => {
-                    self.current_value + (self.max - self.min) * offset.as_f32()
+                    current_value + (self.max - self.min) * offset.as_f32()
                 }
             }
         }
@@ -482,10 +491,6 @@ pub struct FinalLayerAttributedAssertions(pub AttributedAssertionsLayer);
 /// Resource to hold the computed output values from the most recent compositor pass.
 #[derive(Resource, Default, Debug, Clone, PartialEq)]
 pub struct FinalLayerOutput(pub ComputedLayer);
-
-/// Component to store the computed layer for a base layer
-#[derive(Component, Default, Debug, Clone)]
-pub struct BaseLayer(pub ComputedLayer);
 
 /// Component to store the computed layer for a layer's composited output
 #[derive(Component, Default, Debug, Clone)]

@@ -13,12 +13,31 @@ use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
+use rustc_hash::FxHashSet;
 
 use crate::types::{
     CompositorParameter, ComputedLayer, Layer, LayerCompositingContext, ParameterRef,
 };
 
-/// Applies transitions and delays using a layer compositing context.
+/// Assertions a layer leaves out of the current frame's output, such as those still waiting out
+/// their delay or whose release fade has completed.
+#[derive(Debug, Default)]
+pub struct SkippedAssertions {
+    /// Skipped absolute assertions.
+    pub absolute: FxHashSet<ParameterRef>,
+    /// Skipped relative assertions.
+    pub relative: FxHashSet<ParameterRef>,
+}
+
+impl SkippedAssertions {
+    /// Returns whether the layer skipped no assertions.
+    pub fn is_empty(&self) -> bool {
+        self.absolute.is_empty() && self.relative.is_empty()
+    }
+}
+
+/// Applies transitions and delays using a layer compositing context, and removes the assertions
+/// skipped this frame from the layer so its attribution matches the effective output.
 pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
     layer: &mut Layer,
     base: &ComputedLayer,
@@ -26,15 +45,40 @@ pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
     is_releasing: bool,
     context: LayerCompositingContext,
 ) -> ComputedLayer {
+    let (computed_layer, skipped) = evaluate_transitions_with_compositing_context(
+        layer,
+        base,
+        parameters,
+        is_releasing,
+        context,
+    );
+    remove_skipped_assertions(layer, skipped);
+    computed_layer
+}
+
+/// Evaluates a layer's transitions and delays against the composite below it without mutating
+/// the layer.
+///
+/// Returns the computed layer and the assertions skipped this frame, which the caller must leave
+/// out of attribution.
+pub fn evaluate_transitions_with_compositing_context<P: CompositorParameter>(
+    layer: &Layer,
+    base: &ComputedLayer,
+    parameters: &Query<InstanceMut<P>>,
+    is_releasing: bool,
+    context: LayerCompositingContext,
+) -> (ComputedLayer, SkippedAssertions) {
     let mut computed_layer =
         ComputedLayer::with_capacity(layer.absolute.len(), layer.relative.len());
-    let mut skipped_absolute = Vec::new();
-    let mut skipped_relative = Vec::new();
+    let mut skipped = SkippedAssertions::default();
+    // Building a disabled span still costs more than the rest of a parameter's evaluation, so
+    // per-parameter spans are only created while trace logging is enabled for this module.
+    let trace_parameters = tracing::enabled!(tracing::Level::TRACE);
 
     // Process absolute values
-    for (param_ref, (value, transition)) in layer.absolute.iter_mut() {
+    for (param_ref, (value, transition)) in layer.absolute.iter() {
         if !is_releasing {
-            if let (ParameterValue::Absolute { value }, None) = (&*value, transition.as_ref()) {
+            if let (ParameterValue::Absolute { value }, None) = (value, transition.as_ref()) {
                 if parameters.get(param_ref.entity()).is_ok() {
                     computed_layer.absolute.insert(param_ref, *value);
                 }
@@ -45,20 +89,18 @@ pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
         if let Ok(param) = parameters.get(param_ref.entity()) {
             // We must start a span for each log because field filters can only be applied to spans.
             // See: https://github.com/tokio-rs/tracing/issues/2843#issuecomment-1884545840
-            let _span = tracing::trace_span!(
-                "composited_transitions",
-                entity = %param.entity(),
-                attribute = ?param.attribute()
-            )
-            .entered();
+            let _span = trace_parameters.then(|| {
+                tracing::trace_span!(
+                    "composited_transitions",
+                    entity = %param.entity(),
+                    attribute = ?param.attribute()
+                )
+                .entered()
+            });
 
             let default_value = param.default_value();
             let base_value = base.absolute.get(param_ref).unwrap_or(&default_value);
-            let asserted_value = {
-                let mut tmp_param = (*param).clone();
-                tmp_param.set_raw_value(*base_value);
-                tmp_param.resolve_value(value)
-            };
+            let asserted_value = param.resolve_value_with_current(value, *base_value);
 
             let target = if is_releasing {
                 absolute_release_target(&param, param_ref, base)
@@ -73,7 +115,7 @@ pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
                 is_releasing,
                 context,
             ) {
-                skipped_absolute.push(param_ref);
+                skipped.absolute.insert(param_ref);
                 continue;
             }
 
@@ -106,22 +148,20 @@ pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
     }
 
     // Process relative values
-    for (param_ref, (value, transition)) in layer.relative.iter_mut() {
+    for (param_ref, (value, transition)) in layer.relative.iter() {
         if let Ok(param) = parameters.get(param_ref.entity()) {
-            let _span = tracing::trace_span!(
-                "composited_transitions",
-                entity = %param.entity(),
-                attribute = ?param.attribute()
-            )
-            .entered();
+            let _span = trace_parameters.then(|| {
+                tracing::trace_span!(
+                    "composited_transitions",
+                    entity = %param.entity(),
+                    attribute = ?param.attribute()
+                )
+                .entered()
+            });
 
             let default_value = 0.0; // For relative values, default is 0
             let base_value = base.relative.get(param_ref).unwrap_or(&default_value);
-            let asserted_value = {
-                let mut tmp_param = (*param).clone();
-                tmp_param.set_raw_value(*base_value);
-                tmp_param.resolve_value(value)
-            };
+            let asserted_value = param.resolve_value_with_current(value, *base_value);
 
             let target = if is_releasing {
                 *base.relative.get(param_ref).unwrap_or(&0.0)
@@ -136,7 +176,7 @@ pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
                 is_releasing,
                 context,
             ) {
-                skipped_relative.push(param_ref);
+                skipped.relative.insert(param_ref);
                 continue;
             }
 
@@ -167,9 +207,8 @@ pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
             computed_layer.relative.insert(param_ref, new_value);
         }
     }
-    remove_skipped_assertions(layer, skipped_absolute, skipped_relative);
 
-    computed_layer
+    (computed_layer, skipped)
 }
 
 /// Returns whether this assertion should be absent from the current composited layer.
@@ -200,16 +239,12 @@ fn transition_should_skip_output<P: CompositorParameter>(
 }
 
 /// Removes skipped assertions so attribution matches the effective output.
-fn remove_skipped_assertions(
-    layer: &mut Layer,
-    absolute: impl IntoIterator<Item = ParameterRef>,
-    relative: impl IntoIterator<Item = ParameterRef>,
-) {
-    for parameter in absolute {
+fn remove_skipped_assertions(layer: &mut Layer, skipped: SkippedAssertions) {
+    for parameter in skipped.absolute {
         layer.absolute.remove(parameter);
         layer.transitioning.remove(parameter);
     }
-    for parameter in relative {
+    for parameter in skipped.relative {
         layer.relative.remove(parameter);
         layer.transitioning.remove(parameter);
     }
@@ -294,7 +329,7 @@ pub fn process_transition_with_compositing_context<P: CompositorParameter>(
     parameter: &InstanceRef<P>,
     base: ParameterDmxValue,
     target: ParameterDmxValue,
-    transition: &mut MaterializedTransition,
+    transition: &MaterializedTransition,
     is_releasing: bool,
     context: LayerCompositingContext,
 ) -> ParameterDmxValue {
@@ -609,6 +644,52 @@ mod tests {
             !layer.relative.contains_key(&param),
             "delayed relative assertions should be absent from attribution"
         );
+    }
+
+    /// Verifies evaluation reports assertions still in their delay as skipped without removing
+    /// them from the layer, so the compositor can borrow layers instead of cloning them.
+    #[test]
+    fn evaluate_transitions_reports_delayed_assertion_without_mutating_layer() {
+        let mut world = World::new();
+        let delayed = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Red);
+        let active = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Green);
+        let transition = create_test_transition(
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::ZERO,
+            Duration::ZERO,
+        );
+        let mut layer = Layer::new("test".to_string(), Priority(1));
+        layer.absolute.insert(
+            delayed,
+            (ParameterValue::Absolute { value: 200.0 }, Some(transition)),
+        );
+        layer
+            .absolute
+            .insert(active, (ParameterValue::Absolute { value: 100.0 }, None));
+        let original_layer = layer.clone();
+
+        let mut param_query_state = world.query::<InstanceMut<TestParameter>>();
+        let param_query = param_query_state.query_mut(&mut world);
+        let (computed, skipped) = evaluate_transitions_with_compositing_context(
+            &layer,
+            &ComputedLayer::default(),
+            &param_query,
+            false,
+            LayerCompositingContext {
+                position: Duration::from_millis(500),
+                released_at: None,
+            },
+        );
+
+        assert_eq!(
+            layer, original_layer,
+            "evaluation must not mutate the layer"
+        );
+        assert!(skipped.absolute.contains(&ParameterRef::from(delayed)));
+        assert!(!skipped.absolute.contains(&ParameterRef::from(active)));
+        assert!(!computed.absolute.contains_key(delayed));
+        assert_eq!(computed.absolute.get(active), Some(&100.0));
     }
 
     #[test]
