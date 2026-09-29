@@ -357,37 +357,132 @@ pub(crate) mod test_support {
     }
 }
 
+/// Number of entity index bits addressed by one sparse page of a [`ParameterMap`].
+const PARAMETER_PAGE_BITS: u32 = 8;
+/// Number of entity indices addressed by one sparse page of a [`ParameterMap`].
+const PARAMETER_PAGE_LEN: usize = 1 << PARAMETER_PAGE_BITS;
+/// Sparse page entry marking an entity index with no dense slot.
+const EMPTY_PARAMETER_SLOT: u32 = u32::MAX;
+
 /// Map keyed by erased fixture parameter instances.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParameterMap<V>(FxHashMap<Instance<Any>, V>);
+///
+/// Stored as a paged sparse set indexed by the parameter entity's index, so lookups are two array
+/// reads instead of a hash probe. Values live contiguously in insertion order, except that removal
+/// moves the last entry into the removed slot. A stale key whose entity index was reused by a newer
+/// parameter is kept in a small overflow map, so the map never confuses two parameters.
+#[derive(Clone)]
+pub struct ParameterMap<V> {
+    sparse: Vec<Option<Box<[u32; PARAMETER_PAGE_LEN]>>>,
+    overflow: FxHashMap<Instance<Any>, u32>,
+    dense: Vec<(Instance<Any>, V)>,
+}
 
 impl<V> ParameterMap<V> {
     /// Create an empty parameter map.
     pub fn new() -> Self {
-        Self(FxHashMap::default())
+        Self {
+            sparse: Vec::new(),
+            overflow: FxHashMap::default(),
+            dense: Vec::new(),
+        }
     }
 
     /// Create an empty parameter map with capacity for at least `capacity` entries.
     pub fn with_capacity(capacity: usize) -> Self {
-        Self(FxHashMap::with_capacity_and_hasher(
-            capacity,
-            Default::default(),
-        ))
+        Self {
+            sparse: Vec::new(),
+            overflow: FxHashMap::default(),
+            dense: Vec::with_capacity(capacity),
+        }
     }
 
     /// Reserve capacity for at least `additional` more parameter entries.
     pub fn reserve(&mut self, additional: usize) {
-        self.0.reserve(additional);
+        self.dense.reserve(additional);
     }
 
     /// Number of parameter entries.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.dense.len()
     }
 
     /// Whether the map has no parameter entries.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.dense.is_empty()
+    }
+
+    /// Split an instance's entity index into its sparse page and the offset within that page.
+    fn page_position(instance: Instance<Any>) -> (usize, usize) {
+        let index = instance.entity().index_u32() as usize;
+        (
+            index >> PARAMETER_PAGE_BITS,
+            index & (PARAMETER_PAGE_LEN - 1),
+        )
+    }
+
+    /// Return the dense slot recorded in the sparse page for an instance's entity index, if any.
+    ///
+    /// The slot may belong to another generation of the same entity index.
+    fn sparse_slot(&self, instance: Instance<Any>) -> Option<usize> {
+        let (page, offset) = Self::page_position(instance);
+        let slot = self.sparse.get(page)?.as_ref()?[offset];
+        (slot != EMPTY_PARAMETER_SLOT).then_some(slot as usize)
+    }
+
+    /// Return the dense slot holding an instance's value, checking the overflow map when the sparse
+    /// entry belongs to another generation of the same entity index.
+    fn slot(&self, instance: Instance<Any>) -> Option<usize> {
+        let slot = self.sparse_slot(instance)?;
+        if self.dense[slot].0 == instance {
+            Some(slot)
+        } else {
+            self.overflow.get(&instance).map(|slot| *slot as usize)
+        }
+    }
+
+    /// Point an instance's index entry at a dense slot, in its sparse page or in the overflow map
+    /// when the sparse entry is held by another generation of the same entity index.
+    fn set_slot(&mut self, instance: Instance<Any>, slot: usize) {
+        let slot = u32::try_from(slot).expect("parameter map exceeds u32 slots");
+        if self
+            .sparse_slot(instance)
+            .is_some_and(|existing| self.dense[existing].0 != instance)
+        {
+            self.overflow.insert(instance, slot);
+            return;
+        }
+        let (page, offset) = Self::page_position(instance);
+        if self.sparse.len() <= page {
+            self.sparse.resize_with(page + 1, || None);
+        }
+        self.sparse[page]
+            .get_or_insert_with(|| Box::new([EMPTY_PARAMETER_SLOT; PARAMETER_PAGE_LEN]))[offset] =
+            slot;
+    }
+
+    /// Clear an instance's index entry, promoting an overflow entry with the same entity index
+    /// into the sparse page when the sparse entry itself is cleared.
+    fn clear_slot(&mut self, instance: Instance<Any>) {
+        if self.overflow.remove(&instance).is_some() {
+            return;
+        }
+        let (page, offset) = Self::page_position(instance);
+        let entity_index = instance.entity().index_u32();
+        let promoted = self
+            .overflow
+            .iter()
+            .find(|(other, _)| other.entity().index_u32() == entity_index)
+            .map(|(other, slot)| (*other, *slot));
+        let replacement = match promoted {
+            Some((other, slot)) => {
+                self.overflow.remove(&other);
+                slot
+            }
+            None => EMPTY_PARAMETER_SLOT,
+        };
+        if let Some(Some(page)) = self.sparse.get_mut(page) {
+            page[offset] = replacement;
+        }
     }
 
     /// Insert a parameter value, returning the previous value when present.
@@ -395,7 +490,13 @@ impl<V> ParameterMap<V> {
     where
         P: Into<ParameterRef>,
     {
-        self.0.insert(parameter.into().any_instance(), value)
+        let instance = parameter.into().any_instance();
+        if let Some(slot) = self.slot(instance) {
+            return Some(std::mem::replace(&mut self.dense[slot].1, value));
+        }
+        self.dense.push((instance, value));
+        self.set_slot(instance, self.dense.len() - 1);
+        None
     }
 
     /// Return the value for a parameter.
@@ -403,7 +504,8 @@ impl<V> ParameterMap<V> {
     where
         P: Into<ParameterRef>,
     {
-        self.0.get(&parameter.into().any_instance())
+        let slot = self.slot(parameter.into().any_instance())?;
+        Some(&self.dense[slot].1)
     }
 
     /// Return the mutable value for a parameter.
@@ -411,7 +513,8 @@ impl<V> ParameterMap<V> {
     where
         P: Into<ParameterRef>,
     {
-        self.0.get_mut(&parameter.into().any_instance())
+        let slot = self.slot(parameter.into().any_instance())?;
+        Some(&mut self.dense[slot].1)
     }
 
     /// Whether the map contains a parameter.
@@ -419,53 +522,99 @@ impl<V> ParameterMap<V> {
     where
         P: Into<ParameterRef>,
     {
-        self.0.contains_key(&parameter.into().any_instance())
+        self.slot(parameter.into().any_instance()).is_some()
     }
 
-    /// Remove a parameter value.
+    /// Remove a parameter value, moving the last entry into its dense slot.
     pub fn remove<P>(&mut self, parameter: P) -> Option<V>
     where
         P: Into<ParameterRef>,
     {
-        self.0.remove(&parameter.into().any_instance())
+        let instance = parameter.into().any_instance();
+        let slot = self.slot(instance)?;
+        self.clear_slot(instance);
+        let (_, value) = self.dense.swap_remove(slot);
+        if let Some((moved, _)) = self.dense.get(slot) {
+            let moved = *moved;
+            self.relocate_slot(moved, slot);
+        }
+        Some(value)
+    }
+
+    /// Repoint an existing instance's index entry, wherever it lives, at a new dense slot.
+    fn relocate_slot(&mut self, instance: Instance<Any>, slot: usize) {
+        let slot = u32::try_from(slot).expect("parameter map exceeds u32 slots");
+        if let Some(overflow_slot) = self.overflow.get_mut(&instance) {
+            *overflow_slot = slot;
+            return;
+        }
+        let (page, offset) = Self::page_position(instance);
+        if let Some(Some(page)) = self.sparse.get_mut(page) {
+            page[offset] = slot;
+        }
     }
 
     /// Iterate over parameter keys.
     pub fn keys(&self) -> impl Iterator<Item = ParameterRef> + '_ {
-        self.0
-            .keys()
-            .map(|instance| ParameterRef::from_any_instance(*instance))
+        self.dense
+            .iter()
+            .map(|(instance, _)| ParameterRef::from_any_instance(*instance))
     }
 
     /// Iterate over parameter values.
     pub fn values(&self) -> impl Iterator<Item = &V> + '_ {
-        self.0.values()
+        self.dense.iter().map(|(_, value)| value)
     }
 
     /// Iterate over mutable parameter values.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> + '_ {
-        self.0.values_mut()
+        self.dense.iter_mut().map(|(_, value)| value)
     }
 
     /// Iterate over parameter-value pairs.
     pub fn iter(&self) -> impl Iterator<Item = (ParameterRef, &V)> + '_ {
-        self.0
+        self.dense
             .iter()
             .map(|(instance, value)| (ParameterRef::from_any_instance(*instance), value))
     }
 
     /// Iterate over mutable parameter-value pairs.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (ParameterRef, &mut V)> + '_ {
-        self.0
+        self.dense
             .iter_mut()
             .map(|(instance, value)| (ParameterRef::from_any_instance(*instance), value))
     }
 
     /// Extend this map with another parameter map.
     pub fn extend_map(&mut self, other: Self) {
-        self.0.extend(other.0);
+        self.extend(
+            other
+                .dense
+                .into_iter()
+                .map(|(instance, value)| (ParameterRef::from_any_instance(instance), value)),
+        );
     }
 }
+
+impl<V: std::fmt::Debug> std::fmt::Debug for ParameterMap<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entries(self.dense.iter().map(|(instance, value)| (instance, value)))
+            .finish()
+    }
+}
+
+impl<V: PartialEq> PartialEq for ParameterMap<V> {
+    /// Compare maps by their entries, ignoring insertion order.
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len()
+            && self.dense.iter().all(|(instance, value)| {
+                other.get(ParameterRef::from_any_instance(*instance)) == Some(value)
+            })
+    }
+}
+
+impl<V: Eq> Eq for ParameterMap<V> {}
 
 impl<V> Default for ParameterMap<V> {
     fn default() -> Self {
@@ -478,10 +627,11 @@ where
     P: Into<ParameterRef>,
 {
     fn extend<T: IntoIterator<Item = (P, V)>>(&mut self, iter: T) {
-        self.0.extend(
-            iter.into_iter()
-                .map(|(parameter, value)| (parameter.into().any_instance(), value)),
-        );
+        let iter = iter.into_iter();
+        self.dense.reserve(iter.size_hint().0);
+        for (parameter, value) in iter {
+            self.insert(parameter, value);
+        }
     }
 }
 
@@ -677,5 +827,101 @@ impl Display for Layer {
             self.absolute.len(),
             self.relative.len()
         )
+    }
+}
+
+#[cfg(test)]
+mod parameter_map_tests {
+    use super::*;
+
+    /// Builds two parameters with the same entity index and different generations, as when a
+    /// despawned parameter's index is reused by a newer one.
+    fn parameters_sharing_entity_index() -> (ParameterRef, ParameterRef) {
+        let stale = Entity::from_raw_u32(7).expect("valid entity index");
+        let fresh =
+            Entity::from_index_and_generation(stale.index(), stale.generation().after_versions(1));
+        (
+            ParameterRef::from_entity(stale),
+            ParameterRef::from_entity(fresh),
+        )
+    }
+
+    /// Removing an entry moves the last entry into its slot, and both lookups stay correct.
+    #[test]
+    fn remove_keeps_moved_entry_reachable() {
+        let mut world = World::new();
+        let parameters: Vec<_> = (0..4)
+            .map(|_| ParameterRef::from_entity(world.spawn_empty().id()))
+            .collect();
+        let mut map = ParameterMap::new();
+        for (value, parameter) in parameters.iter().enumerate() {
+            map.insert(*parameter, value);
+        }
+
+        assert_eq!(map.remove(parameters[1]), Some(1));
+
+        assert_eq!(map.len(), 3);
+        assert_eq!(map.get(parameters[1]), None);
+        assert_eq!(map.get(parameters[0]), Some(&0));
+        assert_eq!(map.get(parameters[2]), Some(&2));
+        assert_eq!(map.get(parameters[3]), Some(&3));
+        assert_eq!(map.insert(parameters[3], 30), Some(3));
+        assert_eq!(map.get(parameters[3]), Some(&30));
+    }
+
+    /// Two generations of one entity index are separate keys, and removing either keeps the other.
+    #[test]
+    fn entity_index_generations_are_distinct_keys() {
+        let (stale, fresh) = parameters_sharing_entity_index();
+
+        for remove_stale_first in [true, false] {
+            let mut map = ParameterMap::new();
+            map.insert(stale, "stale");
+            map.insert(fresh, "fresh");
+            assert_eq!(map.get(stale), Some(&"stale"));
+            assert_eq!(map.get(fresh), Some(&"fresh"));
+
+            let (removed, kept, kept_value) = if remove_stale_first {
+                (stale, fresh, "fresh")
+            } else {
+                (fresh, stale, "stale")
+            };
+            assert!(map.remove(removed).is_some());
+            assert!(!map.contains_key(removed));
+            assert_eq!(map.get(kept), Some(&kept_value));
+
+            map.insert(removed, "again");
+            assert_eq!(map.get(removed), Some(&"again"));
+            assert_eq!(map.get(kept), Some(&kept_value));
+        }
+    }
+
+    /// Maps holding the same entries compare equal regardless of insertion order.
+    #[test]
+    fn equality_ignores_insertion_order() {
+        let mut world = World::new();
+        let first = ParameterRef::from_entity(world.spawn_empty().id());
+        let second = ParameterRef::from_entity(world.spawn_empty().id());
+
+        let forward: ParameterMap<u8> = [(first, 1), (second, 2)].into_iter().collect_map();
+        let backward: ParameterMap<u8> = [(second, 2), (first, 1)].into_iter().collect_map();
+        let different: ParameterMap<u8> = [(second, 3), (first, 1)].into_iter().collect_map();
+
+        assert_eq!(forward, backward);
+        assert_ne!(forward, different);
+    }
+
+    /// Collects parameter-value pairs into a parameter map for tests.
+    trait CollectMap<V> {
+        /// Builds a parameter map from the iterator's pairs.
+        fn collect_map(self) -> ParameterMap<V>;
+    }
+
+    impl<V, I: Iterator<Item = (ParameterRef, V)>> CollectMap<V> for I {
+        fn collect_map(self) -> ParameterMap<V> {
+            let mut map = ParameterMap::new();
+            map.extend(self);
+            map
+        }
     }
 }
