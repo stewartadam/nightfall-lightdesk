@@ -389,12 +389,23 @@ export function insertStepFxStep(
   return { track: next, uid: inserted.uid };
 }
 
+/** Identity and width shared by attribute and color steps. */
+export interface StepFxSequenceStep {
+  uid: string;
+  width_beats: number;
+}
+
+/** Ordered steps of an attribute track or a color lane. */
+export interface StepFxSequence<S extends StepFxSequenceStep> {
+  steps: S[];
+}
+
 /** Duplicates selected steps in authored order and assigns independent identities. */
-export function duplicateStepFxSteps(
-  track: types.FxTrack,
+export function duplicateStepFxSteps<S extends StepFxSequenceStep>(
+  track: StepFxSequence<S>,
   selectedUids: ReadonlySet<string>,
-): { track: types.FxTrack; selectedUids: Set<string> } {
-  const steps: types.FxStep[] = [];
+): { track: StepFxSequence<S>; selectedUids: Set<string> } {
+  const steps: S[] = [];
   const duplicates = new Set<string>();
   for (const step of track.steps) {
     steps.push(structuredClone(step));
@@ -410,10 +421,10 @@ export function duplicateStepFxSteps(
 }
 
 /** Shares the chosen steps' combined duration evenly without changing other widths. */
-export function distributeStepFxWidthsEvenly(
-  track: types.FxTrack,
+export function distributeStepFxWidthsEvenly<S extends StepFxSequenceStep>(
+  track: StepFxSequence<S>,
   selectedUids: ReadonlySet<string>,
-): types.FxTrack {
+): StepFxSequence<S> {
   const selectedCount = track.steps.filter((step) =>
     selectedUids.has(step.uid),
   ).length;
@@ -440,10 +451,10 @@ export function distributeStepFxWidthsEvenly(
 }
 
 /** Deletes selected steps and chooses the nearest survivor for continued editing. */
-export function deleteStepFxSteps(
-  track: types.FxTrack,
+export function deleteStepFxSteps<S extends StepFxSequenceStep>(
+  track: StepFxSequence<S>,
   selectedUids: ReadonlySet<string>,
-): { track: types.FxTrack; selectedUids: Set<string> } {
+): { track: StepFxSequence<S>; selectedUids: Set<string> } {
   const firstSelected = track.steps.findIndex((step) =>
     selectedUids.has(step.uid),
   );
@@ -460,11 +471,11 @@ export function deleteStepFxSteps(
 }
 
 /** Moves selected steps by one position while retaining step and link identities. */
-export function reorderStepFxSteps(
-  track: types.FxTrack,
+export function reorderStepFxSteps<S extends StepFxSequenceStep>(
+  track: StepFxSequence<S>,
   selectedUids: ReadonlySet<string>,
   direction: -1 | 1,
-): types.FxTrack {
+): StepFxSequence<S> {
   const steps = track.steps.map((step) => structuredClone(step));
   const indexes = steps
     .map((step, index) => (selectedUids.has(step.uid) ? index : -1))
@@ -480,11 +491,11 @@ export function reorderStepFxSteps(
 }
 
 /** Applies one partial edit to every selected step in a track. */
-export function editStepFxSteps(
-  track: types.FxTrack,
+export function editStepFxSteps<S extends StepFxSequenceStep>(
+  track: StepFxSequence<S>,
   selectedUids: ReadonlySet<string>,
-  edit: (step: types.FxStep) => types.FxStep,
-): types.FxTrack {
+  edit: (step: S) => S,
+): StepFxSequence<S> {
   return {
     steps: track.steps.map((step) =>
       selectedUids.has(step.uid)
@@ -555,14 +566,33 @@ export function validateStepFxDraft(stepFx: types.StepFx): StepFxDraftIssue[] {
     );
   }
   validatePhase(stepFx.phase, "phase", add);
-  if (stepFx.lanes.length === 0) {
-    add("lanes", "Add at least one attribute lane");
+  if (stepFx.lanes.length === 0 && !stepFx.color) {
+    add("lanes", "Add at least one lane");
     return issues;
   }
 
   const attributes = new Set<string>();
   const stepUids = new Set<string>();
   let dynamic = false;
+  if (stepFx.color) {
+    const color = stepFx.color;
+    validateLaneOverrides(color, "color", add);
+    if (color.steps.length === 0)
+      add("color.steps", "A color lane needs at least one step");
+    dynamic ||= color.steps.length >= 2;
+    color.steps.forEach((step, stepIndex) => {
+      const stepPath = `color.steps.${stepIndex}`;
+      validateStepShape(step, stepPath, stepUids, add);
+      for (const component of ["red", "green", "blue"] as const) {
+        const value = step.color[component];
+        if (!Number.isFinite(value) || value < 0 || value > 1)
+          add(
+            `${stepPath}.color.${component}`,
+            "Color components must be between 0% and 100%",
+          );
+      }
+    });
+  }
   stepFx.lanes.forEach((lane, laneIndex) => {
     const lanePath = `lanes.${laneIndex}`;
     const attribute = JSON.stringify(lane.attribute);
@@ -572,17 +602,7 @@ export function validateStepFxDraft(stepFx: types.StepFx): StepFxDraftIssue[] {
         "Each attribute may appear in only one lane",
       );
     attributes.add(attribute);
-    if (
-      lane.timing_override &&
-      durationToSeconds(lane.timing_override.beat_duration) <= 0
-    ) {
-      add(
-        `${lanePath}.timing_override.beat_duration`,
-        "Beat duration must be greater than zero",
-      );
-    }
-    if (lane.phase_override)
-      validatePhase(lane.phase_override, `${lanePath}.phase_override`, add);
+    validateLaneOverrides(lane, lanePath, add);
     if (!lane.absolute && !lane.relative)
       add(lanePath, "A lane needs absolute or relative steps");
 
@@ -595,34 +615,7 @@ export function validateStepFxDraft(stepFx: types.StepFx): StepFxDraftIssue[] {
       dynamic ||= track.steps.length >= 2;
       track.steps.forEach((step, stepIndex) => {
         const stepPath = `${path}.steps.${stepIndex}`;
-        if (!validUuid(step.uid) || stepUids.has(step.uid))
-          add(`${stepPath}.uid`, "Step identities must be valid and unique");
-        stepUids.add(step.uid);
-        if (!Number.isFinite(step.width_beats) || step.width_beats <= 0)
-          add(
-            `${stepPath}.width_beats`,
-            "Width must be finite and greater than zero",
-          );
-        if (
-          !Number.isFinite(step.transition.start) ||
-          step.transition.start < 0 ||
-          step.transition.start > 1
-        )
-          add(
-            `${stepPath}.transition.start`,
-            "Ramp start must be between 0% and 100%",
-          );
-        if (
-          !Number.isFinite(step.transition.end) ||
-          step.transition.end < 0 ||
-          step.transition.end > 1
-        )
-          add(
-            `${stepPath}.transition.end`,
-            "Ramp end must be between 0% and 100%",
-          );
-        if (step.transition.start > step.transition.end)
-          add(`${stepPath}.transition`, "Ramp start must not exceed its end");
+        validateStepShape(step, stepPath, stepUids, add);
         const relative =
           step.target.type === "Relative" ||
           step.target.type === "RelativePercent";
@@ -633,28 +626,79 @@ export function validateStepFxDraft(stepFx: types.StepFx): StepFxDraftIssue[] {
               ? "Relative steps require relative targets"
               : "Absolute steps require absolute targets",
           );
-        if (step.curve.type === "Bezier") {
-          const points = [
-            step.curve.data.cp1.x,
-            step.curve.data.cp1.y,
-            step.curve.data.cp2.x,
-            step.curve.data.cp2.y,
-          ];
-          if (
-            points.some(
-              (value) => !Number.isFinite(value) || value < 0 || value > 1,
-            )
-          )
-            add(
-              `${stepPath}.curve`,
-              "Curve control points must be between zero and one",
-            );
-        }
       });
     });
   });
-  if (!dynamic) add("lanes", "At least one attribute needs two or more steps");
+  if (!dynamic) add("lanes", "At least one lane needs two or more steps");
   return issues;
+}
+
+/** Validates a lane's optional timing and phase overrides with backend-compatible paths. */
+function validateLaneOverrides(
+  lane: Pick<types.FxLane, "timing_override" | "phase_override">,
+  lanePath: string,
+  add: (path: string, message: string) => void,
+): void {
+  if (
+    lane.timing_override &&
+    durationToSeconds(lane.timing_override.beat_duration) <= 0
+  ) {
+    add(
+      `${lanePath}.timing_override.beat_duration`,
+      "Beat duration must be greater than zero",
+    );
+  }
+  if (lane.phase_override)
+    validatePhase(lane.phase_override, `${lanePath}.phase_override`, add);
+}
+
+/** Validates the identity, width, transition window, and curve shared by every step kind. */
+function validateStepShape(
+  step: StepFxSequenceStep & Pick<types.FxStep, "transition" | "curve">,
+  stepPath: string,
+  stepUids: Set<string>,
+  add: (path: string, message: string) => void,
+): void {
+  if (!validUuid(step.uid) || stepUids.has(step.uid))
+    add(`${stepPath}.uid`, "Step identities must be valid and unique");
+  stepUids.add(step.uid);
+  if (!Number.isFinite(step.width_beats) || step.width_beats <= 0)
+    add(
+      `${stepPath}.width_beats`,
+      "Width must be finite and greater than zero",
+    );
+  if (
+    !Number.isFinite(step.transition.start) ||
+    step.transition.start < 0 ||
+    step.transition.start > 1
+  )
+    add(
+      `${stepPath}.transition.start`,
+      "Ramp start must be between 0% and 100%",
+    );
+  if (
+    !Number.isFinite(step.transition.end) ||
+    step.transition.end < 0 ||
+    step.transition.end > 1
+  )
+    add(`${stepPath}.transition.end`, "Ramp end must be between 0% and 100%");
+  if (step.transition.start > step.transition.end)
+    add(`${stepPath}.transition`, "Ramp start must not exceed its end");
+  if (step.curve.type === "Bezier") {
+    const points = [
+      step.curve.data.cp1.x,
+      step.curve.data.cp1.y,
+      step.curve.data.cp2.x,
+      step.curve.data.cp2.y,
+    ];
+    if (
+      points.some((value) => !Number.isFinite(value) || value < 0 || value > 1)
+    )
+      add(
+        `${stepPath}.curve`,
+        "Curve control points must be between zero and one",
+      );
+  }
 }
 
 /** Reports whether a reconnect may recreate an editor-owned preview session. */

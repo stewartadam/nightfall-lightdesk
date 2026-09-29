@@ -32,6 +32,7 @@ function previewStatus(
     elapsed: { secs: 1, nanos: 0 },
     elapsed_rate: 1,
     track_phase_offsets: [],
+    color_phase_offset: 0,
     ...options,
   };
 }

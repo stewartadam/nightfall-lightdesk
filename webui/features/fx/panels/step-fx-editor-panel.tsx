@@ -18,6 +18,7 @@ import { CaretRightIcon } from "@squidlab/phosphor-solid/caret-right";
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { DivideIcon } from "@squidlab/phosphor-solid/divide";
 import { MouseScrollIcon } from "@squidlab/phosphor-solid/mouse-scroll";
+import { PaletteIcon } from "@squidlab/phosphor-solid/palette";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
@@ -39,7 +40,6 @@ import {
 import { Dynamic } from "solid-js/web";
 import {
   DropdownMenu,
-  DropdownMenuItem,
   DropdownMenuSeparator,
 } from "../../../components/ui/dropdown-menu";
 import {
@@ -70,6 +70,7 @@ import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelTabStatus } from "../../../lib/panel-tab-status";
 import { resolveSpatialSelection } from "../../../lib/wasm-bridge";
 import {
+  blueprints as blueprintsStore,
   fixtures as fixturesStore,
   groups as groupsStore,
 } from "../../../state/appStores";
@@ -79,7 +80,12 @@ import { FxDirection, type SpatialSelection } from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
 import { SpatialSelectionField } from "../../selection";
 import { FxAttributePicker } from "../components/fx-attribute-picker";
+import { StepFxColorLaneEditor } from "../components/step-fx-color-lane";
 import { StepFxPhaseField } from "../components/step-fx-phase-field";
+import {
+  StepFxCurveSelect,
+  StepFxOverridesControl,
+} from "../components/step-fx-step-controls";
 import {
   StepFxWaveform,
   type StepFxWaveformDragTarget,
@@ -87,6 +93,13 @@ import {
 } from "../components/step-fx-waveform";
 import { createStepFxEditorController } from "../controllers/step-fx-editor-controller";
 import { getTargetFixtureAttributes } from "../model/fixture-attributes";
+import {
+  addStepFxColorLane,
+  type StepFxColorLaneShadow,
+  stepFxColorCycleGradient,
+  stepFxColorLaneShadows,
+  stepFxLanesReplacedByColor,
+} from "../model/step-fx-color-model";
 import {
   createDefaultStepFxLane,
   createDefaultStepFxTrack,
@@ -161,6 +174,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
   log.trace("mounting");
   const $fixtures = useStore(fixturesStore);
   const $groups = useStore(groupsStore);
+  const $blueprints = useStore(blueprintsStore);
   const initialDraft = props.initialDraft;
   const initialUid = (
     props.initialStepFxUid ??
@@ -192,6 +206,9 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     onCleanDeletion: props.panelApi ? () => props.panelApi?.close() : undefined,
   });
   const [selectedLane, setSelectedLane] = createSignal(0);
+  const [colorLaneSelected, setColorLaneSelected] = createSignal(false);
+  const [colorLaneReplacement, setColorLaneReplacement] =
+    createSignal<string[]>();
   const [trackKind, setTrackKind] = createSignal<StepFxTrackKind>(
     initialViewport.trackKind,
   );
@@ -270,6 +287,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
   /** Switches tracks while restoring that track's most recent row selection. */
   const selectTrack = (lane: number, kind: StepFxTrackKind): void => {
     batch(() => {
+      setColorLaneSelected(false);
       setSelectedLane(lane);
       setTrackKind(kind);
       setSelectedStepUidsSignal(
@@ -364,11 +382,65 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     return byPath;
   });
 
-  /** Returns the currently selected lane after clamping structural edits. */
+  /** Returns the color lane while it is selected, or when it is the only lane. */
+  const activeColorLane = createMemo(() =>
+    colorLaneSelected() || (draft()?.lanes.length ?? 0) === 0
+      ? draft()?.color
+      : undefined,
+  );
+
+  /** Returns the selected attribute lane after clamping structural edits, unless the color lane is active. */
   const activeLane = createMemo(() => {
+    if (activeColorLane()) return undefined;
     const lanes = draft()?.lanes ?? [];
     return lanes[Math.min(selectedLane(), Math.max(lanes.length - 1, 0))];
   });
+
+  /** Reports, per attribute lane, how many targeted elements the color lane controls instead. */
+  const colorLaneShadows = createMemo(() => {
+    const current = draft();
+    return current
+      ? stepFxColorLaneShadows(
+          current,
+          Object.values($fixtures()),
+          targetFixtureRefs(),
+        )
+      : new Map<string, StepFxColorLaneShadow>();
+  });
+
+  /** Adds the color lane, first asking to replace any primary-emitter attribute lanes. */
+  const requestColorLane = (): void => {
+    const current = draft();
+    if (!current || current.color) return;
+    const replaced = stepFxLanesReplacedByColor(current).map((lane) =>
+      stepFxAttributeName(lane.attribute),
+    );
+    if (replaced.length > 0) setColorLaneReplacement(replaced);
+    else addColorLane();
+  };
+
+  /** Adds and selects the default color lane, removing the lanes it replaces. */
+  const addColorLane = (): void => {
+    setColorLaneReplacement(undefined);
+    mutate((next) => {
+      const updated = addStepFxColorLane(next);
+      next.lanes = updated.lanes;
+      next.color = updated.color;
+    });
+    trackSelections.clear();
+    batch(() => {
+      setSelectedLane(0);
+      setColorLaneSelected(true);
+    });
+  };
+
+  /** Removes the color lane and returns to the first attribute lane. */
+  const removeColorLane = (): void => {
+    mutate((next) => {
+      next.color = undefined;
+    });
+    selectTrack(0, trackKind());
+  };
 
   /** Returns the absolute or relative track selected in the sheet. */
   const activeTrack = createMemo(() => {
@@ -1411,20 +1483,79 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                       if (!existing.has(attribute)) addLane(attribute);
                   }}
                 />
+                <Show when={!current().color}>
+                  <button
+                    type="button"
+                    class={`${BUTTON_CLASS} mt-2 flex w-full items-center justify-center gap-1.5`}
+                    onClick={requestColorLane}
+                    data-step-fx-add-color-lane
+                  >
+                    <PaletteIcon class="size-4" aria-hidden />
+                    Add color lane
+                  </button>
+                </Show>
                 <div
                   class="mt-3 flex flex-col gap-1"
                   role="tablist"
                   aria-label="Step FX attributes"
                   aria-orientation="vertical"
                 >
+                  <Show when={current().color}>
+                    {(color) => (
+                      <div
+                        role="presentation"
+                        class="group flex items-center rounded p-0.5 transition-colors"
+                        classList={{
+                          "bg-blue-600 text-white": Boolean(activeColorLane()),
+                          "bg-gray-800 text-gray-400": !activeColorLane(),
+                        }}
+                        data-step-fx-color-lane-tab
+                      >
+                        <button
+                          type="button"
+                          id={`step-fx-${previewSessionId}-color-tab`}
+                          role="tab"
+                          aria-selected={Boolean(activeColorLane())}
+                          aria-controls={`step-fx-${previewSessionId}-track-panel`}
+                          class="min-w-0 flex-1 rounded px-2 py-1.5 text-left text-gray-200 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          onClick={() => setColorLaneSelected(true)}
+                        >
+                          <div class="truncate text-sm">Color</div>
+                          <div
+                            class="mt-1 h-1.5 rounded-full"
+                            style={{
+                              background: stepFxColorCycleGradient(
+                                color(),
+                                current().direction,
+                                0,
+                                $blueprints(),
+                                32,
+                              ),
+                            }}
+                            aria-hidden
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Remove Color lane"
+                          class="self-stretch rounded px-2 text-gray-300 hover:bg-black/15 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          onClick={removeColorLane}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </Show>
                   <For each={current().lanes}>
                     {(lane, index) => (
                       <div
                         role="presentation"
                         class="group flex items-center rounded p-0.5 transition-colors"
                         classList={{
-                          "bg-blue-600 text-white": selectedLane() === index(),
+                          "bg-blue-600 text-white":
+                            !activeColorLane() && selectedLane() === index(),
                           "bg-gray-800 text-gray-400":
+                            Boolean(activeColorLane()) ||
                             selectedLane() !== index(),
                         }}
                       >
@@ -1432,7 +1563,9 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                           type="button"
                           id={`step-fx-${previewSessionId}-attribute-tab-${index()}`}
                           role="tab"
-                          aria-selected={selectedLane() === index()}
+                          aria-selected={
+                            !activeColorLane() && selectedLane() === index()
+                          }
                           aria-controls={`step-fx-${previewSessionId}-track-panel`}
                           class="min-w-0 flex-1 rounded px-2 py-1.5 text-left text-gray-200 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                           onClick={() => {
@@ -1458,6 +1591,28 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                               ? `R ${lane.relative.steps.length}`
                               : ""}
                           </div>
+                          <Show
+                            when={colorLaneShadowNotice(
+                              colorLaneShadows().get(
+                                stepFxAttributeName(lane.attribute),
+                              ),
+                            )}
+                          >
+                            {(notice) => (
+                              <div
+                                class="mt-0.5 flex items-start gap-1 text-[11px] leading-tight text-amber-300"
+                                data-step-fx-color-shadow={stepFxAttributeName(
+                                  lane.attribute,
+                                )}
+                              >
+                                <WarningIcon
+                                  class="mt-px size-3 shrink-0"
+                                  aria-hidden
+                                />
+                                <span>{notice()}</span>
+                              </div>
+                            )}
+                          </Show>
                         </button>
                         <button
                           type="button"
@@ -1477,9 +1632,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                 id={`step-fx-${previewSessionId}-track-panel`}
                 role="tabpanel"
                 aria-labelledby={
-                  current().lanes.length > 0
-                    ? `step-fx-${previewSessionId}-attribute-tab-${selectedLane()}`
-                    : undefined
+                  activeColorLane()
+                    ? `step-fx-${previewSessionId}-color-tab`
+                    : current().lanes.length > 0
+                      ? `step-fx-${previewSessionId}-attribute-tab-${selectedLane()}`
+                      : undefined
                 }
                 aria-busy={contributionSlidePhase() !== "idle"}
                 class="relative flex min-h-0 min-w-0 flex-col overflow-hidden"
@@ -1487,12 +1644,36 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                 data-contribution-slide-phase={contributionSlidePhase()}
                 data-contribution-slide-direction={contributionSlideDirection()}
               >
+                <Show when={activeColorLane()}>
+                  {(colorLane) => (
+                    <StepFxColorLaneEditor
+                      stepFx={current()}
+                      lane={colorLane()}
+                      selectionLabels={phaseMarkers().map(
+                        (marker) => marker.members,
+                      )}
+                      blueprints={$blueprints()}
+                      issuesByPath={issuesByPath()}
+                      overridesOpen={openPopover() === "overrides"}
+                      onOverridesOpenChange={(isOpen) =>
+                        setEditorPopoverOpen("overrides", isOpen)
+                      }
+                      onChange={(lane) =>
+                        mutate((next) => {
+                          next.color = lane;
+                        })
+                      }
+                    />
+                  )}
+                </Show>
                 <Show
-                  when={activeLane()}
+                  when={!activeColorLane() && activeLane()}
                   fallback={
-                    <div class="m-auto text-sm text-neutral-500">
-                      Add an attribute lane to begin.
-                    </div>
+                    <Show when={!activeColorLane()}>
+                      <div class="m-auto text-sm text-neutral-500">
+                        Add an attribute lane to begin.
+                      </div>
+                    </Show>
                   }
                 >
                   {(lane) => (
@@ -1978,6 +2159,16 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
         onCancel={() => setIsCloseConfirmOpen(false)}
         onConfirm={confirmClose}
       />
+      <DeleteConfirmModal
+        isOpen={Boolean(colorLaneReplacement())}
+        title={`Replace the ${formatLaneList(colorLaneReplacement() ?? [])} ${
+          (colorLaneReplacement()?.length ?? 0) === 1 ? "lane" : "lanes"
+        } with a Color lane?`}
+        message="The Color lane drives every color emitter on the fixtures it covers. The replaced lanes and their steps are removed."
+        confirmLabel="Replace"
+        onCancel={() => setColorLaneReplacement(undefined)}
+        onConfirm={addColorLane}
+      />
     </div>
   );
 }
@@ -2134,100 +2325,6 @@ function StepFxStepPager(props: {
   );
 }
 
-const STEP_FX_CURVE_NAMES = [
-  "Snap",
-  "Linear",
-  "Ease",
-  "Ease In",
-  "Ease Out",
-] as const;
-
-type StepFxCurveName = (typeof STEP_FX_CURVE_NAMES)[number];
-
-/** Renders an icon-capable selector for one authored transition curve. */
-function StepFxCurveSelect(props: {
-  stepNumber: number;
-  curve: types.CurveType;
-  onChange: (curve: types.CurveType) => void;
-}) {
-  /** Resolves the persisted curve to the selector's supported visual preset. */
-  const selectedName = createMemo(() => curveName(props.curve));
-
-  return (
-    <DropdownMenu
-      align="end"
-      triggerLabel={`Step ${props.stepNumber} curve`}
-      triggerClass="block w-full min-w-0"
-      trigger={
-        <span
-          class={`${FIELD_CLASS} flex w-full min-w-0 items-center gap-1 px-1.5 text-left text-xs`}
-        >
-          <StepFxCurveIcon
-            name={selectedName()}
-            class="size-4 shrink-0 text-neutral-400"
-          />
-          <span class="min-w-0 flex-1 truncate">{selectedName()}</span>
-          <CaretDownIcon class="size-3 shrink-0 text-neutral-400" aria-hidden />
-        </span>
-      }
-    >
-      <div class="py-0.5" data-menu-kind="step-fx-curve">
-        <For each={STEP_FX_CURVE_NAMES}>
-          {(name) => (
-            <DropdownMenuItem
-              onClick={() => props.onChange(curveFromName(name))}
-            >
-              <span
-                class="flex min-w-0 flex-1 items-center gap-2"
-                classList={{ "text-sky-300": selectedName() === name }}
-                data-step-fx-curve-option={name}
-              >
-                <StepFxCurveIcon
-                  name={name}
-                  class="size-4 shrink-0 text-current"
-                />
-                <span>{name}</span>
-              </span>
-            </DropdownMenuItem>
-          )}
-        </For>
-      </div>
-    </DropdownMenu>
-  );
-}
-
-/** Draws the normalized interpolation shape represented by one curve preset. */
-function StepFxCurveIcon(props: { name: StepFxCurveName; class?: string }) {
-  return (
-    <svg
-      class={props.class ?? "size-4"}
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-      data-step-fx-curve-icon={props.name}
-    >
-      <path
-        d={stepFxCurveIconPath(props.name)}
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-      <circle cx="2" cy="14" r="1" fill="currentColor" />
-      <circle cx="14" cy="2" r="1" fill="currentColor" />
-    </svg>
-  );
-}
-
-/** Returns compact SVG geometry that previews a supported interpolation curve. */
-function stepFxCurveIconPath(name: StepFxCurveName): string {
-  if (name === "Snap") return "M2 14 H8 V2 H14";
-  if (name === "Linear") return "M2 14 L14 2";
-  if (name === "Ease In") return "M2 14 C10 14 13 10 14 2";
-  if (name === "Ease Out") return "M2 14 C3 6 6 2 14 2";
-  return "M2 14 C8 14 8 2 14 2";
-}
-
 /** Renders absolute and relative contribution tabs beside the active step controls. */
 function StepFxContributionTabs(props: {
   lane: types.FxLane;
@@ -2304,46 +2401,6 @@ function StepFxContributionTabs(props: {
           </button>
         </Show>
       </div>
-    </div>
-  );
-}
-
-/** Renders lane-specific overrides at the end of the attribute Step bar. */
-function StepFxOverridesControl(props: {
-  lane: types.FxLane;
-  overall: types.StepFx;
-  open: boolean;
-  onOpenChange: (isOpen: boolean) => void;
-  onLaneChange: (lane: types.FxLane) => void;
-}) {
-  return (
-    <div class="flex shrink-0 items-center gap-1">
-      <DropdownMenu
-        placement="below"
-        align="end"
-        triggerLabel="Overrides"
-        open={props.open}
-        onOpenChange={props.onOpenChange}
-        trigger={
-          <span class="inline-flex h-8 items-center gap-1 rounded border border-neutral-700 bg-neutral-800 px-2 text-xs text-neutral-200 hover:bg-neutral-700">
-            Overrides
-            <CaretDownIcon class="size-3" aria-hidden />
-          </span>
-        }
-      >
-        <div
-          class="w-80 p-2"
-          role="region"
-          aria-label="Overrides"
-          data-menu-kind="step-fx-overrides"
-        >
-          <AdvancedLaneControls
-            lane={props.lane}
-            overall={props.overall}
-            onChange={props.onLaneChange}
-          />
-        </div>
-      </DropdownMenu>
     </div>
   );
 }
@@ -3249,93 +3306,6 @@ function previewIndexTitle(
   return `Preview index ${index + 1}: ${members}; phase offset ${formatDegrees(offset)}`;
 }
 
-/** Edits optional timing and phase overrides for the active lane. */
-function AdvancedLaneControls(props: {
-  lane: types.FxLane;
-  overall: types.StepFx;
-  onChange: (lane: types.FxLane) => void;
-}) {
-  /** Publishes an independently cloned lane update. */
-  const update = (edit: (lane: types.FxLane) => void): void => {
-    const lane = structuredClone(props.lane);
-    edit(lane);
-    props.onChange(lane);
-  };
-  return (
-    <div class="space-y-1 text-xs">
-      <div
-        class="grid grid-cols-[minmax(0,1fr)_8.5rem] items-center gap-2 rounded px-1 py-1"
-        data-step-fx-lane-override="speed"
-        role="group"
-        aria-label="Speed override"
-      >
-        <label class="flex min-w-0 items-center gap-2 text-neutral-200">
-          <Checkbox
-            checked={Boolean(props.lane.timing_override)}
-            onChange={(event) =>
-              update(
-                (lane) =>
-                  (lane.timing_override = event.currentTarget.checked
-                    ? structuredClone(props.overall.timing)
-                    : undefined),
-              )
-            }
-          />
-          <span class="whitespace-nowrap">Override speed</span>
-        </label>
-        <Input
-          density="compact"
-          aria-label="Lane BPM"
-          type="number"
-          min="0.001"
-          disabled={!props.lane.timing_override}
-          class={`${FIELD_CLASS} w-full min-w-0`}
-          value={stepFxSpeedValue(
-            props.lane.timing_override ?? props.overall.timing,
-            "BPM",
-          )}
-          onChange={(event) => {
-            const next = stepFxTimingFromSpeed(
-              Number(event.currentTarget.value),
-              "BPM",
-            );
-            if (next) update((lane) => (lane.timing_override = next));
-          }}
-        />
-      </div>
-      <div
-        class="grid grid-cols-[minmax(0,1fr)_8.5rem] items-start gap-2 rounded px-1 py-1"
-        data-step-fx-lane-override="start-position"
-        role="group"
-        aria-label="Start position override"
-      >
-        <label class="flex min-w-0 items-center gap-2 pt-2 text-neutral-200">
-          <Checkbox
-            checked={Boolean(props.lane.phase_override)}
-            onChange={(event) =>
-              update(
-                (lane) =>
-                  (lane.phase_override = event.currentTarget.checked
-                    ? structuredClone(props.overall.phase)
-                    : undefined),
-              )
-            }
-          />
-          <span class="whitespace-nowrap">Override start position</span>
-        </label>
-        <StepFxPhaseField
-          ariaLabel="Lane start position"
-          phase={props.lane.phase_override ?? props.overall.phase}
-          disabled={!props.lane.phase_override}
-          onChange={(nextPhase) =>
-            update((lane) => (lane.phase_override = nextPhase))
-          }
-        />
-      </div>
-    </div>
-  );
-}
-
 /** Returns the authored numeric component from any generated ParameterValue variant. */
 function stepFxNumericTarget(target: types.ParameterValue): number {
   return target.type === "Absolute" || target.type === "AbsolutePercent"
@@ -3343,33 +3313,20 @@ function stepFxNumericTarget(target: types.ParameterValue): number {
     : target.data.offset;
 }
 
-/** Returns the constrained editor label for a persisted transition curve. */
-function curveName(curve: types.CurveType): StepFxCurveName {
-  if (curve.type !== "Bezier") return curve.type;
-  const { cp1, cp2 } = curve.data;
-  if (cp1.x === 0.42 && cp2.x === 1) return "Ease In";
-  if (cp1.x === 0 && cp2.x === 0.58) return "Ease Out";
-  return "Ease";
+/** Joins lane names as readable prose, such as "Red, Green and Blue". */
+function formatLaneList(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** Creates one supported backend transition curve from its sheet label. */
-function curveFromName(name: StepFxCurveName): types.CurveType {
-  if (name === "Snap") return { type: "Snap", data: {} };
-  if (name === "Linear") return { type: "Linear", data: {} };
-  if (name === "Ease In")
-    return {
-      type: "Bezier",
-      data: { cp1: { x: 0.42, y: 0 }, cp2: { x: 1, y: 1 } },
-    };
-  if (name === "Ease Out")
-    return {
-      type: "Bezier",
-      data: { cp1: { x: 0, y: 0 }, cp2: { x: 0.58, y: 1 } },
-    };
-  return {
-    type: "Bezier",
-    data: { cp1: { x: 0.42, y: 0 }, cp2: { x: 0.58, y: 1 } },
-  };
+/** Describes how much of an attribute lane the color lane takes over, if any. */
+function colorLaneShadowNotice(
+  shadow: StepFxColorLaneShadow | undefined,
+): string | undefined {
+  if (!shadow || shadow.shadowed === 0) return undefined;
+  if (shadow.shadowed === shadow.total)
+    return "No effect: the Color lane controls this on every target";
+  return `Color lane controls this on ${shadow.shadowed} of ${shadow.total} elements`;
 }
 
 /** Compares string sets without relying on insertion order. */
