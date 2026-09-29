@@ -55,29 +55,31 @@ pub fn apply_vdim(
     mut param_query: Query<InstanceMut<Parameter>>,
     data_provider: Res<FixtureDataProviderExt>,
 ) {
-    // Collect vdim parameters and their corrected values.
-    // We collect first because we'll mutably borrow params later.
-    let vdim_entries: Vec<_> = param_query
+    // Collect the color parameters to scale first because we'll mutably borrow params later.
+    // Each vdim parameter costs one reverse lookup plus a scan of its element's few parameters.
+    let parameter_index = data_provider.parameter_index();
+    let scaled_parameters: Vec<_> = param_query
         .iter()
         .filter(|p| p.metadata.attribute == Attribute::VirtualIntensity)
         .filter_map(|p| {
-            let fixture_ref = data_provider.try_fixture_ref_for_parameter(&p.instance())?;
+            let location = parameter_index.location(&p.instance())?;
             let vdim_normalized = (p.values.current_value / p.metadata.max).clamp(0.0, 1.0);
             let corrected = gamma_correct(vdim_normalized, DEFAULT_GAMMA);
-            Some((fixture_ref, corrected))
+            Some((&location.element, corrected))
+        })
+        .flat_map(|(element, corrected_vdim)| {
+            parameter_index
+                .element_parameters(element)
+                .iter()
+                .filter(|(attribute, _)| VDIM_AFFECTED_ATTRIBUTES.contains(attribute))
+                .map(move |(_, parameter)| (*parameter, corrected_vdim))
         })
         .collect();
 
     // Apply vdim to color channels on same element
-    for (fixture_ref, corrected_vdim) in vdim_entries {
-        for attr in VDIM_AFFECTED_ATTRIBUTES {
-            if let Some(param_instance) =
-                data_provider.try_parameter_for_element_attribute(&fixture_ref, attr)
-                && let Ok(mut param) = param_query.get_mut(param_instance.entity())
-            {
-                let scaled = param.values.current_value * corrected_vdim;
-                param.values.current_value = scaled;
-            }
+    for (parameter, corrected_vdim) in scaled_parameters {
+        if let Ok(mut param) = param_query.get_mut(parameter.entity()) {
+            param.values.current_value *= corrected_vdim;
         }
     }
 }

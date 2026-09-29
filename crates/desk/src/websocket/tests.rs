@@ -537,8 +537,8 @@ fn computed_transition_state_uses_compositing_context_per_transition_start_posit
         fixture_uid,
         index: Some(1),
     };
-    let mut param_map = bimap::BiMap::new();
-    param_map.insert((fixture_ref, Attribute::Red), parameter);
+    let mut param_index = ParameterIndex::default();
+    param_index.insert(fixture_ref, Attribute::Red, parameter);
 
     let mut layer = Layer::new("clocked".to_owned(), Priority::default());
     layer.absolute.insert(
@@ -567,7 +567,7 @@ fn computed_transition_state_uses_compositing_context_per_transition_start_posit
     let transition_state = computed_transition_fixture_state(
         &layer,
         &output,
-        &param_map,
+        &param_index,
         &parameters_query,
         false,
         Some(&compositing_context),

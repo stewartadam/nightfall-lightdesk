@@ -22,6 +22,7 @@ pub mod geometry;
 pub mod input_apply;
 pub mod library;
 pub mod parameter;
+pub mod parameter_index;
 pub mod physical;
 pub mod placement;
 pub mod selection;
@@ -84,6 +85,7 @@ pub mod prelude {
     };
     pub use crate::input_apply::{ParameterAssertion, ParameterAssertionSource};
     pub use crate::parameter::{Parameter, ParameterValues};
+    pub use crate::parameter_index::{ParameterIndex, ParameterLocation};
     pub use crate::physical::{BeamType, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};

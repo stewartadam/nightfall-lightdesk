@@ -8,6 +8,7 @@
 
 //! Systems for step-based FX evaluation
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
@@ -33,17 +34,89 @@ type StepFxEvaluationData = (
     Option<&'static mut StepFxLanePhaseOffsets>,
 );
 
+/// A step FX selection resolved against the rig, kept while its inputs are unchanged.
+struct CachedStepFxSelection {
+    /// Selection definition the entry was resolved from.
+    source: SpatialSelection,
+    /// Resolved selection filtered down to fixtures that exist.
+    resolved: ResolvedSelection,
+}
+
+/// Resolved step FX selections keyed by active FX entity.
+///
+/// Resolution depends only on the selection definition, the patched fixtures and the groups, so
+/// entries stay valid until the definition changes or either data provider changes.
+#[derive(Default)]
+pub struct StepFxSelectionCache {
+    entries: HashMap<Entity, CachedStepFxSelection>,
+}
+
+impl StepFxSelectionCache {
+    /// Returns the resolved selection for `entity`, resolving again only when `source` changed.
+    fn resolve(
+        &mut self,
+        entity: Entity,
+        source: &SpatialSelection,
+        selection_resolver: &SpatialSelectionResolver,
+        fixture_data_provider: &FixtureDataProviderExt,
+    ) -> &ResolvedSelection {
+        let entry = self
+            .entries
+            .entry(entity)
+            .and_modify(|cached| {
+                if cached.source != *source {
+                    *cached = resolve_step_fx_selection(
+                        source,
+                        selection_resolver,
+                        fixture_data_provider,
+                    );
+                }
+            })
+            .or_insert_with(|| {
+                resolve_step_fx_selection(source, selection_resolver, fixture_data_provider)
+            });
+        &entry.resolved
+    }
+}
+
+/// Resolves a step FX selection and drops fixtures that no longer exist.
+fn resolve_step_fx_selection(
+    source: &SpatialSelection,
+    selection_resolver: &SpatialSelectionResolver,
+    fixture_data_provider: &FixtureDataProviderExt,
+) -> CachedStepFxSelection {
+    CachedStepFxSelection {
+        source: source.clone(),
+        resolved: filter_existing_selection(
+            &selection_resolver.resolve(source).into_value(),
+            fixture_data_provider,
+        ),
+    }
+}
+
 /// Evaluates all active step-based FX and generates layers for compositor
+///
+/// Resolved selections are cached per active FX and resolved again only when the FX selection,
+/// the patched fixtures or the groups change, since resolution dominates evaluation cost.
 pub fn evaluate_step_fx(
     fx_query: Query<&StepFx>,
     preview_fx_query: Query<&PreviewStepFxDefinition>,
     mut active_fx_query: Query<StepFxEvaluationData, Without<ReleaseMarker>>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
+    group_data_provider: Res<DataProvider<Group>>,
     blueprint_data_provider: Res<DataProvider<Blueprint>>,
     parameter_query: Query<&Parameter>,
     selection_resolver: SpatialSelectionResolver,
+    mut selection_cache: Local<StepFxSelectionCache>,
     mut commands: Commands,
 ) {
+    if fixture_data_provider.is_changed() || group_data_provider.is_changed() {
+        selection_cache.entries.clear();
+    }
+    selection_cache
+        .entries
+        .retain(|entity, _| active_fx_query.contains(*entity));
+
     for (entity, active_fx, clock, mut lane_phase_offsets) in active_fx_query.iter_mut() {
         if !active_fx.is_playing {
             continue;
@@ -75,9 +148,11 @@ pub fn evaluate_step_fx(
             continue;
         };
 
-        let selection = filter_existing_selection(
-            &selection_resolver.resolve(&step_fx.selection).into_value(),
-            fixture_data_provider.as_ref(),
+        let selection = selection_cache.resolve(
+            entity,
+            &step_fx.selection,
+            &selection_resolver,
+            &fixture_data_provider,
         );
         if selection.is_empty() {
             tracing::warn!(
@@ -126,7 +201,7 @@ pub fn evaluate_step_fx(
                                     span_index,
                                     span_count,
                                     selection_index.invert,
-                                    &selection,
+                                    selection,
                                     &fixture_data_provider,
                                     &blueprint_data_provider,
                                     &parameter_query,
@@ -146,7 +221,7 @@ pub fn evaluate_step_fx(
                     span_index,
                     span_count,
                     selection_index.invert,
-                    &selection,
+                    selection,
                     &fixture_data_provider,
                     &blueprint_data_provider,
                     &parameter_query,
@@ -460,6 +535,113 @@ mod tests {
         drop(fixtures);
 
         (fixture_ref, parameter)
+    }
+
+    /// Spawns a playing Step FX in an app that keeps the evaluator (and its selection cache) across
+    /// updates, returning the definition and active entities.
+    fn schedule_cached_step_fx(app: &mut App, step_fx: StepFx) -> (Entity, Entity) {
+        app.add_systems(bevy_app::Update, evaluate_step_fx);
+        let fx_entity = app.world_mut().spawn(step_fx).id();
+        let active_entity = app
+            .world_mut()
+            .spawn(ActiveStepFx {
+                fx_entity,
+                priority: Priority::default(),
+                rate: 1.0,
+                is_playing: true,
+            })
+            .id();
+        (fx_entity, active_entity)
+    }
+
+    /// Returns the entities of the parameters written by the active Step FX layer.
+    fn layer_parameters(app: &App, active_entity: Entity) -> Vec<Entity> {
+        app.world()
+            .entity(active_entity)
+            .get::<Layer>()
+            .expect("active Step FX should receive a generated layer")
+            .absolute
+            .keys()
+            .map(|parameter| parameter.entity())
+            .collect()
+    }
+
+    /// Stores group 1 selecting exactly `fixture_ref`, replacing any earlier group 1.
+    fn store_group(app: &mut App, group_uid: uuid::Uuid, fixture_ref: FixtureRef) {
+        let mut groups = app.world_mut().resource_mut::<DataProvider<Group>>();
+        let _ = groups.remove(&group_uid);
+        groups
+            .add(Group {
+                identifiers: Identifiers {
+                    id: 1,
+                    uid: group_uid,
+                    label: "group".to_string(),
+                },
+                selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
+                description: String::new(),
+            })
+            .expect("test group should be stored");
+    }
+
+    /// Verifies a cached selection is resolved again when the Step FX selection is edited.
+    #[test]
+    fn evaluate_step_fx_re_resolves_selection_after_definition_change() {
+        let mut app = step_fx_test_app();
+        let (first_ref, first_parameter) = add_intensity_fixture(&mut app, 1);
+        let (second_ref, second_parameter) = add_intensity_fixture(&mut app, 2);
+        let (fx_entity, active_entity) = schedule_cached_step_fx(
+            &mut app,
+            intensity_step_fx(
+                ParameterValue::AbsolutePercent { value: 0.25.into() },
+                SpatialSelection::identity(SelectionExpr::Resolved(vec![first_ref])),
+            ),
+        );
+
+        app.update();
+        assert_eq!(
+            layer_parameters(&app, active_entity),
+            vec![first_parameter.entity()]
+        );
+
+        app.world_mut()
+            .get_mut::<StepFx>(fx_entity)
+            .expect("step FX definition should exist")
+            .selection = SpatialSelection::identity(SelectionExpr::Resolved(vec![second_ref]));
+        app.update();
+        assert_eq!(
+            layer_parameters(&app, active_entity),
+            vec![second_parameter.entity()]
+        );
+    }
+
+    /// Verifies a cached group selection follows edits to the group it references.
+    #[test]
+    fn evaluate_step_fx_re_resolves_selection_after_group_change() {
+        let mut app = step_fx_test_app();
+        let (first_ref, first_parameter) = add_intensity_fixture(&mut app, 1);
+        let (second_ref, second_parameter) = add_intensity_fixture(&mut app, 2);
+        let group_uid = uuid::Uuid::new_v4();
+        store_group(&mut app, group_uid, first_ref);
+        let (_, active_entity) = schedule_cached_step_fx(
+            &mut app,
+            intensity_step_fx(
+                ParameterValue::AbsolutePercent { value: 0.25.into() },
+                SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ById(1))),
+            ),
+        );
+
+        app.update();
+        assert_eq!(
+            layer_parameters(&app, active_entity),
+            vec![first_parameter.entity()]
+        );
+
+        store_group(&mut app, group_uid, second_ref);
+        app.update();
+        assert_eq!(
+            layer_parameters(&app, active_entity),
+            vec![second_parameter.entity()]
+        );
     }
 
     /// Creates a minimal app world with resources needed by the Step FX evaluator.

@@ -197,7 +197,7 @@ pub fn send_parameter_state(
 ) {
     let _span = tracing::debug_span!("send_parameter_state").entered();
     let build_start = Instant::now();
-    let param_map = fixture_data_provider.parameter_attribute_map_guard();
+    let param_index = fixture_data_provider.parameter_index();
 
     let mut fixture_state = Vec::new();
     for fixture in fixture_data_provider.inner.iter() {
@@ -216,8 +216,7 @@ pub fn send_parameter_state(
 
             for parameter_metadata in &element.parameters {
                 let attribute = &parameter_metadata.attribute;
-                let Some(parameter_instance) =
-                    param_map.get_by_left(&(fixture_ref.clone(), attribute.clone()))
+                let Some(parameter_instance) = param_index.parameter(&fixture_ref, attribute)
                 else {
                     continue;
                 };
@@ -692,14 +691,14 @@ fn send_input_contribution_trace(
     stale_after_ms: u32,
     broadcaster: &ClientEventSink,
 ) {
-    let param_map = fixture_data_provider.parameter_attribute_map_guard();
+    let param_index = fixture_data_provider.parameter_index();
     let mut parameter_locations: HashMap<Entity, (Uuid, u16)> = HashMap::new();
-    for ((fixture_ref, _), parameter_instance) in param_map.iter() {
+    for (parameter_instance, location) in param_index.iter() {
         parameter_locations
             .entry(parameter_instance.entity())
             .or_insert((
-                fixture_ref.fixture_uid,
-                fixture_ref.index.unwrap_or(1) as u16,
+                location.element.fixture_uid,
+                location.element.index.unwrap_or(1) as u16,
             ));
     }
 
