@@ -254,7 +254,7 @@ pub fn handle_restore_offset_snapshot(
             }
 
             // Update the ECS Parameter components per-element
-            let param_attr_map = data_provider.parameter_attribute_map.read().unwrap();
+            let param_index = data_provider.parameter_index();
             for (element_index, offset) in &snapshot.offsets {
                 let fixture_ref = FixtureRef {
                     fixture_uid: uid,
@@ -262,7 +262,7 @@ pub fn handle_restore_offset_snapshot(
                 };
 
                 if let Some(param_instance) =
-                    param_attr_map.get_by_left(&(fixture_ref, snapshot.attribute.clone()))
+                    param_index.parameter(&fixture_ref, &snapshot.attribute)
                 {
                     if let Ok(mut param) = parameter_query.get_mut(param_instance.entity()) {
                         tracing::trace!(

@@ -163,12 +163,12 @@ fn bench_parameter_lookup(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("element_guard/fixtures={fixture_count}")),
             |b| {
                 b.iter(|| {
-                    let map = provider.parameter_attribute_map_guard();
+                    let index = provider.parameter_index();
                     for parameter in &parameters {
-                        black_box(map.get_by_left(&(
-                            black_box(&parameter.fixture_ref).clone(),
-                            parameter.attribute.clone(),
-                        )));
+                        black_box(
+                            index
+                                .parameter(black_box(&parameter.fixture_ref), &parameter.attribute),
+                        );
                     }
                 });
             },
