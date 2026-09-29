@@ -29,6 +29,8 @@ const SEED_DIR =
   join(tmpdir(), "nightfall-startup-load-timing", SHOWFILE_FOLDER);
 /** Quiet main-thread time required after content loads before a run ends. */
 const QUIET_MS = 2_000;
+/** Time recorded after content loads when a run is profiled. */
+const PROFILE_WINDOW_MS = 8_000;
 
 type StartupTiming = {
   /** Milliseconds from the "Open saved showfile" click to each observed phase. */
@@ -147,6 +149,8 @@ async function installStartupProbe(page: Page): Promise<void> {
         mark("dockVisible", panels > 0 && !veiled);
         const fixtures = (window as any).appStores?.fixtures?.get() ?? {};
         mark("fixturesLoaded", Object.keys(fixtures).length > 0);
+        // Stop sampling once every phase is seen so the probe adds no load while settling.
+        if (Object.keys(state.marks).length === 4) return;
       }
       requestAnimationFrame(tick);
     };
@@ -168,6 +172,8 @@ for (let run = 0; run < RUNS; run++) {
      * Opt-in diagnostic: set NIGHTFALL_LOAD_TIMING=1. Marks are milliseconds
      * after the "Open saved showfile" click. `settled` is the latest of the
      * dock becoming visible, fixtures arriving, and the last long task ending.
+     * NIGHTFALL_LOAD_TIMING_PROFILE=1 also writes a CPU profile and a Chrome
+     * trace of each run for DevTools' Performance panel.
      */
     test(`startup load timing run ${run}`, async ({
       page,
@@ -187,6 +193,21 @@ for (let run = 0; run < RUNS; run++) {
       await expect(picker).toBeVisible({ timeout: 30_000 });
       await expect(picker.getByText(SHOWFILE_NAME).first()).toBeVisible();
       await page.waitForTimeout(1_000);
+      const profiling = process.env.NIGHTFALL_LOAD_TIMING_PROFILE === "1";
+      const cdp = profiling
+        ? await page.context().newCDPSession(page)
+        : undefined;
+      if (cdp) {
+        await cdp.send("Profiler.enable");
+        await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
+        await cdp.send("Profiler.start");
+        await page
+          .context()
+          .browser()
+          ?.startTracing(page, {
+            path: testInfo.outputPath("startup.trace.json"),
+          });
+      }
       await openStartupShowfileIfPrompted(page, {
         showfileName: SHOWFILE_NAME,
       });
@@ -203,19 +224,31 @@ for (let run = 0; run < RUNS; run++) {
           { timeout: 30_000 },
         )
         .toBe(true);
-      // Wait until no long task has run for QUIET_MS.
-      await expect
-        .poll(
-          () =>
-            page.evaluate(() => {
-              const tasks = window.__startupTiming?.longTasks ?? [];
-              const last = tasks.at(-1);
-              const lastEnd = last ? last.start + last.duration : 0;
-              return performance.now() - lastEnd;
-            }),
-          { timeout: 30_000, intervals: [250] },
-        )
-        .toBeGreaterThan(QUIET_MS);
+      // Wait until no long task has run for QUIET_MS. Profiling slows every
+      // frame enough that the main thread may never go quiet, so profiled runs
+      // record a fixed window instead.
+      if (cdp) await page.waitForTimeout(PROFILE_WINDOW_MS);
+      else
+        await expect
+          .poll(
+            () =>
+              page.evaluate(() => {
+                const tasks = window.__startupTiming?.longTasks ?? [];
+                const last = tasks.at(-1);
+                const lastEnd = last ? last.start + last.duration : 0;
+                return performance.now() - lastEnd;
+              }),
+            { timeout: 30_000, intervals: [250] },
+          )
+          .toBeGreaterThan(QUIET_MS);
+      if (cdp) {
+        await page.context().browser()?.stopTracing();
+        const { profile } = await cdp.send("Profiler.stop");
+        await writeFile(
+          testInfo.outputPath("startup.cpuprofile"),
+          JSON.stringify(profile),
+        );
+      }
       const result: StartupTiming = await page.evaluate(() => {
         const state = window.__startupTiming!;
         const clickAt = state.clickAt ?? 0;
