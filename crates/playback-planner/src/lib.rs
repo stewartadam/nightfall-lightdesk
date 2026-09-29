@@ -263,7 +263,7 @@ impl PlaybackDurationProfile {
 }
 
 /// Timeline-authored owner for a planned playback interval.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct TimelinePlaybackOwner {
     /// Timeline runtime UID that authored this playback.
@@ -586,7 +586,7 @@ pub struct PlannedNoOp {
 }
 
 /// Reason a planned aggregate is a no-op at the target.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(rename_all = "snake_case")]
 pub enum PlannedNoOpReason {
