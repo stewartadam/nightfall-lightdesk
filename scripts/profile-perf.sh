@@ -12,5 +12,5 @@ set -eu
 # cargo +nightly rustc -p nightfall-cmd-parse --   -Ztime-passes
 
 # note: mixing llvm and cranelift causes samply to fail to record
-cargo build --profile samply --bin nightfall-headless --no-default-features
-samply record cargo run --profile samply --bin nightfall-headless --no-default-features "$@"
+cargo build --profile samply -p app-runtime --bin nightfall-headless --no-default-features
+samply record cargo run --profile samply -p app-runtime --bin nightfall-headless --no-default-features "$@"

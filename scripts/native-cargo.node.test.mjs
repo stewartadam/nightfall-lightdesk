@@ -9,37 +9,33 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
-import { nativeCargoArgs } from "./run-native-cargo.mjs";
 
-/** Keeps every native entry point on runtime workspace defaults so their Cargo graphs match. */
-test("native selection uses runtime workspace default features", () => {
-  for (const command of ["build", "clippy", "test"]) {
-    const args = nativeCargoArgs(command, ["--bin", "nightfall-headless"]);
-    assert.equal(args[0], command);
-    assert.ok(args.includes("--workspace"));
-    assert.equal(args[args.indexOf("--exclude") + 1], "app-tauri");
-    assert.ok(!args.includes("--no-default-features"));
-    assert.ok(!args.includes("--features"));
-    assert.deepEqual(args.slice(-2), ["--bin", "nightfall-headless"]);
-  }
-  assert.ok(nativeCargoArgs("build").includes("--tests"));
-  assert.ok(!nativeCargoArgs("test").includes("--tests"));
+/**
+ * Plain cargo commands must select every runtime crate and only those, so hooks, CI and
+ * partial builds share one graph while the desktop shell builds only when named.
+ */
+test("default workspace members are every member except the desktop shell", () => {
+  const metadata = JSON.parse(
+    execFileSync("cargo", ["metadata", "--format-version=1", "--no-deps"], {
+      encoding: "utf8",
+    }),
+  );
+  const nameOf = (id) =>
+    metadata.packages.find((pkg) => pkg.id === id)?.name ?? id;
+  const members = metadata.workspace_members.map(nameOf);
+  const defaults = new Set(metadata.workspace_default_members.map(nameOf));
+  assert.deepEqual(
+    members.filter((name) => !defaults.has(name)),
+    ["app-tauri"],
+  );
 });
 
 /** Runtime-only builds must not pull a WebView or Tauri build script into native validation. */
 test("the default runtime dependency graph excludes Tauri", () => {
   const graph = execFileSync(
     "cargo",
-    ["tree", "-p", "app-runtime", "--prefix", "none", "--format", "{p}"],
+    ["tree", "--prefix", "none", "--format", "{p}"],
     { encoding: "utf8" },
   );
   assert.doesNotMatch(graph, /^(?:app-tauri|tauri(?:-[\w-]+)?) v/m);
-});
-
-/** Guard artifact reuse between the Playwright backend build and the nextest run. */
-test("nextest selects the same targets and features as the backend build", () => {
-  const nextestArgs = nativeCargoArgs("nextest");
-  const buildArgs = nativeCargoArgs("build");
-  assert.deepEqual(nextestArgs.slice(0, 2), ["nextest", "run"]);
-  assert.deepEqual(nextestArgs.slice(2), buildArgs.slice(1));
 });

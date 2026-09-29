@@ -1,7 +1,7 @@
 # cargo-nextest configuration: https://nexte.st/docs/configuration/
 #
-# Run through `node scripts/run-native-cargo.mjs nextest` so tests use the same
-# feature graph as Clippy and the Playwright backend build.
+# Run `cargo nextest run --tests` so tests select the same targets and feature graph
+# as the Playwright backend build (`cargo build --tests --bin nightfall-headless`).
 
 [profile.default]
 # Every test currently finishes in a few seconds; flag outliers and stop hangs.
