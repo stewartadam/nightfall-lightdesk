@@ -69,6 +69,27 @@ pub enum FixtureLibraryCommand {
         update_existing_only: bool,
     },
 
+    /// Create several instances of one library fixture mode as a single atomic change.
+    ///
+    /// The profile is converted once and every instance is validated before any is
+    /// stored, so one conflicting ID leaves the show unchanged.
+    CreateFixturesFromLibrary {
+        /// Manufacturer name
+        make: String,
+        /// Model name
+        model: String,
+        /// DMX mode name
+        mode: String,
+        /// Library revision to create from; the default revision when omitted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        asset_etag: Option<String>,
+        /// Fixture instances to create, in patch order
+        fixtures: Vec<LibraryFixtureInstance>,
+        /// Existing fixture IDs to update to this library asset version
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        update_existing_ids: Vec<u32>,
+    },
+
     /// Upload a fixture file to the library
     UploadFixture {
         /// Original filename (used to determine format and as storage name)
@@ -94,6 +115,18 @@ pub struct FixtureLibraryEntry {
     /// Revision to delete; the default revision when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_etag: Option<String>,
+}
+
+/// Identity of one fixture instance created from a library profile
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(deny_unknown_fields)]
+pub struct LibraryFixtureInstance {
+    /// Fixture ID
+    pub id: u32,
+    /// Optional user-defined label for the fixture
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 /// Information about an available fixture

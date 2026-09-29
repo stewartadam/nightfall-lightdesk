@@ -20,8 +20,10 @@ use nightfall_engine::prelude::{CommandEnvelope, CommandError, CommandId, UndoId
 use super::catalog::{
     BUILTIN_SOURCE_FORMAT, builtin_fixture_profiles, find_builtin_fixture_profile,
 };
-use super::commands::{FixtureLibraryCommand, deserialize_fixture_library_command};
-use super::instantiate::{LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixture};
+use super::commands::{
+    FixtureLibraryCommand, LibraryFixtureInstance, deserialize_fixture_library_command,
+};
+use super::instantiate::{LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures};
 use super::{create_fixture_from_library, moving_heads, normalize_fixture_profile, strobes};
 use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter};
 
@@ -418,32 +420,50 @@ fn builtin_profile_info_reports_builtin_source() {
 }
 
 /// Resolves the moving-head built-in as a library template for creation tests.
-fn moving_head_template(id: u32) -> Result<LibraryFixtureTemplate, CommandError> {
+fn moving_head_template() -> Result<LibraryFixtureTemplate, CommandError> {
     let profile = find_builtin_fixture_profile("Generic", "Moving Head Spot 16ch")
         .expect("moving head spot should be cataloged");
     Ok(LibraryFixtureTemplate {
         fixture: profile
-            .create_fixture(id, profile.mode)
+            .create_fixture(0, profile.mode)
             .expect("moving head spot should instantiate"),
         asset_etag: profile.asset_etag.to_string(),
     })
 }
 
 /// Runs one library fixture creation against a standalone store and applies its spawns.
+///
+/// Returns the error, if any, and how many times the template was resolved.
 fn create_in_world(
     world: &mut World,
     fixtures: &mut FixtureDataProviderExt,
-    request: LibraryFixtureRequest<'_>,
-) -> Result<(), CommandError> {
+    request: &LibraryFixtureRequest<'_>,
+) -> (Result<(), CommandError>, usize) {
     let mut queue = CommandQueue::default();
+    let mut resolutions = 0;
     let result = {
         let mut commands = Commands::new(&mut queue, world);
-        create_library_fixture(&mut commands, fixtures, request, || {
-            moving_head_template(request.id)
+        create_library_fixtures(&mut commands, fixtures, request, || {
+            resolutions += 1;
+            moving_head_template()
         })
     };
     queue.apply(world);
-    result
+    (result, resolutions)
+}
+
+/// Builds a creation request for the given IDs, labelling each one after its ID.
+fn batch_request(ids: &[u32]) -> LibraryFixtureRequest<'static> {
+    LibraryFixtureRequest {
+        instances: ids
+            .iter()
+            .map(|id| LibraryFixtureInstance {
+                id: *id,
+                label: Some(format!("Spot {id}")),
+            })
+            .collect(),
+        update_existing_ids: &[],
+    }
 }
 
 /// Verifies creation stores the labelled fixture and spawns one parameter per metadata entry.
@@ -454,13 +474,9 @@ fn create_library_fixture_stores_fixture_and_spawns_parameters() {
     create_in_world(
         &mut world,
         &mut fixtures,
-        LibraryFixtureRequest {
-            id: 42,
-            label: Some("Spot A"),
-            update_existing_ids: &[],
-            update_existing_only: false,
-        },
+        &LibraryFixtureRequest::single(42, Some("Spot A"), &[], false),
     )
+    .0
     .expect("creation should succeed");
 
     let stored = fixtures
@@ -493,18 +509,107 @@ fn create_library_fixture_stores_fixture_and_spawns_parameters() {
 fn create_library_fixture_rejects_used_id() {
     let mut world = World::new();
     let mut fixtures = FixtureDataProviderExt::default();
-    let request = LibraryFixtureRequest {
-        id: 5,
-        label: None,
-        update_existing_ids: &[],
-        update_existing_only: false,
-    };
-    create_in_world(&mut world, &mut fixtures, request).expect("first creation should succeed");
+    let request = LibraryFixtureRequest::single(5, None, &[], false);
+    create_in_world(&mut world, &mut fixtures, &request)
+        .0
+        .expect("first creation should succeed");
 
-    let error = create_in_world(&mut world, &mut fixtures, request)
+    let error = create_in_world(&mut world, &mut fixtures, &request)
+        .0
         .expect_err("duplicate ID should be rejected");
     assert_eq!(error.code, "fixture_library.fixture_id_in_use");
     assert_eq!(fixtures.inner.iter().count(), 1);
+}
+
+/// Verifies a batch resolves its template once and stores every instance with its own
+/// ID, UID, label and parameter entities.
+#[test]
+fn create_library_fixtures_stores_every_instance_from_one_template() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    let (result, resolutions) =
+        create_in_world(&mut world, &mut fixtures, &batch_request(&[10, 11, 12]));
+    result.expect("batch creation should succeed");
+
+    assert_eq!(resolutions, 1);
+    let stored = [10, 11, 12].map(|id| {
+        fixtures
+            .inner
+            .from_id(id)
+            .expect("batch instance should be stored")
+            .clone()
+    });
+    let uids = stored
+        .iter()
+        .map(|fixture| fixture.identifiers.uid)
+        .collect::<HashSet<_>>();
+    assert_eq!(uids.len(), 3);
+    for fixture in &stored {
+        assert_eq!(
+            fixture.identifiers.label,
+            format!("Spot {}", fixture.identifiers.id)
+        );
+        let expected = fixture
+            .elements
+            .iter()
+            .map(|element| element.parameters.len())
+            .sum::<usize>();
+        assert_eq!(
+            fixtures
+                .parameter_entities_for_fixture(fixture.identifiers.uid)
+                .len(),
+            expected
+        );
+    }
+}
+
+/// Verifies a batch containing one occupied ID stores none of its instances and never
+/// resolves the template.
+#[test]
+fn create_library_fixtures_with_used_id_is_atomic() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    create_in_world(&mut world, &mut fixtures, &batch_request(&[11]))
+        .0
+        .expect("first creation should succeed");
+
+    let (result, resolutions) =
+        create_in_world(&mut world, &mut fixtures, &batch_request(&[10, 11]));
+
+    assert_eq!(
+        result.expect_err("occupied ID should be rejected").code,
+        "fixture_library.fixture_id_in_use"
+    );
+    assert_eq!(resolutions, 0);
+    assert!(fixtures.inner.from_id(10).is_err());
+}
+
+/// Verifies repeated IDs within one batch are rejected before anything is stored.
+#[test]
+fn create_library_fixtures_rejects_repeated_ids() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    let (result, _) = create_in_world(&mut world, &mut fixtures, &batch_request(&[10, 10]));
+
+    assert_eq!(
+        result.expect_err("repeated ID should be rejected").code,
+        "fixture_library.duplicate_fixture_id"
+    );
+    assert_eq!(fixtures.inner.iter().count(), 0);
+}
+
+/// Verifies an empty batch is rejected rather than reported as a no-op success.
+#[test]
+fn create_library_fixtures_rejects_empty_request() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    let (result, resolutions) = create_in_world(&mut world, &mut fixtures, &batch_request(&[]));
+
+    assert_eq!(
+        result.expect_err("empty request should be rejected").code,
+        "fixture_library.no_fixtures"
+    );
+    assert_eq!(resolutions, 0);
 }
 
 /// Verifies semantic deserialization preserves command and undo identities.

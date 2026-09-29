@@ -25,7 +25,7 @@ use nightfall_fixtures::library::commands::{
     register_fixture_library_commands,
 };
 use nightfall_fixtures::library::instantiate::{
-    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixture,
+    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures,
 };
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 
@@ -93,14 +93,31 @@ pub fn handle_builtin_fixture_library_commands(
                 update_existing_ids,
                 update_existing_only,
             } => {
-                let request = LibraryFixtureRequest {
-                    id: *id,
-                    label: label.as_deref(),
+                let request = LibraryFixtureRequest::single(
+                    *id,
+                    label.as_deref(),
                     update_existing_ids,
-                    update_existing_only: *update_existing_only,
+                    *update_existing_only,
+                );
+                create_library_fixtures(&mut commands, &mut fixtures, &request, || {
+                    builtin_template(make, model, asset_etag.as_deref(), mode)
+                })
+                .map(|()| FixtureLibraryCommandSuccess::Applied)
+            }
+            FixtureLibraryCommand::CreateFixturesFromLibrary {
+                make,
+                model,
+                mode,
+                asset_etag,
+                fixtures: instances,
+                update_existing_ids,
+            } => {
+                let request = LibraryFixtureRequest {
+                    instances: instances.clone(),
+                    update_existing_ids,
                 };
-                create_library_fixture(&mut commands, &mut fixtures, request, || {
-                    builtin_template(make, model, asset_etag.as_deref(), mode, *id)
+                create_library_fixtures(&mut commands, &mut fixtures, &request, || {
+                    builtin_template(make, model, asset_etag.as_deref(), mode)
                 })
                 .map(|()| FixtureLibraryCommandSuccess::Applied)
             }
@@ -149,10 +166,9 @@ fn builtin_template(
     model: &str,
     revision: Option<&str>,
     mode: &str,
-    id: u32,
 ) -> Result<LibraryFixtureTemplate, CommandError> {
     let profile = find_builtin_revision(make, model, revision)?;
-    let fixture = profile.create_fixture(id, mode).ok_or_else(|| {
+    let fixture = profile.create_fixture(0, mode).ok_or_else(|| {
         CommandError::new(
             "fixture_library.create_failed",
             format!(

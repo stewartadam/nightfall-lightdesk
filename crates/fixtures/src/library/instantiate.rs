@@ -18,7 +18,9 @@ use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::FixtureRef;
 use nightfall_engine::prelude::CommandError;
+use uuid::Uuid;
 
+use super::commands::LibraryFixtureInstance;
 use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter, ParameterValues};
 
 /// Resolved fixture template and the library asset version it was built from.
@@ -29,47 +31,82 @@ pub struct LibraryFixtureTemplate {
     pub asset_etag: String,
 }
 
-/// Placement of a library fixture into the show, independent of profile resolution.
-#[derive(Debug, Clone, Copy)]
+/// Placement of library fixtures into the show, independent of profile resolution.
+#[derive(Debug, Clone)]
 pub struct LibraryFixtureRequest<'a> {
-    /// Fixture ID for the newly created fixture.
-    pub id: u32,
-    /// Optional user-facing label applied to the created fixture.
-    pub label: Option<&'a str>,
+    /// Fixture instances to create, in patch order; empty to only update existing fixtures.
+    pub instances: Vec<LibraryFixtureInstance>,
     /// Existing fixture IDs to update to the resolved library asset version.
     pub update_existing_ids: &'a [u32],
-    /// Update existing fixtures without creating a new fixture instance.
-    pub update_existing_only: bool,
 }
 
-/// Validates, resolves, and atomically commits one library fixture creation.
+impl<'a> LibraryFixtureRequest<'a> {
+    /// Builds the request for a `CreateFixtureFromLibrary` command, which creates at most
+    /// one fixture and creates none when `update_existing_only` is set.
+    pub fn single(
+        id: u32,
+        label: Option<&str>,
+        update_existing_ids: &'a [u32],
+        update_existing_only: bool,
+    ) -> Self {
+        let instances = if update_existing_only {
+            Vec::new()
+        } else {
+            vec![LibraryFixtureInstance {
+                id,
+                label: label.map(str::to_string),
+            }]
+        };
+        Self {
+            instances,
+            update_existing_ids,
+        }
+    }
+}
+
+/// Validates, resolves, and atomically commits library fixture creations and updates.
 ///
 /// Request-shape checks run before `resolve_template` so invalid requests never
-/// touch the profile source. Every update target and the new fixture are validated
-/// before any stored state changes; parameter entities are spawned through
-/// `commands` and become visible once the command buffer applies.
-pub fn create_library_fixture(
+/// touch the profile source. The template is resolved once and copied for every
+/// instance, each with its own ID and UID. Every update target and new fixture is
+/// validated before any stored state changes, so one rejected ID leaves the show
+/// unchanged; parameter entities are spawned through `commands` and become visible
+/// once the command buffer applies.
+pub fn create_library_fixtures(
     commands: &mut Commands,
     fixtures: &mut FixtureDataProviderExt,
-    request: LibraryFixtureRequest<'_>,
+    request: &LibraryFixtureRequest<'_>,
     resolve_template: impl FnOnce() -> Result<LibraryFixtureTemplate, CommandError>,
 ) -> Result<(), CommandError> {
     let LibraryFixtureRequest {
-        id,
-        label,
+        instances,
         update_existing_ids,
-        update_existing_only,
     } = request;
-    if update_existing_only && update_existing_ids.is_empty() {
+    if instances.is_empty() && update_existing_ids.is_empty() {
         return Err(CommandError::new(
-            "fixture_library.no_update_targets",
-            "No existing fixture IDs were provided for fixture update",
+            "fixture_library.no_fixtures",
+            "No fixtures were provided to create or update",
         ));
     }
-    if !update_existing_only && fixtures.inner.from_id(id).is_ok() {
+    if let Some(instance) = instances
+        .iter()
+        .find(|instance| fixtures.inner.from_id(instance.id).is_ok())
+    {
         return Err(CommandError::new(
             "fixture_library.fixture_id_in_use",
-            format!("Fixture ID {id} is already in use"),
+            format!("Fixture ID {} is already in use", instance.id),
+        ));
+    }
+    if instances
+        .iter()
+        .map(|instance| instance.id)
+        .collect::<HashSet<_>>()
+        .len()
+        != instances.len()
+    {
+        return Err(CommandError::new(
+            "fixture_library.duplicate_fixture_id",
+            "A fixture ID was specified more than once",
         ));
     }
     if update_existing_ids.iter().collect::<HashSet<_>>().len() != update_existing_ids.len() {
@@ -83,37 +120,41 @@ pub fn create_library_fixture(
         fixture: mut template,
         asset_etag,
     } = resolve_template()?;
-    if let Some(label) = label {
-        template.identifiers.label = label.to_string();
-    }
     template.library_asset_etag = Some(asset_etag.clone());
 
     let updates = update_existing_ids
         .iter()
         .map(|update_id| updated_fixture(fixtures, *update_id, &template, &asset_etag))
         .collect::<Result<Vec<_>, _>>()?;
-    for fixture in &updates {
+    let created = instances
+        .iter()
+        .map(|instance| {
+            let mut fixture = template.clone();
+            fixture.identifiers.id = instance.id;
+            fixture.identifiers.uid = Uuid::new_v4();
+            if let Some(label) = &instance.label {
+                fixture.identifiers.label = label.clone();
+            }
+            fixture
+        })
+        .collect::<Vec<_>>();
+    for fixture in updates.iter().chain(&created) {
         fixtures
             .inner
             .validate_add(fixture)
             .map_err(|error| fixture_store_error(fixture.identifiers.id, error.to_string()))?;
     }
-    if !update_existing_only {
-        fixtures
-            .inner
-            .validate_add(&template)
-            .map_err(|error| fixture_store_error(id, error.to_string()))?;
-    }
 
     for fixture in updates {
         replace_fixture(commands, fixtures, fixture)?;
     }
-    if !update_existing_only {
+    for fixture in created {
+        let id = fixture.identifiers.id;
         fixtures
             .inner
-            .add(template.clone())
+            .add(fixture.clone())
             .map_err(|error| fixture_store_error(id, error.to_string()))?;
-        add_fixture_parameters(commands, fixtures, &template);
+        add_fixture_parameters(commands, fixtures, &fixture);
     }
     Ok(())
 }
