@@ -7,7 +7,6 @@
  */
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -1669,7 +1668,7 @@ fn sample_audio_resources_can_change_without_recompilation() {
             )
             .unwrap();
         }
-        factory
+        let _ = factory
             .build(WorldBootstrap::SampleData {
                 showfile_name: Some(name.to_string()),
             })
@@ -1710,12 +1709,12 @@ fn sample_audio_resources_can_change_without_recompilation() {
             .is_err()
     );
     assert!(!root.path().join("drafts/Missing.nightfall-show").exists());
-    factory
+    let _ = factory
         .build(WorldBootstrap::Empty {
             showfile_name: Some("Empty".into()),
         })
         .unwrap();
-    factory
+    let _ = factory
         .build(WorldBootstrap::Showfile {
             name: Some("First".into()),
             source: root.path().join("drafts/First.nightfall-show"),
