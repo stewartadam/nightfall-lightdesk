@@ -100,6 +100,7 @@ fn minimal_step_fx(id: u32, uid: Uuid, label: &str, beat_duration: Duration) -> 
 #[test]
 fn duplicate_start_clip_in_same_tick_does_not_duplicate_fx_materialization() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -183,6 +184,7 @@ fn duplicate_start_clip_in_same_tick_does_not_duplicate_fx_materialization() {
 #[test]
 fn fx_clips_with_same_target_keep_distinct_priorities() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -263,6 +265,7 @@ fn fx_clips_with_same_target_keep_distinct_priorities() {
 #[test]
 fn start_clip_without_target_does_not_panic_or_materialize_fx() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -321,6 +324,7 @@ fn start_clip_without_target_does_not_panic_or_materialize_fx() {
 #[test]
 fn stop_clip_releases_running_fx_after_target_changes_to_sequence() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -397,6 +401,7 @@ fn stop_clip_releases_running_fx_after_target_changes_to_sequence() {
 #[test]
 fn stop_clip_ignores_non_fx_materialized_clip_bindings() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -451,6 +456,7 @@ fn stop_clip_ignores_non_fx_materialized_clip_bindings() {
 #[test]
 fn stop_and_restart_clip_in_same_tick_rebinds_fx_without_stale_entity_insert() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -640,6 +646,7 @@ fn retarget_running_step_fx_clip_to_fx_replaces_playback_binding() {
 #[test]
 fn start_fx_clip_retargeted_from_existing_playback_replaces_binding() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -736,6 +743,7 @@ fn start_fx_clip_retargeted_from_existing_playback_replaces_binding() {
 #[test]
 fn retarget_running_fx_clip_to_step_fx_replaces_playback_binding() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -846,6 +854,7 @@ fn retarget_running_fx_clip_to_step_fx_replaces_playback_binding() {
 #[test]
 fn start_clip_for_step_fx_spawns_single_active_fx_and_binding() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -917,6 +926,7 @@ fn start_clip_for_step_fx_spawns_single_active_fx_and_binding() {
 #[test]
 fn step_fx_clips_with_same_target_keep_distinct_priorities() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -991,6 +1001,7 @@ fn step_fx_clips_with_same_target_keep_distinct_priorities() {
 #[test]
 fn timed_start_clip_for_step_fx_seeds_instance_clock() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -1064,6 +1075,7 @@ fn timed_start_clip_for_step_fx_seeds_instance_clock() {
 #[test]
 fn timed_stop_clip_for_step_fx_seeds_release_instance_clock() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -1138,6 +1150,7 @@ fn timed_stop_clip_for_step_fx_seeds_release_instance_clock() {
 #[test]
 fn timed_start_clip_for_fx_seeds_instance_clock() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -1216,6 +1229,7 @@ fn timed_start_clip_for_fx_seeds_instance_clock() {
 #[test]
 fn timed_stop_clip_for_fx_seeds_release_instance_clock() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
@@ -1464,6 +1478,7 @@ fn stop_all_releases_direct_step_fx_playback() {
 #[test]
 fn stop_clip_for_step_fx_marks_release_and_removes_binding() {
     let mut app = App::new();
+    add_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
     app.add_message::<EngineActionEnvelope<nightfall_fx::events::FxPlaybackAction>>();
