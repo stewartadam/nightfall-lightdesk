@@ -11,6 +11,10 @@ import { join } from "node:path";
 import { readShowfileJsonSync } from "../../scripts/showfile-storage.mjs";
 import { expect, test } from "./playwright-fixtures";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+test.setTimeout(60_000);
+
 /** Creates sample data from startup, checks its draft, and verifies the next new show defaults empty. */
 test("new show optionally includes standalone sample data", async ({
   page,
