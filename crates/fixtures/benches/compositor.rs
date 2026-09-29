@@ -498,6 +498,9 @@ fn bench_compositor_show_scale_mixed(c: &mut Criterion) {
             |b| {
                 let mut app =
                     mixed_compositor_app(parameter_count, layer_count, fading_count, position);
+                // Newly spawned layers are composited in full on their first pass and cached from
+                // the next one on, so measure the steady state after both.
+                app.update();
                 app.update();
 
                 b.iter(|| {
