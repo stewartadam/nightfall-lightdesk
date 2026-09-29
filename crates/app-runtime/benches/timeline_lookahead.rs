@@ -26,8 +26,9 @@ use nightfall_cues::prelude::{BoundCueInstruction, Cue, CueInstruction, Sequence
 use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{DataProvider, EngineActionEnvelope};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterMetadata, ParameterValues,
+    Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };
 use nightfall_framepace::{FramepaceSettings, Limiter};
 use nightfall_timecode::prelude::{Timecode, TimecodeGenerator, TimecodeRate, TimecodeSource};
