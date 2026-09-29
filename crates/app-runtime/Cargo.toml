@@ -87,7 +87,12 @@ object-library = ["dep:nightfall-object-library"]
 debug = ["nightfall-engine/debug", "nightfall-desk/debug"]
 
 [dev-dependencies]
+criterion.workspace = true
 nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }
+
+[[bench]]
+name = "timeline_lookahead"
+harness = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }

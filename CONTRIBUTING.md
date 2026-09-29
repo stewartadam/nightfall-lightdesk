@@ -530,6 +530,13 @@ components to catch performance regressions:
 | Clip lookup | `cargo bench -p nightfall-desk --bench clip_lookup` | `NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS`, `NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS`, `NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS` |
 | Timeline planning and plan evaluation | `cargo bench -p nightfall-timeline --bench planner` | `NIGHTFALL_TIMELINE_BENCH_ACTION_COUNTS` |
 | Sequence lookahead projection and duration summary | `cargo bench -p nightfall-lookahead-projection --bench projection` | `NIGHTFALL_LOOKAHEAD_BENCH_CUE_COUNTS`, `NIGHTFALL_LOOKAHEAD_BENCH_FIXTURE_COUNTS` |
+| Runtime timeline lookahead (full backend frames) | `cargo bench -p app-runtime --bench timeline_lookahead` | `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_START_COUNTS` |
+
+The runtime timeline lookahead suite times whole frames of the live backend
+schedule, so compare its `enabled` cases with the matching `disabled` cases to
+isolate lookahead's share. `steady` frames reuse cached lookahead state, while
+`cues_changed` frames mark cue definitions changed first to force a full
+rebuild, as when editing a cue while a timeline is armed.
 
 Size overrides take comma-separated counts and replace the default matrix.
 Criterion's `--quick` flag and a benchmark-ID filter keep an iteration loop
