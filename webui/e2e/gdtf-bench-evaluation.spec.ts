@@ -225,21 +225,27 @@ function functionEndPercent(
   );
 }
 
-/** Returns the radius scale of a fixture's volumetric beam mesh. */
+/**
+ * Returns the far-field radius of a fixture's widest lit aperture, from the
+ * clustered surface light the optical batch publishes for each aperture.
+ */
 function beamRadius(
   page: import("./playwright-fixtures").Page,
   uid: string,
 ): Promise<number | undefined> {
   return page.evaluate((uid) => {
     let radius: number | undefined;
-    (window as any).visualizerApi
-      .getScene()
-      .getObjectByName(`Fixture_${uid}`)
-      .traverse((child: any) => {
-        if (child.isMesh && child.name.startsWith("Beam_") && child.visible) {
-          radius = child.scale.x;
-        }
-      });
+    (window as any).visualizerApi.getScene().traverse((child: any) => {
+      if (
+        child.name?.startsWith(`OpticalSurface:${uid}:`) &&
+        child.visible &&
+        child.optics
+      ) {
+        const far =
+          child.optics.radius + child.beamLength * child.optics.slopeX;
+        radius = Math.max(radius ?? 0, far);
+      }
+    });
     return radius;
   }, uid);
 }
