@@ -5354,6 +5354,7 @@ dependencies = [
 name = "nightfall-fixtures"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "async-channel",
  "bevy",
  "bevy_app",
  "bevy_diagnostic",
@@ -5436,6 +5437,7 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "bevy_state",
+ "criterion",
  "enum_dispatch",
  "moonshine-kind",
  "nightfall",
@@ -5779,6 +5781,7 @@ dependencies = [
 name = "nightfall-selection"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "criterion",
  "nightfall",
  "nightfall-dmx",
  "nightfall-workspace-hack",

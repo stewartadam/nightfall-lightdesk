@@ -31,12 +31,17 @@ typeshare.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 moonshine-kind.workspace = true
 nightfall-desk = { path = "../desk" }
 nightfall-clips = { path = "../clips" }
 nightfall-flow = { path = "../flow" }
 nightfall-fx-module = { path = "../fx-module" }
 nightfall-fixture-model = { path = "../fixture-model" }
+
+[[bench]]
+name = "step_fx"
+harness = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
