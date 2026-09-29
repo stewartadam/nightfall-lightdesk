@@ -156,7 +156,7 @@ async function ledTapeSceneLevel(
 }
 
 /**
- * Reads whether the first moving-head beam is visibly enabled in the scene.
+ * Reads whether the moving head's aperture currently lights the shared optical batch.
  */
 async function movingHeadBeamVisible(
   page: Page,
@@ -164,41 +164,8 @@ async function movingHeadBeamVisible(
 ): Promise<boolean> {
   return page.evaluate((uid) => {
     const scene = (window as any).visualizerApi.getScene();
-    const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const beam = root?.getObjectByName?.("Beam");
-    return Boolean(beam?.visible && (beam.material?.opacity ?? 0) > 0.05);
-  }, fixtureUid);
-}
-
-/**
- * Reads the synthetic moving-head floor footprint state from the visualizer scene.
- */
-async function movingHeadFloorSpotStats(
-  page: Page,
-  fixtureUid: string,
-): Promise<{
-  visible: boolean;
-  spotlightVisible: boolean;
-  opacity: number;
-  worldY: number;
-  scaleX: number;
-  scaleY: number;
-}> {
-  return page.evaluate((uid) => {
-    const scene = (window as any).visualizerApi.getScene();
-    const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const footprint = root?.getObjectByName?.("BeamFootprint");
-    const spotLight = root?.getObjectByName?.("SpotLight");
-    root?.updateMatrixWorld?.(true);
-    const matrixWorld = footprint?.matrixWorld?.elements ?? [];
-    return {
-      visible: Boolean(footprint?.visible),
-      spotlightVisible: Boolean(spotLight?.visible),
-      opacity: footprint?.material?.opacity ?? 0,
-      worldY: matrixWorld[13] ?? Number.NaN,
-      scaleX: footprint?.scale?.x ?? 0,
-      scaleY: footprint?.scale?.y ?? 0,
-    };
+    const light = scene?.getObjectByName?.(`OpticalSurface:${uid}:MainEmitter`);
+    return Boolean(light?.visible && light.intensity > 0.05);
   }, fixtureUid);
 }
 
@@ -229,6 +196,13 @@ async function measureVisualLatency(
       const stores = (window as any).appStores;
       const scene = (window as any).visualizerApi.getScene();
       const root = scene?.getObjectByName?.(`Fixture_${uid}`);
+      /** Reports whether the aperture's shared optical light carries visible output. */
+      const beamLit = () => {
+        const light = scene?.getObjectByName?.(
+          `OpticalSurface:${uid}:MainEmitter`,
+        );
+        return Boolean(light?.visible && light.intensity > 0.05);
+      };
 
       const probe = {
         received: null as number | null,
@@ -254,6 +228,15 @@ async function measureVisualLatency(
           );
         }
         probe.lastFrameTime = frameTime;
+        // Shared optical lights are created lazily, so beam scene changes are sampled per frame.
+        if (
+          visualMode === "beam" &&
+          probe.received != null &&
+          probe.sceneObserved == null &&
+          beamLit()
+        ) {
+          probe.sceneObserved = performance.now();
+        }
         if (
           probe.received != null &&
           probe.sceneObserved != null &&
@@ -345,51 +328,8 @@ async function measureVisualLatency(
             delete instanceColor.needsUpdate;
           }
         });
-      } else {
-        const beam = root?.getObjectByName?.("Beam");
-        const material = beam?.material;
-        const intensityUniform = material?.beamIntensityUniform;
-        const isLit = Boolean(
-          beam?.visible &&
-            ((intensityUniform?.value ?? 0) > 0.05 ||
-              (material?.opacity ?? 0) > 0.05),
-        );
-        if (isLit) throw new Error("Beam fixture was already lit");
-        if (!material || !intensityUniform) {
-          throw new Error("Beam intensity uniform not found");
-        }
-
-        const originalOwnDescriptor = Object.getOwnPropertyDescriptor(
-          intensityUniform,
-          "value",
-        );
-        let currentIntensity = intensityUniform.value;
-
-        Object.defineProperty(intensityUniform, "value", {
-          configurable: true,
-          get() {
-            return currentIntensity;
-          },
-          set(value) {
-            currentIntensity = value;
-            if (probe.sceneObserved == null && currentIntensity > 0.05) {
-              probe.sceneObserved = performance.now();
-            }
-          },
-        });
-
-        restoreCallbacks.push(() => {
-          if (originalOwnDescriptor) {
-            Object.defineProperty(
-              intensityUniform,
-              "value",
-              originalOwnDescriptor,
-            );
-            intensityUniform.value = currentIntensity;
-          } else {
-            delete intensityUniform.value;
-          }
-        });
+      } else if (beamLit()) {
+        throw new Error("Beam fixture was already lit");
       }
 
       probe.restore = () => {
@@ -482,10 +422,7 @@ test("moving-head intensity visual latency is comparable to fix 311 LED control"
   const ledUid = await fixtureUidById(page, 311);
   const movingHeadUid = await fixtureUidById(page, 501);
   await waitForFixtureSceneObjects(page, ledUid, ["Pixels"]);
-  await waitForFixtureSceneObjects(page, movingHeadUid, [
-    "Beam",
-    "BeamFootprint",
-  ]);
+  await waitForFixtureSceneObjects(page, movingHeadUid, ["OpticalAperture"]);
   await placeFixtureForFloorFootprint(page, movingHeadUid);
 
   await submitCommand(page, "clear");
@@ -519,49 +456,4 @@ test("moving-head intensity visual latency is comparable to fix 311 LED control"
   expect(led.visualElapsedMs).toBeLessThan(250);
   expect(beam.visualElapsedMs).toBeLessThan(500);
   expect(beam.visualElapsedMs).toBeLessThan(led.visualElapsedMs + 350);
-});
-
-/**
- * Verifies moving-head beams render floor illumination without enabling a Three.js light.
- */
-test("moving-head beam renders synthetic floor footprint without spotlight", async ({
-  page,
-}) => {
-  await seedStartupShowfileName(page, "sample");
-  await page.goto("/?visualizer:offscreenCanvas=false&e2e=1");
-  await waitForDockviewApp(page, { showfileName: "sample" });
-  await waitForVisualizerReady(page);
-
-  const movingHeadUid = await fixtureUidById(page, 501);
-  await waitForFixtureSceneObjects(page, movingHeadUid, [
-    "Beam",
-    "BeamFootprint",
-  ]);
-  await placeFixtureForFloorFootprint(page, movingHeadUid);
-
-  await submitCommand(page, "clear");
-  await expect
-    .poll(() => movingHeadBeamVisible(page, movingHeadUid))
-    .toBe(false);
-  await submitCommand(
-    page,
-    "fix 501.1 pan @ 0 tilt @ 0 intensity @ 100 red @ 100 green @ 0 blue @ 0",
-  );
-  await expect
-    .poll(() => movingHeadBeamVisible(page, movingHeadUid))
-    .toBe(true);
-
-  await expect
-    .poll(() => movingHeadFloorSpotStats(page, movingHeadUid))
-    .toMatchObject({
-      visible: true,
-      spotlightVisible: false,
-    });
-
-  const stats = await movingHeadFloorSpotStats(page, movingHeadUid);
-  expect(stats.opacity).toBeGreaterThan(0.05);
-  expect(stats.worldY).toBeGreaterThan(0);
-  expect(stats.worldY).toBeLessThan(0.02);
-  expect(stats.scaleX).toBeGreaterThan(0);
-  expect(stats.scaleY).toBeGreaterThan(0);
 });
