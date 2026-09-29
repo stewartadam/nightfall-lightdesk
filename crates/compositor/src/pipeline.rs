@@ -17,6 +17,17 @@ use crate::{stages, types::*};
 /// Core compositor pipeline
 pub struct CompositorPipeline;
 
+/// Composite of the bottom layers of a stack, from which compositing can resume higher up.
+#[derive(Clone, Debug, Default)]
+pub struct CompositedPrefix {
+    /// Merged values of the layers composited so far.
+    pub base: ComputedLayer,
+    /// Attributed assertions of the layers composited so far.
+    pub attributed: AttributedAssertionsLayer,
+    /// Priority of the last layer composited, used for same-priority merging of the next layer.
+    pub prev_priority: Option<Priority>,
+}
+
 impl CompositorPipeline {
     /// Compose a stack of layers with optional source-local layer compositing contexts.
     ///
@@ -31,6 +42,108 @@ impl CompositorPipeline {
         Vec<(Entity, ComputedLayer)>,
     ) {
         Self::compose_layers(layers, param_query)
+    }
+
+    /// Compose the upper layers of a stack on top of an already composited prefix.
+    ///
+    /// When `snapshot_after` is set, the composite after that many of `layers` is also returned so
+    /// a later pass can resume from it. Layers without a context are evaluated at zero elapsed, as
+    /// in [`Self::compose_with_layer_compositing_contexts`].
+    pub fn compose_resuming<L: Borrow<Layer>>(
+        prefix: CompositedPrefix,
+        layers: Vec<(Entity, ObjectRef, L, bool, Option<LayerCompositingContext>)>,
+        snapshot_after: Option<usize>,
+        param_query: &impl ParameterLookup,
+    ) -> (
+        ComputedLayer,
+        AttributedAssertionsLayer,
+        Vec<(Entity, ComputedLayer)>,
+        Option<CompositedPrefix>,
+    ) {
+        let CompositedPrefix {
+            mut base,
+            mut attributed,
+            mut prev_priority,
+        } = prefix;
+        let mut output_layers = Vec::with_capacity(layers.len());
+        let mut snapshot = None;
+        if snapshot_after == Some(0) {
+            snapshot = Some(CompositedPrefix {
+                base: base.clone(),
+                attributed: attributed.clone(),
+                prev_priority,
+            });
+        }
+
+        for (index, (entity, object_ref, layer, is_releasing, compositing_context)) in
+            layers.into_iter().enumerate()
+        {
+            Self::compose_layer(
+                &mut base,
+                &mut attributed,
+                &mut prev_priority,
+                &mut output_layers,
+                (
+                    entity,
+                    object_ref,
+                    layer.borrow(),
+                    is_releasing,
+                    compositing_context,
+                ),
+                param_query,
+            );
+            if snapshot_after == Some(index + 1) {
+                snapshot = Some(CompositedPrefix {
+                    base: base.clone(),
+                    attributed: attributed.clone(),
+                    prev_priority,
+                });
+            }
+        }
+
+        (base, attributed, output_layers, snapshot)
+    }
+
+    /// Evaluate one layer's transitions against the composite below it and merge it on top.
+    fn compose_layer(
+        base_layer: &mut ComputedLayer,
+        attributed_assertions_layer: &mut AttributedAssertionsLayer,
+        prev_priority: &mut Option<Priority>,
+        output_layers: &mut Vec<(Entity, ComputedLayer)>,
+        (entity, object_ref, layer, is_releasing, compositing_context): (
+            Entity,
+            ObjectRef,
+            &Layer,
+            bool,
+            Option<LayerCompositingContext>,
+        ),
+        param_query: &impl ParameterLookup,
+    ) {
+        let compositing_context = match compositing_context {
+            Some(compositing_context) => compositing_context,
+            None => {
+                warn_missing_compositing_context(entity, layer);
+                LayerCompositingContext::default()
+            }
+        };
+        let (computed_layer, skipped) = stages::evaluate_transitions_with_compositing_context(
+            layer,
+            base_layer,
+            param_query,
+            is_releasing,
+            compositing_context,
+        );
+
+        output_layers.push((entity, computed_layer.to_effective()));
+        stages::merge_layer_with_attribution_skipping(
+            attributed_assertions_layer,
+            layer,
+            object_ref,
+            &skipped,
+        );
+        let same_priority = prev_priority.is_some_and(|p| p == layer.priority);
+        stages::merge(base_layer, &computed_layer, same_priority, param_query);
+        *prev_priority = Some(layer.priority);
     }
 
     /// Compose a stack of layers after each layer's compositing context has been selected.
@@ -60,32 +173,20 @@ impl CompositorPipeline {
         let mut prev_priority: Option<Priority> = None;
 
         for (entity, object_ref, layer, is_releasing, compositing_context) in layers {
-            let layer = layer.borrow();
-            let compositing_context = match compositing_context {
-                Some(compositing_context) => compositing_context,
-                None => {
-                    warn_missing_compositing_context(entity, layer);
-                    LayerCompositingContext::default()
-                }
-            };
-            let (computed_layer, skipped) = stages::evaluate_transitions_with_compositing_context(
-                layer,
-                &base_layer,
-                param_query,
-                is_releasing,
-                compositing_context,
-            );
-
-            output_layers.push((entity, computed_layer.to_effective()));
-            stages::merge_layer_with_attribution_skipping(
+            Self::compose_layer(
+                &mut base_layer,
                 &mut attributed_assertions_layer,
-                layer,
-                object_ref,
-                &skipped,
+                &mut prev_priority,
+                &mut output_layers,
+                (
+                    entity,
+                    object_ref,
+                    layer.borrow(),
+                    is_releasing,
+                    compositing_context,
+                ),
+                param_query,
             );
-            let same_priority = prev_priority.is_some_and(|p| p == layer.priority);
-            stages::merge(&mut base_layer, &computed_layer, same_priority, param_query);
-            prev_priority = Some(layer.priority);
         }
 
         (base_layer, attributed_assertions_layer, output_layers)
