@@ -339,7 +339,12 @@ pub(super) fn create_moving_spot_16ch(id: u32, make: &str, model: &str) -> Fixtu
             MergeStrategy::LTP,
             false,
         ),
-        custom_parameter("Focus"),
+        parameter(
+            Attribute::Focus,
+            DmxValueResolution::Coarse,
+            MergeStrategy::LTP,
+            false,
+        ),
         auto_run,
         reset,
         custom_parameter("Ring Color"),

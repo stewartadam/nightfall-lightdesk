@@ -108,6 +108,20 @@ mod gdtf_tests {
         );
     }
 
+    /// Keeps lens focus distinct from beam-angle zoom during import.
+    #[test]
+    fn test_map_gdtf_focus() {
+        assert_eq!(
+            map_gdtf_attribute_to_nightfall(&"Focus1"),
+            Some(Attribute::Focus)
+        );
+        assert_eq!(
+            map_gdtf_attribute_to_nightfall(&"Focus"),
+            Some(Attribute::Focus)
+        );
+        assert_eq!(Attribute::Focus.category(), AttributeCategory::Focus);
+    }
+
     #[test]
     fn test_map_gdtf_attribute_shutter() {
         assert_eq!(
@@ -201,10 +215,14 @@ mod ofl_tests {
         assert_eq!(map_channel_key_to_attribute("Zoom"), Some(Attribute::Zoom));
     }
 
+    /// Verifies channel keys without a standard attribute map to custom attributes, while
+    /// focus keys resolve to the standard Focus attribute.
     #[test]
     fn test_map_channel_key_to_attribute_custom() {
-        let attr = map_channel_key_to_attribute("Focus");
-        assert!(matches!(attr, Some(Attribute::Custom { label }) if label == "Focus"));
+        assert_eq!(
+            map_channel_key_to_attribute("Focus"),
+            Some(Attribute::Focus)
+        );
 
         let attr = map_channel_key_to_attribute("Iris");
         assert!(matches!(attr, Some(Attribute::Custom { label }) if label == "Iris"));

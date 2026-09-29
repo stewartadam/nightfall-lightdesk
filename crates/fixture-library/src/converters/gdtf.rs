@@ -387,6 +387,7 @@ pub(super) fn map_gdtf_attribute_to_nightfall(
 
         // Beam
         "Zoom" => Some(Attribute::Zoom),
+        "Focus1" | "Focus" => Some(Attribute::Focus),
         "Gobo1" | "Gobo" => Some(Attribute::Gobo),
         "Gobo1Rot" | "GoboRot" => Some(Attribute::GoboRot),
         "Prism1" | "Prism" => Some(Attribute::Prism),

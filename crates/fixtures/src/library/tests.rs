@@ -311,9 +311,7 @@ fn moving_spot_profile_matches_16_channel_order() {
             &Attribute::Gobo,
             &Attribute::Prism,
             &Attribute::Frost,
-            &Attribute::Custom {
-                label: "Focus".to_owned(),
-            },
+            &Attribute::Focus,
             &Attribute::Custom {
                 label: "Auto Run".to_owned(),
             },
