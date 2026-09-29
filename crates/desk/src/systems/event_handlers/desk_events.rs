@@ -11,7 +11,7 @@ use nightfall_cmd_parse::split_command_statements;
 use nightfall_engine::prelude::*;
 use web_time::Instant;
 
-use crate::prelude::DeskCommand;
+use crate::prelude::*;
 
 fn parse_debug_panic_worker_command(input: &str) -> Option<&str> {
     let mut tokens = input.split_whitespace();

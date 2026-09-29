@@ -211,13 +211,13 @@ impl Plugin for DeskPlugin {
         app.add_systems(
             Update,
             (
-                instances::add_instances_to_index,
-                instances::remove_instances_from_index,
+                nightfall_clips::add_instances_to_index,
+                nightfall_clips::remove_instances_from_index,
                 // Must run after both index systems so new instances are indexed
                 // and removed instances are de-indexed before we check for orphans
                 instances::sync_active_state_on_instance_despawn
-                    .after(instances::add_instances_to_index)
-                    .after(instances::remove_instances_from_index),
+                    .after(nightfall_clips::add_instances_to_index)
+                    .after(nightfall_clips::remove_instances_from_index),
             ),
         );
         app.add_systems(

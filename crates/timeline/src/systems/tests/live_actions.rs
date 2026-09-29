@@ -12,7 +12,6 @@ use nightfall_clips::{CLIP_START_ACTION_ID, ClipTarget, start_clip_action};
 use nightfall_desk::systems::event_handlers::clip_events::{
     PendingClipPlaybackRates, handle_clip_rate_commands,
 };
-use nightfall_engine::prelude::GlobalVariables;
 
 use super::*;
 use crate::TimelineNondeterministicSeekBehavior;
@@ -1876,7 +1875,7 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
 fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
-    app.add_message::<CommandEnvelope<nightfall_cues::prelude::CueCommand>>();
+    app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();

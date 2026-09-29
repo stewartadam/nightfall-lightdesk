@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use nightfall_timeline::prelude::{BeatgridDetector, DetectedBeat, DetectedBeatgrid};
+use nightfall_timeline::prelude::*;
 
 /// Detector that analyzes audio with the downloaded Beat This model.
 pub(crate) const DETECTOR: BeatgridDetector = BeatgridDetector {

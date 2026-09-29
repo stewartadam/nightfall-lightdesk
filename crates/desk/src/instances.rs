@@ -7,9 +7,7 @@
  */
 
 use bevy_ecs::prelude::*;
-pub(crate) use nightfall_clips::{
-    ClipReleaseAfterInstance, InstanceIndex, add_instances_to_index, remove_instances_from_index,
-};
+use nightfall_clips::{ClipReleaseAfterInstance, InstanceIndex};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceId, PlaybackAction, PlaybackScope,

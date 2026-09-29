@@ -8,13 +8,13 @@
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
+use nightfall_clips::InstanceIndex;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceControlUpdate, InstanceControls, InstanceId};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     clips::{Clip, ClipAction, MaterializedClip},
-    instances::InstanceIndex,
     masters::{Master, MasterUpdate},
 };
 
