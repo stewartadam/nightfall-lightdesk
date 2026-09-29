@@ -48,6 +48,7 @@ export interface EngineMetrics {
   entity_count?: number;
   framepace_time_ms?: number;
   framepace_oversleep_ms?: number;
+  framepace_overrun_ms?: number;
   active_layers: number;
   active_universes: number;
   artnet_send_time_ms?: number;
@@ -445,6 +446,7 @@ export interface SmoothedEngineMetrics {
   frameTimeMs: number;
   framepaceTimeMs: number;
   framepaceOversleepMs: number;
+  framepaceOverrunMs: number;
   artnetSendTimeMs: number;
   sacnSendTimeMs: number;
   parameterStateBuildMs: number;
@@ -460,6 +462,7 @@ let smoothedValues: SmoothedEngineMetrics = {
   frameTimeMs: 0,
   framepaceTimeMs: 0,
   framepaceOversleepMs: 0,
+  framepaceOverrunMs: 0,
   artnetSendTimeMs: 0,
   sacnSendTimeMs: 0,
   parameterStateBuildMs: 0,
@@ -495,6 +498,10 @@ engineMetrics.subscribe((raw) => {
     framepaceOversleepMs: applyEma(
       smoothedValues.framepaceOversleepMs,
       raw.framepace_oversleep_ms,
+    ),
+    framepaceOverrunMs: applyEma(
+      smoothedValues.framepaceOverrunMs,
+      raw.framepace_overrun_ms,
     ),
     artnetSendTimeMs: applyEma(
       smoothedValues.artnetSendTimeMs,

@@ -42,6 +42,7 @@ pub fn send_metrics(
         framepace_oversleep_ms: framepace_stats
             .oversleep()
             .map(|d| d.as_secs_f64() * 1000.0),
+        framepace_overrun_ms: framepace_stats.overrun().map(|d| d.as_secs_f64() * 1000.0),
         active_layers,
         active_universes,
         artnet_send_time_ms: network_stats
