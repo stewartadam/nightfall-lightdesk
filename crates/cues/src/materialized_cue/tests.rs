@@ -761,6 +761,127 @@ fn paint_materialized_cues_samples_color_paths_from_lower_layer_base() {
     );
 }
 
+/// Several color-path cues painted in one pass each sample from the layers below them only.
+#[test]
+fn paint_materialized_cues_gives_each_color_path_cue_its_own_lower_base() {
+    let mut app = App::new();
+    app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.add_systems(Update, paint_materialized_cues);
+
+    let (fixture_ref, parameters) = add_single_element_fixture(
+        app.world_mut(),
+        103,
+        &[
+            (Attribute::Red, 0.0, 255.0),
+            (Attribute::Green, 0.0, 255.0),
+            (Attribute::Blue, 0.0, 255.0),
+        ],
+    );
+    let parameter = |attribute: Attribute| {
+        *parameters
+            .get(&attribute)
+            .expect("color parameter should exist")
+    };
+
+    let mut lower_layer = Layer::new("lower red".to_owned(), Priority(-1));
+    lower_layer.absolute.insert(
+        parameter(Attribute::Red),
+        (ParameterValue::Absolute { value: 255.0 }, None),
+    );
+    app.world_mut().spawn(lower_layer);
+    // A higher layer must not leak into any cue's base: a yellow base would shift the midpoint.
+    let mut upper_layer = Layer::new("upper green".to_owned(), Priority(5));
+    upper_layer.absolute.insert(
+        parameter(Attribute::Green),
+        (ParameterValue::Absolute { value: 255.0 }, None),
+    );
+    app.world_mut().spawn(upper_layer);
+
+    let cue = Cue {
+        transitions: PartialTransition {
+            fade_in: Some(TransitionMode::Fixed(Duration::from_secs(10))),
+            ..Default::default()
+        },
+        instructions: vec![BoundCueInstruction {
+            selection: SpatialSelection {
+                source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
+                clauses: vec![],
+                union: Vec::new(),
+            },
+            cue_instruction: CueInstruction {
+                blueprint_application: None,
+                values: HashMap::from([
+                    (
+                        Attribute::Red,
+                        ValueSource::Inline(ParameterValue::Absolute { value: 0.0 }),
+                    ),
+                    (
+                        Attribute::Green,
+                        ValueSource::Inline(ParameterValue::Absolute { value: 255.0 }),
+                    ),
+                    (
+                        Attribute::Blue,
+                        ValueSource::Inline(ParameterValue::Absolute { value: 255.0 }),
+                    ),
+                ]),
+                color_path_id: Some(ColorPathId(2)),
+                ..Default::default()
+            },
+        }],
+        ..Default::default()
+    };
+
+    let cue_entities = (0..3)
+        .map(|_| {
+            let (materialized, _) = make_materialized_cue(app.world_mut(), &cue);
+            app.world_mut()
+                .spawn((
+                    materialized,
+                    InstanceClock {
+                        position: Duration::from_secs(5),
+                        ..Default::default()
+                    },
+                ))
+                .id()
+        })
+        .collect::<Vec<_>>();
+
+    app.update();
+
+    for entity in cue_entities {
+        let layer = app
+            .world()
+            .get::<Layer>(entity)
+            .expect("standalone cue should paint a layer");
+        let sampled = |attribute: Attribute| match layer
+            .absolute
+            .get(&parameter(attribute))
+            .expect("color parameter should be sampled")
+            .0
+        {
+            ParameterValue::Absolute { value } => value,
+            ref value => panic!("expected absolute sampled value, got {value:?}"),
+        };
+
+        let red = sampled(Attribute::Red);
+        let green = sampled(Attribute::Green);
+        let blue = sampled(Attribute::Blue);
+        assert!(
+            (90.0..170.0).contains(&red),
+            "each cue should sample from the lower red base, got red {red}"
+        );
+        assert!(
+            green > 220.0,
+            "HSV midpoint from red to cyan should route through yellow/green, got green {green}"
+        );
+        assert!(
+            blue < 40.0,
+            "HSV midpoint from red to cyan should not route through cyan/blue, got blue {blue}"
+        );
+    }
+}
+
 #[test]
 fn test_materialized_transition_from_transition() {
     // Create a transition with specific values
