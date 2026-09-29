@@ -160,7 +160,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
         with:
           projectPath: desktop/app-tauri
-          tauriScript: pnpm tauri
+          tauriScript: pnpm exec tauri
           args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --locked
       - name: Archive the macOS app for isolated signing
         if: runner.os == 'macOS' && needs.prepare.outputs.publish == 'true'
