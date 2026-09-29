@@ -24,6 +24,7 @@ import {
   loginToShare,
   sha256,
   shareApi,
+  unmatchedReason,
 } from "./fetch-gdtf-bench.mjs";
 
 const sharpy = {
@@ -145,8 +146,8 @@ test("rejects a present archive whose hash differs", async (t) => {
   assert.equal(readFileSync(join(dir, sharpy.file), "utf8"), "edited archive");
 });
 
-/** A pinned revision no longer on GDTF Share fails naming the archive. */
-test("fails naming archives no revision matches", async (t) => {
+/** A pinned revision no longer on GDTF Share fails listing the revisions checked. */
+test("fails listing the revisions checked when none matches", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "gdtf-bench-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -156,9 +157,22 @@ test("fails naming archives no revision matches", async (t) => {
       dir,
       login: async () => fakeClient({}),
     }),
-    /pinned hash for: sharpy/,
+    (error) => {
+      assert.match(error.message, /sharpy: 2 revision\(s\) of .* differ/);
+      assert.match(error.message, /rid 2: "ClayPaky Official File/);
+      assert.match(error.message, /rid 1: "Older revision"/);
+      return true;
+    },
   );
   assert.deepEqual(readdirSync(dir), []);
+});
+
+/** An archive whose fixture is not listed at all is reported as a name miss. */
+test("reports archives whose fixture GDTF Share does not list", () => {
+  assert.match(
+    unmatchedReason({ id: "gone", file: "Acme@Gone@1.gdtf" }, []),
+    /gone: GDTF Share lists no fixture matching Acme@Gone@1\.gdtf/,
+  );
 });
 
 /** The login cookie is replayed on list and download requests. */

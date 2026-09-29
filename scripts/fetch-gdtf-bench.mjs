@@ -183,13 +183,32 @@ export function missingArchives(manifest, dir) {
 }
 
 /**
+ * Describes why no GDTF Share revision matched an archive: either no fixture
+ * of that manufacturer and name is listed, or every listed revision was
+ * downloaded and hashed differently.
+ */
+export function unmatchedReason(archive, candidates) {
+  if (candidates.length === 0) {
+    return `  ${archive.id}: GDTF Share lists no fixture matching ${archive.file}`;
+  }
+  const checked = candidates
+    .map(
+      (entry) =>
+        `    rid ${entry.rid}: ${JSON.stringify(entry.revision)}${entry.lastModified ? ` (modified ${new Date(entry.lastModified * 1000).toISOString().slice(0, 10)})` : ""}`,
+    )
+    .join("\n");
+  return `  ${archive.id}: ${candidates.length} revision(s) of ${archive.file} differ from the pinned hash:\n${checked}`;
+}
+
+/**
  * Downloads every missing bench archive into `dir` and returns the fetched ids.
  *
  * Each archive is matched to a GDTF Share revision by manufacturer and
  * fixture, then accepted only when its bytes hash to the pinned SHA-256.
  * Archives are written through a temporary file so an interrupted run never
- * leaves a partial archive under its final name. Fails listing every archive
- * that no revision matched, after fetching the rest.
+ * leaves a partial archive under its final name. Fails after fetching the
+ * rest, explaining per unmatched archive whether GDTF Share lists no such
+ * fixture or which revisions were checked and found to differ.
  */
 export async function fetchBench({ manifest, dir, login, log = () => {} }) {
   const missing = missingArchives(manifest, dir);
@@ -205,8 +224,9 @@ export async function fetchBench({ manifest, dir, login, log = () => {} }) {
   const fetched = [];
   const unmatched = [];
   for (const archive of missing) {
+    const candidates = candidateRevisions(archive, list);
     let bytes;
-    for (const entry of candidateRevisions(archive, list)) {
+    for (const entry of candidates) {
       const candidate = await client.download(entry.rid);
       if (sha256(candidate) === archive.sha256) {
         bytes = candidate;
@@ -214,7 +234,7 @@ export async function fetchBench({ manifest, dir, login, log = () => {} }) {
       }
     }
     if (!bytes) {
-      unmatched.push(archive.id);
+      unmatched.push(unmatchedReason(archive, candidates));
       continue;
     }
     const path = join(dir, archive.file);
@@ -226,7 +246,7 @@ export async function fetchBench({ manifest, dir, login, log = () => {} }) {
 
   if (unmatched.length > 0) {
     throw new Error(
-      `No GDTF Share revision matches the pinned hash for: ${unmatched.join(", ")}. The revision may have been removed; pin a current one in the manifest.`,
+      `No GDTF Share revision matches the pinned hash for ${unmatched.length} archive(s). A pinned revision that was removed or re-uploaded must be replaced in the manifest, or the archive copied into the bench directory by hand.\n${unmatched.join("\n")}`,
     );
   }
   return fetched;

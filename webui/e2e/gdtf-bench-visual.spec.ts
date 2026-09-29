@@ -54,7 +54,7 @@ const HYDRABEAM: BenchFixture = {
   mode: "19 CH",
 };
 const MAGIC_PANEL: BenchFixture = {
-  file: "Ayrton@MagicPanel_FX@V2.62_Corrected_PanTilt_Rotate.gdtf",
+  file: "Ayrton@MagicPanel_FX@V2.7_Add_RDM_Personality.gdtf",
   make: "Ayrton",
   model: "MagicPanel FX",
   mode: "Extended",
@@ -67,7 +67,7 @@ const MAC_VIPER: BenchFixture = {
 };
 /** Moving head whose pixel ring and liquid effect sit on DMX breaks 2 and 3. */
 const ARGO_6_FX: BenchFixture = {
-  file: "Ayrton@Argo_6_FX@V1.6_Corrected_Atttribute_Names.gdtf",
+  file: "Ayrton@Argo_6_FX@V1.81_Corrected_Factory_Tilt.gdtf",
   make: "Ayrton",
   model: "Argo 6 FX",
   mode: "Extended_Pixel_2_+_Liquid",
