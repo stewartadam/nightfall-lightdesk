@@ -21,6 +21,7 @@ nightfall-websocket = { path = "../websocket" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
@@ -34,7 +35,6 @@ test-support = []
 async-channel.workspace = true
 sha2 = "0.10"
 tempfile.workspace = true
-tokio.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
