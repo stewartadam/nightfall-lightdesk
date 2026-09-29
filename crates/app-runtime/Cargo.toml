@@ -22,6 +22,7 @@ nightfall = { path = "../common" }
 nightfall-config = { path = "../config" }
 nightfall-actions = { path = "../actions" }
 nightfall-audio = { path = "../audio", optional = true }
+nightfall-beatgrid = { path = "../beatgrid", optional = true }
 nightfall-compositor = { path = "../compositor" }
 nightfall-cues = { path = "../cues" }
 nightfall-desk = { path = "../desk", default-features = false, features = ["fx-module-host", "native-network-watch"] }
@@ -78,7 +79,7 @@ default = ["full", "beatgrid-detect"]
 full = ["audio", "midi", "osc", "artnet", "sacn", "usb", "fixture-library", "object-library"]
 minimal = []
 audio = ["dep:nightfall-audio", "dep:nightfall-desk-audio", "nightfall-timeline/audio"]
-beatgrid-detect = ["nightfall-timeline/beatgrid-detect", "dep:reqwest"]
+beatgrid-detect = ["dep:nightfall-beatgrid", "dep:reqwest"]
 midi = ["dep:nightfall-input-midi", "nightfall-showfile/midi"]
 osc = ["dep:nightfall-input-osc", "nightfall-showfile/osc"]
 artnet = ["dep:nightfall-input-artnet", "dep:nightfall-output-artnet"]

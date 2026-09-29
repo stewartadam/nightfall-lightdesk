@@ -29,11 +29,6 @@ nightfall-selection = { path = "../selection" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-undo = { path = "../undo" }
 nightfall-websocket = { path = "../websocket", optional = true }
-rodio = { version = "0.22", optional = true, default-features = false, features = ["wav", "mp3", "mp4"] }
-rten = { version = "0.26", optional = true, features = ["fft"] }
-rten-tensor = { version = "0.26", optional = true }
-rustfft = { version = "6", optional = true }
-sha2 = { version = "0.10", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
@@ -43,7 +38,6 @@ web-time.workspace = true
 
 [features]
 audio = ["dep:nightfall-audio"]
-beatgrid-detect = ["dep:rodio", "dep:rten", "dep:rten-tensor", "dep:rustfft", "dep:sha2"]
 http = ["dep:axum", "dep:nightfall-websocket"]
 
 [dev-dependencies]

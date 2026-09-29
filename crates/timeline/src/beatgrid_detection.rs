@@ -8,20 +8,53 @@
 
 //! Beatgrid detection request queue and result handling.
 
-#[cfg(feature = "beatgrid-detect")]
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use uuid::Uuid;
 
 use crate::prelude::*;
+
+/// One beat of a detected grid, starting at the first detected downbeat.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DetectedBeat {
+    /// Beat time from the start of the audio, in seconds.
+    pub time_sec: f32,
+    /// Whether this beat starts a bar.
+    pub is_downbeat: bool,
+}
+
+/// Beatgrid returned by a detection backend before it becomes a timeline proposal.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DetectedBeatgrid {
+    /// Estimated tempo in beats per minute.
+    pub bpm: f32,
+    /// Estimated number of beats in each bar.
+    pub beats_per_bar: u8,
+    /// Beats from the first downbeat onwards.
+    pub beats: Vec<DetectedBeat>,
+    /// Overall confidence in the grid, from 0 to 1.
+    pub confidence: f32,
+}
+
+/// Audio analysis backend supplied by the host application.
+///
+/// The timeline only schedules detection and turns results into proposals; the host provides
+/// the model-backed implementation so this crate does not depend on the inference stack.
+#[derive(Debug, Clone, Copy)]
+pub struct BeatgridDetector {
+    /// Returns whether model weights are installed, so audio imports can skip detection
+    /// instead of prompting a download.
+    pub model_installed: fn() -> bool,
+    /// Analyzes an audio file, using the given beats per bar when the audio does not imply one.
+    pub detect: fn(&Path, u8) -> Result<DetectedBeatgrid, String>,
+}
 
 /// Trigger source for a beatgrid detection request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +94,7 @@ struct BeatgridWorkerResult {
 /// Runtime state for background beatgrid detection and pending proposals.
 #[derive(Resource)]
 pub(crate) struct BeatgridDetectionRuntime {
+    detector: Option<BeatgridDetector>,
     result_tx: Sender<BeatgridWorkerResult>,
     result_rx: Mutex<Receiver<BeatgridWorkerResult>>,
     pending_requests: HashMap<Uuid, PendingDetection>,
@@ -68,11 +102,12 @@ pub(crate) struct BeatgridDetectionRuntime {
     proposal_timeline_uids: HashMap<Uuid, Uuid>,
 }
 
-impl FromWorld for BeatgridDetectionRuntime {
-    /// Capture host resource configuration and create the background worker result channel.
-    fn from_world(_world: &mut World) -> Self {
+impl BeatgridDetectionRuntime {
+    /// Create the background worker result channel for the host-supplied detector, if any.
+    pub(crate) fn new(detector: Option<BeatgridDetector>) -> Self {
         let (result_tx, result_rx) = mpsc::channel::<BeatgridWorkerResult>();
         Self {
+            detector,
             result_tx,
             result_rx: Mutex::new(result_rx),
             pending_requests: HashMap::new(),
@@ -90,9 +125,10 @@ pub(crate) fn request_detection_for_timeline(
     trigger: BeatgridDetectionTrigger,
 ) {
     // Audio import must not trigger an unsolicited model download or a missing-model error.
-    #[cfg(feature = "beatgrid-detect")]
     if matches!(trigger, BeatgridDetectionTrigger::Automatic)
-        && !crate::beat_model::model_path().is_ok_and(|path| path.is_file())
+        && !runtime
+            .detector
+            .is_some_and(|detector| (detector.model_installed)())
     {
         return;
     }
@@ -195,6 +231,7 @@ pub(crate) fn request_detection_for_timeline(
         },
     );
 
+    let detector = runtime.detector;
     let worker_tx = runtime.result_tx.clone();
     let worker_task = BeatgridWorkerTask {
         request_id,
@@ -208,7 +245,7 @@ pub(crate) fn request_detection_for_timeline(
     let spawn_result = std::thread::Builder::new()
         .name(format!("timeline-beatgrid-{}", request_id))
         .spawn(move || {
-            let proposal_result = detect_beatgrid(worker_task.clone());
+            let proposal_result = detect_beatgrid(detector, worker_task.clone());
             let _ = worker_tx.send(BeatgridWorkerResult {
                 request_id: worker_task.request_id,
                 timeline_uid: worker_task.timeline_uid,
@@ -310,74 +347,23 @@ pub(crate) fn take_proposal_for_timeline(
     runtime.proposals.remove(&request_id)
 }
 
-#[cfg(feature = "beatgrid-detect")]
-/// Analyze the requested audio using the model from the host's resource directory.
-fn detect_beatgrid(task: BeatgridWorkerTask) -> Result<BeatgridProposal, String> {
-    use std::time::Duration;
-
-    let model_paths = crate::beat_this_detection::BeatThisModelPaths::resolve()?;
-    let analysis = crate::beat_this_detection::analyze_path(&task.audio_path, &model_paths)?;
-
-    if analysis.beats.len() < 2 {
-        return Err("Could not detect enough beats in audio".to_string());
-    }
-
-    let first_downbeat_index =
-        crate::beat_this_detection::first_downbeat_index(&analysis.beats, &analysis.downbeats)
-            .unwrap_or(0);
-    let beat_times_sec = &analysis.beats[first_downbeat_index..];
-    if beat_times_sec.len() < 2 {
-        return Err("Could not detect enough beats after first downbeat".to_string());
-    }
-
-    let beat_intervals_sec: Vec<f32> = beat_times_sec
-        .windows(2)
-        .filter_map(|window| {
-            let delta_sec = window[1] - window[0];
-            if delta_sec <= 0.0 {
-                None
-            } else {
-                Some(delta_sec)
-            }
-        })
-        .collect();
-    if beat_intervals_sec.is_empty() {
-        return Err("Detected beats have invalid timing intervals".to_string());
-    }
-
-    let bpm = crate::beat_this_detection::calculate_bpm(beat_times_sec)
-        .unwrap_or_else(|| (60.0 / median(&beat_intervals_sec)).clamp(1.0, 300.0));
-
-    let interval_consistency = compute_interval_consistency(&beat_intervals_sec);
-    let beat_density = (beat_times_sec.len() as f32 / 128.0).min(1.0);
-    let model_peak_confidence =
-        compute_model_peak_confidence(&analysis.beat_logits, &analysis.downbeat_logits);
-    let downbeat_confidence = if analysis.downbeats.is_empty() {
-        0.0
-    } else {
-        1.0
-    };
-    let confidence = (interval_consistency * 0.55
-        + model_peak_confidence * 0.25
-        + downbeat_confidence * 0.1
-        + beat_density * 0.1)
-        .clamp(0.0, 1.0);
-
-    let beats_per_bar =
-        crate::beat_this_detection::infer_beats_per_bar(&analysis.beats, &analysis.downbeats)
-            .unwrap_or(task.beats_per_bar)
-            .max(1);
-    let markers = beat_times_sec
+/// Run the host's detector on the requested audio and convert its grid into a timeline proposal.
+fn detect_beatgrid(
+    detector: Option<BeatgridDetector>,
+    task: BeatgridWorkerTask,
+) -> Result<BeatgridProposal, String> {
+    let detector =
+        detector.ok_or_else(|| "Beatgrid detection is not available in this build".to_string())?;
+    let grid = (detector.detect)(&task.audio_path, task.beats_per_bar)?;
+    let confidence = grid.confidence;
+    let markers = grid
+        .beats
         .iter()
-        .copied()
         .enumerate()
-        .map(|(index, beat_sec)| BeatMarker {
-            time: Duration::from_millis((beat_sec * 1000.0).round().max(0.0) as u64),
+        .map(|(index, beat)| BeatMarker {
+            time: Duration::from_millis((beat.time_sec * 1000.0).round().max(0.0) as u64),
             beat_index: index as u32,
-            is_downbeat: crate::beat_this_detection::is_model_downbeat(
-                beat_sec,
-                &analysis.downbeats,
-            ) || index % usize::from(beats_per_bar) == 0,
+            is_downbeat: beat.is_downbeat,
             confidence: Some(confidence),
         })
         .collect();
@@ -386,24 +372,14 @@ fn detect_beatgrid(task: BeatgridWorkerTask) -> Result<BeatgridProposal, String>
         request_id: task.request_id,
         source: task.source,
         audio_fingerprint: task.audio_fingerprint,
-        bpm,
-        beats_per_bar,
+        bpm: grid.bpm,
+        beats_per_bar: grid.beats_per_bar,
         markers,
         confidence,
     })
 }
 
-#[cfg(not(feature = "beatgrid-detect"))]
-fn detect_beatgrid(task: BeatgridWorkerTask) -> Result<BeatgridProposal, String> {
-    let _ = (
-        task.source,
-        task.audio_fingerprint,
-        task.audio_path,
-        task.beats_per_bar,
-    );
-    Err("Beatgrid detection backend is disabled (enable feature `beatgrid-detect`)".to_string())
-}
-
+/// Fingerprint an audio file by path, size, and modification time to detect replaced audio.
 fn compute_audio_fingerprint(path: &Path) -> Result<String, String> {
     let metadata = std::fs::metadata(path)
         .map_err(|error| format!("Failed to read audio metadata: {}", error))?;
@@ -419,63 +395,4 @@ fn compute_audio_fingerprint(path: &Path) -> Result<String, String> {
     metadata.len().hash(&mut hasher);
     modified.hash(&mut hasher);
     Ok(format!("{:x}", hasher.finish()))
-}
-
-#[cfg(feature = "beatgrid-detect")]
-fn median(values: &[f32]) -> f32 {
-    let mut sorted = values.to_vec();
-    sorted.sort_by(|lhs, rhs| lhs.partial_cmp(rhs).unwrap_or(Ordering::Equal));
-    let middle = sorted.len() / 2;
-    if sorted.len().is_multiple_of(2) {
-        (sorted[middle - 1] + sorted[middle]) * 0.5
-    } else {
-        sorted[middle]
-    }
-}
-
-#[cfg(feature = "beatgrid-detect")]
-fn compute_interval_consistency(intervals: &[f32]) -> f32 {
-    if intervals.is_empty() {
-        return 0.0;
-    }
-
-    let mean = intervals.iter().copied().sum::<f32>() / intervals.len() as f32;
-    if mean <= f32::EPSILON {
-        return 0.0;
-    }
-
-    let variance = intervals
-        .iter()
-        .copied()
-        .map(|value| {
-            let diff = value - mean;
-            diff * diff
-        })
-        .sum::<f32>()
-        / intervals.len() as f32;
-    let std_dev = variance.sqrt();
-    let coeff_variation = (std_dev / mean).clamp(0.0, 1.0);
-    (1.0 - coeff_variation).clamp(0.0, 1.0)
-}
-
-#[cfg(feature = "beatgrid-detect")]
-fn compute_model_peak_confidence(beat_logits: &[f32], downbeat_logits: &[f32]) -> f32 {
-    let beat_confidence = positive_logit_confidence(beat_logits);
-    let downbeat_confidence = positive_logit_confidence(downbeat_logits);
-    (beat_confidence * 0.75 + downbeat_confidence * 0.25).clamp(0.0, 1.0)
-}
-
-#[cfg(feature = "beatgrid-detect")]
-fn positive_logit_confidence(logits: &[f32]) -> f32 {
-    let positive_logits: Vec<f32> = logits
-        .iter()
-        .copied()
-        .filter(|logit| logit.is_finite() && *logit > 0.0)
-        .collect();
-    if positive_logits.is_empty() {
-        return 0.0;
-    }
-
-    let mean_logit = positive_logits.iter().sum::<f32>() / positive_logits.len() as f32;
-    (1.0 / (1.0 + (-mean_logit).exp())).clamp(0.0, 1.0)
 }
