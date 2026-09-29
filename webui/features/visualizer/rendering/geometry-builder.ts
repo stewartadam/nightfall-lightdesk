@@ -285,13 +285,16 @@ export function buildGeometryTree(
 
       if (meshFileName && geometry.gdtfPath) {
         // Load mesh from GDTF archive
-        loadMesh(geometry.gdtfPath, meshFileName, geometry.gdtfRevision).then(
-          (meshGroup) => {
-            if (meshGroup) {
-              replacePrimitiveWithMesh(obj, node.name, meshGroup);
-            }
-          },
-        );
+        loadMesh(
+          geometry.gdtfPath,
+          meshFileName,
+          geometry.gdtfRevision,
+          node.model,
+        ).then((meshGroup) => {
+          if (meshGroup) {
+            replacePrimitiveWithMesh(obj, node.name, meshGroup);
+          }
+        });
       }
     }
   }
