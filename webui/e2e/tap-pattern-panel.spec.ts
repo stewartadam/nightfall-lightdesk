@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 const COMMAND_INPUT_PLACEHOLDER = "Type a command or search...";
 const TAP_PATTERN_STORAGE_KEY = "nightfall-tap-pattern-panel:taps";
 const TAP_PATTERN_STARTUP_STORAGE_KEY =

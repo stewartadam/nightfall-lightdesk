@@ -10,6 +10,9 @@ import { join } from "node:path";
 import { readShowfileJsonSync } from "../../scripts/showfile-storage.mjs";
 import { expect, test } from "./playwright-fixtures";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Checks persisted sample RGB values, removed examples, and visible clip names. */
 test("sample RGB cues have the requested values and labels", async ({
   page,

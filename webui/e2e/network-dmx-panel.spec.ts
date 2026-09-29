@@ -420,78 +420,6 @@ test("I/O transports panel enables new transport IP after protocol mode normaliz
 });
 
 /**
- * Verifies external control shares a section with interface names, addresses, and status.
- */
-test("I/O transports panel lists network interfaces", async ({ page }) => {
-  await page.setViewportSize({ width: 1400, height: 900 });
-  await openOwnedNetworkDmxApp(page);
-
-  await expect(page.locator("main#app")).toBeVisible();
-  await openPanel(page, "I/O Transports");
-
-  const summary = networkDmxPanel(page).locator(
-    '[data-slot="interface-summary"]',
-  );
-  const networkSection = networkDmxPanel(page).locator(
-    'section[aria-label="Network I/O transports"]',
-  );
-  const usbSection = networkDmxPanel(page).locator(
-    'section[aria-label="USB output transports"]',
-  );
-  await expect(summary).toBeVisible();
-  await expect(
-    summary.getByRole("switch", { name: "Enable external control" }),
-  ).toBeVisible();
-  await expect(
-    summary.getByRole("combobox", { name: "External control interface" }),
-  ).toBeVisible();
-  const seededSummaryText = await seedNetworkInterfaces(page);
-  await expect(
-    summary.getByRole("heading", { name: "Network Interfaces" }),
-  ).toBeVisible();
-  await expect(
-    summary.getByRole("columnheader", { name: "Interface" }),
-  ).toBeVisible();
-  await expect(
-    summary.getByRole("columnheader", { name: "Name" }),
-  ).toBeVisible();
-  await expect(
-    summary.getByRole("columnheader", { name: "Addresses" }),
-  ).toBeVisible();
-  const addressesHeader = summary.getByRole("columnheader", {
-    name: "Addresses",
-  });
-  const statusHeader = summary.getByRole("columnheader", { name: "Status" });
-  await expect(statusHeader).toBeVisible();
-
-  const addressesHeaderBox = await addressesHeader.boundingBox();
-  const statusHeaderBox = await statusHeader.boundingBox();
-  expect(addressesHeaderBox).not.toBeNull();
-  expect(statusHeaderBox).not.toBeNull();
-  expect(statusHeaderBox!.width).toBeGreaterThan(addressesHeaderBox!.width);
-  const networkSectionBox = await networkSection.boundingBox();
-  const summaryBox = await summary.boundingBox();
-  const usbSectionBox = await usbSection.boundingBox();
-  expect(networkSectionBox).not.toBeNull();
-  expect(summaryBox).not.toBeNull();
-  expect(usbSectionBox).not.toBeNull();
-  expect(summaryBox!.y).toBeGreaterThan(networkSectionBox!.y);
-  expect(summaryBox!.y).toBeLessThan(usbSectionBox!.y);
-
-  expect(seededSummaryText).toContain("Wi-Fi");
-  expect(seededSummaryText).toContain("en0");
-  expect(seededSummaryText).toContain("192.168.1.44");
-  expect(seededSummaryText).toContain("USB 2.5G LAN");
-  expect(seededSummaryText).toContain("en7");
-  expect(seededSummaryText).toContain("2.0.0.10, 10.0.0.10");
-  expect(seededSummaryText).toContain("Current");
-  expect(seededSummaryText).toContain("Default");
-  await page.screenshot({
-    path: test.info().outputPath("network-interfaces-external-control.png"),
-  });
-});
-
-/**
  * Verifies network interface badges follow the latest interface list/status after the current interface disappears.
  */
 test("I/O transports panel updates network interface badges after unplug", async ({
@@ -732,60 +660,6 @@ test("I/O transports panel configures named USB targets", async ({ page }) => {
 });
 
 /**
- * Verifies Auto can be added as a USB mapping when no existing target uses it.
- */
-test("I/O transports panel offers auto for new USB target when unused", async ({
-  page,
-}) => {
-  const targetId = `autousb${Date.now().toString(36)}`;
-  const deviceId = "id-16c0:05dc,serial-ABC123,port-20:1.4";
-
-  await page.setViewportSize({ width: 1400, height: 900 });
-  await openOwnedNetworkDmxApp(page);
-
-  await expect(page.locator("main#app")).toBeVisible();
-  await openPanel(page, "I/O Transports");
-  await seedUsbDmxDevices(page, [
-    {
-      id: deviceId,
-      label: "Anyma uDMX (16c0:05dc) - bus 20 port 1.4",
-      vendor_id: 0x16c0,
-      product_id: 0x05dc,
-      manufacturer: "Anyma",
-      product: "uDMX",
-      serial_number: "ABC123",
-      location: "bus 20 port 1.4",
-    },
-  ]);
-  await seedUsbDmxTargets(page, [
-    { id: "udmx", device: deviceId, device_label: "Anyma uDMX" },
-  ]);
-
-  const newUsbRow = networkDmxPanel(page).locator(
-    '[data-slot="new-usb-target-row"]',
-  );
-  const select = newUsbRow.getByLabel("New USB device");
-  await expect(select).toHaveValue("default");
-  await expect(select.locator('option[value="default"]')).toContainText(
-    "Auto (first compatible uDMX)",
-  );
-
-  await newUsbRow.getByLabel("New USB transport id").fill(targetId);
-  await expect(
-    newUsbRow.getByRole("status", {
-      name: "New USB transport status: Ready",
-    }),
-  ).toBeVisible();
-  await newUsbRow.getByRole("button", { name: "Add" }).click();
-
-  const targetRow = usbDmxTargetRow(networkDmxPanel(page), targetId);
-  await expect(targetRow).toBeVisible();
-  await expect(targetRow.getByLabel(`${targetId} usb device`)).toHaveValue(
-    "default",
-  );
-});
-
-/**
  * Verifies an empty USB device list uses neutral add-row styling.
  */
 test("I/O transports panel keeps no USB devices state neutral", async ({
@@ -1004,127 +878,259 @@ test("I/O transports panel distinguishes same-SKU USB devices", async ({
   await expect(select).toHaveValue("default");
 });
 
-/**
- * Verifies delivery edits keep IP controls interactive while waiting for a unique persisted output.
- */
-test("I/O transports panel enables IP editing before duplicate unicast edits are saved", async ({
-  page,
-}) => {
-  const duplicateTargetId = `artnetlocal${Date.now().toString(36)}`;
+/** Groups scenarios that create their own blank showfile through the startup picker. */
+test.describe("owned blank showfile", () => {
+  // Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+  test.use({ emptyStartupWorld: true });
 
-  await page.setViewportSize({ width: 1400, height: 900 });
-  await openOwnedNetworkDmxApp(page);
+  /**
+   * Verifies external control shares a section with interface names, addresses, and status.
+   */
+  test("I/O transports panel lists network interfaces", async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await openOwnedNetworkDmxApp(page);
 
-  await expect(page.locator("main#app")).toBeVisible();
-  await openPanel(page, "I/O Transports");
-  await page.evaluate((targetId) => {
-    const stores = (window as any).appStores;
-    const settings = stores.ioSettings.get();
-    stores.ioSettings.set({
-      ...settings,
-      network_dmx_outputs: {
-        targets: [
-          {
-            id: "sacn",
-            protocol: "Sacn",
-            delivery: { type: "SacnMulticast" },
-          },
-          {
-            id: "artnet",
-            protocol: "ArtNet",
-            delivery: { type: "ArtNetBroadcast" },
-          },
-          {
-            id: targetId,
-            protocol: "ArtNet",
-            delivery: {
-              type: "Unicast",
-              data: { ip: "127.0.0.1" },
+    await expect(page.locator("main#app")).toBeVisible();
+    await openPanel(page, "I/O Transports");
+
+    const summary = networkDmxPanel(page).locator(
+      '[data-slot="interface-summary"]',
+    );
+    const networkSection = networkDmxPanel(page).locator(
+      'section[aria-label="Network I/O transports"]',
+    );
+    const usbSection = networkDmxPanel(page).locator(
+      'section[aria-label="USB output transports"]',
+    );
+    await expect(summary).toBeVisible();
+    await expect(
+      summary.getByRole("switch", { name: "Enable external control" }),
+    ).toBeVisible();
+    await expect(
+      summary.getByRole("combobox", { name: "External control interface" }),
+    ).toBeVisible();
+    const seededSummaryText = await seedNetworkInterfaces(page);
+    await expect(
+      summary.getByRole("heading", { name: "Network Interfaces" }),
+    ).toBeVisible();
+    await expect(
+      summary.getByRole("columnheader", { name: "Interface" }),
+    ).toBeVisible();
+    await expect(
+      summary.getByRole("columnheader", { name: "Name" }),
+    ).toBeVisible();
+    await expect(
+      summary.getByRole("columnheader", { name: "Addresses" }),
+    ).toBeVisible();
+    const addressesHeader = summary.getByRole("columnheader", {
+      name: "Addresses",
+    });
+    const statusHeader = summary.getByRole("columnheader", { name: "Status" });
+    await expect(statusHeader).toBeVisible();
+
+    const addressesHeaderBox = await addressesHeader.boundingBox();
+    const statusHeaderBox = await statusHeader.boundingBox();
+    expect(addressesHeaderBox).not.toBeNull();
+    expect(statusHeaderBox).not.toBeNull();
+    expect(statusHeaderBox!.width).toBeGreaterThan(addressesHeaderBox!.width);
+    const networkSectionBox = await networkSection.boundingBox();
+    const summaryBox = await summary.boundingBox();
+    const usbSectionBox = await usbSection.boundingBox();
+    expect(networkSectionBox).not.toBeNull();
+    expect(summaryBox).not.toBeNull();
+    expect(usbSectionBox).not.toBeNull();
+    expect(summaryBox!.y).toBeGreaterThan(networkSectionBox!.y);
+    expect(summaryBox!.y).toBeLessThan(usbSectionBox!.y);
+
+    expect(seededSummaryText).toContain("Wi-Fi");
+    expect(seededSummaryText).toContain("en0");
+    expect(seededSummaryText).toContain("192.168.1.44");
+    expect(seededSummaryText).toContain("USB 2.5G LAN");
+    expect(seededSummaryText).toContain("en7");
+    expect(seededSummaryText).toContain("2.0.0.10, 10.0.0.10");
+    expect(seededSummaryText).toContain("Current");
+    expect(seededSummaryText).toContain("Default");
+    await page.screenshot({
+      path: test.info().outputPath("network-interfaces-external-control.png"),
+    });
+  });
+
+  /**
+   * Verifies Auto can be added as a USB mapping when no existing target uses it.
+   */
+  test("I/O transports panel offers auto for new USB target when unused", async ({
+    page,
+  }) => {
+    const targetId = `autousb${Date.now().toString(36)}`;
+    const deviceId = "id-16c0:05dc,serial-ABC123,port-20:1.4";
+
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await openOwnedNetworkDmxApp(page);
+
+    await expect(page.locator("main#app")).toBeVisible();
+    await openPanel(page, "I/O Transports");
+    await seedUsbDmxDevices(page, [
+      {
+        id: deviceId,
+        label: "Anyma uDMX (16c0:05dc) - bus 20 port 1.4",
+        vendor_id: 0x16c0,
+        product_id: 0x05dc,
+        manufacturer: "Anyma",
+        product: "uDMX",
+        serial_number: "ABC123",
+        location: "bus 20 port 1.4",
+      },
+    ]);
+    await seedUsbDmxTargets(page, [
+      { id: "udmx", device: deviceId, device_label: "Anyma uDMX" },
+    ]);
+
+    const newUsbRow = networkDmxPanel(page).locator(
+      '[data-slot="new-usb-target-row"]',
+    );
+    const select = newUsbRow.getByLabel("New USB device");
+    await expect(select).toHaveValue("default");
+    await expect(select.locator('option[value="default"]')).toContainText(
+      "Auto (first compatible uDMX)",
+    );
+
+    await newUsbRow.getByLabel("New USB transport id").fill(targetId);
+    await expect(
+      newUsbRow.getByRole("status", {
+        name: "New USB transport status: Ready",
+      }),
+    ).toBeVisible();
+    await newUsbRow.getByRole("button", { name: "Add" }).click();
+
+    const targetRow = usbDmxTargetRow(networkDmxPanel(page), targetId);
+    await expect(targetRow).toBeVisible();
+    await expect(targetRow.getByLabel(`${targetId} usb device`)).toHaveValue(
+      "default",
+    );
+  });
+
+  /**
+   * Verifies delivery edits keep IP controls interactive while waiting for a unique persisted output.
+   */
+  test("I/O transports panel enables IP editing before duplicate unicast edits are saved", async ({
+    page,
+  }) => {
+    const duplicateTargetId = `artnetlocal${Date.now().toString(36)}`;
+
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await openOwnedNetworkDmxApp(page);
+
+    await expect(page.locator("main#app")).toBeVisible();
+    await openPanel(page, "I/O Transports");
+    await page.evaluate((targetId) => {
+      const stores = (window as any).appStores;
+      const settings = stores.ioSettings.get();
+      stores.ioSettings.set({
+        ...settings,
+        network_dmx_outputs: {
+          targets: [
+            {
+              id: "sacn",
+              protocol: "Sacn",
+              delivery: { type: "SacnMulticast" },
             },
+            {
+              id: "artnet",
+              protocol: "ArtNet",
+              delivery: { type: "ArtNetBroadcast" },
+            },
+            {
+              id: targetId,
+              protocol: "ArtNet",
+              delivery: {
+                type: "Unicast",
+                data: { ip: "127.0.0.1" },
+              },
+            },
+          ],
+        },
+      });
+    }, duplicateTargetId);
+
+    const panel = networkDmxPanel(page);
+    const artNetRow = networkDmxTargetRow(panel, "artnet");
+    const artNetIp = artNetRow.getByLabel("artnet unicast ip");
+
+    await expect(artNetIp).toBeDisabled();
+    await artNetRow.getByLabel("artnet delivery mode").selectOption({
+      label: "Unicast",
+    });
+
+    await expect(artNetIp).toBeEnabled();
+    await expect(artNetIp).toHaveValue("127.0.0.1");
+  });
+
+  /**
+   * Verifies network output send failures are visible on their configured target row.
+   */
+  test("I/O transports panel surfaces send failures for target troubleshooting", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await openOwnedNetworkDmxApp(page);
+
+    await expect(page.locator("main#app")).toBeVisible();
+
+    await openPanel(page, "I/O Transports");
+
+    const panel = networkDmxPanel(page);
+    await enableTransportOutput(
+      page,
+      panel,
+      "Enable network output",
+      "network_output_enabled",
+    );
+    const artNetRow = networkDmxTargetRow(panel, "artnet");
+    await artNetRow.getByLabel("artnet delivery mode").selectOption({
+      label: "Broadcast",
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const settings = (window as any).appStores.ioSettings.get();
+          const target = settings.network_dmx_outputs?.targets?.find(
+            (candidate: any) => candidate.id === "artnet",
+          );
+          return target?.delivery?.type;
+        }),
+      )
+      .toBe("ArtNetBroadcast");
+
+    const warning = panel.getByRole("status", {
+      name: /artnet output warning: HostUnreachable/,
+    });
+    await page.evaluate(async () => {
+      const { engineRuntime } = await import(
+        /* @vite-ignore */ "/lib/engine-runtime.ts"
+      );
+      engineRuntime.stop();
+      const stores = (window as any).appStores;
+      stores.engineMetrics.set({
+        fps: 60,
+        active_layers: 0,
+        active_universes: 1,
+        artnet_send_time_ms: 1,
+        artnet_universe_count: 1,
+        sacn_send_time_ms: null,
+        sacn_universe_count: 0,
+        network_output_send_failures: [
+          {
+            protocol: "ArtNet",
+            universe: 0,
+            error_kind: "HostUnreachable",
+            message: "No route to host",
+            count: 2,
           },
         ],
-      },
+      });
     });
-  }, duplicateTargetId);
-
-  const panel = networkDmxPanel(page);
-  const artNetRow = networkDmxTargetRow(panel, "artnet");
-  const artNetIp = artNetRow.getByLabel("artnet unicast ip");
-
-  await expect(artNetIp).toBeDisabled();
-  await artNetRow.getByLabel("artnet delivery mode").selectOption({
-    label: "Unicast",
+    await expect(warning).toHaveCount(1);
+    await expect(warning).toBeVisible();
+    await expect(warning).toContainText("HostUnreachable");
   });
-
-  await expect(artNetIp).toBeEnabled();
-  await expect(artNetIp).toHaveValue("127.0.0.1");
-});
-
-/**
- * Verifies network output send failures are visible on their configured target row.
- */
-test("I/O transports panel surfaces send failures for target troubleshooting", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1400, height: 900 });
-  await openOwnedNetworkDmxApp(page);
-
-  await expect(page.locator("main#app")).toBeVisible();
-
-  await openPanel(page, "I/O Transports");
-
-  const panel = networkDmxPanel(page);
-  await enableTransportOutput(
-    page,
-    panel,
-    "Enable network output",
-    "network_output_enabled",
-  );
-  const artNetRow = networkDmxTargetRow(panel, "artnet");
-  await artNetRow.getByLabel("artnet delivery mode").selectOption({
-    label: "Broadcast",
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const settings = (window as any).appStores.ioSettings.get();
-        const target = settings.network_dmx_outputs?.targets?.find(
-          (candidate: any) => candidate.id === "artnet",
-        );
-        return target?.delivery?.type;
-      }),
-    )
-    .toBe("ArtNetBroadcast");
-
-  const warning = panel.getByRole("status", {
-    name: /artnet output warning: HostUnreachable/,
-  });
-  await page.evaluate(async () => {
-    const { engineRuntime } = await import(
-      /* @vite-ignore */ "/lib/engine-runtime.ts"
-    );
-    engineRuntime.stop();
-    const stores = (window as any).appStores;
-    stores.engineMetrics.set({
-      fps: 60,
-      active_layers: 0,
-      active_universes: 1,
-      artnet_send_time_ms: 1,
-      artnet_universe_count: 1,
-      sacn_send_time_ms: null,
-      sacn_universe_count: 0,
-      network_output_send_failures: [
-        {
-          protocol: "ArtNet",
-          universe: 0,
-          error_kind: "HostUnreachable",
-          message: "No route to host",
-          count: 2,
-        },
-      ],
-    });
-  });
-  await expect(warning).toHaveCount(1);
-  await expect(warning).toBeVisible();
-  await expect(warning).toContainText("HostUnreachable");
 });

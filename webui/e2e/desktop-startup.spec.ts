@@ -9,6 +9,9 @@
 import { expect, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Desktop HTTP requests bypass Vite and complete discovery, draft saves, and ranged reads. */
 test("desktop startup can access a backend on another origin", async ({
   page,

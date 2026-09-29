@@ -11,6 +11,9 @@ import { join } from "node:path";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Opens a new show and the transport panel through the public navigation flow. */
 async function openTransports(page: Page): Promise<void> {
   await page.setViewportSize({ width: 2200, height: 1000 });

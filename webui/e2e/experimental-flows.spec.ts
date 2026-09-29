@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Creates an empty show so release-default layout assertions do not inherit a personal saved layout. */
 async function openBlankShow(page: Page): Promise<void> {
   await page.addInitScript(() => window.localStorage.clear());
