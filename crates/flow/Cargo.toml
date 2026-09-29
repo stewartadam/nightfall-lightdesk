@@ -33,6 +33,7 @@ nightfall-desk = { path = "../desk" }
 nightfall-clips = { path = "../clips" }
 tokio.workspace = true
 wit-component.workspace = true
+nightfall-fixture-model = { path = "../fixture-model" }
 
 [features]
 default = ["fx-module"]

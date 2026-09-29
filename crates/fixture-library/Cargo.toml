@@ -24,6 +24,7 @@ thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
+nightfall-fixture-model = { path = "../fixture-model" }
 
 [features]
 # Exposes the synthetic GDTF archive builder to other crates' tests.

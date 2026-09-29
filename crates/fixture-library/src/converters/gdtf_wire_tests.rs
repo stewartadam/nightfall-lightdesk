@@ -14,6 +14,7 @@
 //! would put bytes somewhere other than where the GDTF file says they belong.
 
 use nightfall_dmx::prelude::*;
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::wire_layout::split_dmx_value;
 

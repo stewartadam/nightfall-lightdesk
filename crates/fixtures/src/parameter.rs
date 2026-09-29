@@ -16,7 +16,7 @@
 use bevy_ecs::prelude::*;
 use nightfall_compositor::types::CompositorParameter;
 use nightfall_dmx::prelude::*;
-pub use nightfall_fixture_model::parameter::*;
+use nightfall_fixture_model::parameter::*;
 use nightfall_io::OutputTransport;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;

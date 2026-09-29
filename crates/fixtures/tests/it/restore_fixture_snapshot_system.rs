@@ -13,6 +13,7 @@ use nightfall_engine::prelude::{
     CommandNotice, CommandReply, CommandResult, CommandTracker, EngineActionEnvelope,
     FinishedCommand,
 };
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::events::handle_restore_fixture_snapshot;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::undo::{FixtureSnapshot, ParameterSnapshot, RestoreFixtureSnapshot};

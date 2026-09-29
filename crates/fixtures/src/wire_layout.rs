@@ -15,8 +15,7 @@
 //! slots through this module so they agree on the wire format.
 
 use nightfall_dmx::prelude::*;
-
-use crate::parameter::{DmxSlots, ParameterMetadata};
+use nightfall_fixture_model::prelude::*;
 
 /// Byte placement of one parameter within a laid-out footprint.
 #[derive(Debug, Clone, PartialEq, Eq)]

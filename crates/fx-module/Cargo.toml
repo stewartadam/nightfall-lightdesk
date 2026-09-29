@@ -12,6 +12,7 @@ nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
+nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-fx = { path = "../fx" }
 nightfall-instances = { path = "../instances" }

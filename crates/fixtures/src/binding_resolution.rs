@@ -15,6 +15,7 @@ use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::FixtureRef;
 use nightfall_dmx::prelude::Attribute;
+use nightfall_fixture_model::prelude::*;
 use nightfall_io::BindingTransport;
 use nightfall_io::prelude::{
     NetworkDmxOutputTarget, NetworkDmxOutputTargets, OutputTransport, UsbDmxOutputTarget,

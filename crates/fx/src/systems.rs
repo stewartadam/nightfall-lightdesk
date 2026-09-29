@@ -282,6 +282,7 @@ mod tests {
     use moonshine_kind::prelude::Instance;
     use nightfall_dmx::prelude::Attribute;
     use nightfall_engine::prelude::DataProvider;
+    use nightfall_fixture_model::prelude::*;
 
     use super::*;
     use crate::step_fx::{

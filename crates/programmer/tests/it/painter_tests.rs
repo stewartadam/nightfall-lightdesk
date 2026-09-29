@@ -16,6 +16,7 @@ use nightfall_compositor::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::DataProvider;
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_instances::{InstanceClock, Owner};
 use nightfall_programmer::painter::materialize_and_paint_programmer;

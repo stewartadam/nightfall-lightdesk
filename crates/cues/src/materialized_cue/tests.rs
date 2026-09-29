@@ -13,6 +13,7 @@ use bevy_ecs::system::SystemState;
 use moonshine_kind::prelude::Instance;
 use nightfall_desk::prelude::BlueprintDefinitionChange;
 use nightfall_engine::prelude::DataProvider;
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use uuid::Uuid;
 

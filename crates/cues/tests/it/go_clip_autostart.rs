@@ -35,6 +35,7 @@ use nightfall_engine::prelude::{
     CommandReply, CommandResult, CommandTracker, DataProvider, EngineActionEnvelope,
     FinishedCommand, OperationResult, PendingEngineActionBuffer, ReplyTarget,
 };
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceId, InstanceOptions, InstancePosition,

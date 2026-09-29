@@ -36,9 +36,10 @@ use nightfall_engine::prelude::{
     CommandOutcome, CommandReply, CommandResult, CommandTracker, DataProvider, DmxOutput,
     EngineActionEnvelope, EventHandling, FinishedCommand, ReplyTarget, ResyncRequested,
 };
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, OutputSource, Parameter,
-    ParameterMetadata, ParameterValues,
+    ParameterValues,
 };
 #[cfg(feature = "midi")]
 use nightfall_input_midi::prelude::*;
