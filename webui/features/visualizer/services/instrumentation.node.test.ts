@@ -183,7 +183,7 @@ test("instrumentation preserves stable FPS across resume", () => {
 });
 
 /** Developer diagnostics are published only when requested, while core stats are always present. */
-test("instrumentation gates pacing and GPU passes behind diagnostics", () => {
+test("instrumentation gates pacing, resolution scales and GPU passes behind diagnostics", () => {
   for (const diagnostics of [false, true]) {
     const instrumentation = new Instrumentation({
       renderMode: "worker",
@@ -197,6 +197,9 @@ test("instrumentation gates pacing and GPU passes behind diagnostics", () => {
       instrumentation.recordFrame(1_000 + index * FRAME_INTERVAL_MS, {
         updateMs: 1,
         renderMs: 2,
+        sceneScale: 0.75,
+        atmosphereScale: 0.5,
+        omittedSurfaceLights: 3,
         gpu: { id: 1, milliseconds: 4, passes: { scene: 4 } },
       });
     }
@@ -204,11 +207,19 @@ test("instrumentation gates pacing and GPU passes behind diagnostics", () => {
     assert.ok(stats);
     assert.equal(stats.renderMode, "worker");
     assert.equal(stats.gpuMs, 4);
+    assert.equal(stats.omittedSurfaceLights, 3);
     if (diagnostics) {
+      assert.equal(stats.sceneScale, 0.75);
+      assert.equal(stats.atmosphereScale, 0.5);
       assert.deepEqual(stats.gpuPasses, { scene: 4 });
       assert.equal(stats.framePacing?.frames, 10);
     } else {
-      for (const key of ["framePacing", "gpuPasses"] as const)
+      for (const key of [
+        "framePacing",
+        "sceneScale",
+        "atmosphereScale",
+        "gpuPasses",
+      ] as const)
         assert.equal(key in stats, false, key);
     }
   }

@@ -30,6 +30,7 @@ import {
   setProgrammerValueOutlineSelectedObjects,
 } from "../effects/post-processing";
 import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
+import { resolveQualityProfile } from "../quality-profile";
 import {
   cancelControlsInteraction,
   DEFAULT_CAMERA_POSITION,
@@ -45,6 +46,7 @@ import {
   stopRenderLoop,
   zoomCameraToGroups,
 } from "../renderer";
+import { setSceneDarkness } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
@@ -84,17 +86,15 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     const canvas = config.canvas as HTMLCanvasElement;
 
     // Initialize the renderer and the fixture model that evaluates channel output
+    const profile = resolveQualityProfile(config.quality);
     const [rendererState] = await Promise.all([
-      initRenderer(canvas, config.initialCameraState),
+      initRenderer(canvas, profile, config.initialCameraState),
       loadFixtureEvaluation(),
     ]);
     this.rendererState = rendererState;
 
     // Create scene manager
-    this.sceneManager = new SceneManager(
-      this.rendererState.scene,
-      config.beamQuality,
-    );
+    this.sceneManager = new SceneManager(this.rendererState.scene, profile);
     if (this.rendererState.postProcessing) {
       setOutlineSelectedObjects(
         this.rendererState.postProcessing,
@@ -342,6 +342,16 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     this.rendererState.environment.axesHelper.visible = enabled;
   }
 
+  /** Updates ambient lighting and background without rebuilding the renderer. */
+  setDarkness(darkness: number): void {
+    if (this.rendererState)
+      setSceneDarkness(
+        this.rendererState.scene,
+        this.rendererState.environment,
+        darkness,
+      );
+  }
+
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {
     this.orbitTargetIndicatorEnabled = enabled;
     if (!this.rendererState) return;
@@ -402,6 +412,15 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
         this.instrumentation!.recordFrame(metrics.time, {
           startedAt: metrics.startedAt,
           completedAt: metrics.completedAt,
+          reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
+          reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
+          atmosphereScale:
+            this.rendererState?.postProcessing?.volumePass.getResolutionScale(),
+          sceneScale:
+            this.rendererState?.postProcessing?.scenePass.getResolutionScale(),
+          omittedSurfaceLights:
+            this.rendererState?.postProcessing?.surfaceLighting
+              .omittedPointLights,
           updateMs: metrics.updateMs,
           renderMs: metrics.renderMs,
           gpu: metrics.gpu,

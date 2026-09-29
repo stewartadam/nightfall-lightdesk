@@ -13,7 +13,6 @@
 
 import { Raycaster, Vector2, Vector3 } from "three";
 import { Mesh, type PerspectiveCamera, type Scene } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../lib/feature-flags";
 import { createLogger } from "../../../lib/logger";
 import type { SelectionTarget } from "../../../lib/selection-targets";
 import type { FixtureElement } from "../../../types";
@@ -31,6 +30,7 @@ import {
 } from "./fixture-renderers";
 import { updateGdtfJoints } from "./gdtf-joints";
 import { type EmitterColor, updateEmitterColors } from "./geometry-builder";
+import type { QualityProfile } from "./quality-profile";
 import type {
   FixtureElementDmxMap,
   VisualizerScreenPoint,
@@ -85,16 +85,16 @@ export class SceneManager {
   private selectionHighlighter: SelectionHighlighter;
   private raycaster = new Raycaster();
   private mouseNdc = new Vector2();
-  /** Per-instance color records, released with rebuilt or removed instances. */
   private readonly fixtureColors = new WeakMap<
     ExtendedFixtureInstance,
     FixtureColorState
   >();
 
-  constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
-    this.fixtureManager = new FixtureManager(scene, beamQuality);
+  /** Builds every scene subsystem with the renderer's resolved quality profile. */
+  constructor(scene: Scene, profile: QualityProfile) {
+    this.fixtureManager = new FixtureManager(scene, profile);
     this.sceneObjectManager = new SceneObjectManager(scene);
-    this.beamManager = new BeamManager(beamQuality, scene);
+    this.beamManager = new BeamManager(scene);
     this.beamUpdater = new BeamUpdater(this.beamManager);
     this.selectionHighlighter = new SelectionHighlighter(
       this.fixtureManager.getAllFixtureInstances(),
@@ -113,6 +113,16 @@ export class SceneManager {
    */
   getBeamsEnabled(): boolean {
     return this.beamUpdater.isEnabled();
+  }
+
+  /** Reports active prism approximation for renderer-independent instrumentation. */
+  get reducedPrismEmitters(): number {
+    return this.beamUpdater.reducedPrismEmitters;
+  }
+
+  /** Reports active mask approximation for renderer-independent instrumentation. */
+  get reducedGoboEmitters(): number {
+    return this.beamManager.reducedGoboEmitters;
   }
 
   /**
@@ -465,6 +475,7 @@ export class SceneManager {
     if (instance.rendererType !== "gdtf") {
       // Non-GDTF renderers (LED bar, strobe, moving head) use label-based keys
       updateFixtureColors(instance, colorMap);
+      this.beamUpdater.updateFixtureBeam(fixtureUid, instance, colorMap);
     } else {
       // GDTF renderer uses label-based emitter mapping
       updateEmitterColors(instance, colorMap);
@@ -499,11 +510,11 @@ export class SceneManager {
       pan?: number;
       tilt?: number;
       tiltSpeed: number;
-      zoom: number;
+      zoom?: number;
+      zoomDegrees?: number;
       frost: number;
       white?: number;
       strobeShutter?: number;
-      gobo?: number;
     },
     fixtureElements: Map<string, FixtureElement[]>,
   ): void {
@@ -575,6 +586,7 @@ export class SceneManager {
           });
         }
         updateFixtureColors(instance, elementColors);
+        this.beamUpdater.updateFixtureBeam(uid, instance, elementColors);
       } else {
         // Default GDTF renderer - use label-based mapping
         const elementColors = new Map<string, EmitterColor>();
@@ -599,6 +611,7 @@ export class SceneManager {
         );
         for (const { element, dmx } of rawElementDmx) {
           elementColors.set(element.label, {
+            ...dmx,
             red: dmx.red,
             green: dmx.green,
             blue: dmx.blue,
@@ -611,8 +624,8 @@ export class SceneManager {
             pan: dmx.pan,
             tilt: dmx.tilt,
             zoom: dmx.zoom,
+            zoomDegrees: dmx.zoomDegrees,
             frost: dmx.frost,
-            gobo: dmx.gobo,
           });
         }
 
@@ -643,7 +656,6 @@ export class SceneManager {
   dispose(): void {
     this.selectionHighlighter.dispose();
     this.beamUpdater.dispose();
-    this.beamManager.destroy();
     this.fixtureManager.dispose();
     this.sceneObjectManager.dispose();
   }

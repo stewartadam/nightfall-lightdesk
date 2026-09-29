@@ -16,6 +16,7 @@ import {
   AmbientLight,
   AxesHelper,
   CanvasTexture,
+  Color,
   DirectionalLight,
   DoubleSide,
   GridHelper,
@@ -69,6 +70,22 @@ export interface SceneEnvironmentOptions {
 }
 
 export const DEFAULT_STAGE_FLOOR_TOP_Y = 0.0;
+
+/** Adjusts environment visibility independently of fixture radiance and optical effects. */
+export function setSceneDarkness(
+  scene: Scene,
+  environment: SceneEnvironment,
+  darkness: number,
+): void {
+  const amount = Number.isFinite(darkness)
+    ? Math.max(0, Math.min(100, darkness)) / 100
+    : 0.5;
+  scene.background = new Color(0x303044).lerp(new Color(0x080812), amount);
+  const illumination = 1.8 + (0.25 - 1.8) * amount;
+  environment.ambientLight.intensity = 0.6 * illumination;
+  environment.directionalLight.intensity = 0.8 * illumination;
+  environment.fillLight.intensity = 0.4 * illumination;
+}
 
 const DEFAULT_OPTIONS: Required<SceneEnvironmentOptions> = {
   showGrid: true,

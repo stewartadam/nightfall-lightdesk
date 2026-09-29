@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SceneObjectType } from "../../../types";
+import { fixturePhysicalSignature } from "../model/physical-signature";
 import type { RenderableFixture, RenderableSceneObject } from "../model/types";
 import { buildVisualizerOverlayLabels } from "./use-visualizer-renderer-sync";
 
@@ -28,6 +29,7 @@ function fixture(
     position,
     rotation: { x: 0, y: 0, z: 0 },
     elements: [],
+    physicalSignature: fixturePhysicalSignature(undefined),
   };
 }
 

@@ -6,31 +6,27 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { VisualizerQualityPreset } from "../features/visualizer";
 import { getLogger } from "./logger";
 
 const log = getLogger(import.meta.url);
 
 const STORAGE_KEY = "nightfall-feature-flags";
 
-export type VisualizerBeamQuality = "high" | "low";
-
 interface FeatureFlags {
   visualizerOffscreenCanvas: boolean;
-  visualizerBeamQuality: VisualizerBeamQuality;
   startupDraftRecovery: boolean;
 }
 
 interface FeatureFlagSettings {
   features?: {
     visualizerOffscreenCanvas?: unknown;
-    visualizerBeamQuality?: unknown;
     startupDraftRecovery?: unknown;
   };
 }
 
 const DEFAULT_FEATURES: FeatureFlags = {
   visualizerOffscreenCanvas: true,
-  visualizerBeamQuality: "high",
   startupDraftRecovery: true,
 };
 
@@ -39,9 +35,23 @@ function parseVisualizerOffscreenCanvas(value: string): boolean {
   return value.trim().toLowerCase() === "true";
 }
 
-/** Parses visualizer beam quality from a URL parameter or stored setting. */
-function parseVisualizerBeamQuality(value: unknown): VisualizerBeamQuality {
-  return value === "low" ? "low" : DEFAULT_FEATURES.visualizerBeamQuality;
+/** Parses the diagnostic visualizer quality URL parameter; unknown values select high. */
+function parseVisualizerQuality(value: string): VisualizerQualityPreset {
+  return value === "low" || value === "medium" ? value : "high";
+}
+
+let visualizerQualityUrlOverride: VisualizerQualityPreset | undefined;
+
+/**
+ * Consumes the `visualizer:beamQuality` diagnostic URL override once. The
+ * caller applies it without persisting, so saved Settings are untouched.
+ */
+export function consumeVisualizerQualityUrlOverride():
+  | VisualizerQualityPreset
+  | undefined {
+  const quality = visualizerQualityUrlOverride;
+  visualizerQualityUrlOverride = undefined;
+  return quality;
 }
 
 let startupDraftRecoveryUrlOverride: boolean | undefined;
@@ -88,16 +98,12 @@ function getFeatureFlags(): FeatureFlags {
       typeof parsed.features?.visualizerOffscreenCanvas === "boolean"
         ? parsed.features.visualizerOffscreenCanvas
         : DEFAULT_FEATURES.visualizerOffscreenCanvas;
-    const visualizerBeamQuality = parseVisualizerBeamQuality(
-      parsed.features?.visualizerBeamQuality,
-    );
     const startupDraftRecovery =
       typeof parsed.features?.startupDraftRecovery === "boolean"
         ? parsed.features.startupDraftRecovery
         : DEFAULT_FEATURES.startupDraftRecovery;
     return {
       visualizerOffscreenCanvas,
-      visualizerBeamQuality,
       startupDraftRecovery,
     };
   } catch (error) {
@@ -120,11 +126,6 @@ function saveFeatureFlags(features: Partial<FeatureFlags>): void {
 /** Returns whether the visualizer should render via an offscreen canvas. */
 export function isOffscreenCanvasEnabled(): boolean {
   return getFeatureFlags().visualizerOffscreenCanvas;
-}
-
-/** Returns the visualizer beam render quality selected at startup. */
-export function getVisualizerBeamQuality(): VisualizerBeamQuality {
-  return getFeatureFlags().visualizerBeamQuality;
 }
 
 /** Returns whether a fresh default layout should include the 3D visualizer. */
@@ -174,9 +175,10 @@ function parseFeatureFlagUrlParams(): boolean {
 
     const beamQuality = params.get("visualizer:beamQuality");
     if (beamQuality !== null) {
-      const value = parseVisualizerBeamQuality(beamQuality);
-      saveFeatureFlags({ visualizerBeamQuality: value });
-      log.debug(`URL param set visualizerBeamQuality=${value}`);
+      visualizerQualityUrlOverride = parseVisualizerQuality(beamQuality);
+      log.debug(
+        `URL param overrides visualizer quality=${visualizerQualityUrlOverride}`,
+      );
       changed = true;
     }
 
