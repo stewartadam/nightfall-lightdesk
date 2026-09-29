@@ -8,7 +8,7 @@
 
 //! Source-agnostic timeline planning helpers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use nightfall_actions::{ActionReference, ActionRegistry};
@@ -181,6 +181,7 @@ pub(crate) fn plan_timeline_at(
         }
     }
 
+    dedup_noops(&mut plan.no_ops);
     plan
 }
 
@@ -567,18 +568,27 @@ fn push_unsupported_registered_action(
     });
 }
 
+/// Records an aggregate no-op; duplicates are removed once planning finishes.
 fn push_noop(
     no_ops: &mut Vec<PlannedNoOp>,
     owner: TimelinePlaybackOwner,
     reason: PlannedNoOpReason,
 ) {
-    if no_ops
-        .iter()
-        .any(|no_op| no_op.owner == owner && no_op.reason == reason)
-    {
-        return;
-    }
     no_ops.push(PlannedNoOp { owner, reason });
+}
+
+/// Drops repeated owner and reason pairs, keeping the first occurrence in order.
+///
+/// A single hashed pass keeps planning linear in the number of no-ops, where checking for
+/// duplicates on every insert was quadratic across long timelines.
+fn dedup_noops(no_ops: &mut Vec<PlannedNoOp>) {
+    let mut seen = HashSet::with_capacity(no_ops.len());
+    let keep = no_ops
+        .iter()
+        .map(|no_op| seen.insert((&no_op.owner, no_op.reason)))
+        .collect::<Vec<_>>();
+    let mut keep = keep.into_iter();
+    no_ops.retain(|_| keep.next().unwrap_or(true));
 }
 
 #[cfg(test)]
@@ -1085,6 +1095,39 @@ mod tests {
             plan.no_ops
                 .iter()
                 .any(|no_op| no_op.owner.action_id == "stop")
+        );
+    }
+
+    /// Verifies no-op dedup drops repeated owner and reason pairs while keeping first-seen order
+    /// and distinct reasons for the same owner.
+    #[test]
+    fn dedup_noops_keeps_first_occurrence_of_each_owner_and_reason() {
+        let owner = |action_id: &str| TimelinePlaybackOwner {
+            timeline_uid: Uuid::nil(),
+            track_id: "track".to_owned(),
+            action_id: action_id.to_owned(),
+        };
+        let no_op = |action_id: &str, reason| PlannedNoOp {
+            owner: owner(action_id),
+            reason,
+        };
+        let mut no_ops = vec![
+            no_op("b", PlannedNoOpReason::CompletedBeforeTarget),
+            no_op("a", PlannedNoOpReason::CompletedBeforeTarget),
+            no_op("b", PlannedNoOpReason::CompletedBeforeTarget),
+            no_op("b", PlannedNoOpReason::ReleaseCompletedBeforeTarget),
+            no_op("a", PlannedNoOpReason::CompletedBeforeTarget),
+        ];
+
+        dedup_noops(&mut no_ops);
+
+        assert_eq!(
+            no_ops,
+            vec![
+                no_op("b", PlannedNoOpReason::CompletedBeforeTarget),
+                no_op("a", PlannedNoOpReason::CompletedBeforeTarget),
+                no_op("b", PlannedNoOpReason::ReleaseCompletedBeforeTarget),
+            ]
         );
     }
 }
