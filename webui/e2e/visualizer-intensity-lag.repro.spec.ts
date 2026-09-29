@@ -183,21 +183,25 @@ async function measureVisualLatency(
 ): Promise<LatencyMeasurement> {
   await page.evaluate(
     ({ mode: visualMode, uid }) => {
-      const findDescriptor = (target: any, property: string) => {
-        let cursor = target;
-        while (cursor) {
-          const descriptor = Object.getOwnPropertyDescriptor(cursor, property);
-          if (descriptor) return descriptor;
-          cursor = Object.getPrototypeOf(cursor);
-        }
-        return undefined;
-      };
-
       const stores = (window as any).appStores;
       const scene = (window as any).visualizerApi.getScene();
       const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-      /** Reports whether the aperture's shared optical light carries visible output. */
-      const beamLit = () => {
+      const instanceColor = root?.getObjectByName?.("Pixels")?.instanceColor;
+      if (visualMode === "led" && !instanceColor) {
+        throw new Error("LED instance colors not found");
+      }
+      /**
+       * Reports whether the fixture's rendered output is lit: the LED cell colors that
+       * feed the filtered emitter row, or the aperture's shared optical light.
+       */
+      const sceneLit = () => {
+        if (visualMode === "led") {
+          const values = instanceColor.array as ArrayLike<number>;
+          for (let i = 0; i < values.length; i++) {
+            if (values[i] > 0.05) return true;
+          }
+          return false;
+        }
         const light = scene?.getObjectByName?.(
           `OpticalSurface:${uid}:MainEmitter`,
         );
@@ -228,15 +232,11 @@ async function measureVisualLatency(
           );
         }
         probe.lastFrameTime = frameTime;
-        // Shared optical lights are created lazily, so beam scene changes are sampled per frame.
-        if (
-          visualMode === "beam" &&
-          probe.received != null &&
-          probe.sceneObserved == null &&
-          beamLit()
-        ) {
-          probe.sceneObserved = performance.now();
-        }
+        // Optical lights are created lazily and LED rows upload through a filtered texture,
+        // so neither exposes a synchronous hook; scene changes are sampled per frame.
+        // The visual stamp is taken on the frame after the scene change was seen, once
+        // the render that consumed the change has been presented, so render lag shows
+        // up as visual latency beyond scene latency.
         if (
           probe.received != null &&
           probe.sceneObserved != null &&
@@ -244,6 +244,13 @@ async function measureVisualLatency(
         ) {
           probe.visualFrames += 1;
           probe.visualObserved = performance.now();
+        }
+        if (
+          probe.received != null &&
+          probe.sceneObserved == null &&
+          sceneLit()
+        ) {
+          probe.sceneObserved = performance.now();
         }
 
         probe.rafId = requestAnimationFrame(sampleFrame);
@@ -273,63 +280,8 @@ async function measureVisualLatency(
         stores.parameterUpdateTimestamp.set = originalTimestampSet;
       });
 
-      if (visualMode === "led") {
-        const pixels = root?.getObjectByName?.("Pixels");
-        const instanceColor = pixels?.instanceColor;
-        const values = Array.from(instanceColor?.array ?? []) as number[];
-        if (values.length > 0 && Math.max(...values) > 0.05) {
-          throw new Error("LED control fixture was already lit");
-        }
-        if (!instanceColor) throw new Error("LED instance colors not found");
-
-        const originalOwnDescriptor = Object.getOwnPropertyDescriptor(
-          instanceColor,
-          "needsUpdate",
-        );
-        const originalDescriptor = findDescriptor(instanceColor, "needsUpdate");
-        let currentNeedsUpdate = instanceColor.needsUpdate;
-
-        Object.defineProperty(instanceColor, "needsUpdate", {
-          configurable: true,
-          get() {
-            return originalDescriptor?.get
-              ? originalDescriptor.get.call(instanceColor)
-              : currentNeedsUpdate;
-          },
-          set(value) {
-            if (value) {
-              const colorValues = Array.from(
-                instanceColor.array ?? [],
-              ) as number[];
-              if (
-                probe.sceneObserved == null &&
-                colorValues.length > 0 &&
-                Math.max(...colorValues) > 0.05
-              ) {
-                probe.sceneObserved = performance.now();
-              }
-            }
-            if (originalDescriptor?.set) {
-              originalDescriptor.set.call(instanceColor, value);
-            } else {
-              currentNeedsUpdate = value;
-            }
-          },
-        });
-
-        restoreCallbacks.push(() => {
-          if (originalOwnDescriptor) {
-            Object.defineProperty(
-              instanceColor,
-              "needsUpdate",
-              originalOwnDescriptor,
-            );
-          } else {
-            delete instanceColor.needsUpdate;
-          }
-        });
-      } else if (beamLit()) {
-        throw new Error("Beam fixture was already lit");
+      if (sceneLit()) {
+        throw new Error(`${visualMode} fixture was already lit`);
       }
 
       probe.restore = () => {
