@@ -1,5 +1,5 @@
 {
-  "description": "Curated GDTF bench. Archives come from the GDTF Share collection downloaded 2025-12-30; they are not redistributed with the repository. Hashes pin the exact revisions; mode names are exact, including significant whitespace.",
+  "description": "Curated GDTF bench. Archives come from the GDTF Share collection downloaded 2025-12-30; they are not redistributed with the repository; fetch them with `npm run gdtf-bench:fetch`. Hashes pin the exact revisions; mode names are exact, including significant whitespace.",
   "source": "GDTF Share collection, 2025-12-30",
   "archives": [
     {
