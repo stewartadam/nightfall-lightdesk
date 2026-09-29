@@ -38,13 +38,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let model_paths = nightfall_beatgrid::beat_this::BeatThisModelPaths::resolve()?;
-    let analysis = nightfall_beatgrid::beat_this::analyze_path(&parsed.audio_path, &model_paths)?;
-    let bpm = nightfall_beatgrid::beat_this::calculate_bpm(&analysis.beats);
-    let beats_per_bar =
-        nightfall_beatgrid::beat_this::infer_beats_per_bar(&analysis.beats, &analysis.downbeats);
-    let first_downbeat =
-        nightfall_beatgrid::beat_this::first_downbeat_index(&analysis.beats, &analysis.downbeats);
+    let model_paths = nightfall_beat_detection::beat_this::BeatThisModelPaths::resolve()?;
+    let analysis =
+        nightfall_beat_detection::beat_this::analyze_path(&parsed.audio_path, &model_paths)?;
+    let bpm = nightfall_beat_detection::beat_this::calculate_bpm(&analysis.beats);
+    let beats_per_bar = nightfall_beat_detection::beat_this::infer_beats_per_bar(
+        &analysis.beats,
+        &analysis.downbeats,
+    );
+    let first_downbeat = nightfall_beat_detection::beat_this::first_downbeat_index(
+        &analysis.beats,
+        &analysis.downbeats,
+    );
 
     println!("track={}", parsed.audio_path.display());
     println!("beat_model={}", model_paths.beat_model.display());
@@ -67,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let max_events = parsed.max_events.unwrap_or(analysis.beats.len());
     for (index, beat_time) in analysis.beats.iter().take(max_events).enumerate() {
         let is_downbeat =
-            nightfall_beatgrid::beat_this::is_model_downbeat(*beat_time, &analysis.downbeats);
+            nightfall_beat_detection::beat_this::is_model_downbeat(*beat_time, &analysis.downbeats);
         let instant_bpm = if index == 0 {
             None
         } else {

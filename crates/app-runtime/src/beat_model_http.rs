@@ -20,7 +20,7 @@ use axum::{
     http::StatusCode,
     routing::{delete, get},
 };
-use nightfall_beatgrid::model as beat_model;
+use nightfall_beat_detection::model as beat_model;
 use nightfall_websocket::prelude::HttpRouteRegistry;
 use serde::Serialize;
 use tokio::{io::AsyncWriteExt, sync::watch};

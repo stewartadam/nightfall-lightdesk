@@ -225,7 +225,7 @@ dependencies = [
  "nightfall",
  "nightfall-actions",
  "nightfall-audio",
- "nightfall-beatgrid",
+ "nightfall-beat-detection",
  "nightfall-clips",
  "nightfall-cmd-parse",
  "nightfall-compositor",
@@ -5015,7 +5015,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nightfall-beatgrid"
+name = "nightfall-beat-detection"
 version = "0.1.0-alpha.2"
 dependencies = [
  "nightfall",

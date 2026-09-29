@@ -20,12 +20,12 @@ pub(crate) const DETECTOR: BeatgridDetector = BeatgridDetector {
 
 /// Report whether model weights exist in application data, without verifying their checksum.
 fn model_installed() -> bool {
-    nightfall_beatgrid::model::model_path().is_ok_and(|path| path.is_file())
+    nightfall_beat_detection::model::model_path().is_ok_and(|path| path.is_file())
 }
 
 /// Estimate a beatgrid for an audio file and map it into the timeline's detection result.
 fn detect(audio_path: &Path, fallback_beats_per_bar: u8) -> Result<DetectedBeatgrid, String> {
-    let estimate = nightfall_beatgrid::estimate(audio_path, fallback_beats_per_bar)?;
+    let estimate = nightfall_beat_detection::estimate(audio_path, fallback_beats_per_bar)?;
     Ok(DetectedBeatgrid {
         bpm: estimate.bpm,
         beats_per_bar: estimate.beats_per_bar,

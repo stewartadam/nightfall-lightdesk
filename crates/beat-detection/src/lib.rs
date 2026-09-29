@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Beat This model download metadata and audio beatgrid estimation.
+//! Beat and downbeat detection from audio with the Beat This model.
 //!
 //! This crate owns the RTen inference stack so that crates which only schedule
 //! detection (such as the timeline) do not compile or wait on it.

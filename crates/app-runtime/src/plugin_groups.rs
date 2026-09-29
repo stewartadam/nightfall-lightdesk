@@ -88,8 +88,8 @@ pub struct TimecodePlugins {
 impl PluginGroup for TimecodePlugins {
     fn build(self) -> PluginGroupBuilder {
         let timeline = TimelinePlugin::new(self.timeline_audio_enabled);
-        #[cfg(feature = "beatgrid-detect")]
-        let timeline = timeline.with_beatgrid_detector(crate::beatgrid_backend::DETECTOR);
+        #[cfg(feature = "beat-detection")]
+        let timeline = timeline.with_beatgrid_detector(crate::beat_detection_backend::DETECTOR);
         PluginGroupBuilder::start::<Self>()
             .add(TimecodePlugin)
             .add(timeline)
