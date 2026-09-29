@@ -91,12 +91,12 @@ pub fn rebuild_step_fx_blueprint_reference_index(
     let references = step_fx
         .iter()
         .flat_map(|fx| {
-            fx.blueprint_references().map(move |(uid, attribute)| {
+            fx.blueprint_references().map(move |(uid, lane)| {
                 (
                     uid,
                     format!(
                         "step FX {} ({}) {}",
-                        fx.identifiers.id, fx.identifiers.label, attribute
+                        fx.identifiers.id, fx.identifiers.label, lane
                     ),
                 )
             })

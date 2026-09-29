@@ -33,8 +33,9 @@ pub mod prelude {
     };
     pub use crate::color_path::{
         ColorAttributeTiming, ColorInterpolationSpace, ColorPath, ColorPathDefault, ColorPathId,
-        ColorPathRgb, ColorPathTiming, ColorPathTimingComponent, HueDirection, builtin_color_paths,
-        resolved_interpolation_space, sample_color_path,
+        ColorPathRgb, ColorPathTiming, ColorPathTimingComponent, HueDirection,
+        RGB_COLOR_MIX_ATTRIBUTES, builtin_color_paths, decompose_rgb_color_mix,
+        resolved_interpolation_space, rgb_after_color_mix, sample_color, sample_color_path,
     };
     pub use crate::command_types::{
         Axis, ElementSelectorExpr, FixtureRangeExpr, GridSize, GroupRefExpr, IdExpr,
@@ -177,6 +178,37 @@ pub mod serde_uuid_simple {
     {
         let s: String = String::deserialize(deserializer)?;
         Uuid::from_str(&s).map_err(|e| D::Error::custom(format!("Invalid UUID: {}", e)))
+    }
+}
+
+/// Serde module for optional UUIDs using the simple format of [`serde_uuid_simple`].
+///
+/// Use with `#[serde(default, skip_serializing_if = "Option::is_none")]` so absent values
+/// are omitted on the wire while present values stay strings in binary encodings, where
+/// the default `Uuid` representation would otherwise become raw bytes.
+pub mod serde_option_uuid_simple {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use uuid::Uuid;
+
+    use crate::SimpleUuid;
+
+    /// Writes a present UUID as a compact hyphen-less string and an absent one as none.
+    pub fn serialize<S>(uuid: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match uuid {
+            Some(uuid) => super::serde_uuid_simple::serialize(uuid, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    /// Reads an optional UUID string in any spelling `Uuid` accepts, owned or borrowed.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Uuid>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Option::<SimpleUuid>::deserialize(deserializer)?.map(Uuid::from))
     }
 }
 

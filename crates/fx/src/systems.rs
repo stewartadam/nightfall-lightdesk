@@ -22,6 +22,7 @@ use nightfall_instances::{
 };
 use nightfall_selection::filter_existing_selection;
 
+use crate::color_emitters::ColorLaneEmitters;
 use crate::events::PreviewStepFxDefinition;
 use crate::step_fx::{ActiveStepFx, StepFx, StepFxLanePhaseOffsets};
 
@@ -210,11 +211,35 @@ fn apply_fx_to_fixture(
     layer: &mut Layer,
 ) {
     let default_offsets = StepFxLanePhaseOffsets::default();
+    let lane_phase_offsets = lane_phase_offsets.unwrap_or(&default_offsets);
+    let color_emitters = step_fx.color.as_ref().and_then(|_| {
+        ColorLaneEmitters::resolve(fixture_ref, fixture_data_provider, parameter_query)
+    });
+    if let Some(emitters) = &color_emitters
+        && let Some(color) = step_fx.sample_color_for_selection_index(
+            elapsed,
+            selection_index,
+            selection_index_count,
+            lane_phase_offsets,
+            Some(blueprint_data_provider),
+        )
+    {
+        for (parameter_entity, level) in emitters.levels(color) {
+            let value = step_fx_output_value_for_parameter(
+                ParameterValue::AbsolutePercent {
+                    value: level.into(),
+                },
+                parameter_query.get(parameter_entity.entity()).ok(),
+            );
+            layer.absolute.insert(parameter_entity, (value, None));
+        }
+    }
+
     let samples = step_fx.sample_for_selection_index_with_offsets_and_blueprints(
         elapsed,
         selection_index,
         selection_index_count,
-        lane_phase_offsets.unwrap_or(&default_offsets),
+        lane_phase_offsets,
         Some(blueprint_data_provider),
     );
 
@@ -226,6 +251,13 @@ fn apply_fx_to_fixture(
         };
         let concrete_attribute = resolved_parameter.attribute;
         let parameter_entity = resolved_parameter.instance;
+        if color_emitters.as_ref().is_some_and(|emitters| {
+            emitters
+                .claimed_parameters()
+                .any(|claimed| claimed == parameter_entity)
+        }) {
+            continue;
+        }
 
         let parameter = parameter_query.get(parameter_entity.entity()).ok();
 
@@ -285,8 +317,8 @@ mod tests {
 
     use super::*;
     use crate::step_fx::{
-        CurveType, FxDirection, FxLane, FxStep, FxTrack, Linear, StepFxPhase, StepFxTiming,
-        StepFxTrackPhaseOffsets,
+        CurveType, FxColorLane, FxColorStep, FxDirection, FxLane, FxStep, FxTrack, Linear,
+        StepFxPhase, StepFxTiming, StepFxTrackPhaseOffsets,
     };
 
     /// Verifies clock-backed Step FX elapsed time still honors the local Step FX rate.
@@ -414,30 +446,47 @@ mod tests {
                     }],
                 }),
             }],
+            color: None,
         }
     }
 
     /// Adds a test fixture with one intensity parameter and returns its fixture and parameter refs.
     fn add_intensity_fixture(app: &mut App, id: u32) -> (FixtureRef, Instance<Parameter>) {
+        let (fixture_ref, parameters) = add_fixture(app, id, &[Attribute::Intensity]);
+        (fixture_ref, parameters[0])
+    }
+
+    /// Adds a single-element test fixture exposing the given attributes in order.
+    fn add_fixture(
+        app: &mut App,
+        id: u32,
+        attributes: &[Attribute],
+    ) -> (FixtureRef, Vec<Instance<Parameter>>) {
         let fixture_uid = uuid::Uuid::new_v4();
         let fixture_ref = FixtureRef {
             fixture_uid,
             index: Some(1),
         };
-        let metadata = ParameterMetadata {
-            attribute: Attribute::Intensity,
-            ..Default::default()
-        };
-        let parameter = unsafe {
-            Instance::<Parameter>::from_entity_unchecked(
-                app.world_mut()
-                    .spawn(Parameter {
-                        metadata: metadata.clone(),
-                        values: ParameterValues::default(),
-                    })
-                    .id(),
-            )
-        };
+        let metadata = attributes
+            .iter()
+            .map(|attribute| ParameterMetadata {
+                attribute: attribute.clone(),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+        let parameters = metadata
+            .iter()
+            .map(|metadata| unsafe {
+                Instance::<Parameter>::from_entity_unchecked(
+                    app.world_mut()
+                        .spawn(Parameter {
+                            metadata: metadata.clone(),
+                            values: ParameterValues::default(),
+                        })
+                        .id(),
+                )
+            })
+            .collect::<Vec<_>>();
 
         let mut fixtures = app.world_mut().resource_mut::<FixtureDataProviderExt>();
         fixtures
@@ -450,15 +499,136 @@ mod tests {
                 },
                 elements: vec![FixtureElement {
                     label: "main".to_string(),
-                    parameters: vec![metadata],
+                    parameters: metadata,
                 }],
                 ..Default::default()
             })
             .expect("test fixture should be stored");
-        fixtures.add_parameter(fixture_ref.clone(), Attribute::Intensity, parameter);
+        for (attribute, parameter) in attributes.iter().zip(&parameters) {
+            fixtures.add_parameter(fixture_ref.clone(), attribute.clone(), *parameter);
+        }
         drop(fixtures);
 
-        (fixture_ref, parameter)
+        (fixture_ref, parameters)
+    }
+
+    /// Builds a Step FX holding one static color plus one static full-level White lane.
+    fn color_and_white_step_fx(color: ColorPathRgb, selection: SpatialSelection) -> StepFx {
+        let mut step_fx = intensity_step_fx(
+            ParameterValue::AbsolutePercent { value: 1.0.into() },
+            selection,
+        );
+        step_fx.lanes[0].attribute = Attribute::White;
+        step_fx.color = Some(FxColorLane {
+            interpolation_space: ColorInterpolationSpace::Rgb,
+            hue_direction: HueDirection::Shortest,
+            timing_override: None,
+            phase_override: None,
+            steps: vec![FxColorStep::new(
+                color,
+                1.0,
+                0.0.into(),
+                CurveType::Linear(Linear {}),
+            )],
+        });
+        step_fx
+    }
+
+    /// Returns the raw absolute value the evaluated layer holds for one parameter.
+    fn layer_value(app: &App, active_entity: Entity, parameter: &Instance<Parameter>) -> f32 {
+        let layer = app
+            .world()
+            .entity(active_entity)
+            .get::<Layer>()
+            .expect("active Step FX should receive a generated layer");
+        match layer.absolute.get(parameter).map(|(value, _)| *value) {
+            Some(ParameterValue::Absolute { value }) => value,
+            other => panic!("expected a raw absolute value, got {other:?}"),
+        }
+    }
+
+    /// Verifies the color lane owns RGBW emitters while a White lane still drives a white-only element.
+    #[test]
+    fn evaluate_step_fx_color_lane_claims_white_only_on_color_elements() {
+        let mut app = step_fx_test_app();
+        let (rgbw_fixture, rgbw) = add_fixture(
+            &mut app,
+            1,
+            &[
+                Attribute::Red,
+                Attribute::Green,
+                Attribute::Blue,
+                Attribute::White,
+            ],
+        );
+        let (strip_fixture, strip) = add_fixture(&mut app, 2, &[Attribute::White]);
+        let step_fx = color_and_white_step_fx(
+            ColorPathRgb {
+                red: 1.0,
+                green: 0.5,
+                blue: 0.5,
+            },
+            SpatialSelection::identity(SelectionExpr::Resolved(vec![rgbw_fixture, strip_fixture])),
+        );
+
+        let active_entity = evaluate_test_step_fx(&mut app, step_fx);
+
+        assert_eq!(layer_value(&app, active_entity, &rgbw[0]), 127.5);
+        assert_eq!(layer_value(&app, active_entity, &rgbw[1]), 0.0);
+        assert_eq!(layer_value(&app, active_entity, &rgbw[2]), 0.0);
+        assert_eq!(layer_value(&app, active_entity, &rgbw[3]), 127.5);
+        assert_eq!(layer_value(&app, active_entity, &strip[0]), 255.0);
+    }
+
+    /// Verifies CMY elements receive the subtractive complement of the sampled color.
+    #[test]
+    fn evaluate_step_fx_color_lane_drives_cmy_elements() {
+        let mut app = step_fx_test_app();
+        let (fixture_ref, cmy) = add_fixture(
+            &mut app,
+            1,
+            &[Attribute::Cyan, Attribute::Magenta, Attribute::Yellow],
+        );
+        let step_fx = color_and_white_step_fx(
+            ColorPathRgb {
+                red: 1.0,
+                green: 0.0,
+                blue: 0.0,
+            },
+            SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
+        );
+
+        let active_entity = evaluate_test_step_fx(&mut app, step_fx);
+
+        assert_eq!(layer_value(&app, active_entity, &cmy[0]), 0.0);
+        assert_eq!(layer_value(&app, active_entity, &cmy[1]), 255.0);
+        assert_eq!(layer_value(&app, active_entity, &cmy[2]), 255.0);
+    }
+
+    /// Verifies attribute lanes keep driving an element that lacks a complete color emitter set.
+    #[test]
+    fn evaluate_step_fx_attribute_lane_drives_incomplete_color_elements() {
+        let mut app = step_fx_test_app();
+        let (fixture_ref, parameters) =
+            add_fixture(&mut app, 1, &[Attribute::Red, Attribute::White]);
+        let step_fx = color_and_white_step_fx(
+            ColorPathRgb {
+                red: 0.0,
+                green: 0.0,
+                blue: 1.0,
+            },
+            SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
+        );
+
+        let active_entity = evaluate_test_step_fx(&mut app, step_fx);
+
+        let layer = app
+            .world()
+            .entity(active_entity)
+            .get::<Layer>()
+            .expect("active Step FX should receive a generated layer");
+        assert!(layer.absolute.get(&parameters[0]).is_none());
+        assert_eq!(layer_value(&app, active_entity, &parameters[1]), 255.0);
     }
 
     /// Creates a minimal app world with resources needed by the Step FX evaluator.

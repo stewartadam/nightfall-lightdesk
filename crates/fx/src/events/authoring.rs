@@ -296,6 +296,7 @@ fn resolve_step_fx_draft(
         direction: draft.direction,
         cycle_scale: draft.cycle_scale,
         lanes,
+        color: None,
     })
 }
 

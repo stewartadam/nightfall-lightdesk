@@ -9,6 +9,7 @@ bevy_app.workspace = true
 bevy_ecs.workspace = true
 bevy_state.workspace = true
 enum_dispatch.workspace = true
+moonshine-kind.workspace = true
 orx-parallel.workspace = true
 nightfall = { path = "../common" }
 nightfall-compositor = { path = "../compositor" }
@@ -31,7 +32,6 @@ typeshare.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-moonshine-kind.workspace = true
 nightfall-desk = { path = "../desk" }
 nightfall-clips = { path = "../clips" }
 nightfall-flow = { path = "../flow" }

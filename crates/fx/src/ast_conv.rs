@@ -261,6 +261,7 @@ fn step_fx_from_direct_draft(draft: StepFxDraft) -> StepFx {
         direction: draft.direction,
         cycle_scale: draft.cycle_scale,
         lanes,
+        color: None,
     }
 }
 

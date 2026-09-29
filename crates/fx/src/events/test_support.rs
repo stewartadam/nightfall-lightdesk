@@ -49,5 +49,6 @@ pub(super) fn valid_step_fx(id: u32, uid: Uuid, selection: SpatialSelection) -> 
             }),
             relative: None,
         }],
+        color: None,
     }
 }

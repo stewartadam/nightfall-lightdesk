@@ -132,7 +132,7 @@ pub(super) fn apply_color_path_samples(
         let (sampled, decomposed_emitters) = if group.model == MaterializedColorPathModel::Rgb {
             let decomposed_emitters =
                 sample_decomposed_rgb_emitters(group, start, end, parent_ratio);
-            let primary = rgb_after_decomposed_emitters(sampled, &decomposed_emitters);
+            let primary = rgb_after_color_mix(sampled, &decomposed_emitters);
             (
                 [primary.red, primary.green, primary.blue],
                 decomposed_emitters,
@@ -302,63 +302,18 @@ fn sample_decomposed_rgb_emitters(
                 parent_ratio,
             ))
             .clamped();
-            decompose_rgb_color_mix(sampled, &group.decomposed_emitters)
+            let available = group
+                .decomposed_emitters
+                .iter()
+                .map(|(attribute, _)| attribute.clone())
+                .collect::<Vec<_>>();
+            decompose_rgb_color_mix(sampled, &available)
                 .into_iter()
                 .find_map(|(sampled_attribute, value)| {
                     (sampled_attribute == *attribute).then_some((attribute.clone(), value))
                 })
         })
         .collect()
-}
-
-/// Decomposes an RGB color into common additive color-mix emitter values.
-fn decompose_rgb_color_mix(
-    sampled: ColorPathRgb,
-    emitters: &[(Attribute, Instance<Parameter>)],
-) -> Vec<(Attribute, f32)> {
-    let mut residual = sampled.clamped();
-    let mut decomposed = Vec::new();
-
-    if let Some(attribute) = first_available_attribute(
-        emitters,
-        &[Attribute::White, Attribute::WarmWhite, Attribute::CoolWhite],
-    ) {
-        let white = residual.red.min(residual.green).min(residual.blue);
-        residual.red -= white;
-        residual.green -= white;
-        residual.blue -= white;
-        decomposed.push((attribute, white));
-    }
-
-    if emitter_available(emitters, &Attribute::Amber) {
-        let amber = residual.red.min(residual.green / 0.6);
-        decomposed.push((Attribute::Amber, amber.clamp(0.0, 1.0)));
-    }
-
-    decomposed
-}
-
-/// Removes currently active derived color-mix emitters from a primary RGB sample.
-fn rgb_after_decomposed_emitters(
-    sampled: ColorPathRgb,
-    attributes: &[(Attribute, f32)],
-) -> ColorPathRgb {
-    let mut residual = sampled.clamped();
-    for (attribute, value) in attributes {
-        match attribute {
-            Attribute::White | Attribute::WarmWhite | Attribute::CoolWhite => {
-                residual.red -= value;
-                residual.green -= value;
-                residual.blue -= value;
-            }
-            Attribute::Amber => {
-                residual.red -= value;
-                residual.green -= value * 0.6;
-            }
-            _ => {}
-        }
-    }
-    residual.clamped()
 }
 
 /// Clones the parent RGB transition for derived emitter placeholders in the output layer.
@@ -382,24 +337,6 @@ fn color_path_transition_activity_for_derived_emitter(
     let first_activity = activity.next()?;
 
     Some(activity.fold(first_activity, |active, next| active || next))
-}
-
-/// Returns the first requested attribute that exists in the emitter set.
-fn first_available_attribute(
-    emitters: &[(Attribute, Instance<Parameter>)],
-    attributes: &[Attribute],
-) -> Option<Attribute> {
-    attributes
-        .iter()
-        .find(|attribute| emitter_available(emitters, attribute))
-        .cloned()
-}
-
-/// Returns whether a decomposed color-mix emitter is available.
-fn emitter_available(emitters: &[(Attribute, Instance<Parameter>)], attribute: &Attribute) -> bool {
-    emitters
-        .iter()
-        .any(|(emitter_attribute, _)| emitter_attribute == attribute)
 }
 
 /// Resolves the final absolute target authored in a layer for one parameter.

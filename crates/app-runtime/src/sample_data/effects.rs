@@ -269,6 +269,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 relative: None,
             },
         ],
+        color: None,
     };
     commands.spawn(rainbow_step_fx);
     commands.spawn_instance(Clip {
@@ -306,6 +307,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
         },
         direction: FxDirection::Forward,
         cycle_scale: Default::default(),
+        color: None,
         lanes: vec![
             // Pan (cosine): starts at +50, targets define where we arrive
             // t=0.25→0(center), t=0.50→-50(min), t=0.75→0(center), t=1.00→+50(max)
@@ -501,6 +503,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 relative: None,
             },
         ],
+        color: None,
     };
     commands.spawn(chase_step_fx);
     commands.spawn_instance(Clip {
@@ -532,6 +535,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
         },
         direction: FxDirection::Forward,
         cycle_scale: Default::default(),
+        color: None,
         lanes: vec![
             FxLane {
                 attribute: Attribute::VirtualIntensity,
@@ -739,6 +743,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 relative: None,
             },
         ],
+        color: None,
     };
     commands.spawn(strobe_pixel_rainbow_fx);
 

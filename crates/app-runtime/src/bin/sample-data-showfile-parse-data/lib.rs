@@ -639,6 +639,7 @@ fn add_step_fx(world: &mut World, fixture_ref: FixtureRef) {
         },
         direction: FxDirection::Forward,
         cycle_scale: Default::default(),
+        color: None,
         lanes: vec![FxLane {
             attribute: Attribute::Blue,
             timing_override: None,

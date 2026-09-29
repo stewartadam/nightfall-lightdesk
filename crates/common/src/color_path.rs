@@ -255,14 +255,96 @@ pub fn sample_color_path(
     t: f32,
 ) -> ColorPathRgb {
     let ratio = path.curve.evaluate_at(t.clamp(0.0, 1.0));
-    match resolved_interpolation_space(path) {
+    sample_color(
+        resolved_interpolation_space(path),
+        path.hue_direction,
+        start,
+        end,
+        ratio,
+    )
+}
+
+/// Interpolates two colors through an interpolation space at an already-curved ratio.
+///
+/// Placeholder spaces without a dedicated implementation fall back to RGB interpolation.
+pub fn sample_color(
+    space: ColorInterpolationSpace,
+    hue_direction: HueDirection,
+    start: ColorPathRgb,
+    end: ColorPathRgb,
+    ratio: f32,
+) -> ColorPathRgb {
+    let ratio = ratio.clamp(0.0, 1.0);
+    match space {
         ColorInterpolationSpace::Rgb
         | ColorInterpolationSpace::XyY
         | ColorInterpolationSpace::Cie => lerp_rgb(start, end, ratio),
-        ColorInterpolationSpace::Hsv => sample_hsv(start, end, ratio, path.hue_direction),
+        ColorInterpolationSpace::Hsv => sample_hsv(start, end, ratio, hue_direction),
         ColorInterpolationSpace::Cmy => sample_cmy(start, end, ratio),
     }
 }
+
+/// Additive color-mix emitters that can be derived from an RGB color, in priority order.
+pub const RGB_COLOR_MIX_ATTRIBUTES: [Attribute; 4] = [
+    Attribute::White,
+    Attribute::WarmWhite,
+    Attribute::CoolWhite,
+    Attribute::Amber,
+];
+
+/// Decomposes an RGB color into the additive color-mix emitters available on a fixture.
+///
+/// The common white component drives the first available white emitter (white, then warm
+/// white, then cool white), and amber absorbs the remaining red/green overlap. Emitters that
+/// are available but not driven are omitted; callers treat them as zero.
+pub fn decompose_rgb_color_mix(
+    color: ColorPathRgb,
+    available: &[Attribute],
+) -> Vec<(Attribute, f32)> {
+    let mut residual = color.clamped();
+    let mut decomposed = Vec::new();
+
+    if let Some(white_attribute) = [Attribute::White, Attribute::WarmWhite, Attribute::CoolWhite]
+        .into_iter()
+        .find(|attribute| available.contains(attribute))
+    {
+        let white = residual.red.min(residual.green).min(residual.blue);
+        residual.red -= white;
+        residual.green -= white;
+        residual.blue -= white;
+        decomposed.push((white_attribute, white));
+    }
+
+    if available.contains(&Attribute::Amber) {
+        let amber = residual.red.min(residual.green / AMBER_GREEN_RATIO);
+        decomposed.push((Attribute::Amber, amber.clamp(0.0, 1.0)));
+    }
+
+    decomposed
+}
+
+/// Removes the light contributed by decomposed color-mix emitters from an RGB color.
+pub fn rgb_after_color_mix(color: ColorPathRgb, decomposed: &[(Attribute, f32)]) -> ColorPathRgb {
+    let mut residual = color.clamped();
+    for (attribute, value) in decomposed {
+        match attribute {
+            Attribute::White | Attribute::WarmWhite | Attribute::CoolWhite => {
+                residual.red -= value;
+                residual.green -= value;
+                residual.blue -= value;
+            }
+            Attribute::Amber => {
+                residual.red -= value;
+                residual.green -= value * AMBER_GREEN_RATIO;
+            }
+            _ => {}
+        }
+    }
+    residual.clamped()
+}
+
+/// Green contribution of an amber emitter relative to its red contribution.
+const AMBER_GREEN_RATIO: f32 = 0.6;
 
 /// Resolves the interpolation space implied by a color path.
 pub fn resolved_interpolation_space(path: &ColorPath) -> ColorInterpolationSpace {

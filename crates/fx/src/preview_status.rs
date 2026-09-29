@@ -31,6 +31,8 @@ pub struct StepFxPreviewPlaybackStatus {
     pub elapsed_rate: f64,
     /// Continuity corrections retained for each lane contribution after live edits.
     pub track_phase_offsets: Vec<StepFxPreviewTrackPhaseOffsets>,
+    /// Continuity correction retained for the color lane after live edits.
+    pub color_phase_offset: f32,
 }
 
 /// Runtime phase corrections for one Step FX lane's absolute and relative tracks.
@@ -82,6 +84,7 @@ pub fn step_fx_preview_status(
         elapsed,
         elapsed_rate,
         track_phase_offsets,
+        color_phase_offset: phase_offsets.map_or(0.0, |offsets| offsets.color),
     })
 }
 
