@@ -47,10 +47,15 @@ beatgrid-detect = ["dep:rodio", "dep:rten", "dep:rten-tensor", "dep:rustfft", "d
 http = ["dep:axum", "dep:nightfall-websocket"]
 
 [dev-dependencies]
+criterion.workspace = true
 minicbor-serde.workspace = true
 nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-flow = { path = "../flow" }
 nightfall-fx-module = { path = "../fx-module" }
+
+[[bench]]
+name = "planner"
+harness = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }

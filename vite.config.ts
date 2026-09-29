@@ -129,7 +129,7 @@ function isTauri(): boolean {
 
 const tauriConfig = JSON.parse(
   readFileSync(
-    resolve(projectRoot, "crates/app-tauri/tauri.conf.json"),
+    resolve(projectRoot, "desktop/app-tauri/tauri.conf.json"),
     "utf8",
   ),
 ) as {

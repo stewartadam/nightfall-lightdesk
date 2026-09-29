@@ -208,12 +208,13 @@ export function developmentNotices() {
 export function rustNotices(report) {
   const reviewed = supplements();
   return report.crates
-    .filter(
-      ({ package: pkg }) =>
-        !relative(projectRoot, pkg.manifest_path)
-          .replaceAll("\\", "/")
-          .startsWith("crates/"),
-    )
+    .filter(({ package: pkg }) => {
+      const path = relative(projectRoot, pkg.manifest_path).replaceAll(
+        "\\",
+        "/",
+      );
+      return !path.startsWith("crates/") && !path.startsWith("desktop/");
+    })
     .map(({ package: pkg, license: expression }) => {
       const selected = report.licenses.filter(({ used_by }) =>
         used_by.some(({ crate }) => crate.id === pkg.id),
@@ -376,10 +377,10 @@ export function packageNotices(outDir, target, embeddedDemo = false) {
     );
   }
   if (target) {
-    const config = JSON.parse(read("crates/app-tauri/tauri.conf.json"));
+    const config = JSON.parse(read("desktop/app-tauri/tauri.conf.json"));
     entries.push(
       ...collectRust(
-        "crates/app-tauri/Cargo.toml",
+        "desktop/app-tauri/Cargo.toml",
         target,
         config.build.features,
       ),
