@@ -136,7 +136,11 @@ async function installStartupProbe(page: Page): Promise<void> {
       },
       true,
     );
-    /** Samples picker, shell, dock and fixture state once per frame after the click. */
+    /** App modules read for startup phases; the app has already loaded them. */
+    let lifecycle: { phase: string } | undefined;
+    let backendState: string | undefined;
+    let modulesRequested = false;
+    /** Samples startup phase, shell, dock and fixture state once per frame after the click. */
     const tick = () => {
       if (state.clickAt !== undefined) {
         const elapsed = performance.now() - state.clickAt;
@@ -144,7 +148,33 @@ async function installStartupProbe(page: Page): Promise<void> {
           if (reached && state.marks[name] === undefined)
             state.marks[name] = elapsed;
         };
+        if (!modulesRequested) {
+          modulesRequested = true;
+          void import(/* @vite-ignore */ "/state/app-lifecycle.ts").then(
+            (module) => {
+              lifecycle = module.appLifecycle.get();
+              module.appLifecycle.listen((value: { phase: string }) => {
+                lifecycle = value;
+              });
+            },
+          );
+          void import(/* @vite-ignore */ "/lib/engine-runtime.ts").then(
+            (module) => {
+              const read = () => {
+                backendState = String(module.backendAppState());
+                if (backendState !== "Ready") setTimeout(read, 5);
+              };
+              read();
+            },
+          );
+        }
         mark("pickerClosed", !document.querySelector('[role="dialog"]'));
+        mark("interactivePhase", lifecycle?.phase === "interactive");
+        mark("backendReady", backendState === "Ready");
+        mark(
+          "shellRoot",
+          !!document.querySelector('[data-interactive-shell-root="true"]'),
+        );
         mark("shell", !!document.querySelector("button[title='Menu']"));
         const veiled = !!document.querySelector(
           '[data-testid="showfile-transition-veil"]:not(.opacity-0)',
@@ -154,7 +184,7 @@ async function installStartupProbe(page: Page): Promise<void> {
         const fixtures = (window as any).appStores?.fixtures?.get() ?? {};
         mark("fixturesLoaded", Object.keys(fixtures).length > 0);
         // Stop sampling once every phase is seen so the probe adds no load while settling.
-        if (Object.keys(state.marks).length === 4) return;
+        if (Object.keys(state.marks).length === 7) return;
       }
       requestAnimationFrame(tick);
     };
