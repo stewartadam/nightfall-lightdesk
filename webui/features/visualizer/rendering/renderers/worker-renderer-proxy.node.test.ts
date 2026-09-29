@@ -131,3 +131,43 @@ test("worker proxy resends a DMX snapshot whose delivery failed", async () => {
   assert.equal(dmxSends(calls), 3, "a delivered static look is not resent");
   proxy.dispose();
 });
+
+/** A caller still holding a disposed proxy cannot message, restart or resize the terminated worker. */
+test("disposed worker proxy ignores late calls without throwing", async () => {
+  const { proxy, calls, terminated } = await createProxy();
+  proxy.dispose();
+  await settle();
+  assert.equal(terminated(), 1);
+  assert.deepEqual(
+    calls.map((call) => call.method),
+    ["setLogConfig", "dispose"],
+  );
+  calls.length = 0;
+  animationFrames.clear();
+
+  proxy.pause();
+  proxy.resume();
+  proxy.setFixtures([]);
+  proxy.setSceneObjects([]);
+  proxy.setElementDmxBatch(new Map());
+  proxy.setSelection(["fixture"]);
+  proxy.resize(100, 100, 1);
+  proxy.zoomToFit();
+  proxy.setStatsCallback(() => {});
+  proxy.dispose();
+  await assert.rejects(proxy.getCameraState());
+  assert.equal(
+    await proxy.pickFixtureAtScreenPoint({
+      x: 0,
+      y: 0,
+      viewportWidth: 100,
+      viewportHeight: 100,
+    }),
+    null,
+  );
+  await settle();
+
+  assert.deepEqual(calls, []);
+  assert.equal(animationFrames.size, 0, "colour loop stays stopped");
+  assert.equal(terminated(), 1);
+});

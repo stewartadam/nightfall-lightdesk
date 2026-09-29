@@ -98,8 +98,8 @@ const log = getLogger(import.meta.url);
 export interface VisualizerCanvasProps {
   /** CSS class name */
   class?: string;
-  /** Callback to receive the canvas API */
-  apiRef?: (api: VisualizerCanvasApi) => void;
+  /** Receives the canvas API once the renderer is ready, then `null` when it is disposed. */
+  apiRef?: (api: VisualizerCanvasApi | null) => void;
   /** Force main thread rendering even if OffscreenCanvas is available */
   forceMainThread?: boolean;
 }

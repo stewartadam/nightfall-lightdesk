@@ -33,6 +33,7 @@ import {
   disposeControlsBehavior,
   setControlsRotationMode,
 } from "../interactions/camera-controls";
+import type { CameraState } from "../interactions/visualizer-interaction-types";
 import { zoomCameraToGroups } from "../model/camera-fit";
 import {
   DEFAULT_CAMERA_POSITION,
@@ -180,6 +181,7 @@ export interface RendererState extends CoreRendererState {
  */
 export async function initRenderer(
   canvas: HTMLCanvasElement,
+  initialCameraState?: CameraState,
 ): Promise<RendererState> {
   // Create WebGPU renderer (falls back to WebGL if WebGPU unavailable)
   const renderer = new WebGPURenderer({
@@ -216,8 +218,8 @@ export async function initRenderer(
   // Create orbit controls with configurable rotation mode and dolly-through zoom
   const controls = createControls(camera, canvas);
 
-  // Load saved camera state or use defaults
-  const savedState = loadCameraState();
+  // A caller-supplied pose wins; otherwise restore the persisted one or use defaults.
+  const savedState = initialCameraState ?? loadCameraState();
   if (savedState) {
     camera.position.set(
       savedState.position.x,

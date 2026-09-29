@@ -85,7 +85,7 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
 
     // Initialize the renderer and the fixture model that evaluates channel output
     const [rendererState] = await Promise.all([
-      initRenderer(canvas),
+      initRenderer(canvas, config.initialCameraState),
       loadFixtureEvaluation(),
     ]);
     this.rendererState = rendererState;
@@ -180,10 +180,15 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
     this.debugOverlays?.dispose();
+    this.debugOverlays = undefined;
     this.sceneManager?.dispose();
+    this.sceneManager = undefined;
     this.instrumentation?.clear();
+    this.instrumentation = undefined;
     if (this.rendererState) {
       const state = this.rendererState;
       this.rendererState = undefined;

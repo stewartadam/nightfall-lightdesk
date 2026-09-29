@@ -89,7 +89,7 @@ export interface VisualizerInitConfig {
    * flags, because the worker cannot see the page URL.
    */
   diagnostics?: boolean;
-  /** Initial camera state (loaded from localStorage by main thread) */
+  /** Initial camera pose; renderers fall back to the persisted camera state when absent. */
   initialCameraState?: CameraState;
   /** Beam render quality selected by visualizer runtime settings. */
   beamQuality: VisualizerBeamQuality;
