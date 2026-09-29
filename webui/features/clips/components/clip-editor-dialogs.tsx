@@ -12,9 +12,13 @@ import EntityEditorModal from "../../../components/widgets/entity-editor-dialog"
 interface ClipEditorPayload {
   id: number;
   label: string;
+  overwriteKey?: string;
 }
 
 interface ClipEditorDialogsProps {
+  overwriteConflict: (
+    id: number,
+  ) => { key: string; message: string } | undefined;
   createOpen: boolean;
   createInitialId: number;
   createInitialLabel: string;
@@ -39,6 +43,7 @@ export function ClipEditorDialogs(props: ClipEditorDialogsProps) {
         isOpen={props.createOpen}
         title="Create clip"
         submitLabel="Create"
+        overwriteConflict={props.overwriteConflict}
         initialId={props.createInitialId}
         initialLabel={props.createInitialLabel}
         onCancel={props.onCancelCreate}

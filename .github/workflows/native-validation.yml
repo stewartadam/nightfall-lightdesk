@@ -46,7 +46,7 @@ jobs:
         with:
           # Native stages produce different artifacts. Stable stage keys also let
           # develop pushes warm caches that PRs can restore from their base branch.
-          shared-key: native-${{ inputs.stage }}-${{ hashFiles('Cargo.toml', 'scripts/run-native-cargo.mjs') }}
+          shared-key: native-${{ inputs.stage }}-${{ hashFiles('Cargo.toml') }}
           cache-on-failure: true
 
       - name: Install system dependencies
@@ -84,7 +84,7 @@ jobs:
       - name: Stage the tested native backend
         if: inputs.stage == 'pre-push'
         run: |
-          node scripts/run-native-cargo.mjs build --bin nightfall-headless
+          cargo build --tests --bin nightfall-headless
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           mkdir -p ci-artifacts
           cp "$target_dir/debug/nightfall-headless" ci-artifacts/nightfall-headless

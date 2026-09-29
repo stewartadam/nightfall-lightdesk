@@ -25,9 +25,11 @@ Browser manifests record raw byte sizes, SHA-256 hashes, and SHA-384 integrity.
 The size report uses packaged file sizes. Neither script compresses assets to
 estimate transfer size; actual HTTP compression belongs to the hosting service.
 
-`run-native-cargo.mjs` selects one runtime workspace feature graph, using every
-crate's default features and excluding `app-tauri`, for Clippy, workspace tests,
-and the Playwright backend.
+The workspace's `default-members` are every crate under `crates/`, so plain
+`cargo` commands select one runtime feature graph, using every crate's default
+features, for Clippy, workspace tests, and the Playwright backend. The Tauri
+desktop shell lives in `desktop/app-tauri` and builds only when selected with
+`-p app-tauri`; passing `--workspace` would add it back to the graph.
 The backend build and the `cargo nextest` run both select `--tests`, so they share
 dev-dependency feature unification and compiled units. Already-built test
 harnesses are reused; final executable linking still requires distinct Cargo

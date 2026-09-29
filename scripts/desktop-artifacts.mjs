@@ -91,7 +91,7 @@ export function desktopArtifactPlan(target, version, artifactPaths) {
 
 /** Reads the application version used by Tauri and the frontend build. */
 function appVersion() {
-  return JSON.parse(readFileSync("crates/app-tauri/tauri.conf.json", "utf8"))
+  return JSON.parse(readFileSync("desktop/app-tauri/tauri.conf.json", "utf8"))
     .version;
 }
 

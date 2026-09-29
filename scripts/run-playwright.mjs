@@ -26,7 +26,6 @@ import { extractPlaywrightCliOptions } from "./playwright-cli-options.mjs";
 import { sharedBrowsersPath } from "./playwright-path.mjs";
 import { resolvePlaywrightRunMode } from "./playwright-run-mode.mjs";
 import { playwrightSandboxError } from "./playwright-sandbox.mjs";
-import { nativeCargoArgs } from "./run-native-cargo.mjs";
 
 const cliEntrypoint = join(
   process.cwd(),
@@ -101,11 +100,14 @@ try {
       ? { code: 0 }
       : await runOwnedCommand(
           "cargo",
-          nativeCargoArgs("build", [
+          [
+            "build",
+            // Test targets align dev-dependency features with the nextest run, so its units are reused.
+            "--tests",
             ...(process.env.CI ? ["--timings"] : ["--quiet"]),
             "--bin",
             "nightfall-headless",
-          ]),
+          ],
           { spawnOptions: { stdio: "inherit" } },
         );
     if (buildOutcome.code !== 0 || buildOutcome.signal) {

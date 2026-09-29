@@ -25,6 +25,7 @@ Detailed contribution guides live in [`docs/contributing/`](docs/contributing/).
   - [Validating showfile restore idempotency](#validating-showfile-restore-idempotency)
   - [Debugging command parser](#debugging-command-parser)
   - [Performance profiling](#performance-profiling)
+  - [Microbenchmarks](#microbenchmarks)
 
 ## Legal
 
@@ -143,7 +144,7 @@ npm ci
 node scripts/setup-env.mjs
 npm run typeshare
 npm run wasm-build:dev
-cargo build --workspace --locked
+cargo build --tests --locked
 ```
 
 If npm lifecycle scripts are disabled, run `npm run postinstall` after `npm ci`
@@ -395,15 +396,15 @@ npm run check:crate-boundaries
 npm test
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked
-node scripts/run-native-cargo.mjs nextest
-node scripts/run-native-cargo.mjs test --doc
+cargo nextest run --tests
+cargo test --doc
 ```
 
-Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. The wrapper selects the same feature graph as CI. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `npx prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
+Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. Plain `cargo` commands select every crate under `crates/` and leave out the Tauri desktop shell, which builds with `-p app-tauri`; avoid `--workspace`, which adds it back and changes the feature graph CI uses. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `npx prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
 
 ```sh
-node scripts/run-native-cargo.mjs nextest -E 'rdeps(nightfall-cues)'
-node scripts/run-native-cargo.mjs nextest autocomplete::
+cargo nextest run --tests -E 'rdeps(nightfall-cues)'
+cargo nextest run --tests autocomplete::
 ```
 
 Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file becomes its own executable. The main reason is macOS: without the [Developer Tools setting](#macos), macOS scans each newly built executable the first time it runs, so every extra test binary adds to each test run after a rebuild (74 integration-test binaries became 20). Each binary also links its own copy of Bevy and the workspace; the link-time saving is smaller and has not been measured separately on Linux. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.
@@ -518,19 +519,44 @@ cargo build --profile profiling
 samply record cargo run --profile profiling --bin nightfall-headless "$@"
 ```
 
-Clip lookup scaling has a Criterion suite covering snapshot construction,
-direct-query crossover, and independently sized persistent and active clip
-sets. The default defined-clip matrix extends through 10,000 definitions:
+### Microbenchmarks
 
-```sh
-cargo bench -p nightfall-desk --bench clip_lookup
-```
+Hot paths have Criterion suites. Run them before and after changes to these
+components to catch performance regressions:
 
-Use comma-separated environment overrides for a focused run:
+| Component | Command | Size overrides |
+| --- | --- | --- |
+| Compositor | `cargo bench -p nightfall-fixtures --bench compositor` | `NIGHTFALL_COMPOSITOR_BENCH_LAYERS`, `NIGHTFALL_COMPOSITOR_BENCH_TRANSITIONS` (`none`, `all`) |
+| Clip lookup | `cargo bench -p nightfall-desk --bench clip_lookup` | `NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS`, `NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS`, `NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS` |
+| Timeline planning and plan evaluation | `cargo bench -p nightfall-timeline --bench planner` | `NIGHTFALL_TIMELINE_BENCH_ACTION_COUNTS` |
+| Sequence lookahead projection and duration summary | `cargo bench -p nightfall-lookahead-projection --bench projection` | `NIGHTFALL_LOOKAHEAD_BENCH_CUE_COUNTS`, `NIGHTFALL_LOOKAHEAD_BENCH_FIXTURE_COUNTS` |
+| Runtime timeline lookahead (full backend frames) | `cargo bench -p app-runtime --bench timeline_lookahead` | `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_START_COUNTS` |
+
+The runtime timeline lookahead suite times whole frames of the live backend
+schedule, so compare its `enabled` cases with the matching `disabled` cases to
+isolate lookahead's share. `steady` frames reuse cached lookahead state, while
+`cues_changed` frames mark cue definitions changed first to force a full
+rebuild, as when editing a cue while a timeline is armed.
+
+Size overrides take comma-separated counts and replace the default matrix.
+Criterion's `--quick` flag and a benchmark-ID filter keep an iteration loop
+short; drop both for a full run before merging:
 
 ```sh
 NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS=1000,5000 \
-NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS=1,8,64 \
-NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS=0,16,64 \
-cargo bench -p nightfall-desk --bench clip_lookup
+cargo bench -p nightfall-desk --bench clip_lookup -- --quick clip_lookup_strategy
 ```
+
+Criterion compares each run with the previous one on the same machine. To
+compare a branch against `develop`, save a named baseline first:
+
+```sh
+git switch develop
+cargo bench -p nightfall-timeline --bench planner -- --save-baseline develop
+git switch -
+cargo bench -p nightfall-timeline --bench planner -- --baseline develop
+```
+
+Reports are written to `target/criterion/report/index.html`. Treat changes
+within a few percent as noise, and close other heavy processes while
+measuring.
