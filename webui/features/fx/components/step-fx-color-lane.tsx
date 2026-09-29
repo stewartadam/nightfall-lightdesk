@@ -218,10 +218,16 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
   const distributeWidths = (): void =>
     setSteps(distributeStepFxWidthsEvenly(props.lane, liveSelection()).steps);
 
-  /** Returns the first validation message under a step path prefix. */
+  /**
+   * Stable row keys: string uids compare by value, so rebuilt step objects keep their
+   * row (and any open color picker) instead of remounting it.
+   */
+  const stepUids = createMemo(() => props.lane.steps.map((step) => step.uid));
+
+  /** Returns the first validation message at a step path or any of its fields. */
   const issueAt = (path: string): string | undefined =>
-    [...props.issuesByPath.entries()].find(([issuePath]) =>
-      issuePath.startsWith(path),
+    [...props.issuesByPath.entries()].find(
+      ([issuePath]) => issuePath === path || issuePath.startsWith(`${path}.`),
     )?.[1][0];
 
   const hasSelection = () => liveSelection().size > 0;
@@ -405,19 +411,24 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
             </tr>
           </thead>
           <tbody>
-            <For each={props.lane.steps}>
-              {(step, index) => {
+            <For each={stepUids()}>
+              {(uid, index) => {
+                /** Reads this row's current step; rows are keyed by uid so edits keep open popovers mounted. */
+                const step = () => props.lane.steps[index()];
                 const path = () => `color.steps.${index()}`;
-                const color = () => resolvedStepFxColor(step, props.blueprints);
-                const blueprint = () =>
-                  step.blueprint_uid
-                    ? findBlueprint(props.blueprints, step.blueprint_uid)
+                const color = () =>
+                  resolvedStepFxColor(step(), props.blueprints);
+                const blueprint = () => {
+                  const blueprintUid = step().blueprint_uid;
+                  return blueprintUid
+                    ? findBlueprint(props.blueprints, blueprintUid)
                     : undefined;
+                };
                 return (
                   <tr
                     class="border-b border-neutral-800"
                     classList={{
-                      "bg-[var(--accent-soft)]": liveSelection().has(step.uid),
+                      "bg-[var(--accent-soft)]": liveSelection().has(uid),
                     }}
                     data-step-fx-color-step={index()}
                   >
@@ -427,19 +438,19 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                         class="size-7 rounded border text-xs"
                         classList={{
                           "border-[var(--accent)] text-[var(--accent)]":
-                            liveSelection().has(step.uid),
+                            liveSelection().has(uid),
                           "border-neutral-700 bg-neutral-800 text-neutral-300":
-                            !liveSelection().has(step.uid),
+                            !liveSelection().has(uid),
                           "border-red-500 text-red-200": Boolean(
                             issueAt(path()),
                           ),
                         }}
-                        aria-pressed={liveSelection().has(step.uid)}
+                        aria-pressed={liveSelection().has(uid)}
                         aria-label={`Select color step ${index() + 1}`}
                         title={issueAt(path())}
                         onClick={(event) =>
                           toggleStep(
-                            step.uid,
+                            uid,
                             event.metaKey || event.ctrlKey || event.shiftKey,
                           )
                         }
@@ -466,7 +477,7 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                               {blueprint()?.identifiers.label ??
                                 stepFxColorToHex(color())}
                             </span>
-                            <Show when={step.blueprint_uid}>
+                            <Show when={step().blueprint_uid}>
                               <LinkIcon
                                 class="size-3.5 shrink-0 text-sky-300"
                                 aria-label="Linked to a Blueprint"
@@ -479,7 +490,7 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                           <ColorPicker
                             value={colorStringToHsv(stepFxColorToHex(color()))}
                             onChange={(value) =>
-                              editStep(step.uid, (current) => ({
+                              editStep(uid, (current) => ({
                                 ...current,
                                 color: stepFxColorFromHex(value.hex),
                                 blueprint_uid: undefined,
@@ -497,11 +508,11 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                         step="0.25"
                         aria-label={`Step ${index() + 1} width in beats`}
                         class={`${FIELD_CLASS} w-full`}
-                        value={formatStepFxWidthBeats(step.width_beats)}
+                        value={formatStepFxWidthBeats(step().width_beats)}
                         onChange={(event) => {
                           const value = Number(event.currentTarget.value);
                           if (!Number.isFinite(value) || value <= 0) return;
-                          editStep(step.uid, (current) => ({
+                          editStep(uid, (current) => ({
                             ...current,
                             width_beats: roundStepFxWidthBeats(value),
                           }));
@@ -516,11 +527,11 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                         max="100"
                         aria-label={`Step ${index() + 1} ramp start percent`}
                         class={`${FIELD_CLASS} w-full`}
-                        value={Math.round(step.transition.start * 100)}
+                        value={Math.round(step().transition.start * 100)}
                         onChange={(event) => {
                           const value = Number(event.currentTarget.value) / 100;
                           if (!Number.isFinite(value)) return;
-                          editStep(step.uid, (current) => ({
+                          editStep(uid, (current) => ({
                             ...current,
                             transition: {
                               start: Math.max(
@@ -541,11 +552,11 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                         max="100"
                         aria-label={`Step ${index() + 1} ramp end percent`}
                         class={`${FIELD_CLASS} w-full`}
-                        value={Math.round(step.transition.end * 100)}
+                        value={Math.round(step().transition.end * 100)}
                         onChange={(event) => {
                           const value = Number(event.currentTarget.value) / 100;
                           if (!Number.isFinite(value)) return;
-                          editStep(step.uid, (current) => ({
+                          editStep(uid, (current) => ({
                             ...current,
                             transition: {
                               start: current.transition.start,
@@ -561,9 +572,9 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                     <td class="px-2 py-1">
                       <StepFxCurveSelect
                         stepNumber={index() + 1}
-                        curve={step.curve}
+                        curve={step().curve}
                         onChange={(curve) =>
-                          editStep(step.uid, (current) => ({
+                          editStep(uid, (current) => ({
                             ...current,
                             curve,
                           }))

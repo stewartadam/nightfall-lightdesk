@@ -166,12 +166,16 @@ test("Step FX color lane replaces RGB lanes and adds Blueprint color steps", asy
 
   const editor = page.locator("[data-step-fx-editor]");
   await expect(editor).toBeVisible();
-  await setEditorSelection(page, editor, "Fixture 1>4");
-  await expect(
-    editor
-      .getByRole("group", { name: "Waveform preview" })
-      .locator("[data-step-fx-preview-index]"),
-  ).toHaveCount(4);
+  // The new definition's first autosave can land after an early Apply and restore the
+  // default selection, so reapply until the four-fixture selection sticks.
+  await expect(async () => {
+    await setEditorSelection(page, editor, "Fixture 1>4");
+    await expect(
+      editor
+        .getByRole("group", { name: "Waveform preview" })
+        .locator("[data-step-fx-preview-index]"),
+    ).toHaveCount(4, { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
   await addAttributeLane(editor, "Red");
   await addAttributeLane(editor, "White");
 
@@ -225,6 +229,20 @@ test("Step FX color lane replaces RGB lanes and adds Blueprint color steps", asy
       space: "Hsv",
       blueprint: GREEN_BLUEPRINT_UID,
     });
+
+  await editor.getByRole("button", { name: "Step 1 color" }).click();
+  const picker = page.locator('[data-menu-kind="step-fx-color"]');
+  const brightness = picker.getByLabel("Color brightness");
+  await expect(brightness).toBeVisible();
+  await brightness.focus();
+  await brightness.press("ArrowLeft");
+  await brightness.press("ArrowLeft");
+  await expect(picker).toBeVisible();
+  await expect(
+    editor.locator('[data-step-fx-color-step="0"] [data-step-fx-color-swatch]'),
+  ).not.toHaveAttribute("data-step-fx-color-swatch", "#FF0000");
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
 
   const startPreview = editor.getByRole("button", {
     name: "Preview",
