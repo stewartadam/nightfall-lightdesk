@@ -14,8 +14,9 @@ use bevy_ecs::message::Messages;
 use bevy_ecs::prelude::*;
 use bevy_ecs::world::CommandQueue;
 use nightfall_dmx::DmxValueResolution;
-use nightfall_dmx::prelude::{Attribute, ParameterUnit};
+use nightfall_dmx::prelude::{Attribute, ParameterUnit, ParameterValue};
 use nightfall_engine::prelude::{CommandEnvelope, CommandError, CommandId, UndoId};
+use nightfall_fixture_model::prelude::PhysicalUnit;
 
 use super::catalog::{
     BUILTIN_SOURCE_FORMAT, builtin_fixture_profiles, find_builtin_fixture_profile,
@@ -252,6 +253,111 @@ fn rotating_wash_beam_profile_matches_194_channel_footprint_and_element_order() 
             &Attribute::Yellow,
         ]
     );
+}
+
+/// Returns the evaluated physical zoom angle of a wash beam's control element at a logical value.
+fn wash_zoom_degrees(fixture: &Fixture, value: f32) -> f32 {
+    use nightfall_fixture_model::prelude::{FixtureEvaluator, FixtureModel};
+
+    let control = &fixture.elements[0].parameters;
+    let zoom = control
+        .iter()
+        .position(|parameter| parameter.attribute == Attribute::Zoom)
+        .unwrap();
+    let mut evaluator = FixtureEvaluator::new(FixtureModel::new([control.clone()], true));
+    let mut inputs = vec![None; control.len()];
+    inputs[zoom] = Some(value);
+    evaluator.read(&inputs)[zoom].unwrap().physical
+}
+
+/// Verifies the built-in wash's zoom is an angular function evaluated by the shared fixture
+/// evaluator: DMX 255 (fully zoomed in) is the narrowest 1° beam and DMX 0 the widest 34°.
+#[test]
+fn wash_beam_zoom_evaluates_from_widest_to_narrowest() {
+    let fixture =
+        moving_heads::create_rotating_wash_beam_194(1, "Generic", "12-segment Rotating Wash Beam");
+    let physical = fixture.physical.clone().unwrap();
+    assert_eq!((physical.beam_angle, physical.field_angle), (1.0, 1.2));
+    assert_eq!(wash_zoom_degrees(&fixture, 255.0), 1.0);
+    assert_eq!(wash_zoom_degrees(&fixture, 0.0), 34.0);
+    let zoom = fixture.elements[0]
+        .parameters
+        .iter()
+        .find(|parameter| parameter.attribute == Attribute::Zoom)
+        .unwrap();
+    assert_eq!(zoom.functions[0].physical_unit, PhysicalUnit::Angle);
+    assert_eq!(zoom.native_unit, ParameterUnit::Percent);
+}
+
+/// Verifies normalization restores the wash's zoom function and physical optics on persisted
+/// fixtures while keeping operator zoom settings such as inversion and offset.
+#[test]
+fn wash_beam_normalization_restores_zoom_optics_and_keeps_operator_settings() {
+    let mut fixture =
+        moving_heads::create_rotating_wash_beam_194(1, "Generic", "12-segment Rotating Wash Beam");
+    let expected_physical = fixture.physical.clone();
+    fixture.physical = None;
+    let zoom = fixture.elements[0]
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.attribute == Attribute::Zoom)
+        .unwrap();
+    zoom.functions.clear();
+    zoom.is_inverted = true;
+    zoom.offset = ParameterValue::Absolute { value: 10.0 };
+
+    normalize_fixture_profile(&mut fixture);
+
+    assert_eq!(fixture.physical, expected_physical);
+    let zoom = fixture.elements[0]
+        .parameters
+        .iter()
+        .find(|parameter| parameter.attribute == Attribute::Zoom)
+        .unwrap();
+    assert_eq!(zoom.functions.len(), 1);
+    assert!(zoom.is_inverted);
+    assert_eq!(zoom.offset, ParameterValue::Absolute { value: 10.0 });
+    // Inverted output sends DMX 0, the widest angle, for a fully zoomed-in logical value.
+    assert_eq!(wash_zoom_degrees(&fixture, 255.0), 34.0);
+
+    fixture.physical.as_mut().unwrap().beam_angle = 2.0;
+    normalize_fixture_profile(&mut fixture);
+    assert_eq!(fixture.physical.unwrap().beam_angle, 2.0);
+}
+
+/// Verifies a persisted linear wash bar without photometry or a zoom function normalizes to
+/// the same optics as a newly created bar while keeping operator zoom inversion and offset.
+#[test]
+fn linear_wash_bar_normalization_matches_new_bar_and_keeps_operator_settings() {
+    let created = moving_heads::create_linear_wash_bar(1, "Generic", "Linear Wash Bar");
+    let mut stored = created.clone();
+    stored.physical = None;
+    let zoom = stored.elements[0]
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.attribute == Attribute::Zoom)
+        .unwrap();
+    zoom.functions.clear();
+    zoom.is_inverted = true;
+    zoom.offset = ParameterValue::Absolute { value: 10.0 };
+
+    normalize_fixture_profile(&mut stored);
+
+    assert_eq!(stored.physical, created.physical);
+    let zoom = |fixture: &Fixture| {
+        fixture.elements[0]
+            .parameters
+            .iter()
+            .find(|parameter| parameter.attribute == Attribute::Zoom)
+            .unwrap()
+            .clone()
+    };
+    let (stored_zoom, created_zoom) = (zoom(&stored), zoom(&created));
+    assert_eq!(stored_zoom.functions, created_zoom.functions);
+    assert!(stored_zoom.is_inverted);
+    assert_eq!(stored_zoom.offset, ParameterValue::Absolute { value: 10.0 });
+    assert_eq!(wash_zoom_degrees(&created, 255.0), 1.0);
+    assert_eq!(wash_zoom_degrees(&stored, 255.0), 34.0);
 }
 
 /// Verifies persisted wash-beam emitters gain one virtual intensity without duplicate insertion.

@@ -17,7 +17,16 @@ use uuid::Uuid;
 use crate::prelude::*;
 
 /// Updates known built-in fixture profiles that may have been persisted before profile fixes.
+///
+/// The rotating wash beam and the linear wash bar derived from it share the wash optics
+/// and zoom calibration; only the wash beam's emitters need their virtual intensity restored.
 pub(super) fn normalize_fixture_profile(fixture: &mut Fixture) {
+    if matches!(
+        fixture.layout,
+        Some(FixtureLayout::RotatingWashBeam | FixtureLayout::LinearWashBar)
+    ) {
+        normalize_wash_optics(fixture);
+    }
     if fixture.layout != Some(FixtureLayout::RotatingWashBeam) {
         return;
     }
@@ -50,6 +59,23 @@ pub(super) fn normalize_fixture_profile(fixture: &mut Fixture) {
         if !has_intensity && has_color {
             element.parameters.insert(0, vdim_parameter.clone());
         }
+    }
+}
+
+/// Fills missing wash photometry and replaces the control element's zoom functions with the
+/// calibrated angular zoom, leaving operator settings such as inversion and offset intact.
+fn normalize_wash_optics(fixture: &mut Fixture) {
+    if fixture.physical.is_none() {
+        fixture.physical = Some(rotating_wash_physical());
+    }
+    // Patch only the zoom functions so operator settings such as inversion and offset survive.
+    if let Some(zoom) = fixture.elements.first_mut().and_then(|control| {
+        control
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.attribute == Attribute::Zoom)
+    }) {
+        zoom.functions = vec![rotating_wash_zoom_function()];
     }
 }
 
@@ -87,12 +113,15 @@ pub(super) fn create_rotating_wash_beam_194(id: u32, make: &str, model: &str) ->
                 use_grandmaster: false,
             },
             custom_parameter("Tilt Speed"),
-            parameter(
-                Attribute::Zoom,
-                DmxValueResolution::Coarse,
-                MergeStrategy::LTP,
-                false,
-            ),
+            ParameterMetadata {
+                functions: vec![rotating_wash_zoom_function()],
+                ..parameter(
+                    Attribute::Zoom,
+                    DmxValueResolution::Coarse,
+                    MergeStrategy::LTP,
+                    false,
+                )
+            },
             parameter(
                 Attribute::Intensity,
                 DmxValueResolution::Coarse,
@@ -221,10 +250,44 @@ pub(super) fn create_rotating_wash_beam_194(id: u32, make: &str, model: &str) ->
         model: model.to_owned(),
         mode: String::new(),
         elements,
-        physical: None,
+        physical: Some(rotating_wash_physical()),
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::RotatingWashBeam),
         library_asset_etag: None,
+    }
+}
+
+/// Narrowest full beam angle of the built-in wash's zoom travel, in degrees.
+const ROTATING_WASH_ZOOM_NARROW_DEGREES: f32 = 1.0;
+/// Widest full beam angle of the built-in wash's zoom travel, in degrees.
+const ROTATING_WASH_ZOOM_WIDE_DEGREES: f32 = 34.0;
+
+/// Defines the built-in wash's narrow parallel apertures at their focused zoom.
+fn rotating_wash_physical() -> crate::physical::FixturePhysical {
+    crate::physical::FixturePhysical {
+        beam_angle: ROTATING_WASH_ZOOM_NARROW_DEGREES,
+        field_angle: 1.2,
+        lumens: Some(12000.0),
+        color_temperature: None,
+        beam_type: crate::physical::BeamType::Wash,
+    }
+}
+
+/// Describes the wash's zoom channel as one angular function over its whole DMX range.
+///
+/// DMX 255 (fully zoomed in) selects the narrowest beam and DMX 0 the widest, matching the
+/// operator convention that a higher zoom value focuses the beam. The fixture evaluator reads
+/// the function's physical value as the rendered full beam angle.
+fn rotating_wash_zoom_function() -> ParameterFunction {
+    ParameterFunction {
+        name: "Zoom".to_owned(),
+        attribute: "Zoom".to_owned(),
+        dmx_from: 0,
+        dmx_to: 255,
+        physical_from: ROTATING_WASH_ZOOM_WIDE_DEGREES,
+        physical_to: ROTATING_WASH_ZOOM_NARROW_DEGREES,
+        physical_unit: PhysicalUnit::Angle,
+        ..Default::default()
     }
 }
 
