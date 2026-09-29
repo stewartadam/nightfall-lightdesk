@@ -31,9 +31,21 @@ pins each archive's SHA-256, provenance and exact mode names. Expectations in
 representative modes and the invariant violations known per mode (currently
 none).
 
+The archives are not redistributed with the repository. Fetch them from
+[GDTF Share](https://gdtf-share.com/) with your own account:
+
 ```sh
-NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench npm run test:gdtf-bench
+export NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench
+GDTF_SHARE_USER=<user> GDTF_SHARE_PASSWORD=<password> npm run gdtf-bench:fetch
+npm run test:gdtf-bench
 ```
+
+The fetcher matches each archive to GDTF Share revisions of the same
+manufacturer and fixture and keeps only the one whose bytes hash to the pinned
+SHA-256. Archives already present with the pinned hash are kept, and no login
+happens when all are present. A present archive with a different hash fails
+rather than being overwritten. When no revision matches, the pinned revision
+was removed from GDTF Share and a current one must be pinned in the manifest.
 
 A missing directory, missing archive, changed hash or changed mode list fails.
 After an intended converter change, regenerate the expectations with

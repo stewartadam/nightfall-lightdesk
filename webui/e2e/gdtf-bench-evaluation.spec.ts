@@ -37,7 +37,7 @@ const PIXEL_LINE: BenchFixture = {
 
 /** Panel whose yoke pans 180° to -360° and spins on a separate PanRotate channel. */
 const MAGIC_PANEL: BenchFixture = {
-  file: "Ayrton@MagicPanel_FX@V2.62_Corrected_PanTilt_Rotate.gdtf",
+  file: "Ayrton@MagicPanel_FX@V2.7_Add_RDM_Personality.gdtf",
   make: "Ayrton",
   model: "MagicPanel FX",
   mode: "Extended",

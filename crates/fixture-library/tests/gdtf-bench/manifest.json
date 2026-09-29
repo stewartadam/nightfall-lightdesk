@@ -1,6 +1,6 @@
 {
-  "description": "Curated GDTF bench. Archives come from the GDTF Share collection downloaded 2025-12-30; they are not redistributed with the repository. Hashes pin the exact revisions; mode names are exact, including significant whitespace.",
-  "source": "GDTF Share collection, 2025-12-30",
+  "description": "Curated GDTF bench. Archives come from GDTF Share; they are not redistributed with the repository; fetch them with `npm run gdtf-bench:fetch`. Hashes pin the exact revisions; mode names are exact, including significant whitespace.",
+  "source": "GDTF Share collection, 2025-12-30; mac-viper, magicpanel, volero, magicblade and argo-6-fx re-pinned 2026-09-29 after GDTF Share replaced the earlier revisions",
   "archives": [
     {
       "id": "sharpy",
@@ -14,7 +14,7 @@
       "id": "mac-viper",
       "group": "full",
       "file": "Martin_Professional@MAC_Viper_Profile@20230516NoMeas.gdtf",
-      "sha256": "9f7c036352996edf74d0a39163bda46f4d268359b620af571211142f3f56cf9d",
+      "sha256": "8c9e3b6ddf96fe6a5dba8d7002b76d82a968ee7ec35a374766fafc87308ae63a",
       "modes": ["Basic", "Extended"],
       "chart_modes": ["Basic", "Extended"]
     },
@@ -238,8 +238,8 @@
     {
       "id": "magicpanel",
       "group": "initial",
-      "file": "Ayrton@MagicPanel_FX@V2.62_Corrected_PanTilt_Rotate.gdtf",
-      "sha256": "7bc1c5c3680a6cb34e90c3ed6b2f63f29ddb4705f6acc6a5ac8bebefcefc87ea",
+      "file": "Ayrton@MagicPanel_FX@V2.7_Add_RDM_Personality.gdtf",
+      "sha256": "b2d33ef720a0996694669523e96f66ad2a9eb5693375aeddbf1e7d950f78512d",
       "modes": ["Extended", "Standard", "Basic"],
       "chart_modes": ["Extended", "Basic"]
     },
@@ -726,9 +726,9 @@
     {
       "id": "volero",
       "group": "full",
-      "file": "Clay_Paky@Volero_Wave@Claypaky_Official_File_Fw_V.2.0.005.gdtf",
-      "sha256": "6c49c21cd3cfdff9e036e3df193a881ce659235c22eab6f999c4b63ffb16335f",
-      "modes": ["Standard", "Advanced", "Shape", "RGB", "RGBW"],
+      "file": "Clay_Paky@Volero_Wave@ClayPaky_FW_2_0_008_1_0_010.gdtf",
+      "sha256": "27dd9de2b1990a2160446da5dacb088043a8f359a5079c63abdde018ac7011c8",
+      "modes": ["Advanced", "Standard", "Shape", "RGB", "RGBW"],
       "chart_modes": ["Standard"]
     },
     {
@@ -757,16 +757,16 @@
     {
       "id": "magicblade",
       "group": "full",
-      "file": "Ayrton@MagicBlade_FX@V2.6_Corrected_PT_Rotate.gdtf",
-      "sha256": "94e33f42cfbcbf6b67e95724ff2c57f4cbf518f04b57fab5a64e9226530d7214",
+      "file": "Ayrton@MagicBlade_FX@V2.91_Fix_3D_Vectorwork.gdtf",
+      "sha256": "45628db87fa401a1e8550cd3e3a3f42f7e7df2aa912e3ba84b078839ad59f088",
       "modes": ["Extended", "Standard", "Basic"],
       "chart_modes": ["Extended"]
     },
     {
       "id": "argo-6-fx",
       "group": "full",
-      "file": "Ayrton@Argo_6_FX@V1.6_Corrected_Atttribute_Names.gdtf",
-      "sha256": "0b718401063b2d5f9f39861412a36d4adfbc031ebc083aacdd40b8aab60feb3e",
+      "file": "Ayrton@Argo_6_FX@V1.81_Corrected_Factory_Tilt.gdtf",
+      "sha256": "df033109e020fb940f1c9847376948c6cbf9c0772e914cac39b08635fdb5cbbe",
       "modes": [
         "Extended_Pixel_1",
         "Standard",
