@@ -51,6 +51,7 @@ import {
   type VisibilityGridColumn,
 } from "../../../lib/datagrid-column-visibility";
 import { filterColumnsFromMetadata } from "../../../lib/datagrid-filtering";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { bindings, dmxUniverseData, fixtures } from "../../../state/appStores";
 import {
   type BindingRow,
@@ -81,7 +82,7 @@ export interface PatchUniversesTabProps {
 
 export default function PatchUniversesTab(props: PatchUniversesTabProps) {
   const $bindings = useStore(bindings);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $dmxUniverseData = useStore(dmxUniverseData);
 
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());

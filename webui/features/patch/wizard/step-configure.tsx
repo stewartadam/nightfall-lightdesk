@@ -26,6 +26,7 @@ import {
   fetchFixtureProfile,
   libraryDefinitionId,
 } from "../../../lib/fixture-service";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   bindings,
   dmxUniverseData,
@@ -193,7 +194,7 @@ export function StepConfigure() {
   const { state, updateState, setPatchConflict, patchConflict } =
     usePatchWizard();
   const $dmxData = useStore(dmxUniverseData);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
   const $bindings = useStore(bindings);

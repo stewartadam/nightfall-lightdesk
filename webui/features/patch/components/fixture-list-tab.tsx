@@ -53,6 +53,7 @@ import {
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   orderedUidListsEqual,
   replaceFixtureUidsInSelection,
@@ -345,7 +346,7 @@ function buildPlacementUpdate(
 }
 
 export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const [baseColumns, setBaseColumns] =
     createSignal<VisibilityGridColumn[]>(DEFAULT_COLUMNS);
   const [collapsedGroups, setCollapsedGroups] = createSignal<readonly string[]>(

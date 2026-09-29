@@ -70,6 +70,7 @@ import {
   updateSceneObjectProperties,
   updateSceneObjectsFromLibrary,
 } from "../../../../lib/scene-object-service";
+import { useSharedStore } from "../../../../lib/use-shared-store";
 import {
   orderedUidListsEqual,
   replaceKnownUidsInSelection,
@@ -101,7 +102,7 @@ export interface SceneObjectsPanelProps extends BasePanelComponentProps {
   initialPanelId?: string;
 }
 export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
-  const $sceneObjects = useStore(sceneObjects);
+  const $sceneObjects = useSharedStore(sceneObjects);
   const $objectLibrary = useStore(objectLibrary);
   const { openWizard: openObjectWizard } = useObjectPatchWizard();
   const panelId = props.initialPanelId ?? props.id;

@@ -54,6 +54,7 @@ import { measurePerformanceScope } from "../../../lib/performance-marks";
 import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fixtures,
   layerStack,
@@ -121,7 +122,7 @@ export interface FixturesPanelProps extends BasePanelComponentProps {
 
 export default function FixturesPanel(props: FixturesPanelProps) {
   const isPanelVisible = usePanelVisibility(props.panelApi);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $layerStack = useConditionalShallowStore(layerStack, isPanelVisible);
   const $parametersRaw = useStore(parameters);
   const $programmerSelection = useStore(programmerSelection);

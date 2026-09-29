@@ -19,6 +19,7 @@ import {
   timelinePlacementPreference,
 } from "../../../lib/timeline-placement";
 import { useShallowStore } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { msToDuration, msToPixels, pixelsToMs } from "../../../lib/utils";
 import {
   clips,
@@ -95,7 +96,7 @@ const TrackContents = (props: TrackListProps) => {
   const $cueDurationProfiles = useStore(cueDurationProfiles);
   const $clips = useStore(clips);
   const $flows = useStore(flows);
-  const $fx = useStore(fx);
+  const $fx = useSharedStore(fx);
   const $fxModules = useStore(fxModules);
   const $sequences = useShallowStore(sequences);
   const $stepFx = useStore(stepFx);

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
@@ -31,6 +30,7 @@ import {
 } from "../../../lib/crud-panel-view-mode";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { groups } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
@@ -49,7 +49,7 @@ export interface GroupsPanelControllerProps {
 
 /** Owns group CRUD, selection, filtering, reveal, and keyboard behavior. */
 export function createGroupsPanelController(props: GroupsPanelControllerProps) {
-  const $groups = useStore(groups);
+  const $groups = useSharedStore(groups);
   const panelId = props.initialPanelId ?? props.id;
   const search = createCrudPanelSearch({
     componentId: panelId,

@@ -68,6 +68,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelTabStatus } from "../../../lib/panel-tab-status";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { resolveSpatialSelection } from "../../../lib/wasm-bridge";
 import {
   fixtures as fixturesStore,
@@ -159,7 +160,7 @@ type StepFxEditorPopover = "timing" | "start-position" | "overrides";
 /** Presents Step FX authoring controls and integrates the editor session with docking. */
 export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
   log.trace("mounting");
-  const $fixtures = useStore(fixturesStore);
+  const $fixtures = useSharedStore(fixturesStore);
   const $groups = useStore(groupsStore);
   const initialDraft = props.initialDraft;
   const initialUid = (

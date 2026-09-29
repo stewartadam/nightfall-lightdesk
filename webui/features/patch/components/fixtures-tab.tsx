@@ -55,6 +55,7 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { bindings, dmxUniverseData, fixtures } from "../../../state/appStores";
 import {
   type BindingRow,
@@ -85,7 +86,7 @@ export interface PatchFixturesTabProps {
 
 export default function PatchFixturesTab(props: PatchFixturesTabProps) {
   const $bindings = useStore(bindings);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $dmxUniverseData = useStore(dmxUniverseData);
 
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());

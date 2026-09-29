@@ -50,6 +50,7 @@ import {
   showfileObjectTypeDefinition,
 } from "../../../lib/showfile-object-search";
 import { useShallowStore } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   blueprints,
   clips,
@@ -111,11 +112,11 @@ const ShowfileObjectResultTagBadge: Component<{
 export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   props,
 ) => {
-  const $fixtures = useStore(fixtures);
-  const $groups = useStore(groups);
+  const $fixtures = useSharedStore(fixtures);
+  const $groups = useSharedStore(groups);
   const $cues = useShallowStore(cues);
   const $sequences = useShallowStore(sequences);
-  const $fx = useStore(fx);
+  const $fx = useSharedStore(fx);
   const $stepFx = useStore(stepFx);
   const $fxModules = useStore(fxModules);
   const $clips = useStore(clips);
@@ -124,7 +125,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   const $blueprints = useStore(blueprints);
   const $colorPaths = useStore(colorPaths);
   const $masters = useStore(masters);
-  const $sceneObjects = useStore(sceneObjects);
+  const $sceneObjects = useSharedStore(sceneObjects);
   const $timecodes = useStore(timecodes);
   const $timelines = useShallowStore(timelines);
   const $dockApi = useStore(dockApi);

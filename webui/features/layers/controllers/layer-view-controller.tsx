@@ -50,6 +50,7 @@ import {
 } from "../../../lib/datagrid-filtering";
 import { makeColorSwatchCell } from "../../../lib/datagrid-rich-cells";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import type { LayerNavigationRequest } from "../../../state/appStores";
 import { attributeMetadata, fixtures } from "../../../state/appStores";
 import * as types from "../../../types";
@@ -112,7 +113,7 @@ const EMPTY_DISPLAY_ROWS_DATA: LayerDisplayRowsData = {
 
 /** Coordinates layer-grid projection, selection, filtering, and navigation. */
 export function LayerViewController(props: LayerViewProps) {
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $attributeMetadata = useStore(attributeMetadata);
   const layer = () => resolveMaybeAccessor(props.layer);
   const layerSummary = () =>
