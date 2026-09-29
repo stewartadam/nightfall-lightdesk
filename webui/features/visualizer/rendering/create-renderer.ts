@@ -14,7 +14,11 @@
  */
 
 import * as Comlink from "comlink";
-import { getVisualizerBeamQuality } from "../../../lib/feature-flags";
+import {
+  getVisualizerBeamQuality,
+  isVisualizerFramePacingEnabled,
+  isVisualizerInspectorEnabled,
+} from "../../../lib/feature-flags";
 import { MainThreadRenderer } from "./renderers/main-thread-renderer";
 import type { IVisualizerRenderer } from "./renderers/renderer-api";
 import {
@@ -97,6 +101,8 @@ export async function createVisualizerRenderer(
     width,
     height,
     devicePixelRatio: window.devicePixelRatio,
+    diagnostics:
+      isVisualizerInspectorEnabled() || isVisualizerFramePacingEnabled(),
     beamQuality: getVisualizerBeamQuality(),
   });
 

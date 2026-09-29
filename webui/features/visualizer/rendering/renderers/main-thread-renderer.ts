@@ -118,8 +118,10 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     this.initDebugOverlays();
 
     // Create instrumentation
-    this.instrumentation = new Instrumentation();
-    this.instrumentation.setRenderMode("main-thread");
+    this.instrumentation = new Instrumentation({
+      renderMode: "main-thread",
+      diagnostics: config.diagnostics,
+    });
 
     // Handle initial resize
     handleResize(this.rendererState, config.width, config.height);
@@ -141,7 +143,9 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     if (!this.rendererState) return;
 
     // Append inspector UI to container
-    container.appendChild(this.rendererState.inspector.domElement);
+    if (this.rendererState.inspector) {
+      container.appendChild(this.rendererState.inspector.domElement);
+    }
 
     this.resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -181,7 +185,14 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     this.sceneManager?.dispose();
     this.instrumentation?.clear();
     if (this.rendererState) {
-      disposeRenderer(this.rendererState);
+      const state = this.rendererState;
+      this.rendererState = undefined;
+      void disposeRenderer(state).catch((error) => {
+        log.error(
+          "Failed to drain visualizer GPU timestamps during disposal",
+          error,
+        );
+      });
     }
   }
 
@@ -384,8 +395,11 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
       onUpdate: () => this.updateEmitters(),
       onFrame: (metrics) => {
         this.instrumentation!.recordFrame(metrics.time, {
+          startedAt: metrics.startedAt,
+          completedAt: metrics.completedAt,
           updateMs: metrics.updateMs,
           renderMs: metrics.renderMs,
+          gpu: metrics.gpu,
         });
       },
     };

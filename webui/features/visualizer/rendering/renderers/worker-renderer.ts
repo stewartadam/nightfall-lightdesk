@@ -35,6 +35,7 @@ import type {
   RenderableFixture,
   RenderableSceneObject,
 } from "../../model/types";
+import { Instrumentation } from "../../services/instrumentation";
 import { loadFixtureEvaluation } from "../channel-evaluation";
 import {
   createPostProcessing,
@@ -48,6 +49,7 @@ import {
 } from "../effects/post-processing";
 import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
 import { consumeDueFrame } from "../frame-rate-limiter";
+import { GpuFrameTimer, type TimestampRenderer } from "../gpu-frame-timer";
 import { LatestFrameMailbox } from "../latest-frame-mailbox";
 import {
   cancelControlsInteraction,
@@ -57,6 +59,7 @@ import {
   createScene,
   DEFAULT_CAMERA_ROTATION_MODE,
   DEFAULT_CAMERA_TARGET,
+  GPU_READBACK_DISPOSAL_TIMEOUT_MS,
   loadCameraState,
   saveCameraState,
   setControlsRotationMode,
@@ -157,6 +160,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
       devicePixelRatio: config.devicePixelRatio,
       proxyId: this.proxy.id,
       initialCameraState,
+      diagnostics: config.diagnostics,
       beamQuality: config.beamQuality,
     };
     // The main thread converts DMX for the worker, so it needs the fixture model too.
@@ -400,8 +404,18 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
     }
     this.unsubscribeLogConfig?.();
     this.proxy?.dispose();
-    this.workerApi.dispose();
-    this.worker.terminate();
+    // Allow pending GPU timestamp mappings to finish before terminating the worker.
+    const timeout = setTimeout(
+      () => this.worker.terminate(),
+      GPU_READBACK_DISPOSAL_TIMEOUT_MS,
+    );
+    void this.workerApi
+      .dispose()
+      .catch(() => {})
+      .finally(() => {
+        clearTimeout(timeout);
+        this.worker.terminate();
+      });
   }
 
   setStatsCallback(
@@ -509,13 +523,9 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   private cameraDragEnabled = true;
   private orbitTargetIndicatorEnabled = false;
 
-  // Stats tracking
-  private readonly STATS_WINDOW_SIZE = 60;
-  private readonly STATS_PUBLISH_INTERVAL = 10;
-  private frameTimesMs: number[] = [];
-  private renderTimesMs: number[] = [];
-  private statsFrameCount = 0;
-  private statsLastFrameTime = 0;
+  // Stats tracking; instrumentation exists once init() knows the diagnostics flag.
+  private instrumentation: Instrumentation | undefined;
+  private gpuTimer = new GpuFrameTimer();
 
   // Render loop timing
   private lastTime = 0;
@@ -546,6 +556,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       proxyId,
       initialCameraState,
     } = config;
+
+    this.instrumentation = new Instrumentation({
+      renderMode: "worker",
+      diagnostics: config.diagnostics,
+    });
+    this.instrumentation.setStatsCallback(this.statsCallback);
 
     // Create renderer
     this.renderer = createRenderer({
@@ -666,15 +682,14 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     if (this._isPaused) return;
     this._isPaused = true;
     this.renderer?.setAnimationLoop(null);
-
-    // Send zeroed stats to indicate paused state
-    this.publishStats(true);
+    // Publishes zeroed stats to indicate the paused state.
+    this.instrumentation?.pause();
   }
 
   resume(): void {
     if (!this._isPaused) return;
     this._isPaused = false;
-    this.resetStats();
+    this.instrumentation?.resume();
     this.startRenderLoop();
   }
 
@@ -682,15 +697,21 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     return this._isPaused;
   }
 
-  dispose(): void {
+  /**
+   * Stops rendering and releases GPU resources once any in-flight timestamp
+   * readback has settled, so query buffers are not destroyed while mapped.
+   */
+  async dispose(): Promise<void> {
     this.renderer?.setAnimationLoop(null);
+    this.setStatsCallback(null);
+    this.instrumentation?.clear();
+    this.cameraChangeCallback = null;
+    await this.gpuTimer.dispose();
     this.debugOverlays?.dispose();
     this.sceneManager?.dispose();
     disposePostProcessing(this.postProcessing);
     this.postProcessing = null;
     this.renderer?.dispose();
-    this.statsCallback = null;
-    this.cameraChangeCallback = null;
   }
 
   /**
@@ -713,6 +734,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     callback: ((stats: VisualizerStats | null) => void) | null,
   ): void {
     this.statsCallback = callback;
+    this.instrumentation?.setStatsCallback(callback);
   }
 
   /**
@@ -871,6 +893,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
     // Use setAnimationLoop for proper WebGPU async rendering
     this.renderer.setAnimationLoop((time: number) => {
+      const startedAt = performance.now();
       if (this._isPaused || !this.scene || !this.camera || !this.controls) {
         return;
       }
@@ -885,15 +908,8 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       if (remainingFrameTime === null) return;
       this.accumulator = remainingFrameTime;
 
-      // Track frame-to-frame timing for stats
-      const frameToFrameMs =
-        this.statsLastFrameTime > 0 ? time - this.statsLastFrameTime : 0;
-      this.statsLastFrameTime = time;
-      if (frameToFrameMs > 0) {
-        this.pushToWindow(this.frameTimesMs, frameToFrameMs);
-      }
-
       // Replay the retained DMX snapshot so time-based effects advance
+      const updateStarted = performance.now();
       for (const [uid, dmx] of this.dmxSnapshot) this.setElementDmx(uid, dmx);
 
       // Update controls
@@ -911,79 +927,24 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
       // Render and track timing
       const renderStart = performance.now();
+      const updateMs = renderStart - updateStarted;
+      const timedRenderer = this.renderer! as unknown as TimestampRenderer;
+      this.gpuTimer.begin(timedRenderer);
       if (this.postProcessing) {
         renderWithPostProcessing(this.postProcessing);
       } else {
         this.renderer!.render(this.scene, this.camera);
       }
+      this.gpuTimer.end(timedRenderer);
       const renderEnd = performance.now();
-      this.pushToWindow(this.renderTimesMs, renderEnd - renderStart);
-
-      // Publish stats periodically
-      this.statsFrameCount++;
-      if (this.statsFrameCount % this.STATS_PUBLISH_INTERVAL === 0) {
-        this.publishStats(false);
-      }
-    });
-  }
-
-  private pushToWindow(window: number[], value: number): void {
-    window.push(value);
-    if (window.length > this.STATS_WINDOW_SIZE) {
-      window.shift();
-    }
-  }
-
-  private average(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((a, b) => a + b, 0) / values.length;
-  }
-
-  private publishStats(zeroed: boolean): void {
-    if (!this.statsCallback) return;
-
-    if (zeroed) {
-      this.statsCallback({
-        fps: 0,
-        frameToFrameMs: 0,
-        updateFixturesMs: 0,
-        totalRenderMs: 0,
-        postProcessMs: 0,
-        gpuMs: 0,
-        scenePassMs: 0,
-        volumetricPassMs: 0,
-        gaussianBlurMs: 0,
-        bloomMs: 0,
-        renderMode: "worker",
+      this.instrumentation?.recordFrame(time, {
+        startedAt,
+        completedAt: renderEnd,
+        updateMs,
+        renderMs: renderEnd - renderStart,
+        gpu: this.gpuTimer.reading,
       });
-      return;
-    }
-
-    if (this.frameTimesMs.length === 0) return;
-
-    const avgFrameTime = this.average(this.frameTimesMs);
-    const fps = avgFrameTime > 0 ? 1000 / avgFrameTime : 0;
-
-    this.statsCallback({
-      fps,
-      frameToFrameMs: avgFrameTime,
-      updateFixturesMs: 0,
-      totalRenderMs: this.average(this.renderTimesMs),
-      postProcessMs: 0,
-      gpuMs: 0,
-      scenePassMs: this.average(this.renderTimesMs),
-      volumetricPassMs: 0,
-      gaussianBlurMs: 0,
-      bloomMs: 0,
-      renderMode: "worker",
     });
-  }
-
-  private resetStats(): void {
-    this.frameTimesMs.length = 0;
-    this.renderTimesMs.length = 0;
-    this.statsFrameCount = 0;
-    this.statsLastFrameTime = 0;
   }
 
   private applyControlInteractionState(): void {

@@ -11,6 +11,7 @@
 import { deepMap } from "@nanostores/deepmap";
 import type { DockviewApi } from "dockview";
 import { atom } from "nanostores";
+import type { FramePacingSnapshot } from "../features/visualizer";
 import {
   appendConsoleScrollbackEntry,
   type ConsoleScrollbackEntry,
@@ -629,7 +630,15 @@ export interface VisualizerStats {
   postProcessMs: number;
   totalRenderMs: number;
   frameToFrameMs: number; // Wall clock time between actual renders
-  gpuMs: number; // GPU execution time (from CPU render end to next frame start)
+  gpuMs?: number; // GPU timestamp duration; absent when unsupported or unresolved
+  /** Unsmoothed pass durations from the most recently completed GPU sample (diagnostics only). */
+  gpuPasses?: Record<string, number>;
+  /**
+   * Raw render submission counters; window maximum is not smoothed like FPS.
+   * Published only with the `visualizer:framePacing` or `visualizer:inspector`
+   * diagnostics flags.
+   */
+  framePacing?: FramePacingSnapshot;
   scenePassMs: number;
   volumetricPassMs: number;
   gaussianBlurMs: number;

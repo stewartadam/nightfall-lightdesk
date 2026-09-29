@@ -163,7 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  three@0.185.1: fc922df8e354536173df01ff4462d41571a44b136a05b64226ec32078cdaf1d4
+  three@0.185.1: 5a71a7eb86fbcb8425ea551b8c10f328480a820a010748a5f2fc5968d5cae1d6
 
 importers:
 
@@ -267,7 +267,7 @@ importers:
         version: 4.3.3
       three:
         specifier: 0.185.1
-        version: 0.185.1(patch_hash=fc922df8e354536173df01ff4462d41571a44b136a05b64226ec32078cdaf1d4)
+        version: 0.185.1(patch_hash=5a71a7eb86fbcb8425ea551b8c10f328480a820a010748a5f2fc5968d5cae1d6)
       tinykeys:
         specifier: ^4.0.0
         version: 4.0.0
@@ -3707,7 +3707,7 @@ snapshots:
     dependencies:
       execa: 6.1.0
 
-  three@0.185.1(patch_hash=fc922df8e354536173df01ff4462d41571a44b136a05b64226ec32078cdaf1d4): {}
+  three@0.185.1(patch_hash=5a71a7eb86fbcb8425ea551b8c10f328480a820a010748a5f2fc5968d5cae1d6): {}
 
   tinyglobby@0.2.17:
     dependencies:
