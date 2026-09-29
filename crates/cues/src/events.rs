@@ -17,9 +17,11 @@ use bevy_app::prelude::*;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
-use nightfall_clips::{Clip, ClipAction, MaterializedClip, Source, log_clip_lookup_failure};
+use nightfall_clips::{
+    Clip, ClipAction, ClipReleaseAfterInstance, InstanceIndex, MaterializedClip, Source,
+    log_clip_lookup_failure,
+};
 use nightfall_compositor::prelude::*;
-use nightfall_desk::instances::InstanceIndex;
 use nightfall_desk::prelude::*;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::*;

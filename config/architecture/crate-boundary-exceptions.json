@@ -101,7 +101,7 @@
     },
     {
       "id": "timeline-runtime-orchestration",
-      "reason": "Timeline planning and materialization coordinate audio, cue, desk, and FX domain behavior.",
+      "reason": "Timeline planning and materialization coordinate audio, cue, and FX domain behavior.",
       "edges": [
         {
           "from": "nightfall-timeline",
@@ -116,13 +116,6 @@
           "fromRole": "domain",
           "toRole": "domain",
           "rule": "domain-crate-must-not-depend-on-domain-crate"
-        },
-        {
-          "from": "nightfall-timeline",
-          "to": "nightfall-desk",
-          "fromRole": "domain",
-          "toRole": "integration",
-          "rule": "domain-crate-must-not-depend-on-integration-or-composition"
         },
         {
           "from": "nightfall-timeline",

@@ -11,11 +11,11 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy_ecs::{prelude::*, system::SystemState};
-use nightfall_clips::ClipSourceRef;
 use nightfall_clips::{
     Clip, ClipAction, ClipCommand, ClipLookup, ClipLookupError, MaterializedClip,
     RestoreClipSource, Source, clip_action_from_command, log_clip_lookup_failure,
 };
+use nightfall_clips::{ClipReleaseAfterInstance, ClipSourceRef, InstanceIndex};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_engine::object_registry::{ObjectLookupError, resolve_object};
 use nightfall_engine::prelude::*;
@@ -28,8 +28,6 @@ use nightfall_instances::{
     InstanceControls, InstanceId, InstanceKind, InstanceMetadata, InstanceOptions,
 };
 use nightfall_playback_planner::PlaybackReconstructionTiming;
-
-use crate::prelude::*;
 
 /// Playback identity and control state used to resolve clip actions.
 type ClipPlaybackData = (

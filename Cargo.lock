@@ -5096,6 +5096,7 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "nightfall",
+ "nightfall-actions",
  "nightfall-instances",
  "nightfall-playback-planner",
  "nightfall-undo",
@@ -5275,6 +5276,7 @@ version = "0.1.0-alpha.2"
 dependencies = [
  "async-channel",
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "bevy_state",
  "bimap",

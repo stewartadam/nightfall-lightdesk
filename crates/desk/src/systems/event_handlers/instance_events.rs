@@ -8,6 +8,7 @@
 
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
+use nightfall_clips::InstanceIndex;
 use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
@@ -18,8 +19,6 @@ use nightfall_instances::{
     InstanceClock, InstanceCommand, InstanceControlUpdate, InstanceControls, InstanceId,
     InstanceMetadata, PlaybackAction, PlaybackReleaseAction, PlaybackScope,
 };
-
-use crate::prelude::*;
 
 /// Applies typed playback actions to materialized parameters and DMX state.
 pub fn handle_events(

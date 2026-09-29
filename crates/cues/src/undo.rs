@@ -10,7 +10,7 @@
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::ColorPath;
-use nightfall_desk::instances::InstanceIndex;
+use nightfall_clips::InstanceIndex;
 use nightfall_engine::prelude::*;
 use nightfall_instances::InstanceId;
 use nightfall_undo::prelude::*;

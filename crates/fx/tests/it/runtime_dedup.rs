@@ -11,12 +11,12 @@ use std::time::Duration;
 use bevy_app::prelude::*;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
-use nightfall_clips::{Clip, ClipAction, MaterializedClip, Source};
-use nightfall_compositor::prelude::{Layer, ReleaseMarker};
-use nightfall_desk::instances::{
-    add_instances_to_index, remove_instances_from_index, sync_active_state_on_instance_despawn,
+use nightfall_clips::{
+    Clip, ClipAction, InstanceIndex, MaterializedClip, Source, add_instances_to_index,
+    remove_instances_from_index,
 };
-use nightfall_desk::prelude::InstanceIndex;
+use nightfall_compositor::prelude::{Layer, ReleaseMarker};
+use nightfall_desk::instances::sync_active_state_on_instance_despawn;
 use nightfall_desk::systems::event_handlers::instance_events::handle_playback_commands;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{

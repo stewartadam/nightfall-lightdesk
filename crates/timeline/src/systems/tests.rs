@@ -17,7 +17,10 @@ use bevy_ecs::prelude::Entity;
 use bevy_ecs::schedule::{ApplyDeferred, IntoScheduleConfigs};
 use moonshine_kind::{Instance, InstanceMut};
 use nightfall::prelude::*;
-use nightfall_clips::{Clip, ClipAction, ClipOptions, MaterializedClip, Source};
+use nightfall_clips::{
+    Clip, ClipAction, ClipOptions, ClipReleaseAfterInstance, InstanceIndex, MaterializedClip,
+    Source,
+};
 use nightfall_compositor::prelude::{LayerCompositingContext, ObjectRefMarker, ReleaseMarker};
 use nightfall_cues::materialized_cue::paint_materialized_cues;
 use nightfall_cues::materialized_sequence::paint_materialized_sequences;
@@ -25,9 +28,9 @@ use nightfall_cues::prelude::{
     BoundCueInstruction, Cue, CueInstruction, CueLifecycleAction, CueTriggerType, MaterializedCue,
     MaterializedSequence, PlaybackReleaseTiming, Sequence, SequencePlaybackAction,
 };
-use nightfall_desk::instances::{ClipReleaseAfterInstance, InstanceIndex};
-use nightfall_desk::prelude::{DeskAction, DeskCommand, GlobalVariables};
+use nightfall_desk::prelude::DeskCommand;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
+use nightfall_engine::prelude::EvalAction;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandIngressRouter, CommandNotice, CommandReply,
     CommandResult, CommandTracker, DataProvider, EngineActionEnvelope, EngineActionRouter,
@@ -533,7 +536,7 @@ fn setup_sequence_timeline_app_with_stop(
 fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
@@ -575,7 +578,7 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
                 ApplyDeferred,
                 update_timeline_lookahead_layers_system,
                 nightfall_cues::events::handle_events,
-                nightfall_desk::instances::add_instances_to_index,
+                nightfall_clips::add_instances_to_index,
                 nightfall_undo::dispatcher::process_pending_commands,
                 ApplyDeferred,
                 nightfall_cues::events::handle_sequence_playback_actions,
@@ -607,7 +610,7 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
                     process_actions_system,
                     nightfall_cues::events::handle_events,
                     cleanup_timeline_entities,
-                    nightfall_desk::instances::add_instances_to_index,
+                    nightfall_clips::add_instances_to_index,
                     nightfall_undo::dispatcher::process_pending_commands,
                     ApplyDeferred,
                 )

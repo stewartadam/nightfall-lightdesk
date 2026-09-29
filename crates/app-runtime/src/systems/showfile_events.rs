@@ -20,6 +20,7 @@ use bevy::ecs::resource::IsResource;
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use nightfall::prelude::*;
+use nightfall_clips::InstanceIndex;
 use nightfall_compositor::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_desk::prelude::*;

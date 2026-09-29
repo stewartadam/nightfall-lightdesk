@@ -8,6 +8,8 @@
 
 //! Diagnostic paths and registration for websocket projection work.
 
+use nightfall_engine::diagnostic_paths::*;
+
 use super::*;
 
 pub const LAYER_STACK_BUILD_MS: DiagnosticPath =
@@ -16,20 +18,6 @@ pub const LAYER_STACK_TRANSITION_BUILD_MS: DiagnosticPath =
     DiagnosticPath::const_new("desk/layer_stack/transition_build_ms");
 pub const LAYER_STACK_BROADCAST_MS: DiagnosticPath =
     DiagnosticPath::const_new("desk/layer_stack/broadcast_ms");
-pub const TIMELINE_LAYER_GENERATION_MS: DiagnosticPath =
-    DiagnosticPath::const_new("timeline/layer_generation_ms");
-pub const TIMELINE_UPDATE_MS: DiagnosticPath = DiagnosticPath::const_new("timeline/update_ms");
-pub const TIMELINE_AUDIO_MS: DiagnosticPath = DiagnosticPath::const_new("timeline/audio_ms");
-pub const TIMELINE_LOOKAHEAD_SOURCES_MS: DiagnosticPath =
-    DiagnosticPath::const_new("timeline/lookahead_sources_ms");
-pub const TIMELINE_LOOKAHEAD_ASSERTIONS_MS: DiagnosticPath =
-    DiagnosticPath::const_new("timeline/lookahead_assertions_ms");
-pub const TIMELINE_LOOKAHEAD_LAYERS_MS: DiagnosticPath =
-    DiagnosticPath::const_new("timeline/lookahead_layers_ms");
-pub const TIMELINE_ACTIONS_MS: DiagnosticPath = DiagnosticPath::const_new("timeline/actions_ms");
-pub const TIMELINE_PARAMETERS_MS: DiagnosticPath =
-    DiagnosticPath::const_new("timeline/parameters_ms");
-pub const TIMELINE_SEEK_MS: DiagnosticPath = DiagnosticPath::const_new("timeline/seek_ms");
 
 /// Register websocket performance diagnostics emitted by desk systems.
 pub fn register_websocket_performance_diagnostics(app: &mut App) {

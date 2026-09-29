@@ -20,11 +20,14 @@ pub mod client_ingress;
 pub mod command_lifecycle;
 pub mod command_traits;
 pub mod data_provider;
+pub mod diagnostic_paths;
+pub mod eval_action;
 pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod process_shutdown;
 pub mod protocol;
 pub mod runtime_capabilities;
+pub mod variables;
 
 /// Backend lifecycle state for process initialization and showfile readiness.
 #[derive(
@@ -78,6 +81,7 @@ pub mod prelude {
     };
     pub use crate::command_traits::CliCommand;
     pub use crate::data_provider::{DataProvider, DataStoreError};
+    pub use crate::eval_action::EvalAction;
     pub use crate::parse_command_string;
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::process_shutdown::{
@@ -108,9 +112,10 @@ pub mod prelude {
         FxModuleCapability, LibraryCapability, PersistenceCapability, RuntimeCapabilities,
         RuntimeMode, TimelineAudioCapability,
     };
+    pub use crate::variables::GlobalVariables;
     pub use crate::{
-        AppState, ClientOutput, ClockUpdate, Compositing, DmxOutput, EventHandling, InputHandling,
-        LayerGeneration, ResyncHandling, StartupFrameCounter, VdimProcessing,
+        AppState, ClientOutput, ClockUpdate, Compositing, DeskEventSet, DmxOutput, EventHandling,
+        InputHandling, LayerGeneration, ResyncHandling, StartupFrameCounter, VdimProcessing,
     };
     pub use crate::{EngineCommand, ResyncRequested, register_engine_action};
 }
@@ -216,6 +221,24 @@ pub struct ResyncHandling;
 /// System set for sending finalized DMX frames to output transports.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DmxOutput;
+
+/// Desk event handlers that domain plugins order their own handlers against.
+///
+/// Domains name these sets instead of desk system functions, so ordering against desk work does
+/// not require depending on the desk crate.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DeskEventSet {
+    /// Forwards clip ingress actions and playback requests into clip actions.
+    ClipForwarding,
+    /// Routes clip playback actions to the domain that owns each clip source.
+    ClipRouting,
+    /// Applies blueprint create, update, and delete commands.
+    BlueprintCrud,
+    /// Applies blueprint engine actions.
+    BlueprintActions,
+    /// Applies instance playback commands.
+    InstancePlayback,
+}
 
 /// Registers one user-facing command for semantic envelope dispatch.
 pub fn register_ingress_command<T: IngressCommand + Clone>(app: &mut App) {

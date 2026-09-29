@@ -10,7 +10,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_actions::ActionsPlugin;
-use nightfall_clips::{ClipAction, ClipCommand, RestoreClipSource};
+use nightfall_clips::{ClipAction, ClipCommand, InstanceIndex, RestoreClipSource};
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
 #[cfg(feature = "fx-module-host")]
@@ -47,11 +47,9 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::automation_actions::{
-        CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, CONTROL_SET_ACTION_ID,
-        ClipActionArguments, ClipTarget, ControlActionArguments, DESK_EVAL_ACTION_ID,
+        CONTROL_SET_ACTION_ID, ControlActionArguments, DESK_EVAL_ACTION_ID,
         DeskEvalActionArguments, clip_target_for_action, desk_eval_action,
-        desk_eval_command_for_action, go_clip_action, set_control_action, start_clip_action,
-        stop_clip_action,
+        desk_eval_command_for_action, set_control_action,
     };
     pub use crate::blueprint_command::{
         BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
@@ -60,19 +58,17 @@ pub mod prelude {
         ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
     };
     pub use crate::desk_command::{
-        DeskAction, DeskCommand, ShowfileImportOptions, ShowfileImportPolicy,
-        ShowfileRevisionSelection, ShowfileSaveOptions,
+        DeskCommand, ShowfileImportOptions, ShowfileImportPolicy, ShowfileRevisionSelection,
+        ShowfileSaveOptions,
     };
     pub use crate::group_command::GroupAction;
     pub use crate::group_command::GroupCommand;
-    pub use crate::instances::{ClipReleaseAfterInstance, InstanceIndex};
     pub use crate::masters::{
         FixtureMasterTarget, InstanceMasterTarget, MASTER_INTENSITY_ATTRIBUTES, Master,
         MasterCommand, MasterKind, MasterMode, MasterTarget,
     };
     pub use crate::resources::ExclusiveResource;
     pub use crate::resources::network_stats::{NetworkOutputSendFailure, NetworkStats};
-    pub use crate::resources::variables::GlobalVariables;
     pub use crate::settings::{
         ActivePanelLayout, AvailableAudioDevices, DeskSettings, SelectionFlattenPolicy,
         SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
@@ -110,7 +106,7 @@ impl Plugin for DeskPlugin {
         automation_actions::register_desk_actions(app);
 
         register_ingress_command::<DeskCommand>(app);
-        register_engine_action::<DeskAction>(app);
+        register_engine_action::<EvalAction>(app);
         register_ingress_command::<ClipCommand>(app);
         register_engine_action::<ClipAction>(app);
         register_ingress_command::<GroupCommand>(app);
@@ -248,6 +244,7 @@ impl Plugin for DeskPlugin {
             Update,
             (
                 event_handlers::clip_events::forward_clip_ingress_actions
+                    .in_set(DeskEventSet::ClipForwarding)
                     .before(event_handlers::clip_events::handle_clip_rate_commands)
                     .before(event_handlers::clip_events::route_clip_playback_actions),
                 event_handlers::clip_events::handle_configuration_commands,
@@ -256,11 +253,13 @@ impl Plugin for DeskPlugin {
                 event_handlers::fixture_events::crud_events,
                 event_handlers::group_events::crud_events,
                 event_handlers::group_events::action_events,
-                event_handlers::blueprint_events::crud_events,
-                event_handlers::blueprint_events::action_events,
+                event_handlers::blueprint_events::crud_events.in_set(DeskEventSet::BlueprintCrud),
+                event_handlers::blueprint_events::action_events
+                    .in_set(DeskEventSet::BlueprintActions),
                 event_handlers::debug_events::handle_events,
                 event_handlers::instance_events::handle_events,
-                event_handlers::instance_events::handle_playback_commands,
+                event_handlers::instance_events::handle_playback_commands
+                    .in_set(DeskEventSet::InstancePlayback),
                 event_handlers::clip_events::handle_clip_rate_commands
                     .before(event_handlers::instance_events::handle_playback_control_updates),
                 event_handlers::instance_events::handle_playback_control_updates,
@@ -313,8 +312,9 @@ impl Plugin for DeskPlugin {
             Update,
             (
                 event_handlers::clip_events::forward_clip_playback_requests
+                    .in_set(DeskEventSet::ClipForwarding)
                     .before(event_handlers::clip_events::route_clip_playback_actions),
-                route_clip_playback_actions,
+                route_clip_playback_actions.in_set(DeskEventSet::ClipRouting),
             )
                 .in_set(EventHandling),
         );

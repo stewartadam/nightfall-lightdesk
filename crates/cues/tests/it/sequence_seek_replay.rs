@@ -9,6 +9,7 @@
 use bevy_app::prelude::*;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
+use nightfall_clips::InstanceIndex;
 use nightfall_clips::{
     Clip, ClipAction, ClipCommand, MaterializedClip, Source, clip_action_from_command,
 };
@@ -19,7 +20,7 @@ use nightfall_cues::materialized_sequence::{
 };
 use nightfall_cues::prelude::{Cue, CueLifecycleAction, MaterializedSequence, Sequence};
 use nightfall_desk::instances::sync_active_state_on_instance_despawn;
-use nightfall_desk::prelude::{DeskCommand, InstanceIndex};
+use nightfall_desk::prelude::DeskCommand;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandNotice, CommandReply, CommandResult, CommandTracker,
     DataProvider, EngineActionEnvelope, FinishedCommand, OperationResult, PendingCommandBuffer,

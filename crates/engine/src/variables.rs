@@ -6,6 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Show-wide named variables shared by command evaluation and playback domains.
+
 use std::collections;
 
 use bevy_ecs::prelude::*;
@@ -17,6 +19,7 @@ use nightfall::prelude::*;
 pub struct GlobalVariables(DashMap<String, VariableValue>);
 
 impl GlobalVariables {
+    /// Returns a copy of the named variable, or an error naming the missing variable.
     pub fn get(&self, key: &str) -> Result<VariableValue, String> {
         self.0
             .get(key)
@@ -24,6 +27,7 @@ impl GlobalVariables {
             .ok_or_else(|| format!("Variable {} not found", key))
     }
 
+    /// Returns a snapshot of every variable, keyed by name.
     pub fn get_all(&self) -> collections::HashMap<String, VariableValue> {
         self.0
             .iter()
@@ -31,10 +35,12 @@ impl GlobalVariables {
             .collect()
     }
 
+    /// Creates or overwrites the named variable.
     pub fn set(&self, key: &str, value: VariableValue) {
         self.0.insert(key.to_owned(), value.clone());
     }
 
+    /// Removes every variable, as when a show is unloaded.
     pub fn clear(&self) {
         self.0.clear();
     }

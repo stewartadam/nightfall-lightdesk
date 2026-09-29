@@ -12,11 +12,9 @@ use std::time::Duration;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
-use nightfall_clips::{Clip, MaterializedClip};
+use nightfall_clips::{Clip, ClipReleaseAfterInstance, MaterializedClip};
 use nightfall_compositor::prelude::*;
-use nightfall_desk::prelude::{
-    BlueprintDefinitionChange, BlueprintReferenceIndex, ClipReleaseAfterInstance,
-};
+use nightfall_desk::prelude::{BlueprintDefinitionChange, BlueprintReferenceIndex};
 use nightfall_dmx::{ParameterDmxValue, prelude::ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;

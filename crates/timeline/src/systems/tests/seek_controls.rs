@@ -11,7 +11,7 @@ use super::*;
 #[test]
 fn move_playhead_only_seek_does_not_activate_timeline() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -59,7 +59,7 @@ fn move_playhead_only_seek_does_not_activate_timeline() {
 #[test]
 fn seek_coalesces_multiple_timecode_events_per_frame() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -151,7 +151,7 @@ fn seek_coalesces_multiple_timecode_events_per_frame() {
 #[test]
 fn seek_coalesces_distinct_timecodes_in_last_event_order() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -258,7 +258,7 @@ fn seek_coalesces_distinct_timecodes_in_last_event_order() {
 #[test]
 fn seek_coalesces_each_timeline_for_shared_timecode() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 

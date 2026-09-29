@@ -23,7 +23,7 @@ use bevy_diagnostic::{
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall::prelude::*;
-use nightfall_clips::{Clip, ClipCommand, MaterializedClip};
+use nightfall_clips::{Clip, ClipCommand, InstanceIndex, MaterializedClip};
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
@@ -67,9 +67,6 @@ pub use desk_state::*;
 use diagnostics::record_elapsed_ms;
 pub use diagnostics::{
     LAYER_STACK_BROADCAST_MS, LAYER_STACK_BUILD_MS, LAYER_STACK_TRANSITION_BUILD_MS,
-    TIMELINE_ACTIONS_MS, TIMELINE_AUDIO_MS, TIMELINE_LAYER_GENERATION_MS,
-    TIMELINE_LOOKAHEAD_ASSERTIONS_MS, TIMELINE_LOOKAHEAD_LAYERS_MS, TIMELINE_LOOKAHEAD_SOURCES_MS,
-    TIMELINE_PARAMETERS_MS, TIMELINE_SEEK_MS, TIMELINE_UPDATE_MS,
     register_websocket_performance_diagnostics,
 };
 use inbound::flush_pending_ui_notifications;
