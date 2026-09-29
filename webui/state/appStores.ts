@@ -330,6 +330,11 @@ function getFixtureById(id: number): types.Fixture | undefined {
 
 /** Per-element output map for visualizer: uid -> array of element outputs (index = element number) */
 export type ParameterOutputMap = Map<string, Record<string, number>[]>;
+/** Read-only engine snapshot; publishers replace the map when output changes. */
+export type ParameterOutputSnapshot = ReadonlyMap<
+  string,
+  Record<string, number>[]
+>;
 /**
  * Immediate parameter output for non-reactive hot paths.
  * Updated synchronously on every WebSocket message with minimal processing.
@@ -340,8 +345,12 @@ const parametersImmediateHolder = {
   current: new Map<string, Record<string, number>[]>(),
 };
 
-/** Returns the latest parameter output map without subscribing to nanostore updates. */
-export function getParametersImmediate(): ParameterOutputMap {
+/**
+ * Returns the latest immutable snapshot without subscribing to nanostore
+ * updates. Renderers convert it only when its identity changes, so publish
+ * changes through {@link setParametersImmediate} rather than mutating it.
+ */
+export function getParametersImmediate(): ParameterOutputSnapshot {
   return parametersImmediateHolder.current;
 }
 
@@ -1014,6 +1023,7 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     parameters,
     getFixtureById,
     getParametersImmediate,
+    setParametersImmediate,
     bindings,
     bindingValidationSettings,
     patchBindingNavigationRequest,

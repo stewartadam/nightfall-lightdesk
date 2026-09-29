@@ -46,7 +46,9 @@ import {
   setOutlineSelectedObjects,
   setProgrammerValueOutlineSelectedObjects,
 } from "../effects/post-processing";
+import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
 import { consumeDueFrame } from "../frame-rate-limiter";
+import { LatestFrameMailbox } from "../latest-frame-mailbox";
 import {
   cancelControlsInteraction,
   createCamera,
@@ -67,11 +69,9 @@ import {
   updateOrbitTargetIndicator,
 } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
-import { extractFixtureDmxData, resetDmxPool } from "../visualizer-dmx";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
   CameraState,
-  ElementDmxData,
   FixtureDmxBatch,
   FixtureElementDmxMap,
   IVisualizerRenderer,
@@ -93,6 +93,12 @@ const log = createLogger("visualizer:worker-renderer");
  * Runs on the main thread and forwards to the worker.
  */
 export class WorkerRendererProxy implements IVisualizerRenderer {
+  private readonly dmxMailbox: LatestFrameMailbox<FixtureDmxBatch>;
+  private readonly dmxSnapshot = new FixtureDmxSnapshot();
+  /** Snapshot revision last handed to the mailbox; -1 forces the next post. */
+  private postedDmxRevision = -1;
+  /** Set while consecutive snapshot deliveries fail, so a failing streak logs once. */
+  private dmxDeliveryFailing = false;
   private worker: Worker;
   private workerApi: Comlink.Remote<VisualizerWorkerApi>;
   private proxy: ElementProxy | undefined;
@@ -108,6 +114,19 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
   constructor(worker: Worker, workerApi: Comlink.Remote<VisualizerWorkerApi>) {
     this.worker = worker;
     this.workerApi = workerApi;
+    this.dmxMailbox = new LatestFrameMailbox(
+      async (batch) => {
+        await this.workerApi.setElementDmxBatch(batch);
+        this.dmxDeliveryFailing = false;
+      },
+      (error) => {
+        // An undelivered snapshot must be resent even when the show output stays static.
+        this.postedDmxRevision = -1;
+        if (!this.dmxDeliveryFailing)
+          log.warn("Visualizer lighting update failed; retrying", { error });
+        this.dmxDeliveryFailing = true;
+      },
+    );
 
     // Push initial log config to worker
     this.workerApi.setLogConfig(getConfig());
@@ -140,10 +159,14 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
       initialCameraState,
       beamQuality: config.beamQuality,
     };
-    await this.workerApi.init(
-      // Use Comlink.transfer to ensure the OffscreenCanvas is transferred, not cloned
-      Comlink.transfer(initConfig, [offscreen]) as VisualizerInitConfig,
-    );
+    // The main thread converts DMX for the worker, so it needs the fixture model too.
+    await Promise.all([
+      this.workerApi.init(
+        // Use Comlink.transfer to ensure the OffscreenCanvas is transferred, not cloned
+        Comlink.transfer(initConfig, [offscreen]) as VisualizerInitConfig,
+      ),
+      loadFixtureEvaluation(),
+    ]);
     this.workerApi.setInteractionMode(this.interactionMode);
     this.workerApi.setCameraRotationMode(this.cameraRotationMode);
     this.workerApi.setCameraDragEnabled(this.cameraDragEnabled);
@@ -215,10 +238,12 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
   }
 
   /**
-   * Sends all fixture element DMX updates for one frame across the worker boundary.
+   * Hands a DMX snapshot to the worker. At most one snapshot is in flight; a
+   * newer one replaces any that is still waiting, since the worker only
+   * needs the latest state.
    */
   setElementDmxBatch(batch: FixtureDmxBatch): void {
-    this.workerApi.setElementDmxBatch(batch);
+    this.dmxMailbox.publish(batch);
   }
 
   setSelection(selectedUids: string[]): void {
@@ -275,6 +300,9 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
 
   pause(): void {
     if (this._isPaused) return;
+    this.dmxMailbox.clear();
+    // A cleared, unsent snapshot must be re-posted on resume.
+    this.postedDmxRevision = -1;
     this._isPaused = true;
     if (this.colorUpdateRafId !== null) {
       cancelAnimationFrame(this.colorUpdateRafId);
@@ -366,6 +394,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
   }
 
   dispose(): void {
+    this.dmxMailbox.dispose();
     if (this.colorUpdateRafId !== null) {
       cancelAnimationFrame(this.colorUpdateRafId);
     }
@@ -427,7 +456,10 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
 
   /**
    * Start the color update loop.
-   * Polls DMX parameters and sends colors to the worker at frame rate.
+   * Polls DMX parameters every animation frame, but converts and posts a
+   * snapshot to the worker only when the engine output, fixture definitions
+   * or fixture model readiness changed; the worker replays its retained
+   * snapshot for time-based effects.
    */
   private startColorUpdateLoop(): void {
     const updateColors = () => {
@@ -436,25 +468,17 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
         return;
       }
 
-      // Reset DMX pool at start of frame
-      resetDmxPool();
-
-      const parametersImmediate = getParametersImmediate();
-      const fixtureMap = fixturesStore.get();
-
-      const dmxBatch: FixtureDmxBatch = [];
-      for (const [uid, fixture] of Object.entries(fixtureMap)) {
-        const elementOutputs = parametersImmediate.get(uid);
-        if (!elementOutputs) continue;
-
-        // Build element DMX map using element labels as keys
-        const elementDmx: Array<[string, ElementDmxData]> =
-          extractFixtureDmxData(fixture.elements, elementOutputs);
-
-        if (elementDmx.length > 0) dmxBatch.push([uid, elementDmx]);
+      // Sample current DMX on the next frame after acknowledgement instead of building discarded snapshots.
+      if (!this.dmxMailbox.busy) {
+        const snapshot = this.dmxSnapshot.read(
+          getParametersImmediate(),
+          fixturesStore.get(),
+        );
+        if (this.dmxSnapshot.revision !== this.postedDmxRevision) {
+          this.postedDmxRevision = this.dmxSnapshot.revision;
+          this.setElementDmxBatch(snapshot);
+        }
       }
-
-      if (dmxBatch.length > 0) this.setElementDmxBatch(dmxBatch);
 
       this.colorUpdateRafId = requestAnimationFrame(updateColors);
     };
@@ -496,6 +520,19 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   // Render loop timing
   private lastTime = 0;
   private accumulator = 0;
+
+  /** Latest DMX snapshot from the main thread, re-applied every rendered frame. */
+  private dmxSnapshot: FixtureDmxBatch = new Map();
+
+  /**
+   * Retains the main thread's latest snapshot instead of applying it on
+   * arrival. The render loop replays it every frame, which keeps strobes and
+   * wheel rotation advancing when the engine output has not changed and
+   * charges DMX application to the frame's update budget.
+   */
+  override setElementDmxBatch(batch: FixtureDmxBatch): void {
+    this.dmxSnapshot = batch;
+  }
 
   /**
    * Initializes the worker-side renderer implementation behind the shared renderer API.
@@ -855,6 +892,9 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       if (frameToFrameMs > 0) {
         this.pushToWindow(this.frameTimesMs, frameToFrameMs);
       }
+
+      // Replay the retained DMX snapshot so time-based effects advance
+      for (const [uid, dmx] of this.dmxSnapshot) this.setElementDmx(uid, dmx);
 
       // Update controls
       this.controls.update();

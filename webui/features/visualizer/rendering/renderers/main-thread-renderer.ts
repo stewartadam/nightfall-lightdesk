@@ -29,6 +29,7 @@ import {
   setOutlineSelectedObjects,
   setProgrammerValueOutlineSelectedObjects,
 } from "../effects/post-processing";
+import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
 import {
   cancelControlsInteraction,
   DEFAULT_CAMERA_POSITION,
@@ -45,11 +46,9 @@ import {
   zoomCameraToGroups,
 } from "../renderer";
 import { SceneManager } from "../scene-manager";
-import { extractFixtureDmxData, resetDmxPool } from "../visualizer-dmx";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
   CameraState,
-  ElementDmxData,
   Vec3,
   VisualizerCameraRotationMode,
   VisualizerInitConfig,
@@ -67,6 +66,7 @@ const log = createLogger("visualizer:main-thread-renderer");
  * post-processing and inspector.
  */
 export class MainThreadRenderer extends BaseVisualizerRenderer {
+  private readonly dmxSnapshot = new FixtureDmxSnapshot();
   private rendererState: RendererState | undefined;
   private instrumentation: Instrumentation | undefined;
   private resizeObserver: ResizeObserver | undefined;
@@ -404,29 +404,16 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   }
 
   /**
-   * Update emitter colors from DMX stores.
-   * Called once per frame in the render loop.
+   * Applies the current DMX snapshot to the scene once per rendered frame.
+   * The snapshot is converted only when the engine output or fixture
+   * definitions change, but it is re-applied every frame so strobes and wheel
+   * rotation advance while the engine output is unchanged.
    */
   private updateEmitters(): void {
-    // Reset DMX pool at start of frame
-    resetDmxPool();
-
-    const parametersImmediate = getParametersImmediate();
-    const fixtureMap = fixturesStore.get();
-
-    // Update DMX parameter state for each fixture via the interface method
-    for (const [uid, fixture] of Object.entries(fixtureMap)) {
-      const elementOutputs = parametersImmediate.get(uid);
-      if (!elementOutputs) continue;
-
-      // Build element DMX map using element labels as keys
-      const elementDmx = new Map<string, ElementDmxData>(
-        extractFixtureDmxData(fixture.elements, elementOutputs),
-      );
-
-      if (elementDmx.size > 0) {
-        this.setElementDmx(uid, elementDmx);
-      }
-    }
+    const snapshot = this.dmxSnapshot.read(
+      getParametersImmediate(),
+      fixturesStore.get(),
+    );
+    for (const [uid, dmx] of snapshot) this.setElementDmx(uid, dmx);
   }
 }
