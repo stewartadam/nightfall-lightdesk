@@ -26,7 +26,7 @@ use nightfall_io::OutputTransport;
 
 const DEFAULT_SELECTION_COUNTS: &[usize] = &[16, 128, 1_024];
 const DEFAULT_LANE_COUNTS: &[usize] = &[1, 4];
-const DEFAULT_EVALUATE_FIXTURE_COUNTS: &[usize] = &[64, 512];
+const DEFAULT_EVALUATE_FIXTURE_COUNTS: &[usize] = &[64, 512, 2_048];
 const DEFAULT_FX_COUNTS: &[usize] = &[1, 32];
 /// Intensity, pan and tilt lanes, all patched on every benchmark fixture.
 const EVALUATE_LANE_COUNT: usize = 3;
