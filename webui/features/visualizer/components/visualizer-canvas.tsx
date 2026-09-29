@@ -82,13 +82,17 @@ import { useMoveToolInteraction } from "../interactions/use-move-tool-interactio
 import { useRotateToolInteraction } from "../interactions/use-rotate-tool-interaction";
 import { useSelectionToolInteraction } from "../interactions/use-selection-tool-interaction";
 import { createPointerModeRouter } from "../interactions/use-visualizer-pointer-mode-router";
-import type { VisualizerScreenPoint } from "../rendering/renderers/renderer-api";
+import type {
+  CameraState,
+  VisualizerScreenPoint,
+} from "../rendering/renderers/renderer-api";
 import { useFixtures } from "../services/use-fixtures";
 import { useSceneObjects } from "../services/use-scene-objects";
 import { useVisualizerRendererLifecycle } from "../services/use-visualizer-renderer-lifecycle";
 import { useVisualizerRendererSync } from "../services/use-visualizer-renderer-sync";
 import {
   visualizerCameraRotationMode,
+  visualizerDarkness,
   visualizerHighlightSelection,
   visualizerShowOrbitTargetIndicator,
 } from "../state/settings";
@@ -102,6 +106,8 @@ export interface VisualizerCanvasProps {
   apiRef?: (api: VisualizerCanvasApi | null) => void;
   /** Force main thread rendering even if OffscreenCanvas is available */
   forceMainThread?: boolean;
+  /** Camera pose inherited from a renderer this canvas replaces. */
+  initialCameraState?: CameraState;
 }
 
 type Axis = "x" | "y" | "z";
@@ -133,6 +139,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   const { openWizard: openObjectWizard } = useObjectPatchWizard();
   const $highlightSelection = useStore(visualizerHighlightSelection);
   const $rotationMode = useStore(visualizerCameraRotationMode);
+  const $darkness = useStore(visualizerDarkness);
   const $showOrbitTargetIndicator = useStore(
     visualizerShowOrbitTargetIndicator,
   );
@@ -238,6 +245,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     canvasRef: () => canvasRef,
     containerRef: () => containerRef,
     forceMainThread: props.forceMainThread,
+    initialCameraState: props.initialCameraState,
     getToolMode,
     getSelection: $programmerSelection,
     onStats: (stats) =>
@@ -1002,6 +1010,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     showEmitters: context.showEmitters,
     showGrid: context.showGrid,
     showOrbitTargetIndicator: $showOrbitTargetIndicator,
+    darkness: $darkness,
     showLabels: context.showLabels,
     toolMode: context.toolMode,
     rotationMode: $rotationMode,

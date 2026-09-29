@@ -18,6 +18,7 @@
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Inspector } from "three/examples/jsm/inspector/Inspector.js";
 import {
+  ACESFilmicToneMapping,
   InspectorBase,
   Mesh,
   PerspectiveCamera,
@@ -47,6 +48,7 @@ import {
   createPostProcessing,
   disposePostProcessing,
   type PostProcessingState,
+  preparePostProcessing,
   renderWithPostProcessing,
 } from "./effects/post-processing";
 import { consumeDueFrame } from "./frame-rate-limiter";
@@ -57,6 +59,7 @@ import {
   readInspectorGpuSample,
   type TimestampRenderer,
 } from "./gpu-frame-timer";
+import { type QualityProfile, resolveQualityProfile } from "./quality-profile";
 import {
   createSceneEnvironment,
   type SceneEnvironment,
@@ -113,11 +116,13 @@ export interface RendererConfig {
 export function createRenderer(config: RendererConfig): WebGPURenderer {
   const renderer = new WebGPURenderer({
     canvas: config.canvas as HTMLCanvasElement, // Cast for Three.js types
-    antialias: true,
+    // The scene pass owns multisampling; fullscreen composition and outline filters do not need it.
+    antialias: false,
     alpha: true,
   });
   renderer.setPixelRatio(Math.min(config.devicePixelRatio ?? 2, 2));
   renderer.setClearColor(config.clearColor ?? 0x1a1a2e, 1);
+  renderer.toneMapping = ACESFilmicToneMapping;
   return renderer;
 }
 
@@ -181,16 +186,14 @@ export interface RendererState extends CoreRendererState {
  */
 export async function initRenderer(
   canvas: HTMLCanvasElement,
+  profile: QualityProfile = resolveQualityProfile("high"),
   initialCameraState?: CameraState,
 ): Promise<RendererState> {
   // Create WebGPU renderer (falls back to WebGL if WebGPU unavailable)
-  const renderer = new WebGPURenderer({
+  const renderer = createRenderer({
     canvas,
-    antialias: true,
-    alpha: true,
+    devicePixelRatio: window.devicePixelRatio,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0x1a1a2e, 1); // Dark blue-gray background
 
   // The developer inspector profiles every pass, so it is opt-in.
   let inspector: Inspector | undefined;
@@ -254,7 +257,11 @@ export async function initRenderer(
   const environment = createSceneEnvironment(scene);
 
   // Setup post-processing with bloom
-  const postProcessing = createPostProcessing(renderer, scene, camera);
+  await renderer.init();
+  const postProcessing = createPostProcessing(renderer, scene, camera, {
+    profile,
+  });
+  await preparePostProcessing(postProcessing);
 
   // Setup inspector parameters
   const updateInspector = inspector
@@ -376,7 +383,11 @@ export function startRenderLoop(
     state.gpuTimer?.begin(timedRenderer);
     if (state.postProcessing) {
       // Render with post-processing (bloom, etc.)
-      renderWithPostProcessing(state.postProcessing);
+      renderWithPostProcessing(
+        state.postProcessing,
+        gpu ?? undefined,
+        updateEnd - updateStart,
+      );
     } else {
       // Direct rendering without post-processing
       state.renderer.render(state.scene, state.camera);
