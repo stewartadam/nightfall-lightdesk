@@ -9,14 +9,12 @@
 //! Compositor stage for applying transitions to layers in the compositor pipeline.
 use std::time::Duration;
 
-use bevy_ecs::prelude::*;
-use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 use rustc_hash::FxHashSet;
 
 use crate::types::{
-    CompositorParameter, ComputedLayer, Layer, LayerCompositingContext, ParameterRef,
+    ComputedLayer, Layer, LayerCompositingContext, ParameterLookup, ParameterRef, ParameterTraits,
 };
 
 /// Assertions a layer leaves out of the current frame's output, such as those still waiting out
@@ -38,10 +36,10 @@ impl SkippedAssertions {
 
 /// Applies transitions and delays using a layer compositing context, and removes the assertions
 /// skipped this frame from the layer so its attribution matches the effective output.
-pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
+pub fn apply_transitions_with_compositing_context(
     layer: &mut Layer,
     base: &ComputedLayer,
-    parameters: &Query<InstanceMut<P>>,
+    parameters: &impl ParameterLookup,
     is_releasing: bool,
     context: LayerCompositingContext,
 ) -> ComputedLayer {
@@ -61,10 +59,10 @@ pub fn apply_transitions_with_compositing_context<P: CompositorParameter>(
 ///
 /// Returns the computed layer and the assertions skipped this frame, which the caller must leave
 /// out of attribution.
-pub fn evaluate_transitions_with_compositing_context<P: CompositorParameter>(
+pub fn evaluate_transitions_with_compositing_context(
     layer: &Layer,
     base: &ComputedLayer,
-    parameters: &Query<InstanceMut<P>>,
+    parameters: &impl ParameterLookup,
     is_releasing: bool,
     context: LayerCompositingContext,
 ) -> (ComputedLayer, SkippedAssertions) {
@@ -79,26 +77,19 @@ pub fn evaluate_transitions_with_compositing_context<P: CompositorParameter>(
     for (param_ref, (value, transition)) in layer.absolute.iter() {
         if !is_releasing {
             if let (ParameterValue::Absolute { value }, None) = (value, transition.as_ref()) {
-                if parameters.get(param_ref.entity()).is_ok() {
+                if parameters.parameter_traits(param_ref).is_some() {
                     computed_layer.absolute.insert(param_ref, *value);
                 }
                 continue;
             }
         }
 
-        if let Ok(param) = parameters.get(param_ref.entity()) {
+        if let Some(param) = parameters.parameter_traits(param_ref) {
             // We must start a span for each log because field filters can only be applied to spans.
             // See: https://github.com/tokio-rs/tracing/issues/2843#issuecomment-1884545840
-            let _span = trace_parameters.then(|| {
-                tracing::trace_span!(
-                    "composited_transitions",
-                    entity = %param.entity(),
-                    attribute = ?param.attribute()
-                )
-                .entered()
-            });
+            let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
 
-            let default_value = param.default_value();
+            let default_value = param.default_value;
             let base_value = base.absolute.get(param_ref).unwrap_or(&default_value);
             let asserted_value = param.resolve_value_with_current(value, *base_value);
 
@@ -149,15 +140,8 @@ pub fn evaluate_transitions_with_compositing_context<P: CompositorParameter>(
 
     // Process relative values
     for (param_ref, (value, transition)) in layer.relative.iter() {
-        if let Ok(param) = parameters.get(param_ref.entity()) {
-            let _span = trace_parameters.then(|| {
-                tracing::trace_span!(
-                    "composited_transitions",
-                    entity = %param.entity(),
-                    attribute = ?param.attribute()
-                )
-                .entered()
-            });
+        if let Some(param) = parameters.parameter_traits(param_ref) {
+            let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
 
             let default_value = 0.0; // For relative values, default is 0
             let base_value = base.relative.get(param_ref).unwrap_or(&default_value);
@@ -211,9 +195,23 @@ pub fn evaluate_transitions_with_compositing_context<P: CompositorParameter>(
     (computed_layer, skipped)
 }
 
+/// Enters the trace span that scopes one parameter's transition logs, so they can be filtered by
+/// entity and attribute.
+fn parameter_span(
+    parameters: &impl ParameterLookup,
+    parameter: ParameterRef,
+) -> tracing::span::EnteredSpan {
+    tracing::trace_span!(
+        "composited_transitions",
+        entity = %parameter.entity(),
+        attribute = ?parameters.parameter_attribute(parameter)
+    )
+    .entered()
+}
+
 /// Returns whether this assertion should be absent from the current composited layer.
-fn transition_should_skip_output<P: CompositorParameter>(
-    parameter: &InstanceRef<P>,
+fn transition_should_skip_output(
+    parameter: &ParameterTraits,
     transition: Option<&MaterializedTransition>,
     base: ParameterDmxValue,
     asserted: ParameterDmxValue,
@@ -221,13 +219,13 @@ fn transition_should_skip_output<P: CompositorParameter>(
     context: LayerCompositingContext,
 ) -> bool {
     let Some(transition) = transition else {
-        return is_releasing && !matches!(parameter.attribute(), Attribute::VirtualIntensity);
+        return is_releasing && !parameter.is_virtual_intensity;
     };
 
     if is_releasing {
         let elapsed = elapsed_since_release(transition, context).unwrap_or_default();
         return transition.transition_release_parameter_ratio_at_elapsed(elapsed) >= 1.0
-            && !matches!(parameter.attribute(), Attribute::VirtualIntensity);
+            && !parameter.is_virtual_intensity;
     }
 
     if assertion_uses_out_timing(parameter, asserted - base) {
@@ -251,8 +249,8 @@ fn remove_skipped_assertions(layer: &mut Layer, skipped: SkippedAssertions) {
 }
 
 /// Returns the transition value at the moment release started for an evaluation context.
-fn transition_value_at_release_context<P: CompositorParameter>(
-    parameter: &InstanceRef<P>,
+fn transition_value_at_release_context(
+    parameter: &ParameterTraits,
     base: ParameterDmxValue,
     asserted: ParameterDmxValue,
     transition: &MaterializedTransition,
@@ -274,8 +272,8 @@ fn transition_value_at_release_context<P: CompositorParameter>(
 }
 
 /// Returns the transition value at release for an explicit assertion elapsed time.
-fn transition_value_at_release_elapsed<P: CompositorParameter>(
-    parameter: &InstanceRef<P>,
+fn transition_value_at_release_elapsed(
+    parameter: &ParameterTraits,
     base: ParameterDmxValue,
     asserted: ParameterDmxValue,
     transition: &MaterializedTransition,
@@ -305,28 +303,28 @@ fn interpolate_value(
 }
 
 /// Returns the absolute target a releasing layer should fade toward before it is removed.
-fn absolute_release_target<P: CompositorParameter>(
-    parameter: &InstanceRef<P>,
+fn absolute_release_target(
+    parameter: &ParameterTraits,
     parameter_ref: ParameterRef,
     base: &ComputedLayer,
 ) -> ParameterDmxValue {
-    if matches!(parameter.attribute(), Attribute::VirtualIntensity) {
+    if parameter.is_virtual_intensity {
         return base
             .absolute
             .get(parameter_ref)
             .copied()
-            .unwrap_or_else(|| parameter.logical_min());
+            .unwrap_or(parameter.logical_min);
     }
 
     base.absolute
         .get(parameter_ref)
         .copied()
-        .unwrap_or_else(|| parameter.default_value())
+        .unwrap_or(parameter.default_value)
 }
 
 /// Processes one parameter transition against a layer compositing context.
-pub fn process_transition_with_compositing_context<P: CompositorParameter>(
-    parameter: &InstanceRef<P>,
+pub fn process_transition_with_compositing_context(
+    parameter: &ParameterTraits,
     base: ParameterDmxValue,
     target: ParameterDmxValue,
     transition: &MaterializedTransition,
@@ -357,8 +355,6 @@ pub fn process_transition_with_compositing_context<P: CompositorParameter>(
     if ratio != 1.0 {
         // If ratio is 1.0, we are already at the target value and do not need to log
         tracing::trace!(
-            entity = %parameter.entity(),
-            attribute = ?parameter.attribute(),
             %value,
             %base,
             %target,
@@ -372,8 +368,8 @@ pub fn process_transition_with_compositing_context<P: CompositorParameter>(
 }
 
 /// Returns the delay that applies to an assertion moving in the given direction.
-fn assertion_delay<P: CompositorParameter>(
-    parameter: &InstanceRef<P>,
+fn assertion_delay(
+    parameter: &ParameterTraits,
     transition: &MaterializedTransition,
     delta: ParameterDmxValue,
 ) -> Duration {
@@ -385,8 +381,8 @@ fn assertion_delay<P: CompositorParameter>(
 }
 
 /// Returns assertion progress for the direction between base and target.
-fn assertion_transition_ratio_at_elapsed<P: CompositorParameter>(
-    parameter: &InstanceRef<P>,
+fn assertion_transition_ratio_at_elapsed(
+    parameter: &ParameterTraits,
     transition: &MaterializedTransition,
     delta: ParameterDmxValue,
     elapsed: Duration,
@@ -399,11 +395,8 @@ fn assertion_transition_ratio_at_elapsed<P: CompositorParameter>(
 }
 
 /// Returns whether assertion-out timing applies to this parameter movement.
-fn assertion_uses_out_timing<P: CompositorParameter>(
-    parameter: &InstanceRef<P>,
-    delta: ParameterDmxValue,
-) -> bool {
-    parameter.uses_htp_merge() && delta < 0.0
+fn assertion_uses_out_timing(parameter: &ParameterTraits, delta: ParameterDmxValue) -> bool {
+    parameter.uses_htp_merge && delta < 0.0
 }
 
 /// Returns release elapsed using the canonical transition-owned anchor when present.
@@ -424,11 +417,14 @@ fn elapsed_since_release(
 mod tests {
     use std::time::Duration;
 
+    use bevy_ecs::prelude::*;
     use bevy_ecs::world::World;
+    use moonshine_kind::prelude::*;
     use moonshine_kind::Instance;
 
     use super::*;
     use crate::types::test_support::{TestMergeMode, TestParameter};
+    use crate::types::CompositorParameter;
 
     fn create_test_parameter(
         world: &mut World,
@@ -1069,7 +1065,8 @@ mod tests {
         let first_value = process_transition_with_compositing_context(
             &param_query
                 .get(first_param.entity())
-                .expect("first parameter should exist"),
+                .expect("first parameter should exist")
+                .compositing_traits(),
             200.0,
             0.0,
             &mut first_transition,
@@ -1080,7 +1077,8 @@ mod tests {
         let second_value = process_transition_with_compositing_context(
             &param_query
                 .get(second_param.entity())
-                .expect("second parameter should exist"),
+                .expect("second parameter should exist")
+                .compositing_traits(),
             200.0,
             0.0,
             &mut second_transition,
@@ -1111,7 +1109,8 @@ mod tests {
         let value = process_transition_with_compositing_context(
             &param_query
                 .get(param.entity())
-                .expect("parameter should exist"),
+                .expect("parameter should exist")
+                .compositing_traits(),
             100.0,
             200.0,
             &mut transition,
@@ -1142,7 +1141,8 @@ mod tests {
         let value = process_transition_with_compositing_context(
             &param_query
                 .get(param.entity())
-                .expect("parameter should exist"),
+                .expect("parameter should exist")
+                .compositing_traits(),
             200.0,
             100.0,
             &mut transition,
@@ -1176,7 +1176,8 @@ mod tests {
         let value = process_transition_with_compositing_context(
             &param_query
                 .get(param.entity())
-                .expect("parameter should exist"),
+                .expect("parameter should exist")
+                .compositing_traits(),
             100.0,
             200.0,
             &mut transition,
@@ -1210,7 +1211,8 @@ mod tests {
         let value = process_transition_with_compositing_context(
             &param_query
                 .get(param.entity())
-                .expect("parameter should exist"),
+                .expect("parameter should exist")
+                .compositing_traits(),
             200.0,
             100.0,
             &mut transition,
@@ -1244,7 +1246,8 @@ mod tests {
         let value = transition_value_at_release_elapsed(
             &param_query
                 .get(param.entity())
-                .expect("parameter should exist"),
+                .expect("parameter should exist")
+                .compositing_traits(),
             200.0,
             100.0,
             &transition,
@@ -1274,7 +1277,8 @@ mod tests {
         let value = process_transition_with_compositing_context(
             &param_query
                 .get(param.entity())
-                .expect("parameter should exist"),
+                .expect("parameter should exist")
+                .compositing_traits(),
             200.0,
             100.0,
             &mut transition,
@@ -1308,7 +1312,8 @@ mod tests {
         let value = process_transition_with_compositing_context(
             &param_query
                 .get(param.entity())
-                .expect("parameter should exist"),
+                .expect("parameter should exist")
+                .compositing_traits(),
             200.0,
             0.0,
             &mut transition,

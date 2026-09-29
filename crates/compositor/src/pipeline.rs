@@ -10,7 +10,6 @@
 use std::borrow::Borrow;
 
 use bevy_ecs::prelude::*;
-use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 
 use crate::{stages, types::*};
@@ -23,9 +22,9 @@ impl CompositorPipeline {
     ///
     /// Layers with transitions and no context are evaluated at zero elapsed instead of falling back
     /// to host time, so runtime playback evaluation remains deterministic.
-    pub fn compose_with_layer_compositing_contexts<P: CompositorParameter, L: Borrow<Layer>>(
+    pub fn compose_with_layer_compositing_contexts<L: Borrow<Layer>>(
         layers: Vec<(Entity, ObjectRef, L, bool, Option<LayerCompositingContext>)>,
-        param_query: &Query<InstanceMut<P>>,
+        param_query: &impl ParameterLookup,
     ) -> (
         ComputedLayer,
         AttributedAssertionsLayer,
@@ -35,9 +34,9 @@ impl CompositorPipeline {
     }
 
     /// Compose a stack of layers after each layer's compositing context has been selected.
-    fn compose_layers<P: CompositorParameter, L: Borrow<Layer>>(
+    fn compose_layers<L: Borrow<Layer>>(
         layers: Vec<(Entity, ObjectRef, L, bool, Option<LayerCompositingContext>)>,
-        param_query: &Query<InstanceMut<P>>,
+        param_query: &impl ParameterLookup,
     ) -> (
         ComputedLayer,
         AttributedAssertionsLayer,

@@ -122,12 +122,15 @@ pub fn compositor<P: CompositorParameter>(
         .collect();
     let mut param_query = parameters.queries.p2();
 
-    // Run compositing pipeline
-    let (base_layer, attributed_assertions_layer, output_layers) =
+    // Every layer reads the same parameters, so snapshot their compositing traits once instead of
+    // fetching each parameter component once per layer.
+    let (base_layer, attributed_assertions_layer, output_layers) = {
+        let parameter_traits = ParameterTraitsTable::new(&param_query);
         CompositorPipeline::compose_with_layer_compositing_contexts(
             layers_for_pipeline,
-            &param_query,
-        );
+            &parameter_traits,
+        )
+    };
 
     for (entity, output_layer) in output_layers {
         commands.entity(entity).insert(OutputLayer(output_layer));
@@ -143,7 +146,7 @@ pub fn compositor<P: CompositorParameter>(
         {
             base_layer.get_effective_value(parameter)
         } else {
-            param.default_value()
+            param.compositing_traits().default_value
         };
         if param.current_value() != final_value {
             param.set_raw_value(final_value);

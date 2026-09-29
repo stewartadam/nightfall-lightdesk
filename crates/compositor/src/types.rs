@@ -147,28 +147,140 @@ pub trait CompositorParameter: Component<Mutability = Mutable> + Clone {
     /// Attribute controlled by this parameter.
     fn attribute(&self) -> &Attribute;
 
-    /// Whether this parameter uses highest-takes-priority merging.
-    fn uses_htp_merge(&self) -> bool;
-
-    /// Minimum logical value for this parameter.
-    fn logical_min(&self) -> ParameterDmxValue;
+    /// Compositing behavior of this parameter, which does not depend on its current value.
+    fn compositing_traits(&self) -> ParameterTraits;
 
     /// Current effective value in the parameter's logical range.
     fn current_value(&self) -> ParameterDmxValue;
 
-    /// Default effective value in the parameter's logical range.
-    fn default_value(&self) -> ParameterDmxValue;
-
     /// Set the current effective value used by compositor math.
     fn set_raw_value(&mut self, value: ParameterDmxValue);
+}
 
-    /// Resolve an asserted value against an explicit current value, such as the value composited
-    /// below the asserting layer, without mutating the parameter.
-    fn resolve_value_with_current(
+/// Maps an absolute percentage onto a parameter's logical range.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AbsolutePercentScale {
+    /// Minimum logical value, reached at 0% (unsigned) or -100% (signed).
+    pub min: ParameterDmxValue,
+    /// Width of the logical range.
+    pub range: ParameterDmxValue,
+    /// Whether percentages span -100% to 100% around the range's midpoint instead of 0% to 100%.
+    pub signed: bool,
+}
+
+impl AbsolutePercentScale {
+    /// Converts an absolute percentage into a logical value, clamping it to the scale's span.
+    pub fn value(&self, percent: Percentage) -> ParameterDmxValue {
+        if self.signed {
+            let percent = percent.clamp((-1.0).into(), 1.0.into()).as_f32();
+            self.min + self.range * ((percent + 1.0) / 2.0)
+        } else {
+            let percent = percent.clamp(0.0.into(), 1.0.into());
+            self.min + self.range * percent.as_f32()
+        }
+    }
+}
+
+/// Compositing behavior of one parameter: everything the compositor reads from it besides its
+/// current value.
+///
+/// It is small and `Copy` so a compositor pass can snapshot every parameter once and read the
+/// snapshot per assertion, instead of fetching the full parameter component for each layer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParameterTraits {
+    /// Value the parameter rests at when nothing asserts it.
+    pub default_value: ParameterDmxValue,
+    /// Minimum logical value, which releasing virtual intensities fade toward.
+    pub logical_min: ParameterDmxValue,
+    /// Whether same-priority layers merge highest-takes-precedence.
+    pub uses_htp_merge: bool,
+    /// Whether the parameter is a virtual intensity, which keeps asserting while it releases.
+    pub is_virtual_intensity: bool,
+    /// Conversion for absolute percentage values.
+    pub absolute_percent: AbsolutePercentScale,
+    /// Logical value per 100% of a relative percentage offset.
+    pub relative_percent_range: ParameterDmxValue,
+}
+
+impl ParameterTraits {
+    /// Resolves an asserted value against an explicit current value, such as the value composited
+    /// below the asserting layer.
+    pub fn resolve_value_with_current(
         &self,
         value: &ParameterValue,
         current_value: ParameterDmxValue,
-    ) -> ParameterDmxValue;
+    ) -> ParameterDmxValue {
+        match value {
+            ParameterValue::Absolute { value } => *value,
+            ParameterValue::AbsolutePercent { value } => self.absolute_percent.value(*value),
+            ParameterValue::Relative { offset } => current_value + *offset,
+            ParameterValue::RelativePercent { offset } => {
+                current_value + self.relative_percent_range * offset.as_f32()
+            }
+        }
+    }
+}
+
+/// Source of parameter compositing traits for compositor stages.
+///
+/// A parameter query reads each parameter's component on every lookup, while a
+/// [`ParameterTraitsTable`] answers from a snapshot taken once per compositor pass.
+pub trait ParameterLookup {
+    /// Returns the compositing traits of a parameter, or `None` when it does not exist.
+    fn parameter_traits(&self, parameter: ParameterRef) -> Option<ParameterTraits>;
+
+    /// Returns the attribute of a parameter for trace output.
+    fn parameter_attribute(&self, parameter: ParameterRef) -> Option<Attribute>;
+}
+
+impl<P: CompositorParameter> ParameterLookup for Query<'_, '_, InstanceMut<'_, P>> {
+    /// Reads the traits from the parameter's component.
+    fn parameter_traits(&self, parameter: ParameterRef) -> Option<ParameterTraits> {
+        self.get(parameter.entity())
+            .ok()
+            .map(|parameter| parameter.compositing_traits())
+    }
+
+    /// Reads the attribute from the parameter's component.
+    fn parameter_attribute(&self, parameter: ParameterRef) -> Option<Attribute> {
+        self.get(parameter.entity())
+            .ok()
+            .map(|parameter| parameter.attribute().clone())
+    }
+}
+
+/// Compositing traits of every parameter, snapshotted from a parameter query once per compositor
+/// pass.
+pub struct ParameterTraitsTable<'q, 'w, 's, 'a, P: CompositorParameter> {
+    /// Traits keyed by parameter.
+    traits: ParameterMap<ParameterTraits>,
+    /// Query the snapshot was taken from, used only for trace output.
+    parameters: &'q Query<'w, 's, InstanceMut<'a, P>>,
+}
+
+impl<'q, 'w, 's, 'a, P: CompositorParameter> ParameterTraitsTable<'q, 'w, 's, 'a, P> {
+    /// Snapshots the traits of every parameter in the query.
+    pub fn new(parameters: &'q Query<'w, 's, InstanceMut<'a, P>>) -> Self {
+        let mut traits = ParameterMap::new();
+        traits.extend(
+            parameters
+                .iter()
+                .map(|parameter| (parameter.instance(), parameter.compositing_traits())),
+        );
+        Self { traits, parameters }
+    }
+}
+
+impl<P: CompositorParameter> ParameterLookup for ParameterTraitsTable<'_, '_, '_, '_, P> {
+    /// Reads the traits from the snapshot.
+    fn parameter_traits(&self, parameter: ParameterRef) -> Option<ParameterTraits> {
+        self.traits.get(parameter).copied()
+    }
+
+    /// Reads the attribute from the parameter's component, since trace output is rare.
+    fn parameter_attribute(&self, parameter: ParameterRef) -> Option<Attribute> {
+        self.parameters.parameter_attribute(parameter)
+    }
 }
 
 #[cfg(test)]
@@ -220,41 +332,27 @@ pub(crate) mod test_support {
             &self.attribute
         }
 
-        fn uses_htp_merge(&self) -> bool {
-            matches!(self.merge_mode, TestMergeMode::Htp)
-        }
-
-        fn logical_min(&self) -> ParameterDmxValue {
-            self.min
+        fn compositing_traits(&self) -> ParameterTraits {
+            ParameterTraits {
+                default_value: self.default_value,
+                logical_min: self.min,
+                uses_htp_merge: matches!(self.merge_mode, TestMergeMode::Htp),
+                is_virtual_intensity: matches!(self.attribute, Attribute::VirtualIntensity),
+                absolute_percent: AbsolutePercentScale {
+                    min: self.min,
+                    range: self.max - self.min,
+                    signed: false,
+                },
+                relative_percent_range: self.max - self.min,
+            }
         }
 
         fn current_value(&self) -> ParameterDmxValue {
             self.current_value
         }
 
-        fn default_value(&self) -> ParameterDmxValue {
-            self.default_value
-        }
-
         fn set_raw_value(&mut self, value: ParameterDmxValue) {
             self.current_value = value;
-        }
-
-        fn resolve_value_with_current(
-            &self,
-            value: &ParameterValue,
-            current_value: ParameterDmxValue,
-        ) -> ParameterDmxValue {
-            match value {
-                ParameterValue::Absolute { value } => *value,
-                ParameterValue::AbsolutePercent { value } => {
-                    self.min + (self.max - self.min) * value.as_f32()
-                }
-                ParameterValue::Relative { offset } => current_value + *offset,
-                ParameterValue::RelativePercent { offset } => {
-                    current_value + (self.max - self.min) * offset.as_f32()
-                }
-            }
         }
     }
 }
