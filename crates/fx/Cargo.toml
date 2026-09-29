@@ -35,9 +35,11 @@ criterion.workspace = true
 moonshine-kind.workspace = true
 nightfall-desk = { path = "../desk" }
 nightfall-clips = { path = "../clips" }
+nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
 nightfall-flow = { path = "../flow" }
 nightfall-fx-module = { path = "../fx-module" }
 nightfall-fixture-model = { path = "../fixture-model" }
+nightfall-io = { path = "../io" }
 
 [[bench]]
 name = "step_fx"

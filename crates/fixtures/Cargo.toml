@@ -29,10 +29,14 @@ tracing.workspace = true
 uuid.workspace = true
 web-time.workspace = true
 
+[features]
+test-support = []
+
 [dev-dependencies]
 async-channel.workspace = true
 bevy.workspace = true
 criterion.workspace = true
+nightfall-fixtures = { path = ".", features = ["test-support"] }
 
 [[bench]]
 name = "compositor"
