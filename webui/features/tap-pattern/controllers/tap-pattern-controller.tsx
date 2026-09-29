@@ -11,6 +11,7 @@ import { createEffect, createMemo, createSignal } from "solid-js";
 import { sendCueUpdate, sendSequenceUpdate } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { cues, dockApi, pushToast, sequences } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -54,7 +55,8 @@ export interface TapPatternPanelProps extends BasePanelComponentProps {
 const log = getLogger(import.meta.url);
 
 /** Coordinates tap capture, analysis, persistence, and sequence creation. */
-export function TapPatternController(_props: TapPatternPanelProps) {
+export function TapPatternController(props: TapPatternPanelProps) {
+  const isPanelVisible = usePanelVisibility(props.panelApi);
   let panelElement: HTMLDivElement | undefined;
   let segmentTimelineElement: HTMLButtonElement | undefined;
   const $dockApi = useStore(dockApi);
@@ -378,6 +380,7 @@ export function TapPatternController(_props: TapPatternPanelProps) {
     focusTapsTimeline,
     isCaptureArmed,
     isPanelKeyboardActive,
+    isPanelVisible,
     panelElement: () => panelElement,
     recordTap,
     setIsCaptureArmed,

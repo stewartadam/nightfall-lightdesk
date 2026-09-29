@@ -6,13 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  onCleanup,
-  onMount,
-  type Setter,
-} from "solid-js";
+import { type Accessor, createEffect, onCleanup, type Setter } from "solid-js";
 import {
   isAsciiTapKey,
   isClearTapKey,
@@ -25,6 +19,8 @@ interface TapPatternKeyboardOptions {
   focusTapsTimeline: () => void;
   isCaptureArmed: Accessor<boolean>;
   isPanelKeyboardActive: Accessor<boolean>;
+  /** Whether Dockview shows the panel; hidden panels may mount in the background. */
+  isPanelVisible: Accessor<boolean>;
   panelElement: () => HTMLDivElement | undefined;
   recordTap: (key?: string) => void;
   setIsCaptureArmed: Setter<boolean>;
@@ -34,8 +30,9 @@ interface TapPatternKeyboardOptions {
 
 /** Owns document-level focus and key routing for one mounted tap-pattern panel. */
 export function useTapPatternKeyboard(options: TapPatternKeyboardOptions) {
-  /** Gives the panel a keyboard capture context after its opener event. */
-  onMount(() => {
+  /** Gives the panel a keyboard capture context after the event that shows it. */
+  createEffect(() => {
+    if (!options.isPanelVisible()) return;
     const activationTimer = window.setTimeout(() => {
       options.setIsPanelKeyboardActive(true);
       options.timelineElement()?.focus();

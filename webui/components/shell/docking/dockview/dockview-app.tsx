@@ -64,6 +64,7 @@ import { appearanceSettings } from "../../../../state/appearance";
 import { openContextMenu } from "../../../providers/context-menu";
 import { type AppIcon, renderIconComponent } from "../../../ui/icon";
 import { Button } from "../../../ui/visual-language/button";
+import { backgroundPanelMounts } from "./background-panel-mounts";
 import { visualLanguageDockTheme } from "./dockview-host";
 import { bindPanelAppearance } from "./panel-appearance";
 import { bindPanelClipping } from "./panel-clipping";
@@ -110,8 +111,10 @@ class SolidRenderer implements IContentRenderer {
   private readonly _renderRoot: HTMLElement;
   private component: SolidComponentType;
   private panelAppearance?: ReturnType<typeof bindPanelAppearance>;
-  /** Visibility subscription that mounts a panel first created as a hidden tab. */
+  /** Visibility subscription held until the panel content mounts. */
   private pendingMount?: { dispose: () => void };
+  /** Removes this panel from the background mount queue. */
+  private cancelBackgroundMount?: () => void;
 
   /** Binds renderer ownership to one workspace rather than the app-wide panel ID. */
   constructor(
@@ -136,9 +139,10 @@ class SolidRenderer implements IContentRenderer {
 
   /**
    * Keeps panel appearance tied to Dockview's active panel and mounts the panel
-   * content the first time Dockview shows it. Background tabs and collapsed edge
-   * panels stay unmounted until opened, so restoring a large layout only builds
-   * the panels on screen; once mounted, a panel stays mounted while hidden.
+   * content. Visible panels mount right away; background tabs and collapsed
+   * edge panels mount later in the background, one per idle period, so
+   * restoring a large layout shows the visible panels first. A hidden panel
+   * that is opened before its turn mounts immediately.
    */
   init(parameters: GroupPanelPartInitParameters): void {
     this.panelAppearance = bindPanelAppearance(this._container, parameters.api);
@@ -151,7 +155,15 @@ class SolidRenderer implements IContentRenderer {
     // Dockview reports every panel visible while it builds a group and hides
     // background tabs once the whole layout is restored, so decide afterwards.
     queueMicrotask(() => {
-      if (parameters.api.isVisible) this.mountOnce(parameters);
+      if (!this.pendingMount) return;
+      if (parameters.api.isVisible) {
+        this.mountOnce(parameters);
+        return;
+      }
+      this.cancelBackgroundMount = backgroundPanelMounts.schedule(() => {
+        this.cancelBackgroundMount = undefined;
+        this.mountOnce(parameters);
+      });
     });
   }
 
@@ -160,6 +172,8 @@ class SolidRenderer implements IContentRenderer {
     if (!this.pendingMount) return;
     this.pendingMount.dispose();
     this.pendingMount = undefined;
+    this.cancelBackgroundMount?.();
+    this.cancelBackgroundMount = undefined;
     this.mount(parameters);
   }
 
@@ -190,6 +204,8 @@ class SolidRenderer implements IContentRenderer {
     this.panelAppearance?.dispose();
     this.pendingMount?.dispose();
     this.pendingMount = undefined;
+    this.cancelBackgroundMount?.();
+    this.cancelBackgroundMount = undefined;
     // Remove this panel's portal entry
     if (this.id && this.portalEntryId !== undefined) {
       const portalEntryId = this.portalEntryId;
