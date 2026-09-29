@@ -531,12 +531,22 @@ components to catch performance regressions:
 | Timeline planning and plan evaluation | `cargo bench -p nightfall-timeline --bench planner` | `NIGHTFALL_TIMELINE_BENCH_ACTION_COUNTS` |
 | Sequence lookahead projection and duration summary | `cargo bench -p nightfall-lookahead-projection --bench projection` | `NIGHTFALL_LOOKAHEAD_BENCH_CUE_COUNTS`, `NIGHTFALL_LOOKAHEAD_BENCH_FIXTURE_COUNTS` |
 | Runtime timeline lookahead (full backend frames) | `cargo bench -p app-runtime --bench timeline_lookahead` | `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_START_COUNTS` |
+| Selection resolution (linear and spatial) | `cargo bench -p nightfall-selection --bench resolve` | `NIGHTFALL_SELECTION_BENCH_FIXTURE_COUNTS` |
+| Step FX sampling and full evaluation | `cargo bench -p nightfall-fx --bench step_fx` | `NIGHTFALL_STEP_FX_BENCH_SELECTION_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_LANE_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_FX_COUNTS` |
+| DMX universe packing, parameter-state broadcast and fixture parameter lookup | `cargo bench -p nightfall-fixtures --bench frame_output` | `NIGHTFALL_FRAME_OUTPUT_BENCH_FIXTURE_COUNTS` |
+| Layer-stack snapshot | `cargo bench -p nightfall-desk --bench layer_stack` | `NIGHTFALL_LAYER_STACK_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_LAYER_STACK_BENCH_LAYER_COUNTS` |
 
 The runtime timeline lookahead suite times whole frames of the live backend
 schedule, so compare its `enabled` cases with the matching `disabled` cases to
 isolate lookahead's share. `steady` frames reuse cached lookahead state, while
 `cues_changed` frames mark cue definitions changed first to force a full
 rebuild, as when editing a cue while a timeline is armed.
+
+The parameter-state broadcast and layer-stack snapshot suites also print the
+encoded bytes each message sends to clients, so watch that number alongside the
+timings. `step_fx_sample` times lane sampling alone, while `step_fx_evaluate`
+runs the whole per-frame evaluator, including selection resolution and
+parameter lookup.
 
 Size overrides take comma-separated counts and replace the default matrix.
 Criterion's `--quick` flag and a benchmark-ID filter keep an iteration loop

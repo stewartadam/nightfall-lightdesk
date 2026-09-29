@@ -5354,6 +5354,7 @@ dependencies = [
 name = "nightfall-fixtures"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "async-channel",
  "bevy",
  "bevy_app",
  "bevy_diagnostic",
@@ -5368,6 +5369,7 @@ dependencies = [
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
+ "nightfall-fixtures",
  "nightfall-instances",
  "nightfall-io",
  "nightfall-selection",
@@ -5436,6 +5438,7 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "bevy_state",
+ "criterion",
  "enum_dispatch",
  "moonshine-kind",
  "nightfall",
@@ -5450,6 +5453,7 @@ dependencies = [
  "nightfall-flow",
  "nightfall-fx-module",
  "nightfall-instances",
+ "nightfall-io",
  "nightfall-playback-planner",
  "nightfall-selection",
  "nightfall-undo",
@@ -5779,6 +5783,7 @@ dependencies = [
 name = "nightfall-selection"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "criterion",
  "nightfall",
  "nightfall-dmx",
  "nightfall-workspace-hack",
