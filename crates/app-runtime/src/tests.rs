@@ -88,6 +88,40 @@ fn normalize_command_input_trims_values() {
     );
 }
 
+/// Verifies semicolon-separated startup input saves every named showfile, as the
+/// Playwright sample-data bootstrap relies on `save sample; save default`.
+#[tokio::test]
+async fn startup_commands_run_each_semicolon_separated_statement() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("startup command data root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+
+    queue_startup_command(&mut app, "test", "save sample; save default".to_owned());
+    for _ in 0..10 {
+        app.update();
+    }
+
+    for name in ["sample", "default"] {
+        assert!(
+            root.path()
+                .join(format!("{name}.nightfall-show/showfile.json.gz"))
+                .is_file(),
+            "startup statement `save {name}` should write its showfile"
+        );
+    }
+    drop(app);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
 /// Builds a backend app through the same plugin groups used by the live application.
 fn build_empty_backend_app() -> App {
     WorldFactory::new(test_log_config(), false, false, false)

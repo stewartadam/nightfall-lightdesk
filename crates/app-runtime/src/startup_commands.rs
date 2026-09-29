@@ -7,6 +7,7 @@
  */
 
 use bevy::prelude::{App, Messages};
+use nightfall_cmd_parse::split_command_statements;
 use nightfall_desk::prelude::DeskCommand;
 use nightfall_engine::prelude::{CommandEnvelope, CommandOrigin, CommandTracker, ReplyTarget};
 
@@ -41,8 +42,18 @@ pub(super) fn normalize_command_input(input: String) -> Option<String> {
     }
 }
 
-/// Enqueue a startup command through the same `DeskCommand::Eval` path as runtime input.
+/// Enqueue startup input through the same `DeskCommand::Eval` path as runtime input.
+///
+/// Eval accepts exactly one statement, so semicolon-separated input is split and each
+/// statement is queued as its own command, in order.
 pub(super) fn queue_startup_command(bevy_app: &mut App, source: &str, cmd_str: String) {
+    for statement in split_command_statements(&cmd_str) {
+        queue_startup_statement(bevy_app, source, statement.to_owned());
+    }
+}
+
+/// Enqueue one startup statement as a detached `DeskCommand::Eval`.
+fn queue_startup_statement(bevy_app: &mut App, source: &str, cmd_str: String) {
     tracing::info!(source, command = %cmd_str, "Queueing startup command");
 
     let eval_event = CommandEnvelope::new(

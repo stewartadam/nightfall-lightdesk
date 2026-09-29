@@ -29,6 +29,7 @@ nightfall-desk-audio = { path = "../desk_audio", optional = true }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-framepace = { path = "../framepace" }
 nightfall-fx = { path = "../fx" }
 nightfall-fixtures = { path = "../fixtures" }

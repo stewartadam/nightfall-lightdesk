@@ -226,6 +226,7 @@ dependencies = [
  "nightfall-actions",
  "nightfall-audio",
  "nightfall-clips",
+ "nightfall-cmd-parse",
  "nightfall-compositor",
  "nightfall-config",
  "nightfall-cues",
