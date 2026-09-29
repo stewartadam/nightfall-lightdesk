@@ -29,8 +29,10 @@ type LoadTiming = {
  * Measures the browser-visible phases of reloading the sample showfile.
  *
  * Opt-in diagnostic: set NIGHTFALL_LOAD_TIMING=1. Each run records when the
- * websocket dropped and returned, when the post-swap resync completed, when
- * Dockview restored the showfile layout, and when the last long task ended.
+ * websocket dropped and returned (older backends restart it per load), when
+ * the post-swap resync completed, when Dockview restored the showfile layout,
+ * when the loading veil covered and revealed the dock (builds that have it),
+ * and when the last long task ended.
  * The final run also writes a CPU profile (`load.cpuprofile`) that opens in
  * Chrome DevTools' Performance panel.
  */
@@ -98,7 +100,7 @@ test("showfile load timing", async ({ page }, testInfo) => {
       const resyncGeneration = runtime.resyncGeneration();
       actions.loadShowfileName("load-timing");
       await new Promise<void>((resolve) => {
-        /** Samples connection, resync, and layout state once per frame. */
+        /** Samples connection, resync, layout, and veil state once per frame. */
         const tick = () => {
           const elapsed = performance.now() - t0;
           const connected =
@@ -123,6 +125,17 @@ test("showfile load timing", async ({ page }, testInfo) => {
             layout.dockviewLayoutShowfileRevision.get() !== layoutRevision
           )
             marks.layout = elapsed;
+          // The loading veil, when the build has one, marks when the dock is revealed.
+          const veil = document.querySelector(
+            '[data-testid="showfile-transition-veil"]:not(.opacity-0)',
+          );
+          if (marks.veiled === undefined && veil) marks.veiled = elapsed;
+          if (
+            marks.veiled !== undefined &&
+            marks.revealed === undefined &&
+            !veil
+          )
+            marks.revealed = elapsed;
           if (
             (marks.resync !== undefined && elapsed > settleWindowMs) ||
             elapsed > 30_000
