@@ -166,10 +166,9 @@ impl LayerStackCompositor {
         ),
         parameter_query: &Query<InstanceMut<Parameter>>,
     ) {
-        let mut layer = (*layer).clone();
-        let computed_layer =
-            nightfall_compositor::stages::apply_transitions_with_compositing_context(
-                &mut layer,
+        let (computed_layer, _) =
+            nightfall_compositor::stages::evaluate_transitions_with_compositing_context(
+                layer,
                 &self.base_layer,
                 parameter_query,
                 release_marker.is_some(),

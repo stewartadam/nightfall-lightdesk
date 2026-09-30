@@ -15,7 +15,6 @@ use super::*;
 /// Layer components projected into websocket layer snapshots.
 pub type LayerSnapshotData = (
     &'static Layer,
-    &'static BaseLayer,
     &'static OutputLayer,
     Option<&'static ObjectRefMarker>,
     Option<&'static ReleaseMarker>,
@@ -381,7 +380,6 @@ pub fn send_layer_stack(
         .map(
             |(
                 layer,
-                _base,
                 output,
                 object_ref,
                 release_marker,

@@ -7,24 +7,22 @@
  */
 
 //! Compositor stage for merging computed layers according to merge strategies.
-use bevy_ecs::prelude::*;
-use moonshine_kind::prelude::*;
 
-use crate::types::{CompositorParameter, ComputedLayer};
+use crate::types::{ComputedLayer, ParameterLookup};
 
 /// Merges another computed layer onto this one, honoring HTP/LTP merge rules for same-priority layers.
-pub fn merge<P: CompositorParameter>(
+pub fn merge(
     base: &mut ComputedLayer,
     other: &ComputedLayer,
     same_priority: bool,
-    param_query: &Query<InstanceMut<P>>,
+    param_query: &impl ParameterLookup,
 ) {
     // Apply absolute values from the upper layer
     for (param, value) in other.absolute.iter() {
         let should_update = if same_priority {
             // For same priority, honor the parameter's merge strategy
-            if let Ok(parameter) = param_query.get(param.entity()) {
-                if parameter.uses_htp_merge() {
+            if let Some(parameter) = param_query.parameter_compositing_context(param) {
+                if parameter.uses_htp_merge {
                     base.absolute
                         .get(param)
                         .is_none_or(|existing| *value > *existing)
@@ -53,7 +51,9 @@ pub fn merge<P: CompositorParameter>(
 
 #[cfg(test)]
 mod tests {
+    use bevy_ecs::prelude::*;
     use bevy_ecs::world::World;
+    use moonshine_kind::prelude::*;
     use moonshine_kind::Instance;
     use nightfall_dmx::prelude::*;
 

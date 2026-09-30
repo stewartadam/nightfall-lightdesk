@@ -14,7 +14,7 @@ use bevy_ecs::prelude::*;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nightfall::data::Priority;
 use nightfall::prelude::{FadeCurve, MaterializedTransition, ObjectRef, ObjectType};
-use nightfall_compositor::prelude::{BaseLayer, Layer, ObjectRefMarker, OutputLayer};
+use nightfall_compositor::prelude::{Layer, ObjectRefMarker, OutputLayer};
 use nightfall_desk::websocket::{LayerSnapshotData, send_layer_stack};
 use nightfall_dmx::prelude::ParameterValue;
 use nightfall_engine::prelude::ClientEventSink;
@@ -115,7 +115,6 @@ fn spawn_layer(app: &mut App, parameters: &[BenchParameter], layer_index: usize)
 
     app.world_mut().spawn((
         layer,
-        BaseLayer::default(),
         output,
         ObjectRefMarker(ObjectRef::ById {
             object_type: ObjectType::Cue,

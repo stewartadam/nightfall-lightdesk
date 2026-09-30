@@ -10,6 +10,7 @@
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 
+use crate::stages::transition::SkippedAssertions;
 use crate::types::{AttributedAssertionsLayer, Layer};
 
 /// Merges raw layer data for a materialized object into the attributed assertions layer.
@@ -18,10 +19,27 @@ pub fn merge_layer_with_attribution(
     upper_layer: &Layer,
     object_ref: ObjectRef,
 ) {
+    merge_layer_with_attribution_skipping(
+        assertions,
+        upper_layer,
+        object_ref,
+        &SkippedAssertions::default(),
+    );
+}
+
+/// Merges a layer's assertions into the attributed assertions layer, leaving out the assertions
+/// the layer skipped this frame so attribution matches the effective output.
+pub fn merge_layer_with_attribution_skipping(
+    assertions: &mut AttributedAssertionsLayer,
+    upper_layer: &Layer,
+    object_ref: ObjectRef,
+    skipped: &SkippedAssertions,
+) {
     // Absolute values override one another
     upper_layer
         .absolute
         .iter()
+        .filter(|(param, _)| !skipped.absolute.contains(param))
         .for_each(|(param, (value, transition))| {
             assertions
                 .absolute
@@ -32,6 +50,7 @@ pub fn merge_layer_with_attribution(
     upper_layer
         .relative
         .iter()
+        .filter(|(param, _)| !skipped.relative.contains(param))
         .for_each(|(param, (value, transition))| {
             if let Some((_existing_object_ref, (existing_value, _existing_transition))) =
                 assertions.relative.get(param)
@@ -310,6 +329,46 @@ mod tests {
         assert_eq!(owner1, &object1);
         assert_eq!(owner2, &object1);
         assert_eq!(owner3, &object1);
+    }
+
+    /// Verifies skipped assertions keep the attribution of the layer below them.
+    #[test]
+    fn merge_layer_with_attribution_skipping_leaves_skipped_parameters_attributed_below() {
+        let mut world = World::new();
+        let skipped_param = create_test_parameter(&mut world);
+        let merged_param = create_test_parameter(&mut world);
+
+        let mut composited = AttributedAssertionsLayer::default();
+        let lower = create_object_ref(1);
+        let upper = create_object_ref(2);
+
+        let mut lower_layer = Layer::new("lower".to_string(), Priority(1));
+        lower_layer.absolute.insert(
+            skipped_param,
+            (ParameterValue::Absolute { value: 10.0 }, None),
+        );
+        merge_layer_with_attribution(&mut composited, &lower_layer, lower.clone());
+
+        let mut upper_layer = Layer::new("upper".to_string(), Priority(2));
+        upper_layer.absolute.insert(
+            skipped_param,
+            (ParameterValue::Absolute { value: 200.0 }, None),
+        );
+        upper_layer.absolute.insert(
+            merged_param,
+            (ParameterValue::Absolute { value: 100.0 }, None),
+        );
+        let mut skipped = SkippedAssertions::default();
+        skipped.absolute.insert(skipped_param.into());
+        merge_layer_with_attribution_skipping(
+            &mut composited,
+            &upper_layer,
+            upper.clone(),
+            &skipped,
+        );
+
+        assert_eq!(composited.absolute.get(skipped_param).unwrap().0, lower);
+        assert_eq!(composited.absolute.get(merged_param).unwrap().0, upper);
     }
 
     #[test]

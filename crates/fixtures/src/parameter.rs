@@ -14,7 +14,9 @@
 //! and ECS component.
 
 use bevy_ecs::prelude::*;
-use nightfall_compositor::types::CompositorParameter;
+use nightfall_compositor::types::{
+    AbsolutePercentScale, CompositorParameter, ParameterCompositingContext,
+};
 use nightfall_dmx::prelude::*;
 use nightfall_fixture_model::parameter::*;
 use nightfall_io::OutputTransport;
@@ -188,32 +190,33 @@ impl Parameter {
 }
 
 impl CompositorParameter for Parameter {
-    fn attribute(&self) -> Attribute {
-        self.metadata.attribute.clone()
+    fn attribute(&self) -> &Attribute {
+        &self.metadata.attribute
     }
 
-    fn uses_htp_merge(&self) -> bool {
-        matches!(self.metadata.merge_type, MergeStrategy::HTP)
-    }
-
-    fn logical_min(&self) -> ParameterDmxValue {
-        self.metadata.logical_min()
+    fn compositing_context(&self) -> ParameterCompositingContext {
+        let logical_min = self.metadata.logical_min();
+        let logical_range = self.metadata.logical_range();
+        ParameterCompositingContext {
+            default_value: self.values.default_value,
+            logical_min,
+            uses_htp_merge: matches!(self.metadata.merge_type, MergeStrategy::HTP),
+            is_virtual_intensity: matches!(self.metadata.attribute, Attribute::VirtualIntensity),
+            absolute_percent: AbsolutePercentScale {
+                min: logical_min,
+                range: logical_range,
+                signed: self.metadata.value_polarity == ParameterValuePolarity::Signed,
+            },
+            relative_percent_range: logical_range,
+        }
     }
 
     fn current_value(&self) -> ParameterDmxValue {
         self.values.current_value
     }
 
-    fn default_value(&self) -> ParameterDmxValue {
-        self.values.default_value
-    }
-
     fn set_raw_value(&mut self, value: ParameterDmxValue) {
         Parameter::set_raw_value(self, value);
-    }
-
-    fn resolve_value(&self, value: &ParameterValue) -> ParameterDmxValue {
-        Parameter::resolve_value(self, value)
     }
 }
 
@@ -271,6 +274,39 @@ mod tests {
             parameter.resolve_value(&ParameterValue::AbsolutePercent { value: 1.0.into() }),
             540.0
         );
+    }
+
+    /// Verifies the compositor's trait snapshot resolves every value kind exactly as the parameter
+    /// does, for both polarities and for percentages outside the valid span.
+    #[test]
+    fn compositing_context_resolves_values_like_the_parameter() {
+        let values = [
+            ParameterValue::Absolute { value: 42.0 },
+            ParameterValue::AbsolutePercent { value: 0.25.into() },
+            ParameterValue::AbsolutePercent {
+                value: (-0.5).into(),
+            },
+            ParameterValue::AbsolutePercent { value: 1.5.into() },
+            ParameterValue::Relative { offset: -7.0 },
+            ParameterValue::RelativePercent { offset: 0.1.into() },
+        ];
+        for polarity in [
+            ParameterValuePolarity::Unsigned,
+            ParameterValuePolarity::Signed,
+        ] {
+            let parameter = Parameter {
+                metadata: metadata(polarity),
+                values: ParameterValues::default(),
+            };
+            let context = parameter.compositing_context();
+            for value in &values {
+                assert_eq!(
+                    context.resolve_value_with_current(value, 100.0),
+                    parameter.resolve_value_with_current(value, 100.0),
+                    "{polarity:?} {value:?}"
+                );
+            }
+        }
     }
 
     /// Verifies temporary current values resolve relative assertions without mutating the parameter.
