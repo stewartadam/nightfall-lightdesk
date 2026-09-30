@@ -14,12 +14,14 @@
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { TDSLoader } from "three/examples/jsm/loaders/TDSLoader.js";
 import {
+  Box3,
   DoubleSide,
   Group,
   type Material,
   type Mesh,
   MeshStandardMaterial,
   type Object3D,
+  Vector3,
 } from "three/webgpu";
 import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
@@ -33,16 +35,60 @@ const tdsLoader = new TDSLoader();
 // Mesh cache: gdtfPath:modelName -> Promise<Group>
 const meshCache = new Map<string, Promise<Group>>();
 
+/** Declared size of a GDTF model in metres, used to detect the unit a mesh was authored in. */
+export interface ModelDimensions {
+  length: number;
+  width: number;
+  height: number;
+}
+
+/** Scale converting spec-conforming glTF metres into the geometry tree's millimetres. */
+const METRES_TO_MILLIMETRES = 1000;
+
+/**
+ * Returns the scale that brings a glTF scene into the geometry tree's millimetres.
+ *
+ * GDTF requires glTF meshes in metres, but some archives ship meshes authored
+ * in millimetres. The scene's largest bounding-box extent is compared with the
+ * largest dimension the GDTF model declares: a metre mesh measures about the
+ * declared size and a millimetre mesh about 1000 times it. The boundary is
+ * their geometric mean, so either unit is chosen within a factor of ~31. Missing,
+ * zero or non-finite dimensions and empty scenes keep the metre scale.
+ */
+export function gltfUnitScale(
+  scene: Object3D,
+  dimensions?: ModelDimensions,
+): number {
+  const declared = dimensions
+    ? Math.max(dimensions.length, dimensions.width, dimensions.height)
+    : 0;
+  if (!Number.isFinite(declared) || declared <= 0) {
+    return METRES_TO_MILLIMETRES;
+  }
+  scene.updateMatrixWorld(true);
+  const box = new Box3().setFromObject(scene);
+  if (box.isEmpty()) return METRES_TO_MILLIMETRES;
+  const size = box.getSize(new Vector3());
+  const extent = Math.max(size.x, size.y, size.z);
+  const ratio = extent / declared;
+  return ratio > Math.sqrt(METRES_TO_MILLIMETRES) ? 1 : METRES_TO_MILLIMETRES;
+}
+
 /**
  * Converts a glTF scene from a GDTF archive into the geometry tree's space.
  *
  * glTF is Y-up and in metres, while the GDTF geometry tree is Z-up and built
  * in millimetres (3DS meshes already are). The scene is wrapped in a group
- * that rotates Y-up back to Z-up and scales metres to millimetres. Cameras and
- * lights exported alongside the model are removed so they cannot affect the
- * visualizer scene.
+ * that rotates Y-up back to Z-up and scales it to millimetres; scenes authored
+ * in millimetres are detected from the model's declared dimensions and left
+ * unscaled (see {@link gltfUnitScale}). Cameras and lights exported alongside
+ * the model are removed so they cannot affect the visualizer scene.
  */
-export function normalizeGdtfGltfScene(scene: Group): Group {
+export function normalizeGdtfGltfScene(
+  scene: Group,
+  dimensions?: ModelDimensions,
+  label = "glTF mesh",
+): Group {
   const strays: Object3D[] = [];
   scene.traverse((object) => {
     const flags = object as Object3D & {
@@ -53,9 +99,16 @@ export function normalizeGdtfGltfScene(scene: Group): Group {
   });
   for (const object of strays) object.removeFromParent();
 
+  const scale = gltfUnitScale(scene, dimensions);
+  if (scale !== METRES_TO_MILLIMETRES) {
+    log.warn(
+      `${label} is authored in millimetres rather than metres; loading it unscaled to match its declared model size`,
+    );
+  }
+
   const wrapper = new Group();
   wrapper.rotation.x = Math.PI / 2;
-  wrapper.scale.setScalar(1000);
+  wrapper.scale.setScalar(scale);
   wrapper.add(scene);
   return wrapper;
 }
@@ -140,14 +193,21 @@ export function gdtfWheelMediaUrl(
  * @param modelName - Name of the model/mesh to load (without extension)
  * @param revision - Library revision of the archive; versions the request URL
  *   and cache key so a replaced archive is not served from a stale cache
+ * @param dimensions - Declared model size in metres, used to detect glTF
+ *   meshes authored in millimetres; part of the cache key because models of
+ *   different sizes may share one mesh file
  * @returns A cloned Group containing the mesh, or null if loading failed
  */
 export async function loadMesh(
   gdtfPath: string,
   modelName: string,
   revision?: string,
+  dimensions?: ModelDimensions,
 ): Promise<Group | null> {
-  const cacheKey = `${gdtfPath}:${revision ?? ""}:${modelName}`;
+  const dimensionKey = dimensions
+    ? `${dimensions.length}x${dimensions.width}x${dimensions.height}`
+    : "";
+  const cacheKey = `${gdtfPath}:${revision ?? ""}:${modelName}:${dimensionKey}`;
 
   if (meshCache.has(cacheKey)) {
     try {
@@ -168,7 +228,13 @@ export async function loadMesh(
       url,
       (gltf) => {
         applyFixtureMaterial(gltf.scene);
-        resolve(normalizeGdtfGltfScene(gltf.scene));
+        resolve(
+          normalizeGdtfGltfScene(
+            gltf.scene,
+            dimensions,
+            `Mesh ${modelName} from ${gdtfPath}`,
+          ),
+        );
       },
       undefined,
       () => {

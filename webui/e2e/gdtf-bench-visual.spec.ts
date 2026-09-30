@@ -524,6 +524,7 @@ test("MagicPanel expands its referenced pixels", async ({
     MAGIC_PANEL,
     3,
   );
+  await expect.poll(() => missingMeshCount(page, uid)).toBe(0);
   await page.waitForTimeout(1500);
   await attachCanvas(page, "magicpanel-body", testInfo, { compare: true });
   await submitCommand(page, "fix 3 int @ 100 red @ 100 green @ 50");
