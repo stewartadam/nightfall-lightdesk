@@ -148,7 +148,7 @@ pub trait CompositorParameter: Component<Mutability = Mutable> + Clone {
     fn attribute(&self) -> &Attribute;
 
     /// Compositing behavior of this parameter, which does not depend on its current value.
-    fn compositing_traits(&self) -> ParameterTraits;
+    fn compositing_context(&self) -> ParameterCompositingContext;
 
     /// Current effective value in the parameter's logical range.
     fn current_value(&self) -> ParameterDmxValue;
@@ -187,7 +187,7 @@ impl AbsolutePercentScale {
 /// It is small and `Copy` so a compositor pass can snapshot every parameter once and read the
 /// snapshot per assertion, instead of fetching the full parameter component for each layer.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ParameterTraits {
+pub struct ParameterCompositingContext {
     /// Value the parameter rests at when nothing asserts it.
     pub default_value: ParameterDmxValue,
     /// Minimum logical value, which releasing virtual intensities fade toward.
@@ -202,7 +202,7 @@ pub struct ParameterTraits {
     pub relative_percent_range: ParameterDmxValue,
 }
 
-impl ParameterTraits {
+impl ParameterCompositingContext {
     /// Resolves an asserted value against an explicit current value, such as the value composited
     /// below the asserting layer.
     pub fn resolve_value_with_current(
@@ -221,24 +221,30 @@ impl ParameterTraits {
     }
 }
 
-/// Source of parameter compositing traits for compositor stages.
+/// Source of parameter compositing contexts for compositor stages.
 ///
 /// A parameter query reads each parameter's component on every lookup, while a
-/// [`ParameterTraitsTable`] answers from a snapshot taken once per compositor pass.
+/// [`ParameterCompositingContextTable`] answers from a snapshot taken once per compositor pass.
 pub trait ParameterLookup {
-    /// Returns the compositing traits of a parameter, or `None` when it does not exist.
-    fn parameter_traits(&self, parameter: ParameterRef) -> Option<ParameterTraits>;
+    /// Returns the compositing context of a parameter, or `None` when it does not exist.
+    fn parameter_compositing_context(
+        &self,
+        parameter: ParameterRef,
+    ) -> Option<ParameterCompositingContext>;
 
     /// Returns the attribute of a parameter for trace output.
     fn parameter_attribute(&self, parameter: ParameterRef) -> Option<Attribute>;
 }
 
 impl<P: CompositorParameter> ParameterLookup for Query<'_, '_, InstanceMut<'_, P>> {
-    /// Reads the traits from the parameter's component.
-    fn parameter_traits(&self, parameter: ParameterRef) -> Option<ParameterTraits> {
+    /// Reads the compositing context from the parameter's component.
+    fn parameter_compositing_context(
+        &self,
+        parameter: ParameterRef,
+    ) -> Option<ParameterCompositingContext> {
         self.get(parameter.entity())
             .ok()
-            .map(|parameter| parameter.compositing_traits())
+            .map(|parameter| parameter.compositing_context())
     }
 
     /// Reads the attribute from the parameter's component.
@@ -249,32 +255,40 @@ impl<P: CompositorParameter> ParameterLookup for Query<'_, '_, InstanceMut<'_, P
     }
 }
 
-/// Compositing traits of every parameter, snapshotted from a parameter query once per compositor
+/// Compositing contexts of every parameter, snapshotted from a parameter query once per compositor
 /// pass.
-pub struct ParameterTraitsTable<'q, 'w, 's, 'a, P: CompositorParameter> {
-    /// Traits keyed by parameter.
-    traits: ParameterMap<ParameterTraits>,
+pub struct ParameterCompositingContextTable<'q, 'w, 's, 'a, P: CompositorParameter> {
+    /// Compositing contexts keyed by parameter.
+    contexts: ParameterMap<ParameterCompositingContext>,
     /// Query the snapshot was taken from, used only for trace output.
     parameters: &'q Query<'w, 's, InstanceMut<'a, P>>,
 }
 
-impl<'q, 'w, 's, 'a, P: CompositorParameter> ParameterTraitsTable<'q, 'w, 's, 'a, P> {
-    /// Snapshots the traits of every parameter in the query.
+impl<'q, 'w, 's, 'a, P: CompositorParameter> ParameterCompositingContextTable<'q, 'w, 's, 'a, P> {
+    /// Snapshots the compositing context of every parameter in the query.
     pub fn new(parameters: &'q Query<'w, 's, InstanceMut<'a, P>>) -> Self {
-        let mut traits = ParameterMap::new();
-        traits.extend(
+        let mut contexts = ParameterMap::new();
+        contexts.extend(
             parameters
                 .iter()
-                .map(|parameter| (parameter.instance(), parameter.compositing_traits())),
+                .map(|parameter| (parameter.instance(), parameter.compositing_context())),
         );
-        Self { traits, parameters }
+        Self {
+            contexts,
+            parameters,
+        }
     }
 }
 
-impl<P: CompositorParameter> ParameterLookup for ParameterTraitsTable<'_, '_, '_, '_, P> {
-    /// Reads the traits from the snapshot.
-    fn parameter_traits(&self, parameter: ParameterRef) -> Option<ParameterTraits> {
-        self.traits.get(parameter).copied()
+impl<P: CompositorParameter> ParameterLookup
+    for ParameterCompositingContextTable<'_, '_, '_, '_, P>
+{
+    /// Reads the compositing context from the snapshot.
+    fn parameter_compositing_context(
+        &self,
+        parameter: ParameterRef,
+    ) -> Option<ParameterCompositingContext> {
+        self.contexts.get(parameter).copied()
     }
 
     /// Reads the attribute from the parameter's component, since trace output is rare.
@@ -332,8 +346,8 @@ pub(crate) mod test_support {
             &self.attribute
         }
 
-        fn compositing_traits(&self) -> ParameterTraits {
-            ParameterTraits {
+        fn compositing_context(&self) -> ParameterCompositingContext {
+            ParameterCompositingContext {
                 default_value: self.default_value,
                 logical_min: self.min,
                 uses_htp_merge: matches!(self.merge_mode, TestMergeMode::Htp),

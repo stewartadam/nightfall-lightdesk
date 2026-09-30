@@ -21,7 +21,7 @@ pub fn merge(
     for (param, value) in other.absolute.iter() {
         let should_update = if same_priority {
             // For same priority, honor the parameter's merge strategy
-            if let Some(parameter) = param_query.parameter_traits(param) {
+            if let Some(parameter) = param_query.parameter_compositing_context(param) {
                 if parameter.uses_htp_merge {
                     base.absolute
                         .get(param)
