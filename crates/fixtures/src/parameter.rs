@@ -14,7 +14,9 @@
 //! and ECS component.
 
 use bevy_ecs::prelude::*;
-use nightfall_compositor::types::{AbsolutePercentScale, CompositorParameter, ParameterTraits};
+use nightfall_compositor::types::{
+    AbsolutePercentScale, CompositorParameter, ParameterCompositingContext,
+};
 use nightfall_dmx::prelude::*;
 use nightfall_fixture_model::parameter::*;
 use nightfall_io::OutputTransport;
@@ -192,10 +194,10 @@ impl CompositorParameter for Parameter {
         &self.metadata.attribute
     }
 
-    fn compositing_traits(&self) -> ParameterTraits {
+    fn compositing_context(&self) -> ParameterCompositingContext {
         let logical_min = self.metadata.logical_min();
         let logical_range = self.metadata.logical_range();
-        ParameterTraits {
+        ParameterCompositingContext {
             default_value: self.values.default_value,
             logical_min,
             uses_htp_merge: matches!(self.metadata.merge_type, MergeStrategy::HTP),
@@ -277,7 +279,7 @@ mod tests {
     /// Verifies the compositor's trait snapshot resolves every value kind exactly as the parameter
     /// does, for both polarities and for percentages outside the valid span.
     #[test]
-    fn compositing_traits_resolve_values_like_the_parameter() {
+    fn compositing_context_resolves_values_like_the_parameter() {
         let values = [
             ParameterValue::Absolute { value: 42.0 },
             ParameterValue::AbsolutePercent { value: 0.25.into() },
@@ -296,10 +298,10 @@ mod tests {
                 metadata: metadata(polarity),
                 values: ParameterValues::default(),
             };
-            let traits = parameter.compositing_traits();
+            let context = parameter.compositing_context();
             for value in &values {
                 assert_eq!(
-                    traits.resolve_value_with_current(value, 100.0),
+                    context.resolve_value_with_current(value, 100.0),
                     parameter.resolve_value_with_current(value, 100.0),
                     "{polarity:?} {value:?}"
                 );

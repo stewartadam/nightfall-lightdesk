@@ -14,7 +14,8 @@ use nightfall_dmx::prelude::*;
 use rustc_hash::FxHashSet;
 
 use crate::types::{
-    ComputedLayer, Layer, LayerCompositingContext, ParameterLookup, ParameterRef, ParameterTraits,
+    ComputedLayer, Layer, LayerCompositingContext, ParameterCompositingContext, ParameterLookup,
+    ParameterRef,
 };
 
 /// Assertions a layer leaves out of the current frame's output, such as those still waiting out
@@ -77,14 +78,17 @@ pub fn evaluate_transitions_with_compositing_context(
     for (param_ref, (value, transition)) in layer.absolute.iter() {
         if !is_releasing {
             if let (ParameterValue::Absolute { value }, None) = (value, transition.as_ref()) {
-                if parameters.parameter_traits(param_ref).is_some() {
+                if parameters
+                    .parameter_compositing_context(param_ref)
+                    .is_some()
+                {
                     computed_layer.absolute.insert(param_ref, *value);
                 }
                 continue;
             }
         }
 
-        if let Some(param) = parameters.parameter_traits(param_ref) {
+        if let Some(param) = parameters.parameter_compositing_context(param_ref) {
             // We must start a span for each log because field filters can only be applied to spans.
             // See: https://github.com/tokio-rs/tracing/issues/2843#issuecomment-1884545840
             let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
@@ -140,7 +144,7 @@ pub fn evaluate_transitions_with_compositing_context(
 
     // Process relative values
     for (param_ref, (value, transition)) in layer.relative.iter() {
-        if let Some(param) = parameters.parameter_traits(param_ref) {
+        if let Some(param) = parameters.parameter_compositing_context(param_ref) {
             let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
 
             let default_value = 0.0; // For relative values, default is 0
@@ -211,7 +215,7 @@ fn parameter_span(
 
 /// Returns whether this assertion should be absent from the current composited layer.
 fn transition_should_skip_output(
-    parameter: &ParameterTraits,
+    parameter: &ParameterCompositingContext,
     transition: Option<&MaterializedTransition>,
     base: ParameterDmxValue,
     asserted: ParameterDmxValue,
@@ -250,7 +254,7 @@ fn remove_skipped_assertions(layer: &mut Layer, skipped: SkippedAssertions) {
 
 /// Returns the transition value at the moment release started for an evaluation context.
 fn transition_value_at_release_context(
-    parameter: &ParameterTraits,
+    parameter: &ParameterCompositingContext,
     base: ParameterDmxValue,
     asserted: ParameterDmxValue,
     transition: &MaterializedTransition,
@@ -273,7 +277,7 @@ fn transition_value_at_release_context(
 
 /// Returns the transition value at release for an explicit assertion elapsed time.
 fn transition_value_at_release_elapsed(
-    parameter: &ParameterTraits,
+    parameter: &ParameterCompositingContext,
     base: ParameterDmxValue,
     asserted: ParameterDmxValue,
     transition: &MaterializedTransition,
@@ -304,7 +308,7 @@ fn interpolate_value(
 
 /// Returns the absolute target a releasing layer should fade toward before it is removed.
 fn absolute_release_target(
-    parameter: &ParameterTraits,
+    parameter: &ParameterCompositingContext,
     parameter_ref: ParameterRef,
     base: &ComputedLayer,
 ) -> ParameterDmxValue {
@@ -324,7 +328,7 @@ fn absolute_release_target(
 
 /// Processes one parameter transition against a layer compositing context.
 pub fn process_transition_with_compositing_context(
-    parameter: &ParameterTraits,
+    parameter: &ParameterCompositingContext,
     base: ParameterDmxValue,
     target: ParameterDmxValue,
     transition: &MaterializedTransition,
@@ -369,7 +373,7 @@ pub fn process_transition_with_compositing_context(
 
 /// Returns the delay that applies to an assertion moving in the given direction.
 fn assertion_delay(
-    parameter: &ParameterTraits,
+    parameter: &ParameterCompositingContext,
     transition: &MaterializedTransition,
     delta: ParameterDmxValue,
 ) -> Duration {
@@ -382,7 +386,7 @@ fn assertion_delay(
 
 /// Returns assertion progress for the direction between base and target.
 fn assertion_transition_ratio_at_elapsed(
-    parameter: &ParameterTraits,
+    parameter: &ParameterCompositingContext,
     transition: &MaterializedTransition,
     delta: ParameterDmxValue,
     elapsed: Duration,
@@ -395,7 +399,10 @@ fn assertion_transition_ratio_at_elapsed(
 }
 
 /// Returns whether assertion-out timing applies to this parameter movement.
-fn assertion_uses_out_timing(parameter: &ParameterTraits, delta: ParameterDmxValue) -> bool {
+fn assertion_uses_out_timing(
+    parameter: &ParameterCompositingContext,
+    delta: ParameterDmxValue,
+) -> bool {
     parameter.uses_htp_merge && delta < 0.0
 }
 
@@ -1066,7 +1073,7 @@ mod tests {
             &param_query
                 .get(first_param.entity())
                 .expect("first parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             200.0,
             0.0,
             &mut first_transition,
@@ -1078,7 +1085,7 @@ mod tests {
             &param_query
                 .get(second_param.entity())
                 .expect("second parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             200.0,
             0.0,
             &mut second_transition,
@@ -1110,7 +1117,7 @@ mod tests {
             &param_query
                 .get(param.entity())
                 .expect("parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             100.0,
             200.0,
             &mut transition,
@@ -1142,7 +1149,7 @@ mod tests {
             &param_query
                 .get(param.entity())
                 .expect("parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             200.0,
             100.0,
             &mut transition,
@@ -1177,7 +1184,7 @@ mod tests {
             &param_query
                 .get(param.entity())
                 .expect("parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             100.0,
             200.0,
             &mut transition,
@@ -1212,7 +1219,7 @@ mod tests {
             &param_query
                 .get(param.entity())
                 .expect("parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             200.0,
             100.0,
             &mut transition,
@@ -1247,7 +1254,7 @@ mod tests {
             &param_query
                 .get(param.entity())
                 .expect("parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             200.0,
             100.0,
             &transition,
@@ -1278,7 +1285,7 @@ mod tests {
             &param_query
                 .get(param.entity())
                 .expect("parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             200.0,
             100.0,
             &mut transition,
@@ -1313,7 +1320,7 @@ mod tests {
             &param_query
                 .get(param.entity())
                 .expect("parameter should exist")
-                .compositing_traits(),
+                .compositing_context(),
             200.0,
             0.0,
             &mut transition,
