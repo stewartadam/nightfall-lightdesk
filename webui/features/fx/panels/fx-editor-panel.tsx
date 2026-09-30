@@ -25,6 +25,7 @@ import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { createDefaultFlowWaveform } from "../../../lib/fx-service";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fixtures as fixturesStore,
   fx as fxStore,
@@ -73,7 +74,7 @@ function FxEditorPanelContent(props: FxEditorPanelProps) {
     return stored?.identifiers?.label ?? "Untitled FX";
   });
 
-  const fixturesMap = useStore(fixturesStore);
+  const fixturesMap = useSharedStore(fixturesStore);
   const availableAttributes = createMemo(() => {
     const sel = selection();
     if (!sel) return [] as string[];

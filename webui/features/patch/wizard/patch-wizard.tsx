@@ -36,6 +36,7 @@ import {
   libraryDefinitionId,
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fixtureLibrary,
   fixtureProfile,
@@ -117,7 +118,7 @@ export function PatchWizard() {
   } = usePatchWizard();
 
   const { state } = usePatchWizard();
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
   const [isCreating, setIsCreating] = createSignal(false);

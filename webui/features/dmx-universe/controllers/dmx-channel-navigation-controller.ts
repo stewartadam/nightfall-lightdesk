@@ -19,6 +19,7 @@ import {
   networkDmxOutputsFromSettings,
   usbDmxOutputsFromSettings,
 } from "../../../lib/network-dmx-output-targets";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import {
   bindings,
@@ -49,7 +50,7 @@ export function createDmxChannelNavigationController(
 ) {
   const dock = useStore(dockApi);
   const bindingSnapshot = useStore(bindings);
-  const fixtureMap = useStore(fixtures);
+  const fixtureMap = useSharedStore(fixtures);
   const layers = useStore(layerStack);
   /** Returns network output targets used for binding lookup. */
   const networkDmxOutputs = createMemo(() =>

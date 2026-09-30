@@ -76,7 +76,7 @@ pub mod prelude {
     pub use crate::client_bridge::{
         ClientBridgeHost, ClientBridgePlugin, ClientEventSink, CommandDeserializerRegistry,
         CommandJsonEnvelope, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
-        EncodedClientMessage, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        EncodedClientMessage, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
@@ -141,6 +141,7 @@ impl Plugin for EnginePlugin {
             (
                 InputHandling,
                 EventHandling.after(InputHandling),
+                ResyncHandling.after(EventHandling).before(ClockUpdate),
                 ClockUpdate.after(EventHandling),
                 LayerGeneration.after(ClockUpdate),
                 Compositing.after(LayerGeneration),
@@ -166,7 +167,8 @@ impl Plugin for EnginePlugin {
                 .in_set(InputHandling),
         );
 
-        // Add resync completion system that runs after all plugin resync handlers
+        // Resync completes before clock and layer work so a heavy first frame after a
+        // world swap does not hold the client's readiness boundary.
         app.add_systems(
             Update,
             (
@@ -176,7 +178,7 @@ impl Plugin for EnginePlugin {
                 broadcast_app_state_on_change.in_set(ClientOutput),
                 send_resync_complete
                     .after(ResyncHandling)
-                    .in_set(ClientOutput),
+                    .before(ClockUpdate),
             ),
         );
 
@@ -533,5 +535,50 @@ mod tests {
             .expect("resync should publish its completion notification");
         let decoded: serde_json::Value = minicbor_serde::from_slice(&notification[1..]).unwrap();
         assert_eq!(decoded["type"], "ResyncComplete");
+    }
+
+    /// Receiving end of the client sink, readable from systems under test.
+    #[derive(Resource)]
+    struct PublishedPayloads(async_channel::Receiver<Vec<u8>>);
+
+    /// Whether ResyncComplete had already been published when clock work started.
+    #[derive(Resource, Default)]
+    struct ResyncCompleteBeforeClock(Option<bool>);
+
+    /// Records whether ResyncComplete was published before this frame's clock update ran.
+    fn record_resync_complete_before_clock(
+        payloads: Res<PublishedPayloads>,
+        mut seen: ResMut<ResyncCompleteBeforeClock>,
+    ) {
+        let published = std::iter::from_fn(|| payloads.0.try_recv().ok()).any(|payload| {
+            minicbor_serde::from_slice::<serde_json::Value>(&payload[1..])
+                .is_ok_and(|decoded| decoded["type"] == "ResyncComplete")
+        });
+        seen.0.get_or_insert(published);
+    }
+
+    /// Verifies ResyncComplete goes out before clock and layer work, so a heavy first frame
+    /// after a world swap does not hold the client's readiness boundary.
+    #[test]
+    fn resync_complete_publishes_before_clock_update() {
+        let mut app = App::new();
+        let (sender, receiver) = unbounded();
+        app.insert_resource(ClientEventSink::new(sender));
+        app.insert_resource(PublishedPayloads(receiver));
+        app.init_resource::<ResyncCompleteBeforeClock>();
+        app.add_plugins(EnginePlugin);
+        app.add_systems(
+            Update,
+            record_resync_complete_before_clock.in_set(ClockUpdate),
+        );
+        app.world_mut()
+            .write_message(ResyncRequested { command_id: None });
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<ResyncCompleteBeforeClock>().0,
+            Some(true)
+        );
     }
 }

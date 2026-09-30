@@ -90,6 +90,7 @@ object-library = ["dep:nightfall-object-library"]
 debug = ["nightfall-engine/debug", "nightfall-desk/debug"]
 
 [dev-dependencies]
+async-channel.workspace = true
 criterion.workspace = true
 nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }
 

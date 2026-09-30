@@ -57,34 +57,35 @@ function installBackend({
       }
       commands.push(command);
       setTimeout(() => {
-        if (
-          (command === "NewNamedShowfile" && !rejectCreation) ||
-          (retireFirstSession && sockets[0] === this)
-        ) {
-          if (errorOnSwap && command === "NewNamedShowfile") {
-            this.dispatchEvent(new Event("error"));
-          }
+        if (retireFirstSession && sockets[0] === this) {
+          this.close();
+          return;
+        }
+        if (command === "NewNamedShowfile" && errorOnSwap) {
+          this.dispatchEvent(new Event("error"));
           this.close();
           return;
         }
         const body = malformed
           ? new Uint8Array([0xff])
           : encode(
-              command === "NewNamedShowfile"
-                ? {
-                    type: "CommandResult",
-                    data: {
-                      command_id: request.command_id,
-                      outcome: {
-                        type: "Failed",
-                        data: {
-                          code: "duplicate_name",
-                          message: "Show already exists.",
+              command === "NewNamedShowfile" && !rejectCreation
+                ? { type: "WorldReplaced" }
+                : command === "NewNamedShowfile"
+                  ? {
+                      type: "CommandResult",
+                      data: {
+                        command_id: request.command_id,
+                        outcome: {
+                          type: "Failed",
+                          data: {
+                            code: "duplicate_name",
+                            message: "Show already exists.",
+                          },
                         },
                       },
-                    },
-                  }
-                : { type: "ResyncComplete" },
+                    }
+                  : { type: "ResyncComplete" },
             );
         const frame = new Uint8Array(body.length + 1);
         frame.set(body, 1);
@@ -174,14 +175,15 @@ test("fresh backend setup surfaces creation errors immediately", {
   assert.ok(sockets.every((socket) => socket.closed));
 });
 
-/** Covers backends whose world shutdown emits a transport error before socket close. */
-test("fresh backend setup resyncs after a swap transport error", async () => {
+/** Ensures a transport failure during the swap is reported rather than treated as completion. */
+test("fresh backend setup rejects a swap transport error", {
+  timeout: 1000,
+}, async () => {
   const { sockets, commands } = installBackend({ errorOnSwap: true });
-  await prepareFreshBackendShowfile(1234);
-  assert.deepEqual(commands, [
-    "ResyncState",
-    "NewNamedShowfile",
-    "ResyncState",
-  ]);
+  await assert.rejects(
+    prepareFreshBackendShowfile(1234),
+    /errored during world swap/,
+  );
+  assert.deepEqual(commands, ["ResyncState", "NewNamedShowfile"]);
   assert.ok(sockets.every((socket) => socket.closed));
 });

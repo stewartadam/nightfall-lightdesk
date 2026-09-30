@@ -24,6 +24,7 @@ import {
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { buildReferenceAudit } from "../../lib/reference-audit";
 import { useShallowStore } from "../../lib/use-shallow-store";
+import { useSharedStore } from "../../lib/use-shared-store";
 import {
   bindings,
   blueprints,
@@ -59,11 +60,11 @@ interface ReferencesPanelProps extends BasePanelComponentProps {
 export default function ReferencesPanel(_props: ReferencesPanelProps) {
   const tabsId = createUniqueId();
   const contentId = `${tabsId}-content`;
-  const $fixtures = useStore(fixtures);
-  const $groups = useStore(groups);
+  const $fixtures = useSharedStore(fixtures);
+  const $groups = useSharedStore(groups);
   const $cues = useShallowStore(cues);
   const $sequences = useShallowStore(sequences);
-  const $fx = useStore(fx);
+  const $fx = useSharedStore(fx);
   const $stepFx = useStore(stepFx);
   const $fxModules = useStore(fxModules);
   const $flows = useStore(flows);

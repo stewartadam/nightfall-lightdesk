@@ -136,8 +136,7 @@ impl Plugin for CuePlugin {
                 websocket::send_sequence_definition_changes,
                 websocket::send_cues_on_change,
                 websocket::send_color_paths_on_change,
-                websocket::send_sequence_lookahead_states_on_change,
-                websocket::send_sequence_lookahead_states_after_cue_commands,
+                websocket::send_stale_sequence_lookahead_states,
             )
                 .in_set(ClientOutput),
         );

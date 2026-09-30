@@ -35,6 +35,7 @@ import { recordExternalPerformanceMeasure } from "./performance-measure-collecto
 import {
   applyConfirmedShowfileChange,
   currentShowfileName,
+  currentShowfileRevision,
   normalizedShowfileName,
   persistCurrentShowfileName,
 } from "./showfile-loading";
@@ -125,6 +126,7 @@ import {
   wsLatency,
   wsStats,
 } from "../state/appStores";
+import { beginShowfileTransition } from "../state/showfile-transition";
 import type * as types from "../types";
 import type * as flowTypes from "../types/index";
 import { setAttributeMetadata } from "./attribute-metadata";
@@ -1366,6 +1368,16 @@ function dispatchMessage(raw: AnyWsMessage) {
     case "ResyncComplete": {
       setResyncComplete(true);
       setResyncGeneration(resyncGeneration() + 1);
+      break;
+    }
+
+    case "WorldReplaced": {
+      log.debug("Backend replaced its world, requesting resync");
+      beginShowfileTransition({
+        resyncGeneration: resyncGeneration(),
+        showfileRevision: currentShowfileRevision.get(),
+      });
+      engineRuntime.requestBackendSessionState();
       break;
     }
 
@@ -2648,6 +2660,47 @@ export const engineRuntime = {
   config: null as EngineRuntimeConfig | null,
   isRunning: false,
 
+  /**
+   * Discards session-scoped state and requests a full snapshot plus catalogs
+   * from the backend. Runs when a connection opens and when the backend
+   * replaces its world behind an existing connection.
+   */
+  requestBackendSessionState() {
+    cancelPendingSelectionFlattenConfirmation(
+      BACKEND_SESSION_CHANGED_CONFIRMATION_CANCEL_REASON,
+    );
+    markResyncPending();
+    this.sendCommand({
+      module: "EngineCommand",
+      command: {
+        type: "ResyncState",
+      } as types.EngineCommand,
+    });
+    // Native backends and the embedded demo both serve fixture profiles.
+    this.sendCommand({
+      module: "FixtureLibraryCommand",
+      command: {
+        type: "ListAvailableFixtures",
+      } satisfies types.FixtureLibraryCommand,
+    });
+    if (this.config?.mode === "remote") {
+      // Request native-only catalog state from the remote backend.
+      this.sendCommand({
+        module: "ObjectLibraryCommand",
+        command: {
+          type: "ListAvailableObjects",
+        } as any,
+      });
+      this.sendCommand({
+        module: "FxModuleCommand",
+        command: {
+          type: "ListAvailableFxModules",
+        } as any,
+      });
+    }
+    scheduleWebsocketPull();
+  },
+
   /** Starts a fresh engine connection using the selected runtime adapter. */
   start(config: EngineRuntimeConfig) {
     if (this.isRunning) this.stop();
@@ -2703,40 +2756,7 @@ export const engineRuntime = {
 
         case "connected":
           log.trace("Engine runtime connected, requesting resync");
-          cancelPendingSelectionFlattenConfirmation(
-            BACKEND_SESSION_CHANGED_CONFIRMATION_CANCEL_REASON,
-          );
-          // Worker connected, reset resync flag and send resync request
-          markResyncPending();
-          this.sendCommand({
-            module: "EngineCommand",
-            command: {
-              type: "ResyncState",
-            } as types.EngineCommand,
-          });
-          // Native backends and the embedded demo both serve fixture profiles.
-          this.sendCommand({
-            module: "FixtureLibraryCommand",
-            command: {
-              type: "ListAvailableFixtures",
-            } satisfies types.FixtureLibraryCommand,
-          });
-          if (this.config?.mode === "remote") {
-            // Request native-only catalog state from the remote backend.
-            this.sendCommand({
-              module: "ObjectLibraryCommand",
-              command: {
-                type: "ListAvailableObjects",
-              } as any,
-            });
-            this.sendCommand({
-              module: "FxModuleCommand",
-              command: {
-                type: "ListAvailableFxModules",
-              } as any,
-            });
-          }
-          scheduleWebsocketPull();
+          this.requestBackendSessionState();
           break;
 
         case "message":

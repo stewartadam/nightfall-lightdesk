@@ -201,18 +201,17 @@ export async function prepareFreshBackendShowfile(
         if (error) reject(error);
         else resolve();
       }
-      /** Surfaces correlated command failures instead of waiting for a nonexistent swap. */
+      /** Finishes on the world replacement and surfaces correlated command failures. */
       async function onMessage(event: MessageEvent): Promise<void> {
         try {
           const message = await decodeBackendFrame(event.data);
-          if (
-            !message ||
-            typeof message !== "object" ||
-            !("type" in message) ||
-            message.type !== "CommandResult" ||
-            !("data" in message)
-          )
+          if (!message || typeof message !== "object" || !("type" in message))
             return;
+          if (message.type === "WorldReplaced") {
+            finish();
+            return;
+          }
+          if (message.type !== "CommandResult" || !("data" in message)) return;
           const result = message.data as CommandResult;
           if (result.command_id !== commandId) return;
           if (result.outcome.type === "Failed") {
@@ -226,13 +225,13 @@ export async function prepareFreshBackendShowfile(
           finish(error instanceof Error ? error : new Error(String(error)));
         }
       }
-      /** A successful world replacement retires its websocket listener. */
+      /** A closed connection cannot report the replacement it was waiting for. */
       function onClose(): void {
-        finish();
+        finish(new Error("Backend websocket closed during world swap."));
       }
-      /** World replacement can retire the transport with an error before close. */
+      /** Reports transport failures instead of assuming the swap completed. */
       function onError(): void {
-        finish();
+        finish(new Error("Backend websocket errored during world swap."));
       }
       const timeout = setTimeout(() => {
         finish(new Error("Timed out waiting for backend world swap."));

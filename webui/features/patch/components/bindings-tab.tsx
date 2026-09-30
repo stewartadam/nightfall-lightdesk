@@ -44,6 +44,7 @@ import {
 } from "../../../lib/datagrid-column-visibility";
 import { filterColumnsFromMetadata } from "../../../lib/datagrid-filtering";
 import { sendRemovePatchBinding } from "../../../lib/fixture-service";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { bindings, dmxUniverseData, fixtures } from "../../../state/appStores";
 import {
   type BindingDeleteFilter,
@@ -67,7 +68,7 @@ export interface PatchBindingsTabProps {
 
 export default function PatchBindingsTab(props: PatchBindingsTabProps) {
   const $bindings = useStore(bindings);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $dmxUniverseData = useStore(dmxUniverseData);
   const [columns, setColumns] =
     createSignal<VisibilityGridColumn[]>(DEFAULT_COLUMNS);

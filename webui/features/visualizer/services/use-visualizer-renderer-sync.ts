@@ -14,7 +14,7 @@
  * independently reactive.
  */
 
-import { createEffect } from "solid-js";
+import { createEffect, untrack } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import type { SelectionTarget } from "../../../lib/selection-targets";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
@@ -174,7 +174,9 @@ export function useVisualizerRendererSync(
 
     if (needsFullSync) {
       const setStartMs = performance.now();
-      r.setFixtures(fixtures);
+      // The snapshots above carry this effect's dependencies; serializing the
+      // full fixtures must not subscribe it to every nested store property.
+      untrack(() => r.setFixtures(fixtures));
       const setMs = performance.now() - setStartMs;
       const totalMs = performance.now() - startMs;
       log.trace(

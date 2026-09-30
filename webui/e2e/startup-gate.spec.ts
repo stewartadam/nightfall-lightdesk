@@ -584,3 +584,75 @@ test("returns to startup picker when backend reconnects initialized", async ({
   ).toBeVisible();
   await expect(menuButton).toBeHidden();
 });
+
+/** Verifies reopening a showfile after a backend restart reveals the already-mounted shell again. */
+test("reveals the shell after reopening a showfile once the backend restarts", async ({
+  page,
+}) => {
+  await disableE2eStartupAutoOpen(page);
+  await disconnectStartupWorldSwapCommands(page);
+  await installFakeWebsocketWorker(page);
+  await routeShowfileDiscovery(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        showfiles: [
+          {
+            name: "tour",
+            path: "/tmp/tour.nightfall-show",
+            modified_ms: 1_700_000_000_000,
+            revisions: [],
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/");
+  const menuButton = page.locator("button[title='Menu']");
+  await expect(menuButton).toBeVisible();
+
+  await page.evaluate(() => {
+    const worker = (
+      window as Window & {
+        __nightfallFakeWorkers?: Array<{
+          emitWorkerMessage: (data: unknown) => void;
+        }>;
+      }
+    ).__nightfallFakeWorkers?.[0];
+    worker?.emitWorkerMessage({
+      type: "messageBatch",
+      messages: [
+        {
+          data: { type: "AppState", data: "Initialized" },
+          postedAtMs: performance.timeOrigin + performance.now(),
+          deliveryMessageId: 100,
+        },
+        {
+          data: { type: "ResyncComplete" },
+          postedAtMs: performance.timeOrigin + performance.now(),
+          deliveryMessageId: 101,
+        },
+      ],
+    });
+  });
+
+  const picker = page.getByRole("dialog", { name: "Open Showfile" });
+  await expect(picker).toBeVisible();
+  await expect(menuButton).toBeHidden();
+  await picker.getByRole("button", { name: "Show revisions for tour" }).click();
+  await picker
+    .getByRole("button", { name: "Open saved showfile tour" })
+    .click();
+  await expect(picker).toBeHidden();
+
+  await page.evaluate(() => {
+    (
+      window as Window & {
+        __nightfallCompleteWorldSwap?: () => void;
+      }
+    ).__nightfallCompleteWorldSwap?.();
+  });
+  await expect(page.getByTestId("startup-splash")).toBeHidden();
+  await expect(menuButton).toBeVisible();
+});

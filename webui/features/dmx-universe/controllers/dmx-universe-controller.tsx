@@ -16,6 +16,7 @@ import {
   networkDmxOutputsFromSettings,
   usbDmxOutputsFromSettings,
 } from "../../../lib/network-dmx-output-targets";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import {
   bindings,
@@ -44,7 +45,7 @@ export interface DmxUniverseControllerProps {
 
 /** Coordinates DMX universe state and projects it into the props-only view. */
 export function DmxUniverseController(_props: DmxUniverseControllerProps) {
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $bindings = useStore(bindings);
   const $layerStack = useStore(layerStack);
   const $programmerSelection = useStore(programmerSelection);

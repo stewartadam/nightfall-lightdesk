@@ -40,6 +40,7 @@ import {
   storeStepFx,
 } from "../../../lib/fx-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   availableFxModules,
   dockApi,
@@ -66,7 +67,7 @@ export interface FxListControllerProps {
 
 /** Owns mixed FX CRUD, selection, navigation, creation, and shortcuts. */
 export function createFxListController(props: FxListControllerProps) {
-  const $fx = useStore(fx);
+  const $fx = useSharedStore(fx);
   const $stepFx = useStore(stepFx);
   const $fxModules = useStore(fxModules);
   const $availableFxModules = useStore(availableFxModules);

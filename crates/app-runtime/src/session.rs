@@ -16,7 +16,7 @@ use nightfall_desk::{
 };
 use nightfall_engine::prelude::{
     ClientEventSink, CommandError, CommandId, CommandOutcome, CommandResult,
-    DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, ResyncRequested, finish_command_in_world,
+    DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, finish_command_in_world,
 };
 
 use crate::{
@@ -127,7 +127,7 @@ pub(super) fn run_world_swap_session_loop(initial_app: App, factory: WorldFactor
                 }
                 Ok(_previous_app) => {
                     queue_current_showfile_changed(orchestrator.active_app_mut(), &request);
-                    queue_post_swap_resync(orchestrator.active_app_mut());
+                    publish_world_replaced(orchestrator.active_app());
                 }
             }
         }
@@ -188,11 +188,19 @@ pub(super) fn queue_current_showfile_changed(bevy_app: &mut App, _request: &Pend
     pending_ui_notifications.push(UiNotification::current_showfile_changed(current_showfile));
 }
 
-/// Publishes an internal post-swap resync request in the active world.
-pub(super) fn queue_post_swap_resync(bevy_app: &mut App) {
-    bevy_app
-        .world_mut()
-        .write_message(ResyncRequested { command_id: None });
+/// Tells connected clients that the world behind their unchanged connection was replaced.
+///
+/// Clients answer with the same state requests they send after connecting, so
+/// the new world publishes one resync per client instead of an unrequested one.
+pub(super) fn publish_world_replaced(bevy_app: &App) {
+    let Some(client_events) = bevy_app.world().get_resource::<ClientEventSink>() else {
+        tracing::warn!("Failed to publish world replacement; client event sink was missing");
+        return;
+    };
+    client_events.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &EngineClientMessage::WorldReplaced,
+    );
 }
 
 /// Runs the backend without a desktop shell and propagates fatal worker failures.

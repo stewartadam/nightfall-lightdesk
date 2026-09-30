@@ -50,6 +50,7 @@ import {
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { deleteSceneObject } from "../../../lib/scene-object-service";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   bindings,
   fixtures,
@@ -99,8 +100,8 @@ export const VisualizerToolToolbar: Component = () => {
   const $visualizerSceneObjectSelection = useStore(
     visualizerSceneObjectSelection,
   );
-  const $fixtures = useStore(fixtures);
-  const $sceneObjects = useStore(sceneObjects);
+  const $fixtures = useSharedStore(fixtures);
+  const $sceneObjects = useSharedStore(sceneObjects);
   const $bindings = useStore(bindings);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
 

@@ -23,6 +23,7 @@ import {
   sendFixturePlacementUpdate,
   sendFixturePlacementUpdates,
 } from "../../../lib/fixture-service";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   colorPathDefaults,
   colorPaths,
@@ -146,7 +147,7 @@ function fixtureElementColorPathDefault(
 }
 
 const VisualizerProperties: Component = () => {
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $selection = useStore(programmerSelection);
   const $colorPaths = useStore(colorPaths);
   const $colorPathDefaults = useStore(colorPathDefaults);

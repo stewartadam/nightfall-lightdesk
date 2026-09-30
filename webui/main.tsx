@@ -15,7 +15,6 @@ import EngineConnection from "./components/shell/runtime/engine-connection";
 import { StartupController, StartupOverlaps } from "./components/shell/startup";
 import NewShowfileNameModal from "./features/showfile/dialogs/new-showfile-name";
 import { APP_NAME, APP_TITLE } from "./lib/app-metadata";
-import { backendAppState } from "./lib/engine-runtime";
 import {
   initFeatureFlags,
   isStartupDraftRecoveryEnabled,
@@ -24,7 +23,7 @@ import { isEmbeddedDemoRuntime } from "./lib/runtime-config";
 import { appLifecycle } from "./state/app-lifecycle";
 import "./state/reduced-motion";
 import { appearanceSettings } from "./state/appearance";
-import * as types from "./types";
+import { showfileTransition } from "./state/showfile-transition";
 
 import "./index.css";
 import "./components/shell/app/shell.css";
@@ -108,21 +107,20 @@ function App() {
     );
   });
   const lifecycle = useStore(appLifecycle);
+  // The shell mount is latched, so readiness stays set when startup returns to the picker.
   const [interactiveShellReady, setInteractiveShellReady] = createSignal(false);
   let preloadAnimationFrame: number | undefined;
 
-  /** Resets shell readiness if startup returns to a non-interactive phase. */
-  createEffect(() => {
-    if (lifecycle().phase !== "interactive") {
-      setInteractiveShellReady(false);
-    }
-  });
+  const pendingShowfileTransition = useStore(showfileTransition);
 
-  /** Keeps the startup splash visible while the interactive shell chunk loads. */
+  /**
+   * Keeps the startup splash visible while the interactive shell chunk loads and
+   * until the opened showfile's panels have settled behind the transition veil,
+   * so the splash fades straight onto a ready workspace.
+   */
   const holdStartupSplash = () =>
     lifecycle().phase === "interactive" &&
-    backendAppState() !== types.AppState.Ready &&
-    !interactiveShellReady();
+    (!interactiveShellReady() || pendingShowfileTransition() !== null);
 
   /** Starts loading the interactive shell after the first startup paint. */
   onMount(() => {

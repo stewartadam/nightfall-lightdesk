@@ -53,6 +53,7 @@ import { anyLayerHasTransitioningAttribute } from "../../../lib/layer-transition
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { useShallowStore } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import {
   activeInstances,
@@ -99,13 +100,13 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
   log.trace("mounting");
   const $programmerState = useStore(programmerState);
   const $blueprints = useStore(blueprints);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $programmerSelection = useStore(programmerSelection);
   const $layerStack = useShallowStore(layerStack);
   const $activeInstances = useStore(activeInstances);
   const $cues = useShallowStore(cues);
   const $sequences = useShallowStore(sequences);
-  const $groups = useStore(groups);
+  const $groups = useSharedStore(groups);
   const panelId = props.initialPanelId ?? props.id;
 
   // Track which fixtures are expanded (showing element rows)

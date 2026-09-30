@@ -11,6 +11,7 @@ import { createEffect, createSignal, Show } from "solid-js";
 import { Input, Textarea } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   formatSpatialSelection,
   parseSpatialSelection,
@@ -47,7 +48,7 @@ export interface SpatialSelectionFieldProps {
 /** Renders one reusable, parser-backed field for authored spatial selections. */
 export function SpatialSelectionField(props: SpatialSelectionFieldProps) {
   log.trace("mounting");
-  const $fixtures = useStore(fixturesStore);
+  const $fixtures = useSharedStore(fixturesStore);
   const $groups = useStore(groupsStore);
   const [isEditing, setIsEditing] = createSignal(false);
   const [isApplying, setIsApplying] = createSignal(false);

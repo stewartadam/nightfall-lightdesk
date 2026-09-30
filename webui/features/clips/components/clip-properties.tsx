@@ -21,6 +21,7 @@ import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
 import ObjectSelector from "../../../components/widgets/object-selector";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { useShallowStore } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   clips,
   flows,
@@ -57,7 +58,7 @@ function sortById<T extends { identifiers: { id: number } }>(items: T[]): T[] {
 export default function ClipProperties(props: ClipPropertiesProps) {
   const $clips = useStore(clips);
   const $sequences = useShallowStore(sequences);
-  const $fx = useStore(fx);
+  const $fx = useSharedStore(fx);
   const $stepFx = useStore(stepFx);
   const $fxModules = useStore(fxModules);
   const $flows = useStore(flows);

@@ -53,6 +53,7 @@ import {
   deleteSceneObject,
   updateSceneObjectPlacement,
 } from "../../../lib/scene-object-service";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   applyVisualizerSelectionModifiers,
   combineVisualizerSelectionUids,
@@ -135,7 +136,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   const $showOrbitTargetIndicator = useStore(
     visualizerShowOrbitTargetIndicator,
   );
-  const $fixturesStore = useStore(fixturesStore);
+  const $fixturesStore = useSharedStore(fixturesStore);
   const $sceneObjectsStore = useStore(sceneObjectsStore);
   const $visualizerStats = useStore(visualizerStats);
   const [, setAxisOverlay] = createSignal<{

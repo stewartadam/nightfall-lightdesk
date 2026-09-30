@@ -35,7 +35,7 @@ pub(crate) struct ListenerTaskConfig {
 }
 
 /// Channels connecting engine-owned preferences to the asynchronous listener.
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub(crate) struct ListenerControl {
     pub requests: watch::Sender<ListenerRequest>,
     pub status: watch::Receiver<ExternalControlState>,
@@ -43,11 +43,10 @@ pub(crate) struct ListenerControl {
 
 /// Loads host preferences and initializes the engine side of listener control before transport startup.
 pub(crate) fn initialize_listener_control(
-    mut commands: Commands,
-    mut state: ResMut<ExternalControlState>,
-    interfaces: Res<NetworkInterfaceState>,
-    config: Res<crate::AxumTaskConfig>,
-) -> ListenerTaskConfig {
+    state: &mut ExternalControlState,
+    interfaces: &NetworkInterfaceState,
+    port: u16,
+) -> (ListenerControl, ListenerTaskConfig) {
     let path = settings_path();
     let (settings, error) = load_settings(path.as_deref());
     *state = ExternalControlState {
@@ -56,16 +55,25 @@ pub(crate) fn initialize_listener_control(
         error,
         listening_addresses: Vec::new(),
     };
-    let request = resolve_request(&state.settings, &interfaces, config.bind_port);
+    let request = resolve_request(&state.settings, interfaces, port);
     let (requests, request_rx) = watch::channel(request);
     let (status_tx, status) = watch::channel(state.clone());
-    commands.insert_resource(ListenerControl { requests, status });
-    ListenerTaskConfig {
-        port: config.bind_port,
-        requests: request_rx,
-        status: status_tx,
-        settings_path: path,
-    }
+    (
+        ListenerControl { requests, status },
+        ListenerTaskConfig {
+            port,
+            requests: request_rx,
+            status: status_tx,
+            settings_path: path,
+        },
+    )
+}
+
+/// Restores a new world's view of listener preferences from a server that is already running.
+pub(crate) fn attach_listener_control(control: &ListenerControl, state: &mut ExternalControlState) {
+    let mut status = control.status.borrow().clone();
+    status.settings = control.requests.borrow().settings.clone();
+    *state = status;
 }
 
 /// Resolves permitted IPv4 endpoints without falling back from a missing selection to All.

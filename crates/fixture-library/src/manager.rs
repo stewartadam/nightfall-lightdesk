@@ -145,9 +145,29 @@ impl FixtureLibraryManager {
     }
 
     /// Selects package-local definitions, rebuilding the index so a previous show's assets cannot leak.
+    ///
+    /// When no package library was selected yet, the index holds only built-in
+    /// and installed profiles, so the package profiles are overlaid without
+    /// rescanning the installed library. This keeps a fresh world's showfile
+    /// load to one installed-library scan.
     pub fn set_showfile_directory(&mut self, directory: Option<PathBuf>) -> Result<()> {
-        self.showfile_directory = directory;
-        self.scan()
+        if self.showfile_directory.is_some() {
+            self.showfile_directory = directory;
+            return self.scan();
+        }
+        let Some(directory) = directory else {
+            return Ok(());
+        };
+        let profiles = crate::scanner::FixtureScanner::new(&directory.join("fixtures")).scan()?;
+        self.showfile_directory = Some(directory);
+        for profile in profiles {
+            self.insert_profile(profile);
+        }
+        tracing::info!(
+            "Loaded {} fixtures from fixture library, built-ins, and showfile package",
+            self.fixtures.len()
+        );
+        Ok(())
     }
 
     /// Get the platform-specific library path
@@ -973,6 +993,51 @@ mod revision_tests {
         assert!(manager.find_fixture("Rev Test", "Fixture").is_none());
         assert!(manager.conversions.len() == 0);
         assert!(previous_index.geometry_for_fixture(&fixture).is_some());
+    }
+
+    /// Writes one single-channel package archive for a model under a show directory.
+    fn package(model: &str) -> tempfile::TempDir {
+        let show = tempfile::tempdir().unwrap();
+        std::fs::create_dir(show.path().join("fixtures")).unwrap();
+        GdtfBuilder::new("Rev Test", model)
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body").channel(ChannelSpec::new("Body", "Dimmer", &[1])))
+            .write_to(&show.path().join("fixtures").join(format!("{model}.gdtf")));
+        show
+    }
+
+    /// Returns the sorted make/model/revision keys the manager indexes.
+    fn indexed_keys(manager: &FixtureLibraryManager) -> Vec<(String, String, String)> {
+        let mut keys: Vec<_> = manager.fixtures.keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+
+    /// Verifies overlaying a first package matches a full rescan, and switching
+    /// packages still drops the previous show's profiles.
+    #[test]
+    fn package_overlay_matches_rescan_and_switching_drops_previous_package() {
+        let (dir, mut manager) = library(&[("a.gdtf", revision("Body", 0.0, "Dimmer"))]);
+        let first = package("First");
+        let second = package("Second");
+
+        manager
+            .set_showfile_directory(Some(first.path().to_path_buf()))
+            .unwrap();
+        let rescanned = FixtureLibraryManager::read_from_directories(
+            dir.path().to_path_buf(),
+            Some(first.path().to_path_buf()),
+        )
+        .unwrap();
+        assert_eq!(indexed_keys(&manager), indexed_keys(&rescanned));
+        assert!(manager.find_fixture("Rev Test", "First").is_some());
+
+        manager
+            .set_showfile_directory(Some(second.path().to_path_buf()))
+            .unwrap();
+        assert!(manager.find_fixture("Rev Test", "First").is_none());
+        assert!(manager.find_fixture("Rev Test", "Second").is_some());
+        assert!(manager.find_fixture("Rev Test", "Fixture").is_some());
     }
 }
 

@@ -11,7 +11,7 @@ use std::{
     io::ErrorKind,
     net::{Ipv4Addr, SocketAddr},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
@@ -21,9 +21,9 @@ use async_channel::{Receiver as ClientReceiver, Sender as ClientSender};
 use axum::{
     Extension, Router,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, Request, State},
     http::{Method, header},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::SinkExt;
@@ -320,7 +320,7 @@ pub(crate) fn create_axum_task(
     update_json_tx: ClientSender<UpdateJsonEnvelope>,
     plugin_routes: Router,
     stateful_plugin_routes: Router<AxumAppState>,
-) -> tokio::task::JoinHandle<()> {
+) -> (tokio::task::JoinHandle<()>, SwappableRoutes) {
     let crate::external_control::ListenerTaskConfig {
         port,
         mut requests,
@@ -335,7 +335,8 @@ pub(crate) fn create_axum_task(
         clients: clients.clone(),
         remote_generation: remote_generation.clone(),
     };
-    let axum_app = websocket_router(state, plugin_routes, stateful_plugin_routes);
+    let routes = SwappableRoutes::new(state.clone(), plugin_routes, stateful_plugin_routes);
+    let axum_app = websocket_router(state, routes.clone());
 
     // Byte-oriented broadcast task for plugin-owned serialization
     let _broadcast_task = tokio::spawn({
@@ -353,7 +354,7 @@ pub(crate) fn create_axum_task(
         }
     });
 
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         let mut process_shutdown_rx = subscribe_process_shutdown();
         let mut servers = tokio::task::JoinSet::new();
         let (listener_shutdown, _) = tokio::sync::broadcast::channel::<()>(1);
@@ -446,23 +447,78 @@ pub(crate) fn create_axum_task(
         close_connected_clients(&clients);
         stop_listeners(&mut servers, &listener_shutdown).await;
         _broadcast_task.abort();
-    })
+    });
+    (task, routes)
+}
+
+/// Plugin-registered HTTP routes of the active world, replaceable while the server runs.
+///
+/// Plugin routes capture world-owned state (fixture archives, showfile storage),
+/// so each world installs its own routes when it attaches to a running server.
+#[derive(Clone)]
+pub struct SwappableRoutes {
+    state: AxumAppState,
+    current: Arc<RwLock<Router>>,
+}
+
+impl SwappableRoutes {
+    /// Build the route set for one world, binding stateful routes to the server state.
+    fn new(
+        state: AxumAppState,
+        plugin_routes: Router,
+        stateful_plugin_routes: Router<AxumAppState>,
+    ) -> Self {
+        let current = Arc::new(RwLock::new(Self::combine(
+            &state,
+            plugin_routes,
+            stateful_plugin_routes,
+        )));
+        Self { state, current }
+    }
+
+    /// Merge stateless and stateful plugin routes into one servable router.
+    fn combine(
+        state: &AxumAppState,
+        plugin_routes: Router,
+        stateful_plugin_routes: Router<AxumAppState>,
+    ) -> Router {
+        stateful_plugin_routes
+            .with_state(state.clone())
+            .merge(plugin_routes)
+    }
+
+    /// Replace the served plugin routes with those registered by a newly active world.
+    pub fn replace(&self, plugin_routes: Router, stateful_plugin_routes: Router<AxumAppState>) {
+        let routes = Self::combine(&self.state, plugin_routes, stateful_plugin_routes);
+        *self
+            .current
+            .write()
+            .expect("plugin route lock should not be poisoned") = routes;
+    }
+
+    /// Dispatch one request to the currently installed plugin routes.
+    async fn call(self, request: Request) -> Response {
+        let mut router = self
+            .current
+            .read()
+            .expect("plugin route lock should not be poisoned")
+            .clone();
+        match tower_service::Service::call(&mut router, request).await {
+            Ok(response) => response,
+            Err(never) => match never {},
+        }
+    }
 }
 
 /// Combine core and plugin routes under one cross-origin policy for desktop and browser clients.
-pub fn websocket_router(
-    state: AxumAppState,
-    plugin_routes: Router,
-    stateful_plugin_routes: Router<AxumAppState>,
-) -> Router {
-    // Core routes that require the shared websocket state
+fn websocket_router(state: AxumAppState, routes: SwappableRoutes) -> Router {
+    // Core routes own the socket; plugin routes resolve against the active world.
     let core_routes = Router::new()
         .route("/ws", get(handle_socket))
-        .merge(stateful_plugin_routes)
-        .with_state(state);
+        .with_state(state)
+        .fallback(move |request: Request| routes.clone().call(request));
 
-    // Merge core routes with plugin-registered stateless routes
-    core_routes.merge(plugin_routes).layer(
+    core_routes.layer(
         CorsLayer::new()
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::HEAD, Method::POST, Method::OPTIONS])
@@ -503,7 +559,7 @@ mod tests {
         let (command_tx, _command_rx) = async_channel::unbounded();
         let (update_tx, _update_rx) = async_channel::unbounded();
         let directory = tempfile::tempdir().unwrap();
-        let task = create_axum_task(
+        let (task, _routes) = create_axum_task(
             crate::external_control::ListenerTaskConfig {
                 port,
                 requests: request_rx,

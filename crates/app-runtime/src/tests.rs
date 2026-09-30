@@ -32,9 +32,10 @@ use nightfall_desk::{
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    AppState, ClientOutput, ClockUpdate, CommandEnvelope, CommandNotice, CommandOrigin,
-    CommandOutcome, CommandReply, CommandResult, CommandTracker, DataProvider, DmxOutput,
-    EngineActionEnvelope, EventHandling, FinishedCommand, ReplyTarget, ResyncRequested,
+    AppState, ClientEventSink, ClientOutput, ClockUpdate, CommandEnvelope, CommandNotice,
+    CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
+    DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
+    EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
@@ -58,8 +59,8 @@ use super::{
     WorldFactory,
     composition::{PeriodicDraftAutosaveTimer, ShowfileHandling},
     session::{
-        complete_and_publish_world_swap_success, queue_current_showfile_changed,
-        queue_post_swap_resync, run_world_swap_session_loop,
+        complete_and_publish_world_swap_success, publish_world_replaced,
+        queue_current_showfile_changed, run_world_swap_session_loop,
     },
     startup_commands::{normalize_command_input, queue_startup_command},
     world_factory::{bootstrap_world_with_fallback, initial_world_bootstrap},
@@ -1143,20 +1144,23 @@ fn world_swap_runner_returns_on_app_exit() {
     assert!(matches!(exit, AppExit::Success));
 }
 
+/// Verifies a completed world swap tells clients to resynchronize over their existing connection.
 #[test]
-fn queue_post_swap_resync_emits_resync_request() {
+fn publish_world_replaced_notifies_clients() {
+    let (tx, rx) = async_channel::unbounded();
     let mut app = App::new();
-    app.add_message::<ResyncRequested>();
+    app.insert_resource(ClientEventSink::new(tx));
 
-    queue_post_swap_resync(&mut app);
+    publish_world_replaced(&app);
 
-    let messages: Vec<_> = app
-        .world_mut()
-        .resource_mut::<Messages<ResyncRequested>>()
-        .drain()
-        .collect();
-    assert_eq!(messages.len(), 1);
-    assert!(messages[0].command_id.is_none());
+    let expected = EncodedClientMessage::new(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &EngineClientMessage::WorldReplaced,
+    )
+    .expect("world replacement should encode")
+    .to_bytes();
+    assert_eq!(rx.try_recv().ok(), Some(expected));
+    assert!(rx.try_recv().is_err());
 }
 
 #[test]

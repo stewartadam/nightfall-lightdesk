@@ -15,6 +15,7 @@
  */
 
 import * as Comlink from "comlink";
+import { unwrap } from "solid-js/store";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { PerspectiveCamera, Scene, WebGPURenderer } from "three/webgpu";
 import {
@@ -184,8 +185,17 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
 
   setFixtures(fixtures: readonly RenderableFixture[]): void {
     log.trace(`setFixtures called with ${fixtures.length} fixtures`);
-    // Use JSON serialization to ensure data is clonable
-    const serialized = JSON.parse(JSON.stringify(fixtures));
+    // Unwrap store proxies before cloning; walking them is far slower than plain objects.
+    const serialized = JSON.parse(
+      JSON.stringify(
+        fixtures.map((fixture) => ({
+          ...fixture,
+          geometry: unwrap(fixture.geometry),
+          elements: unwrap(fixture.elements),
+          layout: unwrap(fixture.layout),
+        })),
+      ),
+    );
     this.workerApi.setFixtures(serialized);
   }
 

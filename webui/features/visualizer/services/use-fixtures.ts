@@ -23,8 +23,8 @@
  * 3. Flattens to array format expected by FixtureManager.syncFixtures()
  */
 
-import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo } from "solid-js";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { fixtureGeometries, fixtures } from "../../../state/appStores";
 import type { RenderableFixture } from "../model/types";
 
@@ -33,8 +33,8 @@ import type { RenderableFixture } from "../model/types";
  * Recomputes when fixtures or geometries change.
  */
 export function useFixtures(): Accessor<readonly RenderableFixture[]> {
-  const $fixtures = useStore(fixtures);
-  const $geometries = useStore(fixtureGeometries);
+  const $fixtures = useSharedStore(fixtures);
+  const $geometries = useSharedStore(fixtureGeometries);
 
   return createMemo(() => {
     const fixtureMap = $fixtures();

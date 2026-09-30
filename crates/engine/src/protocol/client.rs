@@ -39,4 +39,7 @@ pub enum EngineClientMessage<'a> {
     CommandNotice(&'a CommandNotice),
     /// Notification that all resync handlers published their current state.
     ResyncComplete,
+    /// Notification that a showfile change replaced the backend world while the
+    /// transport stayed connected; clients must resynchronize their state.
+    WorldReplaced,
 }

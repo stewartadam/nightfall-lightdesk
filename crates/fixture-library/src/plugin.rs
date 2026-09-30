@@ -60,20 +60,22 @@ impl Plugin for FixtureLibraryPlugin {
             }),
         );
 
-        // Try to initialize the file watcher (optional - may fail if library path doesn't exist)
-        if let Ok(manager) = FixtureLibraryManager::new() {
-            let library_path = manager.library_path().to_path_buf();
-            match FixtureLibraryWatcher::new(library_path) {
-                Ok(watcher) => {
-                    app.insert_resource(watcher);
-                    tracing::info!(
-                        "Fixture library enabled, watching '{}'",
-                        manager.library_path().display()
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to initialize fixture library watcher: {}", e);
-                }
+        // Watch the directory the manager already scanned (optional - may fail if it is unavailable)
+        let library_path = app
+            .world()
+            .resource::<FixtureLibraryManager>()
+            .library_path()
+            .to_path_buf();
+        match FixtureLibraryWatcher::new(library_path.clone()) {
+            Ok(watcher) => {
+                app.insert_resource(watcher);
+                tracing::info!(
+                    "Fixture library enabled, watching '{}'",
+                    library_path.display()
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Failed to initialize fixture library watcher: {}", e);
             }
         }
 

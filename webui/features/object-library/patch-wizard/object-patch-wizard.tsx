@@ -37,6 +37,7 @@ import {
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import { createSceneObject } from "../../../lib/scene-object-service";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { objectLibrary, sceneObjects } from "../../../state/appStores";
 import type { ObjectLibraryCommand } from "../../../types";
 import {
@@ -59,7 +60,7 @@ interface ObjectPatchWizardProps {
 const ObjectPatchWizard: Component<ObjectPatchWizardProps> = (props) => {
   const quantityId = createUniqueId();
   const $objectLibrary = useStore(objectLibrary);
-  const $sceneObjects = useStore(sceneObjects);
+  const $sceneObjects = useSharedStore(sceneObjects);
 
   const [selectedObject, setSelectedObject] =
     createSignal<WizardObjectOption | null>(null);
