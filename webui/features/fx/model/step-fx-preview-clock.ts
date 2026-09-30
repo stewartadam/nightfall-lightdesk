@@ -41,39 +41,86 @@ export function stepFxPreviewBeat(
   direction: FxDirection = FxDirection.Forward,
   cycleScale: types.StepFxCycleScale = { type: "Auto" },
 ): number | undefined {
+  if (!preview || !Number.isFinite(selectionPhaseOffset)) return undefined;
+  const offset = preview.track_phase_offsets.find((candidate) =>
+    attributesEqual(candidate.attribute, attribute),
+  )?.[trackKind];
+  const elapsedPosition = stepFxPreviewElapsedCyclePosition(
+    preview,
+    offset ?? 0,
+    totalBeats,
+    beatDurationSeconds,
+    nowEpochMs,
+    direction,
+    cycleScale,
+  );
+  if (elapsedPosition === undefined) return undefined;
+  const cyclePosition = positiveModulo(
+    elapsedPosition + stepFxStartCyclePosition(selectionPhaseOffset, direction),
+    1,
+  );
+  return stepFxAuthoredBeat(cyclePosition, totalBeats, direction);
+}
+
+/**
+ * Resolves the Color lane's elapsed cycle position from one backend clock anchor.
+ *
+ * The position excludes each fixture's start offset, because Color lane previews bake
+ * that offset into their gradients, so one shared position marks "now" on every row.
+ */
+export function stepFxColorPreviewCyclePosition(
+  preview: types.StepFxPreviewPlaybackStatus | undefined,
+  authoredPassBeats: number,
+  beatDurationSeconds: number,
+  nowEpochMs: number,
+  direction: FxDirection = FxDirection.Forward,
+  cycleScale: types.StepFxCycleScale = { type: "Auto" },
+): number | undefined {
+  if (!preview) return undefined;
+  return stepFxPreviewElapsedCyclePosition(
+    preview,
+    preview.color_phase_offset,
+    authoredPassBeats,
+    beatDurationSeconds,
+    nowEpochMs,
+    direction,
+    cycleScale,
+  );
+}
+
+/**
+ * Interpolates the backend's elapsed time into a wrapped cycle position.
+ *
+ * `continuityOffset` is the backend's live-edit phase correction for the sampled track,
+ * which keeps playback continuous when edits change the cycle length.
+ */
+function stepFxPreviewElapsedCyclePosition(
+  preview: types.StepFxPreviewPlaybackStatus,
+  continuityOffset: number,
+  authoredPassBeats: number,
+  beatDurationSeconds: number,
+  nowEpochMs: number,
+  direction: FxDirection,
+  cycleScale: types.StepFxCycleScale,
+): number | undefined {
   if (
-    !preview ||
-    !Number.isFinite(totalBeats) ||
-    totalBeats <= 0 ||
+    !Number.isFinite(authoredPassBeats) ||
+    authoredPassBeats <= 0 ||
     !Number.isFinite(beatDurationSeconds) ||
     beatDurationSeconds <= 0 ||
-    !Number.isFinite(nowEpochMs) ||
-    !Number.isFinite(selectionPhaseOffset)
+    !Number.isFinite(nowEpochMs)
   ) {
     return undefined;
   }
-
   const interpolationSeconds =
     Math.max(0, nowEpochMs - preview.sampled_at_epoch_ms) / 1_000;
   const elapsedSeconds =
     durationToSeconds(preview.elapsed) +
     interpolationSeconds * Math.max(0, preview.elapsed_rate);
-  const cycleBeats = stepFxEffectiveCycleBeats(
-    totalBeats,
-    cycleScale,
-    direction,
-  );
-  const cycleSeconds = cycleBeats * beatDurationSeconds;
-  const offset = preview.track_phase_offsets.find((candidate) =>
-    attributesEqual(candidate.attribute, attribute),
-  )?.[trackKind];
-  const cyclePosition = positiveModulo(
-    elapsedSeconds / cycleSeconds +
-      stepFxStartCyclePosition(selectionPhaseOffset, direction) +
-      (offset ?? 0),
-    1,
-  );
-  return stepFxAuthoredBeat(cyclePosition, totalBeats, direction);
+  const cycleSeconds =
+    stepFxEffectiveCycleBeats(authoredPassBeats, cycleScale, direction) *
+    beatDurationSeconds;
+  return positiveModulo(elapsedSeconds / cycleSeconds + continuityOffset, 1);
 }
 
 /** Resolves multiple selection phase offsets against one backend clock sample. */

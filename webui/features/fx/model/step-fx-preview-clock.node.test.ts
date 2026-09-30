@@ -12,6 +12,7 @@ import * as types from "../../../types/index";
 import {
   findStepFxPreviewStatus,
   stepFxAuthoredBeat,
+  stepFxColorPreviewCyclePosition,
   stepFxEffectiveCycleBeats,
   stepFxPhaseMarkerBeat,
   stepFxPlayheadCycleOffset,
@@ -396,6 +397,36 @@ test("stepFxPreviewBeat maps bounce over twice the authored pass width", () => {
   );
 
   assert.equal(beat, 3);
+});
+
+/** Verifies the Color lane playhead advances with the backend clock and its continuity offset. */
+test("stepFxColorPreviewCyclePosition applies the color continuity offset", () => {
+  const status = previewStatus({
+    elapsed: { secs: 1, nanos: 0 },
+    elapsed_rate: 1,
+    color_phase_offset: 0.25,
+  });
+
+  assert.equal(stepFxColorPreviewCyclePosition(status, 4, 0.5, 10_500), 0);
+  assert.equal(stepFxColorPreviewCyclePosition(status, 4, 0.5, 10_000), 0.75);
+  assert.equal(
+    stepFxColorPreviewCyclePosition(
+      status,
+      4,
+      0.5,
+      10_000,
+      types.FxDirection.Bounce,
+    ),
+    0.5,
+  );
+  assert.equal(
+    stepFxColorPreviewCyclePosition(undefined, 4, 0.5, 10_000),
+    undefined,
+  );
+  assert.equal(
+    stepFxColorPreviewCyclePosition(status, 0, 0.5, 10_000),
+    undefined,
+  );
 });
 
 /** Verifies timestamps slightly ahead of the browser clock do not interpolate backwards. */

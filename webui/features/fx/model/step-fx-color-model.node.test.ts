@@ -22,6 +22,7 @@ import {
   sampleStepFxColorLane,
   stepFxColorFromHex,
   stepFxColorLaneShadows,
+  stepFxColorLaneStepIndexAt,
   stepFxColorToHex,
   stepFxLanesReplacedByColor,
 } from "./step-fx-color-model";
@@ -167,6 +168,41 @@ test("sampleStepFxColorLane fades between steps in the lane's space", () => {
   assert.ok(Math.abs(midpoint.red - 1) < 1e-9);
   assert.ok(Math.abs(midpoint.green - 1) < 1e-9);
   assert.ok(Math.abs(midpoint.blue) < 1e-9);
+});
+
+/** Verifies the live step lookup follows widths, start offsets, and reverse playback. */
+test("stepFxColorLaneStepIndexAt locates the playing step", () => {
+  const lane = colorLane([
+    { red: 1, green: 0, blue: 0 },
+    { red: 0, green: 1, blue: 0 },
+    { red: 0, green: 0, blue: 1 },
+  ]);
+  lane.steps[0].width_beats = 2;
+  assert.equal(
+    stepFxColorLaneStepIndexAt(lane, FxDirection.Forward, 0.1, 0),
+    0,
+  );
+  assert.equal(
+    stepFxColorLaneStepIndexAt(lane, FxDirection.Forward, 0.6, 0),
+    1,
+  );
+  assert.equal(
+    stepFxColorLaneStepIndexAt(lane, FxDirection.Forward, 0.1, 0.5),
+    1,
+  );
+  assert.equal(
+    stepFxColorLaneStepIndexAt(lane, FxDirection.Reverse, 0.1, 0),
+    2,
+  );
+  assert.equal(
+    stepFxColorLaneStepIndexAt(
+      { ...lane, steps: [] },
+      FxDirection.Forward,
+      0,
+      0,
+    ),
+    undefined,
+  );
 });
 
 /** Verifies Blueprint colors resolve from RGB, then CMY, and ignore colorless Blueprints. */

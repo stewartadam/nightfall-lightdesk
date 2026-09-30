@@ -272,9 +272,28 @@ test("Step FX color lane replaces RGB lanes and adds Blueprint color steps", asy
       }),
     )
     .toBe(true);
+
+  const playheads = editor.locator("[data-step-fx-color-playhead]");
+  await expect(playheads).toHaveCount(4);
+  await expect(
+    editor.locator('[data-step-fx-color-step][data-live="true"]'),
+  ).toHaveCount(1);
+  /** Reads the shared playhead's horizontal position as a percentage of the gradient. */
+  const playheadLeft = () =>
+    playheads
+      .first()
+      .evaluate((element) =>
+        Number.parseFloat((element as HTMLElement).style.left),
+      );
+  const firstLeft = await playheadLeft();
+  await expect.poll(playheadLeft).not.toBe(firstLeft);
   await page.screenshot({
     path: testInfo.outputPath("color-lane-editor.png"),
     fullPage: true,
   });
   await editor.getByRole("button", { name: "Stop preview" }).click();
+  await expect(playheads).toHaveCount(0);
+  await expect(
+    editor.locator('[data-step-fx-color-step][data-live="true"]'),
+  ).toHaveCount(0);
 });

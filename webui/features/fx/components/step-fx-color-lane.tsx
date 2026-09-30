@@ -13,13 +13,21 @@ import { DivideIcon } from "@squidlab/phosphor-solid/divide";
 import { LinkIcon } from "@squidlab/phosphor-solid/link";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { DropdownMenu } from "../../../components/ui/dropdown-menu";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Table } from "../../../components/ui/table";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import ColorPicker from "../../../components/widgets/color-picker";
 import { colorStringToHsv } from "../../../components/widgets/color-picker/model";
+import { durationToSeconds } from "../../../lib/duration";
 import type * as types from "../../../types";
 import { ColorInterpolationSpace, HueDirection } from "../../../types";
 import {
@@ -30,6 +38,7 @@ import {
   STEP_FX_COLOR_SPACES,
   stepFxColorCycleGradient,
   stepFxColorFromHex,
+  stepFxColorLaneStepIndexAt,
   stepFxColorToHex,
 } from "../model/step-fx-color-model";
 import {
@@ -42,6 +51,7 @@ import {
   roundStepFxWidthBeats,
   stepFxPhaseSlots,
 } from "../model/step-fx-editor-model";
+import { stepFxColorPreviewCyclePosition } from "../model/step-fx-preview-clock";
 import {
   StepFxCurveSelect,
   StepFxOverridesControl,
@@ -86,6 +96,10 @@ export interface StepFxColorLaneEditorProps {
   onOverridesOpenChange: (isOpen: boolean) => void;
   /** Publishes a complete replacement lane. */
   onChange: (lane: types.FxColorLane) => void;
+  /** Whether this editor's preview session is running. */
+  previewActive: boolean;
+  /** Backend clock anchor for this editor's preview session, once it has published one. */
+  previewStatus?: types.StepFxPreviewPlaybackStatus;
 }
 
 /** Edits the color lane: its steps, interpolation space, overrides, and cycle preview. */
@@ -114,6 +128,62 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
       Math.max(1, props.selectionLabels.length),
     ),
   );
+
+  const [previewEpochMs, setPreviewEpochMs] = createSignal(Date.now());
+  let previewFrame: number | undefined;
+
+  /** Refreshes browser time each frame so the playhead interpolates between backend anchors. */
+  const animatePreview = (): void => {
+    setPreviewEpochMs(Date.now());
+    previewFrame = requestAnimationFrame(animatePreview);
+  };
+
+  /** Runs the playhead clock only while this session's preview has a backend anchor. */
+  createEffect(() => {
+    if (!props.previewActive || !props.previewStatus) {
+      if (previewFrame !== undefined) cancelAnimationFrame(previewFrame);
+      previewFrame = undefined;
+      return;
+    }
+    if (previewFrame === undefined)
+      previewFrame = requestAnimationFrame(animatePreview);
+  });
+
+  /** Stops the playhead clock when the editor unmounts. */
+  onCleanup(() => {
+    if (previewFrame !== undefined) cancelAnimationFrame(previewFrame);
+  });
+
+  /** Shared elapsed cycle position marking "now" on every fixture's gradient, while previewing. */
+  const playheadPosition = createMemo(() => {
+    if (!props.previewActive) return undefined;
+    const passBeats = props.lane.steps.reduce(
+      (total, step) => total + step.width_beats,
+      0,
+    );
+    return stepFxColorPreviewCyclePosition(
+      props.previewStatus,
+      passBeats,
+      durationToSeconds(
+        (props.lane.timing_override ?? props.stepFx.timing).beat_duration,
+      ),
+      previewEpochMs(),
+      props.stepFx.direction,
+      props.stepFx.cycle_scale,
+    );
+  });
+
+  /** Step the first selection index is playing, highlighted in the step table. */
+  const liveStepIndex = createMemo(() => {
+    const position = playheadPosition();
+    if (position === undefined) return undefined;
+    return stepFxColorLaneStepIndexAt(
+      props.lane,
+      props.stepFx.direction,
+      position,
+      startPositions()[0] ?? 0,
+    );
+  });
 
   /** Keeps only selected steps that still exist in the lane. */
   const liveSelection = createMemo(() => {
@@ -426,11 +496,17 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                 };
                 return (
                   <tr
-                    class="border-b border-neutral-800"
+                    class="border-b border-neutral-800 transition-shadow duration-200 ease-out motion-reduce:transition-none"
                     classList={{
                       "bg-[var(--accent-soft)]": liveSelection().has(uid),
+                      "ring-1 ring-inset ring-amber-300/70":
+                        liveStepIndex() === index(),
                     }}
+                    aria-current={
+                      liveStepIndex() === index() ? "step" : undefined
+                    }
                     data-step-fx-color-step={index()}
+                    data-live={liveStepIndex() === index() ? "true" : undefined}
                   >
                     <td class="px-2 py-1">
                       <button
@@ -605,7 +681,7 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                   {props.selectionLabels[index()] ?? `Index ${index() + 1}`}
                 </span>
                 <div
-                  class="h-4 rounded-sm border border-black/40"
+                  class="relative h-4 rounded-sm border border-black/40"
                   style={{
                     background: stepFxColorCycleGradient(
                       props.lane,
@@ -615,7 +691,16 @@ export function StepFxColorLaneEditor(props: StepFxColorLaneEditorProps) {
                     ),
                   }}
                   data-step-fx-color-preview-row={index()}
-                />
+                >
+                  <Show when={playheadPosition() !== undefined}>
+                    <span
+                      class="pointer-events-none absolute -inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.6)]"
+                      style={{ left: `${(playheadPosition() ?? 0) * 100}%` }}
+                      data-step-fx-color-playhead
+                      aria-hidden
+                    />
+                  </Show>
+                </div>
               </div>
             )}
           </For>

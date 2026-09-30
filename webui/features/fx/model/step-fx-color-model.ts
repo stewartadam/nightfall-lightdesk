@@ -201,22 +201,15 @@ export function sampleStepFxColorLane(
   const color = (index: number) =>
     resolvedStepFxColor(steps[index], blueprints);
   if (steps.length === 1) return color(0);
-  const passBeats = steps.reduce((total, step) => total + step.width_beats, 0);
-  if (!Number.isFinite(passBeats) || passBeats <= 0) return undefined;
-  const passes = direction === FxDirection.Bounce ? 2 : 1;
-  const position = mod1(cyclePosition + mod1(startPosition / passes));
-  const beat = authoredBeatPosition(position, passBeats, direction);
-  if (beat >= passBeats) return color(steps.length - 1);
-
-  let start = 0;
-  let index = steps.length - 1;
-  for (let candidate = 0; candidate < steps.length; candidate++) {
-    if (beat < start + steps[candidate].width_beats) {
-      index = candidate;
-      break;
-    }
-    start += steps[candidate].width_beats;
-  }
+  const located = locateStepFxColorStep(
+    lane,
+    direction,
+    cyclePosition,
+    startPosition,
+  );
+  if (!located) return undefined;
+  const { index, beat, start } = located;
+  if (beat >= start + steps[index].width_beats) return color(index);
   const step = steps[index];
   const previous = index === 0 ? steps.length - 1 : index - 1;
   const transitionStart = step.width_beats * clamp01(step.transition.start);
@@ -236,6 +229,46 @@ export function sampleStepFxColorLane(
     color(index),
     factor,
   );
+}
+
+/** Returns the index of the step a fixture is in at one cycle position, if the lane can play. */
+export function stepFxColorLaneStepIndexAt(
+  lane: types.FxColorLane,
+  direction: FxDirection,
+  cyclePosition: number,
+  startPosition: number,
+): number | undefined {
+  if (lane.steps.length === 1) return 0;
+  return locateStepFxColorStep(lane, direction, cyclePosition, startPosition)
+    ?.index;
+}
+
+/**
+ * Finds the step containing a cycle position, mirroring the engine's step lookup.
+ *
+ * Returns the authored beat and the located step's starting beat. Positions at the very
+ * end of a pass resolve to the last step with `beat` equal to the pass length.
+ */
+function locateStepFxColorStep(
+  lane: types.FxColorLane,
+  direction: FxDirection,
+  cyclePosition: number,
+  startPosition: number,
+): { index: number; beat: number; start: number } | undefined {
+  const steps = lane.steps;
+  if (steps.length === 0) return undefined;
+  const passBeats = steps.reduce((total, step) => total + step.width_beats, 0);
+  if (!Number.isFinite(passBeats) || passBeats <= 0) return undefined;
+  const passes = direction === FxDirection.Bounce ? 2 : 1;
+  const position = mod1(cyclePosition + mod1(startPosition / passes));
+  const beat = authoredBeatPosition(position, passBeats, direction);
+  let start = 0;
+  for (let index = 0; index < steps.length; index++) {
+    if (beat < start + steps[index].width_beats) return { index, beat, start };
+    start += steps[index].width_beats;
+  }
+  const last = steps.length - 1;
+  return { index: last, beat, start: passBeats - steps[last].width_beats };
 }
 
 /** Builds a CSS gradient of one complete color cycle for one authored start position. */

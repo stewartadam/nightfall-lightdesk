@@ -1654,6 +1654,8 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                       )}
                       blueprints={$blueprints()}
                       issuesByPath={issuesByPath()}
+                      previewActive={previewActive()}
+                      previewStatus={previewStatus()}
                       overridesOpen={openPopover() === "overrides"}
                       onOverridesOpenChange={(isOpen) =>
                         setEditorPopoverOpen("overrides", isOpen)
