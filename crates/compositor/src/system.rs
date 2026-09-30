@@ -270,10 +270,10 @@ pub fn compositor<P: CompositorParameter>(
     }
     let mut param_query = parameters.queries.p2();
 
-    // Every layer reads the same parameters, so snapshot their compositing traits once instead of
+    // Every layer reads the same parameters, so snapshot their compositing contexts once instead of
     // fetching each parameter component once per layer.
     let (base_layer, attributed_assertions_layer, output_layers, snapshot, settled_runs) = {
-        let parameter_traits = ParameterTraitsTable::new(&param_query);
+        let parameter_contexts = ParameterCompositingContextTable::new(&param_query);
         let mut output_layers = Vec::new();
         let settled_runs: Vec<SettledRun> = settled_run_ranges
             .iter()
@@ -300,7 +300,7 @@ pub fn compositor<P: CompositorParameter>(
                         },
                     ),
                     entry_priority,
-                    &parameter_traits,
+                    &parameter_contexts,
                 );
                 output_layers.extend(run_output_layers);
                 SettledRun {
@@ -324,7 +324,12 @@ pub fn compositor<P: CompositorParameter>(
         }
 
         let (base, attributed, composed_output_layers, snapshot) =
-            CompositorPipeline::compose_resuming(prefix, steps, snapshot_after, &parameter_traits);
+            CompositorPipeline::compose_resuming(
+                prefix,
+                steps,
+                snapshot_after,
+                &parameter_contexts,
+            );
         output_layers.extend(composed_output_layers);
         (base, attributed, output_layers, snapshot, settled_runs)
     };
@@ -348,7 +353,7 @@ pub fn compositor<P: CompositorParameter>(
         {
             base_layer.get_effective_value(parameter)
         } else {
-            param.compositing_traits().default_value
+            param.compositing_context().default_value
         };
         if param.current_value() != final_value {
             param.set_raw_value(final_value);

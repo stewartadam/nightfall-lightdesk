@@ -113,8 +113,8 @@ impl SettledRunTable {
             for (parameter, value) in computed.absolute.iter() {
                 let uses_htp = same_priority
                     && param_query
-                        .parameter_traits(parameter)
-                        .is_some_and(|traits| traits.uses_htp_merge);
+                        .parameter_compositing_context(parameter)
+                        .is_some_and(|context| context.uses_htp_merge);
                 let op = if uses_htp {
                     SettledOp::Max(*value)
                 } else {
