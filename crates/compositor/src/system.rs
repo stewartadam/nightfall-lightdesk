@@ -220,15 +220,15 @@ pub fn compositor<P: CompositorParameter>(
         .collect();
     let mut param_query = parameters.queries.p2();
 
-    // Every layer reads the same parameters, so snapshot their compositing traits once instead of
+    // Every layer reads the same parameters, so snapshot their compositing contexts once instead of
     // fetching each parameter component once per layer.
     let (base_layer, attributed_assertions_layer, output_layers, snapshot) = {
-        let parameter_traits = ParameterTraitsTable::new(&param_query);
+        let parameter_contexts = ParameterCompositingContextTable::new(&param_query);
         CompositorPipeline::compose_resuming(
             prefix,
             layers_for_pipeline,
             snapshot_after,
-            &parameter_traits,
+            &parameter_contexts,
         )
     };
     run_state.settled_prefix = snapshot.map(|composited| SettledPrefix {
@@ -250,7 +250,7 @@ pub fn compositor<P: CompositorParameter>(
         {
             base_layer.get_effective_value(parameter)
         } else {
-            param.compositing_traits().default_value
+            param.compositing_context().default_value
         };
         if param.current_value() != final_value {
             param.set_raw_value(final_value);
