@@ -16,6 +16,7 @@ import {
 } from "solid-js";
 import { resyncComplete, resyncGeneration } from "../../../lib/engine-runtime";
 import { currentShowfileRevision } from "../../../lib/showfile-loading";
+import { pendingPanelComponentLoads } from "../../../state/panel-component-loads";
 import {
   endShowfileTransition,
   showfileTransition,
@@ -35,22 +36,30 @@ const QUIET_FRAMES_REQUIRED = 3;
 const FADE_MS = 150;
 
 /**
- * Resolves after several consecutive short animation frames, or after the
- * settle limit, so the dock is revealed once panels stop mounting and reflowing.
+ * Resolves after several consecutive short animation frames with no panel
+ * component module still loading, or after the settle limit, so the dock is
+ * revealed once panels stop mounting and reflowing.
+ *
+ * The settle limit counts from the last frame with a pending panel import, so a
+ * cold start that is still downloading panel code does not reveal empty panels;
+ * the veil's overall hidden limit still bounds a load that never settles.
  */
 function waitForQuietFrames(isCancelled: () => boolean): Promise<void> {
   return new Promise((resolve) => {
-    const startedAt = performance.now();
-    let previous = startedAt;
+    let settleStartedAt = performance.now();
+    let previous = settleStartedAt;
     let quietFrames = 0;
     /** Counts consecutive idle frames and resolves once enough have passed. */
     const tick = (now: number) => {
       if (isCancelled()) return resolve();
-      quietFrames = now - previous < QUIET_FRAME_MS ? quietFrames + 1 : 0;
+      const loadingPanels = pendingPanelComponentLoads.get() > 0;
+      if (loadingPanels) settleStartedAt = now;
+      quietFrames =
+        !loadingPanels && now - previous < QUIET_FRAME_MS ? quietFrames + 1 : 0;
       previous = now;
       if (
         quietFrames >= QUIET_FRAMES_REQUIRED ||
-        now - startedAt > MAX_SETTLE_MS
+        now - settleStartedAt > MAX_SETTLE_MS
       ) {
         resolve();
         return;

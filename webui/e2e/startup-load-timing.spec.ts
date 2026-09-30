@@ -43,6 +43,8 @@ type StartupTiming = {
   longestAfterVisibleMs: number;
   /** Fixtures in the loaded show. */
   fixtureCount: number;
+  /** Panel component imports still loading when the dock was revealed. */
+  pendingPanelLoadsAtReveal: number;
 };
 
 declare global {
@@ -52,6 +54,8 @@ declare global {
       clickAt?: number;
       marks: Record<string, number>;
       longTasks: { start: number; duration: number }[];
+      /** Panel component imports still loading when the dock was revealed. */
+      pendingPanelLoadsAtReveal?: number;
     };
   }
 }
@@ -139,6 +143,7 @@ async function installStartupProbe(page: Page): Promise<void> {
     /** App modules read for startup phases; the app has already loaded them. */
     let lifecycle: { phase: string } | undefined;
     let backendState: string | undefined;
+    let panelLoads: { get(): number } | undefined;
     let modulesRequested = false;
     /** Samples startup phase, shell, dock and fixture state once per frame after the click. */
     const tick = () => {
@@ -158,6 +163,11 @@ async function installStartupProbe(page: Page): Promise<void> {
               });
             },
           );
+          void import(
+            /* @vite-ignore */ "/state/panel-component-loads.ts"
+          ).then((module) => {
+            panelLoads = module.pendingPanelComponentLoads;
+          });
           void import(/* @vite-ignore */ "/lib/engine-runtime.ts").then(
             (module) => {
               const read = () => {
@@ -177,10 +187,16 @@ async function installStartupProbe(page: Page): Promise<void> {
         );
         mark("shell", !!document.querySelector("button[title='Menu']"));
         const veiled = !!document.querySelector(
-          '[data-testid="showfile-transition-veil"]:not(.opacity-0)',
+          '[data-testid="showfile-transition-veil"]:not(.opacity-0), [data-testid="startup-splash"]:not(.opacity-0)',
         );
         const panels = document.querySelectorAll("[data-panel-id]").length;
         mark("dockVisible", panels > 0 && !veiled);
+        if (
+          state.marks.dockVisible !== undefined &&
+          state.pendingPanelLoadsAtReveal === undefined
+        ) {
+          state.pendingPanelLoadsAtReveal = panelLoads?.get() ?? -1;
+        }
         const fixtures = (window as any).appStores?.fixtures?.get() ?? {};
         mark("fixturesLoaded", Object.keys(fixtures).length > 0);
         // Stop sampling once every phase is seen so the probe adds no load while settling.
@@ -312,10 +328,11 @@ for (let run = 0; run < RUNS; run++) {
             Math.max(0, ...afterVisible.map((task) => task.duration)),
           ),
           fixtureCount: Object.keys(fixtures).length,
+          pendingPanelLoadsAtReveal: state.pendingPanelLoadsAtReveal ?? -1,
         };
       });
       console.log(
-        `run ${run}: ${JSON.stringify(result.marks)} blocked=${result.blockedMs}ms afterVisible=${result.blockedAfterVisibleMs}ms longestAfterVisible=${result.longestAfterVisibleMs}ms fixtures=${result.fixtureCount}`,
+        `run ${run}: ${JSON.stringify(result.marks)} blocked=${result.blockedMs}ms afterVisible=${result.blockedAfterVisibleMs}ms longestAfterVisible=${result.longestAfterVisibleMs}ms fixtures=${result.fixtureCount} pendingPanelLoadsAtReveal=${result.pendingPanelLoadsAtReveal}`,
       );
       await page.screenshot({ path: testInfo.outputPath("settled.png") });
       await writeFile(

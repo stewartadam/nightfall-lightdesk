@@ -8,6 +8,7 @@
 
 import { type Component, createComponent, lazy } from "solid-js";
 import { gateExperimentalFlowPanel } from "../features/flow/panels/experimental-flow-panel";
+import { trackPanelComponentLoad } from "../state/panel-component-loads";
 import { isExperimentalFlowPanel } from "./experimental-features";
 import { PANEL_MODULES } from "./panel-manifest";
 import { type PanelModule, panelDefinitionFromModule } from "./panel-module";
@@ -15,9 +16,10 @@ import { registerPanelComponent } from "./panel-registry";
 
 /** Resolves a panel component implementation from its descriptor-owned loader. */
 function resolvePanelComponent(panelModule: PanelModule): Component<any> {
+  const loadComponent = trackPanelComponentLoad(panelModule.loadComponent);
   /** Owns each lazy resource per mount so retiring a workspace cannot strand another panel. */
   const Panel: Component<any> = (props) =>
-    createComponent(lazy(panelModule.loadComponent), props);
+    createComponent(lazy(loadComponent), props);
   return isExperimentalFlowPanel(panelModule.componentName)
     ? gateExperimentalFlowPanel(Panel)
     : Panel;
