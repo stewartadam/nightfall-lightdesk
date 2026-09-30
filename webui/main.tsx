@@ -107,15 +107,9 @@ function App() {
     );
   });
   const lifecycle = useStore(appLifecycle);
+  // The shell mount is latched, so readiness stays set when startup returns to the picker.
   const [interactiveShellReady, setInteractiveShellReady] = createSignal(false);
   let preloadAnimationFrame: number | undefined;
-
-  /** Resets shell readiness if startup returns to a non-interactive phase. */
-  createEffect(() => {
-    if (lifecycle().phase !== "interactive") {
-      setInteractiveShellReady(false);
-    }
-  });
 
   const pendingShowfileTransition = useStore(showfileTransition);
 
