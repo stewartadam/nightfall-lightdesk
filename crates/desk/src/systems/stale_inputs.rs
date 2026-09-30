@@ -256,8 +256,8 @@ mod tests {
             .world()
             .get::<TransportInputAssertionOwners>(layer_entity)
             .expect("transport assertion owners should still exist");
-        assert!(!layer.absolute.contains_key(&parameter));
-        assert!(!owners.absolute.contains_key(&parameter));
+        assert!(!layer.absolute.contains_key(parameter));
+        assert!(!owners.absolute.contains_key(parameter));
     }
 
     /// Verifies `release stale-inputs` clears stale input state while policy remains Hold.
@@ -350,7 +350,7 @@ mod tests {
             .get::<TransportInputAssertionOwners>(layer_entity)
             .expect("transport assertion owners should still exist");
         assert_eq!(universes.get_value(1, 1), Some(0));
-        assert!(!layer.absolute.contains_key(&parameter));
-        assert!(!owners.absolute.contains_key(&parameter));
+        assert!(!layer.absolute.contains_key(parameter));
+        assert!(!owners.absolute.contains_key(parameter));
     }
 }

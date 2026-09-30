@@ -338,8 +338,8 @@ mod tests {
         );
 
         assert_eq!(layer.absolute.len(), 2);
-        assert!(layer.absolute.contains_key(&parameter_1));
-        assert!(layer.absolute.contains_key(&parameter_2));
+        assert!(layer.absolute.contains_key(parameter_1));
+        assert!(layer.absolute.contains_key(parameter_2));
     }
 
     #[test]

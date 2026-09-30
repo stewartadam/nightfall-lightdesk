@@ -743,6 +743,12 @@ fn same_element_structure(left: &Fixture, right: &Fixture) -> bool {
             })
 }
 
+/// Tags geometry with the profile revision it was built from, versioning its resource URLs.
+fn with_revision(mut geometry: FixtureGeometry, profile: &FixtureProfile) -> FixtureGeometry {
+    geometry.gdtf_revision = Some(profile.revision.clone());
+    geometry
+}
+
 #[cfg(test)]
 mod revision_tests {
     use super::*;
@@ -1039,10 +1045,4 @@ mod revision_tests {
         assert!(manager.find_fixture("Rev Test", "Second").is_some());
         assert!(manager.find_fixture("Rev Test", "Fixture").is_some());
     }
-}
-
-/// Tags geometry with the profile revision it was built from, versioning its resource URLs.
-fn with_revision(mut geometry: FixtureGeometry, profile: &FixtureProfile) -> FixtureGeometry {
-    geometry.gdtf_revision = Some(profile.revision.clone());
-    geometry
 }

@@ -1237,7 +1237,7 @@ fn sequence_runtime_snapshot(
     );
     let value = *computed
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("sequence output should include the test parameter");
     (position, playback_position, value, status)
 }

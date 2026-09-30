@@ -706,7 +706,7 @@ fn timeline_lookahead_preactivates_future_sequence_start() {
         assertions.assertions[0].value,
         ParameterValue::Absolute { value: 90.0 }
     );
-    assert!(layer.absolute.contains_key(&tilt_parameter));
+    assert!(layer.absolute.contains_key(tilt_parameter));
 }
 
 /// Verifies timeline Lookahead scans setup and cue one before a sequence start.
@@ -3659,12 +3659,12 @@ fn seek_timeline_sequence_release_delay_keeps_boundary_cue_and_tracked_values() 
         Some(Duration::from_millis(400))
     );
     assert_eq!(
-        computed.absolute.get(&intensity_parameter),
+        computed.absolute.get(intensity_parameter),
         Some(&100.0),
         "release delay should preserve tracked intensity from cue 1"
     );
     assert_eq!(
-        computed.absolute.get(&tilt_parameter),
+        computed.absolute.get(tilt_parameter),
         Some(&90.0),
         "release delay should preserve cue 2 output due at the release boundary"
     );

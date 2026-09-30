@@ -236,11 +236,11 @@ pub(super) fn open_log_file() -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
         let (program, args) = file_open_command(&log_path)?;
-        return spawn_open_command(
+        spawn_open_command(
             program,
             args,
             &format!("default application for {}", log_path.display()),
-        );
+        )
     }
 }
 

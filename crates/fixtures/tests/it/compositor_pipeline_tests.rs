@@ -98,16 +98,16 @@ mod pipeline_tests {
             compose_without_layer_contexts(layers, &param_query);
 
         // Verify base layer
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 100.0);
         assert!(base_layer.relative.is_empty());
 
         // Verify attributed assertions layer.
-        assert!(attributed_assertions_layer.absolute.contains_key(&param));
+        assert!(attributed_assertions_layer.absolute.contains_key(param));
 
         // Verify output layers
         assert_eq!(output_layers.len(), 1);
         assert_eq!(output_layers[0].0, entity);
-        assert_eq!(*output_layers[0].1.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*output_layers[0].1.absolute.get(param).unwrap(), 100.0);
     }
 
     #[test]
@@ -145,15 +145,15 @@ mod pipeline_tests {
             compose_without_layer_contexts(layers, &param_query);
 
         // Highest priority wins (layer3 with value 150)
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 150.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 150.0);
         assert_eq!(output_layers.len(), 3);
 
         // First layer sees base of 0 (default) + its value
-        assert_eq!(*output_layers[0].1.absolute.get(&param).unwrap(), 50.0);
+        assert_eq!(*output_layers[0].1.absolute.get(param).unwrap(), 50.0);
         // Second layer sees base of 50 (from layer1) + its value
-        assert_eq!(*output_layers[1].1.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*output_layers[1].1.absolute.get(param).unwrap(), 100.0);
         // Third layer sees base of 100 (from layer1+2) + its value
-        assert_eq!(*output_layers[2].1.absolute.get(&param).unwrap(), 150.0);
+        assert_eq!(*output_layers[2].1.absolute.get(param).unwrap(), 150.0);
     }
 
     #[test]
@@ -190,7 +190,7 @@ mod pipeline_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         // With HTP, highest value wins (200)
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 200.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 200.0);
     }
 
     #[test]
@@ -227,7 +227,7 @@ mod pipeline_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         // With LTP, last value wins (100)
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 100.0);
     }
 
     #[test]
@@ -268,7 +268,7 @@ mod pipeline_tests {
         // Layer 2: 20 offset + 10 base = 30
         // Layer 3: 30 offset + 40 base = 70
         // Total = 10 + 30 + 70 = 110
-        assert_eq!(*base_layer.relative.get(&param).unwrap(), 110.0);
+        assert_eq!(*base_layer.relative.get(param).unwrap(), 110.0);
     }
 
     #[test]
@@ -298,11 +298,11 @@ mod pipeline_tests {
         let (base_layer, _, _output_layers) = compose_without_layer_contexts(layers, &param_query);
 
         // Base should have both absolute and relative
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 100.0);
-        assert_eq!(*base_layer.relative.get(&param).unwrap(), 25.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 100.0);
+        assert_eq!(*base_layer.relative.get(param).unwrap(), 25.0);
 
         // Effective value should combine them
-        assert_eq!(base_layer.get_effective_value(&param), 125.0);
+        assert_eq!(base_layer.get_effective_value(param), 125.0);
     }
 
     #[test]
@@ -345,7 +345,7 @@ mod pipeline_tests {
             CompositorPipeline::compose_with_layer_compositing_contexts(layers, &param_query);
 
         // Transition is complete, should reach target
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 200.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 200.0);
     }
 
     /// Verifies explicit source-local clocks override host-time transition anchors.
@@ -388,7 +388,7 @@ mod pipeline_tests {
         let (base_layer, _, _) =
             CompositorPipeline::compose_with_layer_compositing_contexts(layers, &param_query);
 
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 100.0);
     }
 
     /// Verifies source-local composition does not fall back to legacy host-time transition anchors.
@@ -422,7 +422,7 @@ mod pipeline_tests {
         let (base_layer, _, _) =
             CompositorPipeline::compose_with_layer_compositing_contexts(layers, &param_query);
 
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 0.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 0.0);
     }
 
     /// Verifies the default pipeline entry point does not evaluate legacy host-time anchors.
@@ -455,7 +455,7 @@ mod pipeline_tests {
 
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 0.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 0.0);
     }
 
     /// Verifies layer compositing contexts drive transition progress from playback position.
@@ -498,7 +498,7 @@ mod pipeline_tests {
         let (base_layer, _, _) =
             CompositorPipeline::compose_with_layer_compositing_contexts(layers, &param_query);
 
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 100.0);
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod pipeline_tests {
             CompositorPipeline::compose_with_layer_compositing_contexts(layers, &param_query);
 
         // Should revert to base layer value (50)
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 50.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 50.0);
     }
 
     #[test]
@@ -581,9 +581,9 @@ mod pipeline_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         // Verify all parameters composited
-        assert_eq!(*base_layer.absolute.get(&param1).unwrap(), 255.0);
-        assert_eq!(*base_layer.absolute.get(&param2).unwrap(), 128.0);
-        assert_eq!(*base_layer.relative.get(&param3).unwrap(), 50.0);
+        assert_eq!(*base_layer.absolute.get(param1).unwrap(), 255.0);
+        assert_eq!(*base_layer.absolute.get(param2).unwrap(), 128.0);
+        assert_eq!(*base_layer.relative.get(param3).unwrap(), 50.0);
     }
 
     #[test]
@@ -635,8 +635,8 @@ mod pipeline_tests {
             compose_without_layer_contexts(layers, &param_query);
 
         // Verify attribution tracked (object2 should be the final owner)
-        assert!(attributed_assertions_layer.absolute.contains_key(&param));
-        let (owner, (value, _)) = attributed_assertions_layer.absolute.get(&param).unwrap();
+        assert!(attributed_assertions_layer.absolute.contains_key(param));
+        let (owner, (value, _)) = attributed_assertions_layer.absolute.get(param).unwrap();
         assert_eq!(owner, &object2);
         if let ParameterValue::Absolute { value: v } = value {
             assert_eq!(*v, 200.0);
@@ -694,20 +694,20 @@ mod pipeline_tests {
 
         // HTP: Priority 2 wins (150), but same priority layers 1&2 merge with HTP (200 > 100)
         // Final: layer3's 150 wins due to priority
-        assert_eq!(*base_layer.absolute.get(&htp_param).unwrap(), 150.0);
+        assert_eq!(*base_layer.absolute.get(htp_param).unwrap(), 150.0);
 
         // LTP: Same priority layers, last wins (75), then layer3 doesn't have absolute so keeps 75
-        assert_eq!(*base_layer.absolute.get(&ltp_param).unwrap(), 75.0);
+        assert_eq!(*base_layer.absolute.get(ltp_param).unwrap(), 75.0);
 
         // Relative: layer2 adds 25 on base 75, layer3 adds 10 on base (75+25)=100
         // Total relative = 25 + (75) + 10 + (100) but that's not right...
         // Actually: layer2 relative resolves to 25, layer3 relative resolves to 10
         // But during transition they see base, so: 25+75 from layer2, 10+100 from layer3
         // Hmm, let's check actual: relative should just be offsets: 25 + 10 + bases = 60
-        assert_eq!(*base_layer.relative.get(&ltp_param).unwrap(), 60.0);
+        assert_eq!(*base_layer.relative.get(ltp_param).unwrap(), 60.0);
 
         // Effective LTP value: 75 + 60 = 135
-        assert_eq!(base_layer.get_effective_value(&ltp_param), 135.0);
+        assert_eq!(base_layer.get_effective_value(ltp_param), 135.0);
     }
 }
 
@@ -729,9 +729,9 @@ mod edge_case_tests {
         let effective = layer.to_effective();
 
         // param1 should combine absolute + relative
-        assert_eq!(*effective.absolute.get(&param1).unwrap(), 125.0);
+        assert_eq!(*effective.absolute.get(param1).unwrap(), 125.0);
         // param2 has no relative, should stay the same
-        assert_eq!(*effective.absolute.get(&param2).unwrap(), 50.0);
+        assert_eq!(*effective.absolute.get(param2).unwrap(), 50.0);
     }
 
     #[test]
@@ -773,14 +773,14 @@ mod edge_case_tests {
         base_layer.squash(upper_layer);
 
         // param1 should be overridden
-        if let Some((ParameterValue::Absolute { value }, _)) = base_layer.absolute.get(&param1) {
+        if let Some((ParameterValue::Absolute { value }, _)) = base_layer.absolute.get(param1) {
             assert_eq!(*value, 200.0);
         } else {
             panic!("Expected param1 to be present");
         }
 
         // param2 should be added
-        assert!(base_layer.absolute.contains_key(&param2));
+        assert!(base_layer.absolute.contains_key(param2));
     }
 
     #[test]
@@ -814,7 +814,7 @@ mod edge_case_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         // Should instantly reach target
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 200.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 200.0);
     }
 
     /// Verifies delayed assertions do not contribute output before their fade starts.
@@ -849,7 +849,7 @@ mod edge_case_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         assert!(
-            !base_layer.absolute.contains_key(&param),
+            !base_layer.absolute.contains_key(param),
             "delayed assertions should not assert the base/default value"
         );
     }
@@ -881,7 +881,7 @@ mod edge_case_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         // Negative relative should subtract
-        assert_eq!(base_layer.get_effective_value(&param), 70.0);
+        assert_eq!(base_layer.get_effective_value(param), 70.0);
     }
 
     #[test]
@@ -915,8 +915,8 @@ mod edge_case_tests {
         // Layer2: 25 offset on base 50 = 75
         // Total = 50 + 75 = 125
         assert!(base_layer.absolute.is_empty());
-        assert_eq!(*base_layer.relative.get(&param).unwrap(), 125.0);
-        assert_eq!(base_layer.get_effective_value(&param), 125.0);
+        assert_eq!(*base_layer.relative.get(param).unwrap(), 125.0);
+        assert_eq!(base_layer.get_effective_value(param), 125.0);
     }
 
     #[test]
@@ -942,7 +942,7 @@ mod edge_case_tests {
             compose_without_layer_contexts(layers, &param_query);
 
         // With HTP and same priority, highest value (99) should win
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 99.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 99.0);
         assert_eq!(output_layers.len(), 100);
         assert_eq!(attributed_assertions_layer.absolute.len(), 1);
     }
@@ -988,7 +988,7 @@ mod edge_case_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         // Highest priority (3) should win
-        assert_eq!(*base_layer.absolute.get(&param).unwrap(), 40.0);
+        assert_eq!(*base_layer.absolute.get(param).unwrap(), 40.0);
     }
 
     #[test]
@@ -1024,17 +1024,17 @@ mod edge_case_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         // Verify all parameters
-        assert_eq!(*base_layer.absolute.get(&param1).unwrap(), 255.0);
-        assert_eq!(*base_layer.absolute.get(&param2).unwrap(), 200.0);
-        assert_eq!(*base_layer.relative.get(&param2).unwrap(), 25.0);
-        assert_eq!(*base_layer.absolute.get(&param3).unwrap(), 100.0);
-        assert_eq!(*base_layer.relative.get(&param4).unwrap(), 50.0);
+        assert_eq!(*base_layer.absolute.get(param1).unwrap(), 255.0);
+        assert_eq!(*base_layer.absolute.get(param2).unwrap(), 200.0);
+        assert_eq!(*base_layer.relative.get(param2).unwrap(), 25.0);
+        assert_eq!(*base_layer.absolute.get(param3).unwrap(), 100.0);
+        assert_eq!(*base_layer.relative.get(param4).unwrap(), 50.0);
 
         // Check effective values
-        assert_eq!(base_layer.get_effective_value(&param1), 255.0);
-        assert_eq!(base_layer.get_effective_value(&param2), 225.0);
-        assert_eq!(base_layer.get_effective_value(&param3), 100.0);
-        assert_eq!(base_layer.get_effective_value(&param4), 50.0);
+        assert_eq!(base_layer.get_effective_value(param1), 255.0);
+        assert_eq!(base_layer.get_effective_value(param2), 225.0);
+        assert_eq!(base_layer.get_effective_value(param3), 100.0);
+        assert_eq!(base_layer.get_effective_value(param4), 50.0);
     }
 
     #[test]
@@ -1086,7 +1086,7 @@ mod edge_case_tests {
         // With LTP and same priority, the latest activated layer should win (layer3 with value 200)
         // The attributed assertions layer should track which object set the final value.
         let (object_ref, (param_value, _)) =
-            attributed_assertions_layer.absolute.get(&param).unwrap();
+            attributed_assertions_layer.absolute.get(param).unwrap();
 
         // Verify that layer3 (object_ref 3) won because it was activated last
         match object_ref {

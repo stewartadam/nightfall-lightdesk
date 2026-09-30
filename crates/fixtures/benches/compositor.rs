@@ -293,7 +293,11 @@ fn mutate_benchmark_layer_assertions(
     mut frame_index: Local<usize>,
     mut layers: Query<&mut Layer, With<ChangingBenchmarkLayer>>,
 ) {
-    let next_value = if *frame_index % 2 == 0 { 64.0 } else { 192.0 };
+    let next_value = if (*frame_index).is_multiple_of(2) {
+        64.0
+    } else {
+        192.0
+    };
     *frame_index += 1;
 
     for mut layer in &mut layers {

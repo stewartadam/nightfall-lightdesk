@@ -530,8 +530,8 @@ mod tests {
         );
 
         // Should have the resolved absolute value
-        assert!(computed.absolute.contains_key(&param));
-        assert_eq!(*computed.absolute.get(&param).unwrap(), 100.0);
+        assert!(computed.absolute.contains_key(param));
+        assert_eq!(*computed.absolute.get(param).unwrap(), 100.0);
     }
 
     #[test]
@@ -563,8 +563,8 @@ mod tests {
         );
 
         // Should have the relative offset (resolved: 100 base + 50 offset)
-        assert!(computed.relative.contains_key(&param));
-        assert_eq!(*computed.relative.get(&param).unwrap(), 50.0);
+        assert!(computed.relative.contains_key(param));
+        assert_eq!(*computed.relative.get(param).unwrap(), 50.0);
     }
 
     #[test]
@@ -603,8 +603,8 @@ mod tests {
         );
 
         // Should reach target value (transition completed)
-        assert!(computed.absolute.contains_key(&param));
-        assert_eq!(*computed.absolute.get(&param).unwrap(), 200.0);
+        assert!(computed.absolute.contains_key(param));
+        assert_eq!(*computed.absolute.get(param).unwrap(), 200.0);
     }
 
     /// Verifies delayed relative assertions do not contribute a synthetic base offset.
@@ -640,11 +640,11 @@ mod tests {
         );
 
         assert!(
-            !computed.relative.contains_key(&param),
+            !computed.relative.contains_key(param),
             "delayed relative assertions should not assert the base relative value"
         );
         assert!(
-            !layer.relative.contains_key(&param),
+            !layer.relative.contains_key(param),
             "delayed relative assertions should be absent from attribution"
         );
     }
@@ -732,11 +732,11 @@ mod tests {
         );
 
         assert!(
-            !computed.absolute.contains_key(&param),
+            !computed.absolute.contains_key(param),
             "completed release values should stop asserting instead of holding the base target"
         );
         assert!(
-            !layer.absolute.contains_key(&param),
+            !layer.absolute.contains_key(param),
             "completed release values should be absent from attribution"
         );
     }
@@ -772,8 +772,8 @@ mod tests {
             },
         );
 
-        assert!(!computed.absolute.contains_key(&param));
-        assert!(!layer.absolute.contains_key(&param));
+        assert!(!computed.absolute.contains_key(param));
+        assert!(!layer.absolute.contains_key(param));
     }
 
     /// Verifies active relative release fades remain relative until their release completes.
@@ -809,7 +809,7 @@ mod tests {
 
         let value = *computed
             .relative
-            .get(&param)
+            .get(param)
             .expect("active relative release should output a relative value");
         assert!(
             (19.0..=21.0).contains(&value),
@@ -852,7 +852,7 @@ mod tests {
         assert_eq!(
             *computed
                 .absolute
-                .get(&param)
+                .get(param)
                 .expect("virtual intensity should output a release value"),
             0.0
         );
@@ -900,7 +900,7 @@ mod tests {
         );
         let value = *computed
             .absolute
-            .get(&param)
+            .get(param)
             .expect("virtual intensity should output a release fade value");
 
         assert!(
@@ -952,7 +952,7 @@ mod tests {
         );
         let value = *computed
             .absolute
-            .get(&param)
+            .get(param)
             .expect("virtual intensity should output a release fade value");
 
         assert!(
@@ -996,7 +996,7 @@ mod tests {
         );
         let value = *computed
             .absolute
-            .get(&param)
+            .get(param)
             .expect("release fade should output an intermediate value");
 
         assert!(
@@ -1040,7 +1040,7 @@ mod tests {
         );
         let value = *computed
             .absolute
-            .get(&param)
+            .get(param)
             .expect("release fade should output an intermediate value");
 
         assert!(

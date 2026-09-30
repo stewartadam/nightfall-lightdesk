@@ -151,7 +151,7 @@ fn update_running_fixture_effect_layers(
     for (effect, mut layer) in &mut layers {
         let existing_parameters: Vec<_> = layer.absolute.keys().collect();
         for parameter in existing_parameters {
-            layer.absolute.remove(&parameter);
+            layer.absolute.remove(parameter);
         }
         let element_ref = FixtureRef {
             fixture_uid: effect.fixture_uid,
@@ -229,7 +229,7 @@ fn compositor_recomputes_when_layer_assertion_changes() {
     app.world_mut().resource_mut::<ChangedParameterCount>().0 = 0;
     let parameter = unsafe { Instance::<Parameter>::from_entity_unchecked(parameter_entity) };
     let mut layer = app.world_mut().get_mut::<Layer>(layer_entity).unwrap();
-    let (value, _) = layer.absolute.get_mut(&parameter).unwrap();
+    let (value, _) = layer.absolute.get_mut(parameter).unwrap();
     *value = ParameterValue::Absolute { value: 140.0 };
     drop(layer);
 
@@ -1648,7 +1648,7 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     let world = app.world_mut();
     let mut layer_query = world.query_filtered::<&Layer, With<ManualAssertionLayer>>();
     let layer = layer_query
-        .single(&world)
+        .single(world)
         .expect("expected manual assertion layer");
     assert!(layer.absolute.is_empty());
     assert!(layer.relative.is_empty());

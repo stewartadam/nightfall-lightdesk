@@ -1688,7 +1688,7 @@ mod tests {
 
         let instance = {
             let registry = app.world().resource::<FlowNodeRegistry>();
-            FlowInstance::new(1, FlowRuntime::new(definition), &registry)
+            FlowInstance::new(1, FlowRuntime::new(definition), registry)
         };
         app.world_mut().spawn(instance);
 

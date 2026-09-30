@@ -214,7 +214,7 @@ fn sequence_step_activation_updates_cue_start_position() {
         materialized.mcues[1]
             .values
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .and_then(|(_, transition)| transition.as_ref())
             .map(|transition| transition.start_position),
         Some(Duration::from_millis(900))
@@ -310,7 +310,7 @@ fn sequence_step_activation_without_clock_uses_position_anchors() {
         materialized.mcues[1]
             .values
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .and_then(|(_, transition)| transition.as_ref())
             .map(|transition| transition.start_position),
         Some(Duration::ZERO)
@@ -362,7 +362,7 @@ fn completed_sequence_transition_does_not_refade_with_compositing_context() {
         },
     );
 
-    assert_eq!(computed.absolute.get(&parameter).copied(), Some(50.0));
+    assert_eq!(computed.absolute.get(parameter).copied(), Some(50.0));
 }
 
 /// Verifies active cue transitions render from InstanceClock position when available.
@@ -434,13 +434,13 @@ fn sequence_render_uses_instance_clock_for_active_cue_transition() {
     let layer = materialized.to_layer_at_clock(&mut param_query, Some(&clock));
     let rendered = layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .map(|(value, _)| *value)
         .expect("sequence should render the cue value");
 
     assert_eq!(rendered, ParameterValue::Absolute { value: 50.0 });
     assert_eq!(
-        layer.transitioning.get(&parameter),
+        layer.transitioning.get(parameter),
         Some(&true),
         "transition activity should follow playback-clock elapsed time"
     );
@@ -511,13 +511,13 @@ fn sequence_render_without_instance_clock_uses_zero_elapsed() {
     let layer = materialized.to_layer_at_clock(&mut param_query, None);
     let rendered = layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .map(|(value, _)| *value)
         .expect("sequence should render the cue value");
 
     assert_eq!(rendered, ParameterValue::Absolute { value: 0.0 });
     assert_eq!(
-        layer.transitioning.get(&parameter),
+        layer.transitioning.get(parameter),
         Some(&true),
         "unclocked rendering should use deterministic zero elapsed, not stale wall-clock anchors"
     );
@@ -612,11 +612,11 @@ fn derived_color_path_emitters_track_any_active_rgb_parent() {
     let layer = materialized.to_layer_at_clock(&mut param_query, Some(&clock));
 
     assert!(
-        layer.absolute.contains_key(&white),
+        layer.absolute.contains_key(white),
         "color path sampling should insert the derived white emitter"
     );
     assert_eq!(
-        layer.transitioning.get(&white),
+        layer.transitioning.get(white),
         Some(&true),
         "derived emitters should remain active when any RGB parent is still transitioning"
     );
@@ -722,17 +722,14 @@ fn sequence_render_uses_instance_clock_for_retained_cue_transition() {
     let layer = materialized.to_layer_at_clock(&mut param_query, Some(&clock));
 
     assert_eq!(
-        layer
-            .absolute
-            .get(&first_parameter)
-            .map(|(value, _)| *value),
+        layer.absolute.get(first_parameter).map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 75.0 }),
         "retained first cue should continue from its original activation position"
     );
     assert_eq!(
         layer
             .absolute
-            .get(&second_parameter)
+            .get(second_parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 25.0 }),
         "active second cue should render from its later activation position"
@@ -828,7 +825,7 @@ fn sequence_render_uses_instance_clock_for_transition_source_layer() {
     let layer = materialized.to_layer_at_clock(&mut param_query, Some(&clock));
 
     assert_eq!(
-        layer.absolute.get(&parameter).map(|(value, _)| *value),
+        layer.absolute.get(parameter).map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 125.0 }),
         "replacement cue should fade from the playback-clocked retained source value"
     );
@@ -1044,7 +1041,7 @@ fn sequence_render_prefix_cache_is_not_reused_before_valid_position() {
     assert_eq!(
         cached_layer
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 25.0 }),
         "early render should sample the transition instead of reusing the completed prefix"
@@ -1156,7 +1153,7 @@ fn sequence_render_prefix_cache_reuses_stable_prefix_for_later_playback_position
     assert_eq!(
         later_layer
             .absolute
-            .get(&first_parameter)
+            .get(first_parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 70.0 }),
         "later render should start from the cached stable prefix"
@@ -1164,7 +1161,7 @@ fn sequence_render_prefix_cache_reuses_stable_prefix_for_later_playback_position
     assert_eq!(
         later_layer
             .absolute
-            .get(&second_parameter)
+            .get(second_parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 15.0 }),
         "active tail should still render at the later playback position"
@@ -1269,7 +1266,7 @@ fn sequence_render_prefix_cache_returns_full_cached_layer_for_stable_sequence() 
     assert_eq!(
         later_layer
             .absolute
-            .get(&first_parameter)
+            .get(first_parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 70.0 }),
         "later render should return the full cached layer without rebuilding"
@@ -1277,7 +1274,7 @@ fn sequence_render_prefix_cache_returns_full_cached_layer_for_stable_sequence() 
     assert_eq!(
         later_layer
             .absolute
-            .get(&second_parameter)
+            .get(second_parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 100.0 })
     );
@@ -1470,7 +1467,7 @@ fn sequence_setup_compositing_context_uses_sequence_start_position() {
     let layer = materialized.to_layer_at_clock(&mut param_query, Some(&clock));
     let rendered = layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .map(|(value, _)| *value)
         .expect("sequence should render the setup value");
 
@@ -1811,7 +1808,7 @@ fn release_materialized_sequences_without_clock_uses_zero_release_position() {
     let transition = sequence
         .release_layer
         .as_ref()
-        .and_then(|layer| layer.absolute.get(&parameter))
+        .and_then(|layer| layer.absolute.get(parameter))
         .and_then(|(_, transition)| transition.as_ref())
         .expect("unclocked sequence release should generate a release transition");
     assert_eq!(transition.release_position, Some(Duration::ZERO));
@@ -1867,7 +1864,7 @@ fn sequence_release_layer_uses_source_local_release_anchors_when_clocked() {
     let transition = sequence
         .release_layer
         .as_ref()
-        .and_then(|layer| layer.absolute.get(&parameter))
+        .and_then(|layer| layer.absolute.get(parameter))
         .and_then(|(_, transition)| transition.as_ref())
         .expect("clocked sequence release should generate a release transition");
     assert_eq!(
@@ -1974,7 +1971,7 @@ fn release_materialized_sequences_repairs_missing_clock_release_position() {
     let transition = sequence
         .release_layer
         .as_ref()
-        .and_then(|layer| layer.absolute.get(&parameter))
+        .and_then(|layer| layer.absolute.get(parameter))
         .and_then(|(_, transition)| transition.as_ref())
         .expect("repaired release layer should keep its transition");
     assert_eq!(
@@ -2444,7 +2441,7 @@ fn advance_sequences_deactivates_clip_after_sequence_end() {
     assert_eq!(
         app.world_mut()
             .query::<&ReleaseMarker>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         1,
         "expected sequence playback to release after the last attached clip deactivates"
@@ -2452,7 +2449,7 @@ fn advance_sequences_deactivates_clip_after_sequence_end() {
     assert_eq!(
         app.world_mut()
             .query::<&ClipReleaseAfterInstance>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         1,
         "expected existing auto-release behavior to be armed at deactivation"
@@ -2564,7 +2561,7 @@ fn advance_sequences_prepares_release_layer_before_first_release_paint() {
     );
     let output = computed
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release layer should keep asserting the released parameter");
     assert!(
         *output > 90.0,
@@ -2621,7 +2618,7 @@ fn release_materialized_sequences_ignores_final_cue_release_timing() {
         .expect("release should freeze the rendered final cue");
     let transition = release_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .map(|(_, transition)| transition)
         .expect("release should retain the frozen parameter until immediate release completes");
     assert!(
@@ -2741,7 +2738,7 @@ fn advance_sequences_does_not_release_after_wraparound() {
     assert_eq!(
         app.world_mut()
             .query::<&ReleaseMarker>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "wrapped sequence should not release when it wraps to the first cue"
@@ -2749,7 +2746,7 @@ fn advance_sequences_does_not_release_after_wraparound() {
     assert_eq!(
         app.world_mut()
             .query::<&ClipReleaseAfterInstance>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "wrapped sequence should not arm clip auto-release on wraparound"
@@ -2795,7 +2792,7 @@ fn advance_sequences_without_clock_does_not_deactivate_from_wall_time() {
     assert_eq!(
         app.world_mut()
             .query::<&ReleaseMarker>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "unclocked sequence should not release from stale host activation time"
@@ -2849,10 +2846,10 @@ fn advance_sequences_latches_final_output_without_auto_release() {
     let manual_value = app
         .world_mut()
         .query_filtered::<&Layer, With<ManualAssertionLayer>>()
-        .single(&app.world())
+        .single(app.world())
         .expect("manual assertion layer should exist")
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .map(|(value, _)| *value);
 
     assert_eq!(
@@ -2863,7 +2860,7 @@ fn advance_sequences_latches_final_output_without_auto_release() {
     assert_eq!(
         app.world_mut()
             .query::<&ClipReleaseAfterInstance>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "expected no global auto-release watcher when auto-release is disabled"
@@ -2921,7 +2918,7 @@ fn advance_sequences_defers_non_auto_release_until_output_exists() {
     assert_eq!(
         app.world_mut()
             .query::<&ReleaseMarker>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "expected sequence release to wait for a computed output layer"
@@ -2974,7 +2971,7 @@ fn advance_sequences_keeps_clip_active_without_sequence_end_option() {
     assert_eq!(
         app.world_mut()
             .query::<&ReleaseMarker>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "expected sequence playback to keep holding at the final cue"
@@ -3351,7 +3348,7 @@ fn after_delay_overlap_keeps_retained_htp_assertions_active() {
     let sequence_layer = materialized.to_layer_at_clock(&mut param_query, Some(&clock));
     let value_606 = match sequence_layer
         .absolute
-        .get(&parameter_606)
+        .get(parameter_606)
         .expect("606 on should still contribute")
         .0
     {
@@ -3360,7 +3357,7 @@ fn after_delay_overlap_keeps_retained_htp_assertions_active() {
     };
     let value_605 = match sequence_layer
         .absolute
-        .get(&parameter_605)
+        .get(parameter_605)
         .expect("605 on should still win over the lower off cue")
         .0
     {
@@ -3917,7 +3914,7 @@ fn advance_sequences_uses_instance_clock_for_sequence_end() {
     assert_eq!(
         app.world_mut()
             .query::<&MaterializedClip>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "sequence end should deactivate after playback-clock elapsed time completes"
@@ -4020,7 +4017,7 @@ fn advance_sequences_waits_for_final_cue_transition_span() {
     assert_eq!(
         app.world_mut()
             .query::<&MaterializedClip>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         1,
         "final cue should remain active before its full transition span completes"
@@ -4035,7 +4032,7 @@ fn advance_sequences_waits_for_final_cue_transition_span() {
     assert_eq!(
         app.world_mut()
             .query::<&MaterializedClip>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "sequence end should deactivate after the final cue transition span completes"
@@ -4100,7 +4097,7 @@ fn advance_sequences_releases_at_completion_before_release_cue_entry_span() {
     assert_eq!(
         app.world_mut()
             .query::<&MaterializedClip>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "release cue Delay In should not postpone sequence-end release"
@@ -4108,7 +4105,7 @@ fn advance_sequences_releases_at_completion_before_release_cue_entry_span() {
     assert_eq!(
         app.world_mut()
             .query::<&ReleaseMarker>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         1,
         "sequence should enter release at final cue completion"
@@ -4215,7 +4212,7 @@ fn advance_sequences_waits_for_empty_final_cue_authored_duration() {
     assert_eq!(
         app.world_mut()
             .query::<&MaterializedClip>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         1,
         "empty final cue should remain active until authored timing completes"
@@ -4230,7 +4227,7 @@ fn advance_sequences_waits_for_empty_final_cue_authored_duration() {
     assert_eq!(
         app.world_mut()
             .query::<&MaterializedClip>()
-            .iter(&app.world())
+            .iter(app.world())
             .count(),
         0,
         "sequence end should deactivate after authored cue timing completes"

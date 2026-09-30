@@ -153,7 +153,7 @@ fn materialized_absolute_value(
     match cue
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("parameter should be materialized")
         .0
     {
@@ -224,12 +224,7 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         materialized_absolute_value(&first_reference, red_parameter),
         32.0
     );
-    assert!(
-        !first_reference
-            .values
-            .absolute
-            .contains_key(&blue_parameter)
-    );
+    assert!(!first_reference.values.absolute.contains_key(blue_parameter));
 
     let original = blueprint.clone();
     let mut updated = blueprint;
@@ -268,7 +263,7 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         !unchanged_absolute
             .values
             .absolute
-            .contains_key(&blue_parameter)
+            .contains_key(blue_parameter)
     );
 
     let mut removed_red = updated;
@@ -282,7 +277,7 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         !removed_reference
             .values
             .absolute
-            .contains_key(&red_parameter)
+            .contains_key(red_parameter)
     );
     assert_eq!(
         materialized_absolute_value(&removed_reference, blue_parameter),
@@ -303,7 +298,7 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         !restored_reference
             .values
             .absolute
-            .contains_key(&blue_parameter)
+            .contains_key(blue_parameter)
     );
 }
 
@@ -621,7 +616,7 @@ fn paint_materialized_cues_applies_color_path_samples() {
         .expect("standalone cue should paint a layer");
     let sampled = |parameter: Instance<Parameter>| match layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("color parameter should be sampled")
         .0
     {
@@ -735,7 +730,7 @@ fn paint_materialized_cues_samples_color_paths_from_lower_layer_base() {
         .expect("standalone cue should paint a layer");
     let sampled = |parameter: Instance<Parameter>| match layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("color parameter should be sampled")
         .0
     {
@@ -856,7 +851,7 @@ fn paint_materialized_cues_gives_each_color_path_cue_its_own_lower_base() {
             .expect("standalone cue should paint a layer");
         let sampled = |attribute: Attribute| match layer
             .absolute
-            .get(&parameter(attribute))
+            .get(parameter(attribute))
             .expect("color parameter should be sampled")
             .0
         {
@@ -950,7 +945,7 @@ fn non_intensity_out_timing_supplies_assertion_fade() {
     let transition = materialized
         .values
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("red should be materialized")
         .1
         .as_ref()
@@ -997,14 +992,14 @@ fn set_start_position_updates_value_and_release_timing_transitions() {
     assert_eq!(
         cue.values
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .and_then(|(_, transition)| transition.as_ref())
             .map(|transition| transition.start_position),
         Some(Duration::from_millis(750))
     );
     assert_eq!(
         cue.release_timing_overrides
-            .get(&parameter)
+            .get(parameter)
             .map(|transition| transition.start_position),
         Some(Duration::from_millis(750))
     );
@@ -1624,7 +1619,7 @@ fn materialize_fans_values_by_resolved_selection_index() {
             materialized
                 .values
                 .absolute
-                .get(&parameter)
+                .get(parameter)
                 .expect("fixture should receive an intensity value")
                 .0
         })
@@ -1700,7 +1695,7 @@ fn materialize_fixture_attribute_timing_overrides_instruction_fan() {
             materialized
                 .values
                 .absolute
-                .get(&parameter)
+                .get(parameter)
                 .expect("fixture should receive an intensity value")
                 .1
                 .as_ref()
@@ -1797,7 +1792,7 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
     let virtual_intensity_transition = materialized
         .values
         .absolute
-        .get(&virtual_intensity_parameter)
+        .get(virtual_intensity_parameter)
         .expect("virtual intensity should be materialized")
         .1
         .as_ref()
@@ -1810,7 +1805,7 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
     let red_transition = materialized
         .values
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("red should be materialized")
         .1
         .as_ref()
@@ -1838,11 +1833,11 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
     );
     let virtual_intensity_value = *computed
         .absolute
-        .get(&virtual_intensity_parameter)
+        .get(virtual_intensity_parameter)
         .expect("virtual intensity should still output while fading");
     let red_value = *computed
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("red should remain asserted during virtual intensity fade");
 
     assert!(
@@ -1936,21 +1931,21 @@ fn release_cue_intensity_timing_resolves_virtual_intensity() {
         release_materialized
             .values
             .absolute
-            .get(&virtual_intensity_parameter)
+            .get(virtual_intensity_parameter)
             .is_none(),
         "release cue should carry timing without asserting virtual intensity"
     );
     assert!(
         release_materialized
             .release_timing_overrides
-            .get(&virtual_intensity_parameter)
+            .get(virtual_intensity_parameter)
             .is_some(),
         "release cue should materialize Intensity timing against virtual intensity"
     );
 
     let release_timings = release_materialized.release_timings_by_parameter();
     let virtual_intensity_transition = release_timings
-        .get(&virtual_intensity_parameter)
+        .get(virtual_intensity_parameter)
         .expect("release timing should resolve against virtual intensity");
     assert_eq!(
         virtual_intensity_transition.fade_out,
@@ -1959,7 +1954,7 @@ fn release_cue_intensity_timing_resolves_virtual_intensity() {
     let red_transition = materialized
         .values
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("red should be materialized")
         .1
         .as_ref()
@@ -2049,17 +2044,17 @@ fn release_cue_global_timing_resolves_virtual_intensity() {
         release_materialized
             .values
             .absolute
-            .get(&virtual_intensity_parameter)
+            .get(virtual_intensity_parameter)
             .is_none(),
         "release cue should not assert virtual intensity"
     );
     let release_timings = release_materialized.release_timings_by_parameter();
     let release_virtual_transition = release_timings
-        .get(&virtual_intensity_parameter)
+        .get(virtual_intensity_parameter)
         .expect("cue-level release timing should resolve against virtual intensity");
     assert_eq!(release_virtual_transition.fade_out, Duration::from_secs(2));
     assert!(
-        materialized.values.absolute.get(&red_parameter).is_some(),
+        materialized.values.absolute.get(red_parameter).is_some(),
         "source cue should still materialize red independently of release timing extraction"
     );
 }
@@ -2123,7 +2118,7 @@ fn materialize_inverts_only_targeted_attributes() {
             materialized
                 .values
                 .absolute
-                .get(&parameter)
+                .get(parameter)
                 .expect("fixture should receive a pan value")
                 .0
         })
@@ -2136,7 +2131,7 @@ fn materialize_inverts_only_targeted_attributes() {
             materialized
                 .values
                 .absolute
-                .get(&parameter)
+                .get(parameter)
                 .expect("fixture should receive a tilt value")
                 .0
         })
@@ -2219,7 +2214,7 @@ fn materialize_cue_parts_share_start_and_override_in_order() {
     let (value, transition) = materialized
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("fixture should receive an intensity value");
 
     assert_eq!(*value, ParameterValue::Absolute { value: 30.0 });
@@ -2308,7 +2303,7 @@ fn materialize_cue_part_inherits_parent_cue_transition() {
     let transition = materialized
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("part value should materialize with inherited transition");
 
@@ -2316,7 +2311,7 @@ fn materialize_cue_part_inherits_parent_cue_transition() {
         materialized
             .values
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 0.0 })
     );

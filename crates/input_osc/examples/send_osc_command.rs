@@ -211,7 +211,7 @@ fn parse_bool(value: &str) -> Result<bool, String> {
 
 fn parse_blob(value: &str) -> Result<Vec<u8>, String> {
     let hex = value.strip_prefix("0x").unwrap_or(value);
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err("blob hex length must be even".to_string());
     }
 

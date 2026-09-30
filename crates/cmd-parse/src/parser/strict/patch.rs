@@ -273,9 +273,9 @@ fn parse_patch_fixture_target_from_tokens<'i>(
 }
 
 #[cfg(test)]
-fn split_target_and_modifiers<'a, 'i>(
+fn split_target_and_modifiers<'i>(
     command_str: &'i str,
-    tokens: &[&'a LexerToken],
+    tokens: &[&LexerToken],
     target_required: bool,
 ) -> Option<(
     Option<PatchEndpointAst<'i>>,

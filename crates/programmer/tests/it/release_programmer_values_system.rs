@@ -440,7 +440,7 @@ fn test_legacy_release_programmer_values_is_handled() {
     app.update();
 
     let programmer = app.world().resource::<Programmer>();
-    let attrs = fixture_attribute_map(&programmer);
+    let attrs = fixture_attribute_map(programmer);
     assert_eq!(
         attrs.get(&fixture),
         Some(&HashSet::from([Attribute::Blue])),
@@ -471,7 +471,7 @@ fn test_release_programmer_values_with_selection_and_attr_filter() {
     app.update();
 
     let programmer = app.world().resource::<Programmer>();
-    let attrs = fixture_attribute_map(&programmer);
+    let attrs = fixture_attribute_map(programmer);
     assert_eq!(
         attrs.len(),
         2,
@@ -525,7 +525,7 @@ fn test_release_programmer_values_splits_whole_fixture_for_element_clear() {
     app.update();
 
     let programmer = app.world().resource::<Programmer>();
-    let attrs = fixture_attribute_map(&programmer);
+    let attrs = fixture_attribute_map(programmer);
     assert_eq!(
         attrs,
         HashMap::from([
@@ -584,7 +584,7 @@ fn test_release_programmer_values_splits_whole_fixture_for_element_attribute_cle
     app.update();
 
     let programmer = app.world().resource::<Programmer>();
-    let attrs = fixture_attribute_map(&programmer);
+    let attrs = fixture_attribute_map(programmer);
     assert_eq!(
         attrs,
         HashMap::from([
@@ -632,7 +632,7 @@ fn test_release_programmer_values_without_selection_applies_globally() {
     app.update();
 
     let programmer = app.world().resource::<Programmer>();
-    let attrs = fixture_attribute_map(&programmer);
+    let attrs = fixture_attribute_map(programmer);
     assert_eq!(
         attrs.len(),
         2,
@@ -716,7 +716,7 @@ fn test_release_programmer_values_matches_group_selection_with_wildcard_indices(
     app.update();
 
     let programmer = app.world().resource::<Programmer>();
-    let attrs = fixture_attribute_map(&programmer);
+    let attrs = fixture_attribute_map(programmer);
     assert!(
         attrs.get(&fixture_ref_indexed).is_none(),
         "Fixture 501 should be removed from programmer after clear fix 501"
@@ -849,7 +849,7 @@ fn test_release_programmer_values_removes_fixture_from_group_range_instruction()
 
     let fixture_501_uid = Uuid::from_u128(501);
     let programmer = app.world().resource::<Programmer>();
-    let rows = fixture_attribute_map(&programmer);
+    let rows = fixture_attribute_map(programmer);
     assert!(
         !rows
             .keys()
@@ -952,7 +952,7 @@ fn test_explicitly_approved_desk_release_removes_fixture_from_group_range_instru
 
     let fixture_501_uid = Uuid::from_u128(501);
     let programmer = app.world().resource::<Programmer>();
-    let rows = fixture_attribute_map(&programmer);
+    let rows = fixture_attribute_map(programmer);
     assert!(
         !rows
             .keys()

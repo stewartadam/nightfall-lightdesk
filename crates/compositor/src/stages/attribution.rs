@@ -139,8 +139,8 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer1, object1.clone());
 
         // Verify first layer is tracked
-        assert!(composited.absolute.contains_key(&param));
-        let (owner, (value, _)) = composited.absolute.get(&param).unwrap();
+        assert!(composited.absolute.contains_key(param));
+        let (owner, (value, _)) = composited.absolute.get(param).unwrap();
         assert_eq!(owner, &object1);
         if let ParameterValue::Absolute { value: v } = value {
             assert_eq!(*v, 100.0);
@@ -157,7 +157,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer2, object2.clone());
 
         // Verify second layer overwrote the first
-        let (owner, (value, _)) = composited.absolute.get(&param).unwrap();
+        let (owner, (value, _)) = composited.absolute.get(param).unwrap();
         assert_eq!(owner, &object2);
         if let ParameterValue::Absolute { value: v } = value {
             assert_eq!(*v, 200.0);
@@ -184,8 +184,8 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer1, object1.clone());
 
         // Verify first layer
-        assert!(composited.relative.contains_key(&param));
-        let (owner, (value, _)) = composited.relative.get(&param).unwrap();
+        assert!(composited.relative.contains_key(param));
+        let (owner, (value, _)) = composited.relative.get(param).unwrap();
         assert_eq!(owner, &object1);
         if let ParameterValue::Relative { offset } = value {
             assert_eq!(*offset, 30.0);
@@ -202,7 +202,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer2, object2.clone());
 
         // Verify values accumulated and owner updated to most recent
-        let (owner, (value, _)) = composited.relative.get(&param).unwrap();
+        let (owner, (value, _)) = composited.relative.get(param).unwrap();
         assert_eq!(owner, &object2); // Most recent object
         if let ParameterValue::Relative { offset } = value {
             assert_eq!(*offset, 50.0); // 30 + 20
@@ -249,7 +249,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer2, object2.clone());
 
         // Verify values accumulated
-        let (owner, (value, _)) = composited.relative.get(&param).unwrap();
+        let (owner, (value, _)) = composited.relative.get(param).unwrap();
         assert_eq!(owner, &object2);
         if let ParameterValue::RelativePercent { offset } = value {
             // Values accumulated (25 + 15 = 40)
@@ -290,7 +290,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer, object1.clone());
 
         // Verify transition is tracked
-        let (_, (_, stored_transition)) = composited.absolute.get(&param).unwrap();
+        let (_, (_, stored_transition)) = composited.absolute.get(param).unwrap();
         assert!(stored_transition.is_some());
         assert_eq!(stored_transition.as_ref().unwrap(), &transition);
     }
@@ -322,9 +322,9 @@ mod tests {
         assert_eq!(composited.absolute.len(), 2);
         assert_eq!(composited.relative.len(), 1);
 
-        let (owner1, _) = composited.absolute.get(&param1).unwrap();
-        let (owner2, _) = composited.absolute.get(&param2).unwrap();
-        let (owner3, _) = composited.relative.get(&param3).unwrap();
+        let (owner1, _) = composited.absolute.get(param1).unwrap();
+        let (owner2, _) = composited.absolute.get(param2).unwrap();
+        let (owner3, _) = composited.relative.get(param3).unwrap();
 
         assert_eq!(owner1, &object1);
         assert_eq!(owner2, &object1);
@@ -420,7 +420,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer3, object3.clone());
 
         // Verify final owner is object3
-        let (owner, (value, _)) = composited.absolute.get(&param).unwrap();
+        let (owner, (value, _)) = composited.absolute.get(param).unwrap();
         assert_eq!(owner, &object3);
         if let ParameterValue::Absolute { value: v } = value {
             assert_eq!(*v, 200.0);
@@ -461,7 +461,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer2, object2.clone());
 
         // Should replace with the new value (and log warning)
-        let (owner, (value, _)) = composited.relative.get(&param).unwrap();
+        let (owner, (value, _)) = composited.relative.get(param).unwrap();
         assert_eq!(owner, &object2);
         if let ParameterValue::RelativePercent { offset } = value {
             assert_eq!(*offset, Percentage::from(20.0));

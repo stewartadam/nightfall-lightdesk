@@ -220,13 +220,10 @@ pub fn build_slot_plan_with_snapshot(snapshot: &CommandPrefixSnapshot<'_>) -> Sl
         .collect();
     let mut next_clause_options = Vec::new();
     for source in &projected {
-        if let Some(clause) = source
-            .entry_clause
-            .or_else(|| match source.expectation.target {
-                ContinuationTarget::Clause(clause) => Some(clause),
-                _ => None,
-            })
-        {
+        if let Some(clause) = source.entry_clause.or(match source.expectation.target {
+            ContinuationTarget::Clause(clause) => Some(clause),
+            _ => None,
+        }) {
             if !next_clause_options.contains(&clause) {
                 next_clause_options.push(clause);
             }

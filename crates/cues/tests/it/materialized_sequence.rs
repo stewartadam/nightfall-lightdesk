@@ -978,8 +978,8 @@ fn lookahead_preasserts_downstream_position_for_dark_fixture() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&pan_parameter), Some(&45.0));
-    assert_eq!(layer.absolute.get(&tilt_parameter), Some(&90.0));
+    assert_eq!(layer.absolute.get(pan_parameter), Some(&45.0));
+    assert_eq!(layer.absolute.get(tilt_parameter), Some(&90.0));
 }
 
 /// Verifies native authored projection matches runtime lookahead assertions for a dark fixture.
@@ -1044,8 +1044,8 @@ fn authored_lookahead_projection_matches_runtime_dark_fixture_assertions() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&pan_parameter), Some(&45.0));
-    assert_eq!(layer.absolute.get(&tilt_parameter), Some(&90.0));
+    assert_eq!(layer.absolute.get(pan_parameter), Some(&45.0));
+    assert_eq!(layer.absolute.get(tilt_parameter), Some(&90.0));
     assert_eq!(projected.len(), 2);
     assert!(projected.iter().all(|value| value.source.cue_id == 2));
     assert!(projected.iter().any(|value| {
@@ -1105,7 +1105,7 @@ fn lookahead_preasserts_position_for_fixture_without_intensity_parameter() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&tilt_parameter), Some(&90.0));
+    assert_eq!(layer.absolute.get(tilt_parameter), Some(&90.0));
 }
 
 /// Verifies sequence Lookahead ignores global current intensity when the sequence has not lit the fixture.
@@ -1159,7 +1159,7 @@ fn lookahead_preasserts_position_when_only_global_intensity_is_on() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&target_tilt_parameter), Some(&90.0));
+    assert_eq!(layer.absolute.get(target_tilt_parameter), Some(&90.0));
 }
 
 /// Verifies downstream pan and tilt are left untouched when lookahead is disabled.
@@ -1204,7 +1204,7 @@ fn lookahead_disabled_does_not_preassert_downstream_position() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&pan_parameter), None);
+    assert_eq!(layer.absolute.get(pan_parameter), None);
 }
 
 /// Verifies a forced playback disable suppresses cue-authored lookahead.
@@ -1261,7 +1261,7 @@ fn lookahead_force_disabled_does_not_preassert_cue_authored_position() {
         },
     );
 
-    assert_eq!(layer.absolute.get(&pan_parameter), None);
+    assert_eq!(layer.absolute.get(pan_parameter), None);
 }
 
 /// Verifies relative downstream position values are ignored by lookahead.
@@ -1306,7 +1306,7 @@ fn lookahead_ignores_relative_position_values() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&pan_parameter), None);
+    assert_eq!(layer.absolute.get(pan_parameter), None);
 }
 
 /// Verifies lookahead does not look through an intervening cue that makes the fixture visible.
@@ -1363,7 +1363,7 @@ fn lookahead_stops_at_intervening_visible_cue() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&pan_parameter), None);
+    assert_eq!(layer.absolute.get(pan_parameter), None);
 }
 
 /// Verifies native authored projection and runtime assertions both stop at visible blockers.
@@ -1422,7 +1422,7 @@ fn authored_lookahead_projection_matches_runtime_visible_blocker() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&pan_parameter), None);
+    assert_eq!(layer.absolute.get(pan_parameter), None);
     assert!(projected.is_empty());
 }
 
@@ -1473,7 +1473,7 @@ fn authored_lookahead_projection_matches_runtime_wrapped_source() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&pan_parameter), Some(&45.0));
+    assert_eq!(layer.absolute.get(pan_parameter), Some(&45.0));
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].fixture, fixture_ref);
     assert_eq!(projected[0].attribute, "Pan");
@@ -1565,7 +1565,7 @@ fn wrapped_lookahead_uses_ordered_cue_part_source() {
 
     let layer = render_sequence_layer(&mut app, &mut msequence);
 
-    assert_eq!(layer.absolute.get(&pan_parameter), Some(&45.0));
+    assert_eq!(layer.absolute.get(pan_parameter), Some(&45.0));
 }
 
 /// Derives a source-local playback position from legacy test start-time anchors.
@@ -1646,15 +1646,15 @@ fn sequence_rgb_color_path_uses_grouped_hsv_midpoint() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     let red = *midpoint_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("color path midpoint should assert red");
     let green = *midpoint_layer
         .absolute
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("color path midpoint should assert green");
     let blue = *midpoint_layer
         .absolute
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("color path midpoint should assert blue");
 
     assert!(red > 240.0, "HSV midpoint should stay red-heavy, got {red}");
@@ -1754,15 +1754,15 @@ fn sequence_rgb_color_path_applies_midpoint_brightness_only_inside_fade() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     let red_midpoint = *midpoint_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("midpoint brightness should assert red");
     let green_midpoint = *midpoint_layer
         .absolute
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("midpoint brightness should assert green");
     let blue_midpoint = *midpoint_layer
         .absolute
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("midpoint brightness should assert blue");
 
     assert!(
@@ -1785,7 +1785,7 @@ fn sequence_rgb_color_path_applies_midpoint_brightness_only_inside_fade() {
     assert!(
         completed_layer
             .absolute
-            .get(&red_parameter)
+            .get(red_parameter)
             .copied()
             .unwrap_or_default()
             < 10.0,
@@ -1794,7 +1794,7 @@ fn sequence_rgb_color_path_applies_midpoint_brightness_only_inside_fade() {
     assert!(
         completed_layer
             .absolute
-            .get(&green_parameter)
+            .get(green_parameter)
             .copied()
             .unwrap_or_default()
             > 240.0,
@@ -1896,7 +1896,7 @@ fn sequence_rgbw_color_path_applies_auxiliary_emitter_timing() {
     let midpoint_layer =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     assert_eq!(
-        midpoint_layer.absolute.get(&white_parameter).copied(),
+        midpoint_layer.absolute.get(white_parameter).copied(),
         Some(255.0),
         "white should hold its start value until the color path emitter delay has elapsed"
     );
@@ -1908,7 +1908,7 @@ fn sequence_rgbw_color_path_applies_auxiliary_emitter_timing() {
     let completed_layer =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&completed_clock));
     assert_eq!(
-        completed_layer.absolute.get(&white_parameter).copied(),
+        completed_layer.absolute.get(white_parameter).copied(),
         Some(0.0),
         "white should reach its destination after the delayed emitter timing completes"
     );
@@ -1982,19 +1982,19 @@ fn sequence_rgbw_color_path_decomposes_rgb_sample_to_white_emitter() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     let red = *midpoint_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("midpoint should assert red residual");
     let green = *midpoint_layer
         .absolute
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("midpoint should assert green residual");
     let blue = *midpoint_layer
         .absolute
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("midpoint should assert blue residual");
     let white = *midpoint_layer
         .absolute
-        .get(&white_parameter)
+        .get(white_parameter)
         .expect("midpoint should assert decomposed white");
 
     assert!(
@@ -2021,22 +2021,22 @@ fn sequence_rgbw_color_path_decomposes_rgb_sample_to_white_emitter() {
     let completed_layer =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&completed_clock));
     assert_eq!(
-        completed_layer.absolute.get(&red_parameter).copied(),
+        completed_layer.absolute.get(red_parameter).copied(),
         Some(0.0),
         "completed RGBW decomposition should leave no red residual"
     );
     assert_eq!(
-        completed_layer.absolute.get(&green_parameter).copied(),
+        completed_layer.absolute.get(green_parameter).copied(),
         Some(0.0),
         "completed RGBW decomposition should leave no green residual"
     );
     assert_eq!(
-        completed_layer.absolute.get(&blue_parameter).copied(),
+        completed_layer.absolute.get(blue_parameter).copied(),
         Some(0.0),
         "completed RGBW decomposition should leave no blue residual"
     );
     assert_eq!(
-        completed_layer.absolute.get(&white_parameter).copied(),
+        completed_layer.absolute.get(white_parameter).copied(),
         Some(255.0),
         "completed RGBW decomposition should emit full white"
     );
@@ -2134,17 +2134,17 @@ fn sequence_rgbw_color_path_decomposition_applies_white_timing() {
     let midpoint_layer =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     assert_eq!(
-        midpoint_layer.absolute.get(&red_parameter).copied(),
+        midpoint_layer.absolute.get(red_parameter).copied(),
         Some(255.0),
         "red should remain full while delayed white has not started"
     );
     let green = *midpoint_layer
         .absolute
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("midpoint should retain green residual");
     let blue = *midpoint_layer
         .absolute
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("midpoint should retain blue residual");
     assert!(
         (120.0..=140.0).contains(&green),
@@ -2155,7 +2155,7 @@ fn sequence_rgbw_color_path_decomposition_applies_white_timing() {
         "blue residual should stay on RGB while white is delayed, got {blue}"
     );
     assert_eq!(
-        midpoint_layer.absolute.get(&white_parameter).copied(),
+        midpoint_layer.absolute.get(white_parameter).copied(),
         Some(0.0),
         "white should hold its start value until its color path timing begins"
     );
@@ -2167,22 +2167,22 @@ fn sequence_rgbw_color_path_decomposition_applies_white_timing() {
     let completed_layer =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&completed_clock));
     assert_eq!(
-        completed_layer.absolute.get(&red_parameter).copied(),
+        completed_layer.absolute.get(red_parameter).copied(),
         Some(0.0),
         "completed delayed decomposition should leave no red residual"
     );
     assert_eq!(
-        completed_layer.absolute.get(&green_parameter).copied(),
+        completed_layer.absolute.get(green_parameter).copied(),
         Some(0.0),
         "completed delayed decomposition should leave no green residual"
     );
     assert_eq!(
-        completed_layer.absolute.get(&blue_parameter).copied(),
+        completed_layer.absolute.get(blue_parameter).copied(),
         Some(0.0),
         "completed delayed decomposition should leave no blue residual"
     );
     assert_eq!(
-        completed_layer.absolute.get(&white_parameter).copied(),
+        completed_layer.absolute.get(white_parameter).copied(),
         Some(255.0),
         "completed delayed decomposition should emit full white"
     );
@@ -2278,7 +2278,7 @@ fn sequence_scalar_color_path_applies_emitter_timing_without_rgb_vector() {
     let midpoint_layer =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     assert_eq!(
-        midpoint_layer.absolute.get(&white_parameter).copied(),
+        midpoint_layer.absolute.get(white_parameter).copied(),
         Some(255.0),
         "white should hold its start value until scalar color path emitter delay has elapsed"
     );
@@ -2290,7 +2290,7 @@ fn sequence_scalar_color_path_applies_emitter_timing_without_rgb_vector() {
     let completed_layer =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&completed_clock));
     assert_eq!(
-        completed_layer.absolute.get(&white_parameter).copied(),
+        completed_layer.absolute.get(white_parameter).copied(),
         Some(0.0),
         "white should reach its destination after scalar color path timing completes"
     );
@@ -2364,15 +2364,15 @@ fn sequence_cmy_color_path_uses_grouped_hsv_midpoint() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     let cyan = *midpoint_layer
         .absolute
-        .get(&cyan_parameter)
+        .get(cyan_parameter)
         .expect("CMY color path midpoint should assert cyan");
     let magenta = *midpoint_layer
         .absolute
-        .get(&magenta_parameter)
+        .get(magenta_parameter)
         .expect("CMY color path midpoint should assert magenta");
     let yellow = *midpoint_layer
         .absolute
-        .get(&yellow_parameter)
+        .get(yellow_parameter)
         .expect("CMY color path midpoint should assert yellow");
 
     assert!(
@@ -2457,15 +2457,15 @@ fn sequence_rgb_without_color_path_uses_native_interpolation() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
 
     assert_eq!(
-        midpoint_layer.absolute.get(&red_parameter).copied(),
+        midpoint_layer.absolute.get(red_parameter).copied(),
         Some(127.5)
     );
     assert_eq!(
-        midpoint_layer.absolute.get(&green_parameter).copied(),
+        midpoint_layer.absolute.get(green_parameter).copied(),
         Some(0.0)
     );
     assert_eq!(
-        midpoint_layer.absolute.get(&blue_parameter).copied(),
+        midpoint_layer.absolute.get(blue_parameter).copied(),
         Some(127.5)
     );
 }
@@ -2555,7 +2555,7 @@ fn sequence_rgb_color_path_recomputes_when_start_color_changes() {
     assert!(
         red_start_midpoint
             .absolute
-            .get(&red_parameter)
+            .get(red_parameter)
             .copied()
             .unwrap_or_default()
             > 240.0,
@@ -2564,7 +2564,7 @@ fn sequence_rgb_color_path_recomputes_when_start_color_changes() {
     assert!(
         red_start_midpoint
             .absolute
-            .get(&green_parameter)
+            .get(green_parameter)
             .copied()
             .unwrap_or_default()
             < 10.0,
@@ -2573,7 +2573,7 @@ fn sequence_rgb_color_path_recomputes_when_start_color_changes() {
     assert!(
         red_start_midpoint
             .absolute
-            .get(&blue_parameter)
+            .get(blue_parameter)
             .copied()
             .unwrap_or_default()
             > 240.0,
@@ -2593,7 +2593,7 @@ fn sequence_rgb_color_path_recomputes_when_start_color_changes() {
     assert!(
         green_start_midpoint
             .absolute
-            .get(&red_parameter)
+            .get(red_parameter)
             .copied()
             .unwrap_or_default()
             < 10.0,
@@ -2602,7 +2602,7 @@ fn sequence_rgb_color_path_recomputes_when_start_color_changes() {
     assert!(
         green_start_midpoint
             .absolute
-            .get(&green_parameter)
+            .get(green_parameter)
             .copied()
             .unwrap_or_default()
             > 240.0,
@@ -2611,7 +2611,7 @@ fn sequence_rgb_color_path_recomputes_when_start_color_changes() {
     assert!(
         green_start_midpoint
             .absolute
-            .get(&blue_parameter)
+            .get(blue_parameter)
             .copied()
             .unwrap_or_default()
             > 240.0,
@@ -2702,15 +2702,15 @@ fn sequence_rgb_color_path_resolves_custom_showfile_path() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     let red = *midpoint_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("custom path midpoint should assert red");
     let green = *midpoint_layer
         .absolute
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("custom path midpoint should assert green");
     let blue = *midpoint_layer
         .absolute
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("custom path midpoint should assert blue");
 
     assert!(
@@ -2820,15 +2820,15 @@ fn sequence_rgb_color_path_applies_emitter_timing() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
 
     assert_eq!(
-        midpoint_layer.absolute.get(&red_parameter).copied(),
+        midpoint_layer.absolute.get(red_parameter).copied(),
         Some(127.5)
     );
     assert_eq!(
-        midpoint_layer.absolute.get(&green_parameter).copied(),
+        midpoint_layer.absolute.get(green_parameter).copied(),
         Some(0.0)
     );
     assert_eq!(
-        midpoint_layer.absolute.get(&blue_parameter).copied(),
+        midpoint_layer.absolute.get(blue_parameter).copied(),
         Some(0.0)
     );
 }
@@ -2911,15 +2911,15 @@ fn sequence_rgb_color_path_uses_fixture_default() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     let red = *midpoint_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("default color path midpoint should assert red");
     let green = *midpoint_layer
         .absolute
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("default color path midpoint should assert green");
     let blue = *midpoint_layer
         .absolute
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("default color path midpoint should assert blue");
 
     assert!(
@@ -3029,15 +3029,15 @@ fn sequence_rgb_color_path_explicit_assignment_overrides_fixture_default() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&midpoint_clock));
     let red = *midpoint_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("explicit color path midpoint should assert red");
     let green = *midpoint_layer
         .absolute
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("explicit color path midpoint should assert green");
     let blue = *midpoint_layer
         .absolute
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("explicit color path midpoint should assert blue");
 
     assert!(
@@ -3123,7 +3123,7 @@ fn cue_with_tracking_none_does_not_track_values_into_next_cue() {
     msequence.set_position(2);
     let cue_2_layer = render_sequence_layer(&mut app, &mut msequence);
     assert_eq!(
-        cue_2_layer.absolute.get(&parameter),
+        cue_2_layer.absolute.get(parameter),
         Some(&200.0),
         "cue 2 should still output its own value while it is the active cue"
     );
@@ -3131,7 +3131,7 @@ fn cue_with_tracking_none_does_not_track_values_into_next_cue() {
     msequence.set_position(3);
     let cue_3_layer = render_sequence_layer(&mut app, &mut msequence);
     assert_eq!(
-        cue_3_layer.absolute.get(&parameter),
+        cue_3_layer.absolute.get(parameter),
         None,
         "cue 2 value should not remain tracked into cue 3 when cue 2 tracking is none"
     );
@@ -3185,7 +3185,7 @@ fn cue_without_tracking_mode_uses_legacy_tracking_flags() {
     msequence.set_position(1);
     let cue_1_layer = render_sequence_layer(&mut app, &mut msequence);
     assert_eq!(
-        cue_1_layer.absolute.get(&parameter),
+        cue_1_layer.absolute.get(parameter),
         Some(&200.0),
         "legacy cue should output its own value while active"
     );
@@ -3193,7 +3193,7 @@ fn cue_without_tracking_mode_uses_legacy_tracking_flags() {
     msequence.set_position(2);
     let cue_2_layer = render_sequence_layer(&mut app, &mut msequence);
     assert_eq!(
-        cue_2_layer.absolute.get(&parameter),
+        cue_2_layer.absolute.get(parameter),
         None,
         "missing tracking mode should preserve legacy tracking_flags behavior"
     );
@@ -3247,7 +3247,7 @@ fn sequence_cue_default_tracking_mode_inherits_sequence_tracking_mode() {
     msequence.set_position(1);
     let cue_1_layer = render_sequence_layer(&mut app, &mut msequence);
     assert_eq!(
-        cue_1_layer.absolute.get(&parameter),
+        cue_1_layer.absolute.get(parameter),
         Some(&200.0),
         "cue 1 should output its own value while it is active"
     );
@@ -3255,7 +3255,7 @@ fn sequence_cue_default_tracking_mode_inherits_sequence_tracking_mode() {
     msequence.set_position(2);
     let cue_2_layer = render_sequence_layer(&mut app, &mut msequence);
     assert_eq!(
-        cue_2_layer.absolute.get(&parameter),
+        cue_2_layer.absolute.get(parameter),
         None,
         "inherited sequence tracking should prevent HTP values from tracking"
     );
@@ -3439,7 +3439,7 @@ fn wrapped_sequence_tracks_values_through_loop_boundary() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&settled_clock));
     let wrapped_value = wrapped_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("wrapped cue should assert tilt");
     assert_eq!(
         *wrapped_value, expected,
@@ -3494,14 +3494,14 @@ fn wrapped_sequence_does_not_track_none_values_through_loop_boundary() {
     msequence.next();
     let cue_two_layer = render_sequence_layer(&mut app, &mut msequence);
     assert!(
-        cue_two_layer.absolute.contains_key(&parameter),
+        cue_two_layer.absolute.contains_key(parameter),
         "cue 2 should still output blue while it is active"
     );
 
     msequence.next();
     let wrapped_layer = render_sequence_layer(&mut app, &mut msequence);
     assert_eq!(
-        wrapped_layer.absolute.get(&parameter),
+        wrapped_layer.absolute.get(parameter),
         None,
         "cue 2 blue should not remain active after wrapping to cue 1 when cue 2 tracking is none"
     );
@@ -3571,7 +3571,7 @@ fn wrapped_sequence_relative_color_cues_do_not_accumulate_previous_values() {
     let cue_one_layer = render_sequence_layer(&mut app, &mut msequence);
     let cue_one_red = *cue_one_layer
         .relative
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("cue 1 should assert red");
     assert!(
         (-130.0..=-125.0).contains(&cue_one_red),
@@ -3582,11 +3582,11 @@ fn wrapped_sequence_relative_color_cues_do_not_accumulate_previous_values() {
     let cue_two_layer = render_sequence_layer(&mut app, &mut msequence);
     let cue_two_red = *cue_two_layer
         .relative
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("cue 2 should keep tracked red");
     let cue_two_green = *cue_two_layer
         .relative
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("cue 2 should assert green");
 
     assert!(
@@ -3598,7 +3598,7 @@ fn wrapped_sequence_relative_color_cues_do_not_accumulate_previous_values() {
         "cue 2 should assert one green half-step, got {cue_two_green}"
     );
     assert_eq!(
-        cue_two_layer.relative.get(&blue_parameter),
+        cue_two_layer.relative.get(blue_parameter),
         None,
         "cue 2 should not assert blue before cue 3"
     );
@@ -3607,15 +3607,15 @@ fn wrapped_sequence_relative_color_cues_do_not_accumulate_previous_values() {
     let cue_three_layer = render_sequence_layer(&mut app, &mut msequence);
     let cue_three_red = *cue_three_layer
         .relative
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("cue 3 should keep tracked red");
     let cue_three_green = *cue_three_layer
         .relative
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("cue 3 should keep tracked green");
     let cue_three_blue = *cue_three_layer
         .relative
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("cue 3 should assert blue");
     assert!(
         (-130.0..=-125.0).contains(&cue_three_red),
@@ -3633,34 +3633,30 @@ fn wrapped_sequence_relative_color_cues_do_not_accumulate_previous_values() {
     msequence.next();
     let wrapped_cue_one_layer = render_sequence_layer(&mut app, &mut msequence);
     assert!(
-        wrapped_cue_one_layer.relative.contains_key(&red_parameter),
+        wrapped_cue_one_layer.relative.contains_key(red_parameter),
         "wrapped cue 1 should still assert red"
     );
     assert!(
-        wrapped_cue_one_layer
-            .relative
-            .contains_key(&green_parameter),
+        wrapped_cue_one_layer.relative.contains_key(green_parameter),
         "wrapped cue 1 should keep tracked green"
     );
     assert!(
-        wrapped_cue_one_layer.relative.contains_key(&blue_parameter),
+        wrapped_cue_one_layer.relative.contains_key(blue_parameter),
         "wrapped cue 1 should keep tracked blue"
     );
 
     msequence.next();
     let wrapped_cue_two_layer = render_sequence_layer(&mut app, &mut msequence);
     assert!(
-        wrapped_cue_two_layer.relative.contains_key(&red_parameter),
+        wrapped_cue_two_layer.relative.contains_key(red_parameter),
         "wrapped cue 2 should keep tracked red"
     );
     assert!(
-        wrapped_cue_two_layer
-            .relative
-            .contains_key(&green_parameter),
+        wrapped_cue_two_layer.relative.contains_key(green_parameter),
         "wrapped cue 2 should assert green"
     );
     assert!(
-        wrapped_cue_two_layer.relative.contains_key(&blue_parameter),
+        wrapped_cue_two_layer.relative.contains_key(blue_parameter),
         "wrapped cue 2 should keep tracked blue from the previous cycle"
     );
 }
@@ -3745,7 +3741,7 @@ fn wrapped_sequence_uses_retained_order_when_wrapping_mid_fade() {
     let cue_three_layer = render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&clock));
     let in_flight_blue = *cue_three_layer
         .relative
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("cue 3 should assert in-flight blue");
     assert!(
         (-20.0..0.0).contains(&in_flight_blue),
@@ -3757,15 +3753,15 @@ fn wrapped_sequence_uses_retained_order_when_wrapping_mid_fade() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&clock));
     let wrapped_red = *wrapped_cue_one_layer
         .relative
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("wrapped cue 1 should assert red");
     let wrapped_green = *wrapped_cue_one_layer
         .relative
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("wrapped cue 1 should keep tracked green");
     let wrapped_blue = *wrapped_cue_one_layer
         .relative
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("wrapped cue 1 should keep visible blue in flight");
 
     assert!(
@@ -3787,15 +3783,15 @@ fn wrapped_sequence_uses_retained_order_when_wrapping_mid_fade() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&clock));
     let second_cycle_red = *second_cycle_cue_two_layer
         .relative
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("second-cycle cue 2 should keep tracked red");
     let second_cycle_green = *second_cycle_cue_two_layer
         .relative
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("second-cycle cue 2 should keep green transition in flight");
     let second_cycle_blue = *second_cycle_cue_two_layer
         .relative
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("second-cycle cue 2 should keep visible blue in flight");
 
     assert!(
@@ -3901,15 +3897,15 @@ fn wrapped_absolute_sequence_keeps_transitioning_after_fifth_go() {
     let fifth_go_layer = render_sequence_layer(&mut app, &mut msequence);
     let red = *fifth_go_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("cue 2 after wrap should include red while fading away");
     let green = *fifth_go_layer
         .absolute
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("cue 2 after wrap should include green while fading in");
     let blue = *fifth_go_layer
         .absolute
-        .get(&blue_parameter)
+        .get(blue_parameter)
         .expect("cue 2 after wrap should include blue while fading away");
 
     assert!(
@@ -4137,11 +4133,11 @@ fn wrapped_sequence_preserves_pre_wrap_base_during_multi_frame_fade() {
     let expected = (base + target) / 2.0;
     let first_value = first_frame
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("first frame should assert tilt");
     let second_value = second_frame
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("second frame should assert tilt");
 
     assert!(
@@ -4218,7 +4214,7 @@ fn wrapped_zero_duration_cue_tracks_into_immediate_follow_previous_transition() 
     assert_eq!(
         *off_complete
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .expect("off cue should assert white"),
         0.0,
         "setup should leave the last rendered look at white off"
@@ -4240,7 +4236,7 @@ fn wrapped_zero_duration_cue_tracks_into_immediate_follow_previous_transition() 
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&one_millisecond_into_off));
     let value = *caught_up
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("caught-up off cue should still assert white");
 
     assert!(
@@ -4347,7 +4343,7 @@ fn wrapped_zero_duration_cue_tracks_through_autonomous_catch_up() {
     let value = *output_layer
         .0
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("caught-up follower should assert white");
 
     assert!(
@@ -4570,7 +4566,7 @@ fn wrapped_htp_off_cue_fades_from_skipped_on_cue_after_wrap() {
     assert_eq!(
         *off_complete
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .expect("off cue should assert white"),
         0.0,
         "setup should leave the last rendered look at white off"
@@ -4586,7 +4582,7 @@ fn wrapped_htp_off_cue_fades_from_skipped_on_cue_after_wrap() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&caught_up_clock));
     let value = *caught_up
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("caught-up off cue should still assert white");
 
     assert!(
@@ -4656,7 +4652,7 @@ fn htp_downward_assertion_with_explicit_zero_out_timing_snaps() {
     let off_layer = render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&clock));
     let value = *off_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("off cue should assert white");
 
     assert_eq!(
@@ -4765,14 +4761,14 @@ fn mixed_htp_out_timing_preserves_implicit_parameter_timing() {
     assert_eq!(
         *off_complete
             .absolute
-            .get(&implicit_parameter)
+            .get(implicit_parameter)
             .expect("implicit fixture should assert white off"),
         0.0
     );
     assert_eq!(
         *off_complete
             .absolute
-            .get(&explicit_parameter)
+            .get(explicit_parameter)
             .expect("explicit fixture should assert white off"),
         0.0
     );
@@ -4787,11 +4783,11 @@ fn mixed_htp_out_timing_preserves_implicit_parameter_timing() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&caught_up_clock));
     let implicit_value = *caught_up
         .absolute
-        .get(&implicit_parameter)
+        .get(implicit_parameter)
         .expect("implicit fixture should hold retained white on");
     let explicit_value = *caught_up
         .absolute
-        .get(&explicit_parameter)
+        .get(explicit_parameter)
         .expect("explicit fixture should snap white off");
 
     assert!(
@@ -4859,7 +4855,7 @@ fn sequence_relative_values_override_tracked_previous_cue() {
     let cue_one_computed = render_sequence_layer(&mut app, &mut msequence);
     let cue_one_value = *cue_one_computed
         .relative
-        .get(&parameter)
+        .get(parameter)
         .expect("cue 1 should assert relative white before advancing");
     assert!(
         (250.0..=255.0).contains(&cue_one_value),
@@ -4872,7 +4868,7 @@ fn sequence_relative_values_override_tracked_previous_cue() {
     let computed = render_sequence_layer(&mut app, &mut msequence);
     let value = *computed
         .relative
-        .get(&parameter)
+        .get(parameter)
         .expect("sequence should still assert the relative intensity while fading");
 
     assert!(
@@ -4931,19 +4927,19 @@ fn sequence_release_value_clears_tracked_assertion() {
     let mut msequence = materialize_sequence(&mut app, &sequence);
 
     let cue_one_computed = render_sequence_layer(&mut app, &mut msequence);
-    assert_eq!(cue_one_computed.absolute.get(&parameter), Some(&200.0));
+    assert_eq!(cue_one_computed.absolute.get(parameter), Some(&200.0));
 
     msequence.next();
     let cue_two_computed = render_sequence_layer(&mut app, &mut msequence);
     assert!(
-        cue_two_computed.absolute.get(&parameter).is_none(),
+        cue_two_computed.absolute.get(parameter).is_none(),
         "release marker should clear the tracked assertion on its cue"
     );
 
     msequence.next();
     let cue_three_computed = render_sequence_layer(&mut app, &mut msequence);
     assert!(
-        cue_three_computed.absolute.get(&parameter).is_none(),
+        cue_three_computed.absolute.get(parameter).is_none(),
         "release marker should keep the assertion cleared for future cues"
     );
 }
@@ -5010,7 +5006,7 @@ fn sequence_release_value_in_cue_part_waits_for_part_delay() {
     );
     let mut msequence = materialize_sequence(&mut app, &sequence);
     let cue_one_computed = render_sequence_layer(&mut app, &mut msequence);
-    assert_eq!(cue_one_computed.absolute.get(&parameter), Some(&200.0));
+    assert_eq!(cue_one_computed.absolute.get(parameter), Some(&200.0));
 
     msequence.next_at_playback_position(Some(Duration::ZERO));
     let before_delay_clock = InstanceClock {
@@ -5020,7 +5016,7 @@ fn sequence_release_value_in_cue_part_waits_for_part_delay() {
     let before_delay_computed =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&before_delay_clock));
     assert_eq!(
-        before_delay_computed.absolute.get(&parameter),
+        before_delay_computed.absolute.get(parameter),
         Some(&200.0),
         "release marker should not clear tracked intensity before part delay elapses"
     );
@@ -5032,7 +5028,7 @@ fn sequence_release_value_in_cue_part_waits_for_part_delay() {
     let at_delay_computed =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&at_delay_clock));
     assert!(
-        at_delay_computed.absolute.get(&parameter).is_none(),
+        at_delay_computed.absolute.get(parameter).is_none(),
         "release marker should clear tracked intensity once part delay elapses"
     );
 }
@@ -5126,7 +5122,7 @@ fn sequence_release_value_in_later_part_clears_earlier_part_assertion() {
     );
     let mut msequence = materialize_sequence(&mut app, &sequence);
     let cue_one_computed = render_sequence_layer(&mut app, &mut msequence);
-    assert_eq!(cue_one_computed.absolute.get(&parameter), Some(&200.0));
+    assert_eq!(cue_one_computed.absolute.get(parameter), Some(&200.0));
 
     msequence.next_at_playback_position(Some(Duration::ZERO));
     let before_delay_clock = InstanceClock {
@@ -5136,7 +5132,7 @@ fn sequence_release_value_in_later_part_clears_earlier_part_assertion() {
     let before_delay_computed =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&before_delay_clock));
     assert_eq!(
-        before_delay_computed.absolute.get(&parameter),
+        before_delay_computed.absolute.get(parameter),
         Some(&120.0),
         "earlier part assertion should remain active before later release marker delay elapses"
     );
@@ -5144,7 +5140,7 @@ fn sequence_release_value_in_later_part_clears_earlier_part_assertion() {
     let inactive_future_computed =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&before_delay_clock));
     assert_eq!(
-        inactive_future_computed.absolute.get(&parameter),
+        inactive_future_computed.absolute.get(parameter),
         Some(&120.0),
         "inactive release-only part should preserve the earlier part assertion for tracking"
     );
@@ -5159,7 +5155,7 @@ fn sequence_release_value_in_later_part_clears_earlier_part_assertion() {
     let at_delay_computed =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&at_delay_clock));
     assert!(
-        at_delay_computed.absolute.get(&parameter).is_none(),
+        at_delay_computed.absolute.get(parameter).is_none(),
         "later release marker should clear earlier same-cue part assertion"
     );
 
@@ -5171,7 +5167,7 @@ fn sequence_release_value_in_later_part_clears_earlier_part_assertion() {
     let future_computed =
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&future_clock));
     assert!(
-        future_computed.absolute.get(&parameter).is_none(),
+        future_computed.absolute.get(parameter).is_none(),
         "same-cue release marker should prevent the earlier part assertion from tracking forward"
     );
 }
@@ -5245,12 +5241,12 @@ fn sequence_release_then_part_assertion_reasserts_value() {
     );
     let mut msequence = materialize_sequence(&mut app, &sequence);
     let cue_one_computed = render_sequence_layer(&mut app, &mut msequence);
-    assert_eq!(cue_one_computed.absolute.get(&parameter), Some(&120.0));
+    assert_eq!(cue_one_computed.absolute.get(parameter), Some(&120.0));
 
     msequence.next();
     let cue_two_computed = render_sequence_layer(&mut app, &mut msequence);
     assert_eq!(
-        cue_two_computed.absolute.get(&parameter),
+        cue_two_computed.absolute.get(parameter),
         Some(&40.0),
         "a later cue part assertion should win over an earlier parent-cue release"
     );
@@ -5303,7 +5299,7 @@ fn sequence_block_value_reasserts_prior_tracked_value() {
     );
     let mut msequence = materialize_sequence(&mut app, &sequence);
     let cue_one_computed = render_sequence_layer(&mut app, &mut msequence);
-    assert_eq!(cue_one_computed.absolute.get(&parameter), Some(&120.0));
+    assert_eq!(cue_one_computed.absolute.get(parameter), Some(&120.0));
 
     msequence.next();
     let mut param_query_state = app.world_mut().query::<InstanceMut<Parameter>>();
@@ -5311,7 +5307,7 @@ fn sequence_block_value_reasserts_prior_tracked_value() {
     let sequence_layer = msequence.to_layer(&mut param_query);
     let (value, transition) = sequence_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("tracked-value assertion should assert the prior tracked red value");
     assert_eq!(*value, ParameterValue::Absolute { value: 120.0 });
     assert!(
@@ -5400,12 +5396,12 @@ fn sequence_setup_cue_asserts_initial_tracking_values() {
     let computed = render_sequence_layer(&mut app, &mut msequence);
 
     assert_eq!(
-        computed.absolute.get(&setup_parameter),
+        computed.absolute.get(setup_parameter),
         Some(&128.0),
         "setup cue should assert intensity before cue tracking"
     );
     assert!(
-        computed.absolute.contains_key(&step_parameter),
+        computed.absolute.contains_key(step_parameter),
         "regular cue should still assert its own step value"
     );
 }
@@ -5466,11 +5462,11 @@ fn wrapped_sequence_does_not_reuse_tracking_layer_for_non_wrap_return_to_first()
     let computed = render_sequence_layer(&mut app, &mut msequence);
 
     assert!(
-        computed.absolute.contains_key(&cue_one_parameter),
+        computed.absolute.contains_key(cue_one_parameter),
         "cue 1 should remain active"
     );
     assert!(
-        !computed.absolute.contains_key(&cue_two_parameter),
+        !computed.absolute.contains_key(cue_two_parameter),
         "cue 2 should not leak through the wrapped tracking cache"
     );
 }
@@ -5514,7 +5510,7 @@ fn timeline_reconstruction_timing_matches_organic_playback_value() {
     let organic_layer = render_sequence_layer(&mut app, &mut organic_sequence);
     let organic_value = *organic_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("organic playback should render intensity");
 
     let mut reconstructed_sequence = materialize_sequence(&mut app, &sequence);
@@ -5527,7 +5523,7 @@ fn timeline_reconstruction_timing_matches_organic_playback_value() {
         render_sequence_layer_at_clock(&mut app, &mut reconstructed_sequence, Some(&clock));
     let reconstructed_value = *reconstructed_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("timeline reconstruction should render intensity");
 
     assert!(
@@ -5582,7 +5578,7 @@ fn sequence_layer_preserves_current_value_and_transition_status() {
     let mut sequence_layer = msequence.to_layer_at_clock(&mut param_query, Some(&clock));
     let displayed_value = match sequence_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("sequence layer should contain the current fade value")
         .0
     {
@@ -5594,7 +5590,7 @@ fn sequence_layer_preserves_current_value_and_transition_status() {
         "sequence layer should expose the current fade value, got {displayed_value}"
     );
     assert_eq!(
-        sequence_layer.transitioning.get(&parameter),
+        sequence_layer.transitioning.get(parameter),
         Some(&true),
         "sequence layer should retain transition status after squashing current values"
     );
@@ -5611,7 +5607,7 @@ fn sequence_layer_preserves_current_value_and_transition_status() {
     );
     let composited_value = *computed
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("global compositor should render the sequence value");
     assert!(
         (composited_value - displayed_value).abs() <= 1.0,
@@ -5634,7 +5630,7 @@ fn sequence_layer_preserves_current_value_and_transition_status() {
     };
     let completed_layer = completed_sequence.to_layer_at_clock(&mut param_query, Some(&clock));
     assert_eq!(
-        completed_layer.transitioning.get(&parameter),
+        completed_layer.transitioning.get(parameter),
         Some(&false),
         "sequence layer should clear transition status after fade completion"
     );
@@ -5692,7 +5688,7 @@ fn sequence_go_preserves_previous_cue_in_flight_transition() {
     let cue_one_layer = render_sequence_layer(&mut app, &mut msequence);
     let in_flight_red = *cue_one_layer
         .relative
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("cue 1 should assert red while fading");
     assert!(
         (-20.0..0.0).contains(&in_flight_red),
@@ -5704,11 +5700,11 @@ fn sequence_go_preserves_previous_cue_in_flight_transition() {
     let cue_two_layer = render_sequence_layer(&mut app, &mut msequence);
     let carried_red = *cue_two_layer
         .relative
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("cue 2 should carry cue 1 red while it finishes fading");
     let cue_two_green = *cue_two_layer
         .relative
-        .get(&green_parameter)
+        .get(green_parameter)
         .expect("cue 2 should assert green");
 
     assert!(
@@ -5774,7 +5770,7 @@ fn sequence_intensity_off_holds_during_delay_out() {
     let first_layer = render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&clock));
     let first_value = *first_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("first cue should assert intensity");
     assert_eq!(first_value, 200.0);
 
@@ -5786,7 +5782,7 @@ fn sequence_intensity_off_holds_during_delay_out() {
     let mut sequence_layer = msequence.to_layer_at_clock(&mut param_query, Some(&clock));
     let held_value = match sequence_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("off cue should still contribute intensity during delay-out")
         .0
     {
@@ -5799,7 +5795,7 @@ fn sequence_intensity_off_holds_during_delay_out() {
         "off cue should hold the previous intensity during delay-out"
     );
     assert_eq!(
-        sequence_layer.transitioning.get(&parameter),
+        sequence_layer.transitioning.get(parameter),
         Some(&true),
         "off cue should remain active while delay-out is holding"
     );
@@ -5816,7 +5812,7 @@ fn sequence_intensity_off_holds_during_delay_out() {
     );
     let composited_value = *composited
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("global compositor should render the delayed off cue");
     assert_eq!(
         composited_value, 200.0,
@@ -5885,7 +5881,7 @@ fn sequence_default_timing_applies_to_cue_parts() {
     let transition = msequence.mcues[0]
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("cue part value should materialize with inherited sequence timing");
 
@@ -5968,7 +5964,7 @@ fn sequence_release_uses_release_cue_timing() {
         );
     let delayed_value = *computed_during_delay
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release compositor should hold the frozen value during delay");
     assert!(
         (delayed_value - 200.0).abs() <= 5.0,
@@ -5987,7 +5983,7 @@ fn sequence_release_uses_release_cue_timing() {
     );
     let released_value = *computed
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release compositor should render the fading value");
 
     assert!(
@@ -6063,7 +6059,7 @@ fn sequence_release_uses_release_cue_fade_in_for_ltp_timing() {
     );
     let released_value = *computed_release
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release compositor should render the fading LTP value");
 
     assert!(
@@ -6145,13 +6141,13 @@ fn sequence_release_holds_ltp_until_htp_release_completes() {
     let mut release_layer = msequence.to_layer(&mut param_query);
     let intensity_transition = release_layer
         .absolute
-        .get(&intensity_parameter)
+        .get(intensity_parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("intensity release should keep global HTP timing");
     assert_eq!(intensity_transition.fade_out, Duration::from_secs(1));
     let red_transition = release_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("red release should keep global LTP timing");
     assert_eq!(red_transition.delay_out, Duration::from_millis(1500));
@@ -6169,7 +6165,7 @@ fn sequence_release_holds_ltp_until_htp_release_completes() {
     );
     let held_red = *held_release
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("release compositor should render held LTP value");
     assert!(
         (held_red - 200.0).abs() <= 1.0,
@@ -6188,7 +6184,7 @@ fn sequence_release_holds_ltp_until_htp_release_completes() {
     );
     let fading_red = *fading_release
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("release compositor should render fading LTP value");
     assert!(
         (fading_red - 100.0).abs() <= 5.0,
@@ -6251,7 +6247,7 @@ fn sequence_release_uses_global_release_cue_timing() {
     let mut release_layer = msequence.to_layer(&mut param_query);
     let (_, transition) = release_layer
         .absolute
-        .get_mut(&parameter)
+        .get_mut(parameter)
         .expect("release layer should freeze the active parameter");
     transition
         .as_ref()
@@ -6268,7 +6264,7 @@ fn sequence_release_uses_global_release_cue_timing() {
     );
     let released_value = *computed_release
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release compositor should render the fading global release value");
 
     assert!(
@@ -6336,7 +6332,7 @@ fn sequence_release_global_zero_timing_overrides_source_timing() {
     let release_layer = msequence.to_layer(&mut param_query);
     let (_, transition) = release_layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release layer should freeze the active parameter");
     let transition = transition
         .as_ref()
@@ -6432,7 +6428,7 @@ fn sequence_release_global_timing_respects_release_cue_scope() {
     let release_layer = msequence.to_layer(&mut param_query);
     let (_, transition) = release_layer
         .absolute
-        .get(&scoped_parameter)
+        .get(scoped_parameter)
         .expect("release layer should retain the release-cue scoped parameter");
     assert!(
         transition.is_some(),
@@ -6440,7 +6436,7 @@ fn sequence_release_global_timing_respects_release_cue_scope() {
     );
     let (_, unscoped_transition) = release_layer
         .absolute
-        .get(&unscoped_parameter)
+        .get(unscoped_parameter)
         .expect("release layer should retain unmatched parameters for HTP-gated holds");
     let unscoped_transition = unscoped_transition
         .as_ref()
@@ -6528,13 +6524,13 @@ fn sequence_release_scoped_delay_holds_unmatched_parameters() {
     let mut release_layer = msequence.to_layer(&mut param_query);
     let (_, scoped_transition) = release_layer
         .absolute
-        .get(&scoped_parameter)
+        .get(scoped_parameter)
         .expect("release layer should retain the release-cue scoped parameter");
     assert!(
         scoped_transition.is_some(),
         "scoped parameter should inherit the release cue delay and fade"
     );
-    let (_, unmatched_transition) = release_layer.absolute.get(&unmatched_parameter).expect(
+    let (_, unmatched_transition) = release_layer.absolute.get(unmatched_parameter).expect(
         "release layer should hold unmatched LTP parameters during same-fixture HTP release",
     );
     let unmatched_transition = unmatched_transition
@@ -6557,14 +6553,14 @@ fn sequence_release_scoped_delay_holds_unmatched_parameters() {
     assert_eq!(
         computed_during_delay
             .absolute
-            .get(&scoped_parameter)
+            .get(scoped_parameter)
             .copied(),
         Some(200.0)
     );
     assert_eq!(
         computed_during_delay
             .absolute
-            .get(&unmatched_parameter)
+            .get(unmatched_parameter)
             .copied(),
         Some(100.0)
     );
@@ -6583,7 +6579,7 @@ fn sequence_release_scoped_delay_holds_unmatched_parameters() {
     assert_eq!(
         computed_after_delay
             .absolute
-            .get(&unmatched_parameter)
+            .get(unmatched_parameter)
             .copied(),
         Some(100.0),
         "unmatched LTP parameter should hold through the same-fixture HTP release span"
@@ -6697,12 +6693,12 @@ fn sequence_release_duration_planner_matches_timing_only_htp_release() {
     let release_layer = msequence.to_layer(&mut param_query);
     let intensity_transition = release_layer
         .absolute
-        .get(&intensity_parameter)
+        .get(intensity_parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("timing-only HTP override should release frozen intensity");
     let red_transition = release_layer
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("scoped LTP value should receive release timing");
 
@@ -6789,13 +6785,13 @@ fn sequence_release_global_fade_out_only_holds_ltp_until_htp_release_completes()
     assert_eq!(
         computed_mid_release
             .absolute
-            .get(&intensity_parameter)
+            .get(intensity_parameter)
             .copied(),
         Some(100.0),
         "HTP intensity should fade out over the authored release fade"
     );
     assert_eq!(
-        computed_mid_release.absolute.get(&red_parameter).copied(),
+        computed_mid_release.absolute.get(red_parameter).copied(),
         Some(100.0),
         "LTP color should hold while same-fixture HTP fades"
     );
@@ -6958,13 +6954,13 @@ fn sequence_release_fixture_level_htp_holds_ltp_on_sibling_element() {
     assert_eq!(
         computed_mid_release
             .absolute
-            .get(&intensity_parameter)
+            .get(intensity_parameter)
             .copied(),
         Some(100.0),
         "fixture-level HTP dimmer should fade out"
     );
     assert_eq!(
-        computed_mid_release.absolute.get(&red_parameter).copied(),
+        computed_mid_release.absolute.get(red_parameter).copied(),
         Some(100.0),
         "sibling LTP emitter should hold while fixture-level HTP fades"
     );
@@ -7023,7 +7019,7 @@ fn sequence_release_uses_frozen_rendered_assertions() {
     let computed_before_release = render_sequence_layer(&mut app, &mut msequence);
     let frozen_value = *computed_before_release
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("sequence should render the in-flight fade-in value");
     assert!(
         (95.0..=105.0).contains(&frozen_value),
@@ -7046,7 +7042,7 @@ fn sequence_release_uses_frozen_rendered_assertions() {
     let active_transition = msequence.mcues[0]
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("active cue should still own the parameter")
         .1
         .as_ref()
@@ -7068,7 +7064,7 @@ fn sequence_release_uses_frozen_rendered_assertions() {
     );
     let released_value = *computed_release
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release layer should assert the frozen value");
 
     assert!(
@@ -7131,7 +7127,7 @@ fn sequence_clocked_release_fades_from_partial_transition_source() {
         render_sequence_layer_at_clock(&mut app, &mut msequence, Some(&active_clock));
     let frozen_value = *computed_before_release
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("sequence should render the in-flight fade-in value");
     assert!(
         (95.0..=105.0).contains(&frozen_value),
@@ -7169,7 +7165,7 @@ fn sequence_clocked_release_fades_from_partial_transition_source() {
     );
     let released_value = *computed_release
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release layer should fade the frozen value");
 
     assert!(
@@ -7225,7 +7221,7 @@ fn sequence_release_freezes_untracked_active_cue_with_release_timing() {
     let before_release = render_sequence_layer(&mut app, &mut msequence);
     let visible_value = *before_release
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("untracked active cue should still render while active");
     assert_eq!(visible_value, 200.0);
 
@@ -7248,7 +7244,7 @@ fn sequence_release_freezes_untracked_active_cue_with_release_timing() {
     );
     let released_value = *computed_release
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("release compositor should render the frozen untracked value");
 
     assert!(
@@ -7345,7 +7341,7 @@ fn sequence_definition_change_rematerializes_embedded_release_cue() {
     let transition = msequence.mcues[0]
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("active cue should rematerialize with sequence default timing");
     assert_eq!(transition.delay_in, Duration::from_secs(1));
@@ -7873,7 +7869,7 @@ fn cue_definition_change_rematerializes_implicit_htp_timing() {
     assert_eq!(
         *off_complete
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .expect("off cue should assert white"),
         0.0
     );
@@ -7907,7 +7903,7 @@ fn cue_definition_change_rematerializes_implicit_htp_timing() {
 
     let value = *caught_up
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("rematerialized off cue should still assert white");
     assert!(
         value > 250.0,
@@ -7991,7 +7987,7 @@ fn cue_definition_change_preserves_clocked_transition_anchors() {
     let transition = mcue
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("updated materialized value should keep its transition");
     assert_eq!(transition.delay_in, Duration::from_millis(400));
@@ -8066,7 +8062,7 @@ fn cue_definition_change_preserves_absent_release_position() {
     let transition = mcue
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("updated materialized value should keep its transition");
     assert_eq!(transition.fade_out, Duration::from_millis(600));

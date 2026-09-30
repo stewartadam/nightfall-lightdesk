@@ -723,7 +723,7 @@ mod tests {
             .get::<Layer>()
             .expect("active Step FX should receive a generated layer");
         assert_eq!(
-            layer.absolute.get(&parameter).map(|(value, _)| *value),
+            layer.absolute.get(parameter).map(|(value, _)| *value),
             Some(ParameterValue::Absolute { value: 63.75 })
         );
     }
@@ -746,7 +746,7 @@ mod tests {
             .get::<Layer>()
             .expect("active Step FX should receive a generated layer");
         assert_eq!(
-            layer.absolute.get(&parameter).map(|(value, _)| *value),
+            layer.absolute.get(parameter).map(|(value, _)| *value),
             Some(ParameterValue::Absolute { value: 63.75 })
         );
     }
@@ -785,7 +785,7 @@ mod tests {
             .expect("active Step FX should receive a generated layer");
 
         assert_eq!(
-            layer.absolute.get(&parameter).map(|(value, _)| *value),
+            layer.absolute.get(parameter).map(|(value, _)| *value),
             Some(ParameterValue::Absolute { value: 191.25 })
         );
     }
@@ -815,16 +815,13 @@ mod tests {
             .get::<Layer>()
             .expect("active Step FX should receive a generated layer");
         assert_eq!(
-            layer
-                .absolute
-                .get(&first_parameter)
-                .map(|(value, _)| *value),
+            layer.absolute.get(first_parameter).map(|(value, _)| *value),
             Some(ParameterValue::Absolute { value: 63.75 })
         );
         assert_eq!(
             layer
                 .absolute
-                .get(&second_parameter)
+                .get(second_parameter)
                 .map(|(value, _)| *value),
             Some(ParameterValue::Absolute { value: 191.25 })
         );

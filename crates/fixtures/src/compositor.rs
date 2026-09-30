@@ -448,9 +448,9 @@ mod tests {
             clear_unbound_parameter_assertions(&mut layer, &mut owners, &resolved_input_bindings);
 
         assert_eq!(cleared, 1);
-        assert!(layer.absolute.contains_key(&kept_parameter));
-        assert!(owners.absolute.contains_key(&kept_parameter));
-        assert!(!layer.absolute.contains_key(&removed_parameter));
-        assert!(!owners.absolute.contains_key(&removed_parameter));
+        assert!(layer.absolute.contains_key(kept_parameter));
+        assert!(owners.absolute.contains_key(kept_parameter));
+        assert!(!layer.absolute.contains_key(removed_parameter));
+        assert!(!owners.absolute.contains_key(removed_parameter));
     }
 }

@@ -678,8 +678,8 @@ mod tests {
             .drain()
             .collect::<Vec<_>>();
         assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id.into());
-        assert_eq!(messages[0].undo_id, undo_id.into());
+        assert_eq!(messages[0].command_id, command_id);
+        assert_eq!(messages[0].undo_id, undo_id);
         assert!(matches!(
             messages[0].command,
             ObjectLibraryCommand::RefreshLibrary

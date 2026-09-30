@@ -42,6 +42,39 @@ pub fn rebuild_step_fx_blueprint_reference_index(
     reference_index.replace_source("step_fx", references);
 }
 
+impl crate::object_crud::ObjectCrud for Blueprint {
+    type Command = BlueprintCommand;
+
+    fn type_name() -> &'static str {
+        "blueprint"
+    }
+
+    fn extract_store(command: &Self::Command) -> Option<Self> {
+        match command {
+            BlueprintCommand::StoreBlueprint(blueprint) => Some(blueprint.clone()),
+            _ => None,
+        }
+    }
+
+    fn extract_rename(command: &Self::Command) -> Option<(u32, u32)> {
+        match command {
+            BlueprintCommand::RenameBlueprint { id, new_id } => Some((*id, *new_id)),
+            _ => None,
+        }
+    }
+
+    fn extract_delete(command: &Self::Command) -> Option<u32> {
+        match command {
+            BlueprintCommand::DeleteBlueprint(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    fn set_id(&mut self, new_id: u32) {
+        self.identifiers.id = new_id;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy_app::{App, Update};
@@ -98,38 +131,5 @@ mod tests {
                 .dependents(blueprint_uid)
                 .is_empty()
         );
-    }
-}
-
-impl crate::object_crud::ObjectCrud for Blueprint {
-    type Command = BlueprintCommand;
-
-    fn type_name() -> &'static str {
-        "blueprint"
-    }
-
-    fn extract_store(command: &Self::Command) -> Option<Self> {
-        match command {
-            BlueprintCommand::StoreBlueprint(blueprint) => Some(blueprint.clone()),
-            _ => None,
-        }
-    }
-
-    fn extract_rename(command: &Self::Command) -> Option<(u32, u32)> {
-        match command {
-            BlueprintCommand::RenameBlueprint { id, new_id } => Some((*id, *new_id)),
-            _ => None,
-        }
-    }
-
-    fn extract_delete(command: &Self::Command) -> Option<u32> {
-        match command {
-            BlueprintCommand::DeleteBlueprint(id) => Some(*id),
-            _ => None,
-        }
-    }
-
-    fn set_id(&mut self, new_id: u32) {
-        self.identifiers.id = new_id;
     }
 }

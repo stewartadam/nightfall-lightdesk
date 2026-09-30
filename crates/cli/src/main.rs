@@ -136,7 +136,7 @@ impl CliApp {
     async fn send_command_string(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
         for statement in split_command_statements(input) {
             let command_id = Uuid::new_v4();
-            let command_json = create_eval_command_json(command_id, command_id, &statement)?;
+            let command_json = create_eval_command_json(command_id, command_id, statement)?;
             let (result_sender, result_receiver) = oneshot::channel();
             self.pending_results
                 .lock()

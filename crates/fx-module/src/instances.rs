@@ -1361,7 +1361,7 @@ mod tests {
 
         assert_eq!(layer.absolute.len(), 1);
         assert!(
-            layer.absolute.contains_key(&virtual_intensity_parameter),
+            layer.absolute.contains_key(virtual_intensity_parameter),
             "intensity instructions should resolve to virtual intensity when the fixture has no native intensity parameter"
         );
     }
@@ -1451,8 +1451,8 @@ mod tests {
         );
 
         assert_eq!(layer.absolute.len(), 2);
-        assert!(layer.absolute.contains_key(&parameter_1));
-        assert!(layer.absolute.contains_key(&parameter_2));
+        assert!(layer.absolute.contains_key(parameter_1));
+        assert!(layer.absolute.contains_key(parameter_2));
     }
 
     #[test]

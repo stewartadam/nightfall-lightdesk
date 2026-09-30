@@ -129,8 +129,8 @@ mod tests {
         assert_eq!(drained.len(), 1);
 
         let cmd = &drained[0];
-        assert_eq!(cmd.command_id, CommandId::from(command_id));
-        assert_eq!(cmd.undo_id, UndoId::from(undo_id));
+        assert_eq!(cmd.command_id, command_id);
+        assert_eq!(cmd.undo_id, undo_id);
 
         let scene_object_cmd = cmd
             .payload

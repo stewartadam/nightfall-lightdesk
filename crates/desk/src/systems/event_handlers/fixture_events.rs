@@ -1857,7 +1857,7 @@ mod tests {
             [CommandResult {
                 command_id: result_command_id,
                 outcome: CommandOutcome::Succeeded { output: None },
-            }] if result_command_id.to_owned() == command_id
+            }] if *result_command_id == command_id
         ));
     }
 
@@ -1880,7 +1880,7 @@ mod tests {
             [CommandResult {
                 command_id: result_command_id,
                 outcome: CommandOutcome::Failed(error),
-            }] if result_command_id.to_owned() == command_id && error.code == "fixture.not_found"
+            }] if *result_command_id == command_id && error.code == "fixture.not_found"
         ));
     }
 
