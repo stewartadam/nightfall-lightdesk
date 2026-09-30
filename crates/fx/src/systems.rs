@@ -532,7 +532,6 @@ mod tests {
             })
             .expect("test fixture should be stored");
         fixtures.add_parameter(fixture_ref.clone(), Attribute::Intensity, parameter);
-        drop(fixtures);
 
         (fixture_ref, parameter)
     }
@@ -757,11 +756,13 @@ mod tests {
         let mut app = step_fx_test_app();
         let (fixture_ref, parameter) = add_intensity_fixture(&mut app, 1);
         let blueprint_uid = uuid::Uuid::from_u128(0xb1e);
-        let mut blueprint = Blueprint::default();
-        blueprint.identifiers = Identifiers {
-            id: 1,
-            uid: blueprint_uid,
-            label: "Live intensity".to_owned(),
+        let mut blueprint = Blueprint {
+            identifiers: Identifiers {
+                id: 1,
+                uid: blueprint_uid,
+                label: "Live intensity".to_owned(),
+            },
+            ..Default::default()
         };
         blueprint.values.insert(
             Attribute::Intensity,

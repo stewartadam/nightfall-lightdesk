@@ -41,6 +41,10 @@
 //! assert_eq!(samples.len(), 101); // 0 to 100 inclusive
 //! ```
 
+#[cfg(not(target_arch = "wasm32"))]
+// Leaf crate: mark the cargo-hakari workspace-hack as used so cargo's unused_dependencies lint passes.
+use nightfall_workspace_hack as _;
+
 pub mod sampling;
 pub mod types;
 

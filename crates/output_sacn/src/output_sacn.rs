@@ -239,11 +239,11 @@ mod tests {
     use super::*;
     use crate::service::SacnWorkerCommand;
 
-    fn spawn_mock_client() -> (
-        SacnOutputClient,
-        Arc<Mutex<Vec<(u16, Vec<u8>)>>>,
-        std::thread::JoinHandle<()>,
-    ) {
+    /// Universe and payload of each frame the mock worker received.
+    type SentFrames = Arc<Mutex<Vec<(u16, Vec<u8>)>>>;
+
+    /// Wires a client to a mock worker thread that records sent frames until the channel closes.
+    fn spawn_mock_client() -> (SacnOutputClient, SentFrames, std::thread::JoinHandle<()>) {
         let client = SacnOutputClient::default();
         let (command_tx, mut command_rx) = mpsc::unbounded_channel::<SacnWorkerCommand>();
         client.set_sender_and_cid(Some(command_tx), Some([1; 16]));

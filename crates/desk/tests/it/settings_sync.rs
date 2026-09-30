@@ -28,13 +28,9 @@ use nightfall_io::prelude::{
     UsbDmxOutputTarget, UsbDmxOutputTargets,
 };
 
+/// Discards every message currently buffered on `rx`, stopping once it is empty or closed.
 fn drain_channel(rx: &Receiver<Vec<u8>>) {
-    loop {
-        match rx.try_recv() {
-            Ok(_) => {}
-            Err(TryRecvError::Empty) | Err(TryRecvError::Closed) => break,
-        }
-    }
+    while rx.try_recv().is_ok() {}
 }
 
 fn decode_ws_message(raw: &[u8]) -> serde_json::Value {

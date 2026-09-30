@@ -10,6 +10,9 @@
 
 use std::time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
+// Leaf crate: mark the cargo-hakari workspace-hack as used so cargo's unused_dependencies lint passes.
+use nightfall_workspace_hack as _;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

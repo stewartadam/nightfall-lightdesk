@@ -54,12 +54,15 @@ fn cli_websocket_config() -> WebSocketConfig {
         .max_frame_size(Some(CLI_WEBSOCKET_MAX_PAYLOAD_SIZE))
 }
 
+/// Result waiters for submitted commands, keyed by command ID.
+type PendingResults = HashMap<Uuid, oneshot::Sender<Result<(), String>>>;
+
 /// Runtime state for the interactive CLI's engine WebSocket session.
 struct CliApp {
     ws_url: String,
     ws_sender: Arc<Mutex<Option<futures_util::stream::SplitSink<WebsocketStream, WsMessage>>>>,
     is_connected: Arc<std::sync::atomic::AtomicBool>,
-    pending_results: Arc<Mutex<HashMap<Uuid, oneshot::Sender<Result<(), String>>>>>,
+    pending_results: Arc<Mutex<PendingResults>>,
 }
 
 impl CliApp {
@@ -239,10 +242,7 @@ fn is_command_failure(error: &(dyn std::error::Error + 'static)) -> bool {
 }
 
 /// Fails every command waiter when the WebSocket can no longer deliver results.
-async fn fail_pending_results(
-    pending_results: &Mutex<HashMap<Uuid, oneshot::Sender<Result<(), String>>>>,
-    message: impl Into<String>,
-) {
+async fn fail_pending_results(pending_results: &Mutex<PendingResults>, message: impl Into<String>) {
     let message = message.into();
     let waiters = pending_results
         .lock()

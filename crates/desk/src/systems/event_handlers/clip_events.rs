@@ -10,7 +10,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use bevy_ecs::{prelude::*, system::SystemState};
+use bevy_ecs::{
+    prelude::*,
+    system::{SystemParam, SystemState},
+};
 use nightfall_clips::{
     Clip, ClipAction, ClipCommand, ClipLookup, ClipLookupError, MaterializedClip,
     RestoreClipSource, Source, clip_action_from_command, log_clip_lookup_failure,
@@ -42,14 +45,26 @@ type ClipPlaybackData = (
 #[derive(Default, Resource)]
 pub struct PendingClipPlaybackRates(HashMap<u32, f32>);
 
+/// Clip access and command lifecycle publishing used to apply clip configuration commands.
+#[derive(SystemParam)]
+pub struct ClipConfigurationParams<'w, 's> {
+    clips: ParamSet<
+        'w,
+        's,
+        (
+            ClipLookup<'w, 's>,
+            Query<'w, 's, &'static Clip>,
+            Query<'w, 's, &'static mut Clip>,
+        ),
+    >,
+    responder: CommandResponder<'w>,
+}
+
 /// Handles clip source assignment and option updates.
 pub fn handle_configuration_commands(
     world: &mut World,
     reader: &mut SystemState<MessageReader<CommandEnvelope<ClipCommand>>>,
-    configuration: &mut SystemState<(
-        ParamSet<(ClipLookup, Query<&Clip>, Query<&mut Clip>)>,
-        CommandResponder,
-    )>,
+    configuration: &mut SystemState<ClipConfigurationParams>,
 ) {
     let events: Vec<_> = reader
         .get_mut(world)
@@ -66,15 +81,18 @@ pub fn handle_configuration_commands(
             match resolve_clip_source(world, source) {
                 Ok(source) => event.command = ClipCommand::AssignSource { clip_id, source },
                 Err(error) => {
-                    let (_, mut responder) = configuration
+                    let mut params = configuration
                         .get_mut(world)
                         .expect("clip command lifecycle must be installed");
-                    finish_clip_configuration(&mut responder, event.command_id, Err(error));
+                    finish_clip_configuration(&mut params.responder, event.command_id, Err(error));
                     continue;
                 }
             }
         }
-        let (mut exec_params, mut responder) = configuration
+        let ClipConfigurationParams {
+            clips: mut exec_params,
+            mut responder,
+        } = configuration
             .get_mut(world)
             .expect("clip command lifecycle must be installed");
         let result = match &event.command {

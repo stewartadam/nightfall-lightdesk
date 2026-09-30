@@ -292,7 +292,7 @@ fn gdtf_corpus_sweep() {
     report.rejection_reasons = reasons.into_iter().collect();
     report
         .rejection_reasons
-        .sort_by(|left, right| right.1.cmp(&left.1));
+        .sort_by_key(|(_, count)| std::cmp::Reverse(*count));
 
     if let Some(path) = std::env::var_os("NIGHTFALL_GDTF_CORPUS_REPORT") {
         std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())

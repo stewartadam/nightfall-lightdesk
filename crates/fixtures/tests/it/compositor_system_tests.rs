@@ -231,7 +231,6 @@ fn compositor_recomputes_when_layer_assertion_changes() {
     let mut layer = app.world_mut().get_mut::<Layer>(layer_entity).unwrap();
     let (value, _) = layer.absolute.get_mut(parameter).unwrap();
     *value = ParameterValue::Absolute { value: 140.0 };
-    drop(layer);
 
     app.update();
 
@@ -1379,8 +1378,10 @@ fn test_compositor_resets_to_default_after_layer_removal() {
         ..Default::default()
     };
 
-    let mut values = ParameterValues::default();
-    values.default_value = 11.0;
+    let values = ParameterValues {
+        default_value: 11.0,
+        ..Default::default()
+    };
     let parameter_entity = app
         .world_mut()
         .spawn(Parameter {
@@ -1520,8 +1521,10 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
         ..Default::default()
     };
 
-    let mut values = ParameterValues::default();
-    values.default_value = 7.0;
+    let values = ParameterValues {
+        default_value: 7.0,
+        ..Default::default()
+    };
     let parameter_entity = app
         .world_mut()
         .spawn((
@@ -1602,7 +1605,7 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
 
     let parameter = app.world().get::<Parameter>(parameter_entity).unwrap();
     assert_eq!(parameter.values.current_value, 200.0);
-    assert!(MANUAL_ASSERTION_LAYER_PRIORITY.0 > TRANSPORT_INPUT_LAYER_PRIORITY.0);
+    const { assert!(MANUAL_ASSERTION_LAYER_PRIORITY.0 > TRANSPORT_INPUT_LAYER_PRIORITY.0) };
 
     app.world_mut()
         .write_message(EngineActionEnvelope::detached(ClearDmxChannels(

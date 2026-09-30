@@ -426,8 +426,7 @@ mod ofl_tests {
         );
 
         // Next 4 elements should be pixels
-        for i in 1..=4 {
-            let element = &fixture.elements[i];
+        for (i, element) in fixture.elements.iter().enumerate().skip(1).take(4) {
             assert_eq!(element.label, format!("Pixel {}", i));
             assert_eq!(element.parameters.len(), 3); // R, G, B
 

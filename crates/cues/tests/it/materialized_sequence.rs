@@ -5614,7 +5614,6 @@ fn sequence_layer_preserves_current_value_and_transition_status() {
         "global compositor should not apply the sequence fade a second time: displayed={displayed_value}, composited={composited_value}"
     );
 
-    drop(param_query);
     drop(param_query_state);
 
     let mut completed_sequence = materialize_sequence(&mut app, &sequence);
@@ -7035,7 +7034,6 @@ fn sequence_release_uses_frozen_rendered_assertions() {
         .expect("test system parameters should be available");
     msequence.release_from_rendered_assertions(&fixture_data_provider, &parameter_query);
     let _ = parameter_query;
-    drop(fixture_data_provider);
     drop(system_state);
 
     assert_eq!(msequence.mcues[0].release_position, None);
@@ -7147,7 +7145,6 @@ fn sequence_clocked_release_fades_from_partial_transition_source() {
         Some(Duration::from_secs(1)),
     );
     let _ = parameter_query;
-    drop(fixture_data_provider);
     drop(system_state);
 
     let mut param_query_state = app.world_mut().query::<InstanceMut<Parameter>>();

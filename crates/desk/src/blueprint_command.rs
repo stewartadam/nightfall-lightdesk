@@ -91,28 +91,30 @@ mod tests {
         app.init_resource::<BlueprintReferenceIndex>();
         app.add_systems(Update, rebuild_step_fx_blueprint_reference_index);
         let blueprint_uid = Uuid::from_u128(0xb10e);
-        let mut step_fx = StepFx::default();
-        step_fx.identifiers = Identifiers {
-            id: 4,
-            uid: Uuid::from_u128(0xf004),
-            label: "Pulse".to_owned(),
+        let step_fx = StepFx {
+            identifiers: Identifiers {
+                id: 4,
+                uid: Uuid::from_u128(0xf004),
+                label: "Pulse".to_owned(),
+            },
+            lanes: vec![FxLane {
+                attribute: Attribute::Red,
+                timing_override: None,
+                phase_override: None,
+                absolute: Some(FxTrack {
+                    steps: vec![FxStep {
+                        uid: Uuid::from_u128(0xf005),
+                        target: ParameterValue::AbsolutePercent { value: 0.0.into() },
+                        blueprint_uid: Some(blueprint_uid),
+                        width_beats: 1.0,
+                        transition: 0.0.into(),
+                        curve: CurveType::Linear(Linear {}),
+                    }],
+                }),
+                relative: None,
+            }],
+            ..Default::default()
         };
-        step_fx.lanes = vec![FxLane {
-            attribute: Attribute::Red,
-            timing_override: None,
-            phase_override: None,
-            absolute: Some(FxTrack {
-                steps: vec![FxStep {
-                    uid: Uuid::from_u128(0xf005),
-                    target: ParameterValue::AbsolutePercent { value: 0.0.into() },
-                    blueprint_uid: Some(blueprint_uid),
-                    width_beats: 1.0,
-                    transition: 0.0.into(),
-                    curve: CurveType::Linear(Linear {}),
-                }],
-            }),
-            relative: None,
-        }];
         let entity = app.world_mut().spawn(step_fx).id();
 
         app.update();

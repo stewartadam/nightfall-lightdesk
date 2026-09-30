@@ -673,7 +673,6 @@ fn setup_sequence_timeline_app_with_clip_options(
         })
         .expect("test fixture should be stored");
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Intensity, parameter);
-    drop(fixtures);
 
     let cue_1_uid = Uuid::new_v4();
     let cue_2_uid = Uuid::new_v4();

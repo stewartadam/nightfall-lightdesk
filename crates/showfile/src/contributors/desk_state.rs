@@ -20,7 +20,7 @@ use crate::{ShowfileLoadDomain, ShowfileLoadPhase};
 /// Desk-level state used as owned save output or borrowed load input.
 pub(crate) struct DeskStateSnapshot<'a> {
     pub(super) variables: Cow<'a, HashMap<String, VariableValue>>,
-    pub(super) control_assignments: Cow<'a, Vec<Option<ControlAssignment>>>,
+    pub(super) control_assignments: Cow<'a, [Option<ControlAssignment>]>,
     pub(super) settings: Cow<'a, DeskSettings>,
     pub(super) io_settings: Cow<'a, IoRuntimeSettings>,
 }

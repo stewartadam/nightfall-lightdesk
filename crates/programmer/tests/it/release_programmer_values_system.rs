@@ -718,7 +718,7 @@ fn test_release_programmer_values_matches_group_selection_with_wildcard_indices(
     let programmer = app.world().resource::<Programmer>();
     let attrs = fixture_attribute_map(programmer);
     assert!(
-        attrs.get(&fixture_ref_indexed).is_none(),
+        !attrs.contains_key(&fixture_ref_indexed),
         "Fixture 501 should be removed from programmer after clear fix 501"
     );
     assert!(

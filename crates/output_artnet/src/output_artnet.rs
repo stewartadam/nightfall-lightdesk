@@ -278,11 +278,11 @@ mod tests {
     use super::*;
     use crate::service::{ArtNetSendMeta, ArtNetWorkerCommand};
 
-    fn spawn_mock_client() -> (
-        ArtNetOutputClient,
-        Arc<Mutex<Vec<(u16, Vec<u8>, Option<Ipv4Addr>)>>>,
-        std::thread::JoinHandle<()>,
-    ) {
+    /// Universe, payload, and optional unicast target of each frame the mock worker received.
+    type SentFrames = Arc<Mutex<Vec<(u16, Vec<u8>, Option<Ipv4Addr>)>>>;
+
+    /// Wires a client to a mock worker thread that records sent frames until the channel closes.
+    fn spawn_mock_client() -> (ArtNetOutputClient, SentFrames, std::thread::JoinHandle<()>) {
         let client = ArtNetOutputClient::default();
         let (command_tx, mut command_rx) = mpsc::unbounded_channel::<ArtNetWorkerCommand>();
         client.set_sender(Some(command_tx));
