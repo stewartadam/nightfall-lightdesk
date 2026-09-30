@@ -91,13 +91,13 @@
       "type": "node-terminal",
       "request": "launch",
       "name": "Worktree dashboard API (UI+MCP backend)",
-      "command": "npm run worktree:dashboard:api"
+      "command": "pnpm run worktree:dashboard:api"
     },
     {
       "type": "node-terminal",
       "request": "launch",
       "name": "Worktree dashboard UI",
-      "command": "npm run worktree:dashboard:ui"
+      "command": "pnpm run worktree:dashboard:ui"
     }
   ],
   "compounds": [

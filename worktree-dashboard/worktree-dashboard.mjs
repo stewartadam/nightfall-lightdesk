@@ -42,11 +42,11 @@ const SERVICE_DEFINITIONS = {
     args: ["run"],
   },
   ui: {
-    command: process.platform === "win32" ? "npm.cmd" : "npm",
+    command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     args: ["run", "dev"],
   },
   wasm: {
-    command: process.platform === "win32" ? "npm.cmd" : "npm",
+    command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     args: ["run", "wasm-build:dev"],
   },
   "artnet-sender": {

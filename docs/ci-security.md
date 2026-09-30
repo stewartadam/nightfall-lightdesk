@@ -119,7 +119,7 @@ building distributions rather than repeating the full native/UI test suite.
 ## Validation
 
 Run `node --test scripts/ci-security.node.test.mjs scripts/desktop-artifacts.node.test.mjs`
-and `npx prek run actionlint --all-files`. The security tests exercise the actual
+and `pnpm exec prek run actionlint --all-files`. The security tests exercise the actual
 inline archive and inventory validators with hostile fixtures, enforce token
 permissions/action pins, and check that privileged runners cannot acquire source
 or build dependencies. They require Python 3 and Bash alongside Node.

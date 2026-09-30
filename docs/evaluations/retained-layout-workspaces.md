@@ -24,7 +24,7 @@ The heap numbers exclude GPU allocations and worker heaps. Large fixture scenes,
 ## Reproduction and behavior checks
 
 ```sh
-npm run test:webui-playwright -- webui/e2e/layout-switcher.spec.ts --grep 'retains live timeline' --workers=1
+pnpm run test:webui-playwright webui/e2e/layout-switcher.spec.ts --grep 'retains live timeline' --workers=1
 ```
 
 The spec writes `workspace-performance.json` and a workspace screenshot under `test-results/playwright/`, and attaches the measurement to the Playwright report. It uses Chromium CDP post-GC heap/DOM metrics and two-second main-thread task-time samples. It also checks hidden visualizer suspension, timeline viewport retention after resizing, hidden time-display suspension during live playback, catch-up on return, and inactive slot reset. Playback is stopped at the end of the scenario.

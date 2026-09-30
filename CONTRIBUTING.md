@@ -54,7 +54,7 @@ is missing, the hook inserts it and stops the commit so you can inspect and stag
 the change. Script shebangs remain first. Imported third-party code retains its
 original license; the framepace source file is explicitly excluded.
 
-Run `npx prek run insert-license --all-files` to check all tracked source files.
+Run `pnpm exec prek run insert-license --all-files` to check all tracked source files.
 
 ## Getting started
 
@@ -62,11 +62,11 @@ Run `npx prek run insert-license --all-files` to check all tracked source files.
 
 #### General dependencies
 
-Install Git, [Git LFS](https://git-lfs.com/), [rustup](https://rustup.rs/), and **Node.js 24 with npm**, matching `.nvmrc` and the CI environment (`nvm install && nvm use` if you use nvm). Keep `package-lock.json` and `Cargo.lock`; use `npm ci` and Cargo's `--locked` flag to reproduce their dependency versions.
+Install Git, [Git LFS](https://git-lfs.com/), [rustup](https://rustup.rs/), **Node.js 24**, matching `.nvmrc` and the CI environment (`nvm install && nvm use` if you use nvm), and [pnpm](https://pnpm.io/installation) (`corepack enable pnpm` works with Node.js 24). pnpm runs the version pinned by `packageManager` in `package.json`. Keep `pnpm-lock.yaml` and `Cargo.lock`; use `pnpm install --frozen-lockfile` and Cargo's `--locked` flag to reproduce their dependency versions.
 
 Rustup reads `rust-toolchain.toml`, which pins the nightly compiler and installs rustfmt, Clippy, and the `wasm32-unknown-unknown` target. Do not substitute a stable compiler or set `RUSTUP_TOOLCHAIN` when validating a change. Update the pin deliberately with native and WASM validation.
 
-Install the command-line type generator used by `npm run typeshare`, the Rust test runner used by the push hook, and the workspace-hack manager used by the commit hooks:
+Install the command-line type generator used by `pnpm run typeshare`, the Rust test runner used by the push hook, and the workspace-hack manager used by the commit hooks:
 
 ```sh
 cargo install --locked typeshare-cli --version 1.13.3
@@ -89,7 +89,7 @@ features (such as Tokio's networking) that break the `wasm32` browser builds, so
 A new proc-macro crate instead belongs in `workspace-members` under `[traversal-excludes]` in `.config/hakari.toml`:
 proc macros compile for the host even during a `wasm32` build, so the gate cannot keep the workspace-hack out.
 
-Vite, Tauri CLI, wasm-pack, Playwright, and prek are project npm dependencies; `npm ci` installs them. No global npm packages are required for an ordinary contribution.
+Vite, Tauri CLI, wasm-pack, Playwright, and prek are project dependencies; `pnpm install --frozen-lockfile` installs them. No other global Node.js packages are required for an ordinary contribution.
 
 #### macOS
 
@@ -110,10 +110,10 @@ sudo apt-get update
 sudo apt-get install -y build-essential pkg-config libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
 ```
 
-Other distributions need the equivalent development packages. For browser tests, install Chromium and Firefox and their Linux system dependencies through the repository wrapper after `npm ci`:
+Other distributions need the equivalent development packages. For browser tests, install Chromium and Firefox and their Linux system dependencies through the repository wrapper after `pnpm install --frozen-lockfile`:
 
 ```sh
-npm run playwright:install -- --with-deps
+pnpm run playwright:install --with-deps
 ```
 
 #### Windows
@@ -124,13 +124,7 @@ Install the MSVC linker and Windows SDK using Visual Studio Build Tools with the
 winget install -e --id Microsoft.VisualStudio.2022.BuildTools --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools;includeRecommended"
 ```
 
-The desktop shell also requires the Microsoft Edge WebView2 runtime. Use **Git Bash** for the shell commands in this guide. Several npm scripts use POSIX environment-variable syntax, so configure npm to run scripts with Bash too (adjust the path for your Git installation):
-
-```sh
-npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe" --location=user
-```
-
-This changes npm's script shell for your Windows user; launching npm from Git Bash alone does not change its default script shell. In PowerShell, `npm.cmd` avoids the execution-policy restriction on `npm.ps1`; a machine-wide execution-policy change is unnecessary.
+The desktop shell also requires the Microsoft Edge WebView2 runtime. Use **Git Bash** for the shell commands in this guide. Package scripts use POSIX syntax; `pnpm-workspace.yaml` enables pnpm's `shellEmulator`, so they run the same way from any Windows shell.
 
 #### Nightfall setup
 
@@ -140,17 +134,14 @@ From the repository root of a fresh clone:
 git lfs install --local
 git lfs pull
 rustup show
-npm ci
+pnpm install --frozen-lockfile
 node scripts/setup-env.mjs
-npm run typeshare
-npm run wasm-build:dev
+pnpm run typeshare
+pnpm run wasm-build:dev
 cargo build --tests --locked
 ```
 
-If npm lifecycle scripts are disabled, run `npm run postinstall` after `npm ci`
-to apply the required dependency patches. This also invalidates Vite's optimized
-dependency cache; restart any running Vite server afterward. Worktrunk's install
-hook runs this patch step explicitly, including when `ignore-scripts=true`.
+pnpm applies the required dependency patches during installation.
 See [dependency patches](patches/README.md) for details.
 
 Production web and Tauri builds generate dependency notices. Install their
@@ -186,7 +177,7 @@ assets unless a `sample-audio` directory exists beside the executable. Packaged
 desktop apps use Tauri's resource directory; standalone release backends require
 `sample-audio/lofi.mp3` and `sample-audio/rap.mp3` beside their executable.
 
-Run `npm run package:sample-audio -- <executable-directory>` to validate and copy
+Run `pnpm run package:sample-audio <executable-directory>` to validate and copy
 standalone backend resources. Each new sample show receives its own copy, so
 saved shows remain portable. Replacing packaged tracks affects future sample
 shows without recompilation. Updating a track uses normal `git add`, signed-off
@@ -200,14 +191,14 @@ For an existing checkout that already has prek hooks, run the following once to
 reinstall both tools in that order (without making commits or pushes between steps):
 
 ```sh
-npx prek uninstall -t pre-commit -t pre-push -t post-merge -t post-rewrite
+pnpm exec prek uninstall -t pre-commit -t pre-push -t post-merge -t post-rewrite
 git lfs install --local
 ```
 
 Then install the combined hooks:
 
 ```sh
-npx prek install -t pre-commit -t pre-push -t post-merge -t post-rewrite
+pnpm exec prek install -t pre-commit -t pre-push -t post-merge -t post-rewrite
 ```
 
 If you wish to also use beads, ensure hooks are chained:
@@ -250,7 +241,7 @@ cargo install-update -a
 
 ### Running Nightfall
 
-The backend engine can be started with `cargo run`, and the web UI with `npm run dev`. The workspace-hack crate
+The backend engine can be started with `cargo run`, and the web UI with `pnpm run dev`. The workspace-hack crate
 keeps third-party dependency features identical across `cargo run`, `cargo test -p <crate>`, and the commit hooks,
 so switching between them reuses build artifacts.
 
@@ -271,7 +262,7 @@ starting the native backend. The default target is `native`, which can also be
 selected explicitly with `--target native`:
 
 ```sh
-npm run test:webui-playwright -- --target embedded-demo webui/e2e/browser-demo.spec.ts
+pnpm run test:webui-playwright --target embedded-demo webui/e2e/browser-demo.spec.ts
 ```
 
 Pass `--rust-log` through the repository wrapper to set the backend's Rust log
@@ -279,7 +270,7 @@ filter for one run. The wrapper consumes this option and forwards the remaining
 arguments to Playwright:
 
 ```sh
-npm run test:webui-playwright -- --rust-log 'nightfall_websocket=trace,nightfall_fx::events=trace,warn' webui/e2e/step-fx-editor.spec.ts --grep 'first-release authoring workflow'
+pnpm run test:webui-playwright --rust-log 'nightfall_websocket=trace,nightfall_fx::events=trace,warn' webui/e2e/step-fx-editor.spec.ts --grep 'first-release authoring workflow'
 ```
 
 Pass `--data-dir` to select the source data directory used to seed a test run
@@ -287,25 +278,25 @@ without exporting `NIGHTFALL_DATA_DIR`. The run still copies the stable seed dat
 into its disposable data root:
 
 ```sh
-npm run test:webui-playwright -- --data-dir /tmp/nightfall-sample-blueprints webui/e2e/sample-blueprints-visual.spec.ts
+pnpm run test:webui-playwright --data-dir /tmp/nightfall-sample-blueprints webui/e2e/sample-blueprints-visual.spec.ts
 ```
 
 If you run multiple git worktrees in parallel, start the dashboard API with:
 
 ```sh
-npm run worktree:dashboard
+pnpm run worktree:dashboard
 ```
 
 For API hot-reload while editing `worktree-dashboard/worktree-dashboard.mjs`, use:
 
 ```sh
-npm run worktree:dashboard:watch
+pnpm run worktree:dashboard:watch
 ```
 
 Then start the Solid/Vite dashboard UI (with HMR) in a separate shell:
 
 ```sh
-npm run worktree:dashboard:ui
+pnpm run worktree:dashboard:ui
 ```
 
 The dashboard page is served at `/worktree-dashboard.html` and calls the API via Vite proxy (`/worktree-api`).
@@ -318,7 +309,7 @@ and applies them over the environment inherited when the dashboard started.
 An exported value provides a fallback for worktrees that do not configure it:
 
 ```sh
-NIGHTFALL_CARGO_COMMAND=mbx npm run worktree:dashboard
+NIGHTFALL_CARGO_COMMAND=mbx pnpm run worktree:dashboard
 ```
 
 The default is `cargo` (`cargo.exe` on Windows). The value must be one executable
@@ -329,7 +320,7 @@ a missing executable produces a process error without falling back to Cargo.
 Start or recycle the worktree service after changing its `.env`; restarting the
 dashboard is unnecessary. The dashboard loads its own host and port settings from
 its startup directory's `.env`, but does not pass those dotenv values to other
-worktrees. UI and WASM builds still launch through npm with their worktree's
+worktrees. UI and WASM builds still launch through pnpm with their worktree's
 environment.
 
 New worktrees seed their `.env` from the primary worktree's `.env`, preserving
@@ -343,10 +334,10 @@ worktrees.
 Agents can also manage their own worktree lifecycle through MCP (for example, from Codex/Claude) by running:
 
 ```sh
-npm run worktree:mcp
+pnpm run worktree:mcp
 ```
 
-The MCP server talks to the dashboard API, so keep `npm run worktree:dashboard` running while agents are connected.
+The MCP server talks to the dashboard API, so keep `pnpm run worktree:dashboard` running while agents are connected.
 It targets dashboard address `http://127.0.0.1:4780` by default.
 You can override with:
 
@@ -370,7 +361,7 @@ Example MCP config:
 {
   "mcpServers": {
     "nightfall-worktree-dashboard": {
-      "command": "npm",
+      "command": "pnpm",
       "args": ["run", "worktree:mcp"],
       "cwd": "/absolute/path/to/your/main-repo"
     }
@@ -381,7 +372,7 @@ Example MCP config:
 To start the desktop application with Tauri:
 
 ```sh
-npm run tauri-dev
+pnpm run tauri-dev
 ```
 
 ### Quality checks and browser tests
@@ -389,18 +380,18 @@ npm run tauri-dev
 Run the checks relevant to your change:
 
 ```sh
-npm run lint
-npm run typecheck
-npm run check:command-architecture
-npm run check:crate-boundaries
-npm test
+pnpm run lint
+pnpm run typecheck
+pnpm run check:command-architecture
+pnpm run check:crate-boundaries
+pnpm test
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked
 cargo nextest run --tests
 cargo test --doc
 ```
 
-Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. Plain `cargo` commands select every crate under `crates/` and leave out the Tauri desktop shell, which builds with `-p app-tauri`; avoid `--workspace`, which adds it back and changes the feature graph CI uses. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `npx prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
+Rust tests run with [cargo-nextest](https://nexte.st/), which executes each test in its own process in parallel and lists tests slower than 10 seconds in its summary. Plain `cargo` commands select every crate under `crates/` and leave out the Tauri desktop shell, which builds with `-p app-tauri`; avoid `--workspace`, which adds it back and changes the feature graph CI uses. The push hook skips doctests, which CI runs; when you change documentation examples, run them the same way CI does with `pnpm exec prek run cargo-doctest --stage manual`. Pass nextest arguments to narrow a run, for example to a crate and everything that depends on it, or to tests whose name matches:
 
 ```sh
 cargo nextest run --tests -E 'rdeps(nightfall-cues)'
@@ -409,7 +400,7 @@ cargo nextest run --tests autocomplete::
 
 Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file becomes its own executable. The main reason is macOS: without the [Developer Tools setting](#macos), macOS scans each newly built executable the first time it runs, so every extra test binary adds to each test run after a rebuild (74 integration-test binaries became 20). Each binary also links its own copy of Bevy and the workspace; the link-time saving is smaller and has not been measured separately on Linux. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.
 
-After changing Rust command parsing or shared types, regenerate with `npm run typeshare` and `npm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
+After changing Rust command parsing or shared types, regenerate with `pnpm run typeshare` and `pnpm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
 
 CI runs source checks and script tests independently of native compilation and
 WASM builds. TypeScript and WebUI Node checks wait for the WASM assets; Chromium
@@ -421,14 +412,14 @@ commands are unchanged.
 Install test browsers once per shared browser cache:
 
 ```sh
-npm run playwright:install
+pnpm run playwright:install
 ```
 
 On Linux use the `--with-deps` form in the Linux setup section. Run browser tests only through the repository wrapper, which reads `.env` and manages isolated backend data and services:
 
 ```sh
-npm run test:webui-playwright -- webui/e2e/command-palette.spec.ts
-npm run test:webui-playwright -- --headed webui/e2e/clip-go-button.spec.ts
+pnpm run test:webui-playwright webui/e2e/command-palette.spec.ts
+pnpm run test:webui-playwright --headed webui/e2e/clip-go-button.spec.ts
 ```
 
 Use `--grep` to select a scenario and `--workers=1` to reduce concurrent load. Inspect screenshots and traces under `test-results/playwright/`; verify the visible result, not just command acknowledgements. Stop timeline playback at the end of a test that starts it. The wrapper disables timeline audio during its test runs.

@@ -30,11 +30,12 @@ jobs:
       - name: Restore source and Git history
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
 
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       # selecting a toolchain either by action or manual `rustup` calls should happen
       # before the plugin, as the cache uses the current rustc version as its cache key
@@ -59,7 +60,7 @@ jobs:
             libwebkit2gtk-4.1-dev
 
       - name: Install Node dependencies
-        run: npm clean-install
+        run: pnpm install --frozen-lockfile
 
       - name: Install cargo-nextest for Rust tests
         if: inputs.stage == 'pre-push'
@@ -70,7 +71,7 @@ jobs:
 
       - name: Run native ${{ inputs.stage }} hooks
         id: native-hooks
-        run: npx prek run ${{ inputs.hook }} --all-files --verbose --show-diff-on-failure --color always --stage ${{ inputs.stage }}
+        run: pnpm exec prek run ${{ inputs.hook }} --all-files --verbose --show-diff-on-failure --color always --stage ${{ inputs.stage }}
 
       - name: Upload Rust test timings
         if: ${{ !cancelled() && inputs.stage == 'pre-push' }}
@@ -101,4 +102,4 @@ jobs:
       # not delayed, and even when nextest fails so both results report.
       - name: Run Rust doctests
         if: ${{ !cancelled() && inputs.stage == 'pre-push' && steps.native-hooks.outcome != 'skipped' }}
-        run: npx prek run cargo-doctest --all-files --verbose --color always --stage manual
+        run: pnpm exec prek run cargo-doctest --all-files --verbose --color always --stage manual

@@ -55,7 +55,7 @@ function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (value) return value;
   throw new Error(
-    `${name} is required; run Playwright through npm run test:webui-playwright`,
+    `${name} is required; run Playwright through pnpm run test:webui-playwright`,
   );
 }
 

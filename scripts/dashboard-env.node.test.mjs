@@ -71,7 +71,7 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
         assert.equal(command.command, target.NIGHTFALL_CARGO_COMMAND);
         assert.equal(command.label, command.command + " " + command.args.join(" "));
       } else {
-        assert.equal(command.command, process.platform === "win32" ? "npm.cmd" : "npm");
+        assert.equal(command.command, process.platform === "win32" ? "pnpm.cmd" : "pnpm");
       }
     }
     const defaults = processEnvForService("backend", cwd + "/worktree");

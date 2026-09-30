@@ -1,13 +1,13 @@
 # Cached WASM assets
 
-Run after checkout, Node/Rust setup and `npm ci`. The action builds or restores
+Run after checkout, Node/Rust setup and `pnpm install --frozen-lockfile`. The action builds or restores
 the selected wasm-pack package, including generated JavaScript, TypeScript declarations
 and the final optimized WASM binaries. Development and release builds use separate
 keys. The existing Cargo cache still accelerates cache misses.
 
 Only exact matches are restored. Keys include the compiler identity, runner OS
 and architecture, profile, Cargo manifests/lockfile, whole crate trees, Cargo
-configuration, shared configuration and fixtures, build scripts, npm manifests
+configuration, shared configuration and fixtures, build scripts, pnpm manifests
 and lockfile, license, workflows and this action. This deliberately favors extra
 misses over stale binaries: even unrelated native crate changes invalidate the
 cache. Add any future build inputs outside these paths to the key. Build settings

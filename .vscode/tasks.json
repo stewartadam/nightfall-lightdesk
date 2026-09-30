@@ -54,7 +54,7 @@
     {
       "label": "worktree dashboard: ui",
       "type": "shell",
-      "command": "npm run worktree:dashboard:ui",
+      "command": "pnpm run worktree:dashboard:ui",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {

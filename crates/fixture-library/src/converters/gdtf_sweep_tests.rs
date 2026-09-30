@@ -15,7 +15,7 @@
 //! not depend on previous runs; the per-stage report written to
 //! NIGHTFALL_GDTF_CORPUS_REPORT is informational only.
 //!
-//! Run with `NIGHTFALL_GDTF_CORPUS_DIR=<dirs> npm run test:gdtf-sweep`
+//! Run with `NIGHTFALL_GDTF_CORPUS_DIR=<dirs> pnpm run test:gdtf-sweep`
 //! (a platform path list; directories are searched recursively).
 
 use std::collections::BTreeMap;
