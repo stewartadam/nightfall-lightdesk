@@ -1815,7 +1815,6 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
     assert_eq!(red_transition.release_position, Some(Duration::ZERO));
 
     let _ = parameter_query;
-    drop(fixture_data_provider);
     drop(system_state);
 
     let mut param_query_state = app.world_mut().query::<InstanceMut<Parameter>>();

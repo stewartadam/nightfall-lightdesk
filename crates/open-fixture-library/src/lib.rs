@@ -25,6 +25,10 @@
 
 #![warn(missing_docs)]
 
+#[cfg(not(target_arch = "wasm32"))]
+// Leaf crate: mark the cargo-hakari workspace-hack as used so cargo's unused_dependencies lint passes.
+use nightfall_workspace_hack as _;
+
 pub mod fixture;
 pub mod schema;
 

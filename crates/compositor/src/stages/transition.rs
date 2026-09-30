@@ -1055,13 +1055,13 @@ mod tests {
         let mut world = World::new();
         let first_param = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Red);
         let second_param = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Green);
-        let mut first_transition = create_test_transition(
+        let first_transition = create_test_transition(
             Duration::ZERO,
             Duration::ZERO,
             Duration::ZERO,
             Duration::from_millis(4),
         );
-        let mut second_transition = first_transition.clone();
+        let second_transition = first_transition.clone();
 
         let mut param_query_state = world.query::<InstanceMut<TestParameter>>();
         let param_query = param_query_state.query_mut(&mut world);
@@ -1076,7 +1076,7 @@ mod tests {
                 .compositing_context(),
             200.0,
             0.0,
-            &mut first_transition,
+            &first_transition,
             true,
             context,
         );
@@ -1088,7 +1088,7 @@ mod tests {
                 .compositing_context(),
             200.0,
             0.0,
-            &mut second_transition,
+            &second_transition,
             true,
             context,
         );
@@ -1104,7 +1104,7 @@ mod tests {
     fn process_transition_with_compositing_context_evaluates_assertion_elapsed() {
         let mut world = World::new();
         let param = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Red);
-        let mut transition = create_test_transition(
+        let transition = create_test_transition(
             Duration::ZERO,
             Duration::from_secs(1),
             Duration::ZERO,
@@ -1120,7 +1120,7 @@ mod tests {
                 .compositing_context(),
             100.0,
             200.0,
-            &mut transition,
+            &transition,
             false,
             LayerCompositingContext {
                 position: Duration::from_millis(500),
@@ -1136,7 +1136,7 @@ mod tests {
     fn process_transition_with_compositing_context_holds_downward_assertion_for_delay_out() {
         let mut world = World::new();
         let param = create_test_parameter(&mut world, TestMergeMode::Htp, Attribute::Intensity);
-        let mut transition = create_test_transition(
+        let transition = create_test_transition(
             Duration::from_secs(3),
             Duration::ZERO,
             Duration::from_secs(1),
@@ -1152,7 +1152,7 @@ mod tests {
                 .compositing_context(),
             200.0,
             100.0,
-            &mut transition,
+            &transition,
             false,
             LayerCompositingContext {
                 position: Duration::from_millis(500),
@@ -1171,7 +1171,7 @@ mod tests {
     fn process_transition_with_compositing_context_holds_upward_assertion_for_delay_in() {
         let mut world = World::new();
         let param = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Red);
-        let mut transition = create_test_transition(
+        let transition = create_test_transition(
             Duration::from_secs(1),
             Duration::from_secs(1),
             Duration::from_secs(3),
@@ -1187,7 +1187,7 @@ mod tests {
                 .compositing_context(),
             100.0,
             200.0,
-            &mut transition,
+            &transition,
             false,
             LayerCompositingContext {
                 position: Duration::from_millis(500),
@@ -1206,7 +1206,7 @@ mod tests {
     fn process_transition_with_compositing_context_downward_assertion_ignores_delay_in() {
         let mut world = World::new();
         let param = create_test_parameter(&mut world, TestMergeMode::Htp, Attribute::Intensity);
-        let mut transition = create_test_transition(
+        let transition = create_test_transition(
             Duration::from_secs(3),
             Duration::ZERO,
             Duration::ZERO,
@@ -1222,7 +1222,7 @@ mod tests {
                 .compositing_context(),
             200.0,
             100.0,
-            &mut transition,
+            &transition,
             false,
             LayerCompositingContext {
                 position: Duration::from_millis(500),
@@ -1272,7 +1272,7 @@ mod tests {
     fn process_transition_with_compositing_context_ltp_downward_assertion_uses_delay_in() {
         let mut world = World::new();
         let param = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Red);
-        let mut transition = create_test_transition(
+        let transition = create_test_transition(
             Duration::from_secs(1),
             Duration::from_secs(1),
             Duration::ZERO,
@@ -1288,7 +1288,7 @@ mod tests {
                 .compositing_context(),
             200.0,
             100.0,
-            &mut transition,
+            &transition,
             false,
             LayerCompositingContext {
                 position: Duration::from_millis(500),
@@ -1307,7 +1307,7 @@ mod tests {
     fn process_transition_with_compositing_context_evaluates_release_elapsed() {
         let mut world = World::new();
         let param = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Red);
-        let mut transition = create_test_transition(
+        let transition = create_test_transition(
             Duration::ZERO,
             Duration::from_secs(1),
             Duration::ZERO,
@@ -1323,7 +1323,7 @@ mod tests {
                 .compositing_context(),
             200.0,
             0.0,
-            &mut transition,
+            &transition,
             true,
             LayerCompositingContext {
                 position: Duration::from_secs(2),

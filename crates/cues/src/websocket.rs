@@ -781,7 +781,6 @@ mod tests {
             })
             .expect("test fixture should be stored");
         fixtures.add_parameter(fixture_ref.clone(), Attribute::Intensity, parameter);
-        drop(fixtures);
 
         let cue_uid = Uuid::new_v4();
         let mut cues = DataProvider::<Cue>::default();
@@ -899,7 +898,6 @@ mod tests {
             intensity_parameter,
         );
         fixtures.add_parameter(fixture_ref.clone(), Attribute::Pan, pan_parameter);
-        drop(fixtures);
 
         let cue_one_uid = Uuid::new_v4();
         let cue_two_uid = Uuid::new_v4();
