@@ -154,8 +154,8 @@ pub fn repair_description(xml: &str) -> Option<(String, Vec<String>)> {
                 }
                 let repaired = repair_element(&start, &mut repairs)?;
                 open.push((
-                    String::from_utf8_lossy(repaired.name().as_ref()).into_owned(),
-                    start.name().as_ref() == b"Laser",
+                    repaired.name().as_ref().to_owned(),
+                    start.name().as_ref() == "Laser",
                 ));
                 writer.write_event(Event::Start(repaired)).ok()?;
             }
@@ -186,10 +186,10 @@ pub fn repair_description(xml: &str) -> Option<(String, Vec<String>)> {
 fn dropped_element(start: &BytesStart, open: &[(String, bool)]) -> Option<&'static str> {
     let in_laser = open.last().is_some_and(|(_, is_laser)| *is_laser);
     match start.name().as_ref() {
-        b"Protocols" | b"Protocol" if in_laser => Some("dropped laser protocols"),
-        b"ChannelSet"
+        "Protocols" | "Protocol" if in_laser => Some("dropped laser protocols"),
+        "ChannelSet"
             if start.attributes().flatten().any(|attribute| {
-                attribute.key.as_ref() == b"DMXFrom" && attribute.value.starts_with(b"-")
+                attribute.key.as_ref() == "DMXFrom" && attribute.value.starts_with('-')
             }) =>
         {
             Some("dropped channel set with negative DMXFrom")
@@ -212,7 +212,7 @@ const GEOMETRY_ATTRIBUTES: [&str; 3] = ["Name", "Model", "Position"];
 
 /// Returns a copy of an element with its attribute faults repaired.
 fn repair_element(start: &BytesStart, repairs: &mut Vec<String>) -> Option<BytesStart<'static>> {
-    let name = String::from_utf8_lossy(start.name().as_ref()).into_owned();
+    let name = start.name().as_ref().to_owned();
     let is_laser = name == "Laser";
     let mut repaired = BytesStart::new(if is_laser {
         note(repairs, "imported laser geometry as a plain geometry");
@@ -226,7 +226,7 @@ fn repair_element(start: &BytesStart, repairs: &mut Vec<String>) -> Option<Bytes
     let mut has_offset = false;
     for attribute in start.attributes() {
         let attribute = attribute.ok()?;
-        let key = String::from_utf8_lossy(attribute.key.as_ref()).into_owned();
+        let key = attribute.key.as_ref().to_owned();
         let value = attribute
             .normalized_value(quick_xml::XmlVersion::Implicit1_0)
             .ok()?

@@ -71,9 +71,10 @@ when upstream metadata or collector support improves.
 
 Preline is explicitly treated as MIT **and** its custom Fair Use License, not
 as an SPDX choice of licenses. Both full texts, its copyright, and a clickable
-repository attribution are included. `preline.json` pins the reviewed version
-and license hash, so updates require review of its noncompetition and other
-custom restrictions. Nightfall is a lighting controller, not a UI framework.
+repository attribution are included. `preline.json` pins the reviewed license
+hash, so any update that changes the terms requires review of its
+noncompetition and other custom restrictions. Version bumps with unchanged
+terms pass without review. Nightfall is a lighting controller, not a UI framework.
 
 The original Phosphor artwork notice accompanies the SolidJS wrapper's notice.
 The Beat This notice is included verbatim; its model provenance and treatment

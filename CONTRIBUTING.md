@@ -148,9 +148,6 @@ pnpm run wasm-build:dev
 cargo build --tests --locked
 ```
 
-pnpm applies the required dependency patches during installation.
-See [dependency patches](patches/README.md) for details.
-
 Production web and Tauri builds generate dependency notices. Install their
 pinned collector with `cargo install cargo-about --locked --version 0.8.4`.
 See [distribution notices](docs/src/developer-reference/distribution-notices.md)

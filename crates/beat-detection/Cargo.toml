@@ -9,12 +9,12 @@ nightfall = { path = "../common" }
 # Decoding needs only the codec features. The rest match nightfall-audio so rodio keeps one feature
 # set; otherwise hakari unifies it into the workspace-hack and every workspace crate waits on cpal.
 rodio = { version = "0.22", default-features = false, features = ["wav", "mp3", "mp4", "playback", "tracing"] }
-rten = { version = "0.26", features = ["fft"] }
-rten-tensor = "0.26"
+rten = { version = "0.27", features = ["fft"] }
+rten-tensor = "0.27"
 rustfft = "6"
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "0.10"
+sha2 = "0.11"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }

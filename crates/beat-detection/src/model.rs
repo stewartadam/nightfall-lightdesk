@@ -68,7 +68,12 @@ pub fn verify(path: &Path, size: u64, digest: &str) -> Result<(), String> {
         }
         hash.update(&buffer[..count]);
     }
-    if format!("{:x}", hash.finalize()) != digest {
+    let actual: String = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    if actual != digest {
         return Err("Beat detection model checksum mismatch".into());
     }
     Ok(())

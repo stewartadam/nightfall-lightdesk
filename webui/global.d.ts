@@ -7,7 +7,7 @@
  */
 
 import type noUiSlider from "nouislider";
-import type { IStaticMethods } from "preline";
+import type { HSStaticMethods } from "preline";
 
 // Declare types for our window exports used by Preline
 declare global {
@@ -28,6 +28,6 @@ declare global {
     noUiSlider: typeof noUiSlider;
 
     // Preline UI
-    HSStaticMethods: IStaticMethods;
+    HSStaticMethods: typeof HSStaticMethods;
   }
 }

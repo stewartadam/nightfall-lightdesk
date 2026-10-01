@@ -146,7 +146,10 @@ fn gdtf_bench_archives_match_manifest() {
         let path = dir.join(&archive.file);
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|error| panic!("{}: missing bench archive ({error})", archive.id));
-        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let digest: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
         assert_eq!(
             digest, archive.sha256,
             "{}: archive hash changed",

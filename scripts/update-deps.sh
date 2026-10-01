@@ -16,6 +16,13 @@ update_dependencies() {
   popd >/dev/null
 }
 
+# Update web UI dependencies to their latest releases, including major
+# versions, rewriting the ranges in package.json and the lockfile
+update_js_dependencies() {
+  echo "*** Updating pnpm dependencies"
+  pnpm update --latest
+}
+
 # Rebuild the project after updating dependencies
 rebuild_project() {
   echo "*** Rebuilding project"
@@ -28,6 +35,8 @@ update_dependencies "crates/cli"
 for module in crates/fx-module/examples/*/;do
   update_dependencies "$module"
 done
+
+update_js_dependencies
 
 echo -n "Rebuild project ? [y/N] "
 read -r answer

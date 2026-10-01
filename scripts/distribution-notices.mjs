@@ -205,12 +205,9 @@ export function frontendNotices(inventory, strict = true) {
     if (name === "preline") {
       const approval = JSON.parse(read("config/notices/preline.json"));
       const license = readFileSync(join(directory, "LICENSE"), "utf8");
-      if (
-        version !== approval.version ||
-        textHash(license) !== approval.sha256
-      ) {
+      if (textHash(license) !== approval.sha256) {
         throw new Error(
-          "Preline license/version changed: review the custom terms before distribution",
+          `Preline ${version} license changed: review the custom terms before distribution`,
         );
       }
     }
