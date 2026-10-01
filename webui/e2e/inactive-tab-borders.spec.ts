@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks the shared divider behind inactive tabs in regular and expanded edge groups. */
 test("inactive Dockview tabs share a grey content-edge divider", async ({
@@ -15,6 +15,7 @@ test("inactive Dockview tabs share a grey content-edge divider", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     for (const edge of ["left", "right", "bottom"]) {

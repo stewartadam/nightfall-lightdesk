@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 for (const entry of ["app", "lab"] as const) {
   /** Verifies native fields inherit the shared defaults without component classes or a theme wrapper. */
@@ -19,8 +19,10 @@ for (const entry of ["app", "lab"] as const) {
         ? "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1"
         : "/design-lab.html",
     );
-    if (entry === "app") await waitForDockviewApp(page);
-    else
+    if (entry === "app") {
+      await waitForDockviewApp(page);
+      await resetToDefaultLayout(page);
+    } else
       await expect(
         page.getByRole("navigation", { name: "Component index" }),
       ).toBeVisible();

@@ -8,7 +8,7 @@
 
 import type { Page } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Reads the live Clips group geometry and constraints after asynchronous docking changes. */
 async function clipGroup(page: Page) {
@@ -32,6 +32,7 @@ test("panel definitions constrain grid and edge groups", async ({
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.screenshot({ path: testInfo.outputPath("dockview-gutters.png") });
   await page.getByRole("tab", { name: "Clips", exact: true }).click();
   await page.evaluate(() => {

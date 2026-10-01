@@ -8,7 +8,7 @@
 
 import type { Locator } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks actual tab geometry along the header's horizontal or vertical axis. */
 async function expectAlignment(header: Locator, alignment: string) {
@@ -52,6 +52,7 @@ test("app tab alignment covers regular and edge groups and persists", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await expect(page.locator("body")).toHaveAttribute(
     "data-tab-alignment",
     "justify",

@@ -11,7 +11,7 @@ import {
   type Page,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Opens appearance preferences through the registered application shortcut. */
 async function openAppearance(page: Page) {
@@ -38,6 +38,7 @@ test("appearance settings update panels and portals and survive reload", async (
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     (window as any).appearanceOriginalPanel = api.getPanel("panel-FixtureGrid");
@@ -163,6 +164,7 @@ test("appearance settings recover from invalid stored preferences", async ({
   });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const dialog = await openAppearance(page);
   await expect(
     dialog.getByRole("button", { name: "Mint accent" }),
@@ -183,6 +185,7 @@ test("reduced motion supports Auto, On, and Off", async ({
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const dialog = await openAppearance(page);
   const select = dialog.getByLabel("Reduced motion", { exact: true });
   const root = page.locator("html");

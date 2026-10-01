@@ -8,7 +8,7 @@
 
 import type { Locator, Page } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Reads a rendered CSS color in sRGB so relative colors can be compared by channel. */
 async function renderedColor(element: Locator, property = "color") {
@@ -47,6 +47,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const camera = page.getByRole("button", { name: "Camera (C)", exact: true });
   await expect(camera).toBeVisible();
   let dialog = await openAppearance(page);

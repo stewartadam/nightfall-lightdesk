@@ -11,7 +11,7 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Reads visible toolbar geometry and selection styling independently of its command handlers. */
 async function buttonAppearance(button: Locator) {
@@ -55,6 +55,7 @@ test("editor toolbars share the lab button states", async ({
 
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.evaluate(() => {
     const stores = (window as any).appStores;
     const sequence = Object.values(stores.sequences.get())[0] as any;

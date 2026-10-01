@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test as playwrightTest } from "@playwright/test";
@@ -142,19 +142,11 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   },
 });
 
-/** Options for backend-free browser tests. */
-type FrontendOnlyOptions = {
-  /** Serves the packaged demo showfile and audio instead of the tracked test show (preview mode only). */
-  packagedDemoShow: boolean;
-};
-
 /** Playwright fixture that starts only Vite, leaving the backend port deliberately empty. */
 export const frontendOnlyTest = playwrightTest.extend<
-  FrontendOnlyOptions,
+  Record<never, never>,
   WorkerFixtures
 >({
-  packagedDemoShow: [false, { option: true }],
-
   /** Own one Vite service and port pair for a backend-free browser test worker. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -178,38 +170,21 @@ export const frontendOnlyTest = playwrightTest.extend<
   },
 
   /**
-   * Serve the tracked test show and generated audio so product flows stay deterministic
-   * while the packaged demo show changes; opted-in preview tests see the packaged show.
+   * Serve generated audio for the demo show's timelines in dev mode, where the sample
+   * media is not packaged; preview tests use the packaged artifact unchanged.
    */
-  context: async ({ context, packagedDemoShow }, use) => {
-    if (
-      packagedDemoShow &&
-      process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
-    ) {
-      await use(context);
-      return;
+  context: async ({ context }, use) => {
+    if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview") {
+      await context.route(
+        "**/nightfall-demo.nightfall-show/timeline-audio/**",
+        (route) =>
+          route.fulfill({
+            contentType: "audio/wav",
+            headers: { "accept-ranges": "bytes" },
+            body: Buffer.from(createSampleWav()),
+          }),
+      );
     }
-    const showfile = await readFile(
-      new URL(
-        "../../test-fixtures/browser-show/showfile.json",
-        import.meta.url,
-      ),
-    );
-    await context.route(
-      "**/nightfall-demo.nightfall-show/showfile.json",
-      (route) =>
-        route.fulfill({ contentType: "application/json", body: showfile }),
-    );
-    const audioPath = JSON.parse(showfile.toString()).timelines[0].audio_path;
-    await context.route(
-      `**/nightfall-demo.nightfall-show/${audioPath}`,
-      (route) =>
-        route.fulfill({
-          contentType: "audio/wav",
-          headers: { "accept-ranges": "bytes" },
-          body: Buffer.from(createSampleWav()),
-        }),
-    );
     await use(context);
   },
 

@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Exercises production shell styling, portal dialogs, and card/list workflows with the embedded engine. */
 test("application shares the design lab visual language", async ({
@@ -16,6 +16,7 @@ test("application shares the design lab visual language", async ({
   test.setTimeout(90_000);
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await expect(page.locator("body")).toHaveCSS("color-scheme", "dark");
   await expect(
     page.locator(".dockview-theme-nightfall-graphite"),

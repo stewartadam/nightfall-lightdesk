@@ -211,6 +211,8 @@ test("embedded demo fixture library hides upload and delete for built-ins", asyn
 test("embedded demo patches a built-in fixture through the patch wizard", async ({
   page,
 }, testInfo) => {
+  // The full sample rig makes the visualizer and wizard steps slower than the default budget.
+  test.setTimeout(60_000);
   const pageErrors: string[] = [];
   page.on("pageerror", (error) =>
     pageErrors.push(error.stack ?? error.message),

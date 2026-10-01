@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks fixed clip geometry, header alignment, and reflow across panel widths. */
 test("clip tiles keep uniform geometry with mixed badges", async ({
@@ -16,6 +16,7 @@ test("clip tiles keep uniform geometry with mixed badges", async ({
   await page.setViewportSize({ width: 1200, height: 900 });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.getByRole("tab", { name: "Clips", exact: true }).click();
   await page.waitForFunction(
     () => Object.keys((window as any).appStores?.clips?.get() ?? {}).length > 0,

@@ -11,7 +11,7 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks that a toolbar draws a single bottom divider without a border around its action groups. */
 async function expectBottomDivider(toolbar: Locator) {
@@ -35,6 +35,7 @@ test("CRUD and visualizer toolbars share a bottom-only divider", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.getByRole("tab", { name: "Fixtures", exact: true }).click();
   const fixtures = page.locator('[data-component="PanelToolbar"]').filter({
     has: page.getByRole("switch", { name: "Hide default values" }),

@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 const panels = [
   { component: "SequenceList", label: "Sequences", store: "sequences" },
@@ -26,6 +26,7 @@ for (const panel of panels) {
     await page.setViewportSize({ width: 1366, height: 900 });
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
+    await resetToDefaultLayout(page);
     await page.evaluate(({ component, store }) => {
       const stores = (window as any).appStores;
       const sample = Object.values(stores[store].get())[0] as any;
