@@ -225,7 +225,7 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
             <label class="flex items-center gap-2 text-sm">
               <Checkbox
                 aria-label="Use end time"
-                checked={currentTimeline().end_time !== undefined}
+                checked={currentTimeline().end_time != null}
                 onChange={(event) =>
                   updateTimeline({
                     end_time: event.currentTarget.checked
