@@ -64,8 +64,11 @@ export default defineConfig({
     video: "retain-on-failure",
     viewport: { width: 1366, height: 900 },
     baseURL,
+    // Browser-side timeline audio (embedded demo) must stay silent in every browser.
     launchOptions:
-      browserName === "chromium" ? { args: ["--mute-audio"] } : undefined,
+      browserName === "chromium"
+        ? { args: ["--mute-audio"] }
+        : { firefoxUserPrefs: { "media.volume_scale": "0.0" } },
   },
   webServer: usesBackendPool
     ? undefined
