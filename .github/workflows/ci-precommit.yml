@@ -185,22 +185,10 @@ jobs:
         run: pnpm exec prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
 
   native:
-    name: Rust Clippy
+    name: Rust tests, Clippy and backend
     needs: scope
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/native-validation.yml
-    with:
-      stage: pre-commit
-      hook: cargo-clippy
-
-  native-tests:
-    name: Rust tests and backend
-    needs: scope
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-    uses: ./.github/workflows/native-validation.yml
-    with:
-      stage: pre-push
-      hook: cargo-nextest
 
   webui:
     name: TypeScript and WebUI Node tests
@@ -248,7 +236,7 @@ jobs:
 
   browser-smoke:
     name: Chromium product flows
-    needs: [scope, native-tests, wasm-bridge, browser-runtime]
+    needs: [scope, native, wasm-bridge, browser-runtime]
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -301,7 +289,7 @@ jobs:
   precommit:
     # Keep the required check name stable while individual jobs report earlier.
     name: Run prek hooks
-    needs: [scope, source-checks, native, native-tests, wasm-bridge, browser-runtime, webui, browser-smoke]
+    needs: [scope, source-checks, native, wasm-bridge, browser-runtime, webui, browser-smoke]
     if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

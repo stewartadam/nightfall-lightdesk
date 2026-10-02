@@ -1,14 +1,10 @@
 name: Native validation
 
+# One job compiles the native graph once: tests first so the Playwright backend ships
+# early, then the desktop shell, doctests and Clippy reuse its build scripts, proc
+# macros and dependencies.
 on:
   workflow_call:
-    inputs:
-      stage:
-        type: string
-        required: true
-      hook:
-        type: string
-        required: true
 
 permissions: {}
 
@@ -45,11 +41,10 @@ jobs:
       - name: Cache native dependencies and tools
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # Native stages produce different artifacts. Stable stage keys also let
-          # develop pushes warm caches that PRs can restore from their base branch.
-          # The action already hashes manifests and the lockfile, and falls back to the
-          # newest cache for this stage when they change.
-          shared-key: native-${{ inputs.stage }}
+          # A stable key lets develop pushes warm caches that PRs restore from their base
+          # branch. The action already hashes manifests and the lockfile, and falls back
+          # to the newest native cache when they change.
+          shared-key: native
           cache-on-failure: true
 
       - name: Install system dependencies
@@ -60,24 +55,23 @@ jobs:
             libasound2-dev \
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
-            ${{ inputs.stage == 'pre-push' && 'libxdo-dev' || '' }}
+            libxdo-dev
 
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Install cargo-nextest for Rust tests
-        if: inputs.stage == 'pre-push'
         # Prebuilt and checksum-verified; building it from source costs minutes on a cache miss.
         uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
           tool: cargo-nextest@0.9.146
 
-      - name: Run native ${{ inputs.stage }} hooks
+      - name: Run Rust tests
         id: native-hooks
-        run: pnpm exec prek run ${{ inputs.hook }} --all-files --verbose --show-diff-on-failure --color always --stage ${{ inputs.stage }}
+        run: pnpm exec prek run cargo-nextest --all-files --verbose --show-diff-on-failure --color always --stage pre-push
 
       - name: Upload Rust test timings
-        if: ${{ !cancelled() && inputs.stage == 'pre-push' }}
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: rust-test-junit-${{ github.sha }}
@@ -86,14 +80,12 @@ jobs:
           retention-days: 14
 
       - name: Stage the tested native backend
-        if: inputs.stage == 'pre-push'
         run: |
           cargo build --tests --bin nightfall-headless
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           mkdir -p ci-artifacts
           cp "$target_dir/debug/nightfall-headless" ci-artifacts/nightfall-headless
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: inputs.stage == 'pre-push'
         with:
           name: native-test-backend-${{ github.sha }}
           path: ci-artifacts/nightfall-headless
@@ -104,14 +96,20 @@ jobs:
       # .pre-commit-config.yaml). Run them after the backend upload so browser tests are
       # not delayed, and even when nextest fails so both results report.
       - name: Run Rust doctests
-        if: ${{ !cancelled() && inputs.stage == 'pre-push' && steps.native-hooks.outcome != 'skipped' }}
+        if: ${{ !cancelled() && steps.native-hooks.outcome != 'skipped' }}
         run: pnpm exec prek run cargo-doctest --all-files --verbose --color always --stage manual
 
       # app-tauri is not a default member, so nextest skips it. Testing it here reuses
       # most of the runtime units nextest just built instead of a separate cold job.
       - name: Run desktop shell tests
-        if: ${{ !cancelled() && inputs.stage == 'pre-push' && steps.native-hooks.outcome != 'skipped' }}
+        if: ${{ !cancelled() && steps.native-hooks.outcome != 'skipped' }}
         env:
           # Tests do not embed the frontend or copy distribution resources.
           TAURI_CONFIG: '{"build":{"frontendDist":null},"bundle":{"resources":[]}}'
         run: cargo test -p app-tauri --all-targets --locked
+
+      # Clippy runs last so it never delays the backend upload. Its dependency units are
+      # metadata-only and cannot reuse codegen, but build scripts and proc macros can.
+      - name: Run Clippy
+        if: ${{ !cancelled() && steps.native-hooks.outcome != 'skipped' }}
+        run: pnpm exec prek run cargo-clippy --all-files --verbose --show-diff-on-failure --color always --stage pre-commit

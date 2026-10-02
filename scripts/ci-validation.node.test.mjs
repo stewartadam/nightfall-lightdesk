@@ -23,7 +23,6 @@ const { jobs } = parse(
 test("validation jobs wait only for their preparation prerequisites", () => {
   assert.equal(jobs["source-checks"].needs, "scope");
   assert.equal(jobs.native.needs, "scope");
-  assert.equal(jobs["native-tests"].needs, "scope");
   assert.deepEqual(jobs.webui.needs, [
     "scope",
     "wasm-bridge",
@@ -31,14 +30,13 @@ test("validation jobs wait only for their preparation prerequisites", () => {
   ]);
   assert.deepEqual(jobs["browser-smoke"].needs, [
     "scope",
-    "native-tests",
+    "native",
     "wasm-bridge",
     "browser-runtime",
   ]);
   for (const id of [
     "source-checks",
     "native",
-    "native-tests",
     "webui",
     "browser-smoke",
   ]) {
