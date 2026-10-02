@@ -36,6 +36,9 @@ const DASHBOARD_HOST =
 const DASHBOARD_ROOT = resolve(process.cwd());
 const LOG_DIR = join(tmpdir(), "nightfall-worktree-dashboard");
 const DEFAULT_BACKEND_STARTUP_CMDS = "fps 5";
+const FALLBACK_PRIMARY_BRANCHES = ["develop", "main"];
+/** @type {Promise<string[]> | null} */
+let primaryBranchesPromise = null;
 const SERVICE_DEFINITIONS = {
   backend: {
     cargo: true,
@@ -979,11 +982,26 @@ async function collectWorktreeState() {
       };
     }),
   );
-  const worktrees = collected;
+  return sortWorktrees(collected, await getPrimaryBranches());
+}
 
-  worktrees.sort((a, b) => {
-    if (a.isMain !== b.isMain) {
-      return a.isMain ? -1 : 1;
+/**
+ * Orders worktrees for display: primary branches first (in the order given),
+ * then worktrees with a `.env` before those without, then by branch name,
+ * falling back to path for detached worktrees.
+ */
+export function sortWorktrees(worktrees, primaryBranches) {
+  const primaryRank = (worktree) => {
+    const index = worktree.branch
+      ? primaryBranches.indexOf(worktree.branch)
+      : -1;
+    return index === -1 ? primaryBranches.length : index;
+  };
+
+  return [...worktrees].sort((a, b) => {
+    const rankDelta = primaryRank(a) - primaryRank(b);
+    if (rankDelta !== 0) {
+      return rankDelta;
     }
     if (a.envExists !== b.envExists) {
       return a.envExists ? -1 : 1;
@@ -993,8 +1011,33 @@ async function collectWorktreeState() {
     }
     return a.path.localeCompare(b.path);
   });
+}
 
-  return worktrees;
+/**
+ * Builds the ordered primary branch list from the remote's default branch
+ * (e.g. `origin/develop`, when known) followed by the conventional
+ * long-lived branches, without duplicates.
+ */
+export function primaryBranchesFrom(remoteHeadRef) {
+  const detected = remoteHeadRef?.trim().replace(/^[^/]+\//u, "");
+  return [...new Set([detected, ...FALLBACK_PRIMARY_BRANCHES].filter(Boolean))];
+}
+
+/**
+ * Resolves the primary branches once per dashboard process. `origin/HEAD` is
+ * only set by `git clone` or `git remote set-head`, so its absence just leaves
+ * the fallback list.
+ */
+function getPrimaryBranches() {
+  primaryBranchesPromise ??= runGit([
+    "symbolic-ref",
+    "--quiet",
+    "--short",
+    "refs/remotes/origin/HEAD",
+  ])
+    .catch(() => null)
+    .then(primaryBranchesFrom);
+  return primaryBranchesPromise;
 }
 
 function jsonResponse(res, statusCode, payload) {
