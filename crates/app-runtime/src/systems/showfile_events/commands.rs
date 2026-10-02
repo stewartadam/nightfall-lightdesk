@@ -236,6 +236,43 @@ pub fn handle_events(
                 }
             }
 
+            DeskCommand::DeleteShowfile(name) => {
+                let result = current_showfile_name(Some(name)).and_then(|showfile_name| {
+                    if showfile_name.as_deref() == current_showfile.name() {
+                        return Err(format!(
+                            "Cannot delete \"{}\" while it is open. Open another show first.",
+                            showfile_name_stem(showfile_name.as_deref())?
+                        ));
+                    }
+                    trash_showfile_in_root(
+                        &showfile_root_dir_path()?,
+                        showfile_name.as_deref(),
+                        trash::now_ms(),
+                    )
+                });
+                match result {
+                    Ok(_) => succeed_showfile_command(&mut responder, event.command_id),
+                    Err(error) => fail_showfile_command(&mut responder, event.command_id, error),
+                }
+            }
+
+            DeskCommand::RestoreDeletedShowfile(entry_id) => {
+                match showfile_root_dir_path()
+                    .and_then(|root| restore_trashed_showfile_in_root(&root, entry_id))
+                {
+                    Ok(_) => succeed_showfile_command(&mut responder, event.command_id),
+                    Err(error) => fail_showfile_command(&mut responder, event.command_id, error),
+                }
+            }
+
+            DeskCommand::EmptyShowfileTrash => {
+                match showfile_root_dir_path().and_then(|root| empty_showfile_trash_in_root(&root))
+                {
+                    Ok(()) => succeed_showfile_command(&mut responder, event.command_id),
+                    Err(error) => fail_showfile_command(&mut responder, event.command_id, error),
+                }
+            }
+
             DeskCommand::ImportShowfile(options) => {
                 let import_path = match import_showfile_path(options) {
                     Ok(path) => path,

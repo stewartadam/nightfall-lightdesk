@@ -169,6 +169,31 @@ export async function discardDraftShowfileAndAwait(
   });
 }
 
+/** Moves a show that is not open, with its draft and backups, into the backend trash. */
+export async function deleteShowfileAndAwait(
+  showfileName: string,
+): Promise<void> {
+  await sendDeskCommandAndAwait({
+    type: "DeleteShowfile",
+    data: showfileName,
+  });
+}
+
+/** Restores a deleted show from its trash entry and resolves once it is listed again. */
+export async function restoreDeletedShowfileAndAwait(
+  trashEntryId: string,
+): Promise<void> {
+  await sendDeskCommandAndAwait({
+    type: "RestoreDeletedShowfile",
+    data: trashEntryId,
+  });
+}
+
+/** Permanently removes every deleted show held in the backend trash. */
+export async function emptyShowfileTrashAndAwait(): Promise<void> {
+  await sendDeskCommandAndAwait({ type: "EmptyShowfileTrash" });
+}
+
 /** Load a backup revision into working state without replacing its saved showfile. */
 export async function loadShowfileRevisionAndAwait(
   showfileName: string,
