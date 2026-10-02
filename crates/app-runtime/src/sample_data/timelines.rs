@@ -9,7 +9,8 @@
 use super::timeline_clips::{
     BSTRIP_FLASH_BOTTOM_CLIP_UID, BSTRIP_FLASH_CLIP_UID, BSTRIP_FLASH_TOP_CLIP_UID,
     BSTRIP_ROW_FLASH_CLIP_UIDS, PASTEL_PULSE_CLIP_UID, PASTEL_RAINBOW_CLIP_UID,
-    PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID, SPARKLES_FX_CLIP_UID, SPARKLES_INT_CLIP_UID,
+    PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID, SPARKLE_FADE, SPARKLES_FX_CLIP_UID,
+    SPARKLES_INT_CLIP_UID,
     STROBE_BASS_LONG_CLIP_UID, STROBE_BASS_SHORT_CLIP_UID, WASH_HAT_RUN_CLIP_UID,
     WASH_VOCAL_PULSE_CLIP_UID,
 };
@@ -119,8 +120,10 @@ impl ActionList {
         );
     }
 
-    /// Appends a sparkle (intensity lift plus colour twinkle) from `from` until `until`.
-    fn sparkle(&mut self, from: Duration, until: Duration) {
+    /// Appends a sparkle at `from`: the intensity lift fades itself down over
+    /// `SPARKLE_FADE`, and the colour twinkle stops as the fade finishes.
+    fn sparkle(&mut self, from: Duration) {
+        let until = from + SPARKLE_FADE;
         self.start("Sparkle lift", SPARKLES_INT_CLIP_UID, from, until);
         self.start(
             "Sparkle",
@@ -129,7 +132,6 @@ impl ActionList {
             until,
         );
         self.stop("Stop sparkle", SPARKLES_FX_CLIP_UID, until);
-        self.stop("Stop sparkle lift", SPARKLES_INT_CLIP_UID, until);
     }
 
     /// Wraps the actions in an unmuted, expanded track.
@@ -291,7 +293,7 @@ fn lofi_regions(timeline_uid: Uuid) -> Vec<TimelineRegion> {
 ///   starts on beat 2.25 of every even bar.
 /// - Vocal: a wash beam pulse-and-fade on the vocal sample that leads into bars 5, 9,
 ///   and 13.
-/// - Moments: sparkles at the start of section B and on the final hit.
+/// - Moments: a bstrip sparkle on the same vocal samples that fades down over a bar.
 fn rap_tracks() -> Vec<Track> {
     let end = RAP.at(17, 2.0);
     // One rainbow cycle per four rap bars instead of four lo-fi bars.
@@ -382,8 +384,9 @@ fn rap_tracks() -> Vec<Track> {
     }
 
     let mut moments = ActionList::new("moments");
-    moments.sparkle(RAP.at(9, 1.0), RAP.at(11, 1.0));
-    moments.sparkle(RAP.at(17, 1.0), RAP.at(19, 1.0));
+    for bar in [5, 9, 13] {
+        moments.sparkle(RAP.at(bar, 1.0));
+    }
 
     vec![
         wash.into_track("wash", "Wash"),

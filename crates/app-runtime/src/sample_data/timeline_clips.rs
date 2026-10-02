@@ -62,6 +62,9 @@ pub(super) const PASTEL_RAINBOW_CYCLE: Duration = Duration::from_micros(8_888_88
 /// Cycle length of the pastel rainbow pulse: two bars at 108 BPM. The lo-fi groove
 /// restarts it every two beats, so each segment replays the first quarter of the cycle.
 pub(super) const PASTEL_PULSE_CYCLE: Duration = Duration::from_micros(4_444_444);
+/// Length of the sparkle's fade down: one bar at 168 BPM, so the rap's vocal sparkle
+/// hands back to the rainbow on the next clap.
+pub(super) const SPARKLE_FADE: Duration = Duration::from_micros(1_428_571);
 /// Cycle length of the wash hat run: one bar (eight hi-hat eighth notes) at 168 BPM.
 const HAT_RUN_CYCLE: Duration = Duration::from_micros(1_428_571);
 
@@ -484,16 +487,15 @@ fn add_flash(world: &mut World, flash: Flash) {
         };
         fade
     } else {
-        let mut hold = cue(
+        // Restates the flash look so the hold step reads as part of the flash.
+        cue(
             &second_uid,
             2,
             "Hold",
             CueTriggerType::AfterDelay(flash.hold),
             flash.selection.clone(),
-            &[],
-        );
-        hold.instructions.clear();
-        hold
+            &flash.on,
+        )
     };
     let mut sequence = Sequence {
         identifiers: Identifiers {
@@ -524,10 +526,12 @@ fn add_flash(world: &mut World, flash: Flash) {
     add_sequence_clip(world, vec![on, second], sequence, clip);
 }
 
-/// Seed clips 33 and 34: a shuffled RGB sine twinkle and the intensity lift that reveals it.
+/// Seed clips 33 and 34: a shuffled RGB sine twinkle and the intensity that reveals it.
 ///
-/// The timeline bounds the sparkle with stop actions, so the intensity sequence holds its
-/// single cue until stopped.
+/// The intensity lifts at once, holds for 100 ms, then fades the bstrips down over
+/// `SPARKLE_FADE` and ends itself. It plays at priority 2 so the fade can pull the bstrips
+/// below the rainbow; synth flashes at the same priority still punch through it. The timeline stops the twinkle as the fade finishes, and the release hands the
+/// bstrips back to whatever plays underneath.
 fn add_sparkles(world: &mut World) {
     let fx_uid = Uuid::from_str("130131a3-6525-44f7-9757-8650ab0fc81f").unwrap();
     let waveform = |phase_start: f32| FxWaveform {
@@ -582,18 +586,30 @@ fn add_sparkles(world: &mut World) {
         "Sparkle Lift",
         CueTriggerType::Manual,
         groups(BSTRIP_GROUPS.0, BSTRIP_GROUPS.1),
-        &[(
-            Attribute::Intensity,
-            ValueSource::Inline(ParameterValue::RelativePercent { offset: 1.0.into() }),
-        )],
+        // Absolute so the fade cue can take it down; a relative lift stays applied on
+        // top of an absolute fade.
+        &[(Attribute::Intensity, percent(1.0))],
     );
+    let mut fade = cue(
+        "0a7a59c9-9f49-4767-a454-1ae37f177b55",
+        2,
+        "Sparkle Fade",
+        CueTriggerType::FollowPrevious,
+        groups(BSTRIP_GROUPS.0, BSTRIP_GROUPS.1),
+        &[(Attribute::Intensity, percent(0.0))],
+    );
+    fade.transitions = PartialTransition {
+        delay_in: fixed(Duration::from_millis(100)),
+        fade_in: fixed(SPARKLE_FADE),
+        ..Default::default()
+    };
     let sequence = Sequence {
         identifiers: Identifiers {
             uid: Uuid::from_str("f6cdb32d-f027-4708-a724-28212974e45c").unwrap(),
             id: 9,
             label: "Sparkles Intensity".to_owned(),
         },
-        steps: vec![lift.identifiers.uid.into()],
+        steps: vec![lift.identifiers.uid.into(), fade.identifiers.uid.into()],
         ..Default::default()
     };
     let clip = Clip {
@@ -603,10 +619,13 @@ fn add_sparkles(world: &mut World) {
             uid: SPARKLES_INT_CLIP_UID,
         },
         source: Some(Source::Sequence(sequence.identifiers.uid)),
-        priority: Priority(1),
-        ..Default::default()
+        priority: Priority(2),
+        options: ClipOptions {
+            auto_release: true,
+            deactivate_on_sequence_end: true,
+        },
     };
-    add_sequence_clip(world, vec![lift], sequence, clip);
+    add_sequence_clip(world, vec![lift, fade], sequence, clip);
 }
 
 /// Build a selection over the tilt axis and white strobe segments of every matrix strobe,
@@ -735,7 +754,8 @@ fn add_wash_hat_run(world: &mut World) {
             vec![SpatialClause::Grid(GridSize::Width(WASH_STRIP_PIXELS))],
         ),
         phase: StepFxPhase {
-            waypoints: vec![0.0, 1.0],
+            // Phase 45>405 degrees: the run starts one eighth of a bar in.
+            waypoints: vec![0.125, 1.125],
             groups: PhaseGroups::Explicit(8),
         },
         direction: FxDirection::Forward,

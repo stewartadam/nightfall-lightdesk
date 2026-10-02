@@ -1917,6 +1917,10 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
         seen(417, "vocal pulse") >= Duration::from_millis(5_600),
         "the wash pulse waits for the vocal into bar 5"
     );
+    assert!(
+        seen(34, "vocal sparkle") >= Duration::from_millis(5_600),
+        "the sparkle waits for the vocal into bar 5"
+    );
 }
 
 /// Plays the Lo-fi timeline in real time through bar 4 and verifies the phrase-ending
