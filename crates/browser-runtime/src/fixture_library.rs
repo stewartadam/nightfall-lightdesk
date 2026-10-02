@@ -237,7 +237,7 @@ mod tests {
         let messages = engine
             .drain_output_core()
             .iter()
-            .map(|bytes| decode_publication(bytes))
+            .filter_map(|bytes| decode_publication(bytes))
             .collect();
         (command_id, messages)
     }

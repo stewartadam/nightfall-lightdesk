@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks category content, keyboard selection, and access to the segmented strip on narrow screens. */
 test("settings segmented tabs support pointer and keyboard navigation", async ({
@@ -15,6 +15,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });
@@ -112,6 +113,7 @@ test("shared tabs slide their associated content", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });

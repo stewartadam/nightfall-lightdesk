@@ -6,8 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { cp } from "node:fs/promises";
-import { join } from "node:path";
 import {
   cueGridAttributeValueColumnKey,
   gridCellByIdentifier,
@@ -19,14 +17,119 @@ import {
   type TestInfo,
   test,
 } from "./playwright-fixtures";
-import {
-  seedStartupShowfileName,
-  waitForDockviewApp,
-} from "./showfile-startup";
+import { waitForDockviewApp } from "./showfile-startup";
 
-const cueUid = "7ee293f49ce745c198aed2f022343001";
-const fixtureUid = "7ee293f49ce745c198aed2f022341001";
+const cueUid = "5e1ec7ed0000400080000000000c0e01";
 const panelId = "single-element-cue-editor";
+/** Fixture IDs patched by this spec; chosen outside the sample rig's ID ranges. */
+const fixtureIds = [9001, 9002, 9003, 9004, 9005, 9006];
+
+/**
+ * Patches six single-element RGB fixtures from the built-in library and stores one cue
+ * that sets the same inline values on all of them, returning the fixture UIDs in ID order.
+ */
+async function seedSingleElementCue(page: Page): Promise<string[]> {
+  await waitForDockviewApp(page);
+  return page.evaluate(
+    async ({ cueUid, fixtureIds }) => {
+      const stores = (window as any).appStores;
+      const created = await stores.sendAndAwait({
+        module: "FixtureLibraryCommand",
+        command: {
+          type: "CreateFixturesFromLibrary",
+          data: {
+            make: "Generic",
+            model: "Moving Head RGBW",
+            mode: "Spot",
+            fixtures: fixtureIds.map((id: number) => ({
+              id,
+              label: `Single Element ${id}`,
+            })),
+          },
+        },
+      });
+      if (created.outcome.type !== "Succeeded") {
+        throw new Error(`Unable to patch fixtures: ${JSON.stringify(created)}`);
+      }
+      const deadline = Date.now() + 10_000;
+      let fixtureUids: string[] = [];
+      while (Date.now() < deadline) {
+        const fixtures = Object.values(stores.fixtures.get()) as any[];
+        fixtureUids = fixtureIds
+          .map(
+            (id: number) =>
+              fixtures.find((fixture) => fixture.identifiers.id === id)
+                ?.identifiers.uid,
+          )
+          .filter(Boolean);
+        if (fixtureUids.length === fixtureIds.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (fixtureUids.length !== fixtureIds.length) {
+        throw new Error("Patched fixtures never reached the fixture store");
+      }
+      const inline = (value: number) => ({
+        type: "Inline",
+        data: { type: "Absolute", data: { value } },
+      });
+      const noTransitions = {
+        delay_in: null,
+        fade_in: null,
+        curve_in: null,
+        delay_out: null,
+        fade_out: null,
+        curve_out: null,
+      };
+      const stored = await stores.sendAndAwait({
+        module: "CueCommand",
+        command: {
+          type: "StoreCue",
+          data: {
+            identifiers: { id: 9001, uid: cueUid, label: "Single Element" },
+            trigger: { type: "Manual" },
+            transitions: noTransitions,
+            transitions_by_attribute: {},
+            instructions: [
+              {
+                selection: {
+                  source: {
+                    type: "Resolved",
+                    data: fixtureUids.map((fixture_uid) => ({
+                      fixture_uid,
+                      index: 1,
+                    })),
+                  },
+                  clauses: [],
+                },
+                cue_instruction: {
+                  values: {
+                    Intensity: inline(220),
+                    Red: inline(25),
+                    Green: inline(70),
+                    Blue: inline(255),
+                  },
+                  transitions_by_attribute: {},
+                  transitions_by_fixture_attribute: [],
+                  color_path_id: null,
+                  transitions: noTransitions,
+                },
+              },
+            ],
+            lookahead: null,
+            parts: [],
+            tracking_flags: { __Composed__: 7 },
+            tracking_mode: null,
+          },
+        },
+      });
+      if (stored.outcome.type !== "Succeeded") {
+        throw new Error(`Unable to store cue: ${JSON.stringify(stored)}`);
+      }
+      return fixtureUids;
+    },
+    { cueUid, fixtureIds },
+  );
+}
 
 /** Opens the seeded cue through the normal editor panel. */
 async function openCue(page: Page): Promise<void> {
@@ -34,14 +137,13 @@ async function openCue(page: Page): Promise<void> {
   await page.evaluate(
     ({ cueUid, panelId }) => {
       const api = (window as any).appStores.dockApi.get();
-      const existing = api.getPanel(panelId);
-      if (existing) api.removePanel(existing);
+      // Replace the show's saved layout so no collapsed edge group can hide the editor.
+      api.clear();
       const panel = api.addPanel({
         id: panelId,
         component: "CueEditor",
         title: "Single-element cue",
         params: { initialPanelId: panelId, initialCueUid: cueUid },
-        position: { referencePanel: "panel-FixtureGrid", direction: "within" },
       });
       panel.api.setActive();
     },
@@ -54,7 +156,7 @@ async function verifySingleElementValues(
   page: Page,
   testInfo: TestInfo,
 ): Promise<void> {
-  await waitForDockviewApp(page);
+  const fixtureUids = await seedSingleElementCue(page);
   await expect
     .poll(() =>
       page.evaluate(
@@ -70,7 +172,7 @@ async function verifySingleElementValues(
   );
   await expect(grid).toBeVisible();
   for (const [attribute, value] of Object.entries({
-    VirtualIntensity: "220",
+    Intensity: "220",
     Red: "25",
     Green: "70",
     Blue: "255",
@@ -78,7 +180,7 @@ async function verifySingleElementValues(
     const cell = await gridCellByIdentifier(grid, {
       columnKey: cueGridAttributeValueColumnKey(attribute),
       identifierColumnKey: "id",
-      identifierText: "1",
+      identifierText: String(fixtureIds[0]),
     });
     await expect(cell).toHaveText(value);
   }
@@ -88,7 +190,7 @@ async function verifySingleElementValues(
   let red = await gridCellByIdentifier(grid, {
     columnKey: cueGridAttributeValueColumnKey("Red"),
     identifierColumnKey: "id",
-    identifierText: "1",
+    identifierText: String(fixtureIds[0]),
   });
   await red.click();
   await page.keyboard.press("Enter");
@@ -111,15 +213,12 @@ async function verifySingleElementValues(
               blue: instruction.cue_instruction.values.Blue,
             }));
         },
-        { cueUid, fixtureUid },
+        { cueUid, fixtureUid: fixtureUids[0] },
       ),
     )
     .toEqual([
       {
-        refs: Array.from({ length: 6 }, (_, index) => ({
-          fixture_uid: `7ee293f49ce745c198aed2f02234100${index + 1}`,
-          index: 1,
-        })),
+        refs: fixtureUids.map((fixture_uid) => ({ fixture_uid, index: 1 })),
         red: {
           type: "Fanned",
           data: {
@@ -142,18 +241,18 @@ async function verifySingleElementValues(
   red = await gridCellByIdentifier(grid, {
     columnKey: cueGridAttributeValueColumnKey("Red"),
     identifierColumnKey: "id",
-    identifierText: "1",
+    identifierText: String(fixtureIds[0]),
   });
   await expect(red).toHaveText("50%");
   const otherRed = await gridCellByIdentifier(grid, {
     columnKey: cueGridAttributeValueColumnKey("Red"),
     identifierColumnKey: "id",
-    identifierText: "2",
+    identifierText: String(fixtureIds[1]),
   });
   await expect(otherRed).toHaveText("25");
   for (const [id, attribute, value] of [
-    ["1", "VirtualIntensity", "60%"],
-    ["6", "Blue", "80%"],
+    [String(fixtureIds[0]), "Intensity", "60%"],
+    [String(fixtureIds[5]), "Blue", "80%"],
   ]) {
     const cell = await gridCellByIdentifier(grid, {
       columnKey: cueGridAttributeValueColumnKey(attribute),
@@ -177,19 +276,17 @@ async function verifySingleElementValues(
   try {
     await expect
       .poll(() =>
-        page.evaluate(() => {
+        page.evaluate((uids) => {
           const parameters = (window as any).appStores.parameters.get();
-          const first = parameters.get("7ee293f49ce745c198aed2f022341001")?.raw;
-          const second = parameters.get(
-            "7ee293f49ce745c198aed2f022341002",
-          )?.raw;
-          const last = parameters.get("7ee293f49ce745c198aed2f022341006")?.raw;
+          const first = parameters.get(uids[0])?.raw;
+          const second = parameters.get(uids[1])?.raw;
+          const last = parameters.get(uids[uids.length - 1])?.raw;
           return Boolean(
             first?.Red > second?.Red * 2 &&
               last?.Blue > 0 &&
               last?.Blue < second?.Blue,
           );
-        }),
+        }, fixtureUids),
       )
       .toBe(true);
   } finally {
@@ -205,7 +302,7 @@ async function verifySingleElementValues(
   }
 }
 
-/** Exercises the tracked test showfile in the WASM runtime. */
+/** Exercises the cue editor against the embedded demo show in the WASM runtime. */
 frontendOnlyTest(
   "embedded demo displays and edits single-element cue values",
   async ({ page }, testInfo) => {
@@ -214,19 +311,11 @@ frontendOnlyTest(
   },
 );
 
-/** Loads a separate copy of the tracked test showfile through the native showfile lifecycle. */
+/** Exercises the same cue editor flow against the native engine's sample show. */
 test("native runtime displays and edits single-element cue values", async ({
-  backendSlot,
   page,
 }, testInfo) => {
   test.setTimeout(120_000);
-  await cp(
-    "test-fixtures/browser-show",
-    join(backendSlot.dataDir, "cue-editor-demo.nightfall-show"),
-    { recursive: true },
-  );
-  await seedStartupShowfileName(page, "cue-editor-demo");
   await page.goto("/?startup:draftRecovery=false&e2e=1");
-  await waitForDockviewApp(page, { showfileName: "cue-editor-demo" });
   await verifySingleElementValues(page, testInfo);
 });

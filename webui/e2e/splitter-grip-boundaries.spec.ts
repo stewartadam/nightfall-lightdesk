@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 for (const side of ["right", "bottom"] as const) {
   /** Keeps grid and edge splitters visible and usable when their panels cannot shrink further. */
@@ -17,6 +17,7 @@ for (const side of ["right", "bottom"] as const) {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
+    await resetToDefaultLayout(page);
     await page.evaluate((side) => {
       const api = (window as any).appStores.dockApi.get();
       if (side === "right") {

@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks stable header controls as edge rails appear, expand, hide, and disappear. */
 test("header alignment stays fixed across edge rail states", async ({
@@ -15,6 +15,7 @@ test("header alignment stays fixed across edge rail states", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const header = page.locator(".nf-app-header");
   /** Measures viewport anchoring and control positions independently of the workspace. */
   const measureHeader = () =>
@@ -112,6 +113,7 @@ for (const { platform, modifier, label } of [
     }, platform);
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
+    await resetToDefaultLayout(page);
     await expect
       .poll(() =>
         page.evaluate(() => {

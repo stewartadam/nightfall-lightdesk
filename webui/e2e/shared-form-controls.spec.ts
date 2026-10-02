@@ -11,7 +11,7 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Reads the visual properties that should stay consistent across form contexts. */
 async function controlAppearance(control: Locator) {
@@ -54,6 +54,7 @@ test("lab, settings and entity editors share form controls", async ({
 
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.keyboard.press("ControlOrMeta+,");
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   const retention = settings.getByLabel("Backups to keep");

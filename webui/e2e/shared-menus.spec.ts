@@ -11,7 +11,7 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Captures the visible surface, row and icon treatment independently of menu behavior. */
 async function menuAppearance(menu: Locator) {
@@ -42,6 +42,7 @@ test("settings, tile and timeline menus share their visual treatment", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.locator('[title="Menu"]').click();
   const dropdown = page.locator('[data-menu-kind="dropdown"]');
   await expect(dropdown).toBeVisible();

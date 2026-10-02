@@ -11,7 +11,7 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Reads dialog presentation independently of the caller's width and content. */
 async function presentation(dialog: Locator) {
@@ -72,6 +72,7 @@ test("shared dialog presentation covers lab, store and creation forms", async ({
 
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     api.getPanel("panel-Programmer")?.api.setActive();

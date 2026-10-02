@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks workspace spacing as the last tab leaves and returns to each edge. */
 test("empty hidden edges add padding only on the left and right", async ({
@@ -15,6 +15,7 @@ test("empty hidden edges add padding only on the left and right", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const host = page.getByTestId("dockview-host");
 
   for (const edge of ["left", "right", "bottom"] as const) {

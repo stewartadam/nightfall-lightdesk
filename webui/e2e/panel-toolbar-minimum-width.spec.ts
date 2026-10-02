@@ -9,7 +9,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 const panels = [
   {
@@ -33,6 +33,7 @@ for (const panel of panels) {
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
+    await resetToDefaultLayout(page);
     await expect
       .poll(() =>
         page.evaluate(

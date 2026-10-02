@@ -9,7 +9,7 @@
 import type { Page } from "@playwright/test";
 import type { Sequence, Timeline } from "../types";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Activates a dedicated list panel in the main dock group for visual checks. */
 async function openCardPanel(page: Page, component: string) {
@@ -33,6 +33,7 @@ test("timeline cards stay aligned and sequence loop tags match clip gears", asyn
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.evaluate(() => {
     const stores = (window as any).appStores;
     const timeline = Object.values(stores.timelines.get())[0] as Timeline;

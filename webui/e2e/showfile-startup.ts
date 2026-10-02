@@ -156,6 +156,30 @@ export async function openStartupShowfileIfPrompted(
   }
 }
 
+/**
+ * Replaces the loaded show's saved panel layout with the application default layout,
+ * so shell tests do not depend on how the demo show author arranged its panels.
+ */
+export async function resetToDefaultLayout(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const commandInput = page.getByPlaceholder("Type a command or search...");
+  await expect(commandInput).toBeVisible();
+  await commandInput.fill("Reset Layout");
+  await page.keyboard.press("Enter");
+  await expect(commandInput).toBeHidden();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Boolean(
+          (window as any).appStores?.dockApi
+            ?.get?.()
+            ?.getPanel?.("panel-FixtureGrid"),
+        ),
+      ),
+    )
+    .toBe(true);
+}
+
 /** Waits for the app shell stores, resolving startup showfile prompts first. */
 export async function waitForDockviewApp(
   page: Page,

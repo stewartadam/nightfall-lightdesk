@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 for (const surface of ["app", "designer"] as const) {
   /** Verifies focus changes only the outer frame while preserving the divider and accent tab. */
@@ -20,7 +20,10 @@ for (const surface of ["app", "designer"] as const) {
         ? "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1"
         : "/design-lab.html",
     );
-    if (surface === "app") await waitForDockviewApp(page);
+    if (surface === "app") {
+      await waitForDockviewApp(page);
+      await resetToDefaultLayout(page);
+    }
     const tab = page.getByRole("tab", {
       name: surface === "app" ? "Fixtures" : "Groups",
       exact: true,

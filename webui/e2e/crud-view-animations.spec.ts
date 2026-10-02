@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 for (const component of [
   "SequenceList",
@@ -24,6 +24,7 @@ for (const component of [
   }, testInfo) => {
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
+    await resetToDefaultLayout(page);
     await page.evaluate((component) => {
       const api = (window as any).appStores.dockApi.get();
       api.addPanel({

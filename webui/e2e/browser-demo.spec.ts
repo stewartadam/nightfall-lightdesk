@@ -7,10 +7,44 @@
  */
 
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
+
+/** Lo-fi timeline in the generated sample show; its fx3 clip starts at 3.6 s. */
+const DEMO_TIMELINE_LABEL = "Lo-fi";
+const DEMO_FX_CLIP_LABEL = "fx3";
+const DEMO_CUE_LABEL = "Red 100%";
+/** RGB pixel tape and moving spot fixture IDs patched by the sample rig. */
+const DEMO_RGB_FIXTURE_ID = 310;
+const DEMO_SPOT_FIXTURE_ID = 501;
+
+/** Read the domain collection sizes the embedded runtime should load from the demo showfile. */
+async function readDemoShowfileCounts() {
+  const showfile = JSON.parse(
+    await readFile(
+      new URL(
+        "../public/nightfall-demo.nightfall-show/showfile.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const timeline = showfile.timelines.find(
+    (entry: any) => entry.identifiers.label === DEMO_TIMELINE_LABEL,
+  );
+  return {
+    fixtureCount: showfile.fixtures.length,
+    groupCount: showfile.groups.length,
+    cueCount: showfile.cues.length,
+    sequenceCount: showfile.sequences.length,
+    clipCount: showfile.clips.length,
+    fxCount: showfile.fx.length,
+    markerCount: timeline.markers.length,
+    regionCount: timeline.regions.length,
+  };
+}
 
 /** Reads playback diagnostics independently of the visible shell controls. */
 async function readDemoAudioState(page: Page) {
@@ -73,12 +107,12 @@ async function prepareEmbeddedPage(page: Page): Promise<{
 
 /** Read the deterministic domain state and runtime capabilities exposed to the UI. */
 async function readDemoState(page: Page) {
-  return page.evaluate(() => {
+  return page.evaluate((timelineLabel) => {
     const stores = (window as any).appStores;
     const values = (storeName: string) =>
       Object.values(stores?.[storeName]?.get?.() ?? {});
     const timeline = values("timelines").find(
-      (entry: any) => entry?.identifiers?.label === "Nightfall Demo",
+      (entry: any) => entry?.identifiers?.label === timelineLabel,
     ) as any;
     return {
       capabilities: stores?.runtimeCapabilities?.get?.() ?? null,
@@ -94,7 +128,7 @@ async function readDemoState(page: Page) {
       audioPath: timeline?.audio_path ?? null,
       resyncComplete: stores?.resyncComplete?.() ?? false,
     };
-  });
+  }, DEMO_TIMELINE_LABEL);
 }
 
 /** Open a playback workspace independent of the bundled showfile's saved panel layout. */
@@ -110,7 +144,7 @@ async function openDemoTimeline(
     api.addPanel({
       id: `browser-demo-timeline-${uid}`,
       component: "Timeline",
-      title: "Nightfall Demo Timeline",
+      title: "Demo Timeline",
       params: { initialTimelineUid: uid },
     });
   }, timelineUid);
@@ -123,24 +157,27 @@ async function openDemoTimeline(
 
 /** Open the clip list beside the timeline and return the seeded FX clip UID. */
 async function openDemoClips(page: Page, timelineUid: string): Promise<string> {
-  const clipUid = await page.evaluate((uid) => {
-    const stores = (window as any).appStores;
-    const entry = Object.values(stores.clips.get()).find(
-      (candidate: any) => candidate[0].identifiers.label === "Nightfall Wave",
-    ) as any;
-    if (!entry) throw new Error("Seeded Nightfall Wave clip was unavailable");
-    stores.dockApi.get().addPanel({
-      id: "browser-demo-clips",
-      component: "ClipList",
-      title: "Clips",
-      params: { initialPanelId: "browser-demo-clips" },
-      position: {
-        referencePanel: `browser-demo-timeline-${uid}`,
-        direction: "right",
-      },
-    });
-    return entry[0].identifiers.uid;
-  }, timelineUid);
+  const clipUid = await page.evaluate(
+    ({ uid, clipLabel }) => {
+      const stores = (window as any).appStores;
+      const entry = Object.values(stores.clips.get()).find(
+        (candidate: any) => candidate[0].identifiers.label === clipLabel,
+      ) as any;
+      if (!entry) throw new Error(`Seeded ${clipLabel} clip was unavailable`);
+      stores.dockApi.get().addPanel({
+        id: "browser-demo-clips",
+        component: "ClipList",
+        title: "Clips",
+        params: { initialPanelId: "browser-demo-clips" },
+        position: {
+          referencePanel: `browser-demo-timeline-${uid}`,
+          direction: "right",
+        },
+      });
+      return entry[0].identifiers.uid;
+    },
+    { uid: timelineUid, clipLabel: DEMO_FX_CLIP_LABEL },
+  );
   await expect(
     page.locator(
       '[data-panel-kind="clips"][data-panel-id="browser-demo-clips"]',
@@ -183,16 +220,16 @@ async function submitCommand(page: Page, command: string): Promise<void> {
     .toEqual({ status: "success" });
 }
 
-/** Return the stable UUID for the first seeded demo fixture. */
-async function fixtureOneUid(page: Page): Promise<string> {
-  return page.evaluate(() => {
+/** Return the stable UUID for one seeded demo fixture by its fixture ID. */
+async function fixtureUidById(page: Page, fixtureId: number): Promise<string> {
+  return page.evaluate((id) => {
     const stores = (window as any).appStores;
     const fixture = Object.values(stores.fixtures.get()).find(
-      (candidate: any) => candidate.identifiers.id === 1,
+      (candidate: any) => candidate.identifiers.id === id,
     ) as any;
-    if (!fixture) throw new Error("Demo fixture 1 was unavailable");
+    if (!fixture) throw new Error(`Demo fixture ${id} was unavailable`);
     return fixture.identifiers.uid;
-  });
+  }, fixtureId);
 }
 
 /** Report whether the browser can create a WebGL context for the visualizer. */
@@ -238,7 +275,7 @@ async function readProgrammerOutput(page: Page, fixtureUid: string) {
     const stores = (window as any).appStores;
     const row = stores.parameters.get().get(uid);
     return {
-      intensity: Number(row?.raw?.VirtualIntensity ?? 0),
+      intensity: Number(row?.raw?.VirtualIntensity ?? row?.raw?.Intensity ?? 0),
       red: Number(row?.raw?.Red ?? 0),
       green: Number(row?.raw?.Green ?? 0),
       blue: Number(row?.raw?.Blue ?? 0),
@@ -250,19 +287,19 @@ async function readProgrammerOutput(page: Page, fixtureUid: string) {
 
 /** Store a visibly renamed sample cue through the correlated cue command lifecycle. */
 async function renameDemoCue(page: Page): Promise<string> {
-  return page.evaluate(async () => {
+  return page.evaluate(async (cueLabel) => {
     const stores = (window as any).appStores;
     const cue = Object.values(stores.cues.get()).find(
-      (candidate: any) => candidate.identifiers.label === "Midnight Blue",
+      (candidate: any) => candidate.identifiers.label === cueLabel,
     ) as any;
-    if (!cue) throw new Error("Seeded Midnight Blue cue was unavailable");
+    if (!cue) throw new Error(`Seeded ${cueLabel} cue was unavailable`);
     const result = await stores.sendAndAwait({
       module: "CueCommand",
       command: {
         type: "StoreCue",
         data: {
           ...cue,
-          identifiers: { ...cue.identifiers, label: "Edited Midnight Blue" },
+          identifiers: { ...cue.identifiers, label: `Edited ${cueLabel}` },
         },
       },
     });
@@ -270,7 +307,7 @@ async function renameDemoCue(page: Page): Promise<string> {
       throw new Error(`Unable to edit demo cue: ${JSON.stringify(result)}`);
     }
     return cue.identifiers.uid;
-  });
+  }, DEMO_CUE_LABEL);
 }
 
 /** Seek the timeline's linked timecode through its normal command module. */
@@ -317,6 +354,8 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   browserName,
   page,
 }, testInfo) => {
+  // The full sample rig takes longer to load, reset, and render than the default budget.
+  test.setTimeout(90_000);
   if (
     browserName === "chromium" &&
     process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview"
@@ -328,9 +367,14 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   }
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
-  page.on("pageerror", (error) =>
-    pageErrors.push(error.stack ?? error.message),
-  );
+  page.on("pageerror", (error) => {
+    // The demo show's saved layout mounts the 3D visualizer, which headless Firefox
+    // cannot give a WebGL context; Chromium covers visualizer rendering.
+    if (browserName === "firefox" && /this\.gl is null/.test(error.message)) {
+      return;
+    }
+    pageErrors.push(error.stack ?? error.message);
+  });
   page.on("console", (message) => {
     const text = message.text();
     if (message.type() === "error") {
@@ -339,6 +383,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   });
   const { audioRequests, backendRequests, showfileRequests } =
     await prepareEmbeddedPage(page);
+  const expectedCounts = await readDemoShowfileCounts();
   const demoBasePath =
     process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
       ? "/demo/app/?startup:draftRecovery=false&e2e=1"
@@ -384,21 +429,14 @@ test("embedded demo edits and plays the sample without backend traffic", async (
         network_dmx_output: false,
         usb_dmx_output: false,
       },
-      fixtureCount: 6,
-      groupCount: 1,
-      cueCount: 2,
-      sequenceCount: 1,
-      clipCount: 2,
-      fxCount: 1,
-      markerCount: 2,
-      regionCount: 1,
+      ...expectedCounts,
       consoleErrors: [],
       pageErrors: [],
     });
   const initialState = await readDemoState(page);
   expect(initialState.timelineUid).toBeTruthy();
-  expect(initialState.audioPath).toBe(
-    `timeline-audio/${initialState.timelineUid}/nightfall-demo-click.wav`,
+  expect(initialState.audioPath).toMatch(
+    new RegExp(`^timeline-audio/${initialState.timelineUid}/[^/]+$`),
   );
   const loadedShowfileUrl = showfileRequests[0];
   if (!initialState.audioPath || !loadedShowfileUrl) {
@@ -407,7 +445,8 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   const expectedAudioUrl = new URL(initialState.audioPath, loadedShowfileUrl)
     .href;
 
-  const fixtureUid = await fixtureOneUid(page);
+  const rgbFixtureUid = await fixtureUidById(page, DEMO_RGB_FIXTURE_ID);
+  const spotFixtureUid = await fixtureUidById(page, DEMO_SPOT_FIXTURE_ID);
   const visualizerSupported =
     browserName !== "firefox" && (await supportsVisualizerWebGl(page));
   if (visualizerSupported) {
@@ -423,28 +462,30 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   }
   await submitCommand(
     page,
-    "fix 1>6 @ 65 red @ 80 green @ 10 blue @ 30 pan @ 20 tilt @ 70",
+    `fix ${DEMO_RGB_FIXTURE_ID} @ 65 red @ 80 green @ 10 blue @ 30`,
+  );
+  await submitCommand(
+    page,
+    `fix ${DEMO_SPOT_FIXTURE_ID} @ 65 pan @ 20 tilt @ 70`,
   );
   await expect
     .poll(async () => {
-      const output = await readProgrammerOutput(page, fixtureUid);
+      const rgb = await readProgrammerOutput(page, rgbFixtureUid);
+      const spot = await readProgrammerOutput(page, spotFixtureUid);
       return (
-        output.intensity > 0 &&
-        output.red > output.blue &&
-        output.blue > output.green &&
-        output.tilt > output.pan
+        rgb.intensity > 0 &&
+        rgb.red > rgb.blue &&
+        rgb.blue > rgb.green &&
+        spot.intensity > 0 &&
+        spot.tilt > spot.pan
       );
     })
     .toBe(true);
-  const programmerOutput = await readProgrammerOutput(page, fixtureUid);
-  expect(programmerOutput.intensity).toBeGreaterThan(0);
-  expect(programmerOutput.red).toBeGreaterThan(programmerOutput.blue);
-  expect(programmerOutput.blue).toBeGreaterThan(programmerOutput.green);
-  expect(programmerOutput.tilt).toBeGreaterThan(programmerOutput.pan);
+  const rgbOutput = await readProgrammerOutput(page, rgbFixtureUid);
+  const spotOutput = await readProgrammerOutput(page, spotFixtureUid);
   await page.waitForTimeout(250);
-  expect(await readProgrammerOutput(page, fixtureUid)).toEqual(
-    programmerOutput,
-  );
+  expect(await readProgrammerOutput(page, rgbFixtureUid)).toEqual(rgbOutput);
+  expect(await readProgrammerOutput(page, spotFixtureUid)).toEqual(spotOutput);
   if (visualizerSupported) {
     await page
       .locator('[data-panel-id="panel-Visualizer"]')
@@ -459,7 +500,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
         editedCueUid,
       ),
     )
-    .toBe("Edited Midnight Blue");
+    .toBe(`Edited ${DEMO_CUE_LABEL}`);
 
   await openDemoTimeline(page, initialState.timelineUid);
   const fxClipUid = await openDemoClips(page, initialState.timelineUid);
@@ -483,13 +524,13 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   await surface.getByRole("button", { name: "Drop marker" }).click();
   await expect
     .poll(async () => (await readDemoState(page)).markerCount)
-    .toBe(3);
+    .toBe(expectedCounts.markerCount + 1);
 
   await surface.getByRole("button", { name: "Play timeline" }).click();
   await expect
     .poll(() => readDemoAudioState(page))
     .toMatchObject({ status: "playing" });
-  expect(audioRequests).toContain(expectedAudioUrl);
+  await expect.poll(() => audioRequests).toContain(expectedAudioUrl);
   await expect
     .poll(() => timelinePositionMs(page, initialState.timelineUid))
     .toBeGreaterThan(250);
@@ -520,6 +561,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   await expect(
     surface.locator('[data-timeline-loop-overlay="true"]'),
   ).toBeVisible();
+  // The new loop spans 2 s to 12 s; the fx3 clip starts at 3.6 s.
   await seekTimeline(page, initialState.timelineUid, 3_400);
   await surface.getByRole("button", { name: "Play timeline" }).click();
   await expect(fxActiveIndicator).toBeVisible();
@@ -527,11 +569,14 @@ test("embedded demo edits and plays the sample without backend traffic", async (
     path: testInfo.outputPath("browser-demo-fx-clip-active.png"),
     fullPage: true,
   });
+  await surface.getByRole("button", { name: "Pause timeline" }).click();
+  await seekTimeline(page, initialState.timelineUid, 11_500);
+  await surface.getByRole("button", { name: "Play timeline" }).click();
   await expect
     .poll(() => timelinePositionMs(page, initialState.timelineUid), {
       timeout: 3_000,
     })
-    .toBeLessThan(2_000);
+    .toBeLessThan(4_000);
   await surface.getByRole("button", { name: "Stop timeline" }).click();
   await expect
     .poll(() => timelinePositionMs(page, initialState.timelineUid))
@@ -569,7 +614,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   await page.getByTestId("browser-demo-reset").click();
   await expect
     .poll(async () => (await readDemoState(page)).markerCount)
-    .toBe(2);
+    .toBe(expectedCounts.markerCount);
   await expect
     .poll(() =>
       page.evaluate(
@@ -577,7 +622,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
         editedCueUid,
       ),
     )
-    .toBe("Midnight Blue");
+    .toBe(DEMO_CUE_LABEL);
   await expect
     .poll(() => readDemoAudioState(page))
     .toMatchObject({ status: "unloaded" });
@@ -597,8 +642,8 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   expect(consoleErrors).toEqual([]);
 });
 
-/** Verify the tracked show and generated audio support real timeline playback. */
-test("embedded fixture decodes and plays generated timeline audio", async ({
+/** Verify the demo show and served timeline audio support real timeline playback. */
+test("embedded demo decodes and plays timeline audio", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -729,7 +774,7 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
     .toBeGreaterThan(initialSession);
   await expect
     .poll(async () => (await readDemoState(page)).fixtureCount)
-    .toBe(6);
+    .toBe((await readDemoShowfileCounts()).fixtureCount);
   await expect(bar.getByTestId("status-showfile-name")).toHaveText(
     "nightfall-demo",
   );
@@ -828,8 +873,6 @@ async function expectTimelineAudioPlays(
 }
 
 test.describe("packaged demo show", () => {
-  test.use({ packagedDemoShow: true });
-
   /** Verifies the shipped demo show loads completely and every timeline's audio is packaged and playable. */
   test("packaged demo loads its show and plays bundled timeline audio", async ({
     page,
