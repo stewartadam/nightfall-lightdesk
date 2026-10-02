@@ -300,7 +300,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
           class="max-w-2xl"
         >
           <DialogHeader>
-            <DialogTitle>Open Showfile</DialogTitle>
+            <DialogTitle>Showfiles</DialogTitle>
             <div class="flex items-center gap-2">
               <Button
                 type="button"
@@ -385,13 +385,6 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                                 />
                                 <span class="truncate">{showfile.name}</span>
                               </span>
-                              <Show
-                                when={mostRecentShowfiles().has(showfile.name)}
-                              >
-                                <span class="shrink-0 rounded border border-sky-700/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-300">
-                                  Most recent
-                                </span>
-                              </Show>
                             </span>
                             <span class="truncate text-xs text-gray-400">
                               {formatModifiedTime(
@@ -399,6 +392,11 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                               )}
                             </span>
                           </span>
+                          <Show when={mostRecentShowfiles().has(showfile.name)}>
+                            <span class="shrink-0 self-center rounded border border-sky-700/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-300">
+                              Most recent
+                            </span>
+                          </Show>
                         </SearchPickerOption>
                         <Show when={showfileLoadError(showfile)}>
                           {(loadError) => (

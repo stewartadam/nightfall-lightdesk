@@ -51,6 +51,9 @@ test("deletes, restores, and empties showfile trash", async ({
   await dialog
     .getByRole("button", { name: `Show revisions for ${deletedName}` })
     .hover();
+  await expect(
+    dialog.getByRole("heading", { name: "Showfiles", exact: true }),
+  ).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("delete-hover.png") });
   await dialog
     .getByRole("button", { name: `Delete showfile ${deletedName}` })
