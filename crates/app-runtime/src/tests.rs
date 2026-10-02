@@ -1828,9 +1828,9 @@ fn sample_audio_resources_can_change_without_recompilation() {
 
 /// Returns the IDs of every running clip and every running or releasing sequence.
 ///
-/// Sample flash sequences share their clip's ID. A single-cue flash despawns its clip as
-/// soon as the cue fires, while its sequence lives on through the hold and release fade,
-/// so the sequence is what a frame-sampling test can observe.
+/// Sample flash sequences share their clip's ID. A flash despawns its clip when its last
+/// cue fires, while its sequence lives on through the release fade, so the sequence keeps
+/// a short flash observable to a frame-sampling test.
 fn active_clip_and_sequence_ids(app: &mut App) -> Vec<u32> {
     use nightfall_clips::MaterializedClip;
     use nightfall_cues::prelude::MaterializedSequence;

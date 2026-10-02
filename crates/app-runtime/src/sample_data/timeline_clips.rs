@@ -254,8 +254,8 @@ fn add_pastel_rainbow(
     });
 }
 
-/// A self-ending flash clip: one cue snaps `on` values in, holds them for `hold`, then the
-/// release fades back to whatever plays underneath over `fade`.
+/// A self-ending flash clip: one cue snaps `on` values in and holds them for `hold`, then
+/// the flash fades out over `fade`.
 struct Flash {
     /// Shared ID of the sequence and the clip.
     id: u32,
@@ -267,10 +267,15 @@ struct Flash {
     selection: SelectionExpr,
     /// Values the flash snaps to.
     on: Vec<(Attribute, ValueSource)>,
-    /// Time the `on` look is held before the release starts.
+    /// Time the `on` look is held before the fade starts.
     hold: Duration,
-    /// Length of the release fade back to the underlying look.
+    /// Length of the fade out.
     fade: Duration,
+    /// Fade intensity to zero in a cue of its own, so the flash also fades when nothing
+    /// plays underneath. Otherwise the release crossfades back to the underlying look, but
+    /// a released element virtual dimmer drops at once, so on its own the flash would cut
+    /// out without a fade.
+    fade_to_black: bool,
     /// UIDs of the `on` cue and the sequence.
     uids: [&'static str; 2],
 }
@@ -304,6 +309,8 @@ fn add_flashes(world: &mut World) {
         on: white_rgb(),
         hold: Duration::from_millis(hold_ms),
         fade: Duration::from_millis(90),
+        // The lo-fi breaks play these flashes on black.
+        fade_to_black: true,
         uids,
     };
     let bass = |id, label, clip_uid, hold, fade, uids| Flash {
@@ -318,6 +325,7 @@ fn add_flashes(world: &mut World) {
         ],
         hold,
         fade,
+        fade_to_black: false,
         uids,
     };
     let row_flash = |id, label, index: usize, uids| Flash {
@@ -329,6 +337,7 @@ fn add_flashes(world: &mut World) {
         on: white_rgb(),
         hold: Duration::from_millis(60),
         fade: Duration::from_millis(250),
+        fade_to_black: false,
         uids,
     };
     let flashes = [
@@ -434,6 +443,7 @@ fn add_flashes(world: &mut World) {
             ],
             hold: Duration::from_millis(80),
             fade: Duration::from_millis(650),
+            fade_to_black: false,
             uids: [
                 "cd0cdc43-ad9d-45b0-b47a-caa9393e2384",
                 "6f3147c6-f8f6-4ae9-b459-372a4f61c31a",
@@ -448,6 +458,7 @@ fn add_flashes(world: &mut World) {
 /// Store the two cues and sequence of a flash, then spawn its self-ending clip.
 fn add_flash(world: &mut World, flash: Flash) {
     let [on_uid, sequence_uid] = flash.uids;
+    let sequence_uid = Uuid::from_str(sequence_uid).unwrap();
     let on = cue(
         on_uid,
         1,
@@ -456,18 +467,47 @@ fn add_flash(world: &mut World, flash: Flash) {
         flash.selection.clone(),
         &flash.on,
     );
+    let second_uid = Uuid::new_v5(&sequence_uid, b"fade").to_string();
+    let second = if flash.fade_to_black {
+        let mut fade = cue(
+            &second_uid,
+            2,
+            "Fade",
+            CueTriggerType::FollowPrevious,
+            flash.selection.clone(),
+            &[(Attribute::Intensity, percent(0.0))],
+        );
+        fade.transitions = PartialTransition {
+            delay_in: fixed(flash.hold),
+            fade_in: fixed(flash.fade),
+            ..Default::default()
+        };
+        fade
+    } else {
+        let mut hold = cue(
+            &second_uid,
+            2,
+            "Hold",
+            CueTriggerType::AfterDelay(flash.hold),
+            flash.selection.clone(),
+            &[],
+        );
+        hold.instructions.clear();
+        hold
+    };
     let mut sequence = Sequence {
         identifiers: Identifiers {
-            uid: Uuid::from_str(sequence_uid).unwrap(),
+            uid: sequence_uid,
             id: flash.id,
             label: flash.label.to_owned(),
         },
-        steps: vec![on.identifiers.uid.into()],
+        steps: vec![on.identifiers.uid.into(), second.identifiers.uid.into()],
         ..Default::default()
     };
-    sequence.release_cue.trigger = CueTriggerType::FollowPrevious;
-    sequence.release_cue.transitions.delay_in = fixed(flash.hold);
-    sequence.release_cue.transitions.fade_in = fixed(flash.fade);
+    if !flash.fade_to_black {
+        sequence.release_cue.trigger = CueTriggerType::FollowPrevious;
+        sequence.release_cue.transitions.fade_in = fixed(flash.fade);
+    }
     let clip = Clip {
         identifiers: Identifiers {
             id: flash.id,
@@ -481,7 +521,7 @@ fn add_flash(world: &mut World, flash: Flash) {
             deactivate_on_sequence_end: true,
         },
     };
-    add_sequence_clip(world, vec![on], sequence, clip);
+    add_sequence_clip(world, vec![on, second], sequence, clip);
 }
 
 /// Seed clips 33 and 34: a shuffled RGB sine twinkle and the intensity lift that reveals it.
