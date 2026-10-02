@@ -1240,62 +1240,6 @@ fn resolve_output_bindings_resolves_named_usb_targets() {
     );
 }
 
-#[test]
-fn resolve_output_bindings_applies_disabled_filter_from_target_disabled() {
-    let mut app = App::new();
-    app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
-    app.init_resource::<ConsoleDmxAddresses>();
-    app.init_resource::<NetworkDmxOutputTargets>();
-    app.init_resource::<UsbDmxOutputTargets>();
-
-    let uid = Uuid::new_v4();
-    let parameter_entity =
-        spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Intensity);
-
-    {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![
-            OutputBinding {
-                source: OutputSource::Fixture {
-                    uids: vec![uid],
-                    element: None,
-                    param: None,
-                },
-                target: OutputTarget::Transport {
-                    target: "sacn".to_string(),
-                    universe: Some(DmxRange::single(1)),
-                    address: Some(10),
-                },
-                priority: 0,
-                clone: false,
-            },
-            OutputBinding {
-                source: OutputSource::Fixture {
-                    uids: vec![uid],
-                    element: None,
-                    param: None,
-                },
-                target: OutputTarget::Disabled,
-                priority: 0,
-                clone: false,
-            },
-        ];
-    }
-
-    app.init_resource::<OutputRouting>();
-    app.init_resource::<ConsoleDmxUniverses>();
-    app.add_systems(Update, resolve_output_bindings);
-    app.update();
-
-    let destinations = app
-        .world()
-        .get::<ResolvedOutputDestinations>(parameter_entity)
-        .expect("Expected ResolvedOutputDestinations component");
-    assert!(destinations.destinations.is_empty());
-}
-
 /// Builds break-1 parameter metadata placed at explicit 1-based footprint slots.
 fn explicit_param(attribute: Attribute, offsets: &[u16]) -> ParameterMetadata {
     let resolution = match offsets.len() {

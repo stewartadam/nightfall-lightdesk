@@ -164,9 +164,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
 
     snapshot.disabled.forEach((binding, index) => {
       const keys = new Set<UniverseKey>(
-        binding.type === "Input"
-          ? collectUniversesFromInputSource(binding.data.source)
-          : collectUniversesFromOutputSource(binding.data.source),
+        collectUniversesFromInputSource(binding.data.source),
       );
 
       addToUniverses(

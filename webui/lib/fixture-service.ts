@@ -279,8 +279,6 @@ function toOutputTargetEndpoint(
       return { type: "Transport", data: { ...target.data } };
     case "Console":
       return { type: "Console", data: { ...target.data } };
-    case "Disabled":
-      return { type: "Disabled" };
   }
 }
 
@@ -353,28 +351,7 @@ export function removePatchBindingsForFixtureIds(
   }
 
   for (const binding of snapshot.disabled ?? []) {
-    if (binding.type === "Input") {
-      const sourceEndpoint = toInputSourceEndpoint(
-        binding.data.source,
-        fixtureMap,
-      );
-      const matches = endpointHasAnyFixtureId(sourceEndpoint, fixtureIdSet);
-      if (!matches || !sourceEndpoint) {
-        continue;
-      }
-
-      sendRemovePatchBinding(
-        sourceEndpoint,
-        { type: "Disabled" },
-        binding.data.priority,
-        binding.data.clone,
-        batchId,
-      );
-      removedCount += 1;
-      continue;
-    }
-
-    const sourceEndpoint = toOutputSourceEndpoint(
+    const sourceEndpoint = toInputSourceEndpoint(
       binding.data.source,
       fixtureMap,
     );

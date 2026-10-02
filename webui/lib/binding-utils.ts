@@ -135,14 +135,6 @@ function outputTargetIdToTransport(
   );
 }
 
-function rangesOverlap(
-  source?: types.DmxRange,
-  disabled?: types.DmxRange,
-): boolean {
-  if (!source || !disabled) return true;
-  return source.start <= disabled.end && disabled.start <= source.end;
-}
-
 /** Fixtures, and the part of each fixture, patched by a fixture output source. */
 type FixtureOutputSelection = {
   uids: unknown[];
@@ -177,64 +169,6 @@ function fixtureOutputSelection(
   }
 }
 
-function outputSourceMatches(
-  source: types.OutputSource,
-  disabled: types.OutputSource,
-): boolean {
-  if (source.type === "FixtureBreak") {
-    // A whole-fixture disable also silences the fixture's additional breaks.
-    const disabledSelection = fixtureOutputSelection(disabled);
-    if (
-      !disabledSelection ||
-      disabledSelection.element !== undefined ||
-      disabledSelection.param !== undefined ||
-      (disabled.type === "FixtureBreak" &&
-        disabledSelection.dmxBreak !== source.data.dmx_break)
-    ) {
-      return false;
-    }
-    const disabledUids = new Set(normalizeFixtureUids(disabledSelection.uids));
-    return normalizeFixtureUids(source.data.uids as unknown[]).some((uid) =>
-      disabledUids.has(uid),
-    );
-  }
-  if (source.type !== disabled.type) return false;
-
-  if (source.type === "Fixture" && disabled.type === "Fixture") {
-    const sourceData = source.data;
-    const disabledData = disabled.data;
-    const sourceUids = normalizeFixtureUids(sourceData.uids as unknown[]);
-    const disabledUids = new Set(
-      normalizeFixtureUids(disabledData.uids as unknown[]),
-    );
-    const uidMatch = sourceUids.some((uid) => disabledUids.has(uid));
-    if (!uidMatch) return false;
-    const elementMatch =
-      disabledData.element === undefined ||
-      sourceData.element === disabledData.element;
-    const paramMatch =
-      disabledData.param === undefined ||
-      sourceData.param === disabledData.param;
-    return elementMatch && paramMatch;
-  }
-
-  if (source.type === "Console" && disabled.type === "Console") {
-    const sourceData = source.data;
-    const disabledData = disabled.data;
-    const universeMatch = rangesOverlap(
-      sourceData.universe,
-      disabledData.universe,
-    );
-    const addressMatch =
-      disabledData.address === undefined ||
-      sourceData.address === undefined ||
-      sourceData.address === disabledData.address;
-    return universeMatch && addressMatch;
-  }
-
-  return false;
-}
-
 /**
  * Projects output bindings onto per-element patch locations in console numbering and in
  * each concrete transport's wire numbering.
@@ -243,7 +177,6 @@ function outputSourceMatches(
  * fixture's wire layout (DMX element order, explicit footprint slots and gaps): direct
  * fixture→transport bindings, fixture→console bindings (per-parameter console layout), and
  * console→transport passthrough windows remapping those console bytes onto the wire.
- * Disabled bindings and Fixture→Disabled rows suppress the fixtures they match.
  */
 export function buildFixturePatchMapFromBindings(
   snapshot: types.BindingsSnapshot,
@@ -252,30 +185,11 @@ export function buildFixturePatchMapFromBindings(
   usbDmxOutputs: types.UsbDmxOutputTargets = defaultUsbDmxOutputs(),
 ): FixturePatchMap {
   const patchMap: FixturePatchMap = {};
-  const disabledSources: types.OutputSource[] = [];
-  for (const binding of snapshot.disabled) {
-    if (binding.type === "Output") {
-      disabledSources.push(binding.data.source);
-    }
-  }
-  for (const binding of snapshot.output) {
-    if (binding.target.type === "Disabled") {
-      disabledSources.push(binding.source);
-    }
-  }
 
   for (const binding of snapshot.output) {
     if (binding.target.type !== "Transport") continue;
     const sourceData = fixtureOutputSelection(binding.source);
     if (!sourceData) continue;
-
-    if (
-      disabledSources.some((source) =>
-        outputSourceMatches(binding.source, source),
-      )
-    ) {
-      continue;
-    }
 
     const targetData = binding.target.data;
     const baseUniverses = expandRange(targetData.universe);
@@ -325,7 +239,7 @@ export function buildFixturePatchMapFromBindings(
   }
 
   const consoleLocations = groupConsoleLocations(
-    resolveConsoleAddresses(snapshot, fixtures, disabledSources),
+    resolveConsoleAddresses(snapshot, fixtures),
     fixtures,
   );
   for (const location of consoleLocations) {
@@ -335,13 +249,6 @@ export function buildFixturePatchMapFromBindings(
   for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
     if (binding.source.type !== "Console") continue;
     if (binding.target.type !== "Transport") continue;
-    if (
-      disabledSources.some((source) =>
-        outputSourceMatches(binding.source, source),
-      )
-    ) {
-      continue;
-    }
 
     const targetData = binding.target.data;
     const outputTransport = outputTargetIdToTransport(
@@ -549,8 +456,8 @@ function groupConsoleLocations(
  * fixture→console bindings, keyed by `uid:elementId:parameterIndex`.
  *
  * Mirrors the engine's `derive_console_addresses`: bindings apply in priority order with
- * later bindings replacing earlier ones for the parameters they select, disabled sources
- * are skipped, and each binding lays out only the parameters its element/parameter filter
+ * later bindings replacing earlier ones for the parameters they select, and each binding
+ * lays out only the parameters its element/parameter filter
  * selects with the fixture's wire layout (DMX wiring order, explicit footprint slots).
  * Non-clone bindings place fixtures one after another by that filtered footprint,
  * restarting at the base address per universe.
@@ -558,7 +465,6 @@ function groupConsoleLocations(
 function resolveConsoleAddresses(
   snapshot: types.BindingsSnapshot,
   fixtures: Record<string, types.Fixture>,
-  disabledSources: types.OutputSource[],
 ): Map<string, ConsoleParameterAddress> {
   const addresses = new Map<string, ConsoleParameterAddress>();
 
@@ -566,13 +472,6 @@ function resolveConsoleAddresses(
     if (binding.target.type !== "Console") continue;
     const sourceData = fixtureOutputSelection(binding.source);
     if (!sourceData) continue;
-    if (
-      disabledSources.some((source) =>
-        outputSourceMatches(binding.source, source),
-      )
-    ) {
-      continue;
-    }
 
     const targetData = binding.target.data;
     const explicitUniverses = expandRange(targetData.universe);

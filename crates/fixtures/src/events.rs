@@ -124,21 +124,11 @@ fn output_binding_matches_fixture(binding: &OutputBinding, uid: uuid::Uuid) -> b
         .is_some_and(|uids| uids.contains(&uid))
 }
 
-fn disabled_binding_matches_fixture(binding: &DisabledBinding, uid: uuid::Uuid) -> bool {
-    match binding {
-        DisabledBinding::Output { source, .. } => source
-            .fixture_uids()
-            .is_some_and(|uids| uids.contains(&uid)),
-        _ => false,
-    }
-}
-
 /// Handle RestoreBindingSnapshot commands to restore fixture binding configuration.
 pub fn handle_restore_binding_snapshot(
     mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreBindingSnapshot>>,
     data_provider: Res<FixtureDataProviderExt>,
     mut output_bindings: ResMut<OutputBindings>,
-    mut disabled_bindings: ResMut<DisabledBindings>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
@@ -168,16 +158,9 @@ pub fn handle_restore_binding_snapshot(
         output_bindings
             .bindings
             .retain(|binding| !output_binding_matches_fixture(binding, fixture_uid));
-        disabled_bindings
-            .bindings
-            .retain(|binding| !disabled_binding_matches_fixture(binding, fixture_uid));
-
         output_bindings
             .bindings
             .extend(snapshot.output_bindings.clone());
-        disabled_bindings
-            .bindings
-            .extend(snapshot.disabled_bindings.clone());
         succeed_action(&mut responder, event.command_id);
     }
 }

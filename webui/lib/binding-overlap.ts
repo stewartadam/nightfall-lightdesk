@@ -121,8 +121,6 @@ function collectUniversesFromOutputTarget(
       if (expanded === "wildcard") return ["*"];
       return expanded ?? [];
     }
-    case "Disabled":
-      return [];
   }
 }
 
@@ -434,17 +432,10 @@ export function computeBindingOverlapAnalysis(
     );
   }
   for (const binding of snapshot.disabled) {
-    if (binding.type === "Input") {
-      addKnownUniverses(
-        universeIds,
-        collectUniversesFromInputSource(binding.data.source),
-      );
-    } else {
-      addKnownUniverses(
-        universeIds,
-        collectUniversesFromOutputSource(binding.data.source),
-      );
-    }
+    addKnownUniverses(
+      universeIds,
+      collectUniversesFromInputSource(binding.data.source),
+    );
   }
 
   snapshot.input.forEach((binding, index) => {
@@ -553,45 +544,23 @@ export function computeBindingOverlapAnalysis(
   snapshot.disabled.forEach((binding, index) => {
     const rowId = `disabled-${index}`;
     const keys = new Set<UniverseKey>(
-      binding.type === "Input"
-        ? collectUniversesFromInputSource(binding.data.source)
-        : collectUniversesFromOutputSource(binding.data.source),
+      collectUniversesFromInputSource(binding.data.source),
     );
     bindingUniverses.set(
       rowId,
       new Set(getExpandedUniversesForKeys(keys, universeIds)),
     );
 
-    const targetUniverses = getExpandedUniversesForKeys(keys, universeIds);
-
-    if (binding.type === "Input") {
-      if (binding.data.source.type === "Console") {
-        for (const universeKey of targetUniverses) {
-          registerInputTarget(
-            overlapsByUniverse,
-            conflictColumnsByBinding,
-            inputTargets,
-            universeKey,
-            binding.data.source.data.address ?? undefined,
-            { rowId, column: "source" },
-          );
-        }
-      }
-      return;
-    }
-
-    if (binding.data.source.type === "Console") {
-      for (const universeKey of targetUniverses) {
-        const overlapFlags = ensureOverlapFlags(
-          overlapsByUniverse,
-          universeKey,
-        );
-        overlapFlags.outputOverlap = true;
-        markBindingConflictColumn(conflictColumnsByBinding, {
-          rowId,
-          column: "source",
-        });
-      }
+    if (binding.data.source.type !== "Console") return;
+    for (const universeKey of getExpandedUniversesForKeys(keys, universeIds)) {
+      registerInputTarget(
+        overlapsByUniverse,
+        conflictColumnsByBinding,
+        inputTargets,
+        universeKey,
+        binding.data.source.data.address ?? undefined,
+        { rowId, column: "source" },
+      );
     }
   });
 

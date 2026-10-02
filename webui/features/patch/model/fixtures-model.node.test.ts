@@ -58,23 +58,11 @@ test("breaks patched to different addresses do not collide", () => {
   );
 });
 
-/** Verifies bindings for other fixtures and disabled targets occupy nothing for the fixture. */
-test("other fixtures and disabled targets have no occupancy key", () => {
+/** Verifies bindings for other fixtures occupy nothing for the fixture. */
+test("other fixtures have no occupancy key", () => {
   assert.equal(
     fixtureOutputOccupancyKey(
       transportBinding(breakSource(2, OTHER), 1),
-      FIXTURE_KEY,
-    ),
-    null,
-  );
-  assert.equal(
-    fixtureOutputOccupancyKey(
-      {
-        source: breakSource(2),
-        target: { type: "Disabled" },
-        priority: 0,
-        clone: false,
-      },
       FIXTURE_KEY,
     ),
     null,

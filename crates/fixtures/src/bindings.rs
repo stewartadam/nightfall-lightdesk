@@ -229,11 +229,12 @@ pub enum OutputTarget {
         /// Optional address.
         address: Option<u16>,
     },
-    /// Disabled target (filter).
-    Disabled,
 }
 
 /// Disabled binding filter rule.
+///
+/// Only inputs can be disabled: an output that should not be sent is simply
+/// left unbound.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
@@ -242,15 +243,6 @@ pub enum DisabledBinding {
     Input {
         /// Binding source to disable.
         source: InputSource,
-        /// Priority (lower runs first).
-        priority: i32,
-        /// If true, duplicate the source address across a range destination.
-        clone: bool,
-    },
-    /// Disable output bindings that match the source.
-    Output {
-        /// Binding source to disable.
-        source: OutputSource,
         /// Priority (lower runs first).
         priority: i32,
         /// If true, duplicate the source address across a range destination.

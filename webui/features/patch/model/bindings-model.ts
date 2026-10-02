@@ -320,8 +320,6 @@ export function toOutputTargetEndpoint(
       return { type: "Transport", data: { ...target.data } };
     case "Console":
       return { type: "Console", data: { ...target.data } };
-    case "Disabled":
-      return { type: "Disabled" };
   }
 }
 
@@ -363,20 +361,7 @@ export function toDisabledBindingDeleteFilter(
   binding: types.DisabledBinding,
   fixtureMap: Record<string, types.Fixture>,
 ): BindingDeleteFilter | null {
-  if (binding.type === "Input") {
-    const source = toInputSourceEndpoint(binding.data.source, fixtureMap);
-    if (!source) {
-      return null;
-    }
-    return {
-      source,
-      target: { type: "Disabled" },
-      priority: binding.data.priority,
-      clone: binding.data.clone,
-    };
-  }
-
-  const source = toOutputSourceEndpoint(binding.data.source, fixtureMap);
+  const source = toInputSourceEndpoint(binding.data.source, fixtureMap);
   if (!source) {
     return null;
   }
@@ -491,8 +476,6 @@ export function formatOutputTarget(target: types.OutputTarget): string {
       );
       return universeAddress ? `Console ${universeAddress}` : "Console";
     }
-    case "Disabled":
-      return "Disabled";
   }
 }
 
@@ -533,22 +516,10 @@ export function toDisabledBindingRow(
   fixtureMap: Record<string, types.Fixture>,
   id: string,
 ): BindingRow {
-  if (binding.type === "Input") {
-    return {
-      id,
-      kind: "Input",
-      source: formatInputSource(binding.data.source, fixtureMap),
-      target: "Disabled",
-      priority: binding.data.priority,
-      clone: binding.data.clone,
-      deleteFilter: toDisabledBindingDeleteFilter(binding, fixtureMap),
-    };
-  }
-
   return {
     id,
-    kind: "Output",
-    source: formatOutputSource(binding.data.source, fixtureMap),
+    kind: "Input",
+    source: formatInputSource(binding.data.source, fixtureMap),
     target: "Disabled",
     priority: binding.data.priority,
     clone: binding.data.clone,

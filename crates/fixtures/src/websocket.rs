@@ -1042,26 +1042,6 @@ mod tests {
         assert_eq!(views[0].2[4..7], [10, 20, 30]);
     }
 
-    /// A disabled output binding for the fixture blocks console-space reporting.
-    #[test]
-    fn disabled_binding_blocks_console_reporting() {
-        let mut app = pipeline_app();
-        let uid = Uuid::new_v4();
-        spawn_rgb_fixture(&mut app, uid, 1, [255.0, 0.0, 0.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
-            fixture_binding(uid, console_target(2, 1)),
-            fixture_binding(uid, OutputTarget::Disabled),
-        ];
-
-        let views = output_views(&mut app);
-
-        assert!(
-            views.is_empty(),
-            "unexpected views: {:?}",
-            view_keys(&views)
-        );
-    }
-
     /// Manual channel writes land in console space; a routed transport universe with the same
     /// number keeps showing its own output buffer.
     #[test]

@@ -45,9 +45,7 @@ export function stableUniverseKey(range?: types.DmxRange): string {
   return `${range.start}-${range.end}`;
 }
 
-export function stableOutputTargetKey(
-  target: types.OutputTarget,
-): string | null {
+export function stableOutputTargetKey(target: types.OutputTarget): string {
   switch (target.type) {
     case "Transport":
       return `transport:${target.data.target}:${stableUniverseKey(
@@ -55,8 +53,6 @@ export function stableOutputTargetKey(
       )}:${target.data.address ?? "*"}`;
     case "Console":
       return `console:${stableUniverseKey(target.data.universe)}:${target.data.address ?? "*"}`;
-    case "Disabled":
-      return null;
   }
 }
 
@@ -106,7 +102,7 @@ export function inputBindingTouchesFixture(
 /**
  * Returns the stable key of the output location where a binding sends a
  * fixture's DMX, or null when it does not output that fixture (another
- * source, another fixture, or a disabled target).
+ * source or another fixture).
  *
  * Primary (`Fixture`) and additional-break (`FixtureBreak`) sources both
  * occupy their target, so two breaks of one fixture patched to the same
@@ -131,16 +127,12 @@ export function outputBindingTouchesFixture(
   return sourceUids.has(fixtureUid);
 }
 
+/** Returns whether a disabled input rule filters input from the fixture. */
 export function disabledBindingTouchesFixture(
   binding: types.DisabledBinding,
   fixtureUid: string,
 ): boolean {
-  if (binding.type === "Input") {
-    const uids = fixtureUidsFromInputSource(binding.data.source);
-    return uids.has(fixtureUid);
-  }
-  const uids = fixtureUidsFromOutputSource(binding.data.source);
-  return uids.has(fixtureUid);
+  return fixtureUidsFromInputSource(binding.data.source).has(fixtureUid);
 }
 
 export function formatFixtureGroupLabel(fixture: types.Fixture): string {

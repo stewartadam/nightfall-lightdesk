@@ -2377,11 +2377,11 @@ fn seed_world(world: &mut World) {
     world
         .resource_mut::<DisabledBindings>()
         .bindings
-        .push(DisabledBinding::Output {
-            source: OutputSource::Fixture {
-                uids: vec![fixture_uid],
-                element: None,
-                param: None,
+        .push(DisabledBinding::Input {
+            source: InputSource::Transport {
+                transport: BindingTransport::ArtNet,
+                universe: Some(DmxRange::single(3)),
+                address: None,
             },
             priority: 2,
             clone: false,

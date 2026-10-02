@@ -231,9 +231,6 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
 
       snapshot.output.forEach((binding, index) => {
         if (!outputBindingTouchesFixture(binding, uid)) return;
-        if (binding.target.type === "Disabled") {
-          disabledByBinding = true;
-        }
         const key = fixtureOutputOccupancyKey(binding, uid);
         if (key) {
           if (seenOutputTargets.has(key)) outputOverlap = true;

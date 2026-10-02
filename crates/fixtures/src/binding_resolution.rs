@@ -242,63 +242,6 @@ fn input_source_matches(source: &ResolvedInputSource, disabled: &InputSource) ->
     }
 }
 
-fn output_source_matches(source: &OutputSource, disabled: &OutputSource) -> bool {
-    match (source, disabled) {
-        (
-            OutputSource::Fixture {
-                uids,
-                element,
-                param,
-            },
-            OutputSource::Fixture {
-                uids: disabled_uids,
-                element: disabled_element,
-                param: disabled_param,
-            },
-        ) => {
-            uids.iter().any(|uid| disabled_uids.contains(uid))
-                && disabled_element.is_none_or(|idx| *element == Some(idx))
-                && disabled_param
-                    .as_ref()
-                    .is_none_or(|p| param.as_ref() == Some(p))
-        }
-        (
-            OutputSource::FixtureBreak { uids, dmx_break },
-            OutputSource::FixtureBreak {
-                uids: disabled_uids,
-                dmx_break: disabled_break,
-            },
-        ) => dmx_break == disabled_break && uids.iter().any(|uid| disabled_uids.contains(uid)),
-        (
-            OutputSource::FixtureBreak { uids, .. },
-            OutputSource::Fixture {
-                uids: disabled_uids,
-                element: None,
-                param: None,
-            },
-        ) => uids.iter().any(|uid| disabled_uids.contains(uid)),
-        (
-            OutputSource::Console { universe, address },
-            OutputSource::Console {
-                universe: disabled_universe,
-                address: disabled_address,
-            },
-        ) => {
-            let universe_match = match (universe, disabled_universe) {
-                (Some(source_range), Some(disabled_range)) => {
-                    source_range.start <= disabled_range.end
-                        && disabled_range.start <= source_range.end
-                }
-                (Some(_), None) | (None, Some(_)) | (None, None) => true,
-            };
-            let address_match = disabled_address
-                .is_none_or(|addr| address.is_none_or(|source_addr| source_addr == addr));
-            universe_match && address_match
-        }
-        _ => false,
-    }
-}
-
 fn output_transport_from_target_id(
     target: &str,
     network_outputs: &NetworkDmxOutputTargets,
@@ -330,31 +273,13 @@ fn output_protocol_for_transport(transport: &OutputTransport) -> BindingTranspor
 /// order (explicit footprint slots and gaps included).
 pub fn derive_console_addresses(
     output_bindings: Res<OutputBindings>,
-    disabled_bindings: Res<DisabledBindings>,
     data_provider: Res<FixtureDataProviderExt>,
     param_query: Query<InstanceRef<Parameter>>,
     mut console_addresses: ResMut<ConsoleDmxAddresses>,
 ) {
-    let should_rebuild = output_bindings.is_changed()
-        || disabled_bindings.is_changed()
-        || data_provider.is_changed();
+    let should_rebuild = output_bindings.is_changed() || data_provider.is_changed();
     if !should_rebuild {
         return;
-    }
-
-    let mut disabled_sources: Vec<OutputSource> = disabled_bindings
-        .bindings
-        .iter()
-        .filter_map(|binding| match binding {
-            DisabledBinding::Output { source, .. } => Some(source.clone()),
-            _ => None,
-        })
-        .collect();
-
-    for binding in &output_bindings.bindings {
-        if matches!(binding.target, OutputTarget::Disabled) {
-            disabled_sources.push(binding.source.clone());
-        }
     }
 
     console_addresses.clear();
@@ -375,13 +300,6 @@ pub fn derive_console_addresses(
         let OutputTarget::Console { universe, address } = &binding.target else {
             continue;
         };
-
-        if disabled_sources
-            .iter()
-            .any(|source| output_source_matches(&binding.source, source))
-        {
-            continue;
-        }
 
         let target_universes = expand_range(*universe);
         let base_universes = if target_universes.is_empty() {
@@ -466,9 +384,8 @@ pub fn resolve_input_bindings(
     let mut disabled_sources: Vec<InputSource> = disabled_bindings
         .bindings
         .iter()
-        .filter_map(|binding| match binding {
-            DisabledBinding::Input { source, .. } => Some(source.clone()),
-            _ => None,
+        .map(|binding| match binding {
+            DisabledBinding::Input { source, .. } => source.clone(),
         })
         .collect();
 
@@ -814,11 +731,10 @@ type ResolvedParameterOutputs<'a> = (
 /// Fixture→transport bindings become per-parameter [`ResolvedOutputDestinations`] feeding
 /// direct output buffers; console→transport bindings become console window routes. Each
 /// parameter's console address is mirrored into [`ResolvedConsoleDestination`]. On rebuild,
-/// fixture-owned console and output buffer values are cleared so moved, removed, or
-/// disabled bindings leave no ghost values behind.
+/// fixture-owned console and output buffer values are cleared so moved or removed
+/// bindings leave no ghost values behind.
 pub fn resolve_output_bindings(
     output_bindings: Res<OutputBindings>,
-    disabled_bindings: Res<DisabledBindings>,
     console_addresses: Res<ConsoleDmxAddresses>,
     data_provider: Res<FixtureDataProviderExt>,
     network_outputs: Res<NetworkDmxOutputTargets>,
@@ -831,28 +747,12 @@ pub fn resolve_output_bindings(
     mut commands: Commands,
 ) {
     let should_rebuild = output_bindings.is_changed()
-        || disabled_bindings.is_changed()
         || console_addresses.is_changed()
         || data_provider.is_changed()
         || network_outputs.is_changed()
         || usb_outputs.is_changed();
     if !should_rebuild {
         return;
-    }
-
-    let mut disabled_sources: Vec<OutputSource> = disabled_bindings
-        .bindings
-        .iter()
-        .filter_map(|binding| match binding {
-            DisabledBinding::Output { source, .. } => Some(source.clone()),
-            _ => None,
-        })
-        .collect();
-
-    for binding in &output_bindings.bindings {
-        if matches!(binding.target, OutputTarget::Disabled) {
-            disabled_sources.push(binding.source.clone());
-        }
     }
 
     let mut destinations: HashMap<Entity, Vec<OutputDestination>> = HashMap::new();
@@ -863,17 +763,6 @@ pub fn resolve_output_bindings(
     bindings_with_index.sort_by_key(|(index, binding)| (binding.priority, *index));
 
     for (_, binding) in bindings_with_index {
-        if matches!(binding.target, OutputTarget::Disabled) {
-            continue;
-        }
-
-        if disabled_sources
-            .iter()
-            .any(|source| output_source_matches(&binding.source, source))
-        {
-            continue;
-        }
-
         match (&binding.source, &binding.target) {
             (
                 source @ (OutputSource::Fixture { .. } | OutputSource::FixtureBreak { .. }),

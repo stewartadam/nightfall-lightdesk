@@ -230,11 +230,12 @@
     ],
     "disabled": [
       {
-        "type": "Output",
+        "type": "Input",
         "data": {
           "source": {
-            "type": "Console",
+            "type": "Transport",
             "data": {
+              "transport": "sacn",
               "universe": {
                 "start": 1,
                 "end": 1

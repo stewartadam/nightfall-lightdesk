@@ -180,37 +180,6 @@ test("follows only the parameters a filtered binding writes", () => {
   );
 });
 
-/** Verifies binding follow ignores bindings overridden by a Fixture→Disabled row. */
-test("does not follow bindings overridden by a disabled row", () => {
-  const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.BindingsSnapshot = {
-    input: [],
-    disabled: [],
-    output: [
-      {
-        source: { type: "Fixture", data: { uids: ["a"] } },
-        target: {
-          type: "Transport",
-          data: { target: "sacn", universe: singleUniverse(1), address: 1 },
-        },
-        priority: 0,
-        clone: false,
-      },
-      {
-        source: { type: "Fixture", data: { uids: ["a"] } },
-        target: { type: "Disabled" },
-        priority: 0,
-        clone: false,
-      },
-    ],
-  };
-
-  assert.equal(
-    findOutputBindingIdForChannel(snapshot, fixtures, SACN, 1, 1),
-    null,
-  );
-});
-
 /**
  * Builds a one-universe DMX range for output binding follow tests.
  */

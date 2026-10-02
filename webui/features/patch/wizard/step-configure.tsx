@@ -38,46 +38,6 @@ import {
 import type * as types from "../../../types";
 import { usePatchWizard } from "./wizard-context";
 
-function rangeOverlaps(lhs?: types.DmxRange, rhs?: types.DmxRange): boolean {
-  if (!lhs || !rhs) return true;
-  return lhs.start <= rhs.end && rhs.start <= lhs.end;
-}
-
-function outputSourceMatches(
-  source: types.OutputSource,
-  disabled: types.OutputSource,
-): boolean {
-  if (source.type !== disabled.type) return false;
-
-  if (source.type === "Fixture" && disabled.type === "Fixture") {
-    const sourceUids = source.data.uids.map((uid) => normalizeFixtureUid(uid));
-    const disabledUids = new Set(
-      disabled.data.uids.map((uid) => normalizeFixtureUid(uid)),
-    );
-    const hasUidMatch = sourceUids.some((uid) => disabledUids.has(uid));
-    if (!hasUidMatch) return false;
-
-    const elementMatches =
-      disabled.data.element === undefined ||
-      source.data.element === disabled.data.element;
-    const paramMatches =
-      disabled.data.param === undefined ||
-      source.data.param === disabled.data.param;
-    return elementMatches && paramMatches;
-  }
-
-  if (source.type === "Console" && disabled.type === "Console") {
-    return (
-      rangeOverlaps(source.data.universe, disabled.data.universe) &&
-      (disabled.data.address === undefined ||
-        source.data.address === undefined ||
-        source.data.address === disabled.data.address)
-    );
-  }
-
-  return false;
-}
-
 function mapUniverseByIndex(universes: number[], index: number): number {
   if (universes.length === 0) return 1;
   if (universes.length === 1) return universes[0];
@@ -106,29 +66,9 @@ function collectConsolePatchOccupancy(
 ): Map<string, { label: string }> {
   const occupied = new Map<string, { label: string }>();
 
-  const disabledSources: types.OutputSource[] = [];
-  for (const binding of snapshot.disabled) {
-    if (binding.type === "Output") {
-      disabledSources.push(binding.data.source);
-    }
-  }
-  for (const binding of snapshot.output) {
-    if (binding.target.type === "Disabled") {
-      disabledSources.push(binding.source);
-    }
-  }
-
   for (const binding of snapshot.output) {
     if (binding.source.type !== "Fixture") continue;
     if (binding.target.type !== "Console") continue;
-
-    if (
-      disabledSources.some((disabledSource) =>
-        outputSourceMatches(binding.source, disabledSource),
-      )
-    ) {
-      continue;
-    }
 
     const sourceData = binding.source.data;
     const targetData = binding.target.data;
