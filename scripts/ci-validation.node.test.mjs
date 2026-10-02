@@ -34,12 +34,7 @@ test("validation jobs wait only for their preparation prerequisites", () => {
     "wasm-bridge",
     "browser-runtime",
   ]);
-  for (const id of [
-    "source-checks",
-    "native",
-    "webui",
-    "browser-smoke",
-  ]) {
+  for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
     assert.equal(jobs[id].if, `\${{ !startsWith(github.ref, 'refs/tags/') }}`);
     assert.ok(
       jobs.precommit.needs.includes(id),
