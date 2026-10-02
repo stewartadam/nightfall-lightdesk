@@ -65,6 +65,7 @@ mod revision;
 mod save;
 mod state;
 mod storage;
+mod trash;
 
 #[cfg(all(test, feature = "object-library"))]
 use assets::{
@@ -131,6 +132,9 @@ use storage::{
     hash_showfile_snapshot_with_metadata, read_showfile_snapshot,
     repair_showfile_manifest_for_existing_snapshot_to_dir, replace_showfile_dir_with_temp,
     temporary_showfile_dir, write_showfile_snapshot_with_manifest_to_dir,
+};
+use trash::{
+    empty_showfile_trash_in_root, restore_trashed_showfile_in_root, trash_showfile_in_root,
 };
 
 #[cfg(test)]

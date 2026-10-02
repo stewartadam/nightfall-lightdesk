@@ -18,6 +18,7 @@ use super::{
         showfile_draft_dir_path_in_root, showfile_folder_name, showfile_name_from_dir,
         showfile_name_stem, showfile_snapshot_path_in_dir,
     },
+    trash::DeletedShowfile,
 };
 
 /// Validation state reported by metadata-only showfile discovery.
@@ -68,6 +69,8 @@ pub(super) struct AvailableShowfileRevision {
 #[serde(rename_all = "camelCase")]
 pub(super) struct AvailableShowfilesResponse {
     pub(super) showfiles: Vec<AvailableShowfile>,
+    /// Recently deleted shows that can still be restored.
+    pub(super) trash: Vec<DeletedShowfile>,
 }
 
 /// Response returned by the targeted available-draft endpoint.

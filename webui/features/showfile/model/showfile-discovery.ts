@@ -47,8 +47,44 @@ export interface AvailableShowfileRevision {
   loadError?: string | null;
 }
 
+export interface DeletedShowfile {
+  /** Trash entry id passed back to restore the show. */
+  id: string;
+  name: string;
+  deletedAtMs: number;
+  /** Time after which the backend purges the entry. */
+  expiresAtMs: number;
+}
+
 export interface AvailableShowfilesResponse {
   showfiles: AvailableShowfile[];
+  trash?: DeletedShowfile[];
+}
+
+/** Returns the most recently deleted trash entry for a show name, if any. */
+export function newestDeletedShowfile(
+  trash: readonly DeletedShowfile[],
+  name: string,
+): DeletedShowfile | undefined {
+  return trash
+    .filter((entry) => entry.name === name)
+    .reduce<DeletedShowfile | undefined>(
+      (newest, entry) =>
+        !newest || entry.deletedAtMs > newest.deletedAtMs ? entry : newest,
+      undefined,
+    );
+}
+
+/** Describes what deleting a show moves to the trash, for the confirmation prompt. */
+export function deleteShowfileMessage(showfile: AvailableShowfile): string {
+  const parts: string[] = [];
+  if (showfile.draft) parts.push("its unsaved draft");
+  const backupCount = showfile.revisions?.length ?? 0;
+  if (backupCount > 0) {
+    parts.push(`${backupCount} backup${backupCount === 1 ? "" : "s"}`);
+  }
+  const extras = parts.length > 0 ? `, along with ${parts.join(" and ")},` : "";
+  return `"${showfile.name}"${extras} will move to Recently deleted. You can restore it for 7 days.`;
 }
 
 type TimestampedShowfileItem =

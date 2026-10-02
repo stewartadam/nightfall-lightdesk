@@ -29,6 +29,7 @@ use super::{
         available_showfile_draft_for_name_in_root, list_available_showfiles_in_root,
     },
     paths::{show_data_dir_path, showfile_root_dir_path},
+    trash::{list_deleted_showfiles_in_root, now_ms},
 };
 
 /// Register showfile-owned HTTP endpoints with the shared route registry.
@@ -266,14 +267,20 @@ async fn serve_current_showfile_resource(
     }
 }
 
-/// Return the showfiles available from the app data showfile root.
+/// Return the showfiles available from the app data showfile root, plus recoverable deleted shows.
+///
+/// Listing the trash also purges entries past their retention period.
 async fn list_available_showfiles() -> Response {
     match tokio::task::spawn_blocking(|| {
-        showfile_root_dir_path().and_then(|root| list_available_showfiles_in_root(&root))
+        let root = showfile_root_dir_path()?;
+        Ok::<_, String>(AvailableShowfilesResponse {
+            showfiles: list_available_showfiles_in_root(&root)?,
+            trash: list_deleted_showfiles_in_root(&root, now_ms())?,
+        })
     })
     .await
     {
-        Ok(Ok(showfiles)) => Json(AvailableShowfilesResponse { showfiles }).into_response(),
+        Ok(Ok(response)) => Json(response).into_response(),
         Ok(Err(error)) => {
             tracing::warn!("Failed to list available showfiles: {}", error);
             (StatusCode::INTERNAL_SERVER_ERROR, error).into_response()

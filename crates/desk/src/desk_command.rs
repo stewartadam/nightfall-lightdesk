@@ -247,6 +247,12 @@ pub enum DeskCommand {
     LoadShowfileRevision(ShowfileRevisionSelection),
     /// Delete a draft from the app data drafts folder.
     DiscardDraftShowfile(String),
+    /// Move a show that is not currently loaded, with its draft and backups, into the trash.
+    DeleteShowfile(String),
+    /// Restore a deleted show from the trash entry with this id.
+    RestoreDeletedShowfile(String),
+    /// Permanently remove every deleted show from the trash.
+    EmptyShowfileTrash,
     /// Import selected object collections from a showfile
     ImportShowfile(ShowfileImportOptions),
 

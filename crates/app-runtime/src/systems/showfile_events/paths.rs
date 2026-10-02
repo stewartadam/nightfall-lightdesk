@@ -12,6 +12,7 @@ pub(super) const SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR: &str = "scene-objects";
 pub(super) const SHOWFILE_TIMELINE_AUDIO_DIR: &str = "timeline-audio";
 pub(super) const SHOWFILE_BACKUPS_DIR: &str = "backups";
 pub(super) const SHOWFILE_DRAFTS_DIR: &str = "drafts";
+pub(super) const SHOWFILE_TRASH_DIR: &str = "trash";
 pub(super) const SHOWFILE_FOLDER_EXTENSION: &str = "nightfall-show";
 pub(super) const SHOWFILE_SNAPSHOT_FILENAME: &str = "showfile.json";
 pub(super) const SHOWFILE_COMPRESSED_SNAPSHOT_FILENAME: &str = "showfile.json.gz";
@@ -172,7 +173,10 @@ pub(super) fn validate_new_showfile_name(name: Option<&str>) -> Result<(), Strin
 }
 
 /// Check both storage locations without relying on readable snapshot or manifest contents.
-fn validate_new_showfile_name_in_root(root: &Path, name: Option<&str>) -> Result<(), String> {
+pub(super) fn validate_new_showfile_name_in_root(
+    root: &Path,
+    name: Option<&str>,
+) -> Result<(), String> {
     let folder = showfile_folder_name(name)?.to_lowercase();
     for directory in [root.to_path_buf(), root.join(SHOWFILE_DRAFTS_DIR)] {
         let entries = match std::fs::read_dir(&directory) {

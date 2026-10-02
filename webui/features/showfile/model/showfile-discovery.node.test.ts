@@ -10,10 +10,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   type AvailableShowfile,
+  deleteShowfileMessage,
   draftShowfileName,
   hasSavedShowfileRevision,
   modifiedTimeMs,
   mostRecentlyUpdatedShowfileNames,
+  newestDeletedShowfile,
   savedShowfileRevisionName,
   showfileGroupModifiedTimeMs,
   showfileLoadError,
@@ -82,5 +84,36 @@ test("showfile revision labels compact filesystem paths", () => {
       path: "/data/tour.nightfall-show/showfile.json",
     }),
     "showfile.json",
+  );
+});
+
+/** Verifies undo targets the latest trash entry for a name when it was deleted repeatedly. */
+test("newest deleted showfile picks the latest entry for a name", () => {
+  const trash = [
+    { id: "tour-1", name: "tour", deletedAtMs: 10, expiresAtMs: 20 },
+    { id: "tour-2", name: "tour", deletedAtMs: 30, expiresAtMs: 40 },
+    { id: "other", name: "other", deletedAtMs: 50, expiresAtMs: 60 },
+  ];
+  assert.equal(newestDeletedShowfile(trash, "tour")?.id, "tour-2");
+  assert.equal(newestDeletedShowfile(trash, "missing"), undefined);
+});
+
+/** Verifies the delete prompt names the draft and backups that move with the show. */
+test("delete showfile message lists what moves to the trash", () => {
+  assert.equal(
+    deleteShowfileMessage({ name: "tour", path: "/tour" }),
+    '"tour" will move to Recently deleted. You can restore it for 7 days.',
+  );
+  assert.equal(
+    deleteShowfileMessage({
+      name: "tour",
+      path: "/tour",
+      draft: { name: "tour", path: "/drafts/tour" },
+      revisions: [
+        { name: "a", path: "/backups/a" },
+        { name: "b", path: "/backups/b" },
+      ],
+    }),
+    '"tour", along with its unsaved draft and 2 backups, will move to Recently deleted. You can restore it for 7 days.',
   );
 });

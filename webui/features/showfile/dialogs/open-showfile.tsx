@@ -6,11 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
+import { ArrowCounterClockwiseIcon } from "@squidlab/phosphor-solid/arrow-counter-clockwise";
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { CaretRightIcon } from "@squidlab/phosphor-solid/caret-right";
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
+import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
   type Component,
   createEffect,
@@ -32,21 +35,32 @@ import {
 import { SearchPickerOption } from "../../../components/ui/search-picker";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
+import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
 import {
+  deleteShowfileAndAwait,
+  emptyShowfileTrashAndAwait,
   type OpenShowfileSelection,
   promptForNewShowfile,
+  restoreDeletedShowfileAndAwait,
 } from "../../../lib/showfile-actions";
+import {
+  currentShowfileName,
+  normalizedShowfileName,
+} from "../../../lib/showfile-loading";
 import { pushToast } from "../../../state/appStores";
 import {
   type AvailableShowfile,
   type AvailableShowfilesResponse,
+  type DeletedShowfile,
+  deleteShowfileMessage,
   draftShowfileName,
   formatModifiedTime,
   hasSavedShowfileRevision,
   modifiedTimeMs,
   mostRecentlyUpdatedShowfileNames,
+  newestDeletedShowfile,
   savedShowfileRevisionName,
   showfileGroupModifiedTimeMs,
   showfileLoadError,
@@ -120,11 +134,16 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
   const [expandedShowfiles, setExpandedShowfiles] = createSignal<Set<string>>(
     new Set(),
   );
+  const [trash, setTrash] = createSignal<DeletedShowfile[]>([]);
+  const [pendingDelete, setPendingDelete] =
+    createSignal<AvailableShowfile | null>(null);
+  const [isConfirmingEmptyTrash, setConfirmingEmptyTrash] = createSignal(false);
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | undefined>();
+  const openShowfileName = useStore(currentShowfileName);
   let abortController: AbortController | undefined;
 
-  /** Fetch showfiles from the backend discovery endpoint. */
+  /** Fetch showfiles and recently deleted shows from the backend discovery endpoint. */
   const loadShowfiles = async () => {
     abortController?.abort();
     const controller = new AbortController();
@@ -142,6 +161,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
 
       const body = (await response.json()) as AvailableShowfilesResponse;
       setShowfiles(body.showfiles ?? []);
+      setTrash(body.trash ?? []);
       setExpandedShowfiles(new Set<string>());
     } catch (caught) {
       if (controller.signal.aborted) {
@@ -149,6 +169,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
       }
       log.warn("failed to load available showfiles", caught);
       setShowfiles([]);
+      setTrash([]);
       setError("Could not load showfiles.");
     } finally {
       if (abortController === controller) {
@@ -192,6 +213,64 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
         caught instanceof Error ? caught.message : "Could not open showfile.",
       );
     }
+  };
+
+  /** Returns whether a listed show is the one currently loaded by the backend. */
+  const isOpenShowfile = (showfile: AvailableShowfile) =>
+    normalizedShowfileName(openShowfileName()) === showfile.name;
+
+  /** Reports a failed trash operation as a toast so the list stays usable, even from Undo. */
+  const reportTrashError = (caught: unknown, fallback: string) => {
+    log.warn(fallback, caught);
+    pushToast("error", caught instanceof Error ? caught.message : fallback);
+  };
+
+  /** Restores a deleted show and refreshes the list so it reappears. */
+  const restoreDeleted = async (entry: DeletedShowfile) => {
+    try {
+      await restoreDeletedShowfileAndAwait(entry.id);
+      pushToast("success", `Restored "${entry.name}"`);
+    } catch (caught) {
+      reportTrashError(caught, "Could not restore showfile.");
+      return;
+    }
+    await loadShowfiles();
+  };
+
+  /** Moves the confirmed show to the trash and offers an undo toast. */
+  const confirmDelete = async () => {
+    const showfile = pendingDelete();
+    setPendingDelete(null);
+    if (!showfile) return;
+    try {
+      await deleteShowfileAndAwait(showfile.name);
+    } catch (caught) {
+      reportTrashError(caught, "Could not delete showfile.");
+      return;
+    }
+    await loadShowfiles();
+    const entry = newestDeletedShowfile(trash(), showfile.name);
+    pushToast(
+      "success",
+      `Moved "${showfile.name}" to Recently deleted`,
+      undefined,
+      entry
+        ? [{ label: "Undo", onClick: () => void restoreDeleted(entry) }]
+        : [],
+    );
+  };
+
+  /** Permanently removes every deleted show after confirmation. */
+  const confirmEmptyTrash = async () => {
+    setConfirmingEmptyTrash(false);
+    try {
+      await emptyShowfileTrashAndAwait();
+      pushToast("success", "Emptied Recently deleted");
+    } catch (caught) {
+      reportTrashError(caught, "Could not empty Recently deleted.");
+      return;
+    }
+    await loadShowfiles();
   };
 
   /** Collect the name and initial content before starting a new showfile. */
@@ -275,7 +354,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                 <For each={showfiles()}>
                   {(showfile) => (
                     <div class="border-t border-gray-800 first:border-t-0">
-                      <div class="flex w-full items-stretch hover:bg-gray-800 focus-within:bg-gray-800">
+                      <div class="group flex w-full items-stretch hover:bg-gray-800 focus-within:bg-gray-800">
                         <SearchPickerOption
                           type="button"
                           class="min-w-0 flex-1"
@@ -328,6 +407,28 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                             </span>
                           )}
                         </Show>
+                        <span class="inline-flex shrink-0 items-center pr-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                          <Tooltip
+                            content={() =>
+                              isOpenShowfile(showfile)
+                                ? "Open another show first"
+                                : "Delete show"
+                            }
+                          >
+                            <span>
+                              <Button
+                                size="icon"
+                                variant="subtle"
+                                type="button"
+                                aria-label={`Delete showfile ${showfile.name}`}
+                                disabled={isOpenShowfile(showfile)}
+                                onClick={() => setPendingDelete(showfile)}
+                              >
+                                <TrashIcon class="size-4" aria-hidden />
+                              </Button>
+                            </span>
+                          </Tooltip>
+                        </span>
                       </div>
                       <Show when={expandedShowfiles().has(showfile.name)}>
                         <div class="border-t border-gray-800 bg-gray-950/60 py-1 pl-10">
@@ -494,9 +595,77 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                 </For>
               </div>
             </Show>
+
+            <Show when={!isLoading() && !error() && trash().length > 0}>
+              <section
+                aria-label="Recently deleted"
+                class="mt-4 overflow-hidden rounded border border-gray-700"
+              >
+                <div class="flex items-center justify-between gap-2 px-4 py-2">
+                  <h3 class="text-xs font-semibold uppercase text-gray-400">
+                    Recently deleted
+                  </h3>
+                  <Button
+                    size="compact"
+                    variant="danger"
+                    type="button"
+                    onClick={() => setConfirmingEmptyTrash(true)}
+                  >
+                    <TrashIcon class="size-3.5" aria-hidden />
+                    <span>Empty trash</span>
+                  </Button>
+                </div>
+                <For each={trash()}>
+                  {(entry) => (
+                    <div class="flex items-center gap-3 border-t border-gray-800 px-4 py-2">
+                      <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span class="truncate text-sm text-gray-200">
+                          {entry.name}
+                        </span>
+                        <span class="truncate text-xs text-gray-500">
+                          Deleted {formatModifiedTime(entry.deletedAtMs)} ·
+                          Expires {formatModifiedTime(entry.expiresAtMs)}
+                        </span>
+                      </span>
+                      <Button
+                        size="compact"
+                        type="button"
+                        aria-label={`Restore showfile ${entry.name}`}
+                        onClick={() => void restoreDeleted(entry)}
+                      >
+                        <ArrowCounterClockwiseIcon
+                          class="size-3.5"
+                          aria-hidden
+                        />
+                        <span>Restore</span>
+                      </Button>
+                    </div>
+                  )}
+                </For>
+              </section>
+            </Show>
           </DialogBody>
         </DialogSurface>
       </DialogBackdrop>
+      <DeleteConfirmModal
+        isOpen={pendingDelete() !== null}
+        title="Delete Showfile"
+        message={(() => {
+          const showfile = pendingDelete();
+          return showfile ? deleteShowfileMessage(showfile) : "";
+        })()}
+        confirmLabel="Delete"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
+      />
+      <DeleteConfirmModal
+        isOpen={isConfirmingEmptyTrash()}
+        title="Empty Trash"
+        message={`Permanently delete ${trash().length} show${trash().length === 1 ? "" : "s"} in Recently deleted? This cannot be undone.`}
+        confirmLabel="Empty trash"
+        onCancel={() => setConfirmingEmptyTrash(false)}
+        onConfirm={() => void confirmEmptyTrash()}
+      />
     </Show>
   );
 }
