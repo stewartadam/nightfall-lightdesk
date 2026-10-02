@@ -24,7 +24,7 @@ interface EmbeddedBrowserEngine {
   tick(deltaMs: number): number;
 }
 
-const MAX_EMBEDDED_SHOWFILE_BYTES = 5 * 1024 * 1024;
+const MAX_EMBEDDED_SHOWFILE_BYTES = 16 * 1024 * 1024;
 const Status = {
   Disconnected: "disconnected",
   Connecting: "connecting",
