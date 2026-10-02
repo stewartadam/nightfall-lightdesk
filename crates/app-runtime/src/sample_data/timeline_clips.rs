@@ -40,13 +40,8 @@ pub(super) const BSTRIP_FLASH_BOTTOM_CLIP_UID: Uuid =
 /// Violet pulses on the matrix strobe pixels for one two-bar loop of the rap bass line.
 pub(super) const STROBE_BASS_LINE_CLIP_UID: Uuid =
     uuid::uuid!("00b0f9e6-473c-47cb-a339-c382ab109c1b");
-/// White flash on one pixel tape tier each, ordered top tier first.
-pub(super) const BSTRIP_ROW_FLASH_CLIP_UIDS: [Uuid; 4] = [
-    uuid::uuid!("0c8e0159-e6e4-4a9e-a243-26b06991f7ea"),
-    uuid::uuid!("e549e08a-4793-48b8-991a-06601ce1cafe"),
-    uuid::uuid!("2dfad8bd-ac20-4960-ad87-d2a93611e863"),
-    uuid::uuid!("b2df5344-41bd-468e-9ffd-349035365cb7"),
-];
+/// White flashes on the pixel tape tiers for one two-bar loop of the rap synth.
+pub(super) const SYNTH_ROWS_CLIP_UID: Uuid = uuid::uuid!("0c8e0159-e6e4-4a9e-a243-26b06991f7ea");
 /// White dot that runs along the rotating wash LED strips, one step per rap eighth note.
 pub(super) const WASH_HAT_RUN_CLIP_UID: Uuid = uuid::uuid!("81467c52-f96a-4202-a36a-8bd9da00ee41");
 /// White pulse-and-fade of the rotating wash beams.
@@ -91,6 +86,7 @@ pub(super) fn add_timeline_clips(world: &mut World) {
     add_pastel_rainbows(world);
     add_flashes(world);
     add_strobe_bass_line(world);
+    add_synth_rows(world);
     add_sparkles(world);
     add_snap(world);
     add_wash_hat_run(world);
@@ -322,14 +318,12 @@ fn white_rgb() -> Vec<(Attribute, ValueSource)> {
 ///
 /// - 407-409: a brief white flash over the rainbow on all bstrips (held 150 ms), the top
 ///   two tiers, and the bottom two tiers (held 200 ms each).
-/// - 412-415: a white flash on a single pixel tape tier, top tier first.
 /// - 417: a white pulse-and-fade of the rotating wash beams, including the master dimmer
 ///   the beams render through.
 /// - 418: a white flash on the rotating wash LED strips. The strips ignore the master
 ///   dimmer, and nothing plays under them in the lo-fi groove, so the flash fades to
 ///   black.
 fn add_flashes(world: &mut World) {
-    let tier = |index: usize| groups(TIER_GROUPS[index].0, TIER_GROUPS[index].1);
     let lofi_flash = |id, label, clip_uid, selection, hold_ms, uids| Flash {
         id,
         label,
@@ -340,18 +334,6 @@ fn add_flashes(world: &mut World) {
         fade: Duration::from_millis(90),
         // The lo-fi breaks play these flashes on black.
         fade_to_black: true,
-        uids,
-    };
-    let row_flash = |id, label, index: usize, uids| Flash {
-        id,
-        label,
-        clip_uid: BSTRIP_ROW_FLASH_CLIP_UIDS[index],
-        // Row flashes are indexed top first; tier groups are listed bottom first.
-        selection: tier(TIER_GROUPS.len() - 1 - index),
-        on: white_rgb(),
-        hold: Duration::from_millis(60),
-        fade: Duration::from_millis(250),
-        fade_to_black: false,
         uids,
     };
     let flashes = [
@@ -386,42 +368,6 @@ fn add_flashes(world: &mut World) {
             [
                 "69b55ac0-60c0-44a3-8b6a-733bae2cc6ec",
                 "bef25d64-4d33-4c35-8478-0c39e2af4864",
-            ],
-        ),
-        row_flash(
-            412,
-            "Bstrip Row 1 Flash",
-            0,
-            [
-                "93956bac-f7a1-4542-89ff-b5aec129e440",
-                "4463e88e-f059-4110-8415-0beebc13baae",
-            ],
-        ),
-        row_flash(
-            413,
-            "Bstrip Row 2 Flash",
-            1,
-            [
-                "d2817af2-075c-4b8a-9e50-ad586b4b7653",
-                "a341d5fe-50c1-425c-b2bd-9028bd49582d",
-            ],
-        ),
-        row_flash(
-            414,
-            "Bstrip Row 3 Flash",
-            2,
-            [
-                "2a43caba-5da4-4536-85b6-ed6050d98009",
-                "7e98e1c5-22cd-4030-8130-3b71437d95de",
-            ],
-        ),
-        row_flash(
-            415,
-            "Bstrip Row 4 Flash",
-            3,
-            [
-                "5edef1bb-ac5e-404f-b7fe-1df766574400",
-                "1896bec9-a1ab-46c1-b30e-e030849fbad2",
             ],
         ),
         Flash {
@@ -514,6 +460,9 @@ fn add_flash(world: &mut World, flash: Flash) {
     };
     if !flash.fade_to_black {
         sequence.release_cue.trigger = CueTriggerType::FollowPrevious;
+        // A sequence release fades HTP parameters with the out time and LTP ones with the
+        // in time.
+        sequence.release_cue.transitions.fade_in = fixed(flash.fade);
         sequence.release_cue.transitions.fade_out = fixed(flash.fade);
     }
     let clip = Clip {
@@ -537,22 +486,101 @@ fn rap_beats(beats: f64) -> Duration {
     Duration::from_secs_f64(beats * 60.0 / 168.0)
 }
 
-/// Seed clip 410, one two-bar loop of the rap bass line as violet pulses on the matrix
-/// strobe pixels: three quick notes, then two held notes a bar later.
+/// One hit of a hit sequence: snaps `on` values onto `selection` at `offset`, holds them
+/// for `hold`, then fades to `off` over `fade`.
+struct Hit {
+    /// Time from the sequence start to the hit.
+    offset: Duration,
+    /// Fixtures or elements the hit lights.
+    selection: SelectionExpr,
+    /// Values the hit snaps to.
+    on: Vec<(Attribute, ValueSource)>,
+    /// Values the hit fades to after its hold.
+    off: Vec<(Attribute, ValueSource)>,
+    /// Time the `on` look is held before the fade starts.
+    hold: Duration,
+    /// Length of the fade to `off`.
+    fade: Duration,
+}
+
+/// Seed a self-ending sequence clip that plays `hits` on a fixed schedule.
 ///
-/// The sequence starts on the first note. Each note has an "On" cue at its offset and a
-/// cue that fades the pixels back to black after a short hold, with longer holds and fades
-/// on the held notes. The strobe pixels have no white emitter, so the bass leaves the
-/// snap's white segments alone. The clip ends itself after the last fade.
+/// Each hit gets an "On" cue at its offset and a fade cue after its hold. A release marker
+/// inside a sequence cuts at once, so the fade cue fades to explicit values instead, with
+/// matching in and out times so LTP colour and HTP intensity both fade. The first cue
+/// starts with the sequence, the rest are timed from the sequence start, and the clip
+/// ends itself after the last fade.
+fn add_hit_sequence(
+    world: &mut World,
+    identifiers: Identifiers,
+    sequence_uid: Uuid,
+    priority: Priority,
+    hits: Vec<Hit>,
+) {
+    let mut cues = Vec::new();
+    for (index, hit) in hits.into_iter().enumerate() {
+        let number = index + 1;
+        let trigger = if index == 0 {
+            CueTriggerType::Manual
+        } else {
+            CueTriggerType::At(hit.offset)
+        };
+        let on_uid = Uuid::new_v5(&sequence_uid, format!("hit-{number}-on").as_bytes());
+        cues.push(cue(
+            &on_uid.to_string(),
+            cues.len() as u32 + 1,
+            &format!("Hit {number}"),
+            trigger,
+            hit.selection.clone(),
+            &hit.on,
+        ));
+        let fade_uid = Uuid::new_v5(&sequence_uid, format!("hit-{number}-fade").as_bytes());
+        let mut fade_cue = cue(
+            &fade_uid.to_string(),
+            cues.len() as u32 + 1,
+            &format!("Hit {number} fade"),
+            CueTriggerType::At(hit.offset + hit.hold),
+            hit.selection,
+            &hit.off,
+        );
+        fade_cue.transitions = PartialTransition {
+            fade_in: fixed(hit.fade),
+            fade_out: fixed(hit.fade),
+            ..Default::default()
+        };
+        cues.push(fade_cue);
+    }
+    let sequence = Sequence {
+        identifiers: Identifiers {
+            uid: sequence_uid,
+            ..identifiers.clone()
+        },
+        steps: cues.iter().map(|cue| cue.identifiers.uid.into()).collect(),
+        ..Default::default()
+    };
+    let clip = Clip {
+        identifiers,
+        source: Some(Source::Sequence(sequence_uid)),
+        priority,
+        options: ClipOptions {
+            auto_release: true,
+            deactivate_on_sequence_end: true,
+        },
+    };
+    add_sequence_clip(world, cues, sequence, clip);
+}
+
+/// Seed clip 410, one two-bar loop of the rap bass line as violet pulses on the matrix
+/// strobe pixels: three quick notes, then two held notes a bar later, with longer holds
+/// and fades on the held notes. The sequence starts on the first note. The strobe pixels
+/// have no white emitter, so the bass leaves the snap's white segments alone.
 fn add_strobe_bass_line(world: &mut World) {
-    let sequence_uid = Uuid::from_str("59eddb46-662b-42ab-834a-093563237b57").unwrap();
-    let selection = groups(MATRIX_STROBE_GROUP, MATRIX_STROBE_GROUP);
-    let violet = [
+    let violet = vec![
         (Attribute::Red, percent(0.55)),
         (Attribute::Green, percent(0.0)),
         (Attribute::Blue, percent(1.0)),
     ];
-    let black = [
+    let black = vec![
         (Attribute::Red, percent(0.0)),
         (Attribute::Green, percent(0.0)),
         (Attribute::Blue, percent(0.0)),
@@ -568,62 +596,66 @@ fn add_strobe_bass_line(world: &mut World) {
         (3.125, long),
         (5.125, long),
     ];
-    let mut cues = Vec::new();
-    for (index, (beat, (hold, fade))) in notes.into_iter().enumerate() {
-        let note = index + 1;
-        let start = rap_beats(beat);
-        let trigger = if index == 0 {
-            CueTriggerType::Manual
-        } else {
-            CueTriggerType::At(start)
-        };
-        let on_uid = Uuid::new_v5(&sequence_uid, format!("note-{note}-on").as_bytes());
-        cues.push(cue(
-            &on_uid.to_string(),
-            cues.len() as u32 + 1,
-            &format!("Note {note}"),
-            trigger,
-            selection.clone(),
-            &violet,
-        ));
-        let fade_uid = Uuid::new_v5(&sequence_uid, format!("note-{note}-fade").as_bytes());
-        let mut fade_cue = cue(
-            &fade_uid.to_string(),
-            cues.len() as u32 + 1,
-            &format!("Note {note} fade"),
-            CueTriggerType::At(start + hold),
-            selection.clone(),
-            &black,
-        );
-        fade_cue.transitions = PartialTransition {
-            fade_in: fixed(fade),
-            ..Default::default()
-        };
-        cues.push(fade_cue);
-    }
-    let sequence = Sequence {
-        identifiers: Identifiers {
-            uid: sequence_uid,
-            id: 410,
-            label: "Strobe Bass Line".to_owned(),
-        },
-        steps: cues.iter().map(|cue| cue.identifiers.uid.into()).collect(),
-        ..Default::default()
-    };
-    let clip = Clip {
-        identifiers: Identifiers {
+    let hits = notes
+        .into_iter()
+        .map(|(beat, (hold, fade))| Hit {
+            offset: rap_beats(beat),
+            selection: groups(MATRIX_STROBE_GROUP, MATRIX_STROBE_GROUP),
+            on: violet.clone(),
+            off: black.clone(),
+            hold,
+            fade,
+        })
+        .collect();
+    add_hit_sequence(
+        world,
+        Identifiers {
             id: 410,
             label: "Strobe Bass Line".to_owned(),
             uid: STROBE_BASS_LINE_CLIP_UID,
         },
-        source: Some(Source::Sequence(sequence_uid)),
-        priority: Priority(2),
-        options: ClipOptions {
-            auto_release: true,
-            deactivate_on_sequence_end: true,
-        },
+        Uuid::from_str("59eddb46-662b-42ab-834a-093563237b57").unwrap(),
+        Priority(2),
+        hits,
+    );
+}
+
+/// Seed clip 412, one two-bar loop of the rap synth as white flashes on the pixel tape
+/// tiers. The loop splits into four two-beat steps: a double hit on the top row, then the
+/// third, second and bottom rows. Rows count from the top tier.
+///
+/// The rows hold black from their first fade until the loop ends; the clip plays below
+/// the sparkle so the vocal sparkle still shows over them.
+fn add_synth_rows(world: &mut World) {
+    let row = |number: usize| {
+        let (start, end) = TIER_GROUPS[TIER_GROUPS.len() - number];
+        groups(start, end)
     };
-    add_sequence_clip(world, cues, sequence, clip);
+    let pattern = [(1, 0.0), (1, 0.875), (3, 2.0), (2, 4.0), (4, 6.0)];
+    let hits = pattern
+        .into_iter()
+        .map(|(number, beat)| Hit {
+            offset: rap_beats(beat),
+            selection: row(number),
+            on: white_rgb(),
+            // Dims the white rather than fading the colour, so the flash fades as white.
+            off: vec![(Attribute::Intensity, percent(0.0))],
+            hold: Duration::from_millis(60),
+            fade: Duration::from_millis(250),
+        })
+        .collect();
+    add_hit_sequence(
+        world,
+        Identifiers {
+            id: 412,
+            label: "Synth Rows".to_owned(),
+            uid: SYNTH_ROWS_CLIP_UID,
+        },
+        Uuid::from_str("8a46ab84-ff95-4f0a-8b0d-6f6a2bfc1a58").unwrap(),
+        // Below the sparkle, so the vocal sparkle plays over the rows untouched.
+        Priority(1),
+        hits,
+    );
 }
 
 /// Seed clips 33 and 34: a shuffled RGB sine twinkle and the intensity that reveals it.

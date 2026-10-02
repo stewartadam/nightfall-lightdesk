@@ -8,8 +8,8 @@
 
 use super::timeline_clips::{
     BSTRIP_FLASH_BOTTOM_CLIP_UID, BSTRIP_FLASH_CLIP_UID, BSTRIP_FLASH_TOP_CLIP_UID,
-    BSTRIP_ROW_FLASH_CLIP_UIDS, PASTEL_PULSE_CLIP_UID, SNAP_CLIP_UID, SPARKLE_FADE,
-    SPARKLES_FX_CLIP_UID, SPARKLES_INT_CLIP_UID, STROBE_BASS_LINE_CLIP_UID, WASH_HAT_RUN_CLIP_UID,
+    PASTEL_PULSE_CLIP_UID, SNAP_CLIP_UID, SPARKLE_FADE, SPARKLES_FX_CLIP_UID,
+    SPARKLES_INT_CLIP_UID, STROBE_BASS_LINE_CLIP_UID, SYNTH_ROWS_CLIP_UID, WASH_HAT_RUN_CLIP_UID,
     WASH_STRIP_SNARE_CLIP_UID, WASH_VOCAL_PULSE_CLIP_UID,
 };
 use super::*;
@@ -28,8 +28,12 @@ const STRIP_SNARE_LENGTH: Duration = Duration::from_millis(310);
 /// Length of one bass line loop, from its first note to the end of its last fade, used
 /// for display width.
 const BASS_LINE_LENGTH: Duration = Duration::from_millis(2_490);
-/// Length of one synth row flash including its fade, used for display width.
-const ROW_FLASH_LENGTH: Duration = Duration::from_millis(310);
+/// Length of one synth loop, from its first hit to the end of its last fade, used for
+/// display width.
+const SYNTH_LOOP_LENGTH: Duration = Duration::from_millis(2_453);
+/// Start of the synth's first loop: SMPTE 00:00:00:04 at 30 fps, just ahead of the
+/// halfway point between beats 1 and 2 of bar 1.
+const SYNTH_START: Duration = Duration::from_micros(133_333);
 /// Length of the wash vocal pulse including its fade, used for display width.
 const VOCAL_PULSE_LENGTH: Duration = Duration::from_millis(730);
 
@@ -324,19 +328,14 @@ fn rap_tracks() -> Vec<Track> {
     }
 
     let mut synth = ActionList::new("synth");
-    // Each two-bar loop splits into four two-beat steps: a double hit on the top row, then
-    // rows 3, 2 and 4. Row indexes count from the top tier.
-    let pattern = [(0, 1.0), (0, 1.875), (2, 3.0), (1, 5.0), (3, 7.0)];
-    for bar in (1..=15).step_by(2) {
-        for (row, beat) in pattern {
-            let at = RAP.at(bar, 1.0) + RAP.beats(beat - 1.0);
-            synth.start(
-                &format!("Synth row {}", row + 1),
-                BSTRIP_ROW_FLASH_CLIP_UIDS[row],
-                at,
-                at + ROW_FLASH_LENGTH,
-            );
-        }
+    for loop_index in 0..8 {
+        let at = SYNTH_START + RAP.beats(8.0 * f64::from(loop_index));
+        synth.start(
+            "Synth rows",
+            SYNTH_ROWS_CLIP_UID,
+            at,
+            at + SYNTH_LOOP_LENGTH,
+        );
     }
 
     let mut vocal = ActionList::new("vocal");
