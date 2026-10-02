@@ -103,8 +103,9 @@ omission reasons, and unmatched commits. Avoid putting generated files in Git.
 
 The workflow saves both files as `release-notes-<commit>` for 90 days. The existing
 publisher uses this Markdown and the standard installation information when
-creating its draft release, then publishes after every installer upload succeeds.
-It does not reread PR descriptions during publishing. A full rerun including the
+creating its draft release and leaves it unpublished, so the notes can be edited
+on the draft before a maintainer publishes it. It does not reread PR descriptions
+when uploading. A full rerun including the
 metadata acquisition job does reread them; PR descriptions are mutable until the release is cut. An
 existing draft's manually edited body is preserved on publication retry. Published
 releases remain immutable under the existing workflow.

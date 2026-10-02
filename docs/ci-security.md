@@ -65,8 +65,8 @@ Publication (fresh runner; contents: write; no Apple credentials)
   adding those requires reviewing extraction and inside-out signing support.
 - **Publish:** another fresh runner downloads the installers, notices, and release
   notes as data. It requires exactly four installers and one combined notices file,
-  rejects empty files and links, computes checksums, and uploads a draft release
-  before publishing it. It runs no downloaded code or project scripts. Only this
+  rejects empty files and links, computes checksums, and uploads them to a draft
+  release, which a maintainer reviews and publishes. It runs no downloaded code or project scripts. Only this
   job uses a write-capable GitHub token; the reusable-workflow caller supplies
   that permission ceiling, while the signer retains `permissions: {}`.
 

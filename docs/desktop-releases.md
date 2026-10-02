@@ -17,7 +17,7 @@ Generated macOS installers target Apple Silicon only.
 - Pushes to `main` build unsigned/ad-hoc GitHub Actions artifacts, retained for 14 days. They do not create a GitHub Release and must not appear on `nightfall.live/downloads`.
 - Pull requests changing distribution workflows, their build inputs, runtime entry points, or Tauri packaging configuration exercise the same builds without publishing.
 - Manual workflow runs produce CI artifacts only, including when run against a tag.
-- A pushed `v<version>` tag signs/notarizes macOS on an isolated runner and publishes a GitHub Release after every platform build and signing succeeds. The tag must exactly match the Tauri application version and Cargo workspace version. Versions such as `v0.2.0-beta.1` produce prereleases.
+- A pushed `v<version>` tag signs/notarizes macOS on an isolated runner and creates a draft GitHub Release after every platform build and signing succeeds. A maintainer reviews and publishes the draft. The tag must exactly match the Tauri application version and Cargo workspace version. Versions such as `v0.2.0-beta.1` produce prereleases.
 
 This repository supplies the tagged GitHub Release assets. The `nightfall.live/downloads` site should list published releases and their installers, excluding Actions artifacts and drafts.
 
@@ -32,9 +32,10 @@ This repository supplies the tagged GitHub Release assets. The `nightfall.live/d
    git push origin v0.1.0
    ```
 
-4. Inspect the desktop jobs in the CI run. Preparation collects PR release notes since the closest ancestral published release and saves a Markdown preview and JSON report. It collects four uniquely named installers and writes `SHA256SUMS`. Uploads go to a draft release with those notes and installation information, which becomes public only after every upload succeeds.
+4. Inspect the desktop jobs in the CI run. Preparation collects PR release notes since the closest ancestral published release and saves a Markdown preview and JSON report. It collects four uniquely named installers and writes `SHA256SUMS`. Uploads go to a draft release with those notes and installation information. The workflow never publishes it; the publish job's summary links to the draft.
+5. Review the draft under the repository's Releases. Edit its notes in the GitHub UI or with `gh release edit v0.1.0 --notes-file notes.md`, then publish it with **Publish release** or `gh release edit v0.1.0 --draft=false`.
 
-A failed upload leaves a draft that the same workflow can resume. Rerunning an already-public release fails instead of replacing its files. Keep release tags and published artifacts immutable; use a new version for corrections.
+To write the notes by hand from the start, create the draft before pushing the tag (`gh release create v0.1.0 --draft --title "Nightfall 0.1.0" --notes-file notes.md`, adding `--prerelease` for prerelease versions); the workflow reuses an existing draft and keeps its body. Rerunning the workflow resumes uploads into the same draft without changing its notes. Rerunning an already-public release fails instead of replacing its files. Keep release tags and published artifacts immutable; use a new version for corrections.
 
 Installer names include the version and architecture target, for example `nightfall-v0.1.0-aarch64-apple-darwin.dmg`. Download `SHA256SUMS` with the installers to verify their hashes (`sha256sum -c SHA256SUMS` on Linux, or `shasum -a 256 -c SHA256SUMS` on macOS).
 
@@ -51,7 +52,7 @@ Only version-tag pushes use a Developer ID Application certificate and Apple not
 | `APPLE_PASSWORD` | App-specific password for that account |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
 
-Tauri builds an ad-hoc signed app without credentials. A fresh runner downloads only the app artifact and uses system tools to sign, notarize, staple, and verify it before creating the release DMG. The DMG is also signed, notarized, and stapled. No project scripts, dependency installation, or compilation run on this runner. Publication occurs on a third runner after every build and signing succeeds. See [CI trust boundaries](ci-security.md) for the design philosophy, artifact validation, and maintenance rules.
+Tauri builds an ad-hoc signed app without credentials. A fresh runner downloads only the app artifact and uses system tools to sign, notarize, staple, and verify it before creating the release DMG. The DMG is also signed, notarized, and stapled. No project scripts, dependency installation, or compilation run on this runner. The draft release is created on a third runner after every build and signing succeeds. See [CI trust boundaries](ci-security.md) for the design philosophy, artifact validation, and maintenance rules.
 
 Pull requests (including same-repository PRs), branch pushes, and manual runs receive no signing credentials and use an ad-hoc macOS identity (`-`). Linux and Windows packaging receive no Apple credentials. Windows installers remain unsigned.
 
