@@ -76,13 +76,19 @@ impl WorldFactory {
     }
 
     /// Build a world factory with explicit process transport permissions.
+    ///
+    /// Tests and offline tools use this constructor, so timeline audio output stays
+    /// muted: driving a sample-data timeline must never play through the host speakers.
     pub fn new(
         log_config: LogConfig,
         network_output_enabled: bool,
         network_input_enabled: bool,
         usb_output_enabled: bool,
     ) -> Self {
-        let runtime_config = RuntimeConfig::default();
+        let runtime_config = RuntimeConfig {
+            timeline_audio_enabled: false,
+            ..RuntimeConfig::default()
+        };
         Self {
             log_config,
             transport_policy: TransportRuntimePolicy::new(

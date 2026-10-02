@@ -39,6 +39,7 @@ bd init --branch beads-sync --actor agent
   - Only stop services that you personally started during the current turn.
   - If a service was already running at the start of the turn, leave it running at completion unless the user explicitly asks you to stop it.
   - When reporting completion, mention any services left running.
+  - Start any backend you launch yourself (e.g. `cargo run`, a built `nightfall-headless`) with `NIGHTFALL_TIMELINE_AUDIO_ENABLED=0` so timeline playback never plays through the user's speakers. The Playwright wrapper already does this for its backends.
 
 ### Protected-branches task workflow
 
