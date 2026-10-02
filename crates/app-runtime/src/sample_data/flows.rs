@@ -128,7 +128,7 @@ fn build_metronome_flow(registry: &FlowNodeRegistry) -> FlowDefinition {
 
     FlowDefinition {
         identifiers: Identifiers {
-            id: 1,
+            id: 24,
             label: "Flow: Metronome Alternator".to_string(),
             uid: Uuid::from_str("c4dcd5fa-2231-4bdf-8d91-486efef2990e").unwrap(),
         },
@@ -265,7 +265,7 @@ fn build_red_chase_flow(registry: &FlowNodeRegistry) -> FlowDefinition {
 
     FlowDefinition {
         identifiers: Identifiers {
-            id: 2,
+            id: 25,
             label: "Flow: Modulated Chase".to_string(),
             uid: Uuid::from_str("c9ff2525-d0e2-4b4c-a5a0-1e50d90b6e32").unwrap(),
         },

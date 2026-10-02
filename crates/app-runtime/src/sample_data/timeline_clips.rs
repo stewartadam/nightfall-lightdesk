@@ -658,7 +658,7 @@ fn add_synth_rows(world: &mut World) {
     );
 }
 
-/// Seed clips 33 and 9: a shuffled RGB sine twinkle and the intensity that reveals it.
+/// Seed clips 33 and 34: a shuffled RGB sine twinkle and the intensity that reveals it.
 ///
 /// The intensity lifts at once, holds for 100 ms, then fades the bstrips down over
 /// `SPARKLE_FADE` and ends itself. It plays at priority 2 so the fade can pull the bstrips
@@ -682,7 +682,7 @@ fn add_sparkles(world: &mut World) {
         .resource_mut::<DataProvider<Fx>>()
         .add(Fx {
             identifiers: Identifiers {
-                id: 7,
+                id: 33,
                 label: "Sparkles".to_owned(),
                 uid: fx_uid,
             },
@@ -738,7 +738,7 @@ fn add_sparkles(world: &mut World) {
     let sequence = Sequence {
         identifiers: Identifiers {
             uid: Uuid::from_str("f6cdb32d-f027-4708-a724-28212974e45c").unwrap(),
-            id: 9,
+            id: 34,
             label: "Sparkles Intensity".to_owned(),
         },
         steps: vec![lift.identifiers.uid.into(), fade.identifiers.uid.into()],
@@ -746,7 +746,7 @@ fn add_sparkles(world: &mut World) {
     };
     let clip = Clip {
         identifiers: Identifiers {
-            id: 9,
+            id: 34,
             label: "Sparkles Intensity".to_owned(),
             uid: SPARKLES_INT_CLIP_UID,
         },

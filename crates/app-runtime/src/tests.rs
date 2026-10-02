@@ -1949,7 +1949,7 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
         "the wash pulse waits for the vocal into bar 5"
     );
     assert!(
-        seen(9, "vocal sparkle") >= Duration::from_millis(5_600),
+        seen(34, "vocal sparkle") >= Duration::from_millis(5_600),
         "the sparkle waits for the vocal into bar 5"
     );
 }
@@ -2012,3 +2012,4 @@ async fn world_factory_sample_lofi_timeline_flashes_phrase_endings() {
         "flash {flash:?}, top {top:?}, bottom {bottom:?}"
     );
 }
+
