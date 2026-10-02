@@ -2012,4 +2012,3 @@ async fn world_factory_sample_lofi_timeline_flashes_phrase_endings() {
         "flash {flash:?}, top {top:?}, bottom {bottom:?}"
     );
 }
-
