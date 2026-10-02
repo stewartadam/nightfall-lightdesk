@@ -14,15 +14,14 @@ test.use({ sampleDataOnly: true, viewport: { width: 1920, height: 1080 } });
 test.setTimeout(90_000);
 
 /**
- * Long-running clip IDs the sample timelines drive. The one-shot snap and synth fill
- * clips are covered by `world_factory_sample_rap_timeline_fires_one_shot_clips`, since
- * instance snapshots are droppable and can skip sub-second instances.
+ * Long-running clip IDs the sample timelines drive. The one-shot snap, bass, and flash
+ * clips are covered by the `world_factory_sample_*_timeline_*` Rust tests, since instance
+ * snapshots are droppable and can skip sub-second instances.
  */
 const CLIP = {
   pastelRainbow: 405,
   pastelPulse: 406,
   sparklesFx: 33,
-  sparklesInt: 34,
   washHatRun: 416,
 } as const;
 
@@ -106,8 +105,11 @@ function isActive(page: Page, clipId: number): Promise<boolean> {
   );
 }
 
-/** Plays the Lo-fi groove, then its first break, and captures the sparkle over the slow rainbow. */
-test("Lo-fi pulses the rainbow in the groove and sparkles in the break", async ({
+/**
+ * Plays the Lo-fi groove, captures the restarting rainbow pulse, then plays into the first
+ * break and checks the rainbow stops so the break flashes play on black.
+ */
+test("Lo-fi pulses the rainbow in the groove and clears it for the break", async ({
   page,
 }, testInfo) => {
   const surface = await openTimeline(page, "Lo-fi");
@@ -121,18 +123,11 @@ test("Lo-fi pulses the rainbow in the groove and sparkles in the break", async (
     await page.waitForTimeout(1_500);
     await captureVisualizer(page, testInfo.outputPath("lofi-groove.png"));
 
-    await seek(page, "Lo-fi", 13_000);
+    await seek(page, "Lo-fi", 12_000);
     await expect
-      .poll(() => isActive(page, CLIP.sparklesFx), { timeout: 5_000 })
-      .toBe(true);
-    await expect.poll(() => isActive(page, CLIP.sparklesInt)).toBe(true);
-    await expect.poll(() => isActive(page, CLIP.pastelRainbow)).toBe(true);
-    await page.waitForTimeout(1_000);
-    await captureVisualizer(page, testInfo.outputPath("lofi-break.png"));
-
-    await expect
-      .poll(() => isActive(page, CLIP.sparklesFx), { timeout: 10_000 })
+      .poll(() => isActive(page, CLIP.pastelPulse), { timeout: 5_000 })
       .toBe(false);
+    await expect.poll(() => isActive(page, CLIP.sparklesFx)).toBe(false);
   } finally {
     await surface
       .getByRole("button", { name: "Stop timeline", exact: true })

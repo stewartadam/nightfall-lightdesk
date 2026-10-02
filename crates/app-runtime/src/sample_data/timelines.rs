@@ -166,19 +166,21 @@ fn region(
     }
 }
 
-/// Lo-fi lanes: a pastel wash that restarts with the groove, accents on the backbeat and
-/// the phrase-ending notes, and sparkles in the breaks.
+/// Lo-fi lanes: a pastel wash that restarts with the groove, a snap on the backbeat, and
+/// bstrip flashes on the phrase-ending notes and the break hits, which play on black.
 ///
 /// Each groove pair of bars plays three and a half two-beat segments before a two-note
-/// figure on the second bar's fourth beat. The figure is a repeated note in bars 2, 6, 10,
-/// and 14, and falls from high to low in bars 4 and 12.
+/// figure late in the second bar. The figure is a repeated note (beats 3.84 and 4.5) in
+/// bars 2, 6, 10, and 14, and falls from high to low (beats 3.84 and 4.36) in bars 4 and
+/// 12. The rainbow stops just after the last groove figure, leaving a short gap of black
+/// before each break.
 fn lofi_tracks() -> Vec<Track> {
     let grooves = [1..=6, 9..=14];
-    let breaks = [(7, 9), (15, 17)];
+    let breaks = [7, 15];
 
     let mut wash = ActionList::new("wash");
     for groove in grooves.clone() {
-        let groove_end = LOFI.at(groove.end() + 1, 1.0);
+        let last_bar = *groove.end();
         for bar in groove {
             for beat in [1.0, 3.0] {
                 let at = LOFI.at(bar, beat);
@@ -190,46 +192,42 @@ fn lofi_tracks() -> Vec<Track> {
                 );
             }
         }
-        wash.stop("Stop rainbow pulse", PASTEL_PULSE_CLIP_UID, groove_end);
-    }
-    for (from, until) in breaks {
-        wash.start(
-            "Pastel rainbow",
-            PASTEL_RAINBOW_CLIP_UID,
-            LOFI.at(from, 1.0),
-            LOFI.at(until, 1.0),
+        wash.stop(
+            "Stop rainbow pulse",
+            PASTEL_PULSE_CLIP_UID,
+            LOFI.at(last_bar, 4.75),
         );
-        wash.stop("Stop rainbow", PASTEL_RAINBOW_CLIP_UID, LOFI.at(until, 1.0));
     }
 
-    let mut accents = ActionList::new("accents");
+    let mut snaps = ActionList::new("snaps");
+    let mut flashes = ActionList::new("flashes");
     for bar in grooves.into_iter().flatten() {
         let at = LOFI.at(bar, 3.0);
-        accents.start("Snap", SNAP_CLIP_UID, at, at + SNAP_LENGTH);
+        snaps.start("Snap", SNAP_CLIP_UID, at, at + SNAP_LENGTH);
         if bar % 2 == 1 {
             continue;
         }
-        let (first, second) = if bar % 4 == 0 {
-            (
-                ("Flash high", BSTRIP_FLASH_TOP_CLIP_UID),
-                ("Flash low", BSTRIP_FLASH_BOTTOM_CLIP_UID),
-            )
+        let figure = if bar % 4 == 0 {
+            [
+                ("Flash high", BSTRIP_FLASH_TOP_CLIP_UID, 3.84),
+                ("Flash low", BSTRIP_FLASH_BOTTOM_CLIP_UID, 4.36),
+            ]
         } else {
-            (
-                ("Flash", BSTRIP_FLASH_CLIP_UID),
-                ("Flash", BSTRIP_FLASH_CLIP_UID),
-            )
+            [
+                ("Flash", BSTRIP_FLASH_CLIP_UID, 3.84),
+                ("Flash", BSTRIP_FLASH_CLIP_UID, 4.5),
+            ]
         };
-        for ((label, clip), beat) in [(first, 4.25), (second, 4.5)] {
+        for (label, clip, beat) in figure {
             let at = LOFI.at(bar, beat);
-            accents.start(label, clip, at, at + FLASH_LENGTH);
+            flashes.start(label, clip, at, at + FLASH_LENGTH);
         }
     }
-    for (from, _) in breaks {
+    for bar in breaks {
         // Four high notes on the first break bar, then eight low notes on the second.
         for beat in [1.0, 2.0, 3.0, 4.0] {
-            let at = LOFI.at(from, beat);
-            accents.start(
+            let at = LOFI.at(bar, beat);
+            flashes.start(
                 "Flash high",
                 BSTRIP_FLASH_TOP_CLIP_UID,
                 at,
@@ -237,8 +235,8 @@ fn lofi_tracks() -> Vec<Track> {
             );
         }
         for eighth in 0..8 {
-            let at = LOFI.at(from + 1, 1.0 + f64::from(eighth) / 2.0);
-            accents.start(
+            let at = LOFI.at(bar + 1, 1.0 + f64::from(eighth) / 2.0);
+            flashes.start(
                 "Flash low",
                 BSTRIP_FLASH_BOTTOM_CLIP_UID,
                 at,
@@ -247,15 +245,10 @@ fn lofi_tracks() -> Vec<Track> {
         }
     }
 
-    let mut sparkles = ActionList::new("breaks");
-    for (from, until) in breaks {
-        sparkles.sparkle(LOFI.at(from, 1.0), LOFI.at(until, 1.0));
-    }
-
     vec![
         wash.into_track("wash", "Wash"),
-        accents.into_track("accents", "Accents"),
-        sparkles.into_track("breaks", "Breaks"),
+        snaps.into_track("snaps", "Snaps"),
+        flashes.into_track("breaks", "Breaks"),
     ]
 }
 

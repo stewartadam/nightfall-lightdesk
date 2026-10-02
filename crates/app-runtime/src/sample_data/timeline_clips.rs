@@ -59,8 +59,9 @@ pub(super) const WASH_VOCAL_PULSE_CLIP_UID: Uuid =
 
 /// Cycle length of the pastel rainbow: four bars at 108 BPM.
 pub(super) const PASTEL_RAINBOW_CYCLE: Duration = Duration::from_micros(8_888_889);
-/// Cycle length of the pastel rainbow pulse: two beats at 108 BPM.
-pub(super) const PASTEL_PULSE_CYCLE: Duration = Duration::from_micros(1_111_111);
+/// Cycle length of the pastel rainbow pulse: two bars at 108 BPM. The lo-fi groove
+/// restarts it every two beats, so each segment replays the first quarter of the cycle.
+pub(super) const PASTEL_PULSE_CYCLE: Duration = Duration::from_micros(4_444_444);
 /// Cycle length of the wash hat run: one bar (eight hi-hat eighth notes) at 168 BPM.
 const HAT_RUN_CYCLE: Duration = Duration::from_micros(1_428_571);
 
@@ -187,8 +188,8 @@ fn rainbow_lane(attribute: Attribute, targets: [f32; 6]) -> FxLane {
 }
 
 /// Seed the pastel rainbow at both of its tempos: clip 405 cycles over four lo-fi bars,
-/// and clip 406 cycles every two lo-fi beats so the timeline can restart it on each
-/// segment of the groove.
+/// and clip 406 cycles over two lo-fi bars and is restarted by the timeline on each
+/// two-beat segment of the groove.
 fn add_pastel_rainbows(world: &mut World) {
     add_pastel_rainbow(
         world,
@@ -286,8 +287,8 @@ fn white_rgb() -> Vec<(Attribute, ValueSource)> {
 
 /// Seed the flash clips the timelines restart on each hit:
 ///
-/// - 407-409: a brief white flash over the rainbow on all bstrips, the top two tiers, and
-///   the bottom two tiers.
+/// - 407-409: a brief white flash over the rainbow on all bstrips (held 150 ms), the top
+///   two tiers, and the bottom two tiers (held 200 ms each).
 /// - 410-411: a violet bass pulse on the matrix strobe pixels, short and long. The strobe
 ///   pixels have no white emitter, so these leave the snap's white segments alone.
 /// - 412-415: a white flash on a single pixel tape tier, top tier first.
@@ -295,13 +296,13 @@ fn white_rgb() -> Vec<(Attribute, ValueSource)> {
 ///   the beams render through.
 fn add_flashes(world: &mut World) {
     let tier = |index: usize| groups(TIER_GROUPS[index].0, TIER_GROUPS[index].1);
-    let lofi_flash = |id, label, clip_uid, selection, uids| Flash {
+    let lofi_flash = |id, label, clip_uid, selection, hold_ms, uids| Flash {
         id,
         label,
         clip_uid,
         selection,
         on: white_rgb(),
-        hold: Duration::from_millis(40),
+        hold: Duration::from_millis(hold_ms),
         fade: Duration::from_millis(90),
         uids,
     };
@@ -336,6 +337,7 @@ fn add_flashes(world: &mut World) {
             "Bstrip Flash",
             BSTRIP_FLASH_CLIP_UID,
             groups(BSTRIP_GROUPS.0, BSTRIP_GROUPS.1),
+            150,
             [
                 "9df93bf1-1282-40c3-a9c0-784fbf423785",
                 "bc223c3d-d71d-473e-8425-fb4d1146813a",
@@ -346,6 +348,7 @@ fn add_flashes(world: &mut World) {
             "Bstrip Flash Top",
             BSTRIP_FLASH_TOP_CLIP_UID,
             groups(TIER_GROUPS[2].0, TIER_GROUPS[3].1),
+            200,
             [
                 "b7e92331-6a23-4722-98d8-ffd7474cfce7",
                 "9efe58b4-f90e-426f-95fa-c346c4430d66",
@@ -356,6 +359,7 @@ fn add_flashes(world: &mut World) {
             "Bstrip Flash Bottom",
             BSTRIP_FLASH_BOTTOM_CLIP_UID,
             groups(TIER_GROUPS[0].0, TIER_GROUPS[1].1),
+            200,
             [
                 "69b55ac0-60c0-44a3-8b6a-733bae2cc6ec",
                 "bef25d64-4d33-4c35-8478-0c39e2af4864",
