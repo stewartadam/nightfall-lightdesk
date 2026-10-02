@@ -12,7 +12,8 @@ crate-type = ["cdylib"]
 nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-fixture-model = { path = "../fixture-model" }
-nightfall-io = { path = "../io" }
+# Without the `ecs` feature so Bevy stays out of the bridge (see CONTRIBUTING.md).
+nightfall-io = { path = "../io", default-features = false }
 nightfall-lookahead-projection = { path = "../lookahead-projection" }
 nightfall-selection = { path = "../selection" }
 nightfall-waveform = { path = "../waveform" }

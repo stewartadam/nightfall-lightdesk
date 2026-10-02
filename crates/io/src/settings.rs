@@ -8,7 +8,6 @@
 
 use std::time::Duration;
 
-use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
 use crate::{InputUniverseVisibilityMode, NetworkDmxOutputTargets, UsbDmxOutputTargets};
@@ -21,7 +20,8 @@ pub const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS: u32 = 2_000;
 /// This resource is intentionally not serialized. A showfile can preserve the
 /// operator's preferred transport state while a host process prevents physical
 /// input or output for its entire lifetime.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct TransportRuntimePolicy {
     /// Whether showfiles may enable network DMX output.
     pub allow_network_output: bool,
@@ -79,7 +79,8 @@ pub struct ExternalControlSettings {
 }
 
 /// Host control preferences and the native listener's actual runtime state.
-#[derive(Resource, Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub struct ExternalControlState {
     /// Whether this runtime hosts a native network listener.
@@ -93,7 +94,8 @@ pub struct ExternalControlState {
 }
 
 /// Showfile-scoped runtime settings for network and USB transports.
-#[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub struct IoRuntimeSettings {
     /// Selected network interface name, or `None` for the system default.
@@ -183,7 +185,8 @@ pub enum InputSignalLossPolicy {
 }
 
 /// Snapshot of compatible USB DMX devices currently surfaced to clients.
-#[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct AvailableUsbDmxDevices(pub Vec<UsbDmxDeviceInfo>);
 
 /// Compatible USB DMX device currently visible to the host OS.
@@ -221,7 +224,8 @@ pub struct NetworkInterfaceInfo {
 }
 
 /// Snapshot of currently available/default network interfaces.
-#[derive(Resource, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct NetworkInterfaceState {
     /// Available non-loopback IPv4 interfaces.
     pub available_interfaces: Vec<NetworkInterfaceInfo>,

@@ -89,6 +89,13 @@ features (such as Tokio's networking) that break the `wasm32` browser builds, so
 A new proc-macro crate instead belongs in `workspace-members` under `[traversal-excludes]` in `.config/hakari.toml`:
 proc macros compile for the host even during a `wasm32` build, so the gate cannot keep the workspace-hack out.
 
+The WASM bridge (`crates/wasm-bridge`) only needs plain types and constants, so keep Bevy out of its
+dependency tree. A crate the bridge uses that also defines ECS types puts its Bevy derives behind an
+optional, default-on `ecs` feature (`#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]`),
+and the bridge depends on it with `default-features = false`; `nightfall-io` follows this pattern.
+Verify with `cargo tree -p nightfall-wasm-bridge --target wasm32-unknown-unknown -e normal -i bevy_ecs`,
+which should report that `bevy_ecs` is not in the tree.
+
 Vite, Tauri CLI, wasm-pack, Playwright, and prek are project dependencies; `pnpm install --frozen-lockfile` installs them. No other global Node.js packages are required for an ordinary contribution.
 
 #### macOS
