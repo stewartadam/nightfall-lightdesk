@@ -8,9 +8,8 @@
 
 use super::timeline_clips::{
     BSTRIP_FLASH_BOTTOM_CLIP_UID, BSTRIP_FLASH_CLIP_UID, BSTRIP_FLASH_TOP_CLIP_UID,
-    BSTRIP_ROW_FLASH_CLIP_UIDS, PASTEL_PULSE_CLIP_UID, PASTEL_RAINBOW_CLIP_UID,
-    PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID, SPARKLE_FADE, SPARKLES_FX_CLIP_UID, SPARKLES_INT_CLIP_UID,
-    STROBE_BASS_LONG_CLIP_UID, STROBE_BASS_SHORT_CLIP_UID, WASH_HAT_RUN_CLIP_UID,
+    BSTRIP_ROW_FLASH_CLIP_UIDS, PASTEL_PULSE_CLIP_UID, SNAP_CLIP_UID, SPARKLE_FADE,
+    SPARKLES_FX_CLIP_UID, SPARKLES_INT_CLIP_UID, STROBE_BASS_LINE_CLIP_UID, WASH_HAT_RUN_CLIP_UID,
     WASH_STRIP_SNARE_CLIP_UID, WASH_VOCAL_PULSE_CLIP_UID,
 };
 use super::*;
@@ -26,10 +25,9 @@ const SNAP_LENGTH: Duration = Duration::from_millis(514);
 const FLASH_LENGTH: Duration = Duration::from_millis(130);
 /// Length of one wash strip snare flash including its fade, used for display width.
 const STRIP_SNARE_LENGTH: Duration = Duration::from_millis(310);
-/// Length of one short bass pulse including its fade, used for display width.
-const BASS_SHORT_LENGTH: Duration = Duration::from_millis(180);
-/// Length of one long bass pulse including its fade, used for display width.
-const BASS_LONG_LENGTH: Duration = Duration::from_millis(660);
+/// Length of one bass line loop, from its first note to the end of its last fade, used
+/// for display width.
+const BASS_LINE_LENGTH: Duration = Duration::from_millis(2_490);
 /// Length of one synth row flash including its fade, used for display width.
 const ROW_FLASH_LENGTH: Duration = Duration::from_millis(310);
 /// Length of the wash vocal pulse including its fade, used for display width.
@@ -54,11 +52,6 @@ impl SongGrid {
     /// Returns the length of `beats` beats.
     fn beats(self, beats: f64) -> Duration {
         Duration::from_secs_f64(beats * 60.0 / self.bpm)
-    }
-
-    /// Returns the length of `bars` whole bars.
-    fn bars(self, bars: u32) -> Duration {
-        Duration::from_secs_f64(f64::from(bars) * 4.0 * 60.0 / self.bpm)
     }
 }
 
@@ -307,28 +300,10 @@ fn lofi_regions(timeline_uid: Uuid) -> Vec<TimelineRegion> {
 /// - Moments: a bstrip sparkle on the same vocal samples that fades down over a bar.
 fn rap_tracks() -> Vec<Track> {
     let end = RAP.at(17, 2.0);
-    // One rainbow cycle per four rap bars instead of four lo-fi bars.
-    let rainbow_rate = PASTEL_RAINBOW_CYCLE.as_secs_f32() / RAP.bars(4).as_secs_f32();
 
     let mut wash = ActionList::new("wash");
-    wash.start(
-        "Pastel rainbow",
-        PASTEL_RAINBOW_CLIP_UID,
-        RAP.at(1, 1.0),
-        end,
-    );
-    wash.push(
-        "Rainbow at 4 bars",
-        RAP.at(1, 2.0),
-        Duration::from_millis(250),
-        ActionKind::SetClipRate {
-            uid: PASTEL_RAINBOW_CLIP_UID,
-            rate: rainbow_rate,
-        },
-    );
     wash.start("Hat run", WASH_HAT_RUN_CLIP_UID, RAP.at(1, 3.0), end);
     wash.start("Circle motion", CIRCLE_MOTION_CLIP_UID, RAP.at(9, 1.0), end);
-    wash.stop("Stop rainbow", PASTEL_RAINBOW_CLIP_UID, end);
     wash.stop("Stop hat run", WASH_HAT_RUN_CLIP_UID, end);
     wash.stop("Stop circle motion", CIRCLE_MOTION_CLIP_UID, end);
 
@@ -339,48 +314,29 @@ fn rap_tracks() -> Vec<Track> {
         if bar % 2 == 0 || bar == 17 {
             continue;
         }
-        let notes = [
-            (bar, 2.875, false),
-            (bar, 3.5, false),
-            (bar, 4.0, false),
-            (bar + 1, 2.0, true),
-            (bar + 1, 4.0, true),
-        ];
-        for (bar, beat, held) in notes {
-            let at = RAP.at(bar, beat);
-            if held {
-                strobes.start("Bass", STROBE_BASS_LONG_CLIP_UID, at, at + BASS_LONG_LENGTH);
-            } else {
-                strobes.start(
-                    "Bass",
-                    STROBE_BASS_SHORT_CLIP_UID,
-                    at,
-                    at + BASS_SHORT_LENGTH,
-                );
-            }
-        }
+        let at = RAP.at(bar, 2.875);
+        strobes.start(
+            "Bass line",
+            STROBE_BASS_LINE_CLIP_UID,
+            at,
+            at + BASS_LINE_LENGTH,
+        );
     }
 
     let mut synth = ActionList::new("synth");
-    let row_order = [0, 2, 1, 3];
-    let hits = (2..=16).step_by(2).flat_map(|bar| {
-        [
-            (bar, 2.25),
-            (bar, 3.0),
-            (bar, 4.0),
-            (bar + 1, 2.0),
-            (bar + 1, 4.0),
-        ]
-    });
-    for (index, (bar, beat)) in hits.filter(|&(bar, _)| bar <= 16).enumerate() {
-        let row = row_order[index % row_order.len()];
-        let at = RAP.at(bar, beat);
-        synth.start(
-            &format!("Synth row {}", row + 1),
-            BSTRIP_ROW_FLASH_CLIP_UIDS[row],
-            at,
-            at + ROW_FLASH_LENGTH,
-        );
+    // Each two-bar loop splits into four two-beat steps: a double hit on the top row, then
+    // rows 3, 2 and 4. Row indexes count from the top tier.
+    let pattern = [(0, 1.0), (0, 1.875), (2, 3.0), (1, 5.0), (3, 7.0)];
+    for bar in (1..=15).step_by(2) {
+        for (row, beat) in pattern {
+            let at = RAP.at(bar, 1.0) + RAP.beats(beat - 1.0);
+            synth.start(
+                &format!("Synth row {}", row + 1),
+                BSTRIP_ROW_FLASH_CLIP_UIDS[row],
+                at,
+                at + ROW_FLASH_LENGTH,
+            );
+        }
     }
 
     let mut vocal = ActionList::new("vocal");

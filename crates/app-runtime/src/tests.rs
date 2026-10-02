@@ -1884,8 +1884,9 @@ fn active_clip_and_sequence_ids(app: &mut App) -> Vec<u32> {
 }
 
 /// Plays the Rap timeline in real time into bar 5 and verifies each lane's one-shot clips:
-/// a snap on every bar line, short bass pulses before long ones, synth row flashes in
-/// tier order 1, 3, 2, 4, the running hat dot, and the wash pulse on the vocal into bar 5.
+/// a snap on every bar line, the bass line loop from its first note, synth row flashes
+/// from the start of playback in tier order 1, 3, 2, 4, the running hat dot, and the wash
+/// pulse on the vocal into bar 5.
 #[tokio::test]
 async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
     use nightfall_timecode::prelude::TimecodeGenerator;
@@ -1933,8 +1934,14 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
             .unwrap_or_else(|| panic!("{what} (clip {clip_id}) never fired"))
     };
     assert!(
-        seen(410, "quick bass") < seen(411, "held bass"),
-        "the quick bass notes open the loop"
+        seen(410, "bass line") >= Duration::from_millis(600),
+        "the bass line starts on its first note at bar 1 beat 2.875 (0.68 s)"
+    );
+    // The first polled frame can land a few hundred milliseconds in, so this checks the
+    // row 1 double hit fires before the row 3 hit on beat 3 (0.72 s).
+    assert!(
+        seen(412, "synth row 1") < Duration::from_millis(700),
+        "the synth starts with playback"
     );
     let rows = [
         seen(412, "synth row 1"),

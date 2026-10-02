@@ -19,7 +19,6 @@ test.setTimeout(90_000);
  * snapshots are droppable and can skip sub-second instances.
  */
 const CLIP = {
-  pastelRainbow: 405,
   pastelPulse: 406,
   sparklesFx: 33,
   washHatRun: 416,
@@ -169,8 +168,8 @@ test("Lo-fi pulses the rainbow in the groove and clears it for the break", async
 });
 
 /**
- * Plays the Rap timeline into section B and captures the sparkle over the sped-up
- * rainbow, with the hi-hat dot running along the rotating wash strips.
+ * Plays the Rap timeline into section B and captures the vocal sparkle on the bstrips,
+ * with the hi-hat dot running along the rotating wash strips.
  */
 test("Rap opens section B with a sparkle", async ({ page }, testInfo) => {
   const surface = await openTimeline(page, "Rap");
@@ -184,7 +183,6 @@ test("Rap opens section B with a sparkle", async ({ page }, testInfo) => {
     await expect
       .poll(() => isActive(page, CLIP.sparklesFx), { timeout: 5_000 })
       .toBe(true);
-    await expect.poll(() => isActive(page, CLIP.pastelRainbow)).toBe(true);
     await expect.poll(() => isActive(page, CLIP.washHatRun)).toBe(true);
     await page.waitForTimeout(500);
     await captureVisualizer(page, testInfo.outputPath("rap-sparkle.png"));
