@@ -648,6 +648,64 @@ fn world_factory_sample_data_seeds_fader_assignments() {
     assert_eq!(snapshot.control_assignments, assignments);
 }
 
+/// Verifies every clip a sample timeline drives is seeded, and that clips which do not end
+/// on their own are stopped again later on the same timeline.
+#[test]
+fn world_factory_sample_timelines_drive_seeded_clips() {
+    use nightfall_timeline::prelude::{ActionKind, Timeline};
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
+    let clip_by_uid: HashMap<_, _> = snapshot
+        .clips
+        .iter()
+        .map(|clip| (clip.identifiers.uid, clip))
+        .collect();
+    let timelines = app.world().resource::<DataProvider<Timeline>>();
+
+    for timeline in timelines.iter() {
+        assert_eq!(
+            timeline.tracks.len(),
+            3,
+            "{} lanes",
+            timeline.identifiers.label
+        );
+        let actions: Vec<_> = timeline
+            .tracks
+            .iter()
+            .flat_map(|track| &track.actions)
+            .collect();
+        for action in &actions {
+            let (ActionKind::StartClip(uid)
+            | ActionKind::StopClip(uid)
+            | ActionKind::SetClipRate { uid, .. }) = &action.action
+            else {
+                panic!("unexpected sample action {:?}", action.action);
+            };
+            let clip = clip_by_uid
+                .get(uid)
+                .unwrap_or_else(|| panic!("{} targets unknown clip {uid}", action.label));
+            if let ActionKind::StartClip(_) = action.action
+                && !clip.options.deactivate_on_sequence_end
+            {
+                assert!(
+                    actions.iter().any(|stop| matches!(
+                        stop.action,
+                        ActionKind::StopClip(stop_uid) if stop_uid == *uid
+                    ) && stop.position > action.position),
+                    "{} on {} is never stopped",
+                    action.label,
+                    timeline.identifiers.label
+                );
+            }
+        }
+    }
+}
+
 /// Verifies sample startup exposes populated Color and Position Blueprints.
 #[test]
 fn world_factory_sample_data_bootstrap_seeds_blueprints() {
@@ -1761,4 +1819,54 @@ fn sample_audio_resources_can_change_without_recompilation() {
         .unwrap();
     nightfall::clear_active_show_data_dir();
     nightfall::set_nightfall_data_dir(None);
+}
+
+/// Plays the Rap timeline in real time through its first synth fill and verifies the
+/// timeline restarts the snap on each bar and fires the self-ending synth fill clip.
+#[tokio::test]
+async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
+    use nightfall_clips::MaterializedClip;
+    use nightfall_timecode::prelude::TimecodeGenerator;
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    queue_startup_command(&mut app, "test", "timecode 2 start".to_owned());
+
+    let mut snap_starts = 0;
+    let mut snap_was_active = false;
+    let mut synth_seen = false;
+    let mut position = Duration::ZERO;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while position < Duration::from_millis(5_300) && Instant::now() < deadline {
+        app.update();
+        let active: Vec<u32> = app
+            .world_mut()
+            .query::<&MaterializedClip>()
+            .iter(app.world())
+            .map(|clip| clip.clip_id)
+            .collect();
+        let snap_active = active.contains(&29);
+        snap_starts += usize::from(snap_active && !snap_was_active);
+        snap_was_active = snap_active;
+        synth_seen |= active.contains(&403);
+        position = app
+            .world_mut()
+            .query::<&TimecodeGenerator>()
+            .iter(app.world())
+            .find(|generator| generator.timecode.identifiers.id == 2)
+            .map(|generator| generator.state.current_time)
+            .unwrap_or_default();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert!(
+        position >= Duration::from_millis(5_300),
+        "timecode 2 stalled at {position:?}"
+    );
+    // Bar lines at 0.01, 1.43, 2.86, and 4.29 s.
+    assert_eq!(snap_starts, 4, "snap should flash once per bar");
+    assert!(synth_seen, "synth fill should fire on beat 2 of bar 4");
 }
