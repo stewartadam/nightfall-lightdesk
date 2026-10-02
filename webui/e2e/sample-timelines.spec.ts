@@ -106,6 +106,39 @@ function isActive(page: Page, clipId: number): Promise<boolean> {
 }
 
 /**
+ * Opens the "On" cue of the wash vocal pulse (sequence 417) and checks the cue editor
+ * shows its programmed values, which requires the seeded selection to be resolved.
+ */
+test("cue editor shows the wash vocal pulse values", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.waitForTimeout(4_000);
+  await page.evaluate(() => {
+    const panelId = "panel-CueEditor-wash-vocal-pulse";
+    (window as any).appStores.dockApi.get().addPanel({
+      id: panelId,
+      component: "CueEditor",
+      title: "Wash Vocal Pulse On",
+      params: {
+        initialPanelId: panelId,
+        initialCueUid: "cd0cdc43ad9d45b0b47acaa9393e2384",
+      },
+    });
+  });
+  const editor = page.locator(
+    '[data-panel-id="panel-CueEditor-wash-vocal-pulse"]',
+  );
+  await expect(editor.getByText("100", { exact: false }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await editor
+    .first()
+    .screenshot({ path: testInfo.outputPath("wash-vocal-pulse-cue.png") });
+});
+
+/**
  * Plays the Lo-fi groove, captures the restarting rainbow pulse, then plays into the first
  * break and checks the rainbow stops so the break flashes play on black.
  */

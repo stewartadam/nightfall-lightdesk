@@ -648,6 +648,40 @@ fn world_factory_sample_data_seeds_fader_assignments() {
     assert_eq!(snapshot.control_assignments, assignments);
 }
 
+/// Verifies every seeded cue stores resolved fixture refs, since the cue editor only
+/// displays values for instructions whose selection source is resolved.
+#[test]
+fn world_factory_sample_cues_store_resolved_selections() {
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
+    let cues = snapshot.cues.iter().chain(
+        snapshot
+            .sequences
+            .iter()
+            .flat_map(|sequence| [&sequence.setup_cue, &sequence.release_cue]),
+    );
+    for cue in cues {
+        for instruction in &cue.instructions {
+            let SelectionExpr::Resolved(refs) = &instruction.selection.source else {
+                panic!(
+                    "cue {} stores an unresolved selection {:?}",
+                    cue.identifiers.label, instruction.selection.source
+                );
+            };
+            assert!(
+                !refs.is_empty(),
+                "cue {} selects nothing",
+                cue.identifiers.label
+            );
+        }
+    }
+}
+
 /// Verifies every clip a sample timeline drives is seeded, and that clips which do not end
 /// on their own are stopped again later on the same timeline.
 #[test]

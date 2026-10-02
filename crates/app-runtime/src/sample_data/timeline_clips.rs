@@ -152,21 +152,45 @@ fn cue(
 }
 
 /// Store the cues and sequence for a sequence-backed clip, then spawn the clip.
-fn add_sequence_clip(world: &mut World, cues: Vec<Cue>, sequence: Sequence, clip: Clip) {
-    let mut system_state: SystemState<(ResMut<DataProvider<Cue>>, ResMut<DataProvider<Sequence>>)> =
-        SystemState::new(world);
-    let (mut cue_data_provider, mut seq_data_provider) = system_state
+///
+/// Each cue instruction's selection source is resolved to explicit fixture and element
+/// refs first, the form cues programmed in the UI store and the cue editor displays.
+fn add_sequence_clip(world: &mut World, cues: Vec<Cue>, mut sequence: Sequence, clip: Clip) {
+    let mut system_state: SystemState<(
+        SelectionResolver,
+        ResMut<DataProvider<Cue>>,
+        ResMut<DataProvider<Sequence>>,
+    )> = SystemState::new(world);
+    let (resolver, mut cue_data_provider, mut seq_data_provider) = system_state
         .get_mut(world)
         .expect("sample data system parameters should be available");
-    for cue in cues {
+    for mut cue in cues {
+        resolve_cue_selections(&resolver, &mut cue);
         cue_data_provider
             .add(cue)
             .expect("sample data should not have duplicate IDs");
     }
+    resolve_cue_selections(&resolver, &mut sequence.setup_cue);
+    resolve_cue_selections(&resolver, &mut sequence.release_cue);
     seq_data_provider
         .add(sequence)
         .expect("sample data should not have duplicate IDs");
     world.spawn_instance(clip);
+}
+
+/// Replace each instruction's selection source with the fixture and element refs it
+/// resolves to, keeping any spatial clauses. Panics if a sample selection fails to resolve.
+fn resolve_cue_selections(resolver: &SelectionResolver, cue: &mut Cue) {
+    for instruction in &mut cue.instructions {
+        let resolved = resolver.resolve_expr(&instruction.selection.source);
+        assert!(
+            resolved.issues.is_empty(),
+            "sample cue {} selection should resolve: {:?}",
+            cue.identifiers.label,
+            resolved.issues
+        );
+        instruction.selection.source = SelectionExpr::Resolved(resolved.value);
+    }
 }
 
 /// Build one step-FX lane whose absolute targets each occupy an equal share of the cycle.
