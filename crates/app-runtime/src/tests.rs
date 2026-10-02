@@ -39,7 +39,8 @@ use nightfall_engine::prelude::{
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, Parameter, ParameterValues,
+    ConsoleDmxAddress, ConsoleDmxAddresses, Fixture, FixtureDataProviderExt, FixtureElement,
+    InputBindings, OutputBindings, OutputTarget, Parameter, ParameterValues,
 };
 #[cfg(feature = "midi")]
 use nightfall_input_midi::prelude::*;
@@ -826,9 +827,9 @@ fn world_factory_build_propagates_network_enabled_states() {
     assert!(settings.usb_output_enabled);
 }
 
-/// Verifies the inner wash arc is seeded unpatched, so nothing is sent even when transports are enabled.
+/// Verifies the inner wash arc is seeded with its profile and placement.
 #[test]
-fn sample_data_build_seeds_rotating_wash_beam_unpatched() {
+fn sample_data_build_seeds_rotating_wash_beam() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
 
     let app = factory
@@ -849,13 +850,61 @@ fn sample_data_build_seeds_rotating_wash_beam_unpatched() {
     assert_eq!(fixture.placement.position.x, -2.25);
     assert_eq!(fixture.placement.position.y, 0.25);
     assert_eq!(fixture.placement.position.z, -2.5);
+}
 
-    assert!(app.world().resource::<OutputBindings>().bindings.is_empty());
+/// Verifies every sample fixture is patched once to console universes without overlaps or
+/// universe overflow, and that nothing is routed to a transport.
+#[tokio::test]
+async fn sample_data_build_patches_every_fixture_to_console_only() {
+    let factory = WorldFactory::new(test_log_config(), false, false, true);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("world factory build");
+    app.update();
+    let world = app.world();
+    let fixtures = world.resource::<FixtureDataProviderExt>();
+    let output = world.resource::<OutputBindings>();
+
+    let mut patched: Vec<Uuid> = Vec::new();
+    for binding in &output.bindings {
+        assert!(
+            matches!(binding.target, OutputTarget::Console { .. }),
+            "sample show must not route output to a transport: {binding:?}"
+        );
+        patched.extend(binding.source.fixture_uids().expect("fixture source"));
+    }
+    let mut every_fixture: Vec<_> = fixtures.inner.iter().map(|f| f.identifiers.uid).collect();
+    patched.sort();
+    every_fixture.sort();
+    assert_eq!(patched, every_fixture);
+
+    let issues = nightfall_fixtures::binding_validation::validate_bindings(
+        &Default::default(),
+        world.resource::<InputBindings>(),
+        output,
+        world.resource::<nightfall_fixtures::prelude::DisabledBindings>(),
+        fixtures,
+    );
+    assert!(issues.is_empty(), "{issues:?}");
+
+    let addresses = world.resource::<ConsoleDmxAddresses>();
+    assert_eq!(addresses.universes(), (1..=20).collect::<Vec<_>>());
     assert!(
-        app.world()
-            .resource::<nightfall_fixtures::prelude::DisabledBindings>()
-            .bindings
-            .is_empty()
+        addresses
+            .parameters
+            .values()
+            .flat_map(|parameter| &parameter.addresses)
+            .all(|address| (1..=512).contains(address))
+    );
+    let first_tape = fixtures.inner.from_id(310).unwrap().identifiers.uid;
+    assert_eq!(
+        addresses.addresses[&first_tape],
+        ConsoleDmxAddress {
+            universe: 1,
+            address: 1
+        }
     );
 }
 
@@ -1577,7 +1626,14 @@ fn named_sample_show_is_standalone_and_recoverable() {
         )),
         "sample stage must use built-in primitives"
     );
-    assert!(snapshot.bindings.output.is_empty());
+    assert_eq!(snapshot.bindings.output.len(), 15);
+    assert!(
+        snapshot
+            .bindings
+            .output
+            .iter()
+            .all(|binding| matches!(binding.target, OutputTarget::Console { .. }))
+    );
     assert!(snapshot.bindings.disabled.is_empty());
 
     // Resolve every programmed selection against the generated inventory, including cue parts.
@@ -1711,12 +1767,13 @@ fn named_sample_show_is_standalone_and_recoverable() {
             .count(),
         3
     );
-    assert!(
+    assert_eq!(
         recovered
             .world()
             .resource::<OutputBindings>()
             .bindings
-            .is_empty()
+            .len(),
+        15
     );
     for asset in crate::sample_data::SAMPLE_AUDIO {
         assert_eq!(

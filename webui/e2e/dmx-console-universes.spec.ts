@@ -232,8 +232,9 @@ test("console DMX panel reports console-space and remapped wire universes", asyn
 });
 
 /**
- * The embedded browser demo engine reports console-space universes the same way, using the
- * generated sample show's unpatched RGB pixel tapes.
+ * The embedded browser demo engine reports the sample show's console patch the same way:
+ * every rig section in its own console universe, and nothing on a transport until a
+ * console universe is routed to one.
  */
 demoTest(
   "embedded demo reports console-space and remapped wire universes",
@@ -241,19 +242,25 @@ demoTest(
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
 
-    await runCommandLine(page, "patch fix 310>311 @ console:2");
     await runCommandLine(page, "fix 310>311 red @ 100 green @ 0 blue @ 0");
 
     const panel = await openDmxUniversePanel(page);
     await expect(panel.getByLabel("Transport")).toHaveValue("Console");
-    await expect(universeTabs(panel).getByRole("tab")).toHaveText(["Univ. 2"]);
+    expect(await transportOptions(panel)).toEqual(["Console"]);
+    await expect(universeTabs(panel).getByRole("tab")).toHaveText(
+      Array.from({ length: 20 }, (_, index) => `Univ. ${index + 1}`),
+    );
+    await universeTabs(panel)
+      .getByRole("tab", { name: "Univ. 1", exact: true })
+      .click();
     await expect(channelValue(panel, 1)).toHaveText("255");
     await expect(channelValue(panel, 121)).toHaveText("255");
     await expect(channelTile(panel, 1)).toContainText("#310.1");
     await expect(channelTile(panel, 121)).toContainText("#311.1");
+    await expect(channelTile(panel, 361)).toContainText("#313.1");
     await panel.screenshot({ path: testInfo.outputPath("demo-console.png") });
 
-    await runCommandLine(page, "patch console:2 @ sacn:10");
+    await runCommandLine(page, "patch console:1 @ sacn:10");
     await expect
       .poll(async () => transportOptions(panel))
       .toEqual(["Console", "sACN"]);
@@ -265,7 +272,7 @@ demoTest(
 
     await expect
       .poll(async () => {
-        const consoleChannels = await outputChannels(page, "Console", 2);
+        const consoleChannels = await outputChannels(page, "Console", 1);
         const wireChannels = await outputChannels(page, "sACN", 10);
         return (
           consoleChannels?.some((value) => value > 0) === true &&
