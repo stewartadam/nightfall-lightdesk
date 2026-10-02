@@ -231,20 +231,26 @@ test("console DMX panel reports console-space and remapped wire universes", asyn
   );
 });
 
-/** The embedded browser demo engine reports console-space universes the same way. */
+/**
+ * The embedded browser demo engine reports console-space universes the same way, using the
+ * generated sample show's unpatched RGB pixel tapes.
+ */
 demoTest(
   "embedded demo reports console-space and remapped wire universes",
   async ({ page }, testInfo) => {
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
 
-    await runCommandLine(page, "patch fix 1>2 @ console:2");
-    await runCommandLine(page, "fix 1>2 @ 100");
+    await runCommandLine(page, "patch fix 310>311 @ console:2");
+    await runCommandLine(page, "fix 310>311 red @ 100 green @ 0 blue @ 0");
 
     const panel = await openDmxUniversePanel(page);
     await expect(panel.getByLabel("Transport")).toHaveValue("Console");
     await expect(universeTabs(panel).getByRole("tab")).toHaveText(["Univ. 2"]);
-    await expect(channelTile(panel, 1)).toContainText("#1");
+    await expect(channelValue(panel, 1)).toHaveText("255");
+    await expect(channelValue(panel, 121)).toHaveText("255");
+    await expect(channelTile(panel, 1)).toContainText("#310.1");
+    await expect(channelTile(panel, 121)).toContainText("#311.1");
     await panel.screenshot({ path: testInfo.outputPath("demo-console.png") });
 
     await runCommandLine(page, "patch console:2 @ sacn:10");
@@ -253,7 +259,8 @@ demoTest(
       .toEqual(["Console", "sACN"]);
     await panel.getByLabel("Transport").selectOption("sACN");
     await expect(universeTabs(panel).getByRole("tab")).toHaveText(["Univ. 10"]);
-    await expect(channelTile(panel, 1)).toContainText("#1");
+    await expect(channelTile(panel, 1)).toContainText("#310.1");
+    await expect(channelTile(panel, 121)).toContainText("#311.1");
     await panel.screenshot({ path: testInfo.outputPath("demo-sacn.png") });
 
     await expect
