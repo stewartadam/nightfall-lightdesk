@@ -125,7 +125,7 @@ export async function seedPerformanceTimeline(page: Page): Promise<{
       const clipUids: string[] = [];
       for (const [index, id] of clipIds.entries()) {
         const source = sampleClips.find(
-          ([clip]) => clip.identifiers.id === [26, 27, 28][index % 3],
+          ([clip]) => clip.identifiers.id === [100, 101, 102][index % 3],
         )?.[0];
         if (!source?.source)
           throw new Error("Dense sample FX clips were not initialized");

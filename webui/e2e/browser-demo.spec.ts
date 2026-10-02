@@ -12,9 +12,9 @@ import type { Page } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-/** Lo-fi timeline in the generated sample show; its fx3 clip starts at 3.6 s. */
+/** Lo-fi timeline in the generated sample show; its rainbow pulse runs through the groove. */
 const DEMO_TIMELINE_LABEL = "Lo-fi";
-const DEMO_FX_CLIP_LABEL = "fx3";
+const DEMO_FX_CLIP_LABEL = "Pastel Rainbow Pulse";
 const DEMO_CUE_LABEL = "Red 100%";
 /** RGB pixel tape and moving spot fixture IDs patched by the sample rig. */
 const DEMO_RGB_FIXTURE_ID = 310;
@@ -561,7 +561,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   await expect(
     surface.locator('[data-timeline-loop-overlay="true"]'),
   ).toBeVisible();
-  // The new loop spans 2 s to 12 s; the fx3 clip starts at 3.6 s.
+  // The new loop spans 2 s to 12 s; the rainbow pulse plays throughout the groove.
   await seekTimeline(page, initialState.timelineUid, 3_400);
   await surface.getByRole("button", { name: "Play timeline" }).click();
   await expect(fxActiveIndicator).toBeVisible();

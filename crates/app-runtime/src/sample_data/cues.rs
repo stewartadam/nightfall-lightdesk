@@ -839,6 +839,10 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
             label: "Red Fade".to_owned(),
         },
         source: Some(Source::Sequence(red_sequence.identifiers.uid)),
+        options: nightfall_clips::ClipOptions {
+            deactivate_on_sequence_end: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -908,6 +912,10 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
             label: "Green Fade".to_owned(),
         },
         source: Some(Source::Sequence(green_sequence.identifiers.uid)),
+        options: nightfall_clips::ClipOptions {
+            deactivate_on_sequence_end: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -977,6 +985,10 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
             label: "Blue Fade".to_owned(),
         },
         source: Some(Source::Sequence(blue_sequence.identifiers.uid)),
+        options: nightfall_clips::ClipOptions {
+            deactivate_on_sequence_end: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
 

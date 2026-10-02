@@ -20,11 +20,11 @@ type ReproSurface = {
 
 const SAMPLE_DATA_SHOWFILE = "sample";
 const REPRO_TIMELINE_ID = 1;
-const REPRO_CLIP_IDS = [26, 27, 28] as const;
+const REPRO_CLIP_IDS = [100, 101, 102] as const;
 const REPRO_CLIP_BUTTON_NAMES = [
-  /26: Rainbow Cycle/,
-  /27: Circle Motion/,
-  /28: White Bounce/,
+  /100: Rainbow Cycle/,
+  /101: Circle Motion/,
+  /102: White Bounce/,
 ] as const;
 const MAX_ACCEPTABLE_DELIVERY_LAG_MS = 22;
 const MIN_ACCEPTABLE_FRAME_FPS = 45;

@@ -65,8 +65,8 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
     fx_data_provider
         .add(Fx {
             identifiers: Identifiers {
-                id: 3,
-                label: "fx3".to_owned(),
+                id: 6,
+                label: "Red Chase".to_owned(),
                 uid: Uuid::from_str("b72e2314-1e75-48ee-a8b1-3595943aada1").unwrap(),
             },
             selection: bstrip_selection.clone().into(),
@@ -76,7 +76,7 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
             id: 6,
-            label: "fx3".to_owned(),
+            label: "Red Chase".to_owned(),
             uid: Uuid::from_str("324d1219-7c36-4c7f-a01e-29dbad6c3b3c").unwrap(),
         },
         source: Some(Source::Fx(
@@ -86,8 +86,8 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
     });
     let _ = fx_data_provider.add(Fx {
         identifiers: Identifiers {
-            id: 4,
-            label: "fx4".to_owned(),
+            id: 7,
+            label: "Blue Chase".to_owned(),
             uid: Uuid::from_str("0547658e-1f84-4313-a9e3-b3092b8048bf").unwrap(),
         },
         selection: bstrip_selection.clone().into(),
@@ -96,7 +96,7 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
             id: 7,
-            label: "fx4".to_owned(),
+            label: "Blue Chase".to_owned(),
             uid: Uuid::from_str("fddef9fd-9a9c-4f31-95da-d432ad079f17").unwrap(),
         },
         source: Some(Source::Fx(
@@ -119,8 +119,8 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
     };
     let _ = fx_data_provider.add(Fx {
         identifiers: Identifiers {
-            id: 5,
-            label: "fx5".to_owned(),
+            id: 8,
+            label: "Green Chase".to_owned(),
             uid: Uuid::from_str("a8733b39-c02f-4198-ad15-22e461586a1e").unwrap(),
         },
         selection: bstrip_selection.clone().into(),
@@ -129,7 +129,7 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
             id: 8,
-            label: "fx5".to_owned(),
+            label: "Green Chase".to_owned(),
             uid: Uuid::from_str("fdef00a2-46e8-4808-b1a3-3fecb2923042").unwrap(),
         },
         source: Some(Source::Fx(
@@ -273,7 +273,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
     commands.spawn(rainbow_step_fx);
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
-            id: 26,
+            id: 100,
             label: "Rainbow Cycle".to_owned(),
             uid: Uuid::from_str("6b6c3181-d29b-4d53-8f4c-c05c59f07601").unwrap(),
         },
@@ -395,12 +395,29 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 }),
                 relative: None,
             },
+            // Holds the moving heads at full intensity while they circle.
+            FxLane {
+                attribute: Attribute::Intensity,
+                timing_override: None,
+                phase_override: None,
+                absolute: Some(FxTrack {
+                    steps: vec![FxStep {
+                        uid: Uuid::new_v4(),
+                        target: ParameterValue::AbsolutePercent { value: 1.0.into() },
+                        blueprint_uid: None,
+                        width_beats: 1.0,
+                        transition: 0.0.into(),
+                        curve: CurveType::Snap(Snap {}),
+                    }],
+                }),
+                relative: None,
+            },
         ],
     };
     commands.spawn(circle_step_fx);
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
-            id: 27,
+            id: 101,
             label: "Circle Motion".to_owned(),
             uid: Uuid::from_str("ac08f795-9e9c-4fae-b714-0810b0cebecb").unwrap(),
         },
@@ -505,7 +522,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
     commands.spawn(chase_step_fx);
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
-            id: 28,
+            id: 102,
             label: "White Bounce".to_owned(),
             uid: Uuid::from_str("f281d741-b4af-420f-a0de-f145c1293544").unwrap(),
         },
@@ -610,6 +627,17 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
         ],
     };
     commands.spawn(single_bar_fx);
+    commands.spawn_instance(Clip {
+        identifiers: Identifiers {
+            id: 103,
+            label: "White Bounce Single".to_owned(),
+            uid: Uuid::from_str("d82e82ce-8f06-4185-aa17-d863ac1879b0").unwrap(),
+        },
+        source: Some(Source::StepFx(
+            Uuid::from_str("f1000001-0000-0000-0000-000000000004").unwrap(),
+        )),
+        ..Default::default()
+    });
 
     // 5. Manual strobe pixel rainbow (fixture 601 RGB pixels only)
     let strobe_pixel_rainbow_fx = StepFx {

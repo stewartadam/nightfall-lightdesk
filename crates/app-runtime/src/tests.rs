@@ -638,14 +638,111 @@ fn world_factory_sample_data_seeds_fader_assignments() {
     let assignments = app.world().resource::<Controls>().assignments();
     assert_eq!(
         &assignments[..5],
-        &[1, 2, 26, 28, 30].map(|id| Some(ControlAssignment::Clip(id)))
+        &[1, 2, 100, 102, 30].map(|id| Some(ControlAssignment::Clip(id)))
     );
     assert!(assignments[5..].iter().all(Option::is_none));
     let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
-    for id in [1, 2, 26, 28, 30] {
+    for id in [1, 2, 100, 102, 30] {
         assert!(snapshot.clips.iter().any(|clip| clip.identifiers.id == id));
     }
     assert_eq!(snapshot.control_assignments, assignments);
+}
+
+/// Verifies every seeded cue stores resolved fixture refs, since the cue editor only
+/// displays values for instructions whose selection source is resolved.
+#[test]
+fn world_factory_sample_cues_store_resolved_selections() {
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
+    let cues = snapshot.cues.iter().chain(
+        snapshot
+            .sequences
+            .iter()
+            .flat_map(|sequence| [&sequence.setup_cue, &sequence.release_cue]),
+    );
+    for cue in cues {
+        for instruction in &cue.instructions {
+            let SelectionExpr::Resolved(refs) = &instruction.selection.source else {
+                panic!(
+                    "cue {} stores an unresolved selection {:?}",
+                    cue.identifiers.label, instruction.selection.source
+                );
+            };
+            assert!(
+                !refs.is_empty(),
+                "cue {} selects nothing",
+                cue.identifiers.label
+            );
+        }
+    }
+}
+
+/// Verifies every clip a sample timeline drives is seeded, and that clips which do not end
+/// on their own are stopped again later on the same timeline.
+#[test]
+fn world_factory_sample_timelines_drive_seeded_clips() {
+    use nightfall_timeline::prelude::{ActionKind, Timeline};
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
+    let clip_by_uid: HashMap<_, _> = snapshot
+        .clips
+        .iter()
+        .map(|clip| (clip.identifiers.uid, clip))
+        .collect();
+    let timelines = app.world().resource::<DataProvider<Timeline>>();
+
+    for timeline in timelines.iter() {
+        let lanes = if timeline.identifiers.label == "Rap" {
+            5
+        } else {
+            4
+        };
+        assert_eq!(
+            timeline.tracks.len(),
+            lanes,
+            "{} lanes",
+            timeline.identifiers.label
+        );
+        let actions: Vec<_> = timeline
+            .tracks
+            .iter()
+            .flat_map(|track| &track.actions)
+            .collect();
+        for action in &actions {
+            let (ActionKind::StartClip(uid)
+            | ActionKind::StopClip(uid)
+            | ActionKind::SetClipRate { uid, .. }) = &action.action
+            else {
+                panic!("unexpected sample action {:?}", action.action);
+            };
+            let clip = clip_by_uid
+                .get(uid)
+                .unwrap_or_else(|| panic!("{} targets unknown clip {uid}", action.label));
+            if let ActionKind::StartClip(_) = action.action
+                && !clip.options.deactivate_on_sequence_end
+            {
+                assert!(
+                    actions.iter().any(|stop| matches!(
+                        stop.action,
+                        ActionKind::StopClip(stop_uid) if stop_uid == *uid
+                    ) && stop.position > action.position),
+                    "{} on {} is never stopped",
+                    action.label,
+                    timeline.identifiers.label
+                );
+            }
+        }
+    }
 }
 
 /// Verifies sample startup exposes populated Color and Position Blueprints.
@@ -1761,4 +1858,157 @@ fn sample_audio_resources_can_change_without_recompilation() {
         .unwrap();
     nightfall::clear_active_show_data_dir();
     nightfall::set_nightfall_data_dir(None);
+}
+
+/// Returns the IDs of every running clip and every running or releasing sequence.
+///
+/// Sample flash sequences share their clip's ID. A flash despawns its clip when its last
+/// cue fires, while its sequence lives on through the release fade, so the sequence keeps
+/// a short flash observable to a frame-sampling test.
+fn active_clip_and_sequence_ids(app: &mut App) -> Vec<u32> {
+    use nightfall_clips::MaterializedClip;
+    use nightfall_cues::prelude::MaterializedSequence;
+    let mut ids: Vec<u32> = app
+        .world_mut()
+        .query::<&MaterializedClip>()
+        .iter(app.world())
+        .map(|clip| clip.clip_id)
+        .collect();
+    ids.extend(
+        app.world_mut()
+            .query::<&MaterializedSequence>()
+            .iter(app.world())
+            .map(|sequence| sequence.sequence.identifiers.id),
+    );
+    ids
+}
+
+/// Plays the Rap timeline in real time into bar 5 and verifies each lane's one-shot clips:
+/// a snap on every bar line, the bass line loop from its first note, the synth rows loop
+/// from the start of playback, the running hat dot, and the wash pulse on the vocal into
+/// bar 5.
+#[tokio::test]
+async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
+    use nightfall_timecode::prelude::TimecodeGenerator;
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    queue_startup_command(&mut app, "test", "timecode 2 start".to_owned());
+
+    let mut snap_starts = 0;
+    let mut snap_was_active = false;
+    let mut first_seen: HashMap<u32, Duration> = HashMap::new();
+    let mut position = Duration::ZERO;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while position < Duration::from_millis(6_000) && Instant::now() < deadline {
+        app.update();
+        position = app
+            .world_mut()
+            .query::<&TimecodeGenerator>()
+            .iter(app.world())
+            .find(|generator| generator.timecode.identifiers.id == 2)
+            .map(|generator| generator.state.current_time)
+            .unwrap_or_default();
+        let active = active_clip_and_sequence_ids(&mut app);
+        let snap_active = active.contains(&16);
+        snap_starts += usize::from(snap_active && !snap_was_active);
+        snap_was_active = snap_active;
+        for clip_id in active {
+            first_seen.entry(clip_id).or_insert(position);
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert!(
+        position >= Duration::from_millis(6_000),
+        "timecode 2 stalled at {position:?}"
+    );
+    // Bar lines at 0.01, 1.43, 2.86, 4.29, and 5.72 s.
+    assert_eq!(snap_starts, 5, "snap should flash once per bar");
+    let seen = |clip_id: u32, what: &str| {
+        *first_seen
+            .get(&clip_id)
+            .unwrap_or_else(|| panic!("{what} (clip {clip_id}) never fired"))
+    };
+    assert!(
+        seen(410, "bass line") >= Duration::from_millis(600),
+        "the bass line starts on its first note at bar 1 beat 2.875 (0.68 s)"
+    );
+    // The loop starts at SMPTE frame 4 (0.13 s), but the first polled frame can land a
+    // few hundred milliseconds in.
+    assert!(
+        seen(412, "synth rows") < Duration::from_millis(500),
+        "the synth starts with playback"
+    );
+    seen(416, "hat run");
+    assert!(
+        seen(417, "vocal pulse") >= Duration::from_millis(5_600),
+        "the wash pulse waits for the vocal into bar 5"
+    );
+    assert!(
+        seen(34, "vocal sparkle") >= Duration::from_millis(5_600),
+        "the sparkle waits for the vocal into bar 5"
+    );
+}
+
+/// Plays the Lo-fi timeline in real time through bar 4 and verifies the phrase-ending
+/// accents: a full bstrip flash on bar 2's repeated note, then top-then-bottom flashes on
+/// bar 4's falling note, all over the restarting rainbow pulse.
+#[tokio::test]
+async fn world_factory_sample_lofi_timeline_flashes_phrase_endings() {
+    use nightfall_timecode::prelude::TimecodeGenerator;
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    queue_startup_command(&mut app, "test", "timecode 1 start".to_owned());
+
+    let mut first_seen: HashMap<u32, Duration> = HashMap::new();
+    let mut position = Duration::ZERO;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while position < Duration::from_millis(8_900) && Instant::now() < deadline {
+        app.update();
+        position = app
+            .world_mut()
+            .query::<&TimecodeGenerator>()
+            .iter(app.world())
+            .find(|generator| generator.timecode.identifiers.id == 1)
+            .map(|generator| generator.state.current_time)
+            .unwrap_or_default();
+        for clip_id in active_clip_and_sequence_ids(&mut app) {
+            first_seen.entry(clip_id).or_insert(position);
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert!(
+        position >= Duration::from_millis(8_900),
+        "timecode 1 stalled at {position:?}"
+    );
+    assert!(
+        first_seen.contains_key(&406),
+        "rainbow pulse should run in the groove"
+    );
+    assert!(
+        first_seen.contains_key(&418),
+        "the wash strips should flash on the beat 1 snare"
+    );
+    let flash = first_seen
+        .get(&407)
+        .expect("bar 2 should flash every bstrip");
+    let top = first_seen
+        .get(&408)
+        .expect("bar 4 should flash the top tiers");
+    let bottom = first_seen
+        .get(&409)
+        .expect("bar 4 should flash the bottom tiers");
+    assert!(
+        flash < top && top < bottom,
+        "flash {flash:?}, top {top:?}, bottom {bottom:?}"
+    );
 }

@@ -41,6 +41,7 @@ mod fixtures;
 mod flows;
 mod groups;
 mod input_mappings;
+mod timeline_clips;
 mod timelines;
 
 pub(crate) use audio::{SAMPLE_AUDIO, sample_audio_assets, sample_audio_directory};
@@ -58,9 +59,10 @@ pub fn populate_sample_entities(world: &mut World) {
     effects::add_bstrip_fx(world);
     effects::add_visualizer_demo_fx(world);
     flows::add_flows(world);
+    timeline_clips::add_timeline_clips(world);
     timelines::add_tc(world);
     input_mappings::add_midi_mappings(world);
     world.insert_resource(Controls::from_assignments(
-        &[1, 2, 26, 28, 30].map(|id| Some(ControlAssignment::Clip(id))),
+        &[1, 2, 100, 102, 30].map(|id| Some(ControlAssignment::Clip(id))),
     ));
 }
