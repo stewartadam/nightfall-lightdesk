@@ -78,9 +78,23 @@ const ConnectionOverlay = () => {
   let showOverlayTimeoutId: number | undefined;
   let hideOverlayTimeoutId: number | undefined;
 
+  /**
+   * Returns whether the overlay is on screen. The overlay lives in the
+   * interactive shell, which startup hides, so it only presents (and blocks the
+   * keyboard) while the session is interactive.
+   */
+  const isOverlayPresented = () =>
+    isPopupVisible() && lifecycle().phase === "interactive";
+
+  /** Cancels a pending show so a stale timer cannot re-present the overlay later. */
+  const cancelPendingShow = () => {
+    clearTimeout(showOverlayTimeoutId);
+    showOverlayTimeoutId = undefined;
+  };
+
   /** Clear overlay state for websocket transitions that happen during startup. */
   const suppressStartupTransition = (connected: boolean) => {
-    clearTimeout(showOverlayTimeoutId);
+    cancelPendingShow();
     clearTimeout(hideOverlayTimeoutId);
     setIsConnected(connected);
     setHasPresentedDisconnect(false);
@@ -92,8 +106,12 @@ const ConnectionOverlay = () => {
     // Don't hide the overlay if we disconnected again before it had a chance to trigger
     clearTimeout(hideOverlayTimeoutId);
 
+    // Repeated disconnected/connecting transitions keep the original show delay
+    if (showOverlayTimeoutId !== undefined) return;
+
     // Show the overlay after a small delay
     showOverlayTimeoutId = window.setTimeout(() => {
+      showOverlayTimeoutId = undefined;
       setHasStateChanged(true);
       setHasPresentedDisconnect(true);
       setIsPopupVisible(true);
@@ -103,7 +121,7 @@ const ConnectionOverlay = () => {
   /** Hide the overlay after showing recovery only when a disconnect was presented. */
   const handleReconnected = () => {
     // Don't show the overlay if we re-connected before it had a chance to appear
-    clearTimeout(showOverlayTimeoutId);
+    cancelPendingShow();
 
     if (!hasPresentedDisconnect()) {
       setIsPopupVisible(false);
@@ -147,7 +165,7 @@ const ConnectionOverlay = () => {
       e.stopImmediatePropagation();
     };
 
-    if (isPopupVisible()) {
+    if (isOverlayPresented()) {
       // Capture phase to intercept before other handlers
       document.addEventListener("keydown", blockKeyboard, true);
       document.addEventListener("keyup", blockKeyboard, true);
@@ -164,12 +182,12 @@ const ConnectionOverlay = () => {
   // Clean up timeouts on unmount
   onCleanup(() => {
     log.trace("unmounting");
-    clearTimeout(showOverlayTimeoutId);
+    cancelPendingShow();
     clearTimeout(hideOverlayTimeoutId);
   });
 
   return (
-    <Show when={isPopupVisible()}>
+    <Show when={isOverlayPresented()}>
       {/* overlay with background blur */}
       <DialogBackdrop
         class={`pointer-events-auto ${

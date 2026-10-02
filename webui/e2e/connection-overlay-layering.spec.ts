@@ -185,3 +185,73 @@ test("connection overlay renders above showfile dialogs and dockview sashes", as
   expect(topElement.isInsideOverlay, topElement.className).toBe(true);
   expect(topElement.isInsideSash, topElement.className).toBe(false);
 });
+
+/**
+ * Replays a reconnect whose last failed attempt lands just before the socket
+ * opens, then hands the screen to the startup picker as a reset backend does.
+ * The hidden shell's overlay must not re-arm its keyboard blocker, so the new
+ * show dialog still accepts typing.
+ */
+test("startup picker accepts typing after a reconnect hands control back to startup", async ({
+  page,
+}, testInfo) => {
+  await routeShowfileDiscovery(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ showfiles: [] }),
+    });
+  });
+
+  await page.goto("/?startup:bypassBackendReadiness=1");
+  await waitForDockviewApp(page, {
+    createIfMissing: true,
+    newShowfileName: "connection-overlay-startup-e2e",
+  });
+  const overlay = page.locator('[data-overlay-kind="connection"]');
+
+  await page.evaluate(async () => {
+    const { EngineRuntimeStatus, engineRuntime } = await import(
+      "/lib/engine-runtime.ts"
+    );
+    /** Delivers one worker status message to the main-thread runtime. */
+    const postStatus = (status: string) =>
+      engineRuntime.worker?.onmessage?.(
+        new MessageEvent("message", { data: { type: "status", status } }),
+      );
+    postStatus(EngineRuntimeStatus.Disconnected);
+  });
+  await expect(overlay.getByText("Connection Lost")).toBeVisible();
+
+  await page.evaluate(async () => {
+    const { EngineRuntimeStatus, engineRuntime } = await import(
+      "/lib/engine-runtime.ts"
+    );
+    const { transitionAppLifecycle } = await import("/state/app-lifecycle.ts");
+    /** Delivers one worker status message to the main-thread runtime. */
+    const postStatus = (status: string) =>
+      engineRuntime.worker?.onmessage?.(
+        new MessageEvent("message", { data: { type: "status", status } }),
+      );
+    postStatus(EngineRuntimeStatus.Connecting);
+    postStatus(EngineRuntimeStatus.Disconnected);
+    postStatus(EngineRuntimeStatus.Connecting);
+    postStatus(EngineRuntimeStatus.Connected);
+    transitionAppLifecycle({ type: "showfile-prompt" });
+  });
+
+  const picker = page.getByRole("dialog", { name: "Open Showfile" });
+  await expect(picker).toBeVisible();
+  // Outlast the overlay's show delay so a stale show timer would have fired.
+  await page.waitForTimeout(1_500);
+  await picker.getByRole("button", { name: "New showfile" }).click();
+
+  const nameField = page
+    .getByRole("dialog", { name: "New Showfile" })
+    .getByLabel("Show name");
+  await expect(nameField).toBeFocused();
+  await nameField.pressSequentially("after reconnect");
+  await expect(nameField).toHaveValue("after reconnect");
+  await page.screenshot({
+    path: testInfo.outputPath("startup-picker-after-reconnect.png"),
+  });
+});
