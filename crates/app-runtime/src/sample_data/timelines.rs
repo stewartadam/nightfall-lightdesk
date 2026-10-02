@@ -8,8 +8,10 @@
 
 use super::timeline_clips::{
     BSTRIP_FLASH_BOTTOM_CLIP_UID, BSTRIP_FLASH_CLIP_UID, BSTRIP_FLASH_TOP_CLIP_UID,
-    PASTEL_PULSE_CLIP_UID, PASTEL_RAINBOW_CLIP_UID, PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID,
-    SPARKLES_FX_CLIP_UID, SPARKLES_INT_CLIP_UID, SYNTH_FILL_CLIP_UID,
+    BSTRIP_ROW_FLASH_CLIP_UIDS, PASTEL_PULSE_CLIP_UID, PASTEL_RAINBOW_CLIP_UID,
+    PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID, SPARKLES_FX_CLIP_UID, SPARKLES_INT_CLIP_UID,
+    STROBE_BASS_LONG_CLIP_UID, STROBE_BASS_SHORT_CLIP_UID, WASH_HAT_RUN_CLIP_UID,
+    WASH_VOCAL_PULSE_CLIP_UID,
 };
 use super::*;
 
@@ -22,8 +24,14 @@ const SPARKLE_FX_OFFSET: Duration = Duration::from_millis(10);
 const SNAP_LENGTH: Duration = Duration::from_millis(514);
 /// Length of one bstrip flash including its fade, used for the action's display width.
 const FLASH_LENGTH: Duration = Duration::from_millis(130);
-/// Length of one synth fill (six eighth notes at 168 BPM), used for display width.
-const SYNTH_FILL_LENGTH: Duration = Duration::from_millis(1071);
+/// Length of one short bass pulse including its fade, used for display width.
+const BASS_SHORT_LENGTH: Duration = Duration::from_millis(180);
+/// Length of one long bass pulse including its fade, used for display width.
+const BASS_LONG_LENGTH: Duration = Duration::from_millis(660);
+/// Length of one synth row flash including its fade, used for display width.
+const ROW_FLASH_LENGTH: Duration = Duration::from_millis(310);
+/// Length of the wash vocal pulse including its fade, used for display width.
+const VOCAL_PULSE_LENGTH: Duration = Duration::from_millis(730);
 
 /// Musical grid of a sample song, measured from its audio.
 #[derive(Clone, Copy)]
@@ -277,8 +285,20 @@ fn lofi_regions(timeline_uid: Uuid) -> Vec<TimelineRegion> {
     .collect()
 }
 
-/// Rap lanes: a faster wash with moving heads in section B, snare and synth hits, and
-/// sparkle moments at the section change and the final hit.
+/// Rap lanes, each following one part of the two-bar loop measured from the audio:
+///
+/// - Wash: the pastel rainbow on the bstrips, a white dot running along the rotating
+///   wash strips on every hi-hat eighth note, and the moving heads circling in section B.
+/// - Strobes: the matrix strobes alternate between a white snap on each clap (every bar
+///   line) and a violet pulse on their RGB pixels for each bass note. The bass plays three
+///   quick notes on beats 2.875, 3.5, and 4 of the first bar, then two held notes on beats
+///   2 and 4 of the second.
+/// - Synth: the background synth's double hit and three answers each flash one bstrip
+///   tier white over the rainbow, cycling through tiers 1, 3, 2, 4 from the top. Its loop
+///   starts on beat 2.25 of every even bar.
+/// - Vocal: a wash beam pulse-and-fade on the vocal sample that leads into bars 5, 9,
+///   and 13.
+/// - Moments: sparkles at the start of section B and on the final hit.
 fn rap_tracks() -> Vec<Track> {
     let end = RAP.at(17, 2.0);
     // One rainbow cycle per four rap bars instead of four lo-fi bars.
@@ -300,26 +320,71 @@ fn rap_tracks() -> Vec<Track> {
             rate: rainbow_rate,
         },
     );
+    wash.start("Hat run", WASH_HAT_RUN_CLIP_UID, RAP.at(1, 3.0), end);
     wash.start("Circle motion", CIRCLE_MOTION_CLIP_UID, RAP.at(9, 1.0), end);
     wash.stop("Stop rainbow", PASTEL_RAINBOW_CLIP_UID, end);
+    wash.stop("Stop hat run", WASH_HAT_RUN_CLIP_UID, end);
     wash.stop("Stop circle motion", CIRCLE_MOTION_CLIP_UID, end);
 
-    let mut hits = ActionList::new("hits");
+    let mut strobes = ActionList::new("strobes");
     for bar in 1..=17 {
-        hits.start(
-            "Snap",
-            SNAP_CLIP_UID,
-            RAP.at(bar, 1.0),
-            RAP.at(bar, 1.0) + SNAP_LENGTH,
+        let clap = RAP.at(bar, 1.0);
+        strobes.start("Clap", SNAP_CLIP_UID, clap, clap + SNAP_LENGTH);
+        if bar % 2 == 0 || bar == 17 {
+            continue;
+        }
+        let notes = [
+            (bar, 2.875, false),
+            (bar, 3.5, false),
+            (bar, 4.0, false),
+            (bar + 1, 2.0, true),
+            (bar + 1, 4.0, true),
+        ];
+        for (bar, beat, held) in notes {
+            let at = RAP.at(bar, beat);
+            if held {
+                strobes.start("Bass", STROBE_BASS_LONG_CLIP_UID, at, at + BASS_LONG_LENGTH);
+            } else {
+                strobes.start(
+                    "Bass",
+                    STROBE_BASS_SHORT_CLIP_UID,
+                    at,
+                    at + BASS_SHORT_LENGTH,
+                );
+            }
+        }
+    }
+
+    let mut synth = ActionList::new("synth");
+    let row_order = [0, 2, 1, 3];
+    let hits = (2..=16).step_by(2).flat_map(|bar| {
+        [
+            (bar, 2.25),
+            (bar, 3.0),
+            (bar, 4.0),
+            (bar + 1, 2.0),
+            (bar + 1, 4.0),
+        ]
+    });
+    for (index, (bar, beat)) in hits.filter(|&(bar, _)| bar <= 16).enumerate() {
+        let row = row_order[index % row_order.len()];
+        let at = RAP.at(bar, beat);
+        synth.start(
+            &format!("Synth row {}", row + 1),
+            BSTRIP_ROW_FLASH_CLIP_UIDS[row],
+            at,
+            at + ROW_FLASH_LENGTH,
         );
     }
-    for bar in [4, 8, 12, 16] {
-        let at = RAP.at(bar, 2.0);
-        hits.start(
-            "Synth fill",
-            SYNTH_FILL_CLIP_UID,
+
+    let mut vocal = ActionList::new("vocal");
+    for bar in [5, 9, 13] {
+        let at = RAP.at(bar, 1.0);
+        vocal.start(
+            "Vocal pulse",
+            WASH_VOCAL_PULSE_CLIP_UID,
             at,
-            at + SYNTH_FILL_LENGTH,
+            at + VOCAL_PULSE_LENGTH,
         );
     }
 
@@ -329,7 +394,9 @@ fn rap_tracks() -> Vec<Track> {
 
     vec![
         wash.into_track("wash", "Wash"),
-        hits.into_track("hits", "Hits"),
+        strobes.into_track("strobes", "Strobes"),
+        synth.into_track("synth", "Synth"),
+        vocal.into_track("vocal", "Vocal"),
         moments.into_track("moments", "Moments"),
     ]
 }

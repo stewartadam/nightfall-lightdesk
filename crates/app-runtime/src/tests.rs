@@ -668,9 +668,14 @@ fn world_factory_sample_timelines_drive_seeded_clips() {
     let timelines = app.world().resource::<DataProvider<Timeline>>();
 
     for timeline in timelines.iter() {
+        let lanes = if timeline.identifiers.label == "Rap" {
+            5
+        } else {
+            3
+        };
         assert_eq!(
             timeline.tracks.len(),
-            3,
+            lanes,
             "{} lanes",
             timeline.identifiers.label
         );
@@ -1821,11 +1826,34 @@ fn sample_audio_resources_can_change_without_recompilation() {
     nightfall::set_nightfall_data_dir(None);
 }
 
-/// Plays the Rap timeline in real time through its first synth fill and verifies the
-/// timeline restarts the snap on each bar and fires the self-ending synth fill clip.
+/// Returns the IDs of every running clip and every running or releasing sequence.
+///
+/// Sample flash sequences share their clip's ID. A single-cue flash despawns its clip as
+/// soon as the cue fires, while its sequence lives on through the hold and release fade,
+/// so the sequence is what a frame-sampling test can observe.
+fn active_clip_and_sequence_ids(app: &mut App) -> Vec<u32> {
+    use nightfall_clips::MaterializedClip;
+    use nightfall_cues::prelude::MaterializedSequence;
+    let mut ids: Vec<u32> = app
+        .world_mut()
+        .query::<&MaterializedClip>()
+        .iter(app.world())
+        .map(|clip| clip.clip_id)
+        .collect();
+    ids.extend(
+        app.world_mut()
+            .query::<&MaterializedSequence>()
+            .iter(app.world())
+            .map(|sequence| sequence.sequence.identifiers.id),
+    );
+    ids
+}
+
+/// Plays the Rap timeline in real time into bar 5 and verifies each lane's one-shot clips:
+/// a snap on every bar line, short bass pulses before long ones, synth row flashes in
+/// tier order 1, 3, 2, 4, the running hat dot, and the wash pulse on the vocal into bar 5.
 #[tokio::test]
 async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
-    use nightfall_clips::MaterializedClip;
     use nightfall_timecode::prelude::TimecodeGenerator;
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
@@ -1837,21 +1865,11 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
 
     let mut snap_starts = 0;
     let mut snap_was_active = false;
-    let mut synth_seen = false;
+    let mut first_seen: HashMap<u32, Duration> = HashMap::new();
     let mut position = Duration::ZERO;
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while position < Duration::from_millis(5_300) && Instant::now() < deadline {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while position < Duration::from_millis(6_000) && Instant::now() < deadline {
         app.update();
-        let active: Vec<u32> = app
-            .world_mut()
-            .query::<&MaterializedClip>()
-            .iter(app.world())
-            .map(|clip| clip.clip_id)
-            .collect();
-        let snap_active = active.contains(&29);
-        snap_starts += usize::from(snap_active && !snap_was_active);
-        snap_was_active = snap_active;
-        synth_seen |= active.contains(&403);
         position = app
             .world_mut()
             .query::<&TimecodeGenerator>()
@@ -1859,16 +1877,46 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
             .find(|generator| generator.timecode.identifiers.id == 2)
             .map(|generator| generator.state.current_time)
             .unwrap_or_default();
-        std::thread::sleep(Duration::from_millis(10));
+        let active = active_clip_and_sequence_ids(&mut app);
+        let snap_active = active.contains(&29);
+        snap_starts += usize::from(snap_active && !snap_was_active);
+        snap_was_active = snap_active;
+        for clip_id in active {
+            first_seen.entry(clip_id).or_insert(position);
+        }
+        std::thread::sleep(Duration::from_millis(5));
     }
 
     assert!(
-        position >= Duration::from_millis(5_300),
+        position >= Duration::from_millis(6_000),
         "timecode 2 stalled at {position:?}"
     );
-    // Bar lines at 0.01, 1.43, 2.86, and 4.29 s.
-    assert_eq!(snap_starts, 4, "snap should flash once per bar");
-    assert!(synth_seen, "synth fill should fire on beat 2 of bar 4");
+    // Bar lines at 0.01, 1.43, 2.86, 4.29, and 5.72 s.
+    assert_eq!(snap_starts, 5, "snap should flash once per bar");
+    let seen = |clip_id: u32, what: &str| {
+        *first_seen
+            .get(&clip_id)
+            .unwrap_or_else(|| panic!("{what} (clip {clip_id}) never fired"))
+    };
+    assert!(
+        seen(410, "quick bass") < seen(411, "held bass"),
+        "the quick bass notes open the loop"
+    );
+    let rows = [
+        seen(412, "synth row 1"),
+        seen(414, "synth row 3"),
+        seen(413, "synth row 2"),
+        seen(415, "synth row 4"),
+    ];
+    assert!(
+        rows.windows(2).all(|pair| pair[0] < pair[1]),
+        "synth rows should light 1, 3, 2, 4: {rows:?}"
+    );
+    seen(416, "hat run");
+    assert!(
+        seen(417, "vocal pulse") >= Duration::from_millis(5_600),
+        "the wash pulse waits for the vocal into bar 5"
+    );
 }
 
 /// Plays the Lo-fi timeline in real time through bar 4 and verifies the phrase-ending
@@ -1876,7 +1924,6 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
 /// bar 4's falling note, all over the restarting rainbow pulse.
 #[tokio::test]
 async fn world_factory_sample_lofi_timeline_flashes_phrase_endings() {
-    use nightfall_clips::MaterializedClip;
     use nightfall_timecode::prelude::TimecodeGenerator;
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
@@ -1898,13 +1945,7 @@ async fn world_factory_sample_lofi_timeline_flashes_phrase_endings() {
             .find(|generator| generator.timecode.identifiers.id == 1)
             .map(|generator| generator.state.current_time)
             .unwrap_or_default();
-        let active: Vec<u32> = app
-            .world_mut()
-            .query::<&MaterializedClip>()
-            .iter(app.world())
-            .map(|clip| clip.clip_id)
-            .collect();
-        for clip_id in active {
+        for clip_id in active_clip_and_sequence_ids(&mut app) {
             first_seen.entry(clip_id).or_insert(position);
         }
         std::thread::sleep(Duration::from_millis(5));

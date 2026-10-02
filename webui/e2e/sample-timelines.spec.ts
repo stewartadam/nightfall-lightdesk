@@ -23,6 +23,7 @@ const CLIP = {
   pastelPulse: 406,
   sparklesFx: 33,
   sparklesInt: 34,
+  washHatRun: 416,
 } as const;
 
 /** Opens a timeline in the default layout, next to its 3D visualizer. */
@@ -139,7 +140,10 @@ test("Lo-fi pulses the rainbow in the groove and sparkles in the break", async (
   }
 });
 
-/** Plays the Rap timeline into section B and captures the sparkle over the sped-up rainbow. */
+/**
+ * Plays the Rap timeline into section B and captures the sparkle over the sped-up
+ * rainbow, with the hi-hat dot running along the rotating wash strips.
+ */
 test("Rap opens section B with a sparkle", async ({ page }, testInfo) => {
   const surface = await openTimeline(page, "Rap");
   try {
@@ -153,6 +157,7 @@ test("Rap opens section B with a sparkle", async ({ page }, testInfo) => {
       .poll(() => isActive(page, CLIP.sparklesFx), { timeout: 5_000 })
       .toBe(true);
     await expect.poll(() => isActive(page, CLIP.pastelRainbow)).toBe(true);
+    await expect.poll(() => isActive(page, CLIP.washHatRun)).toBe(true);
     await page.waitForTimeout(500);
     await captureVisualizer(page, testInfo.outputPath("rap-sparkle.png"));
     await expect

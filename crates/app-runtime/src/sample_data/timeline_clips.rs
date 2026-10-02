@@ -9,7 +9,8 @@
 //! Clips adapted from the reference default show for the sample timelines.
 //!
 //! Selections address the sample groups by ID (3-10 are the bstrip rows, 15 the matrix
-//! strobes) so the effects follow the sample rig instead of per-fixture UIDs.
+//! strobes) or the rotating wash elements by fixture map, so the effects follow the
+//! sample rig instead of per-fixture UIDs.
 
 use nightfall::prelude::Axis;
 use nightfall_clips::ClipOptions;
@@ -25,8 +26,6 @@ pub(super) const SPARKLES_FX_CLIP_UID: Uuid = uuid::uuid!("04ded175-ddf4-4716-9f
 pub(super) const SPARKLES_INT_CLIP_UID: Uuid = uuid::uuid!("d77584c1-c80e-46bc-bc91-ff85fe0511a8");
 /// One white flash on the matrix strobes, restarted by the timeline on each snare.
 pub(super) const SNAP_CLIP_UID: Uuid = uuid::uuid!("d8b7d72c-11d5-4c37-81a6-bd4ce1ddb69d");
-/// Row-by-row white cascade across the pixel tapes, timed in 168 BPM eighth notes.
-pub(super) const SYNTH_FILL_CLIP_UID: Uuid = uuid::uuid!("386e41a8-4b97-4d4d-8173-cb4b68be7fca");
 
 /// Fast pastel rainbow the lo-fi groove restarts every two beats.
 pub(super) const PASTEL_PULSE_CLIP_UID: Uuid = uuid::uuid!("12cd4b41-5de9-4401-92a9-ec9e1d226155");
@@ -39,10 +38,31 @@ pub(super) const BSTRIP_FLASH_TOP_CLIP_UID: Uuid =
 pub(super) const BSTRIP_FLASH_BOTTOM_CLIP_UID: Uuid =
     uuid::uuid!("e3a7c914-8b52-4f06-a1d9-7c4e05b2f8a6");
 
+/// Violet pulse on the matrix strobe pixels for the rap's quick bass notes.
+pub(super) const STROBE_BASS_SHORT_CLIP_UID: Uuid =
+    uuid::uuid!("00b0f9e6-473c-47cb-a339-c382ab109c1b");
+/// Violet pulse with a long tail on the matrix strobe pixels for the rap's held bass notes.
+pub(super) const STROBE_BASS_LONG_CLIP_UID: Uuid =
+    uuid::uuid!("6088fc36-b2ae-4eed-8631-6d08c481bfaa");
+/// White flash on one pixel tape tier each, ordered top tier first.
+pub(super) const BSTRIP_ROW_FLASH_CLIP_UIDS: [Uuid; 4] = [
+    uuid::uuid!("0c8e0159-e6e4-4a9e-a243-26b06991f7ea"),
+    uuid::uuid!("e549e08a-4793-48b8-991a-06601ce1cafe"),
+    uuid::uuid!("2dfad8bd-ac20-4960-ad87-d2a93611e863"),
+    uuid::uuid!("b2df5344-41bd-468e-9ffd-349035365cb7"),
+];
+/// White dot that runs along the rotating wash LED strips, one step per rap eighth note.
+pub(super) const WASH_HAT_RUN_CLIP_UID: Uuid = uuid::uuid!("81467c52-f96a-4202-a36a-8bd9da00ee41");
+/// White pulse-and-fade of the rotating wash beams.
+pub(super) const WASH_VOCAL_PULSE_CLIP_UID: Uuid =
+    uuid::uuid!("a19716d7-33fb-4746-9ca1-8ada8ddcb4f9");
+
 /// Cycle length of the pastel rainbow: four bars at 108 BPM.
 pub(super) const PASTEL_RAINBOW_CYCLE: Duration = Duration::from_micros(8_888_889);
 /// Cycle length of the pastel rainbow pulse: two beats at 108 BPM.
 pub(super) const PASTEL_PULSE_CYCLE: Duration = Duration::from_micros(1_111_111);
+/// Cycle length of the wash hat run: one bar (eight hi-hat eighth notes) at 168 BPM.
+const HAT_RUN_CYCLE: Duration = Duration::from_micros(1_428_571);
 
 /// Group ID range covering every bstrip row.
 const BSTRIP_GROUPS: (u32, u32) = (3, 10);
@@ -50,21 +70,38 @@ const BSTRIP_GROUPS: (u32, u32) = (3, 10);
 const MATRIX_STROBE_GROUP: u32 = 15;
 /// Group ID pairs for each pixel tape tier, bottom to top.
 const TIER_GROUPS: [(u32, u32); 4] = [(3, 4), (5, 6), (7, 8), (9, 10)];
-/// Spacing between synth fill steps: one eighth note at 168 BPM.
-const SYNTH_STEP: Duration = Duration::from_micros(178_571);
+/// Fixture IDs of the six rotating washes.
+const ROTATING_WASHES: FixtureRangeExpr = FixtureRangeExpr {
+    start: 1010,
+    end: 1015,
+};
+/// Rotating wash elements for the control channel (master intensity) and the 12 beams.
+const WASH_CONTROL_AND_BEAMS: ElementSelectorExpr = ElementSelectorExpr::Range { start: 1, end: 13 };
+/// Rotating wash elements for the 12-pixel top strip followed by the bottom strip.
+const WASH_STRIPS: ElementSelectorExpr = ElementSelectorExpr::Range { start: 14, end: 37 };
+/// Pixels in each rotating wash LED strip.
+const WASH_STRIP_PIXELS: u32 = 12;
 
 /// Seed the effects, sequences, and clips the sample timelines trigger.
 pub(super) fn add_timeline_clips(world: &mut World) {
     add_pastel_rainbows(world);
-    add_bstrip_flashes(world);
+    add_flashes(world);
     add_sparkles(world);
     add_snap(world);
-    add_synth_fill(world);
+    add_wash_hat_run(world);
 }
 
 /// Build a selection over an inclusive range of group IDs.
 fn groups(start: u32, end: u32) -> SelectionExpr {
     SelectionExpr::Group(GroupRefExpr::RangeById { start, end })
+}
+
+/// Build a selection over the given elements of every rotating wash.
+fn washes(elements: ElementSelectorExpr) -> SelectionExpr {
+    SelectionExpr::FixtureMap {
+        fixtures: ROTATING_WASHES,
+        elements,
+    }
 }
 
 /// Build an inline absolute percentage value source.
@@ -216,96 +253,231 @@ fn add_pastel_rainbow(
     });
 }
 
-/// Seed clips 407-409: a brief white flash over the rainbow on all bstrips, on the top two
-/// tiers, and on the bottom two tiers. Each ends itself after its fade so the timeline
-/// can restart it for every hit.
-fn add_bstrip_flashes(world: &mut World) {
+/// A self-ending flash clip: one cue snaps `on` values in, holds them for `hold`, then the
+/// release fades back to whatever plays underneath over `fade`.
+struct Flash {
+    /// Shared ID of the sequence and the clip.
+    id: u32,
+    /// Shared label of the sequence and the clip.
+    label: &'static str,
+    /// Clip UID the timelines start.
+    clip_uid: Uuid,
+    /// Fixtures or elements the flash lights.
+    selection: SelectionExpr,
+    /// Values the flash snaps to.
+    on: Vec<(Attribute, ValueSource)>,
+    /// Time the `on` look is held before the release starts.
+    hold: Duration,
+    /// Length of the release fade back to the underlying look.
+    fade: Duration,
+    /// UIDs of the `on` cue and the sequence.
+    uids: [&'static str; 2],
+}
+
+/// Full white on RGB pixels at full intensity.
+fn white_rgb() -> Vec<(Attribute, ValueSource)> {
+    vec![
+        (Attribute::Intensity, percent(1.0)),
+        (Attribute::Red, percent(1.0)),
+        (Attribute::Green, percent(1.0)),
+        (Attribute::Blue, percent(1.0)),
+    ]
+}
+
+/// Seed the flash clips the timelines restart on each hit:
+///
+/// - 407-409: a brief white flash over the rainbow on all bstrips, the top two tiers, and
+///   the bottom two tiers.
+/// - 410-411: a violet bass pulse on the matrix strobe pixels, short and long. The strobe
+///   pixels have no white emitter, so these leave the snap's white segments alone.
+/// - 412-415: a white flash on a single pixel tape tier, top tier first.
+/// - 417: a white pulse-and-fade of the rotating wash beams, including the master dimmer
+///   the beams render through.
+fn add_flashes(world: &mut World) {
+    let tier = |index: usize| groups(TIER_GROUPS[index].0, TIER_GROUPS[index].1);
+    let lofi_flash = |id, label, clip_uid, selection, uids| Flash {
+        id,
+        label,
+        clip_uid,
+        selection,
+        on: white_rgb(),
+        hold: Duration::from_millis(40),
+        fade: Duration::from_millis(90),
+        uids,
+    };
+    let bass = |id, label, clip_uid, hold, fade, uids| Flash {
+        id,
+        label,
+        clip_uid,
+        selection: groups(MATRIX_STROBE_GROUP, MATRIX_STROBE_GROUP),
+        on: vec![
+            (Attribute::Red, percent(0.55)),
+            (Attribute::Green, percent(0.0)),
+            (Attribute::Blue, percent(1.0)),
+        ],
+        hold,
+        fade,
+        uids,
+    };
+    let row_flash = |id, label, index: usize, uids| Flash {
+        id,
+        label,
+        clip_uid: BSTRIP_ROW_FLASH_CLIP_UIDS[index],
+        // Row flashes are indexed top first; tier groups are listed bottom first.
+        selection: tier(TIER_GROUPS.len() - 1 - index),
+        on: white_rgb(),
+        hold: Duration::from_millis(60),
+        fade: Duration::from_millis(250),
+        uids,
+    };
     let flashes = [
-        (
+        lofi_flash(
             407,
             "Bstrip Flash",
             BSTRIP_FLASH_CLIP_UID,
             groups(BSTRIP_GROUPS.0, BSTRIP_GROUPS.1),
             [
                 "9df93bf1-1282-40c3-a9c0-784fbf423785",
-                "a63f8d34-ae43-484d-999a-b2e0db996e0f",
                 "bc223c3d-d71d-473e-8425-fb4d1146813a",
             ],
         ),
-        (
+        lofi_flash(
             408,
             "Bstrip Flash Top",
             BSTRIP_FLASH_TOP_CLIP_UID,
             groups(TIER_GROUPS[2].0, TIER_GROUPS[3].1),
             [
                 "b7e92331-6a23-4722-98d8-ffd7474cfce7",
-                "0589f524-4ab2-48f8-bf77-26d0a571fa60",
                 "9efe58b4-f90e-426f-95fa-c346c4430d66",
             ],
         ),
-        (
+        lofi_flash(
             409,
             "Bstrip Flash Bottom",
             BSTRIP_FLASH_BOTTOM_CLIP_UID,
             groups(TIER_GROUPS[0].0, TIER_GROUPS[1].1),
             [
                 "69b55ac0-60c0-44a3-8b6a-733bae2cc6ec",
-                "2cea615d-02eb-472d-8313-e8d55dba3e8f",
                 "bef25d64-4d33-4c35-8478-0c39e2af4864",
             ],
         ),
-    ];
-    for (id, label, clip_uid, selection, [on_uid, off_uid, sequence_uid]) in flashes {
-        let on = cue(
-            on_uid,
-            1,
-            "White",
-            CueTriggerType::Manual,
-            selection.clone(),
-            &[
-                (Attribute::Intensity, percent(1.0)),
-                (Attribute::Red, percent(1.0)),
-                (Attribute::Green, percent(1.0)),
-                (Attribute::Blue, percent(1.0)),
+        bass(
+            410,
+            "Strobe Bass Short",
+            STROBE_BASS_SHORT_CLIP_UID,
+            Duration::from_millis(30),
+            Duration::from_millis(150),
+            [
+                "a950a3b6-6eca-4151-95a4-eca207aaff47",
+                "59eddb46-662b-42ab-834a-093563237b57",
             ],
-        );
-        let mut off = cue(
-            off_uid,
+        ),
+        bass(
+            411,
+            "Strobe Bass Long",
+            STROBE_BASS_LONG_CLIP_UID,
+            Duration::from_millis(60),
+            Duration::from_millis(600),
+            [
+                "69bf802a-7a3e-4940-b7de-2d7d9abd9381",
+                "646a5bab-7a0c-4a4d-ab32-0c2c70d30ddd",
+            ],
+        ),
+        row_flash(
+            412,
+            "Bstrip Row 1 Flash",
+            0,
+            [
+                "93956bac-f7a1-4542-89ff-b5aec129e440",
+                "4463e88e-f059-4110-8415-0beebc13baae",
+            ],
+        ),
+        row_flash(
+            413,
+            "Bstrip Row 2 Flash",
+            1,
+            [
+                "d2817af2-075c-4b8a-9e50-ad586b4b7653",
+                "a341d5fe-50c1-425c-b2bd-9028bd49582d",
+            ],
+        ),
+        row_flash(
+            414,
+            "Bstrip Row 3 Flash",
             2,
-            "Fade",
-            CueTriggerType::FollowPrevious,
-            selection,
-            &[(Attribute::Intensity, percent(0.0))],
-        );
-        off.transitions = PartialTransition {
-            delay_in: fixed(Duration::from_millis(40)),
-            fade_in: fixed(Duration::from_millis(90)),
-            ..Default::default()
-        };
-        let sequence = Sequence {
-            identifiers: Identifiers {
-                uid: Uuid::from_str(sequence_uid).unwrap(),
-                id,
-                label: label.to_owned(),
-            },
-            steps: vec![on.identifiers.uid.into(), off.identifiers.uid.into()],
-            ..Default::default()
-        };
-        let clip = Clip {
-            identifiers: Identifiers {
-                id,
-                label: label.to_owned(),
-                uid: clip_uid,
-            },
-            source: Some(Source::Sequence(sequence.identifiers.uid)),
-            priority: Priority(2),
-            options: ClipOptions {
-                auto_release: true,
-                deactivate_on_sequence_end: true,
-            },
-        };
-        add_sequence_clip(world, vec![on, off], sequence, clip);
+            [
+                "2a43caba-5da4-4536-85b6-ed6050d98009",
+                "7e98e1c5-22cd-4030-8130-3b71437d95de",
+            ],
+        ),
+        row_flash(
+            415,
+            "Bstrip Row 4 Flash",
+            3,
+            [
+                "5edef1bb-ac5e-404f-b7fe-1df766574400",
+                "1896bec9-a1ab-46c1-b30e-e030849fbad2",
+            ],
+        ),
+        Flash {
+            id: 417,
+            label: "Wash Vocal Pulse",
+            clip_uid: WASH_VOCAL_PULSE_CLIP_UID,
+            selection: washes(WASH_CONTROL_AND_BEAMS),
+            on: vec![
+                (Attribute::Intensity, percent(1.0)),
+                (Attribute::White, percent(1.0)),
+            ],
+            hold: Duration::from_millis(80),
+            fade: Duration::from_millis(650),
+            uids: [
+                "cd0cdc43-ad9d-45b0-b47a-caa9393e2384",
+                "6f3147c6-f8f6-4ae9-b459-372a4f61c31a",
+            ],
+        },
+    ];
+    for flash in flashes {
+        add_flash(world, flash);
     }
+}
+
+/// Store the two cues and sequence of a flash, then spawn its self-ending clip.
+fn add_flash(world: &mut World, flash: Flash) {
+    let [on_uid, sequence_uid] = flash.uids;
+    let on = cue(
+        on_uid,
+        1,
+        "On",
+        CueTriggerType::Manual,
+        flash.selection.clone(),
+        &flash.on,
+    );
+    let mut sequence = Sequence {
+        identifiers: Identifiers {
+            uid: Uuid::from_str(sequence_uid).unwrap(),
+            id: flash.id,
+            label: flash.label.to_owned(),
+        },
+        steps: vec![on.identifiers.uid.into()],
+        ..Default::default()
+    };
+    sequence.release_cue.trigger = CueTriggerType::FollowPrevious;
+    sequence.release_cue.transitions.delay_in = fixed(flash.hold);
+    sequence.release_cue.transitions.fade_in = fixed(flash.fade);
+    let clip = Clip {
+        identifiers: Identifiers {
+            id: flash.id,
+            label: flash.label.to_owned(),
+            uid: flash.clip_uid,
+        },
+        source: Some(Source::Sequence(sequence.identifiers.uid)),
+        priority: Priority(2),
+        options: ClipOptions {
+            auto_release: true,
+            deactivate_on_sequence_end: true,
+        },
+    };
+    add_sequence_clip(world, vec![on], sequence, clip);
 }
 
 /// Seed clips 33 and 34: a shuffled RGB sine twinkle and the intensity lift that reveals it.
@@ -393,9 +565,28 @@ fn add_sparkles(world: &mut World) {
     add_sequence_clip(world, vec![lift], sequence, clip);
 }
 
-/// Seed clip 29, a single matrix-strobe flash that ends itself after its fade.
+/// Build a selection over the tilt axis and white strobe segments of every matrix strobe,
+/// leaving their RGB pixels to the bass pulses. The outer two strobes have 16 white
+/// segments and the inner four have 20; elements 2-3 carry no light or tilt attributes.
+fn strobe_tilt_and_whites() -> SelectionExpr {
+    let map = |start, end, last_white| SelectionExpr::FixtureMap {
+        fixtures: FixtureRangeExpr { start, end },
+        elements: ElementSelectorExpr::Range {
+            start: 1,
+            end: last_white,
+        },
+    };
+    let add = |lhs, rhs| SelectionExpr::Add {
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+    };
+    add(add(map(601, 601, 19), map(602, 605, 23)), map(606, 606, 19))
+}
+
+/// Seed clip 29, a single flash on the matrix strobes' white segments that ends itself
+/// after its fade.
 fn add_snap(world: &mut World) {
-    let strobes = || groups(MATRIX_STROBE_GROUP, MATRIX_STROBE_GROUP);
+    let strobes = strobe_tilt_and_whites;
     let flash = cue(
         "c0b1b593-6ba4-4501-adc0-84ea828d903f",
         1,
@@ -452,96 +643,74 @@ fn add_snap(world: &mut World) {
     add_sequence_clip(world, vec![flash, fade], sequence, clip);
 }
 
-/// Seed clip 403, a "do-do-dah-duh" white cascade across the pixel tape tiers.
+/// Build one step-FX lane of snapped absolute targets that share the cycle equally.
+fn snap_lane(attribute: Attribute, targets: &[f32]) -> FxLane {
+    let width = 1.0 / targets.len() as f32;
+    FxLane {
+        attribute,
+        timing_override: None,
+        phase_override: None,
+        absolute: Some(FxTrack {
+            steps: targets
+                .iter()
+                .map(|&value| FxStep {
+                    uid: Uuid::new_v4(),
+                    target: ParameterValue::AbsolutePercent {
+                        value: value.into(),
+                    },
+                    blueprint_uid: None,
+                    width_beats: width,
+                    transition: 0.0.into(),
+                    curve: CurveType::Snap(Snap {}),
+                })
+                .collect(),
+        }),
+        relative: None,
+    }
+}
+
+/// Seed clip 416, a white dot with a short tail that runs along every rotating wash LED
+/// strip once per rap bar.
 ///
-/// Tracking is disabled so each step lights only its own tier, and the clip ends itself
-/// one step after the final hit.
-fn add_synth_fill(world: &mut World) {
-    let white = [
-        (Attribute::Intensity, percent(1.0)),
-        (Attribute::Red, percent(1.0)),
-        (Attribute::Green, percent(1.0)),
-        (Attribute::Blue, percent(1.0)),
-    ];
-    let tier = |index: usize| groups(TIER_GROUPS[index].0, TIER_GROUPS[index].1);
-    let after_step = CueTriggerType::AfterDelay(SYNTH_STEP);
-    let mut blank = cue(
-        "f28567c7-3e04-4889-854c-5d48cebd5938",
-        5,
-        "Rest",
-        after_step,
-        tier(0),
-        &[],
-    );
-    blank.instructions.clear();
-    let steps = vec![
-        cue(
-            "290fe782-ae49-4d29-9008-783e00381ce9",
-            1,
-            "Do (top)",
-            CueTriggerType::AfterDelay(Duration::ZERO),
-            tier(3),
-            &white,
-        ),
-        cue(
-            "9c8c756f-e320-4342-b317-ca64985d943c",
-            2,
-            "Do (tier 2)",
-            after_step,
-            tier(1),
-            &white,
-        ),
-        cue(
-            "a5c6441f-a139-4bcb-bbc6-6a0a1cda7688",
-            3,
-            "Dah (tier 3)",
-            after_step,
-            tier(2),
-            &white,
-        ),
-        cue(
-            "38f6b6bf-c17e-4908-bc53-bb4ba04fa24c",
-            4,
-            "Duh (bottom)",
-            after_step,
-            tier(0),
-            &white,
-        ),
-        blank,
-        cue(
-            "ae78b0ea-736c-40be-a9ea-7f96a765d242",
-            6,
-            "Duh (bottom)",
-            CueTriggerType::FollowPrevious,
-            tier(0),
-            &white,
-        ),
-    ];
-    let no_tracking = TrackingMode::Flags(TrackingFlags::from(0));
-    let mut sequence = Sequence {
+/// The grid lines the same pixel of every strip up in one column so all twelve strips run
+/// together, and eight phase groups make the dot advance on each hi-hat eighth note. The
+/// timeline starts it on a bar line so the steps land on the hats.
+fn add_wash_hat_run(world: &mut World) {
+    let step_fx_uid = Uuid::from_str("b18cf25a-125e-4f92-9a8a-3eee8d982edc").unwrap();
+    world.spawn(StepFx {
         identifiers: Identifiers {
-            uid: Uuid::from_str("c748303b-b06c-4cbe-9bb2-49f0bdc547ce").unwrap(),
-            id: 403,
-            label: "Synth Fill".to_owned(),
+            id: 416,
+            label: "Wash Hat Run".to_owned(),
+            uid: step_fx_uid,
         },
-        steps: steps.iter().map(|cue| cue.identifiers.uid.into()).collect(),
-        tracking_mode: no_tracking,
+        timing: StepFxTiming {
+            beat_duration: HAT_RUN_CYCLE,
+        },
+        selection: SpatialSelection::pipeline(
+            washes(WASH_STRIPS),
+            vec![SpatialClause::Grid(GridSize::Width(WASH_STRIP_PIXELS))],
+        ),
+        phase: StepFxPhase {
+            waypoints: vec![0.0, 1.0],
+            groups: PhaseGroups::Explicit(8),
+        },
+        direction: FxDirection::Forward,
+        cycle_scale: Default::default(),
+        lanes: vec![
+            snap_lane(
+                Attribute::Intensity,
+                &[1.0, 0.45, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            snap_lane(Attribute::White, &[1.0]),
+        ],
+    });
+    world.spawn_instance(Clip {
+        identifiers: Identifiers {
+            id: 416,
+            label: "Wash Hat Run".to_owned(),
+            uid: WASH_HAT_RUN_CLIP_UID,
+        },
+        source: Some(Source::StepFx(step_fx_uid)),
         ..Default::default()
-    };
-    sequence.release_cue.trigger = CueTriggerType::FollowPrevious;
-    sequence.release_cue.transitions.delay_in = fixed(SYNTH_STEP);
-    let clip = Clip {
-        identifiers: Identifiers {
-            id: 403,
-            label: "Synth Fill".to_owned(),
-            uid: SYNTH_FILL_CLIP_UID,
-        },
-        source: Some(Source::Sequence(sequence.identifiers.uid)),
-        priority: Priority(2),
-        options: ClipOptions {
-            auto_release: true,
-            deactivate_on_sequence_end: true,
-        },
-    };
-    add_sequence_clip(world, steps, sequence, clip);
+    });
 }
