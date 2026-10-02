@@ -45,9 +45,6 @@ test("sample RGB cues have the requested values and labels", async ({
       ),
     ),
   );
-  expect(snapshot.clips.some((clip: any) => clip.identifiers.id === 9)).toBe(
-    false,
-  );
   expect(
     snapshot.sequences.some((sequence: any) => sequence.identifiers.id === 4),
   ).toBe(false);

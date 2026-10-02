@@ -638,11 +638,11 @@ fn world_factory_sample_data_seeds_fader_assignments() {
     let assignments = app.world().resource::<Controls>().assignments();
     assert_eq!(
         &assignments[..5],
-        &[1, 2, 26, 28, 30].map(|id| Some(ControlAssignment::Clip(id)))
+        &[1, 2, 100, 102, 30].map(|id| Some(ControlAssignment::Clip(id)))
     );
     assert!(assignments[5..].iter().all(Option::is_none));
     let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
-    for id in [1, 2, 26, 28, 30] {
+    for id in [1, 2, 100, 102, 30] {
         assert!(snapshot.clips.iter().any(|clip| clip.identifiers.id == id));
     }
     assert_eq!(snapshot.control_assignments, assignments);
@@ -1913,7 +1913,7 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
             .map(|generator| generator.state.current_time)
             .unwrap_or_default();
         let active = active_clip_and_sequence_ids(&mut app);
-        let snap_active = active.contains(&29);
+        let snap_active = active.contains(&16);
         snap_starts += usize::from(snap_active && !snap_was_active);
         snap_was_active = snap_active;
         for clip_id in active {
@@ -1949,7 +1949,7 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
         "the wash pulse waits for the vocal into bar 5"
     );
     assert!(
-        seen(34, "vocal sparkle") >= Duration::from_millis(5_600),
+        seen(9, "vocal sparkle") >= Duration::from_millis(5_600),
         "the sparkle waits for the vocal into bar 5"
     );
 }

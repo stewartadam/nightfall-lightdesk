@@ -63,6 +63,6 @@ pub fn populate_sample_entities(world: &mut World) {
     timelines::add_tc(world);
     input_mappings::add_midi_mappings(world);
     world.insert_resource(Controls::from_assignments(
-        &[1, 2, 26, 28, 30].map(|id| Some(ControlAssignment::Clip(id))),
+        &[1, 2, 100, 102, 30].map(|id| Some(ControlAssignment::Clip(id))),
     ));
 }

@@ -273,7 +273,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
     commands.spawn(rainbow_step_fx);
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
-            id: 26,
+            id: 100,
             label: "Rainbow Cycle".to_owned(),
             uid: Uuid::from_str("6b6c3181-d29b-4d53-8f4c-c05c59f07601").unwrap(),
         },
@@ -400,7 +400,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
     commands.spawn(circle_step_fx);
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
-            id: 27,
+            id: 101,
             label: "Circle Motion".to_owned(),
             uid: Uuid::from_str("ac08f795-9e9c-4fae-b714-0810b0cebecb").unwrap(),
         },
@@ -505,7 +505,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
     commands.spawn(chase_step_fx);
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
-            id: 28,
+            id: 102,
             label: "White Bounce".to_owned(),
             uid: Uuid::from_str("f281d741-b4af-420f-a0de-f145c1293544").unwrap(),
         },

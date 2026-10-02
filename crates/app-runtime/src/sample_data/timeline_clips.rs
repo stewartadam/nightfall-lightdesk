@@ -658,7 +658,7 @@ fn add_synth_rows(world: &mut World) {
     );
 }
 
-/// Seed clips 33 and 34: a shuffled RGB sine twinkle and the intensity that reveals it.
+/// Seed clips 33 and 9: a shuffled RGB sine twinkle and the intensity that reveals it.
 ///
 /// The intensity lifts at once, holds for 100 ms, then fades the bstrips down over
 /// `SPARKLE_FADE` and ends itself. It plays at priority 2 so the fade can pull the bstrips
@@ -746,7 +746,7 @@ fn add_sparkles(world: &mut World) {
     };
     let clip = Clip {
         identifiers: Identifiers {
-            id: 34,
+            id: 9,
             label: "Sparkles Intensity".to_owned(),
             uid: SPARKLES_INT_CLIP_UID,
         },
@@ -778,7 +778,7 @@ fn strobe_tilt_and_whites() -> SelectionExpr {
     add(add(map(601, 601, 19), map(602, 605, 23)), map(606, 606, 19))
 }
 
-/// Seed clip 29, a single flash on the matrix strobes' white segments that ends itself
+/// Seed clip 16, a single flash on the matrix strobes' white segments that ends itself
 /// after its fade.
 fn add_snap(world: &mut World) {
     let strobes = strobe_tilt_and_whites;
@@ -824,7 +824,7 @@ fn add_snap(world: &mut World) {
     }];
     let clip = Clip {
         identifiers: Identifiers {
-            id: 29,
+            id: 16,
             label: "Snap".to_owned(),
             uid: SNAP_CLIP_UID,
         },
