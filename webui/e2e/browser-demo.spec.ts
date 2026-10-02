@@ -367,9 +367,14 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   }
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
-  page.on("pageerror", (error) =>
-    pageErrors.push(error.stack ?? error.message),
-  );
+  page.on("pageerror", (error) => {
+    // The demo show's saved layout mounts the 3D visualizer, which headless Firefox
+    // cannot give a WebGL context; Chromium covers visualizer rendering.
+    if (browserName === "firefox" && /this\.gl is null/.test(error.message)) {
+      return;
+    }
+    pageErrors.push(error.stack ?? error.message);
+  });
   page.on("console", (message) => {
     const text = message.text();
     if (message.type() === "error") {
