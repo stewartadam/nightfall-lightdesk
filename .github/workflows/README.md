@@ -20,9 +20,9 @@ Keep these boundaries intact when adding checks, tools, caches, or release steps
 
 The application is split into `app-runtime` (shared native runtime and the
 `nightfall-headless` executable) and `app-tauri` (the `nightfall-app` desktop
-executable, in `desktop/app-tauri`). Native validation excludes `app-tauri`, which
-is not a default workspace member; desktop checks explicitly
-enable its `full,beat-detection` features.
+executable, in `desktop/app-tauri`). `app-tauri` is not a default workspace
+member, so Clippy and nextest skip it; the native test job and desktop checks
+test it explicitly with its default `full,beat-detection` features.
 
 ## Distribution selection
 
@@ -44,11 +44,11 @@ scripts never execute in the credentialed acquisition job.
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
 
-All non-tag events still run native and WebUI validation. Desktop checks run
-`cargo test -p app-tauri --all-targets` on macOS, Windows, and Linux, without release
-optimization, frontend generation, or installer creation. They are the only gate
-that runs `app-tauri` tests, since native validation excludes the crate and
-packaging only compiles it; a desktop code change therefore selects the check even
+All non-tag events still run native and WebUI validation. The native test job runs
+`cargo test -p app-tauri --all-targets` on Linux after nextest, reusing most of the
+runtime units it just built. Desktop checks run the same command on macOS and
+Windows, without release optimization, frontend generation, or installer creation.
+Packaging only compiles `app-tauri`, so a desktop code change selects the check even
 when it also selects packaging. A check-only Tauri
 configuration clears frontendDist and omits bundled resources, so checks need no
 webui/dist output even without a development URL. Packaging validates the actual
@@ -73,16 +73,16 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 and pre-push stage (Rust tests) as parallel matrix jobs with `fail-fast: false`.
 Each stage runs once. Both skip TypeScript and Node hooks, which run once in the
 downstream WebUI job after the shared WASM assets are available. Only the native
-test job builds and uploads the tested backend for Playwright, then runs Rust
-doctests through the `manual`-stage `cargo-doctest` hook; the local push hook
+test job builds and uploads the tested backend for Playwright, then runs the
+Linux desktop shell tests and Rust doctests through the `manual`-stage `cargo-doctest` hook; the local push hook
 skips doctests because rustdoc processes every library crate. The existing
 `Run prek hooks` check still requires both native stages and both WASM builds
 to succeed before running WebUI validation.
 
 Each native stage uses a stable, separate `Swatinem/rust-cache` shared key:
-`native-pre-commit` and `native-pre-push`, suffixed with a hash of the root
-manifest and shared native Cargo command wrapper. This also refreshes caches
-when workspace profile settings or selected features change. This prevents parallel jobs from
+`native-pre-commit` and `native-pre-push`. The key deliberately omits a manifest
+hash so a version bump or profile change restores the newest cache for the stage
+instead of starting cold. This prevents parallel jobs from
 competing to save the same immutable key with different compiler artifacts.
 The action adds runner architecture/OS, toolchain, compiler environment and
 Cargo dependency/configuration hashes; it can restore compatible caches from
