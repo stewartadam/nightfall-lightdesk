@@ -156,7 +156,7 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Publish version-tag release
+    name: Draft version-tag release
     needs: sign
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
@@ -199,7 +199,7 @@ jobs:
           notices="release-assets/THIRD-PARTY-NOTICES-$RELEASE_TAG.txt"
           [[ -f "$notices" && -s "$notices" && ! -L "$notices" ]]
           [[ -f release-notes/release-notes.md && -s release-notes/release-notes.md && ! -L release-notes/release-notes.md ]]
-      - name: Publish only the complete installer set
+      - name: Draft the release with the complete installer set
         working-directory: release-assets
         shell: bash
         env:
@@ -223,4 +223,5 @@ jobs:
               "${prerelease_args[@]}"
           fi
           gh release upload "$RELEASE_TAG" ./* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false
+          url=$(gh release view "$RELEASE_TAG" --json url --jq .url)
+          echo "Draft release ready for review: $url" >> "$GITHUB_STEP_SUMMARY"
