@@ -9,10 +9,9 @@
 use super::timeline_clips::{
     BSTRIP_FLASH_BOTTOM_CLIP_UID, BSTRIP_FLASH_CLIP_UID, BSTRIP_FLASH_TOP_CLIP_UID,
     BSTRIP_ROW_FLASH_CLIP_UIDS, PASTEL_PULSE_CLIP_UID, PASTEL_RAINBOW_CLIP_UID,
-    PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID, SPARKLE_FADE, SPARKLES_FX_CLIP_UID,
-    SPARKLES_INT_CLIP_UID,
+    PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID, SPARKLE_FADE, SPARKLES_FX_CLIP_UID, SPARKLES_INT_CLIP_UID,
     STROBE_BASS_LONG_CLIP_UID, STROBE_BASS_SHORT_CLIP_UID, WASH_HAT_RUN_CLIP_UID,
-    WASH_VOCAL_PULSE_CLIP_UID,
+    WASH_STRIP_SNARE_CLIP_UID, WASH_VOCAL_PULSE_CLIP_UID,
 };
 use super::*;
 
@@ -25,6 +24,8 @@ const SPARKLE_FX_OFFSET: Duration = Duration::from_millis(10);
 const SNAP_LENGTH: Duration = Duration::from_millis(514);
 /// Length of one bstrip flash including its fade, used for the action's display width.
 const FLASH_LENGTH: Duration = Duration::from_millis(130);
+/// Length of one wash strip snare flash including its fade, used for display width.
+const STRIP_SNARE_LENGTH: Duration = Duration::from_millis(310);
 /// Length of one short bass pulse including its fade, used for display width.
 const BASS_SHORT_LENGTH: Duration = Duration::from_millis(180);
 /// Length of one long bass pulse including its fade, used for display width.
@@ -202,10 +203,19 @@ fn lofi_tracks() -> Vec<Track> {
     }
 
     let mut snaps = ActionList::new("snaps");
+    let mut snares = ActionList::new("snares");
     let mut flashes = ActionList::new("flashes");
     for bar in grooves.into_iter().flatten() {
         let at = LOFI.at(bar, 3.0);
         snaps.start("Snap", SNAP_CLIP_UID, at, at + SNAP_LENGTH);
+        // The lower-pitched snare lands on beat 1, between the snaps.
+        let at = LOFI.at(bar, 1.0);
+        snares.start(
+            "Snare",
+            WASH_STRIP_SNARE_CLIP_UID,
+            at,
+            at + STRIP_SNARE_LENGTH,
+        );
         if bar % 2 == 1 {
             continue;
         }
@@ -250,6 +260,7 @@ fn lofi_tracks() -> Vec<Track> {
     vec![
         wash.into_track("wash", "Wash"),
         snaps.into_track("snaps", "Snaps"),
+        snares.into_track("snares", "Snares"),
         flashes.into_track("breaks", "Breaks"),
     ]
 }

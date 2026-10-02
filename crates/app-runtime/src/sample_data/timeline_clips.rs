@@ -56,6 +56,9 @@ pub(super) const WASH_HAT_RUN_CLIP_UID: Uuid = uuid::uuid!("81467c52-f96a-4202-a
 /// White pulse-and-fade of the rotating wash beams.
 pub(super) const WASH_VOCAL_PULSE_CLIP_UID: Uuid =
     uuid::uuid!("a19716d7-33fb-4746-9ca1-8ada8ddcb4f9");
+/// White flash on the rotating wash LED strips for the lo-fi's off-beat snare.
+pub(super) const WASH_STRIP_SNARE_CLIP_UID: Uuid =
+    uuid::uuid!("f1792a4a-6b04-41ac-b099-61faeea2a973");
 
 /// Cycle length of the pastel rainbow: four bars at 108 BPM.
 pub(super) const PASTEL_RAINBOW_CYCLE: Duration = Duration::from_micros(8_888_889);
@@ -80,7 +83,8 @@ const ROTATING_WASHES: FixtureRangeExpr = FixtureRangeExpr {
     end: 1015,
 };
 /// Rotating wash elements for the control channel (master intensity) and the 12 beams.
-const WASH_CONTROL_AND_BEAMS: ElementSelectorExpr = ElementSelectorExpr::Range { start: 1, end: 13 };
+const WASH_CONTROL_AND_BEAMS: ElementSelectorExpr =
+    ElementSelectorExpr::Range { start: 1, end: 13 };
 /// Rotating wash elements for the 12-pixel top strip followed by the bottom strip.
 const WASH_STRIPS: ElementSelectorExpr = ElementSelectorExpr::Range { start: 14, end: 37 };
 /// Pixels in each rotating wash LED strip.
@@ -302,6 +306,9 @@ fn white_rgb() -> Vec<(Attribute, ValueSource)> {
 /// - 412-415: a white flash on a single pixel tape tier, top tier first.
 /// - 417: a white pulse-and-fade of the rotating wash beams, including the master dimmer
 ///   the beams render through.
+/// - 418: a white flash on the rotating wash LED strips. The strips ignore the master
+///   dimmer, and nothing plays under them in the lo-fi groove, so the flash fades to
+///   black.
 fn add_flashes(world: &mut World) {
     let tier = |index: usize| groups(TIER_GROUPS[index].0, TIER_GROUPS[index].1);
     let lofi_flash = |id, label, clip_uid, selection, hold_ms, uids| Flash {
@@ -450,6 +457,23 @@ fn add_flashes(world: &mut World) {
             uids: [
                 "cd0cdc43-ad9d-45b0-b47a-caa9393e2384",
                 "6f3147c6-f8f6-4ae9-b459-372a4f61c31a",
+            ],
+        },
+        Flash {
+            id: 418,
+            label: "Wash Strip Snare",
+            clip_uid: WASH_STRIP_SNARE_CLIP_UID,
+            selection: washes(WASH_STRIPS),
+            on: vec![
+                (Attribute::Intensity, percent(1.0)),
+                (Attribute::White, percent(1.0)),
+            ],
+            hold: Duration::from_millis(60),
+            fade: Duration::from_millis(250),
+            fade_to_black: true,
+            uids: [
+                "6eb76e68-ccd3-41fb-af4a-7ce36a07cd3d",
+                "d5cd5ee5-8a08-4731-819f-43bf3434199f",
             ],
         },
     ];

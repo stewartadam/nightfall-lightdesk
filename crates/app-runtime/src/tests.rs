@@ -671,7 +671,7 @@ fn world_factory_sample_timelines_drive_seeded_clips() {
         let lanes = if timeline.identifiers.label == "Rap" {
             5
         } else {
-            3
+            4
         };
         assert_eq!(
             timeline.tracks.len(),
@@ -1962,6 +1962,10 @@ async fn world_factory_sample_lofi_timeline_flashes_phrase_endings() {
     assert!(
         first_seen.contains_key(&406),
         "rainbow pulse should run in the groove"
+    );
+    assert!(
+        first_seen.contains_key(&418),
+        "the wash strips should flash on the beat 1 snare"
     );
     let flash = first_seen
         .get(&407)
