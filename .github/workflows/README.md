@@ -20,9 +20,9 @@ Keep these boundaries intact when adding checks, tools, caches, or release steps
 
 The application is split into `app-runtime` (shared native runtime and the
 `nightfall-headless` executable) and `app-tauri` (the `nightfall-app` desktop
-executable, in `desktop/app-tauri`). Native validation excludes `app-tauri`, which
-is not a default workspace member; desktop checks explicitly
-enable its `full,beat-detection` features.
+executable, in `desktop/app-tauri`). `app-tauri` is not a default workspace
+member, so Clippy and nextest skip it; the native test job and desktop checks
+test it explicitly with its default `full,beat-detection` features.
 
 ## Distribution selection
 
@@ -44,11 +44,11 @@ scripts never execute in the credentialed acquisition job.
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
 
-All non-tag events still run native and WebUI validation. Desktop checks run
-`cargo test -p app-tauri --all-targets` on macOS, Windows, and Linux, without release
-optimization, frontend generation, or installer creation. They are the only gate
-that runs `app-tauri` tests, since native validation excludes the crate and
-packaging only compiles it; a desktop code change therefore selects the check even
+All non-tag events still run native and WebUI validation. The native test job runs
+`cargo test -p app-tauri --all-targets` on Linux after nextest, reusing most of the
+runtime units it just built. Desktop checks run the same command on macOS and
+Windows, without release optimization, frontend generation, or installer creation.
+Packaging only compiles `app-tauri`, so a desktop code change selects the check even
 when it also selects packaging. A check-only Tauri
 configuration clears frontendDist and omits bundled resources, so checks need no
 webui/dist output even without a development URL. Packaging validates the actual
@@ -69,26 +69,26 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 
 ## Native execution and caching
 
-`ci-precommit.yml` runs the native pre-commit stage (Clippy and source checks)
-and pre-push stage (Rust tests) as parallel matrix jobs with `fail-fast: false`.
-Each stage runs once. Both skip TypeScript and Node hooks, which run once in the
-downstream WebUI job after the shared WASM assets are available. Only the native
-test job builds and uploads the tested backend for Playwright, then runs Rust
-doctests through the `manual`-stage `cargo-doctest` hook; the local push hook
-skips doctests because rustdoc processes every library crate. The existing
-`Run prek hooks` check still requires both native stages and both WASM builds
-to succeed before running WebUI validation.
+`ci-precommit.yml` runs all native Rust validation in one Linux job so the
+dependency graph compiles once per run. The job runs the `cargo-nextest` push hook,
+uploads the tested backend for Playwright, then runs the desktop shell tests
+(`cargo test -p app-tauri --all-targets`), Rust doctests through the
+`manual`-stage `cargo-doctest` hook, and finally the `cargo-clippy` commit hook.
+Each later step reuses the build scripts, proc macros and dependencies the test
+build produced; Clippy still compiles metadata-only dependency units of its own.
+Later steps run even when an earlier one fails, so every result reports. The local
+push hook skips doctests because rustdoc processes every library crate. TypeScript
+and Node hooks run once in the downstream WebUI job after the shared WASM assets
+are available. The browser demo job does not compile native Rust, because the
+browser runtime is a default member and its tests already run here.
 
-Each native stage uses a stable, separate `Swatinem/rust-cache` shared key:
-`native-pre-commit` and `native-pre-push`, suffixed with a hash of the root
-manifest and shared native Cargo command wrapper. This also refreshes caches
-when workspace profile settings or selected features change. This prevents parallel jobs from
-competing to save the same immutable key with different compiler artifacts.
+The native job uses a stable `Swatinem/rust-cache` shared key, `native`. The key
+deliberately omits a manifest hash so a version bump or profile change restores
+the newest native cache instead of starting cold.
 The action adds runner architecture/OS, toolchain, compiler environment and
 Cargo dependency/configuration hashes; it can restore compatible caches from
 older lockfiles. Native profile environment variables apply to the whole job,
-including cache restore/save and all Cargo commands. Optimization settings and
-hook coverage are unchanged.
+including cache restore/save and all Cargo commands.
 
 Both `main` and `develop` pushes populate caches visible to PRs targeting those
 branches. A PR cache is scoped to that PR and does not warm unrelated PRs.
@@ -101,11 +101,9 @@ standard cleanup policy. Workspace artifacts and incremental data are not
 persisted. Merely retaining workspace artifacts is insufficient when a fresh
 checkout changes source timestamps: Cargo may rebuild them. Workspace-artifact
 reuse is deferred pending a verified content-based freshness mechanism for the
-pinned toolchain. Parallel execution reduces wall time at the cost of additional
-runner work, and no particular speedup is assumed until measured on GitHub.
+pinned toolchain.
 
 Validate syntax with `pnpm exec prek run actionlint --all-files`. On the first hosted
-run, confirm that both native jobs overlap, only the test job uploads
-`native-test-backend`, and failures in either stage fail the downstream check.
-After a successful base-branch run, a PR with unchanged Rust inputs should report
-restored caches in both native jobs and avoid rebuilding unchanged dependencies.
+run, confirm that a failure in any native step fails the downstream check. After a
+successful base-branch run, a PR with unchanged Rust inputs should report a restored
+native cache and avoid rebuilding unchanged dependencies.
