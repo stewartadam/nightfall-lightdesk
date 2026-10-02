@@ -14,7 +14,6 @@ use std::{
     time::Duration,
 };
 
-use bevy_ecs::prelude::*;
 use nightfall_dmx::MAX_CHANNELS_PER_UNIVERSE;
 use serde::{Deserialize, Serialize};
 use web_time::Instant;
@@ -33,14 +32,16 @@ pub enum BindingTransport {
 }
 
 /// Metadata about the local sACN output source identity.
-#[derive(Debug, Default, Clone, Resource)]
+#[derive(Debug, Default, Clone)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct SacnOutputIdentity {
     /// CID bytes of the local sACN output source, if configured.
     pub cid: Option<[u8; 16]>,
 }
 
 /// Metadata about the local Art-Net output source identity.
-#[derive(Debug, Clone, Resource, Default)]
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct ArtNetRecentFramesByUniverse {
     recent_frames: HashMap<u16, VecDeque<ArtNetRecentFrame>>,
 }
@@ -113,7 +114,8 @@ impl ArtNetRecentFramesByUniverse {
 }
 
 /// One accepted DMX frame, after protocol validation and local-source filtering.
-#[derive(Debug, Clone, Message)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Message))]
 pub struct AcceptedDmxFrame {
     /// Protocol that delivered the frame.
     pub transport: BindingTransport,
@@ -128,7 +130,8 @@ pub struct AcceptedDmxFrame {
 }
 
 /// Shared ordering boundary for adapter publication and routing consumption.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemSet)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::SystemSet))]
 pub enum DmxInputSet {
     /// Protocol adapters publish accepted frames.
     Ingress,

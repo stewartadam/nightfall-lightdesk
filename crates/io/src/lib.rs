@@ -7,6 +7,10 @@
  */
 
 //! IO transport configuration and named output target definitions.
+//!
+//! The Bevy ECS derives on these types are gated behind the default `ecs`
+//! feature. Disable default features to use the plain types and constants
+//! without pulling `bevy_ecs` into the dependency tree, as the WASM bridge does.
 
 #![warn(missing_docs)]
 
@@ -17,7 +21,6 @@ mod settings;
 
 use std::{collections::HashSet, net::Ipv4Addr};
 
-use bevy_ecs::prelude::*;
 pub use input::{
     AcceptedDmxFrame, ArtNetRecentFramesByUniverse, BindingTransport, DmxInputSet,
     IoRuntimeNotification, SacnOutputIdentity,
@@ -192,7 +195,8 @@ impl NetworkDmxOutputTarget {
 }
 
 /// Showfile-scoped network DMX output target definitions.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Resource)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub struct NetworkDmxOutputTargets {
     /// Configured target list.
@@ -295,7 +299,8 @@ impl UsbDmxOutputTarget {
 }
 
 /// Showfile-scoped USB DMX output target definitions.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Resource)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub struct UsbDmxOutputTargets {
     /// Configured target list.
@@ -540,7 +545,8 @@ pub fn is_reserved_usb_dmx_target_id(id: &str) -> bool {
 }
 
 /// Input universe visibility mode.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Resource, Copy)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub enum InputUniverseVisibilityMode {
     /// Show only external transport inputs.
