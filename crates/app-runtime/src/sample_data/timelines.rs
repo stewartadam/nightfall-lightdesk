@@ -7,8 +7,9 @@
  */
 
 use super::timeline_clips::{
-    PASTEL_RAINBOW_CLIP_UID, PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID, SPARKLES_FX_CLIP_UID,
-    SPARKLES_INT_CLIP_UID, SYNTH_FILL_CLIP_UID,
+    BSTRIP_FLASH_BOTTOM_CLIP_UID, BSTRIP_FLASH_CLIP_UID, BSTRIP_FLASH_TOP_CLIP_UID,
+    PASTEL_PULSE_CLIP_UID, PASTEL_RAINBOW_CLIP_UID, PASTEL_RAINBOW_CYCLE, SNAP_CLIP_UID,
+    SPARKLES_FX_CLIP_UID, SPARKLES_INT_CLIP_UID, SYNTH_FILL_CLIP_UID,
 };
 use super::*;
 
@@ -19,6 +20,8 @@ const CIRCLE_MOTION_CLIP_UID: Uuid = uuid::uuid!("ac08f795-9e9c-4fae-b714-0810b0
 const SPARKLE_FX_OFFSET: Duration = Duration::from_millis(10);
 /// Length of one snap flash including its fade, used for the action's display width.
 const SNAP_LENGTH: Duration = Duration::from_millis(514);
+/// Length of one bstrip flash including its fade, used for the action's display width.
+const FLASH_LENGTH: Duration = Duration::from_millis(130);
 /// Length of one synth fill (six eighth notes at 168 BPM), used for display width.
 const SYNTH_FILL_LENGTH: Duration = Duration::from_millis(1071);
 
@@ -36,6 +39,11 @@ impl SongGrid {
     fn at(self, bar: u32, beat: f64) -> Duration {
         let beats = f64::from(bar - 1) * 4.0 + (beat - 1.0);
         self.downbeat + Duration::from_secs_f64(beats * 60.0 / self.bpm)
+    }
+
+    /// Returns the length of `beats` beats.
+    fn beats(self, beats: f64) -> Duration {
+        Duration::from_secs_f64(beats * 60.0 / self.bpm)
     }
 
     /// Returns the length of `bars` whole bars.
@@ -150,38 +158,96 @@ fn region(
     }
 }
 
-/// Lo-fi lanes: a pastel wash, a soft backbeat on the strobes, and sparkles in the breaks.
+/// Lo-fi lanes: a pastel wash that restarts with the groove, accents on the backbeat and
+/// the phrase-ending notes, and sparkles in the breaks.
+///
+/// Each groove pair of bars plays three and a half two-beat segments before a two-note
+/// figure on the second bar's fourth beat. The figure is a repeated note in bars 2, 6, 10,
+/// and 14, and falls from high to low in bars 4 and 12.
 fn lofi_tracks() -> Vec<Track> {
-    let end = LOFI.at(17, 1.0);
+    let grooves = [1..=6, 9..=14];
+    let breaks = [(7, 9), (15, 17)];
 
     let mut wash = ActionList::new("wash");
-    wash.start(
-        "Pastel rainbow",
-        PASTEL_RAINBOW_CLIP_UID,
-        LOFI.at(1, 1.0),
-        end,
-    );
-    wash.stop("Stop rainbow", PASTEL_RAINBOW_CLIP_UID, end);
-
-    let mut backbeat = ActionList::new("backbeat");
-    for bar in (1..=6).chain(9..=14) {
-        backbeat.start(
-            "Snap",
-            SNAP_CLIP_UID,
-            LOFI.at(bar, 3.0),
-            LOFI.at(bar, 3.0) + SNAP_LENGTH,
+    for groove in grooves.clone() {
+        let groove_end = LOFI.at(groove.end() + 1, 1.0);
+        for bar in groove {
+            for beat in [1.0, 3.0] {
+                let at = LOFI.at(bar, beat);
+                wash.start(
+                    "Rainbow pulse",
+                    PASTEL_PULSE_CLIP_UID,
+                    at,
+                    at + LOFI.beats(2.0),
+                );
+            }
+        }
+        wash.stop("Stop rainbow pulse", PASTEL_PULSE_CLIP_UID, groove_end);
+    }
+    for (from, until) in breaks {
+        wash.start(
+            "Pastel rainbow",
+            PASTEL_RAINBOW_CLIP_UID,
+            LOFI.at(from, 1.0),
+            LOFI.at(until, 1.0),
         );
+        wash.stop("Stop rainbow", PASTEL_RAINBOW_CLIP_UID, LOFI.at(until, 1.0));
     }
 
-    let mut breaks = ActionList::new("breaks");
-    for (from, until) in [(7, 9), (15, 17)] {
-        breaks.sparkle(LOFI.at(from, 1.0), LOFI.at(until, 1.0));
+    let mut accents = ActionList::new("accents");
+    for bar in grooves.into_iter().flatten() {
+        let at = LOFI.at(bar, 3.0);
+        accents.start("Snap", SNAP_CLIP_UID, at, at + SNAP_LENGTH);
+        if bar % 2 == 1 {
+            continue;
+        }
+        let (first, second) = if bar % 4 == 0 {
+            (
+                ("Flash high", BSTRIP_FLASH_TOP_CLIP_UID),
+                ("Flash low", BSTRIP_FLASH_BOTTOM_CLIP_UID),
+            )
+        } else {
+            (
+                ("Flash", BSTRIP_FLASH_CLIP_UID),
+                ("Flash", BSTRIP_FLASH_CLIP_UID),
+            )
+        };
+        for ((label, clip), beat) in [(first, 4.25), (second, 4.5)] {
+            let at = LOFI.at(bar, beat);
+            accents.start(label, clip, at, at + FLASH_LENGTH);
+        }
+    }
+    for (from, _) in breaks {
+        // Four high notes on the first break bar, then eight low notes on the second.
+        for beat in [1.0, 2.0, 3.0, 4.0] {
+            let at = LOFI.at(from, beat);
+            accents.start(
+                "Flash high",
+                BSTRIP_FLASH_TOP_CLIP_UID,
+                at,
+                at + FLASH_LENGTH,
+            );
+        }
+        for eighth in 0..8 {
+            let at = LOFI.at(from + 1, 1.0 + f64::from(eighth) / 2.0);
+            accents.start(
+                "Flash low",
+                BSTRIP_FLASH_BOTTOM_CLIP_UID,
+                at,
+                at + FLASH_LENGTH,
+            );
+        }
+    }
+
+    let mut sparkles = ActionList::new("breaks");
+    for (from, until) in breaks {
+        sparkles.sparkle(LOFI.at(from, 1.0), LOFI.at(until, 1.0));
     }
 
     vec![
         wash.into_track("wash", "Wash"),
-        backbeat.into_track("backbeat", "Backbeat"),
-        breaks.into_track("breaks", "Breaks"),
+        accents.into_track("accents", "Accents"),
+        sparkles.into_track("breaks", "Breaks"),
     ]
 }
 

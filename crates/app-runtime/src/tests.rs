@@ -1870,3 +1870,65 @@ async fn world_factory_sample_rap_timeline_fires_one_shot_clips() {
     assert_eq!(snap_starts, 4, "snap should flash once per bar");
     assert!(synth_seen, "synth fill should fire on beat 2 of bar 4");
 }
+
+/// Plays the Lo-fi timeline in real time through bar 4 and verifies the phrase-ending
+/// accents: a full bstrip flash on bar 2's repeated note, then top-then-bottom flashes on
+/// bar 4's falling note, all over the restarting rainbow pulse.
+#[tokio::test]
+async fn world_factory_sample_lofi_timeline_flashes_phrase_endings() {
+    use nightfall_clips::MaterializedClip;
+    use nightfall_timecode::prelude::TimecodeGenerator;
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world");
+    queue_startup_command(&mut app, "test", "timecode 1 start".to_owned());
+
+    let mut first_seen: HashMap<u32, Duration> = HashMap::new();
+    let mut position = Duration::ZERO;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while position < Duration::from_millis(8_900) && Instant::now() < deadline {
+        app.update();
+        position = app
+            .world_mut()
+            .query::<&TimecodeGenerator>()
+            .iter(app.world())
+            .find(|generator| generator.timecode.identifiers.id == 1)
+            .map(|generator| generator.state.current_time)
+            .unwrap_or_default();
+        let active: Vec<u32> = app
+            .world_mut()
+            .query::<&MaterializedClip>()
+            .iter(app.world())
+            .map(|clip| clip.clip_id)
+            .collect();
+        for clip_id in active {
+            first_seen.entry(clip_id).or_insert(position);
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert!(
+        position >= Duration::from_millis(8_900),
+        "timecode 1 stalled at {position:?}"
+    );
+    assert!(
+        first_seen.contains_key(&406),
+        "rainbow pulse should run in the groove"
+    );
+    let flash = first_seen
+        .get(&407)
+        .expect("bar 2 should flash every bstrip");
+    let top = first_seen
+        .get(&408)
+        .expect("bar 4 should flash the top tiers");
+    let bottom = first_seen
+        .get(&409)
+        .expect("bar 4 should flash the bottom tiers");
+    assert!(
+        flash < top && top < bottom,
+        "flash {flash:?}, top {top:?}, bottom {bottom:?}"
+    );
+}

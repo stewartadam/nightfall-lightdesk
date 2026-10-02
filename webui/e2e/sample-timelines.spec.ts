@@ -20,6 +20,7 @@ test.setTimeout(90_000);
  */
 const CLIP = {
   pastelRainbow: 405,
+  pastelPulse: 406,
   sparklesFx: 33,
   sparklesInt: 34,
 } as const;
@@ -104,16 +105,18 @@ function isActive(page: Page, clipId: number): Promise<boolean> {
   );
 }
 
-/** Plays the Lo-fi groove, then its first break, and captures the sparkle over the rainbow. */
-test("Lo-fi layers break sparkles over the pastel rainbow", async ({
+/** Plays the Lo-fi groove, then its first break, and captures the sparkle over the slow rainbow. */
+test("Lo-fi pulses the rainbow in the groove and sparkles in the break", async ({
   page,
 }, testInfo) => {
   const surface = await openTimeline(page, "Lo-fi");
   try {
+    // Give the visualizer scene time to load before the groove screenshot.
+    await page.waitForTimeout(4_000);
     await surface
       .getByRole("button", { name: "Play timeline", exact: true })
       .click();
-    await expect.poll(() => isActive(page, CLIP.pastelRainbow)).toBe(true);
+    await expect.poll(() => isActive(page, CLIP.pastelPulse)).toBe(true);
     await page.waitForTimeout(1_500);
     await captureVisualizer(page, testInfo.outputPath("lofi-groove.png"));
 

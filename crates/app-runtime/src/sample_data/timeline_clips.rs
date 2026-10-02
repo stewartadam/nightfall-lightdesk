@@ -28,8 +28,21 @@ pub(super) const SNAP_CLIP_UID: Uuid = uuid::uuid!("d8b7d72c-11d5-4c37-81a6-bd4c
 /// Row-by-row white cascade across the pixel tapes, timed in 168 BPM eighth notes.
 pub(super) const SYNTH_FILL_CLIP_UID: Uuid = uuid::uuid!("386e41a8-4b97-4d4d-8173-cb4b68be7fca");
 
+/// Fast pastel rainbow the lo-fi groove restarts every two beats.
+pub(super) const PASTEL_PULSE_CLIP_UID: Uuid = uuid::uuid!("12cd4b41-5de9-4401-92a9-ec9e1d226155");
+/// White flash across every bstrip, layered over the rainbow.
+pub(super) const BSTRIP_FLASH_CLIP_UID: Uuid = uuid::uuid!("a528607d-e238-4100-a6dc-1db2578f5838");
+/// White flash on the top two pixel tape tiers.
+pub(super) const BSTRIP_FLASH_TOP_CLIP_UID: Uuid =
+    uuid::uuid!("5b0f2d3e-6c1a-4e8b-9f47-2d81c6a3e910");
+/// White flash on the bottom two pixel tape tiers.
+pub(super) const BSTRIP_FLASH_BOTTOM_CLIP_UID: Uuid =
+    uuid::uuid!("e3a7c914-8b52-4f06-a1d9-7c4e05b2f8a6");
+
 /// Cycle length of the pastel rainbow: four bars at 108 BPM.
 pub(super) const PASTEL_RAINBOW_CYCLE: Duration = Duration::from_micros(8_888_889);
+/// Cycle length of the pastel rainbow pulse: two beats at 108 BPM.
+pub(super) const PASTEL_PULSE_CYCLE: Duration = Duration::from_micros(1_111_111);
 
 /// Group ID range covering every bstrip row.
 const BSTRIP_GROUPS: (u32, u32) = (3, 10);
@@ -42,7 +55,8 @@ const SYNTH_STEP: Duration = Duration::from_micros(178_571);
 
 /// Seed the effects, sequences, and clips the sample timelines trigger.
 pub(super) fn add_timeline_clips(world: &mut World) {
-    add_pastel_rainbow(world);
+    add_pastel_rainbows(world);
+    add_bstrip_flashes(world);
     add_sparkles(world);
     add_snap(world);
     add_synth_fill(world);
@@ -135,22 +149,54 @@ fn rainbow_lane(attribute: Attribute, targets: [f32; 6]) -> FxLane {
     }
 }
 
-/// Seed clip 405, a six-hue rainbow whose 25% channel floor keeps every color pastel.
-fn add_pastel_rainbow(world: &mut World) {
-    let step_fx_uid = Uuid::from_str("d46dbfe6-a5f9-4354-a1cf-ba27be08cd17").unwrap();
+/// Seed the pastel rainbow at both of its tempos: clip 405 cycles over four lo-fi bars,
+/// and clip 406 cycles every two lo-fi beats so the timeline can restart it on each
+/// segment of the groove.
+fn add_pastel_rainbows(world: &mut World) {
+    add_pastel_rainbow(
+        world,
+        Identifiers {
+            id: 405,
+            label: "Pastel Rainbow".to_owned(),
+            uid: Uuid::from_str("d46dbfe6-a5f9-4354-a1cf-ba27be08cd17").unwrap(),
+        },
+        PASTEL_RAINBOW_CLIP_UID,
+        PASTEL_RAINBOW_CYCLE,
+    );
+    add_pastel_rainbow(
+        world,
+        Identifiers {
+            id: 406,
+            label: "Pastel Rainbow Pulse".to_owned(),
+            uid: Uuid::from_str("7cf5696d-e039-4eca-b517-1506bb91cf86").unwrap(),
+        },
+        PASTEL_PULSE_CLIP_UID,
+        PASTEL_PULSE_CYCLE,
+    );
+}
+
+/// Seed a six-hue rainbow step FX on every bstrip, with a 25% channel floor that keeps
+/// each color pastel, and a clip with the same ID and label that plays it.
+fn add_pastel_rainbow(
+    world: &mut World,
+    identifiers: Identifiers,
+    clip_uid: Uuid,
+    cycle: Duration,
+) {
+    let step_fx_uid = identifiers.uid;
+    let clip_identifiers = Identifiers {
+        uid: clip_uid,
+        ..identifiers.clone()
+    };
     let mut intensity = rainbow_lane(Attribute::Intensity, [1.0; 6]);
     if let Some(track) = intensity.absolute.as_mut() {
         track.steps.truncate(1);
         track.steps[0].width_beats = 1.0;
     }
     world.spawn(StepFx {
-        identifiers: Identifiers {
-            id: 405,
-            label: "Pastel Rainbow".to_owned(),
-            uid: step_fx_uid,
-        },
+        identifiers,
         timing: StepFxTiming {
-            beat_duration: PASTEL_RAINBOW_CYCLE,
+            beat_duration: cycle,
         },
         selection: groups(BSTRIP_GROUPS.0, BSTRIP_GROUPS.1).into(),
         phase: StepFxPhase::default(),
@@ -164,14 +210,102 @@ fn add_pastel_rainbow(world: &mut World) {
         ],
     });
     world.spawn_instance(Clip {
-        identifiers: Identifiers {
-            id: 405,
-            label: "Pastel Rainbow".to_owned(),
-            uid: PASTEL_RAINBOW_CLIP_UID,
-        },
+        identifiers: clip_identifiers,
         source: Some(Source::StepFx(step_fx_uid)),
         ..Default::default()
     });
+}
+
+/// Seed clips 407-409: a brief white flash over the rainbow on all bstrips, on the top two
+/// tiers, and on the bottom two tiers. Each ends itself after its fade so the timeline
+/// can restart it for every hit.
+fn add_bstrip_flashes(world: &mut World) {
+    let flashes = [
+        (
+            407,
+            "Bstrip Flash",
+            BSTRIP_FLASH_CLIP_UID,
+            groups(BSTRIP_GROUPS.0, BSTRIP_GROUPS.1),
+            [
+                "9df93bf1-1282-40c3-a9c0-784fbf423785",
+                "a63f8d34-ae43-484d-999a-b2e0db996e0f",
+                "bc223c3d-d71d-473e-8425-fb4d1146813a",
+            ],
+        ),
+        (
+            408,
+            "Bstrip Flash Top",
+            BSTRIP_FLASH_TOP_CLIP_UID,
+            groups(TIER_GROUPS[2].0, TIER_GROUPS[3].1),
+            [
+                "b7e92331-6a23-4722-98d8-ffd7474cfce7",
+                "0589f524-4ab2-48f8-bf77-26d0a571fa60",
+                "9efe58b4-f90e-426f-95fa-c346c4430d66",
+            ],
+        ),
+        (
+            409,
+            "Bstrip Flash Bottom",
+            BSTRIP_FLASH_BOTTOM_CLIP_UID,
+            groups(TIER_GROUPS[0].0, TIER_GROUPS[1].1),
+            [
+                "69b55ac0-60c0-44a3-8b6a-733bae2cc6ec",
+                "2cea615d-02eb-472d-8313-e8d55dba3e8f",
+                "bef25d64-4d33-4c35-8478-0c39e2af4864",
+            ],
+        ),
+    ];
+    for (id, label, clip_uid, selection, [on_uid, off_uid, sequence_uid]) in flashes {
+        let on = cue(
+            on_uid,
+            1,
+            "White",
+            CueTriggerType::Manual,
+            selection.clone(),
+            &[
+                (Attribute::Intensity, percent(1.0)),
+                (Attribute::Red, percent(1.0)),
+                (Attribute::Green, percent(1.0)),
+                (Attribute::Blue, percent(1.0)),
+            ],
+        );
+        let mut off = cue(
+            off_uid,
+            2,
+            "Fade",
+            CueTriggerType::FollowPrevious,
+            selection,
+            &[(Attribute::Intensity, percent(0.0))],
+        );
+        off.transitions = PartialTransition {
+            delay_in: fixed(Duration::from_millis(40)),
+            fade_in: fixed(Duration::from_millis(90)),
+            ..Default::default()
+        };
+        let sequence = Sequence {
+            identifiers: Identifiers {
+                uid: Uuid::from_str(sequence_uid).unwrap(),
+                id,
+                label: label.to_owned(),
+            },
+            steps: vec![on.identifiers.uid.into(), off.identifiers.uid.into()],
+            ..Default::default()
+        };
+        let clip = Clip {
+            identifiers: Identifiers {
+                id,
+                label: label.to_owned(),
+                uid: clip_uid,
+            },
+            source: Some(Source::Sequence(sequence.identifiers.uid)),
+            priority: Priority(2),
+            options: ClipOptions {
+                auto_release: true,
+                deactivate_on_sequence_end: true,
+            },
+        };
+        add_sequence_clip(world, vec![on, off], sequence, clip);
+    }
 }
 
 /// Seed clips 33 and 34: a shuffled RGB sine twinkle and the intensity lift that reveals it.
