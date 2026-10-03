@@ -60,7 +60,7 @@ async function openSequenceListPanel(page: Page): Promise<void> {
     const api = stores.dockApi.get();
     const panelId = "panel-SequenceList-create-tracking-mode-e2e";
     const referencePanel =
-      api.getPanel("panel-FixtureGrid") ??
+      api.getPanel("panel-Groups") ??
       api.panels.find(
         (candidate: any) => candidate.api.location.type === "grid",
       );
@@ -151,7 +151,7 @@ async function openCreatedSequenceProperties(
     api.getPanel(`sequence-editor-panel-${uid}`)?.api.close();
     api.getPanel(panelId)?.api.close();
     const referencePanel =
-      api.getPanel("panel-FixtureGrid") ??
+      api.getPanel("panel-Groups") ??
       api.panels.find(
         (candidate: any) => candidate.api.location.type === "grid",
       );

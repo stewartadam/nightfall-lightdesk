@@ -127,7 +127,7 @@ async function openOwnedTimelineApp(page: Page): Promise<string> {
       title: timeline.identifiers.label,
       params: { initialTimelineUid: uid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });

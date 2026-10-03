@@ -139,7 +139,7 @@ test("timeline playhead advances smoothly", async ({ page }) => {
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });

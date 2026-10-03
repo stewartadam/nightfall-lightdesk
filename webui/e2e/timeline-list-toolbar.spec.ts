@@ -52,7 +52,7 @@ async function openTimelineListPanel(page: Page) {
       title: "Timelines",
       params: {},
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });
@@ -65,7 +65,10 @@ async function openTimelineListPanel(page: Page) {
 async function focusTimelineListPanel(page: Page) {
   await page.evaluate(() => {
     const api = (window as any).appStores?.dockApi?.get?.();
-    api?.getPanel("panel-TimelinesPanel-e2e")?.focus();
+    const panel = api?.getPanel("panel-TimelinesPanel-e2e");
+    // Opened timelines join the same group, so bring the list tab back first.
+    panel?.api.setActive();
+    panel?.focus();
   });
 }
 

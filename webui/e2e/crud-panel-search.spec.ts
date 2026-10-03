@@ -209,7 +209,7 @@ async function openSequenceSearchPanel(page: Page): Promise<void> {
     const panelId = "panel-SequenceList-crud-search-e2e";
     api.getPanel("panel-SequenceList")?.api.close();
     api.getPanel(panelId)?.api.close();
-    const referencePanel = api.getPanel("panel-FixtureGrid");
+    const referencePanel = api.getPanel("panel-Groups");
     api.addPanel({
       id: panelId,
       component: "SequenceList",
