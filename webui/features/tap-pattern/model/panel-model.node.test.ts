@@ -14,6 +14,7 @@ import {
   formatBpm,
   formatMs,
   oneShotSequencePatternFromTaps,
+  segmentTimelineLeft,
   segmentTimelinePercent,
 } from "./panel-model";
 
@@ -44,6 +45,18 @@ test("tap pattern timeline projection uses padded bounded coordinates", () => {
   assert.equal(segmentTimelinePercent(-10, 100), 1.5);
   assert.equal(segmentTimelinePercent(200, 100), 98.5);
   assert.deepEqual(beatScaleMarkers(2.5), [0, 1, 2, 2.5]);
+});
+
+/** Verifies CSS offsets reserve a marker radius at each edge before applying the padded range. */
+test("tap pattern timeline offsets inset markers from the track edges", () => {
+  assert.equal(
+    segmentTimelineLeft(0, 100),
+    "calc(8px + (100% - 16px) * 0.015)",
+  );
+  assert.equal(
+    segmentTimelineLeft(100, 100),
+    "calc(8px + (100% - 16px) * 0.985)",
+  );
 });
 
 /** Verifies one-shot sequence projection preserves captured tap intervals. */
