@@ -55,7 +55,7 @@ test("PR selection follows distribution ownership", () => {
     ["pnpm-lock.yaml", both],
     ["pnpm-workspace.yaml", both],
     ["crates/app-runtime/assets/sample-audio/lofi.mp3", both],
-    [".github/workflows/ci-precommit.yml", both],
+    [".github/workflows/ci.yml", both],
     ["scripts/ci-scope.mjs", both],
     ["crates/wasm-bridge/src/lib.rs", both],
   ]) {

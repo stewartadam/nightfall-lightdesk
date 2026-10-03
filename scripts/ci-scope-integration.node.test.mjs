@@ -41,7 +41,7 @@ test("workflow diff captures both sides of renames and removed files", (t) => {
   git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "change");
   const workflow = parse(
     readFileSync(
-      new URL("../.github/workflows/ci-precommit.yml", import.meta.url),
+      new URL("../.github/workflows/ci.yml", import.meta.url),
       "utf8",
     ),
   );
@@ -64,7 +64,7 @@ test("workflow diff captures both sides of renames and removed files", (t) => {
 test("workflow connects independent validation outputs", () => {
   const { jobs } = parse(
     readFileSync(
-      new URL("../.github/workflows/ci-precommit.yml", import.meta.url),
+      new URL("../.github/workflows/ci.yml", import.meta.url),
       "utf8",
     ),
   );

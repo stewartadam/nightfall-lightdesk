@@ -14,7 +14,7 @@ import { parse } from "yaml";
 
 const { jobs } = parse(
   readFileSync(
-    new URL("../.github/workflows/ci-precommit.yml", import.meta.url),
+    new URL("../.github/workflows/ci.yml", import.meta.url),
     "utf8",
   ),
 );
@@ -37,7 +37,7 @@ test("validation jobs wait only for their preparation prerequisites", () => {
   for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
     assert.equal(jobs[id].if, `\${{ !startsWith(github.ref, 'refs/tags/') }}`);
     assert.ok(
-      jobs.precommit.needs.includes(id),
+      jobs.gate.needs.includes(id),
       `${id} must contribute to the required check`,
     );
   }
@@ -45,13 +45,13 @@ test("validation jobs wait only for their preparation prerequisites", () => {
 
 /** Execute the production aggregate guard against failed, cancelled, and skipped prerequisites. */
 test("the required check accepts only successful prerequisite results", () => {
-  assert.equal(jobs.precommit.name, "Run prek hooks");
-  assert.match(jobs.precommit.if, /!cancelled\(\)/);
-  assert.match(jobs.precommit.if, /needs.scope.result != 'skipped'/);
-  const guard = jobs.precommit.steps[0];
+  assert.equal(jobs.gate.name, "CI gate");
+  assert.match(jobs.gate.if, /!cancelled\(\)/);
+  assert.match(jobs.gate.if, /needs.scope.result != 'skipped'/);
+  const guard = jobs.gate.steps[0];
   assert.equal(guard.env.JOB_RESULTS, `\${{ toJSON(needs) }}`);
   const results = Object.fromEntries(
-    jobs.precommit.needs.map((id) => [id, { result: "success" }]),
+    jobs.gate.needs.map((id) => [id, { result: "success" }]),
   );
   /** Run the workflow shell against a controlled collection of dependency outcomes. */
   function runGuard(outcomes) {
@@ -67,7 +67,7 @@ test("the required check accepts only successful prerequisite results", () => {
     return result.status;
   }
   assert.equal(runGuard(results), 0);
-  for (const id of jobs.precommit.needs) {
+  for (const id of jobs.gate.needs) {
     for (const result of ["failure", "cancelled", "skipped"]) {
       assert.notEqual(
         runGuard({ ...results, [id]: { result } }),

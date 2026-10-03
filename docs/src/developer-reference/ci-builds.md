@@ -1,6 +1,6 @@
 # CI builds
 
-`ci-precommit.yml` acquires credential-free source and LFS assets in a read-only
+`ci.yml` acquires credential-free source and LFS assets in a read-only
 job, then runs all builds/tests with `permissions: {}` and no release secrets.
 The shared `wasm.yml` workflow builds the bridge and browser runtime separately.
 `desktop-artifacts.yml` validates version policy, builds the desktop frontend,
@@ -56,7 +56,7 @@ compile for `wasm32`. `app-tauri` is excluded from hakari's traversal so Tauri
 crates never enter runtime builds, and so are proc-macro crates such as
 `nightfall-engine-derive`: they compile for the host even in a `wasm32` build,
 where the native-only gate holds, so a workspace-hack dependency would build
-Tokio, axum, and wasmtime for every browser build. The source checks job runs `cargo hakari generate --diff`
+Tokio, axum, and wasmtime for every browser build. The prek hooks job runs `cargo hakari generate --diff`
 and `cargo hakari manage-deps --dry-run`, and a script test rejects any crate
 that declares the workspace-hack outside its native-only dependency table and
 any proc-macro crate missing from hakari's traversal excludes.

@@ -9,7 +9,7 @@ Run the Chromium product smoke suite in an existing Linux build-and-test job:
 
 The caller must check out this repository, set up Node.js, pnpm and Rust, install Node
 and native backend dependencies, generate TypeScript shared types, and download
-the shared release WASM artifacts. `ci-precommit.yml` supplies those artifacts
+the shared release WASM artifacts. `ci.yml` supplies those artifacts
 and the backend executable produced by its native-check job.
 
 The CI caller runs smoke tests even if a preceding hook fails, provided asset
