@@ -25,9 +25,9 @@ export type GuidePrerequisite = Extract<GuideContent, { type: "prerequisite" }>;
 
 /**
  * An area the card must leave uncovered in addition to the target:
- * the target's whole panel, its grid row, or the 3D Visualizer viewport.
+ * the target's whole panel, its panel tab, its grid row, or the 3D Visualizer viewport.
  */
-export type GuideFocusArea = "panel" | "row" | "visualizer";
+export type GuideFocusArea = "panel" | "tab" | "row" | "visualizer";
 
 export interface GuideStep {
   persistenceUnavailable?: Pick<
@@ -54,6 +54,11 @@ export interface GuideStep {
    */
   keepVisible?: GuideFocusArea[];
   focusTarget?: boolean;
+  /**
+   * Runs the step in the layout the user had before the lesson. Saving the show records which
+   * layout is showing, so a save from the Lesson layout would reopen the show in it.
+   */
+  userLayout?: boolean;
   observe?: GuideObservation;
 }
 export interface GuideLesson {
@@ -93,6 +98,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "open-timeline",
         title: "Open the sample timeline",
+        keepVisible: ["tab"],
         observe: {
           type: "sample-panels",
         },
@@ -345,6 +351,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           ],
         },
         observe: { type: "save-showfile" },
+        userLayout: true,
         title: "Keep a saved version of your show",
         target:
           '[data-component="DropdownMenuItem"]:has([data-guide-target="save-showfile"]), [aria-label="Menu"]:not([aria-expanded="true"])',
@@ -352,6 +359,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             type: "text",
             text: "Nightfall automatically saves your showfile changes to a draft. Save Showfile explicitly updates the saved version of the whole show. A draft lets you recover work made since that saved version.",
+          },
+          {
+            type: "text",
+            text: "A save also remembers which layout is showing, so the guide has switched back to your own layout for the rest of this lesson.",
           },
           {
             type: "action",

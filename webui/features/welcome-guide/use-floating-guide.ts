@@ -181,8 +181,20 @@ export function useFloatingGuide(
       focus?.includes("row") && targetElement
         ? rowBounds(targetElement)
         : undefined;
+    const panelId = targetElement
+      ?.closest<HTMLElement>("[data-panel-id]")
+      ?.getAttribute("data-panel-id");
+    const tab =
+      focus?.includes("tab") && panelId
+        ? document
+            .querySelector(
+              `[data-workspace-active="true"] .dv-tab[data-tab-panel-id="${CSS.escape(panelId)}"]`,
+            )
+            ?.getBoundingClientRect()
+        : undefined;
     const kept = [
       ...(focus?.includes("panel") && panel ? [panel] : []),
+      ...(tab && tab.width > 0 ? [tab] : []),
       ...(row ? [row] : []),
       ...(focus?.includes("visualizer") && visualizer ? [visualizer] : []),
     ];
