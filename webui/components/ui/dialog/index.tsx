@@ -104,6 +104,7 @@ export function Dialog(props: DialogProps) {
         >
           <DialogSurface
             ref={props.surfaceRef}
+            role="document"
             class={props.class ?? "max-w-lg"}
             style={props.style}
           >

@@ -152,7 +152,8 @@ export function createBeatModelDownload() {
       label="Beat detection model"
       closeLabel="Close beat detection model"
       usePortal={usePortal}
-      class="max-w-[560px] max-h-[85vh]"
+      class="max-w-[560px]"
+      style={{ "max-height": "85vh" }}
       onDismiss={close}
       onSubmit={downloadFromKeyboard}
     >
