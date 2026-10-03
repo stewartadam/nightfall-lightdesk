@@ -422,7 +422,7 @@ fn to_wit_fixture_physical(
     bindings::nightfall::fx_module::shared::FixturePhysical {
         beam_angle: physical.beam_angle,
         field_angle: physical.field_angle,
-        lumens: physical.lumens,
+        lumens: Some(physical.lumens),
         color_temperature: physical.color_temperature,
         beam_type: to_wit_beam_type(physical.beam_type),
     }

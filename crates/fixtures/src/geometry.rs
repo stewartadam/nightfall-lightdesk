@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 
+use nightfall_fixture_model::prelude::ElementParameterRef;
 use serde::{Deserialize, Serialize};
 
 /// 4x4 transformation matrix stored as column-major array.
@@ -176,6 +177,11 @@ pub struct GeometryNode {
     /// Optical distribution of this aperture, preserved independently of other emitters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub beam: Option<crate::physical::BeamOptics>,
+    /// Parameters with gobo, prism, zoom or focus functions that shape this beam, inherited
+    /// from the beam and its ancestors. The nearest geometry's parameter wins per attribute,
+    /// so a local control overrides its ancestor's only for its own descendants.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optical_parameters: Vec<ElementParameterRef>,
 }
 
 /// Format of a mesh resource file.

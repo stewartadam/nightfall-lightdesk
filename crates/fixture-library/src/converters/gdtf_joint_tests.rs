@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Joint binding tests: pan and tilt bind to the geometry their channels name.
+//! Geometry binding tests: pan and tilt bind to the geometry their channels name, and beams
+//! inherit the optical parameters of their nearest geometries.
 
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
@@ -282,4 +283,56 @@ fn dangling_root_produces_no_geometry() {
     let (fixture, geometry, _) = convert_with_diagnostics(&builder);
     assert!(geometry.is_none());
     assert_eq!(check_invariants(&fixture, geometry.as_ref()), vec![]);
+}
+
+/// Returns `(element label, attribute key)` for each optical parameter a beam inherits.
+fn optical_parameters<'a>(
+    fixture: &'a Fixture,
+    geometry: &FixtureGeometry,
+    beam: &str,
+) -> Vec<(&'a str, String)> {
+    let node = geometry
+        .nodes
+        .iter()
+        .find(|node| node.name == beam)
+        .expect("beam node");
+    node.optical_parameters
+        .iter()
+        .map(|reference| {
+            (
+                fixture.elements[reference.element as usize].label.as_str(),
+                reference.attribute.key(),
+            )
+        })
+        .collect()
+}
+
+/// Verifies beams inherit ancestor gobo and prism parameters, with a beam's own control
+/// overriding its ancestor's for that attribute only.
+#[test]
+fn beams_inherit_nearest_optical_parameters() {
+    let builder = GdtfBuilder::new("Test", "Optics")
+        .geometry(
+            GeometrySpec::axis("Head")
+                .child(GeometrySpec::beam("Lens 1"))
+                .child(GeometrySpec::beam("Lens 2")),
+        )
+        .mode(
+            ModeSpec::new("Mode", "Head")
+                .channel(ChannelSpec::new("Head", "Gobo1", &[1]))
+                .channel(ChannelSpec::new("Head", "Prism1", &[2]))
+                .channel(ChannelSpec::new("Head", "Dimmer", &[3]))
+                .channel(ChannelSpec::new("Lens 1", "Gobo1", &[4])),
+        );
+    let (fixture, geometry) = convert(&builder);
+    let gobo = |label| (label, "Gobo".to_owned());
+    let prism = |label| (label, "Prism".to_owned());
+    assert_eq!(
+        optical_parameters(&fixture, &geometry, "Lens 1"),
+        [gobo("Lens 1"), prism("Head")]
+    );
+    assert_eq!(
+        optical_parameters(&fixture, &geometry, "Lens 2"),
+        [gobo("Head"), prism("Head")]
+    );
 }

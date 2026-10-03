@@ -256,23 +256,32 @@ pub(super) fn channel_semantics(
             sets.sort_by_key(|(from, _)| *from);
             let set_starts: Vec<u32> = sets.iter().map(|(from, _)| *from).collect();
             let wheel = function.wheel(fixture_type);
+            let attribute = function.attribute.to_string();
+            let physical_unit = function
+                .attribute(fixture_type)
+                .map_or(PhysicalUnit::None, |attribute| {
+                    map_gdtf_physical_unit(attribute.physical_unit)
+                });
+            let optical = OpticalFunction::classify(
+                &attribute,
+                physical_unit,
+                function.physical_from as f32,
+                function.physical_to as f32,
+            );
             ParameterFunction {
                 name: function
                     .name
                     .as_ref()
                     .map(|name| name.to_string())
                     .unwrap_or_default(),
-                attribute: function.attribute.to_string(),
+                attribute,
                 dmx_from,
                 dmx_to,
                 physical_from: function.physical_from as f32,
                 physical_to: function.physical_to as f32,
-                physical_unit: function
-                    .attribute(fixture_type)
-                    .map_or(PhysicalUnit::None, |attribute| {
-                        map_gdtf_physical_unit(attribute.physical_unit)
-                    }),
+                physical_unit,
                 wheel: function.wheel.as_ref().map(|wheel| wheel.to_string()),
+                optical,
                 emitter_color: emitter_color(fixture_type, function),
                 sets: sets
                     .iter()

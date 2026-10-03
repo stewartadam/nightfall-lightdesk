@@ -189,13 +189,13 @@ mod gdtf_tests {
         assert_eq!(rectangle.physical.beam_type, BeamType::Rectangle);
         assert_eq!(rectangle.physical.beam_angle, 2.0);
         assert_eq!(rectangle.physical.field_angle, 4.0);
-        assert_eq!(rectangle.physical.lumens, Some(700.0));
+        assert_eq!(rectangle.physical.lumens, 700.0);
         assert_eq!(rectangle.radius, 0.012);
         assert_eq!(rectangle.throw_ratio, 2.5);
         assert_eq!(rectangle.rectangle_ratio, 12.0);
         assert_eq!(wash.physical.beam_type, BeamType::Wash);
         assert_eq!(wash.physical.beam_angle, 40.0);
-        assert_eq!(wash.physical.lumens, Some(1200.0));
+        assert_eq!(wash.physical.lumens, 1200.0);
     }
 
     /// Beam nodes of the geometry tree carry their own aperture optics; other nodes carry none.

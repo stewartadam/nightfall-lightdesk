@@ -111,6 +111,7 @@ pub fn convert_gdtf_mode(
     let geometry = build_geometry_tree(
         &resolved,
         &built.placements,
+        &built.elements,
         fixture_type,
         &mut gdtf.resources,
         metadata,
@@ -429,7 +430,11 @@ pub(super) fn convert_beam_optics(beam: &gdtf::geometry::BeamGeometry) -> BeamOp
         physical: FixturePhysical {
             beam_angle: beam.beam_angle as f32,
             field_angle: beam.field_angle as f32,
-            lumens: (beam.luminous_flux > 0.0).then_some(beam.luminous_flux as f32),
+            lumens: if beam.luminous_flux > 0.0 {
+                beam.luminous_flux as f32
+            } else {
+                DEFAULT_LUMENS
+            },
             color_temperature: (beam.color_temperature > 0.0)
                 .then_some(beam.color_temperature as f32),
             beam_type: map_gdtf_beam_type(&beam.beam_type),
@@ -525,6 +530,56 @@ fn emitter_owners(resolved: &ResolvedMode<'_>, placements: &[Placement]) -> Vec<
     owners
 }
 
+/// Returns, for every instance, the optical parameters its beam inherits.
+///
+/// Gobo wheels, prisms, zoom and focus sit on any ancestor of a beam (a head's
+/// gobo wheel reaches every beam below it). Walking from the instance to the
+/// root, the first parameter seen for an attribute wins, so a nearer control
+/// overrides an ancestor's only for its own descendants.
+fn optical_parameters(
+    resolved: &ResolvedMode<'_>,
+    placements: &[Placement],
+    elements: &[FixtureElement],
+) -> Vec<Vec<ElementParameterRef>> {
+    let mut local: Vec<Vec<ElementParameterRef>> = vec![Vec::new(); resolved.instances.len()];
+    for (channel, placement) in resolved.channels.iter().zip(placements) {
+        let Some((element, parameter)) = *placement else {
+            continue;
+        };
+        let metadata = &elements[element].parameters[parameter];
+        if metadata
+            .functions
+            .iter()
+            .any(|function| function.optical.is_some())
+        {
+            local[channel.instance].push(ElementParameterRef {
+                element: element as u32,
+                attribute: metadata.attribute.clone(),
+            });
+        }
+    }
+
+    let mut inherited: Vec<Vec<ElementParameterRef>> = Vec::with_capacity(local.len());
+    for (index, instance) in resolved.instances.iter().enumerate() {
+        // Instances are in depth-first order, so parents are resolved first.
+        let mut parameters = local[index].clone();
+        if let Some(parent) = instance.parent {
+            parameters.extend(
+                inherited[parent]
+                    .iter()
+                    .filter(|reference| {
+                        !local[index]
+                            .iter()
+                            .any(|own| own.attribute == reference.attribute)
+                    })
+                    .cloned(),
+            );
+        }
+        inherited.push(parameters);
+    }
+    inherited
+}
+
 /// Builds the visualization geometry tree from resolved instances.
 ///
 /// `placements` records which resolved channels produced parameters; only
@@ -532,6 +587,7 @@ fn emitter_owners(resolved: &ResolvedMode<'_>, placements: &[Placement]) -> Vec<
 fn build_geometry_tree(
     resolved: &ResolvedMode<'_>,
     placements: &[Placement],
+    elements: &[FixtureElement],
     fixture_type: &gdtf::fixture_type::FixtureType,
     resources: &mut gdtf::ResourceMap,
     metadata: &GdtfMetadata,
@@ -542,6 +598,7 @@ fn build_geometry_tree(
         .filter_map(|m| m.name.as_ref().map(|n| (n.as_ref(), m)))
         .collect();
     let owners = emitter_owners(resolved, placements);
+    let mut optical = optical_parameters(resolved, placements, elements);
     let mut axes = joint_axes(resolved, placements);
     let mut mesh_resources = HashMap::new();
 
@@ -591,6 +648,10 @@ fn build_geometry_tree(
                 beam: match instance.geometry {
                     Geometry::Beam(beam) => Some(convert_beam_optics(beam)),
                     _ => None,
+                },
+                optical_parameters: match geometry_type {
+                    GeometryType::Beam => std::mem::take(&mut optical[index]),
+                    _ => Vec::new(),
                 },
             }
         })

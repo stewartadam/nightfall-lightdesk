@@ -104,6 +104,97 @@ pub enum PhysicalUnit {
     ColorComponent,
 }
 
+/// What a profile function does to the optics of the beams it reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum OpticalFunctionKind {
+    /// Selects gobo wheel slots; slots with media project an image.
+    GoboSelect,
+    /// Holds the selected gobo at an angle.
+    GoboIndex,
+    /// Rotates the selected gobo continuously at an angular speed.
+    GoboRotate,
+    /// Selects prism wheel slots, splitting the beam into the slot's facets.
+    PrismSelect,
+    /// Holds the inserted prism at an angle.
+    PrismIndex,
+    /// Rotates the inserted prism continuously at an angular speed.
+    PrismRotate,
+    /// Sets the full beam angle in degrees.
+    Zoom,
+    /// Sets the projection focus distance in meters.
+    Focus,
+}
+
+/// Optical meaning of a profile function, resolved from its attribute and physical range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct OpticalFunction {
+    /// What the function does.
+    pub kind: OpticalFunctionKind,
+    /// 1-based gobo or prism wheel the function belongs to; 0 for zoom and focus.
+    pub wheel: u32,
+}
+
+impl OpticalFunction {
+    /// Classifies a profile function by its GDTF attribute name, unit and physical range.
+    ///
+    /// Wheel attributes are `Gobo<n><kind>` or `Prism<n><kind>`, where an empty
+    /// `<n>` is wheel 1. `Pos` holds an index angle and `PosRotate` spins; other
+    /// `Pos…` kinds (shake) have no projected effect. Any other gobo kind
+    /// (selection, spin, shake through slots) picks slots, while prisms only split
+    /// on the bare attribute. Zoom counts only when it states real degrees: GDTF
+    /// defaults an unauthored PhysicalFrom/To to 0/1, so a span of one degree or
+    /// less carries no angle even with an Angle unit. Focus counts only in meters.
+    pub fn classify(
+        attribute: &str,
+        unit: PhysicalUnit,
+        physical_from: f32,
+        physical_to: f32,
+    ) -> Option<Self> {
+        let numbered = |prefix: &str| -> Option<(u32, &str)> {
+            let rest = attribute.strip_prefix(prefix)?;
+            let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+            let wheel = if digits == 0 {
+                1
+            } else {
+                rest[..digits].parse().ok()?
+            };
+            Some((wheel, &rest[digits..]))
+        };
+        if let Some((_, "")) = numbered("Zoom") {
+            let span = physical_from.abs().max(physical_to.abs());
+            return (unit == PhysicalUnit::Angle && span > 1.0).then_some(Self {
+                kind: OpticalFunctionKind::Zoom,
+                wheel: 0,
+            });
+        }
+        if let Some((_, "" | "Distance")) = numbered("Focus") {
+            return (unit == PhysicalUnit::Length).then_some(Self {
+                kind: OpticalFunctionKind::Focus,
+                wheel: 0,
+            });
+        }
+        if let Some((wheel, kind)) = numbered("Gobo") {
+            let kind = match kind {
+                "Pos" => OpticalFunctionKind::GoboIndex,
+                "PosRotate" => OpticalFunctionKind::GoboRotate,
+                kind if kind.starts_with("Pos") => return None,
+                _ => OpticalFunctionKind::GoboSelect,
+            };
+            return Some(Self { kind, wheel });
+        }
+        let (wheel, kind) = numbered("Prism")?;
+        let kind = match kind {
+            "" => OpticalFunctionKind::PrismSelect,
+            "Pos" => OpticalFunctionKind::PrismIndex,
+            "PosRotate" => OpticalFunctionKind::PrismRotate,
+            _ => return None,
+        };
+        Some(Self { kind, wheel })
+    }
+}
+
 /// One facet of a prism wheel slot: how it displaces the beam and the color it transmits.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -250,6 +341,9 @@ pub struct ParameterFunction {
     /// Wheel the range indexes into, when it selects wheel slots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wheel: Option<String>,
+    /// What the range does to beam optics, when it drives a gobo, prism, zoom or focus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub optical: Option<OpticalFunction>,
     /// Measured color of the emitter this range drives, for additive color mixing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emitter_color: Option<CieColor>,
@@ -724,5 +818,57 @@ mod tests {
         assert_eq!(metadata.function_at(10).unwrap().name, "Gobo1");
         assert_eq!(metadata.function_at(200).unwrap().name, "Gobo1PosRotate");
         assert!(ParameterMetadata::default().function_at(10).is_none());
+    }
+
+    /// Verifies wheel attributes classify by family, wheel number and function kind, and
+    /// zoom and focus only when their physical range carries degrees or meters.
+    #[test]
+    fn optical_function_classifies_attributes() {
+        use OpticalFunctionKind::*;
+        let classify = |attribute: &str| {
+            OpticalFunction::classify(attribute, PhysicalUnit::None, 0.0, 1.0)
+                .map(|optical| (optical.kind, optical.wheel))
+        };
+        assert_eq!(classify("Gobo1"), Some((GoboSelect, 1)));
+        assert_eq!(classify("Gobo"), Some((GoboSelect, 1)));
+        assert_eq!(classify("Gobo2SelectSpin"), Some((GoboSelect, 2)));
+        assert_eq!(classify("Gobo1Pos"), Some((GoboIndex, 1)));
+        assert_eq!(classify("Gobo3PosRotate"), Some((GoboRotate, 3)));
+        assert_eq!(classify("Gobo1PosShake"), None);
+        assert_eq!(classify("Prism1"), Some((PrismSelect, 1)));
+        assert_eq!(classify("Prism2PosRotate"), Some((PrismRotate, 2)));
+        assert_eq!(classify("Prism1Pos"), Some((PrismIndex, 1)));
+        assert_eq!(classify("Prism1Macro"), None);
+        assert_eq!(classify("Dimmer"), None);
+
+        let angle = |from, to| {
+            OpticalFunction::classify("Zoom", PhysicalUnit::Angle, from, to)
+                .map(|optical| optical.kind)
+        };
+        assert_eq!(angle(5.0, 40.0), Some(Zoom));
+        assert_eq!(
+            angle(0.0, 1.0),
+            None,
+            "GDTF's unauthored 0-1 range has no degrees"
+        );
+        assert_eq!(
+            OpticalFunction::classify("Zoom", PhysicalUnit::Percent, 0.0, 100.0),
+            None
+        );
+        assert_eq!(
+            OpticalFunction::classify("ZoomModeSpot", PhysicalUnit::Angle, 5.0, 40.0),
+            None
+        );
+        for focus in ["Focus1", "Focus1Distance"] {
+            assert_eq!(
+                OpticalFunction::classify(focus, PhysicalUnit::Length, 1.0, 20.0)
+                    .map(|optical| optical.kind),
+                Some(Focus)
+            );
+        }
+        assert_eq!(
+            OpticalFunction::classify("Focus1", PhysicalUnit::None, 0.0, 1.0),
+            None
+        );
     }
 }

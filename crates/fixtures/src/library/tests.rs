@@ -255,8 +255,8 @@ fn rotating_wash_beam_profile_matches_194_channel_footprint_and_element_order() 
     );
 }
 
-/// Returns the evaluated physical zoom angle of a wash beam's control element at a logical value.
-fn wash_zoom_degrees(fixture: &Fixture, value: f32) -> f32 {
+/// Returns the evaluated physical zoom angle of a fixture's control element at a logical value.
+fn control_zoom_degrees(fixture: &Fixture, value: f32) -> f32 {
     use nightfall_fixture_model::prelude::{FixtureEvaluator, FixtureModel};
 
     let control = &fixture.elements[0].parameters;
@@ -278,8 +278,8 @@ fn wash_beam_zoom_evaluates_from_widest_to_narrowest() {
         moving_heads::create_rotating_wash_beam_194(1, "Generic", "12-segment Rotating Wash Beam");
     let physical = fixture.physical.clone().unwrap();
     assert_eq!((physical.beam_angle, physical.field_angle), (1.0, 1.2));
-    assert_eq!(wash_zoom_degrees(&fixture, 255.0), 1.0);
-    assert_eq!(wash_zoom_degrees(&fixture, 0.0), 34.0);
+    assert_eq!(control_zoom_degrees(&fixture, 255.0), 1.0);
+    assert_eq!(control_zoom_degrees(&fixture, 0.0), 34.0);
     let zoom = fixture.elements[0]
         .parameters
         .iter()
@@ -287,6 +287,26 @@ fn wash_beam_zoom_evaluates_from_widest_to_narrowest() {
         .unwrap();
     assert_eq!(zoom.functions[0].physical_unit, PhysicalUnit::Angle);
     assert_eq!(zoom.native_unit, ParameterUnit::Percent);
+}
+
+/// Verifies the built-in moving spot's zoom states degrees: DMX 0 keeps its native 8° beam and
+/// DMX 255 narrows it to 1.5°, so the visualizer reads the beam angle from the evaluator instead
+/// of mapping a normalized level itself.
+#[test]
+fn moving_spot_zoom_evaluates_from_native_to_narrowest() {
+    let fixture = moving_heads::create_moving_spot(1, "Generic", "Moving Spot");
+    assert_eq!(fixture.physical.as_ref().unwrap().beam_angle, 8.0);
+    assert_eq!(control_zoom_degrees(&fixture, 0.0), 8.0);
+    assert_eq!(control_zoom_degrees(&fixture, 255.0), 1.5);
+    let zoom = fixture.elements[0]
+        .parameters
+        .iter()
+        .find(|parameter| parameter.attribute == Attribute::Zoom)
+        .unwrap();
+    assert_eq!(
+        zoom.functions[0].optical.map(|optical| optical.kind),
+        Some(nightfall_fixture_model::prelude::OpticalFunctionKind::Zoom)
+    );
 }
 
 /// Verifies normalization restores the wash's zoom function and physical optics on persisted
@@ -318,7 +338,7 @@ fn wash_beam_normalization_restores_zoom_optics_and_keeps_operator_settings() {
     assert!(zoom.is_inverted);
     assert_eq!(zoom.offset, ParameterValue::Absolute { value: 10.0 });
     // Inverted output sends DMX 0, the widest angle, for a fully zoomed-in logical value.
-    assert_eq!(wash_zoom_degrees(&fixture, 255.0), 34.0);
+    assert_eq!(control_zoom_degrees(&fixture, 255.0), 34.0);
 
     fixture.physical.as_mut().unwrap().beam_angle = 2.0;
     normalize_fixture_profile(&mut fixture);
@@ -356,8 +376,8 @@ fn linear_wash_bar_normalization_matches_new_bar_and_keeps_operator_settings() {
     assert_eq!(stored_zoom.functions, created_zoom.functions);
     assert!(stored_zoom.is_inverted);
     assert_eq!(stored_zoom.offset, ParameterValue::Absolute { value: 10.0 });
-    assert_eq!(wash_zoom_degrees(&created, 255.0), 1.0);
-    assert_eq!(wash_zoom_degrees(&stored, 255.0), 34.0);
+    assert_eq!(control_zoom_degrees(&created, 255.0), 1.0);
+    assert_eq!(control_zoom_degrees(&stored, 255.0), 34.0);
 }
 
 /// Verifies persisted wash-beam emitters gain one virtual intensity without duplicate insertion.

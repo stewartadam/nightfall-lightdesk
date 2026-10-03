@@ -465,7 +465,11 @@ fn extract_physical_properties(
     let physical = mode.physical.as_ref().or_else(|| ofl.physical())?;
 
     // Extract bulb/lens information
-    let lumens = physical.bulb.as_ref().and_then(|b| b.lumens);
+    let lumens = physical
+        .bulb
+        .as_ref()
+        .and_then(|b| b.lumens)
+        .unwrap_or(DEFAULT_LUMENS);
     let color_temperature = physical.bulb.as_ref().and_then(|b| b.color_temperature);
 
     // Extract lens angles
