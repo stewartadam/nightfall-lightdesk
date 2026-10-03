@@ -633,6 +633,14 @@ export interface VisualizerStats {
   gpuMs?: number; // GPU timestamp duration; absent when unsupported or unresolved
   /** Unsmoothed pass durations from the most recently completed GPU sample (diagnostics only). */
   gpuPasses?: Record<string, number>;
+  /** Active fog resolution, for correlating quality changes with stalls (diagnostics only). */
+  atmosphereScale?: number;
+  /** Active scene resolution, independent of presentation canvas size (diagnostics only). */
+  sceneScale?: number;
+  /** Sources excluded from surface shading by the fixed light budget. */
+  omittedSurfaceLights?: number;
+  reducedPrismEmitters?: number;
+  reducedGoboEmitters?: number;
   /**
    * Raw render submission counters; window maximum is not smoothed like FPS.
    * Published only with the `visualizer:framePacing` or `visualizer:inspector`

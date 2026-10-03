@@ -93,11 +93,15 @@ const STATIC_BENCH: BenchFixture[] = [
   },
 ];
 
-/** Opens a blank show with the main-thread visualizer so scene nodes are inspectable. */
+/**
+ * Opens a blank show with the main-thread visualizer so scene nodes are
+ * inspectable, at High quality: the only preset that projects gobos, and the
+ * one the body captures were baselined with.
+ */
 test.beforeEach(async ({ backendSlot, page }) => {
   await prepareFreshBackendShowfile(backendSlot.backendPort);
   await page.goto(
-    "/?startup:draftRecovery=false&visualizer:offscreenCanvas=false",
+    "/?startup:draftRecovery=false&visualizer:offscreenCanvas=false&visualizer:beamQuality=high",
   );
   await waitForDockviewApp(page);
   await page
@@ -665,16 +669,20 @@ async function findGoboSlot(page: Page, uid: string): Promise<GoboChoice> {
   return choice as GoboChoice;
 }
 
-/** Returns whether any spot light of the fixture projects a gobo image. */
+/**
+ * Returns whether any aperture of the fixture projects a gobo: the clustered
+ * surface light the optical batch publishes per aperture carries the address
+ * of the gobo image or stack it samples, 0 for an open beam (stacked masks use
+ * negative stack-table addresses).
+ */
 function projectsGobo(page: Page, uid: string): Promise<boolean> {
   return page.evaluate((uid) => {
     let projecting = false;
-    // Pooled beam lights live at the scene root and record the fixture they serve.
     (window as any).visualizerApi.getScene().traverse((object: any) => {
       if (
-        object.isSpotLight &&
-        object.userData.fixtureUid === uid &&
-        object.userData.projectsGobo
+        object.name?.startsWith(`OpticalSurface:${uid}:`) &&
+        object.visible &&
+        object.goboSlot !== 0
       ) {
         projecting = true;
       }
@@ -690,33 +698,38 @@ type CameraState = {
 };
 
 /**
- * Captures the visualizer canvas from `camera` with the fixture's volumetric
- * beam cones masked, so only light its spot lights put on the floor shows.
+ * Captures the visualizer canvas from `camera` with the atmospheric beam
+ * batches masked, so only the light the clustered surface lights put on the
+ * floor shows.
  *
- * The cones are drawn with color writes disabled rather than hidden, since
- * the beam manager resets their visibility every frame; the spot lights that
- * light the floor are unaffected. The capture is attached as `name` for
- * review. Main-thread renderer only.
+ * The `EmitterVolumes` and `EmitterBeams` draws in the atmosphere scene are
+ * drawn with color writes disabled rather than hidden, since the batch owns
+ * their visibility; the surface lights that light the floor are unaffected.
+ * The capture is attached as `name` for review. Main-thread renderer only.
  */
 async function captureFloorLight(
   page: Page,
-  uid: string,
   camera: CameraState,
   testInfo: import("@playwright/test").TestInfo,
   name: string,
 ): Promise<DecodedPng> {
   const maskCones = (masked: boolean) =>
-    page.evaluate(
-      ({ uid, masked }) => {
-        (window as any).visualizerApi.getScene().traverse((object: any) => {
-          if (object.name?.startsWith(`Beam_${uid}`) && object.material) {
-            object.material.colorWrite = !masked;
-            object.material.needsUpdate = true;
-          }
-        });
-      },
-      { uid, masked },
-    );
+    page.evaluate(async (masked) => {
+      const { getOpticalRenderContext } = await import(
+        "/features/visualizer/rendering/effects/optical-render-context.ts"
+      );
+      const scene = (window as any).visualizerApi.getScene();
+      getOpticalRenderContext(scene)?.scene.traverse((object: any) => {
+        if (
+          (object.name === "EmitterVolumes" ||
+            object.name === "EmitterBeams") &&
+          object.material
+        ) {
+          object.material.colorWrite = !masked;
+          object.material.needsUpdate = true;
+        }
+      });
+    }, masked);
   await maskCones(true);
   try {
     await page.evaluate(
@@ -806,22 +819,6 @@ test("Sharpy gobo slot shapes the beam", async ({
     page,
     `fix 1 int @ 100 "${choice.attribute}" @ ${choice.percent.toFixed(2)}`,
   );
-  await expect
-    .poll(() =>
-      page.evaluate((uid) => {
-        const root = (window as any).visualizerApi
-          .getScene()
-          .getObjectByName(`Fixture_${uid}`);
-        let active = 0;
-        root.traverse((object: any) => {
-          if (object.material?.goboActiveUniform) {
-            active = Math.max(active, object.material.goboActiveUniform.value);
-          }
-        });
-        return active;
-      }, uid),
-    )
-    .toBe(1);
   await expect.poll(() => projectsGobo(page, uid)).toBe(true);
   await attachCanvas(page, "sharpy-gobo", testInfo);
 });
@@ -861,7 +858,6 @@ test("MAC Viper gobo projects onto the floor", async ({
   });
   const goboFloor = await captureFloorLight(
     page,
-    uid,
     floorView,
     testInfo,
     "viper-gobo-floor-light",
@@ -877,7 +873,6 @@ test("MAC Viper gobo projects onto the floor", async ({
   });
   const openFloor = await captureFloorLight(
     page,
-    uid,
     floorView,
     testInfo,
     "viper-open-floor-light",
@@ -886,7 +881,6 @@ test("MAC Viper gobo projects onto the floor", async ({
   await submitCommand(page, "fix 1 int @ 0");
   const unlitFloor = await captureFloorLight(
     page,
-    uid,
     floorView,
     testInfo,
     "viper-unlit-floor-light",
@@ -907,7 +901,7 @@ test("MAC Viper gobo projects onto the floor", async ({
   // The worker renderer shares the beam code but not the inspectable scene,
   // so it is checked by capture only.
   await page.goto(
-    "/?startup:draftRecovery=false&visualizer:offscreenCanvas=true",
+    "/?startup:draftRecovery=false&visualizer:offscreenCanvas=true&visualizer:beamQuality=high",
   );
   await waitForDockviewApp(page);
   await page

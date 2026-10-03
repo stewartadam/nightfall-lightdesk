@@ -15,8 +15,10 @@ export {
 export { default as VisualizerPanel } from "./panels/visualizer-panel";
 export type { VisualizerCameraRotationMode } from "./rendering/renderers/renderer-api";
 export type { FramePacingSnapshot } from "./services/frame-pacing";
+export type { VisualizerQualityPreset } from "./state/settings";
 export {
   visualizerCameraRotationMode,
+  visualizerDarkness,
   visualizerHighlightSelection,
   visualizerShowOrbitTargetIndicator,
 } from "./state/settings";

@@ -20,6 +20,7 @@ import {
   cieChromaticityToFullBrightnessRgb,
   hsvToRgb,
 } from "../../../lib/color-path-preview";
+import type { ParameterFunction } from "../../../types";
 import type { EvaluatedChannel } from "./channel-evaluation";
 
 /** Color temperature a white source is assumed to have, in Kelvin. */
@@ -87,12 +88,24 @@ export function resetPhysicalState(state: PhysicalState): PhysicalState {
   return state;
 }
 
-/** Returns the largest magnitude of a function's physical range. */
-function physicalSpan(channel: EvaluatedChannel): number {
-  const fn = channel.function;
+/** Returns the largest magnitude of a function's physical range, or 0 without a function. */
+function functionPhysicalSpan(fn: ParameterFunction | undefined): number {
   return fn
     ? Math.max(Math.abs(fn.physical_from), Math.abs(fn.physical_to))
     : 0;
+}
+
+/** Returns the largest magnitude of the active function's physical range. */
+function physicalSpan(channel: EvaluatedChannel): number {
+  return functionPhysicalSpan(channel.function);
+}
+
+/**
+ * Returns true when a zoom function states real beam angles. GDTF defaults PhysicalFrom/To
+ * to 0/1, so a profile that omits the range carries no degrees even with an Angle unit.
+ */
+export function statesZoomDegrees(fn: ParameterFunction | undefined): boolean {
+  return functionPhysicalSpan(fn) > 1;
 }
 
 /** Returns true when the function authors its physical range as a 0-1 amount. */
@@ -225,7 +238,8 @@ export function collectPhysical(
       state.iris = Math.max(MIN_IRIS_APERTURE, irisAperture(channel));
       return true;
     case "Zoom":
-      if (physicalSpan(channel) > 1) state.zoomDegrees = channel.physical;
+      if (statesZoomDegrees(channel.function))
+        state.zoomDegrees = channel.physical;
       return false;
   }
   if (/^Frost\d*$/.test(attribute)) {

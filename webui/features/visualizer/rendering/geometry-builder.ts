@@ -31,10 +31,12 @@ import {
   Vector3,
 } from "three/webgpu";
 import type {
+  FixtureElement,
   FixtureGeometry,
   GeometryModel,
   GeometryNode,
 } from "../../../types";
+import { bindEmitterOpticalParameters } from "../model/optical-bindings";
 import { excludeFromSelection } from "../model/selection-exclusion";
 import type { EmitterData, FixtureInstance } from "../model/types";
 import { createGdtfJoints } from "./gdtf-joints";
@@ -216,17 +218,20 @@ function replacePrimitiveWithMesh(
  *
  * @param fixtureUid - Unique identifier for this fixture instance
  * @param geometry - GDTF geometry definition
+ * @param elements - Fixture elements, bound to the beams whose optics their channels drive
  * @returns FixtureInstance with the built scene graph
  */
 export function buildGeometryTree(
   fixtureUid: string,
   geometry: FixtureGeometry,
+  elements: readonly FixtureElement[] = [],
 ): FixtureInstance {
   const group = new Group();
   group.name = `Fixture_${fixtureUid}`;
 
   const nodeObjects = new Map<string, Object3D>();
   const emitters = new Map<string, EmitterData>();
+  const opticalParameters = bindEmitterOpticalParameters(geometry, elements);
 
   // Create Object3D for each geometry node
   for (const node of geometry.nodes) {
@@ -269,6 +274,10 @@ export function buildGeometryTree(
       obj.add(emitterMesh);
 
       emitters.set(node.name, {
+        optics: node.beam,
+        opticalParameters: opticalParameters.get(node.name),
+        gdtfPath: geometry.gdtfPath,
+        gdtfRevision: geometry.gdtfRevision,
         mesh: emitterMesh,
         controlledElement: node.controlledElement,
         nodeGroup: obj,
@@ -374,18 +383,24 @@ export interface EmitterColor {
   green: number;
   blue: number;
   intensity: number;
+  /** Optional second half of a split wheel filter, in the same color space as the primary. */
+  secondaryRed?: number;
+  secondaryGreen?: number;
+  secondaryBlue?: number;
   /** White emitter level normalized to 0-1 when the element exposes a white channel. */
   white?: number;
   /** Pan position normalized against the attribute max, with 0 as neutral */
   pan?: number;
   /** Tilt position normalized against the attribute max, with 0 as neutral */
   tilt?: number;
-  /** Zoom position (0-1, 0 = wide/unfocused, 1 = narrow/focused) */
+  /** Zoom position (0-1, 0 = wide/unfocused, 1 = narrow/focused); absent without a zoom channel. */
   zoom?: number;
+  /** Physical beam angle when the fixture supplies an angular zoom range. */
+  zoomDegrees?: number;
   /** Frost amount (0-1, 0 = clear, 1 = full frost) */
   frost?: number;
-  /** 1-based index into the element's gobo images, or 0/undefined for an open beam */
-  gobo?: number;
+  /** Iris aperture as a fraction of the open beam, when the element has an iris. */
+  iris?: number;
 }
 
 /**

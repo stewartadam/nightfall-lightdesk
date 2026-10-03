@@ -35,10 +35,15 @@ source and both distribution entry points, without requiring a GPU.
 
 Timestamp readback also preserves copied raw interval bounds before unmapping:
 `lastInterval` covers the sampled batch and `frameIntervals` separates frames
-when the developer inspector resolves several together. Nightfall reports GPU
+when the developer inspector resolves several together. Nightfall budgets GPU
 work using the earliest start and latest end across render and compute passes.
 Summing individual durations can double-count overlapping work. Missing bounds
 remain unavailable, and each readback replaces the frame map to bound retention.
+
+The WebGL fallback maps `MaxEquation` to WebGL 2's `MAX` operation. Without
+this mapping, Low's overlapping schematic beams incorrectly use additive
+blending. The visualizer antialias browser tests check coincident beams on
+both WebGPU and WebGL, while confirming Medium remains additive.
 
 Regression coverage:
 
