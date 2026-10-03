@@ -15,7 +15,7 @@
 //!
 //! A wire frame is composed in this order, later sources overwriting earlier ones:
 //! 1. written channels of console universe windows routed by console→transport bindings
-//!    (with remapping), later bindings winning where windows overlap;
+//!    (with remapping), the highest-priority binding winning where windows overlap;
 //! 2. direct fixture→transport output buffer channels;
 //! 3. transport input windows routed by input passthrough bindings, highest-priority binding
 //!    last so its window wins where windows overlap.
@@ -93,7 +93,8 @@ pub struct InputWindowRoute {
 /// Output-binding sources feeding one wire frame.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OutputBindingRoute {
-    /// Console windows routed by console→transport bindings, in binding priority order.
+    /// Console windows routed by console→transport bindings, lowest precedence first so the
+    /// highest-priority (then earliest-authored) binding's window is overlaid last.
     pub console_windows: Vec<ConsoleWindowRoute>,
     /// Whether fixture→transport bindings write this frame's direct output buffer.
     pub direct: bool,

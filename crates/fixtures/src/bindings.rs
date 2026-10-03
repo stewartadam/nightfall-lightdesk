@@ -44,7 +44,7 @@ pub struct InputBinding {
     pub source: InputSource,
     /// Binding target.
     pub target: InputTarget,
-    /// Priority; when bindings write the same destination, the higher value wins.
+    /// Priority; when bindings conflict, the higher value wins and ties go to the earlier binding.
     pub priority: i32,
     /// If true, duplicate the source address across a range destination.
     pub clone: bool,
@@ -58,7 +58,7 @@ pub struct OutputBinding {
     pub source: OutputSource,
     /// Binding target.
     pub target: OutputTarget,
-    /// Priority (lower runs first).
+    /// Priority; when bindings conflict, the higher value wins and ties go to the earlier binding.
     pub priority: i32,
     /// If true, duplicate the source address across a range destination.
     pub clone: bool,

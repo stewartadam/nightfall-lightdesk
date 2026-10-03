@@ -265,10 +265,25 @@ fn output_protocol_for_transport(transport: &OutputTransport) -> BindingTranspor
     }
 }
 
+/// Orders output bindings lowest precedence first: ascending priority, and among equal
+/// priorities the earliest-authored binding last. Consumers where a later binding replaces an
+/// earlier one therefore leave the highest-priority, earliest-authored binding in effect.
+fn output_bindings_in_overlay_order(output_bindings: &OutputBindings) -> Vec<&OutputBinding> {
+    let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
+        output_bindings.bindings.iter().enumerate().collect();
+    bindings_with_index
+        .sort_by_key(|(index, binding)| (binding.priority, std::cmp::Reverse(*index)));
+    bindings_with_index
+        .into_iter()
+        .map(|(_, binding)| binding)
+        .collect()
+}
+
 /// Rebuild `ConsoleDmxAddresses` from output bindings and fixtures when inputs change.
 ///
-/// Fixture→console bindings apply in priority order; a later binding replaces earlier
-/// addresses for the parameters it selects. Each binding lays out only the parameters
+/// Fixture→console bindings apply in overlay order; a later binding replaces earlier
+/// addresses for the parameters it selects, so the highest-priority binding wins and ties go
+/// to the earliest-authored one. Each binding lays out only the parameters
 /// selected by its element/parameter filter, placed by the selection's wire layout in DMX
 /// order (explicit footprint slots and gaps included).
 pub fn derive_console_addresses(
@@ -284,11 +299,7 @@ pub fn derive_console_addresses(
 
     console_addresses.clear();
 
-    let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
-        output_bindings.bindings.iter().enumerate().collect();
-    bindings_with_index.sort_by_key(|(index, binding)| (binding.priority, *index));
-
-    for (_, binding) in bindings_with_index {
+    for binding in output_bindings_in_overlay_order(&output_bindings) {
         let OutputSource::Fixture {
             uids,
             element,
@@ -758,11 +769,7 @@ pub fn resolve_output_bindings(
     let mut destinations: HashMap<Entity, Vec<OutputDestination>> = HashMap::new();
     let mut routes: HashMap<OutputFrameKey, OutputBindingRoute> = HashMap::new();
 
-    let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
-        output_bindings.bindings.iter().enumerate().collect();
-    bindings_with_index.sort_by_key(|(index, binding)| (binding.priority, *index));
-
-    for (_, binding) in bindings_with_index {
+    for binding in output_bindings_in_overlay_order(&output_bindings) {
         match (&binding.source, &binding.target) {
             (
                 source @ (OutputSource::Fixture { .. } | OutputSource::FixtureBreak { .. }),
