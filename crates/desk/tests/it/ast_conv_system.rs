@@ -13,7 +13,6 @@ use nightfall_cmd_parse::generate_ast;
 use nightfall_desk::ast_conv::DeskAstConverter;
 use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::undo::ClearDmxChannels;
 use nightfall_programmer::ast_conv::ProgrammerAstConverter;
 use nightfall_programmer::prelude::{ReleaseCommand, ReleaseTarget, UserCommand};
 
@@ -409,6 +408,7 @@ fn test_release_fixture_attr_conversion() {
     }
 }
 
+/// Channel release enters the user command planner so it reaches the real release path.
 #[test]
 fn test_release_channel_conversion() {
     let ast = generate_ast("release channel 5.").expect("Failed to parse 'release channel 5.'");
@@ -417,12 +417,18 @@ fn test_release_channel_conversion() {
     assert_eq!(commands.len(), 1);
     let cmd = commands[0]
         .as_any()
-        .downcast_ref::<ClearDmxChannels>()
-        .expect("Expected ClearDmxChannels command");
+        .downcast_ref::<UserCommand>()
+        .expect("Expected release user command");
+    let UserCommand::Release(release) = cmd else {
+        panic!("Expected release command, got {cmd:?}");
+    };
+    let Some(ReleaseTarget::Channels { channels }) = &release.target else {
+        panic!("Expected channel release target, got {:?}", release.target);
+    };
 
     assert_eq!(
-        cmd.0.channels,
-        DmxChannelExpr::Range {
+        channels,
+        &DmxChannelExpr::Range {
             start: nightfall::command_types::DmxChannelRef {
                 universe: 5,
                 address: 1,

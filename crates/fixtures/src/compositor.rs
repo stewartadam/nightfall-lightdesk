@@ -24,9 +24,9 @@ use nightfall_instances::{PlaybackAction, PlaybackScope};
 
 use crate::prelude::{
     ConsoleChannelOrigin, ConsoleDmxUniverses, DmxAction, FixtureCommand, InputDmxUniverses,
-    Parameter, ParameterAssertion, ParameterAssertionSource, ResolvedConsoleDestination,
-    ResolvedInputBindings, ResolvedInputDestination, ResolvedInputSource,
-    ResolvedOutputDestinations,
+    ManualDmxChannelState, Parameter, ParameterAssertion, ParameterAssertionSource,
+    ResolvedConsoleDestination, ResolvedInputBindings, ResolvedInputDestination,
+    ResolvedInputSource, ResolvedOutputDestinations,
 };
 use crate::universe::parameter_dmx_bytes;
 use crate::wire_layout::combine_dmx_bytes;
@@ -254,13 +254,15 @@ type ManualChannelQuery<'w, 's> = Query<
 /// `ch U/A` addresses console space. Console-bound parameters match by their console
 /// address; parameters without a console address (direct fixture→transport patches) match
 /// by their wire universe and address instead, so directly patched fixtures stay addressable.
+///
+/// Releasing a channel also frees its console slot, so patched fixtures resume output and
+/// unpatched slots stop being owned; restoring a captured state re-applies manual writes.
 pub fn update_manual_assertion_layer(
     mut set_events: MessageReader<CommandEnvelope<FixtureCommand>>,
-    mut clear_events: MessageReader<EngineActionEnvelope<crate::undo::ClearDmxChannels>>,
     mut playback_actions: MessageReader<EngineActionEnvelope<PlaybackAction>>,
     mut dmx_actions: MessageReader<EngineActionEnvelope<DmxAction>>,
     mut responder: CommandResponder,
-    universes: Res<ConsoleDmxUniverses>,
+    mut universes: ResMut<ConsoleDmxUniverses>,
     destinations_query: ManualChannelQuery,
     mut layer_query: Query<&mut Layer, With<ManualAssertionLayer>>,
 ) {
@@ -296,12 +298,6 @@ pub fn update_manual_assertion_layer(
         }
     }
 
-    for event in clear_events.read() {
-        for channel in event.action.0.channels.expand() {
-            remove_manual_assertion_for_channel(&channel, &destinations_query, &mut layer);
-        }
-    }
-
     for event in playback_actions.read() {
         if matches!(
             &event.action,
@@ -315,9 +311,45 @@ pub fn update_manual_assertion_layer(
     }
 
     for event in dmx_actions.read() {
-        let DmxAction::ReleaseChannels { channels } = &event.action;
-        for channel in channels.expand() {
-            remove_manual_assertion_for_channel(&channel, &destinations_query, &mut layer);
+        match &event.action {
+            DmxAction::ReleaseChannels { channels } => {
+                for channel in channels.expand() {
+                    universes.release_value(channel.universe, channel.address);
+                    remove_manual_assertion_for_channel(&channel, &destinations_query, &mut layer);
+                }
+            }
+            DmxAction::RestoreChannels { channels } => {
+                for ManualDmxChannelState {
+                    channel,
+                    manual_value,
+                } in channels
+                {
+                    match manual_value {
+                        Some(value) => {
+                            universes.set_value(
+                                channel.universe,
+                                channel.address,
+                                *value,
+                                ConsoleChannelOrigin::ManualCommand,
+                            );
+                            set_manual_assertion_from_channel(
+                                channel,
+                                &universes,
+                                &destinations_query,
+                                &mut layer,
+                            );
+                        }
+                        None => {
+                            universes.release_value(channel.universe, channel.address);
+                            remove_manual_assertion_for_channel(
+                                channel,
+                                &destinations_query,
+                                &mut layer,
+                            );
+                        }
+                    }
+                }
+            }
         }
         if let Some(command_id) = event.command_id
             && let Err(error) = responder.succeed(command_id)

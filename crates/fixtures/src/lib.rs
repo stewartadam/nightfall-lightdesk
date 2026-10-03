@@ -36,7 +36,7 @@ pub mod wire_layout;
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use nightfall::command_types::DmxChannelExpr;
+use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{ColorPathId, FixtureRef};
 use nightfall_dmx::ChannelDmxValue;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
@@ -51,11 +51,25 @@ use crate::placement::{PlacementPosition, PlacementRotation};
 /// Runtime actions owned by fixture-level DMX processing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DmxAction {
-    /// Release DMX channels.
+    /// Release manual writes on DMX channels, returning each slot to whatever else feeds it.
     ReleaseChannels {
         /// Channels to release.
         channels: DmxChannelExpr,
     },
+    /// Put DMX channels back into a previously captured manual state (used by undo).
+    RestoreChannels {
+        /// Per-channel manual state to restore.
+        channels: Vec<ManualDmxChannelState>,
+    },
+}
+
+/// Manual write state of one console DMX channel, captured for undo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ManualDmxChannelState {
+    /// Console channel the state belongs to.
+    pub channel: DmxChannelRef,
+    /// Manually written value, or `None` when no manual write owned the channel.
+    pub manual_value: Option<ChannelDmxValue>,
 }
 
 impl EnginePayload for DmxAction {}
@@ -104,7 +118,7 @@ pub mod prelude {
     pub use crate::wire_layout::{PlacedParameter, WireLayout};
     pub use crate::{
         BindingEndpoint, DmxAction, FixtureCommand, FixturePlacementPositionUpdate,
-        FixturePlacementRotationUpdate, FixturePlugin,
+        FixturePlacementRotationUpdate, FixturePlugin, ManualDmxChannelState,
     };
 }
 
@@ -150,7 +164,7 @@ impl Plugin for FixturePlugin {
             registry.register_action::<undo::RestorePatchBindingsSnapshot>();
             registry.register_action::<undo::RestoreOffsetSnapshot>();
             registry.register_action::<undo::RestoreColorPathDefaultsSnapshot>();
-            registry.register_action::<undo::ClearDmxChannels>();
+            registry.register_action::<DmxAction>();
         }
 
         // Register event dispatchers for undo helper commands
@@ -159,7 +173,6 @@ impl Plugin for FixturePlugin {
         register_engine_action::<undo::RestorePatchBindingsSnapshot>(app);
         register_engine_action::<undo::RestoreOffsetSnapshot>(app);
         register_engine_action::<undo::RestoreColorPathDefaultsSnapshot>(app);
-        register_engine_action::<undo::ClearDmxChannels>(app);
 
         app.add_systems(
             Update,
@@ -171,7 +184,6 @@ impl Plugin for FixturePlugin {
                 events::handle_restore_patch_bindings_snapshot,
                 events::handle_restore_offset_snapshot,
                 events::handle_restore_color_path_defaults_snapshot,
-                events::handle_clear_dmx_channels,
             )
                 .chain()
                 .in_set(EventHandling),
