@@ -129,28 +129,41 @@ async function openOwnedManualChannelApp(
     .toBe(1);
 }
 
+/** Creates one fixture from the built-in library with the given model and mode. */
+async function createLibraryFixture(
+  page: Page,
+  id: number,
+  model: string,
+  mode: string,
+) {
+  await page.evaluate(
+    async ([fixtureId, fixtureModel, fixtureMode]) => {
+      const result = await (window as any).appStores.sendAndAwait({
+        module: "FixtureLibraryCommand",
+        command: {
+          type: "CreateFixtureFromLibrary",
+          data: {
+            id: fixtureId,
+            make: "Generic",
+            model: fixtureModel,
+            mode: fixtureMode,
+            label: `Release Fixture ${fixtureId}`,
+            update_existing_ids: [],
+            update_existing_only: false,
+          },
+        },
+      });
+      if (result.outcome.type !== "Succeeded") {
+        throw new Error(`fixture setup failed: ${JSON.stringify(result)}`);
+      }
+    },
+    [id, model, mode] as const,
+  );
+}
+
 /** Creates one RGB pixel tape fixture whose first channel is red. */
 async function createPixelTapeFixture(page: Page, id: number) {
-  await page.evaluate(async (fixtureId) => {
-    const result = await (window as any).appStores.sendAndAwait({
-      module: "FixtureLibraryCommand",
-      command: {
-        type: "CreateFixtureFromLibrary",
-        data: {
-          id: fixtureId,
-          make: "Generic",
-          model: "RGBPixelTape 120ch RGB",
-          mode: "RGB",
-          label: `Release Tape ${fixtureId}`,
-          update_existing_ids: [],
-          update_existing_only: false,
-        },
-      },
-    });
-    if (result.outcome.type !== "Succeeded") {
-      throw new Error(`fixture setup failed: ${JSON.stringify(result)}`);
-    }
-  }, id);
+  await createLibraryFixture(page, id, "RGBPixelTape 120ch RGB", "RGB");
 }
 
 /**
@@ -358,4 +371,43 @@ test("global release stops a routed console universe fed only by manual writes",
   await submitCommand(page, "release");
   await expect.poll(() => outputUniverse(page, "Console", 7)).toBeNull();
   await expect.poll(() => outputUniverse(page, "sACN", 17)).toBeNull();
+});
+
+/**
+ * After plain `release`, every patched slot reads its parameter default again on console and
+ * wire, including non-zero defaults such as a centred pan, and manual slots are gone.
+ */
+test("global release returns console and wire DMX to parameter defaults", async ({
+  backendSlot,
+  page,
+}) => {
+  await openBlankApp(page, backendSlot.backendPort);
+  await createLibraryFixture(page, 320, "Moving Head RGBW", "Spot");
+  await submitCommand(page, "patch fix 320 @ console:3");
+  await submitCommand(page, "patch console:3 @ sacn:30");
+
+  await expect
+    .poll(async () => (await outputUniverse(page, "sACN", 30)) !== null)
+    .toBe(true);
+  const consoleDefaults = await outputUniverse(page, "Console", 3);
+  const wireDefaults = await outputUniverse(page, "sACN", 30);
+  expect(
+    consoleDefaults?.some((value) => value !== 0),
+    "the fixture should have at least one non-zero default to prove defaults are restored",
+  ).toBe(true);
+
+  await submitCommand(page, "fix 320 @ 100");
+  await submitCommand(page, "ch 3.1 @ 77");
+  await submitCommand(page, "ch 3.500 @ 99");
+  await expect
+    .poll(() => outputUniverse(page, "Console", 3))
+    .not.toEqual(consoleDefaults);
+
+  await submitCommand(page, "release");
+  await expect
+    .poll(() => outputUniverse(page, "Console", 3))
+    .toEqual(consoleDefaults);
+  await expect
+    .poll(() => outputUniverse(page, "sACN", 30))
+    .toEqual(wireDefaults);
 });
