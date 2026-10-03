@@ -296,8 +296,11 @@ export default function DockWorkspaces() {
     });
   });
 
+  shell.setDockviewLayoutReset(() => current.handle?.reset());
+
   /** Releases shell references after all owned Dockviews are torn down. */
   onCleanup(() => {
+    shell.setDockviewLayoutReset(undefined);
     disposed = true;
     cancelEntrance();
     generation += 1;

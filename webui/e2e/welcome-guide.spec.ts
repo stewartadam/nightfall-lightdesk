@@ -7,7 +7,7 @@
  */
 
 import { utimes } from "node:fs/promises";
-import { expect, type Page, test } from "./playwright-fixtures";
+import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 test.use({ sampleDataOnly: true });
@@ -70,6 +70,30 @@ async function openSample(page: Page, offscreenCanvas = true) {
     ]),
   );
   expect(targets.timelines).toContainEqual([1, "Lo-fi"]);
+}
+
+/**
+ * Starts a lesson from the open library and waits until it has switched to the Lesson layout
+ * and shows its first step, so later clicks cannot land while the switch is still in progress.
+ */
+async function openLesson(guide: Locator, lesson: RegExp) {
+  await guide.getByRole("button", { name: lesson }).click();
+  await expect(
+    guide.getByRole("progressbar", { name: "Lesson progress" }),
+  ).toBeVisible();
+}
+
+/** Closes a panel in the Lesson layout, which every lesson starts from in its default arrangement. */
+async function removeLessonPanel(page: Page, panelId: string) {
+  await page.evaluate((id) => {
+    const api = (window as any).appStores.dockApi.get();
+    api.removePanel(api.getPanel(id));
+  }, panelId);
+}
+
+/** Scopes queries to the visible layout, since switching layouts keeps the previous one mounted but hidden. */
+function activeLayout(page: Page) {
+  return page.locator('[data-workspace-active="true"]');
 }
 
 /** Moves through guide instructions without pretending skipped actions succeeded. */
@@ -254,7 +278,9 @@ test("guide leaves Status Display and Fixtures edge tabs reachable", async ({
         )
         .toBe(name);
       if (name === "Fixtures") {
-        const fixtures = page.locator('[data-panel-kind="fixtures"]');
+        const fixtures = activeLayout(page).locator(
+          '[data-panel-kind="fixtures"]',
+        );
         await fixtures.getByRole("button").first().click({ trial: true });
         await expect(
           fixtures.getByText("RGBPixelTape 120ch RGB", { exact: true }).first(),
@@ -275,7 +301,7 @@ test("floating lessons provide context, selectable commands and manual placement
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
   await reachStep(page, "Select lights by number");
   await expect(
     page.getByRole("textbox", { name: "Command input", exact: true }),
@@ -393,7 +419,7 @@ test("guide accepts stored cue identity without its suggested label", async ({
   await command.press("Enter");
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
   await reachStep(page, "Store the red cue");
   await guide
     .getByRole("button", { name: "Open Programmer", exact: true })
@@ -424,12 +450,11 @@ test("guide content waits for prerequisites and renders text after actions", asy
       type: "text",
       text: "Text after the action callout.",
     });
-    const api = (window as any).appStores.dockApi.get();
-    api.removePanel(api.getPanel("panel-Visualizer"));
   });
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
+  await removeLessonPanel(page, "panel-Visualizer");
   await reachStep(page, "Bring up the lights");
   await expect(guide).toContainText(
     "The Programmer holds live lighting instructions.",
@@ -474,7 +499,7 @@ test("guide shortcuts follow panel visibility", async ({ page }, testInfo) => {
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
   await reachStep(page, "Bring up the lights");
   const shortcut = guide.getByRole("button", {
     name: "Open Programmer",
@@ -538,7 +563,9 @@ test("programmer columns fit selected sample fixtures", async ({
   });
   await command.fill("fix 310>313");
   await command.press("Enter");
-  const panel = page.locator('[data-panel-kind="programmer"]:visible');
+  const panel = activeLayout(page).locator(
+    '[data-panel-kind="programmer"]:visible',
+  );
   await expect(panel).toBeVisible();
   for (const [id, width] of [
     ["id", 85],
@@ -561,7 +588,7 @@ test("Stop guidance prefers above the timeline", async ({ page }, testInfo) => {
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await openLesson(guide, /Welcome to Nightfall/);
   await guide.getByRole("button", { name: NEXT_STEP }).click();
   await guide
     .getByRole("button", { name: "Open Timeline 1: Lo-fi", exact: true })
@@ -605,9 +632,9 @@ test("welcome basics toggles a clip and opens properties", async ({
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await openLesson(guide, /Welcome to Nightfall/);
   await expect(page.locator(".nf-guide-highlight")).toBeVisible();
-  const visualizer = page.locator(
+  const visualizer = activeLayout(page).locator(
     '[data-component="Visualizer"][data-panel-id]',
   );
   await expect
@@ -657,7 +684,7 @@ test("welcome basics toggles a clip and opens properties", async ({
         ([clip]) => clip.identifiers.id === 1,
       )[0].identifiers.uid,
   );
-  const tile = page.locator(`[data-crud-select-id="${uid}"]`);
+  const tile = activeLayout(page).locator(`[data-crud-select-id="${uid}"]`);
   await tile.click();
   await expect(
     guide.getByRole("heading", { name: "Stop a clip" }),
@@ -684,7 +711,7 @@ test("welcome basics toggles a clip and opens properties", async ({
   await expect(
     guide.getByRole("heading", { name: "Properties follows your focus" }),
   ).toBeVisible();
-  const properties = page.locator(
+  const properties = activeLayout(page).locator(
     '[data-component="PropertiesInspector"][data-panel-id]',
   );
   await page.setViewportSize({ width: 2048, height: 1000 });
@@ -710,7 +737,7 @@ test("welcome basics toggles a clip and opens properties", async ({
   await expect(
     properties.getByText("Clip Properties", { exact: true }),
   ).toBeVisible();
-  await page
+  await activeLayout(page)
     .locator(".dv-tab")
     .filter({ hasText: "Timeline 1: Lo-fi" })
     .click();
@@ -834,7 +861,7 @@ test("welcome saving explains unavailable persistence", async ({
   });
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await openLesson(guide, /Welcome to Nightfall/);
   await reachStep(page, "Demo edits are temporary");
   await expect(
     guide.getByText(
@@ -890,7 +917,7 @@ test("clip overwrite confirms and advances the guide", async ({
   );
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
   await reachStep(page, /Create.*clip/);
   await guide.getByRole("button", { name: "Open Clips", exact: true }).click();
   await page.getByRole("button", { name: "Add clip", exact: true }).click();
@@ -939,7 +966,7 @@ for (const platform of ["MacIntel", "Win32"]) {
       await page.setViewportSize({ width: 1100, height: 1000 });
     await page.getByRole("button", { name: "Open Welcome Guide" }).click();
     const guide = page.getByTestId("welcome-guide");
-    await guide.getByRole("button", { name: /Your first lights/ }).click();
+    await openLesson(guide, /Your first lights/);
     await reachStep(page, "Find your way around");
     const keys = guide.locator(".nf-guide-inline-shortcut kbd");
     await expect(keys).toHaveCount(3);
@@ -1021,7 +1048,7 @@ test("lesson hot reload preserves the guide and Dockview layout", async ({
   await openSample(page, false);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
   await reachStep(page, "Bring up the lights");
   const stepLabel = await guide
     .getByRole("status", { name: "Current step" })
@@ -1030,7 +1057,7 @@ test("lesson hot reload preserves the guide and Dockview layout", async ({
     .getByRole("button", { name: "Open Programmer", exact: true })
     .click();
   await expect(
-    page.getByText("Programmer is empty.", { exact: true }),
+    activeLayout(page).getByText("Programmer is empty.", { exact: true }),
   ).toBeVisible();
   const workspace = await page.evaluateHandle(() => {
     const api = (window as any).appStores.dockApi.get();
@@ -1097,13 +1124,10 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   page,
 }, testInfo) => {
   await openSample(page);
-  await page.evaluate(() => {
-    const api = (window as any).appStores.dockApi.get();
-    api.removePanel(api.getPanel("panel-Visualizer"));
-  });
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await openLesson(guide, /Welcome to Nightfall/);
+  await removeLessonPanel(page, "panel-Visualizer");
   await guide.getByRole("button", { name: NEXT_STEP }).click();
   await guide
     .getByRole("button", { name: "Open Timeline 1: Lo-fi", exact: true })
@@ -1167,7 +1191,14 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   });
   await reachStep(page, "Ready to explore");
   await guide.getByRole("button", { name: "Finish lesson" }).click();
-  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  // Starting again rebuilds the Lesson layout, so reopen the timeline before reaching its step.
+  await openLesson(guide, /Welcome to Nightfall/);
+  await activeLayout(page)
+    .getByRole("button", { name: /^Timeline 1: Lo-fi/ })
+    .dblclick();
+  await expect(
+    page.getByRole("button", { name: "Play timeline", exact: true }),
+  ).toBeVisible();
   await guide.getByRole("button", { name: NEXT_STEP }).click();
   await expect(
     guide.getByRole("heading", { name: "Start the sample show" }),
@@ -1181,7 +1212,7 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await openSample(page);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Welcome to Nightfall/ }).click();
+  await openLesson(guide, /Welcome to Nightfall/);
   await guide.getByRole("button", { name: NEXT_STEP }).click();
   await expect(guide).toContainText("Lo-fi");
   await expect(
@@ -1209,7 +1240,7 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
     .getByRole("button", { name: "Stop timeline", exact: true })
     .click();
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
   await expect(
     guide.getByRole("heading", { name: "Find your way around" }),
   ).toBeVisible();
@@ -1285,7 +1316,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
   await expect(
     guide.getByRole("button", { name: /Follow-on lesson/i }),
   ).toHaveCount(5);
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
   await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
     0,
   );
@@ -1373,12 +1404,14 @@ test("welcome guide teaches live selection and cue storage without blocking the 
         (s) => s.identifiers.id === 50,
       ).identifiers.uid,
   );
-  await page.locator(`[data-crud-select-id="${sequenceUid}"]`).dblclick();
+  await activeLayout(page)
+    .locator(`[data-crud-select-id="${sequenceUid}"]`)
+    .dblclick();
   const cueUid = await page.evaluate(
     (uid) => (window as any).appStores.sequences.get()[uid].steps[1],
     sequenceUid,
   );
-  await page
+  await activeLayout(page)
     .locator(
       `[data-grid-column-key="trigger"][data-grid-row-key="${cueUid}:cue"]`,
     )
@@ -1406,7 +1439,7 @@ test("first lights builds its own Red and Blue sequence", async ({
   );
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Your first lights/ }).click();
+  await openLesson(guide, /Your first lights/);
   await reachStep(page, "Store the red cue");
   await guide
     .getByRole("button", { name: "Open Programmer", exact: true })
@@ -1467,7 +1500,9 @@ test("first lights builds its own Red and Blue sequence", async ({
         (s) => s.identifiers.id === 50,
       ).identifiers.uid,
   );
-  await page.locator(`[data-crud-select-id="${sequenceUid}"]`).dblclick();
+  await activeLayout(page)
+    .locator(`[data-crud-select-id="${sequenceUid}"]`)
+    .dblclick();
   await expect(
     guide.getByRole("heading", { name: "Let Go advance to Blue" }),
   ).toBeVisible();
@@ -1479,7 +1514,7 @@ test("first lights builds its own Red and Blue sequence", async ({
     (uid) => (window as any).appStores.sequences.get()[uid].steps[1],
     sequenceUid,
   );
-  await page
+  await activeLayout(page)
     .locator(
       `[data-grid-column-key="trigger"][data-grid-row-key="${cueUid}:cue"]`,
     )
@@ -1513,8 +1548,8 @@ test("first lights builds its own Red and Blue sequence", async ({
   await page
     .getByRole("button", { name: "Inspect clip 50", exact: true })
     .click();
-  await page.getByPlaceholder("Find a sequence...").fill("50");
-  await page
+  await activeLayout(page).getByPlaceholder("Find a sequence...").fill("50");
+  await activeLayout(page)
     .locator('[data-component="PropertiesInspector"]')
     .getByText(/^50:/)
     .click();
@@ -1552,7 +1587,9 @@ test("first lights builds its own Red and Blue sequence", async ({
         ([clip]) => clip.identifiers.id === 50,
       )[0].identifiers.uid,
   );
-  const clipCard = page.locator(`[data-crud-select-id="${clipUid}"]`);
+  const clipCard = activeLayout(page).locator(
+    `[data-crud-select-id="${clipUid}"]`,
+  );
   await expect
     .poll(async () => {
       const card = await clipCard.boundingBox();
@@ -1574,14 +1611,16 @@ test("first lights builds its own Red and Blue sequence", async ({
   await page.screenshot({
     path: testInfo.outputPath("guide-clip-source-highlight.png"),
   });
-  await page
+  await activeLayout(page)
     .locator(`[data-crud-select-id="${clipUid}"]`)
-    .dragTo(page.locator('[data-clip-dropzone-index="6"]'));
-  await expect(page.locator('[data-control-go-index="6"]')).toBeEnabled();
+    .dragTo(activeLayout(page).locator('[data-clip-dropzone-index="6"]'));
+  await expect(
+    activeLayout(page).locator('[data-control-go-index="6"]'),
+  ).toBeEnabled();
   await expect(
     guide.getByRole("heading", { name: "Start First Lights" }),
   ).toBeVisible();
-  const goTarget = page.locator('[data-control-go-index="6"]');
+  const goTarget = activeLayout(page).locator('[data-control-go-index="6"]');
   const scrollChange = await goTarget.evaluate((element) => {
     let scroller = element.parentElement;
     while (
@@ -1625,7 +1664,7 @@ test("first lights builds its own Red and Blue sequence", async ({
   await page.screenshot({
     path: testInfo.outputPath("guide-scrolled-controls.png"),
   });
-  await page.locator('[data-control-go-index="6"]').click();
+  await activeLayout(page).locator('[data-control-go-index="6"]').click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -1637,11 +1676,13 @@ test("first lights builds its own Red and Blue sequence", async ({
   await expect(
     guide.getByRole("heading", { name: "Advance to blue" }),
   ).toBeVisible();
-  await page.locator('[data-control-go-index="6"]').click();
+  await activeLayout(page).locator('[data-control-go-index="6"]').click();
   await expect(
     guide.getByRole("heading", { name: "Control the level" }),
   ).toBeVisible();
-  const fader = page.locator('[data-control-index="6"] [role="slider"]');
+  const fader = activeLayout(page).locator(
+    '[data-control-index="6"] [role="slider"]',
+  );
   await fader.focus();
   await fader.press("Home");
   await expect(fader).toHaveAttribute("aria-valuenow", "0.0");
@@ -1683,13 +1724,13 @@ test("Guide always opens the lesson menu and matches header button height", asyn
   );
   await button.click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: /Your first lights/i }).click();
+  await openLesson(guide, /Your first lights/i);
   await expect(guide.getByRole("button", { name: NEXT_STEP })).toBeVisible();
   await button.click();
   await expect(
     guide.getByRole("button", { name: /Your first lights/i }),
   ).toBeVisible();
-  await guide.getByRole("button", { name: /Your first lights/i }).click();
+  await openLesson(guide, /Your first lights/i);
   await guide.getByRole("button", { name: "Exit welcome guide" }).click();
   await button.click();
   await expect(
@@ -1711,7 +1752,7 @@ test("lesson library starts sample lessons immediately and preserves completion"
   await page.keyboard.press("Enter");
   const guide = page.getByTestId("welcome-guide");
   await expect(guide).toBeVisible();
-  await guide.getByRole("button", { name: /Transports and output/ }).click();
+  await openLesson(guide, /Transports and output/);
   await expect(
     guide.getByRole("heading", { name: "Open I/O Transports" }),
   ).toBeVisible();
@@ -1726,7 +1767,7 @@ test("lesson library starts sample lessons immediately and preserves completion"
   await expect(
     guide.getByRole("button", { name: /Transports and output/ }),
   ).toContainText("Completed · Take again");
-  await guide.getByRole("button", { name: /Step FX designer/ }).click();
+  await openLesson(guide, /Step FX designer/);
   await expect(guide.getByRole("button", { name: "Start lesson" })).toHaveCount(
     0,
   );
@@ -1735,17 +1776,21 @@ test("lesson library starts sample lessons immediately and preserves completion"
   ).toBeDisabled();
   await reachStep(page, "Ready to explore");
   await guide.getByRole("button", { name: "Finish lesson" }).click();
-  await guide.getByRole("button", { name: /Patching fixtures/ }).click();
+  await openLesson(guide, /Patching fixtures/);
   await reachStep(page, "Find pixel strip 310");
   await guide.getByRole("button", { name: "Open Patch", exact: true }).click();
   await expect(guide).toContainText("click fixture 310’s ID");
   await page.setViewportSize({ width: 700, height: 900 });
   await expect(guide).toBeVisible();
-  const dimensions = await guide.evaluate((element) => ({
-    width: element.clientWidth,
-    scrollWidth: element.scrollWidth,
-    height: element.getBoundingClientRect().height,
-  }));
+  // Measure the content, since the pointer tip deliberately extends past the card edge.
+  const dimensions = await guide.evaluate((element) => {
+    const body = element.querySelector(".nf-guide-body")!;
+    return {
+      width: body.clientWidth,
+      scrollWidth: body.scrollWidth,
+      height: element.getBoundingClientRect().height,
+    };
+  });
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width);
   expect(dimensions.height).toBeLessThan(450);
   await page.screenshot({
@@ -1766,7 +1811,7 @@ test("lesson library starts sample lessons immediately and preserves completion"
 async function startLesson(page: Page, lesson: RegExp) {
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
-  await guide.getByRole("button", { name: lesson }).click();
+  await openLesson(guide, lesson);
   return guide;
 }
 
@@ -1856,7 +1901,7 @@ test("patch lesson follows fixture picking, selection, and DMX I/O", async ({
     .screenshot({
       path: testInfo.outputPath("patch-fixture-target.png"),
     });
-  await page
+  await activeLayout(page)
     .locator('[data-panel-kind="patch"] [data-grid-column-key="id"]')
     .filter({ hasText: /^310$/ })
     .first()
@@ -1864,7 +1909,7 @@ test("patch lesson follows fixture picking, selection, and DMX I/O", async ({
   await expectStep(page, "Select it by ID", { target: true });
   await submitCommand(page, "fix 310");
   await expectStep(page, "Open the DMX I/O view", { target: true });
-  await page
+  await activeLayout(page)
     .locator('[data-panel-kind="patch"] [role="tab"][id$="-bindings"]')
     .click();
   await expectStep(page, "The sample needs no DMX", { target: true });
@@ -1899,7 +1944,7 @@ test("transports lesson highlights output targets and Console DMX", async ({
   await paletteCommand(page, "Open Console DMX");
   await expectStep(page, "Nothing to send yet", { target: true });
   await expect(
-    page.locator('[data-component="DmxUniverse"][data-panel-id]'),
+    activeLayout(page).locator('[data-component="DmxUniverse"][data-panel-id]'),
   ).toContainText("No universe data");
   await page.screenshot({
     path: testInfo.outputPath("transports-console-dmx.png"),
@@ -1931,24 +1976,24 @@ test("waveform lesson edits, saves, and plays fx3", async ({
         (entry) => entry.identifiers.id === 3,
       ).identifiers.uid,
   );
-  await page.locator(`[data-crud-select-id="${fx3}"]`).click();
+  await activeLayout(page).locator(`[data-crud-select-id="${fx3}"]`).click();
   await expectStep(page, "Slow the wave down", { target: true });
-  const rate = page.locator(
+  const rate = activeLayout(page).locator(
     '[data-component="FxEditor"] input[aria-label="Rate"]',
   );
   await rate.fill("8");
   await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await expectStep(page, "Change the wave’s shape", { target: true });
-  await page
+  await activeLayout(page)
     .locator(
       '[data-component="FxEditor"] .waveform-editor button[title="Square"]',
     )
     .click();
   await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await expectStep(page, "Save your version of fx3", { target: true });
-  await page.locator('[data-guide-target="fx-save"]').click();
+  await activeLayout(page).locator('[data-guide-target="fx-save"]').click();
   await expectStep(page, "Close the FX Editor", { target: true });
-  const closeTab = page.locator(
+  const closeTab = activeLayout(page).locator(
     '.dv-default-tab[aria-label^="FX 3: fx3"] .dv-default-tab-action',
   );
   const closeBox = await closeTab.boundingBox();
@@ -1971,7 +2016,7 @@ test("waveform lesson edits, saves, and plays fx3", async ({
         ([clip]) => clip.identifiers.id === 6,
       )[0].identifiers.uid,
   );
-  const tile = page.locator(`[data-crud-select-id="${clip6}"]`);
+  const tile = activeLayout(page).locator(`[data-crud-select-id="${clip6}"]`);
   await tile.click();
   await expectStep(page, "Stop fx3", { target: true });
   await tile.click();
@@ -2028,14 +2073,14 @@ test("step fx lesson builds a chase and releases the red base", async ({
   // Follow the lesson's fallback: focusing the editor tab points Properties at it.
   await page.getByRole("tab", { name: /^Step FX 1/ }).click();
   await expect(
-    page.locator('[data-component="PropertiesInspector"]'),
+    activeLayout(page).locator('[data-component="PropertiesInspector"]'),
   ).toContainText("Step FX 1 Properties");
   await expect(page.getByTestId("guide-target").first()).toBeVisible();
-  const selection = page.locator(
+  const selection = activeLayout(page).locator(
     '[data-component="PropertiesInspector"] textarea[aria-label="Selection"]',
   );
   await selection.fill("Fixture 310>313");
-  await page
+  await activeLayout(page)
     .locator('[data-component="PropertiesInspector"]')
     .getByRole("button", { name: "Apply", exact: true })
     .click();
@@ -2108,14 +2153,16 @@ test("timeline lesson moves the fx3 action and rehearses it", async ({
     .screenshot({
       path: testInfo.outputPath("timeline-action-target.png"),
     });
-  await page
+  await activeLayout(page)
     .locator(
       '[data-timeline-action="true"][data-track-id="1"][data-action-id="1"]:not([data-drag-preview]) [data-timeline-action-chip="true"]',
     )
     .first()
     .click();
   await expectStep(page, "Start the wave earlier", { target: true });
-  const position = page.getByLabel("Action position (ms)", { exact: true });
+  const position = activeLayout(page).getByLabel("Action position (ms)", {
+    exact: true,
+  });
   await position.fill("3000");
   await position.press("Enter");
   await expectStep(page, "Rehearse the change", { target: true });
@@ -2188,4 +2235,95 @@ test("lesson end clears the programmer in one press", async ({ page }) => {
   await expect(
     guide.getByRole("button", { name: "Clear programmer", exact: true }),
   ).toHaveCount(0);
+});
+
+/** Lessons start from the default panels in their own layout and leave the user's layout intact. */
+test("lessons switch to the Lesson layout and can return to the user's layout", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  const userLayout = page.getByRole("button", { name: /^Layout 1: / });
+  const userLayoutName = (
+    (await userLayout.getAttribute("aria-label")) ?? ""
+  ).replace(/^Layout 1: /, "");
+  await page.getByRole("tab", { name: "Clips", exact: true }).click();
+  await expect(
+    activeLayout(page).locator('[data-component="ClipList"]'),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await expect(guide.getByTestId("guide-layout-notice")).toContainText(
+    "Lesson layout",
+  );
+  await openLesson(guide, /Welcome to Nightfall/);
+  await expect(
+    guide.getByRole("heading", { name: "Meet your sample rig" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^Layout \d+: Lesson$/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  // The default arrangement keeps Clips collapsed, unlike the user's layout above.
+  await expect(
+    activeLayout(page).locator('[data-component="ClipList"]'),
+  ).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath("lesson-layout.png") });
+  await guide.getByRole("button", { name: "Exit welcome guide" }).click();
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await guide
+    .getByRole("button", { name: `Return to ${userLayoutName}`, exact: true })
+    .click();
+  await expect(userLayout).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    activeLayout(page).locator('[data-component="ClipList"]'),
+  ).toBeVisible();
+});
+
+/** A panel covered by an edge panel is not ready; its button collapses the covering edge panel. */
+test("covered prerequisite panels offer Show and make room", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  const guide = await startLesson(page, /Your first lights/);
+  await reachStep(page, "Select lights");
+  await page.getByRole("tab", { name: "Clips", exact: true }).click();
+  await page.getByRole("tab", { name: "Properties", exact: true }).click();
+  const show = guide.getByRole("button", {
+    name: "Show 3D Visualizer",
+    exact: true,
+  });
+  await expect(show).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("covered-visualizer.png"),
+  });
+  await show.click();
+  await expect(show).toHaveCount(0);
+  await expect(
+    activeLayout(page).locator('[data-component="ClipList"]'),
+  ).toBeVisible();
+  await expect(
+    activeLayout(page).locator('[data-component="PropertiesInspector"]'),
+  ).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath("visualizer-shown.png") });
+});
+
+/** Edge panel collapses still advance the guide after a layout reset replaces the edge groups. */
+test("collapsing Properties advances after the layout is reset", async ({
+  page,
+}) => {
+  await openSample(page);
+  await paletteCommand(page, "Reset Layout");
+  const guide = await startLesson(page, /Your first lights/);
+  await reachStep(page, "Choose your clip’s sequence");
+  await page.getByRole("tab", { name: "Properties", exact: true }).click();
+  await expect(
+    activeLayout(page).locator('[data-component="PropertiesInspector"]'),
+  ).toBeVisible();
+  await guide.getByRole("button", { name: NEXT_STEP }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Make room for the Visualizer" }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Properties", exact: true }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Put First Lights on control 6" }),
+  ).toBeVisible();
 });
