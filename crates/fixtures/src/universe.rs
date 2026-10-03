@@ -440,18 +440,6 @@ impl ConsoleDmxUniverses {
         self.universes.keys()
     }
 
-    /// Clears all channel values for existing universes.
-    pub fn clear_values(&mut self) {
-        for universe in self.universes.values_mut() {
-            universe.values.fill(0);
-            universe.origins.fill(Some(ConsoleChannelOrigin::System));
-        }
-        for universe in self.output_universes.values_mut() {
-            universe.values.fill(0);
-            universe.origins.fill(Some(ConsoleChannelOrigin::System));
-        }
-    }
-
     /// Clears all console universe buffers and ownership metadata.
     pub fn clear(&mut self) {
         self.universes.clear();

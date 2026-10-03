@@ -343,3 +343,19 @@ test("release channel stops a routed console universe nothing feeds and undo res
   await expectSlotValue(page, "Console", 7, 1, 50);
   await expectSlotValue(page, "sACN", 17, 1, 50);
 });
+
+/** Plain `release` frees manual console slots, so a routed console universe stops transmitting. */
+test("global release stops a routed console universe fed only by manual writes", async ({
+  backendSlot,
+  page,
+}) => {
+  await openBlankApp(page, backendSlot.backendPort);
+  await submitCommand(page, "patch console:7 @ sacn:17");
+
+  await submitCommand(page, "ch 7.1 @ 50");
+  await expectSlotValue(page, "sACN", 17, 1, 50);
+
+  await submitCommand(page, "release");
+  await expect.poll(() => outputUniverse(page, "Console", 7)).toBeNull();
+  await expect.poll(() => outputUniverse(page, "sACN", 17)).toBeNull();
+});
