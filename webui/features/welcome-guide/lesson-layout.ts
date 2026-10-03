@@ -7,6 +7,7 @@
  */
 
 import type { DockviewApi } from "dockview";
+import { bestEffortPersistentAtom } from "../../lib/best-effort-persistent-atom";
 import { activateStoredLayout } from "../../lib/layout-activation";
 import { createNamedLayout } from "../../lib/layout-management";
 import {
@@ -18,11 +19,41 @@ import { activeLayoutId } from "../../state/layout-switcher";
 /** Name of the shared layout every lesson starts from, kept apart from the user's own layouts. */
 export const LESSON_LAYOUT_NAME = "Lesson";
 
-/** Finds the visible Lesson layout, if this showfile already has one. */
+/**
+ * Remembers which layout the guide created, so a user's own layout that happens to share
+ * the name is never rebuilt.
+ */
+const lessonLayoutId = bestEffortPersistentAtom<string | null>(
+  "nightfall.guide.v1.lessonLayoutId",
+  null,
+  { encode: (value) => value ?? undefined, decode: (value) => value || null },
+);
+
+/** Finds the visible layout the guide created for lessons, if this showfile still has it. */
 export function findLessonLayoutId(): string | undefined {
-  return getShowfilePanelLayouts().find(
-    (layout) => layout.name === LESSON_LAYOUT_NAME && layout.shownInSwitcher,
-  )?.id;
+  const id = lessonLayoutId.get();
+  return id && getStoredLayout(id)?.shownInSwitcher ? id : undefined;
+}
+
+/** Picks a layout name for lessons that doesn't collide with an existing layout. */
+function availableLessonLayoutName(): string {
+  const names = new Set(getShowfilePanelLayouts().map((layout) => layout.name));
+  let name = LESSON_LAYOUT_NAME;
+  for (let index = 2; names.has(name); index += 1)
+    name = `${LESSON_LAYOUT_NAME} ${index}`;
+  return name;
+}
+
+/** Creates the layout lessons run in and remembers it as the guide's own. */
+async function createLessonLayout(api: DockviewApi): Promise<string | null> {
+  const layout = await createNamedLayout(
+    api,
+    availableLessonLayoutName(),
+    true,
+  );
+  if (!layout) return null;
+  lessonLayoutId.set(layout.id);
+  return layout.id;
 }
 
 /**
@@ -35,9 +66,7 @@ export async function enterLessonLayout(
   resetLayout: () => boolean,
 ): Promise<{ previousLayoutId: string | null } | null> {
   const previousLayoutId = activeLayoutId.get();
-  const lessonId =
-    findLessonLayoutId() ??
-    (await createNamedLayout(api, LESSON_LAYOUT_NAME, true))?.id;
+  const lessonId = findLessonLayoutId() ?? (await createLessonLayout(api));
   if (!lessonId) return null;
   if (!(await activateStoredLayout(api, lessonId, { reset: true })))
     return null;

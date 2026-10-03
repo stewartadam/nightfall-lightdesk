@@ -175,8 +175,9 @@ export default function WelcomeGuide() {
   const [workspace, setWorkspace] = createSignal<GuidePanelSnapshot>({
     panels: [],
   });
-  /** Tracks open panels and whether each is actually unobstructed, across layout restores. */
+  /** While the guide is open, tracks open panels and whether each is unobstructed, across layout restores. */
   createEffect(() => {
+    if (!opened()) return;
     onCleanup(trackGuidePanels(dockviewApi(), setWorkspace));
   });
   /** Lists panels the user can currently see; anything else gets an Open or Show button. */
