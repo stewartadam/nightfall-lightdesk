@@ -7,7 +7,6 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import type { DockviewApi } from "dockview";
 import {
   type Accessor,
   createEffect,
@@ -33,6 +32,7 @@ import {
   visualizerEditSelection,
 } from "../../state/appStores";
 import { patchPanelActiveTab } from "../patch";
+import type { GuidePanelSnapshot } from "./panel-tracking";
 import {
   type GuideObservation,
   type GuideSnapshot,
@@ -42,7 +42,8 @@ import {
 /** Advances on fresh actions, or immediately when the required sample panels are already open. */
 export function useGuideProgress(
   observation: Accessor<GuideObservation | undefined>,
-  dockApi: Accessor<DockviewApi | undefined>,
+  held: Accessor<boolean>,
+  workspace: Accessor<GuidePanelSnapshot>,
   advance: () => void,
 ): void {
   const { isOpen: commandPaletteOpen } = useCommandPalette();
@@ -61,47 +62,10 @@ export function useGuideProgress(
   const instances = useStore(activeInstances);
   const timelineMap = useStore(timelines);
   const clocks = useStore(timecodes);
-  const [panel, setPanel] = createSignal<string>();
-  const [openPanels, setOpenPanels] = createSignal<GuideSnapshot["openPanels"]>(
-    [],
-  );
-
-  /** Mirrors active and open panels using Dockview's lifecycle rather than polling the DOM. */
-  createEffect(() => {
-    const api = dockApi();
-    /** Captures editor identities whenever panels are added or removed. */
-    const updateOpenPanels = () =>
-      setOpenPanels(
-        api?.panels.map((entry) => ({
-          component: entry.api.component,
-          timelineUid: entry.params?.initialTimelineUid,
-          sequenceUid: entry.params?.initialSequenceUid,
-          stepFxUid: entry.params?.initialStepFxUid,
-          visible: entry.api.isVisible && !entry.group.api.isCollapsed(),
-        })) ?? [],
-      );
-    updateOpenPanels();
-    const added = api?.onDidAddPanel(updateOpenPanels);
-    const removed = api?.onDidRemovePanel(updateOpenPanels);
-    const layout = api?.onDidLayoutChange(updateOpenPanels);
-    const collapsed = api?.onDidTabGroupCollapsedChange(updateOpenPanels);
-    const edges = ["left", "right", "top", "bottom"] as const;
-    const edgeSubscriptions = edges.map((edge) =>
-      api?.getEdgeGroup(edge)?.onDidCollapsedChange(updateOpenPanels),
-    );
-    setPanel(api?.activePanel?.api.component);
-    const subscription = api?.onDidActivePanelChange(() =>
-      setPanel(api.activePanel?.api.component),
-    );
-    onCleanup(() => {
-      subscription?.dispose();
-      added?.dispose();
-      removed?.dispose();
-      layout?.dispose();
-      collapsed?.dispose();
-      for (const subscription of edgeSubscriptions) subscription?.dispose();
-    });
-  });
+  /** Reads the active panel from the shared workspace snapshot. */
+  const panel = () => workspace().activeComponent;
+  /** Reads open panels and their visibility from the shared workspace snapshot. */
+  const openPanels = () => workspace().panels;
 
   /** Arms a new observation at entry, and cancels pending advancement on navigation or exit. */
   createEffect(() => {
@@ -220,9 +184,13 @@ export function useGuideProgress(
         ? ""
         : untrack(token);
     let pending: ReturnType<typeof setTimeout> | undefined;
-    /** Advances once per step after a new matching state is published. */
+    /**
+     * Advances once per step after a new matching state is published. While held, the step-entry
+     * state is kept, so an action completed before the instructions appeared advances once they do.
+     */
     createEffect(() => {
       const next = token();
+      if (held()) return;
       if (next && next !== previous && pending === undefined)
         pending = setTimeout(advance, 0);
       previous = next;

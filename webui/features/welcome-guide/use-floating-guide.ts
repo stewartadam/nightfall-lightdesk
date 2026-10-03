@@ -14,6 +14,60 @@ import {
   onCleanup,
   untrack,
 } from "solid-js";
+import type { GuideFocusArea } from "./lessons";
+
+/** Open menus and dropdown lists the card must never cover, since the user is choosing from them. */
+const POPOVER_SELECTOR =
+  '[role="menu"], [role="listbox"], [data-hs-select-dropdown]';
+
+/** Finds open menus and dropdown lists outside the guide card. */
+function popoverBounds(): DOMRect[] {
+  return [...document.querySelectorAll<HTMLElement>(POPOVER_SELECTOR)]
+    .filter(
+      (surface) =>
+        !surface.closest(".nf-welcome-guide") &&
+        surface.checkVisibility({
+          opacityProperty: true,
+          visibilityProperty: true,
+        }),
+    )
+    .map((surface) => surface.getBoundingClientRect())
+    .filter((rect) => rect.width > 0 && rect.height > 0);
+}
+
+/** Measures a grid row by joining all cells that share the target cell's row key, or the nearest row element. */
+function rowBounds(element: Element): DOMRect | undefined {
+  const key = element.closest<HTMLElement>("[data-grid-row-key]")?.dataset
+    .gridRowKey;
+  const cells = key
+    ? [
+        ...(element.closest("[data-panel-id]") ?? document).querySelectorAll(
+          `[data-grid-row-key="${CSS.escape(key)}"]`,
+        ),
+      ]
+    : [element.closest('[role="row"], tr')].filter(
+        (row): row is Element => row !== null,
+      );
+  const rects = cells
+    .map((cell) => cell.getBoundingClientRect())
+    .filter((rect) => rect.width > 0 && rect.height > 0);
+  if (rects.length === 0) return undefined;
+  const left = Math.min(...rects.map((rect) => rect.left));
+  const top = Math.min(...rects.map((rect) => rect.top));
+  return new DOMRect(
+    left,
+    top,
+    Math.max(...rects.map((rect) => rect.right)) - left,
+    Math.max(...rects.map((rect) => rect.bottom)) - top,
+  );
+}
+
+/** Serializes rectangles so placement can tell when protected surfaces moved. */
+function rectsKey(rects: DOMRect[]): string {
+  return rects
+    .map((rect) => `${rect.x},${rect.y},${rect.width},${rect.height}`)
+    .join(";");
+}
 
 /** Places cards beside their target and preserves manual placement until the next step. */
 export function useFloatingGuide(
@@ -22,6 +76,7 @@ export function useFloatingGuide(
   anchor: Accessor<DOMRect | null>,
   selector: Accessor<string | undefined>,
   preference: Accessor<"above" | undefined>,
+  keepVisible: Accessor<GuideFocusArea[] | undefined>,
 ) {
   const [position, setPosition] = createSignal({ x: 12, y: 80 });
   const [size, setSize] = createSignal({ width: 360, height: 400 });
@@ -121,6 +176,19 @@ export function useFloatingGuide(
     const panel = targetElement
       ?.closest("[data-panel-id]")
       ?.getBoundingClientRect();
+    const focus = keepVisible();
+    const row =
+      focus?.includes("row") && targetElement
+        ? rowBounds(targetElement)
+        : undefined;
+    const kept = [
+      ...(focus?.includes("panel") && panel ? [panel] : []),
+      ...(row ? [row] : []),
+      ...(focus?.includes("visualizer") && visualizer ? [visualizer] : []),
+    ];
+    const popovers = popoverBounds();
+    // The card never covers the action, an open dialog or menu, or an area the step asks the user to watch.
+    const avoid = [target, ...(dialog ? [dialog] : []), ...popovers, ...kept];
     /** Offers placements outside both the action and the panel whose content explains the lesson. */
     const beside = (rect: DOMRect) => [
       { x: rect.right + 16, y: target.y + target.height / 2 - height / 2 },
@@ -135,6 +203,8 @@ export function useFloatingGuide(
       ...beside(target),
       ...(dialog ? beside(dialog) : []),
       ...(panel ? beside(panel) : []),
+      ...kept.flatMap(beside),
+      ...popovers.flatMap(beside),
       ...(panel
         ? [
             {
@@ -173,7 +243,10 @@ export function useFloatingGuide(
         0,
         Math.min(point.y + height, rect.bottom) - Math.max(point.y, rect.top),
       );
-    const geometry = `${target.x},${target.y},${target.width},${target.height},${width},${height}`;
+    const geometry = `${target.x},${target.y},${target.width},${target.height},${width},${height}|${rectsKey([...popovers, ...kept])}`;
+    /** Reports whether a position leaves every protected surface uncovered. */
+    const clear = (point: { x: number; y: number }) =>
+      avoid.every((rect) => overlap(point, rect) === 0);
     // Honor teaching-specific placement before falling back to general overlap scoring.
     const preferred = dialog
       ? beside(dialog).slice(0, 2).map(clamp)
@@ -192,9 +265,8 @@ export function useFloatingGuide(
       return (
         point.x === bounded.x &&
         point.y === bounded.y &&
-        overlap(point, target) === 0 &&
-        (!dialog || overlap(point, dialog) === 0) &&
-        (!panel || overlap(point, panel) === 0)
+        clear(point) &&
+        (focus !== undefined || !panel || overlap(point, panel) === 0)
       );
     });
     if (preferredPosition) {
@@ -215,9 +287,8 @@ export function useFloatingGuide(
       geometry === placedGeometry &&
       current.x === bounded.x &&
       current.y === bounded.y &&
-      overlap(current, target) === 0 &&
-      (!dialog ||
-        (overlap(current, dialog) === 0 && gap(current, dialog) <= 64))
+      clear(current) &&
+      (!dialog || gap(current, dialog) <= 64)
     )
       return;
     placedGeometry = geometry;
@@ -254,11 +325,13 @@ export function useFloatingGuide(
       point.x >= target.right || point.x + width <= target.left
         ? Math.abs(point.y + height / 2 - target.y - target.height / 2)
         : Math.abs(point.x + width / 2 - target.x - target.width / 2);
-    /** Keeps header actions nearby; panel actions also preserve their teaching panel and Visualizer. */
+    /**
+     * Never covers protected surfaces and keeps header actions nearby. Without explicit focus areas,
+     * panel actions also prefer to leave their teaching panel and the Visualizer clear.
+     */
     const score = (point: { x: number; y: number }) =>
-      overlap(point, target) * 10000 +
-      (dialog ? overlap(point, dialog) * 10000 : 0) +
-      (panel ? overlap(point, panel) * 2 : 0) +
+      avoid.reduce((sum, rect) => sum + overlap(point, rect) * 10000, 0) +
+      (panel && focus === undefined ? overlap(point, panel) * 2 : 0) +
       (visualizer && (panel || !anchor()) ? overlap(point, visualizer) : 0) +
       gap(point, dialog ?? target) * 2 +
       centering(point) * 0.25 +
@@ -283,12 +356,10 @@ export function useFloatingGuide(
     const observer = new ResizeObserver(place);
     observer.observe(card);
     let previousDialog = "";
-    /** Reacts to dialog opening or closing without following unrelated app updates. */
+    /** Reacts to dialogs and menus opening or closing without following unrelated app updates. */
     const pollDialog = window.setInterval(() => {
       const rect = dialogBounds();
-      const key = rect
-        ? `${rect.x},${rect.y},${rect.width},${rect.height}`
-        : "";
+      const key = rectsKey([...(rect ? [rect] : []), ...popoverBounds()]);
       if (key !== previousDialog) {
         previousDialog = key;
         place();
