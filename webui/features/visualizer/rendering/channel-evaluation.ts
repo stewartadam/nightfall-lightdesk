@@ -47,8 +47,12 @@ export interface EvaluatedChannel {
   dmx: number;
   /** Profile function active at `dmx`, if the parameter declares functions. */
   function?: ParameterFunction;
+  /** Index of `function` in the parameter's functions, or -1 without one. */
+  functionIndex: number;
   /** Channel set of the active function containing `dmx`. */
   set?: ParameterFunctionSet;
+  /** Index of `set` in the active function's sets, or -1 without one. */
+  setIndex: number;
   /**
    * Position within the active function (or the whole range without
    * functions), 0-1, after the function's DMX profile.
@@ -193,6 +197,8 @@ function compile(
         parameter,
         value: 0,
         dmx: 0,
+        functionIndex: -1,
+        setIndex: -1,
         fraction: 0,
         physical: 0,
         level: 0,
@@ -260,6 +266,8 @@ function evaluate(
           : undefined;
       channel.set =
         setIndex >= 0 ? channel.function?.sets?.[setIndex] : undefined;
+      channel.functionIndex = channel.function ? functionIndex : -1;
+      channel.setIndex = channel.set ? setIndex : -1;
       channel.fraction = readings[base + 3];
       channel.physical = readings[base + 4];
       channel.level = readings[base + 5];

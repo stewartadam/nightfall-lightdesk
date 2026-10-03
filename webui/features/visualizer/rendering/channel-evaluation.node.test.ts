@@ -502,6 +502,35 @@ test("profiles and channel sets map DMX to physical values", () => {
 });
 
 /**
+ * Verifies evaluated channels carry the evaluator's function and set indices, so per-frame
+ * consumers can address profile tables without searching the metadata.
+ */
+test("evaluated channels report active function and set indices", () => {
+  const element: FixtureElement = {
+    label: "Head",
+    parameters: [
+      parameter({ type: "Zoom" }, [
+        fn("Open", 0, 99),
+        fn("Zoom", 100, 255, {
+          sets: [
+            { name: "Wide", dmx_from: 100, dmx_to: 199 },
+            { name: "Narrow", dmx_from: 200, dmx_to: 255 },
+          ],
+        }),
+      ]),
+    ],
+  };
+  const open = evaluateElementChannels(element, { Zoom: 10 })[0];
+  assert.equal(open?.function?.name, "Open");
+  assert.equal(open?.functionIndex, 0);
+  assert.equal(open?.setIndex, -1);
+  const narrow = evaluateElementChannels(element, { Zoom: 230 })[0];
+  assert.equal(narrow?.functionIndex, 1);
+  assert.equal(narrow?.set?.name, "Narrow");
+  assert.equal(narrow?.setIndex, 1);
+});
+
+/**
  * Verifies movement follows the profile's physical angles and rotation
  * speeds, using the MagicPanel FX layout: a 16-bit pan authored from 180° to
  * -360° and a separate rotate channel that stops below DMX 128.
