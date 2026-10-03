@@ -33,14 +33,41 @@ async function openOwnedNetworkDmxApp(page: Page): Promise<void> {
   await waitForDockviewApp(page);
 }
 
-/** Opens a panel through the command palette. */
+/**
+ * Opens the I/O Transports panel through the command palette once startup has
+ * restored the showfile layout, which would otherwise replace the new panel,
+ * and waits for its lazily loaded content, which queues behind the default
+ * layout's background panel imports on the Vite dev server.
+ */
 async function openPanel(page: Page, panelName: string) {
+  await waitForDockviewApp(page);
   await page.getByRole("button", { name: "Open command palette" }).click();
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();
   await commandInput.fill(`Open ${panelName}`);
   await page.keyboard.press("Enter");
+  await expect(networkDmxPanel(page)).toBeVisible({ timeout: 20_000 });
+}
+
+/**
+ * Reports every DMX transport as available to the UI. The Playwright backend
+ * pool forbids physical transports so tests never transmit DMX, which makes the
+ * panel disable its switches; the toggles still persist the showfile preference.
+ */
+async function allowHostTransportsInUi(page: Page): Promise<void> {
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.runtimeCapabilities?.get?.()),
+  );
+  await page.evaluate(() => {
+    const capabilities = (window as any).appStores.runtimeCapabilities;
+    capabilities.set({
+      ...capabilities.get(),
+      network_dmx_input: true,
+      network_dmx_output: true,
+      usb_dmx_output: true,
+    });
+  });
 }
 
 /** Returns the visible I/O Transports component boundary for scoped panel assertions. */
@@ -82,6 +109,7 @@ async function enableTransportOutput(
       "boolean",
     settingKey,
   );
+  await allowHostTransportsInUi(page);
   const outputSwitch = panel.getByRole("switch", { name: switchName });
   if (!(await outputSwitch.isChecked())) {
     await outputSwitch.setChecked(true);
@@ -256,6 +284,7 @@ test("I/O transports panel toggles network output", async ({ page }) => {
   const outputSwitch = networkSection.getByRole("switch", {
     name: "Enable network output",
   });
+  await allowHostTransportsInUi(page);
 
   /** Reads the current network output enabled state from the hydrated settings store. */
   const networkOutputEnabled = async () =>
@@ -310,6 +339,7 @@ test("I/O transports panel toggles network input", async ({ page }) => {
   const inputSwitch = networkSection.getByRole("switch", {
     name: "Enable network input",
   });
+  await allowHostTransportsInUi(page);
 
   /** Reads the current network input enabled state from the hydrated settings store. */
   const networkInputEnabled = async () =>
@@ -361,6 +391,7 @@ test("I/O transports panel toggles USB output", async ({ page }) => {
   const usbSwitch = usbSection.getByRole("switch", {
     name: "Enable USB output",
   });
+  await allowHostTransportsInUi(page);
 
   /** Reads the current USB output enabled state from the hydrated settings store. */
   const usbOutputEnabled = async () =>
@@ -683,8 +714,7 @@ test("I/O transports panel keeps no USB devices state neutral", async ({
   await expect(select.locator("option")).toContainText(
     "No compatible USB devices",
   );
-  await expect(select).toHaveClass(/border-gray-700/);
-  await expect(select).not.toHaveClass(/border-red-500/);
+  await expect(select).toHaveAttribute("aria-invalid", "false");
   await expect(newUsbRow).not.toHaveClass(/outline-red-500/);
 });
 
