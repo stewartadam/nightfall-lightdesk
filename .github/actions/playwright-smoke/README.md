@@ -8,19 +8,22 @@ Run the Chromium product smoke suite in an existing Linux build-and-test job:
 ```
 
 The caller must check out this repository, set up Node.js, pnpm and Rust, install Node
-and native backend dependencies, generate TypeScript shared types, and download
+dependencies, generate TypeScript shared types, and download
 the shared release WASM bridge. `ci.yml` supplies that artifact
 and the backend executable produced by its native job.
 
 The CI caller runs smoke tests even if a preceding hook fails, provided asset
 preparation succeeded and the job has not been cancelled.
 
-The action installs Playwright browsers and their system dependencies, seeds
+The action installs Chromium (without the headless shell) and its system
+dependencies, which include ALSA, the headless backend's only native runtime
+library. It then seeds
 disposable showfiles in the runner's temporary directory, runs
 `pnpm run test:webui-smoke --max-failures=3`, and uploads reports even when tests
 fail. The three-failure cap stops repeated setup failures before they exhaust the
 job timeout. It uses two
-workers by default; set the `workers` input to override this. Set a unique
+workers by default; set the `workers` input to override this. `ci.yml` runs three
+on its four-vCPU runner. Set a unique
 `artifact-name` when invoking the action more than once in the same job.
 
 The wrapper builds the backend using the shared native Cargo graph unless
