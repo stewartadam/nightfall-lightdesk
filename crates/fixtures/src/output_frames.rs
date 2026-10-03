@@ -17,7 +17,8 @@
 //! 1. written channels of console universe windows routed by console→transport bindings
 //!    (with remapping), later bindings winning where windows overlap;
 //! 2. direct fixture→transport output buffer channels;
-//! 3. transport input windows routed by input passthrough bindings.
+//! 3. transport input windows routed by input passthrough bindings, highest-priority binding
+//!    last so its window wins where windows overlap.
 //!
 //! Console space never reaches the wire unless a console→transport binding routes it.
 
@@ -271,7 +272,7 @@ pub fn update_input_routing(
     }
 
     let mut routes: HashMap<OutputFrameKey, Vec<InputWindowRoute>> = HashMap::new();
-    for binding in &resolved_input_bindings.bindings {
+    for binding in resolved_input_bindings.iter_overlay_order() {
         let ResolvedInputSource::Transport {
             transport,
             universe,
@@ -479,5 +480,54 @@ mod tests {
         assert_eq!(composed(&mut app, &sacn(), 1).unwrap()[0..2], [5, 0]);
         assert_eq!(composed(&mut app, &unicast, 1).unwrap()[0..2], [0, 6]);
         assert_eq!(output_transport_label(&unicast), "sACN → 10.0.0.4");
+    }
+
+    /// Builds a resolved Art-Net-to-sACN passthrough from `source_universe` onto sACN
+    /// universe 5, both windows starting at address 1.
+    fn artnet_to_sacn_passthrough(source_universe: u16, priority: i32) -> ResolvedInputBinding {
+        ResolvedInputBinding {
+            source: ResolvedInputSource::Transport {
+                transport: BindingTransport::ArtNet,
+                universe: source_universe,
+                address: 1,
+            },
+            priority,
+            destination: ResolvedInputDestination::Transport {
+                target: ResolvedTransportTarget {
+                    target: "sacn".to_string(),
+                    protocol: BindingTransport::Sacn,
+                    transport: sacn(),
+                    universe: 5,
+                    address: 1,
+                },
+            },
+        }
+    }
+
+    /// When two passthroughs write the same wire universe, the binding resolved with the
+    /// higher priority (listed first) is the one whose data reaches the frame.
+    #[test]
+    fn highest_priority_passthrough_wins_shared_wire_universe() {
+        let mut app = compose_app();
+        for (universe, value) in [(1, 10), (2, 1)] {
+            let mut input = [0; MAX_CHANNELS_PER_UNIVERSE];
+            input[0] = value;
+            app.world_mut()
+                .resource_mut::<InputDmxUniverses>()
+                .set_universe(BindingTransport::ArtNet, universe, input, Instant::now());
+        }
+        app.world_mut()
+            .resource_mut::<ResolvedInputBindings>()
+            .bindings = vec![
+            artnet_to_sacn_passthrough(1, 10),
+            artnet_to_sacn_passthrough(2, 1),
+        ];
+
+        let frame = composed(&mut app, &sacn(), 5).expect("passthrough frame is composed");
+
+        assert_eq!(
+            frame[0], 10,
+            "priority 10 source should win over priority 1"
+        );
     }
 }
