@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 const SEQUENCE_GOTO_CUE_ONE_UID = "10000000000040008000000000000001";
 const SEQUENCE_GOTO_CUE_TWO_UID = "10000000000040008000000000000002";
 const SEQUENCE_GOTO_SEQUENCE_UID = "20000000000040008000000000000001";

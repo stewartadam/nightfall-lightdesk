@@ -9,6 +9,9 @@
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 const SEQUENCE_EDITOR_PANEL_ID =
   "panel-SequenceEditor-create-tracking-mode-e2e";
 

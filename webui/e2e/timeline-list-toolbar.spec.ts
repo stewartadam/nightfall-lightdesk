@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Opens a unique blank showfile for the timeline toolbar scenario. */
 async function openOwnedTimelineListApp(page: Page): Promise<void> {
   const testInfo = test.info();

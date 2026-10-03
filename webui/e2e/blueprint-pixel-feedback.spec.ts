@@ -8,6 +8,9 @@
 
 import { expect, test } from "./playwright-fixtures";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Recalling position onto the sample pixel group keeps feedback and the page responsive. */
 test("pixel group recall bounds incompatible blueprint feedback", async ({
   page,

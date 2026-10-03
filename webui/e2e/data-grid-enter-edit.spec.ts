@@ -9,6 +9,9 @@
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 const PATCH_PANEL_ACTIVE_TAB_KEY = "nightfall-patch-panel:active-tab";
 
 type OwnedPatchFixtures = {
@@ -107,7 +110,11 @@ async function openPatchFixtureGrid(page: Page): Promise<OwnedPatchGrid> {
   await expect(commandInput).toBeVisible();
   await commandInput.fill("Open Patch");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Add fixture" })).toBeVisible();
+  await expect(
+    page
+      .locator('[data-panel-kind="patch"]')
+      .getByRole("button", { name: "Add fixture", exact: true }),
+  ).toBeVisible();
   const grid = page
     .locator('[data-panel-kind="patch"] [data-grid-kind="tanstack"]')
     .filter({
