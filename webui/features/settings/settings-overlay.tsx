@@ -341,7 +341,6 @@ export function SettingsOverlay() {
         aria-label="Settings"
         class="nightfall-top-layer"
         onClick={closeSettings}
-        onKeyDown={(e) => e.key === "Enter" && closeSettings()}
       >
         <DialogSurface
           role="document"

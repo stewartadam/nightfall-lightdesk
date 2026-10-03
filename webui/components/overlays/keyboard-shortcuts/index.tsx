@@ -6,25 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createMemo,
-  For,
-  Match,
-  onCleanup,
-  onMount,
-  Show,
-  Switch,
-} from "solid-js";
-import { Portal } from "solid-js/web";
+import { createMemo, For, Match, Switch } from "solid-js";
 import {
   allShortcuts,
   type KeyboardShortcut,
 } from "../../../lib/keyboardShortcuts";
-import { getLogger } from "../../../lib/logger";
 import { useAppShell } from "../../providers/app-shell";
+import Modal from "../../ui/modal";
 import { ScrollArea } from "../../ui/scroll-area";
-
-const log = getLogger(import.meta.url);
 
 // Detect if running on macOS
 const isMac =
@@ -225,108 +214,64 @@ export default function ShortcutsPopup() {
     return groupKey;
   };
 
-  /**
-   * Handle Escape key press to close the shortcuts popup
-   *
-   * This direct event handler only processes the Escape key when the popup is visible.
-   * All other keyboard shortcuts are managed through the centralized shortcuts system.
-   *
-   * @param e - The keyboard event
-   */
-  const handleKeyDown = (e: KeyboardEvent) => {
-    // Only handle escape key, let the keyboard shortcuts system handle others
-    if (e.key === "Escape" && isShortcutsPopupVisible()) {
-      e.preventDefault();
-      e.stopPropagation();
-      hideShortcutsPopup();
-    }
-  };
-
-  /**
-   * Direct DOM event handler for Escape key
-   *
-   * NOTE: This component uses a direct DOM event listener for the Escape key rather than
-   * the keyboard shortcuts system for the following reasons:
-   * 1. Escape is a high-priority key that should always close modal UI elements
-   * 2. We need to ensure this takes precedence over other shortcuts
-   *
-   * For all other shortcuts (e.g., Shift+? to open), we use the centralized
-   * keyboard shortcuts system.
-   */
-  onMount(() => {
-    log.trace("mounting");
-
-    // Register escape key handler with capture phase to ensure it runs before other handlers
-    window.addEventListener("keydown", handleKeyDown, { capture: true });
-
-    onCleanup(() => {
-      log.trace("unmounting");
-      window.removeEventListener("keydown", handleKeyDown, { capture: true });
-    });
-  });
-
   return (
-    <Show when={isShortcutsPopupVisible()}>
-      <Portal>
-        {/** biome-ignore lint/a11y/useKeyWithClickEvents: this is a click-only interaction */}
-        <div
-          class="fixed inset-0 nightfall-top-layer bg-black bg-opacity-70 flex items-center justify-center"
-          data-dialog-kind="shortcuts"
-          onClick={hideShortcutsPopup}
+    <Modal isOpen={isShortcutsPopupVisible()} onEscape={hideShortcutsPopup}>
+      {/** biome-ignore lint/a11y/useKeyWithClickEvents: this is a click-only interaction */}
+      <div
+        class="fixed inset-0 nightfall-top-layer bg-black bg-opacity-70 flex items-center justify-center"
+        data-dialog-kind="shortcuts"
+        onClick={hideShortcutsPopup}
+      >
+        <ScrollArea
+          class="bg-[#252525] border border-gray-700 rounded-lg max-w-4xl max-h-[80vh]"
+          viewportClass="p-6"
+          viewportProps={{
+            role: "region",
+            "aria-label": "Keyboard shortcuts",
+            tabIndex: 0,
+            onClick: (event) => event.stopPropagation(),
+          }}
         >
-          <ScrollArea
-            class="bg-[#252525] border border-gray-700 rounded-lg max-w-4xl max-h-[80vh]"
-            viewportClass="p-6"
-            viewportProps={{
-              role: "region",
-              "aria-label": "Keyboard shortcuts",
-              tabIndex: 0,
-              onClick: (event) => event.stopPropagation(),
-            }}
-          >
-            <div class="flex justify-between items-center mb-4">
-              <h2 class="text-xl font-semibold text-white">
-                Keyboard Shortcuts
-              </h2>
-              <button
-                class="text-gray-400 hover:text-white"
-                title="Close"
-                onClick={hideShortcutsPopup}
-              >
-                ✕
-              </button>
-            </div>
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-white">Keyboard Shortcuts</h2>
+            <button
+              class="text-gray-400 hover:text-white"
+              title="Close"
+              onClick={hideShortcutsPopup}
+            >
+              ✕
+            </button>
+          </div>
 
-            <div class="columns-1 md:columns-2 lg:columns-3 gap-8">
-              <For each={organizedShortcuts()}>
-                {([panelName, panelShortcuts]) => (
-                  <div class="mb-8 break-inside-avoid">
-                    <h3 class="text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
-                      {getDisplayName(panelName)}
-                    </h3>
-                    <div class="space-y-2">
-                      <For each={panelShortcuts}>
-                        {(shortcut) => (
-                          <div class="flex items-center text-sm gap-2">
-                            <ShortcutKeys shortcut={shortcut.key} />
-                            <span class="text-gray-300">
-                              {shortcut.description}
-                            </span>
-                          </div>
-                        )}
-                      </For>
-                    </div>
+          <div class="columns-1 md:columns-2 lg:columns-3 gap-8">
+            <For each={organizedShortcuts()}>
+              {([panelName, panelShortcuts]) => (
+                <div class="mb-8 break-inside-avoid">
+                  <h3 class="text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
+                    {getDisplayName(panelName)}
+                  </h3>
+                  <div class="space-y-2">
+                    <For each={panelShortcuts}>
+                      {(shortcut) => (
+                        <div class="flex items-center text-sm gap-2">
+                          <ShortcutKeys shortcut={shortcut.key} />
+                          <span class="text-gray-300">
+                            {shortcut.description}
+                          </span>
+                        </div>
+                      )}
+                    </For>
                   </div>
-                )}
-              </For>
-            </div>
+                </div>
+              )}
+            </For>
+          </div>
 
-            <div class="mt-4 text-xs text-gray-500 text-center flex items-center justify-center gap-1">
-              Press <kbd class={kbdClasses}>Esc</kbd> to close
-            </div>
-          </ScrollArea>
-        </div>
-      </Portal>
-    </Show>
+          <div class="mt-4 text-xs text-gray-500 text-center flex items-center justify-center gap-1">
+            Press <kbd class={kbdClasses}>Esc</kbd> to close
+          </div>
+        </ScrollArea>
+      </div>
+    </Modal>
   );
 }

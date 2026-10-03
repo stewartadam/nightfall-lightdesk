@@ -205,35 +205,6 @@ export function DiagnosticsDialog() {
     onCleanup(() => cancelAnimationFrame(frame));
   });
 
-  /** Routes Enter to Download while preserving explicitly focused controls and text selection. */
-  createEffect(() => {
-    if (!isOpen()) return;
-    /** Keeps the default action inside this dialog without intercepting Cancel or Copy activation. */
-    const handleDefaultAction = (event: KeyboardEvent) => {
-      if (
-        event.key !== "Enter" ||
-        event.repeat ||
-        event.isComposing ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey
-      )
-        return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("button, summary, textarea, [contenteditable=true]"))
-        return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      void download();
-    };
-    document.addEventListener("keydown", handleDefaultAction, true);
-    onCleanup(() =>
-      document.removeEventListener("keydown", handleDefaultAction, true),
-    );
-  });
-
   const buttonClass =
     "rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 hover:bg-neutral-700 focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50";
   /** Styles the selected segment while keeping its radio input keyboard accessible. */
@@ -241,7 +212,11 @@ export function DiagnosticsDialog() {
     `relative cursor-pointer whitespace-nowrap rounded px-2.5 py-1 text-center text-sm has-focus-visible:ring-2 has-focus-visible:ring-blue-400 ${selected ? "bg-blue-600 text-white" : "text-neutral-300 hover:bg-neutral-800"}`;
 
   return (
-    <Modal isOpen={isOpen()} onEscape={closeDiagnostics}>
+    <Modal
+      isOpen={isOpen()}
+      onEscape={closeDiagnostics}
+      onEnter={() => void download()}
+    >
       <div class="fixed inset-0 nightfall-top-layer flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
         <section
           ref={dialogElement}

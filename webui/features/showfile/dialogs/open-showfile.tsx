@@ -32,6 +32,7 @@ import {
   DialogSurface,
   DialogTitle,
 } from "../../../components/ui/dialog";
+import Modal from "../../../components/ui/modal";
 import { SearchPickerOption } from "../../../components/ui/search-picker";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -286,7 +287,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
   );
 
   return (
-    <Show when={props.open}>
+    <Modal isOpen={props.open} usePortal={false}>
       <DialogBackdrop
         role="presentation"
         onMouseDown={(event) => {
@@ -664,6 +665,6 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
         onCancel={() => setConfirmingEmptyTrash(false)}
         onConfirm={() => void confirmEmptyTrash()}
       />
-    </Show>
+    </Modal>
   );
 }

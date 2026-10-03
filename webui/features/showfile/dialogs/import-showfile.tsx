@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog";
 import { NativeSelect } from "../../../components/ui/form-controls";
+import Modal from "../../../components/ui/modal";
 import { Table } from "../../../components/ui/table";
 import { Button } from "../../../components/ui/visual-language/button";
 import {
@@ -194,7 +195,7 @@ export function ShowfileImportModal(props: ShowfileImportModalProps) {
   };
 
   return (
-    <Show when={props.open}>
+    <Modal isOpen={props.open} usePortal={false} onEnter={submitImport}>
       <DialogBackdrop
         role="presentation"
         onMouseDown={(event) => {
@@ -363,6 +364,6 @@ export function ShowfileImportModal(props: ShowfileImportModalProps) {
           </DialogFooter>
         </DialogSurface>
       </DialogBackdrop>
-    </Show>
+    </Modal>
   );
 }

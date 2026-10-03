@@ -8,17 +8,7 @@
 
 import "./patch-wizard.css";
 import { useStore } from "@nanostores/solid";
-import {
-  createMemo,
-  createSignal,
-  For,
-  Match,
-  onCleanup,
-  onMount,
-  Show,
-  Switch,
-} from "solid-js";
-import { Portal } from "solid-js/web";
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import {
   DialogBackdrop,
   DialogBody,
@@ -28,14 +18,13 @@ import {
   DialogSurface,
   DialogTitle,
 } from "../../../components/ui/dialog";
-import { createModalScrollLock } from "../../../components/ui/modal/scroll-lock";
+import Modal from "../../../components/ui/modal";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import {
   computeFixtureChannelCount,
   libraryDefinitionId,
 } from "../../../lib/fixture-service";
-import { getLogger } from "../../../lib/logger";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fixtureLibrary,
@@ -48,8 +37,6 @@ import { StepFinalize } from "./step-finalize";
 import { StepSelectFixture } from "./step-select-fixture";
 import { StepSelectMode } from "./step-select-mode";
 import { usePatchWizard, type WizardStep } from "./wizard-context";
-
-const log = getLogger(import.meta.url);
 
 interface StepIndicatorProps {
   step: WizardStep;
@@ -128,8 +115,6 @@ export function PatchWizard() {
     createSignal<number[]>([]);
   /** Tracks when the wizard is updating existing fixture definitions. */
   const isMorphMode = createMemo(() => state().morphFixtureIds.length > 0);
-
-  createModalScrollLock(isOpen);
 
   /** Calculate the next available fixture ID */
   const nextFixtureId = createMemo(() => {
@@ -253,44 +238,28 @@ export function PatchWizard() {
     void finishWithOptions(false);
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (!isOpen()) return;
-
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!isCreating()) {
-        closeWizard();
-      }
-    } else if (e.key === "Enter" && canGoNext() && !isCreating()) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (isLastStep()) {
-        handleFinish();
-      } else {
-        goToNextStep();
-      }
+  /** Advances the wizard, or finishes it on the last step, as its Enter action. */
+  const advanceFromKeyboard = () => {
+    if (!canGoNext() || isCreating()) return;
+    if (isLastStep()) {
+      handleFinish();
+    } else {
+      goToNextStep();
     }
   };
 
-  onMount(() => {
-    log.trace("mounting");
-    document.addEventListener("keydown", handleKeyDown, true);
-  });
-
-  onCleanup(() => {
-    log.trace("unmounting");
-    document.removeEventListener("keydown", handleKeyDown, true);
-  });
-
   return (
     <Show when={isOpen()}>
-      <Portal>
+      <Modal
+        isOpen
+        onEscape={closeWizard}
+        closeOnEscape={!isCreating()}
+        onEnter={advanceFromKeyboard}
+      >
         <DialogBackdrop
           role="dialog"
           aria-modal="true"
           aria-label="Patch Wizard"
-          onKeyDown={(e) => e.key === "Enter" && e.stopPropagation()}
         >
           <DialogSurface
             role="document"
@@ -449,7 +418,7 @@ export function PatchWizard() {
             </DialogFooter>
           </DialogSurface>
         </DialogBackdrop>
-      </Portal>
+      </Modal>
       <DeleteConfirmModal
         isOpen={isVersionConflictModalOpen()}
         title="Version Mismatch Detected"
