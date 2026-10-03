@@ -8,7 +8,10 @@
 
 //! Provides a logical representation of DMX universes and their channel values.
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
@@ -46,6 +49,7 @@ pub struct InputDmxUniverses {
         HashMap<BindingTransport, HashMap<u16, [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE]>>,
     last_seen: HashMap<(BindingTransport, u16), Instant>,
     last_is_self: HashMap<(BindingTransport, u16), bool>,
+    released: HashSet<(BindingTransport, u16)>,
 }
 
 impl InputDmxUniverses {
@@ -72,6 +76,7 @@ impl InputDmxUniverses {
         let by_transport = self.universes.entry(transport).or_default();
         by_transport.insert(universe_id, data);
         self.last_seen.insert((transport, universe_id), received_at);
+        self.released.remove(&(transport, universe_id));
         self.last_is_self
             .insert((transport, universe_id), is_self_frame);
     }
@@ -106,12 +111,19 @@ impl InputDmxUniverses {
             .unwrap_or([0; MAX_CHANNELS_PER_UNIVERSE])
     }
 
-    /// Borrows the latest frame of a transport/universe, if one was received.
-    pub fn universe(
+    /// Borrows the latest frame of a transport/universe for passthrough output.
+    ///
+    /// Returns `None` when no frame was received, or when the source was released by
+    /// [`Self::release_stale`] and has not sent a new frame since. Released sources keep their
+    /// last frame and age for stale-input reporting.
+    pub fn active_universe(
         &self,
         transport: BindingTransport,
         universe_id: u16,
     ) -> Option<&[ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE]> {
+        if self.released.contains(&(transport, universe_id)) {
+            return None;
+        }
         self.universes
             .get(&transport)
             .and_then(|by_universe| by_universe.get(&universe_id))
@@ -147,11 +159,23 @@ impl InputDmxUniverses {
         self.last_is_self.get(&(transport, universe_id)).copied()
     }
 
+    /// Releases received universes whose latest frame is at least `timeout` old.
+    ///
+    /// Released sources stop feeding passthrough bindings until their next frame is stored.
+    pub fn release_stale(&mut self, now: Instant, timeout: Duration) {
+        for (source, last_seen) in &self.last_seen {
+            if now.saturating_duration_since(*last_seen) >= timeout {
+                self.released.insert(*source);
+            }
+        }
+    }
+
     /// Clears all cached input DMX universes and age tracking metadata.
     pub fn clear(&mut self) {
         self.universes.clear();
         self.last_seen.clear();
         self.last_is_self.clear();
+        self.released.clear();
     }
 }
 
@@ -704,6 +728,68 @@ mod tests {
         assert_eq!(
             input_universes.is_self_frame(BindingTransport::Sacn, 11),
             Some(false)
+        );
+    }
+
+    /// Verifies a stale source stops feeding passthrough while fresh sources keep feeding it.
+    #[test]
+    fn release_stale_deactivates_only_stale_sources() {
+        let mut input_universes = InputDmxUniverses::default();
+        let now = Instant::now();
+        let stale = (BindingTransport::Sacn, 1);
+        let fresh = (BindingTransport::ArtNet, 2);
+
+        input_universes.set_universe(
+            stale.0,
+            stale.1,
+            [0; MAX_CHANNELS_PER_UNIVERSE],
+            now - Duration::from_millis(1500),
+        );
+        input_universes.set_universe(
+            fresh.0,
+            fresh.1,
+            [0; MAX_CHANNELS_PER_UNIVERSE],
+            now - Duration::from_millis(100),
+        );
+
+        input_universes.release_stale(now, Duration::from_millis(500));
+
+        assert!(input_universes.active_universe(stale.0, stale.1).is_none());
+        assert!(input_universes.active_universe(fresh.0, fresh.1).is_some());
+        assert!(
+            input_universes
+                .frame_age_ms(stale.0, stale.1, now)
+                .is_some(),
+            "released sources keep their frame age for stale reporting"
+        );
+    }
+
+    /// Verifies a released source becomes active again once a new frame arrives.
+    #[test]
+    fn new_frame_reactivates_released_source() {
+        let mut input_universes = InputDmxUniverses::default();
+        let now = Instant::now();
+        let source = (BindingTransport::Sacn, 1);
+
+        input_universes.set_universe(
+            source.0,
+            source.1,
+            [0; MAX_CHANNELS_PER_UNIVERSE],
+            now - Duration::from_millis(1500),
+        );
+        input_universes.release_stale(now, Duration::from_millis(500));
+        assert!(
+            input_universes
+                .active_universe(source.0, source.1)
+                .is_none()
+        );
+
+        input_universes.set_universe(source.0, source.1, [0; MAX_CHANNELS_PER_UNIVERSE], now);
+
+        assert!(
+            input_universes
+                .active_universe(source.0, source.1)
+                .is_some()
         );
     }
 }
