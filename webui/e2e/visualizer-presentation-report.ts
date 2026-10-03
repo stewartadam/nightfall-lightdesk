@@ -6,6 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+/** Presentation outcome Chromium records for one frame. */
+type FrameReporter = { state: string; affects_smoothness: boolean };
+
 type TraceEvent = {
   name: string;
   ph: string;
@@ -17,7 +20,8 @@ type TraceEvent = {
     args?: {
       data?: { expected: number; dropped_v3: number; dropped_v4: number };
     };
-    frame_reporter?: { state: string; affects_smoothness: boolean };
+    frame_reporter?: FrameReporter;
+    chrome_frame_reporter?: FrameReporter;
   };
 };
 
@@ -85,7 +89,9 @@ export function summarizePresentationTrace(trace: {
         });
       continue;
     }
-    const reporter = begin.args?.frame_reporter;
+    // Chromium versions name the typed PipelineReporter argument differently in JSON traces.
+    const reporter =
+      begin.args?.frame_reporter ?? begin.args?.chrome_frame_reporter;
     if (reporter?.state === "STATE_PRESENTED_ALL") {
       presentedAll++;
       presentedAt.add(event.ts);
@@ -108,8 +114,7 @@ export function summarizePresentationTrace(trace: {
     presentedPartial,
     droppedAffectingSmoothness,
     maxPresentationIntervalMs: Math.max(0, ...intervals),
-    presentationIntervalsOver25Ms: intervals.filter((value) => value > 25)
-      .length,
+    presentationIntervalsMs: intervals,
     sequences,
   };
 }

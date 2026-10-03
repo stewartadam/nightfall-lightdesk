@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   budgetCheckPasses,
+  frameSkipThresholdMs,
   MAX_DROPPED_FRAME_RATIO,
   minimumPresentedFrames,
   type PresentationSummary,
@@ -26,7 +27,7 @@ function summary(
     presentedPartial: 0,
     droppedAffectingSmoothness: 0,
     maxPresentationIntervalMs: 17,
-    presentationIntervalsOver25Ms: 0,
+    presentationIntervalsMs: Array.from({ length: 717 }, () => 1000 / 60),
     sequences,
   };
 }
@@ -92,6 +93,29 @@ test("missing required sequence fails", () => {
   );
 });
 
+/** A frame held for two refreshes counts as skipped at 120 Hz but not at 60 Hz. */
+test("skip threshold follows the refresh interval", () => {
+  assert.equal(frameSkipThresholdMs(1000 / 60), 25);
+  assert.equal(frameSkipThresholdMs(1000 / 120), 12.5);
+  const presentation = {
+    ...summary([
+      { name: "CanvasAnimation", expected: 1440, droppedV3: 0, droppedV4: 0 },
+    ]),
+    presentedAll: 1400,
+    presentationIntervalsMs: [
+      ...Array.from({ length: 1380 }, () => 1000 / 120),
+      ...Array.from({ length: 19 }, () => 1000 / 60),
+    ],
+  };
+  assert.deepEqual(failures(presentation, "CanvasAnimation"), []);
+  assert.deepEqual(
+    presentationBudgetChecks(presentation, "CanvasAnimation", 1000 / 120)
+      .checks.filter((check) => !budgetCheckPasses(check))
+      .map((check) => check.label),
+    ["Presentation intervals over 12.5ms"],
+  );
+});
+
 /** The presented-frame floor scales with the display cadence instead of assuming 60 Hz. */
 test("presented frame floor follows the refresh interval", () => {
   assert.equal(minimumPresentedFrames(12_000, 1000 / 60), 600);
@@ -103,6 +127,7 @@ test("presented frame floor follows the refresh interval", () => {
     presentationBudgetChecks(presentation, "CanvasAnimation", 1000 / 120)
       .checks.filter((check) => !budgetCheckPasses(check))
       .map((check) => check.label),
-    ["Fully presented frames"],
+    // A steady 60 Hz cadence on a 120 Hz display skips every other refresh.
+    ["Fully presented frames", "Presentation intervals over 12.5ms"],
   );
 });

@@ -49,7 +49,7 @@ test("presentation summary scopes completed frames to the marked page interval",
   assert.equal(result.presentedPartial, 1);
   assert.equal(result.droppedAffectingSmoothness, 1);
   assert.equal(result.maxPresentationIntervalMs, 48);
-  assert.equal(result.presentationIntervalsOver25Ms, 1);
+  assert.deepEqual(result.presentationIntervalsMs, [16, 48]);
   assert.equal(result.durationMs, 99);
 });
 
@@ -79,6 +79,20 @@ test("presentation summary retains completed canvas drop counters", () => {
   assert.deepEqual(result.sequences, [
     { name: "CanvasAnimation", expected: 301, droppedV3: 1, droppedV4: 1 },
   ]);
+});
+
+/** Traces that name the reporter argument `chrome_frame_reporter` are summarized the same way. */
+test("presentation summary reads either reporter argument name", () => {
+  const traceEvents = [
+    { name: "nightfall-playback-measure-start", ph: "I", pid: 1, ts: 0 },
+    { name: "nightfall-playback-measure-end", ph: "I", pid: 1, ts: 100000 },
+    ...frame(1000, 3000).map(({ args, ...event }) =>
+      args
+        ? { ...event, args: { chrome_frame_reporter: args.frame_reporter } }
+        : event,
+    ),
+  ];
+  assert.equal(summarizePresentationTrace({ traceEvents }).presentedAll, 1);
 });
 
 /** Missing tracing categories or measurement markers must fail instead of reporting zero drops. */

@@ -13,7 +13,7 @@
  * stutter (a few percent of frames) still does.
  */
 
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import type { summarizePresentationTrace } from "./visualizer-presentation-report";
 
 /** Summary of a measured Chromium presentation trace. */
@@ -22,11 +22,11 @@ export type PresentationSummary = ReturnType<typeof summarizePresentationTrace>;
 /** One Chromium frame-sequence tracker window from a presentation summary. */
 export type PresentationSequence = PresentationSummary["sequences"][number];
 
-/** 60 Hz refresh budget plus scheduling slack: a frame interval above this is a visible skip. */
-export const FRAME_SKIP_MS = 25;
-
-/** The 99th-percentile frame interval must stay within one refresh plus slack. */
-export const P99_FRAME_INTERVAL_MS = FRAME_SKIP_MS;
+/**
+ * A frame interval longer than this many refresh intervals is a visible skip: one refresh
+ * plus half a refresh of scheduling slack (25 ms at 60 Hz, 12.5 ms at 120 Hz).
+ */
+export const FRAME_SKIP_REFRESH_MULTIPLE = 1.5;
 
 /**
  * At most 0.5% of frames may be skipped: three skips in a twelve-second 60 Hz window
@@ -34,7 +34,7 @@ export const P99_FRAME_INTERVAL_MS = FRAME_SKIP_MS;
  */
 export const MAX_SKIPPED_FRAME_RATIO = 0.005;
 
-/** At most 0.5% of submissions may complete after their 60 Hz frame deadline. */
+/** At most 0.5% of submissions may complete after their frame deadline. */
 export const MAX_LATE_SUBMISSION_RATIO = 0.005;
 
 /**
@@ -51,6 +51,39 @@ export const MIN_PRESENTED_REFRESH_RATIO = 5 / 6;
 
 /** Refresh interval assumed when a spec has not measured the display's own cadence. */
 export const DEFAULT_REFRESH_INTERVAL_MS = 1000 / 60;
+
+/**
+ * Returns the frame interval above which a frame counts as skipped at a display cadence of
+ * `refreshIntervalMs`. The 99th-percentile frame interval is held to the same bound.
+ */
+export function frameSkipThresholdMs(
+  refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS,
+): number {
+  return refreshIntervalMs * FRAME_SKIP_REFRESH_MULTIPLE;
+}
+
+/**
+ * Measures the display's refresh interval as the median of idle animation-frame intervals.
+ * Call it while the page is idle, before starting a measured workload.
+ */
+export async function measureRefreshIntervalMs(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const intervals: number[] = [];
+        let last: number | undefined;
+        /** Records idle frame intervals until enough are collected for a stable median. */
+        const tick = (time: number) => {
+          if (last !== undefined) intervals.push(time - last);
+          last = time;
+          if (intervals.length === 60)
+            resolve(intervals.sort((a, b) => a - b)[30]);
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+}
 
 /** Returns the value at percentile `p` (0–1) of an ascending-sorted array. */
 export function percentile(sorted: readonly number[], p: number): number {
@@ -98,6 +131,7 @@ export function presentationBudgetChecks(
   const required = presentation.sequences.filter(
     (sequence) => sequence.name === requiredSequence,
   );
+  const skipThresholdMs = frameSkipThresholdMs(refreshIntervalMs);
   const checks: BudgetCheck[] = [
     {
       label: "Fully presented frames",
@@ -113,9 +147,11 @@ export function presentationBudgetChecks(
       max: MAX_DROPPED_FRAME_RATIO,
     },
     {
-      label: `Presentation intervals over ${FRAME_SKIP_MS}ms`,
+      label: `Presentation intervals over ${skipThresholdMs.toFixed(1)}ms`,
       actual: ratio(
-        presentation.presentationIntervalsOver25Ms,
+        presentation.presentationIntervalsMs.filter(
+          (interval) => interval > skipThresholdMs,
+        ).length,
         presentation.presentedAll,
       ),
       max: MAX_SKIPPED_FRAME_RATIO,

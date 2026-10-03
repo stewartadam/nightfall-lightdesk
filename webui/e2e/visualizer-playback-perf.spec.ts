@@ -6,13 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { TARGET_FRAME_TIME } from "../features/visualizer/rendering/frame-rate-limiter";
 import type { VisualizerStats } from "../state/appStores";
 import {
   expectPresentationWithinBudget,
-  FRAME_SKIP_MS,
+  frameSkipThresholdMs,
   MAX_LATE_SUBMISSION_RATIO,
   MAX_SKIPPED_FRAME_RATIO,
-  P99_FRAME_INTERVAL_MS,
+  measureRefreshIntervalMs,
+  minimumPresentedFrames,
   percentile,
   ratio,
 } from "./perf-budgets";
@@ -88,10 +90,29 @@ async function transport(page: Page, target: PlaybackTarget, playing: boolean) {
         ]);
         if (result?.error) throw new Error(JSON.stringify(result));
       };
+      /** Reads the store's view of the benchmarked timecode. */
+      const timecode = () =>
+        (window as any).appStores.timecodes.get()[target.timecodeUid]?.[1];
+      /** Waits until the store reflects a transport change, so later polls cannot read stale state. */
+      const reflected = (predicate: () => boolean, description: string) =>
+        new Promise<void>((resolve, reject) => {
+          const deadline = performance.now() + 10_000;
+          /** Polls until the predicate holds or the deadline passes. */
+          const poll = () => {
+            if (predicate()) resolve();
+            else if (performance.now() > deadline)
+              reject(
+                new Error(`Timecode store never reflected ${description}`),
+              );
+            else setTimeout(poll, 10);
+          };
+          poll();
+        });
       await send({
         module: "TimecodeCommand",
         command: { type: "StopTimecode", data: target.timecodeId },
       });
+      await reflected(() => !timecode()?.is_active, "the stop");
       if (playing) {
         await send({
           module: "TimecodeCommand",
@@ -106,6 +127,13 @@ async function transport(page: Page, target: PlaybackTarget, playing: boolean) {
             },
           },
         });
+        await reflected(() => {
+          const time = timecode()?.current_time;
+          const ms = (time?.secs ?? 0) * 1000 + (time?.nanos ?? 0) / 1e6;
+          // Warm-up leaves the stopped clock seconds past the target, so a small
+          // tolerance only absorbs the backend's position quantization.
+          return Math.abs(ms - target.positionMs) < 50;
+        }, "the seek");
         await send({
           module: "TimecodeCommand",
           command: { type: "StartTimecode", data: target.timecodeId },
@@ -337,6 +365,15 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
+  // Measure on the blank page, before the visualizer can slow the main thread's cadence.
+  const refreshIntervalMs = await measureRefreshIntervalMs(page);
+  testInfo.annotations.push({
+    type: "refresh-interval",
+    description: `${refreshIntervalMs.toFixed(2)}ms`,
+  });
+  const skipThresholdMs = frameSkipThresholdMs(refreshIntervalMs);
+  // The production renderer caps its own submissions at 60 FPS, even on faster displays.
+  const renderIntervalMs = Math.max(refreshIntervalMs, TARGET_FRAME_TIME);
   const target = await openWorkload(page);
   if (process.env.NIGHTFALL_VISUALIZER_WASH_STRESS === "1") {
     const ids = await page.evaluate(() =>
@@ -515,6 +552,7 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
             expectPresentationWithinBudget(
               presentation,
               workerMode ? "RAF" : "CanvasAnimation",
+              renderIntervalMs,
             );
           }
         } finally {
@@ -586,7 +624,8 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
         p95: percentile(intervals, 0.95),
         p99: percentile(intervals, 0.99),
         max: intervals.at(-1),
-        over25Ms: intervals.filter((ms) => ms > FRAME_SKIP_MS).length,
+        refreshIntervalMs,
+        skippedFrames: intervals.filter((ms) => ms > skipThresholdMs).length,
         renderPacing,
         samples,
       });
@@ -617,7 +656,12 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
             renderPacing?.submittedFrames,
             "Renderer must continue submitting throughout playback",
           )
-          .toBeGreaterThan(600);
+          .toBeGreaterThanOrEqual(
+            minimumPresentedFrames(
+              samples.at(-1)!.time - samples[0].time,
+              renderIntervalMs,
+            ),
+          );
         expect
           .soft(
             renderPacing?.scheduling?.frames,
@@ -630,7 +674,8 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
               renderPacing?.scheduling?.intervalsOver25Ms,
               renderPacing?.scheduling?.frames,
             ),
-            "Share of refreshes the renderer skips during timeline playback",
+            // The renderer's own counters match its 60 FPS cap: 25 ms skips, 60 Hz deadlines.
+            "Share of renderer callbacks more than 25 ms apart during timeline playback",
           )
           .toBeLessThanOrEqual(MAX_SKIPPED_FRAME_RATIO);
         expect
@@ -647,11 +692,11 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
             percentile(intervals, 0.99),
             "p99 UI frame interval during timeline playback",
           )
-          .toBeLessThanOrEqual(P99_FRAME_INTERVAL_MS);
+          .toBeLessThanOrEqual(skipThresholdMs);
         expect
           .soft(
             ratio(
-              intervals.filter((ms) => ms > FRAME_SKIP_MS).length,
+              intervals.filter((ms) => ms > skipThresholdMs).length,
               intervals.length,
             ),
             "Share of UI frames stalled during timeline playback",
