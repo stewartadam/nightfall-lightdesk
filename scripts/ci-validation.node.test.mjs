@@ -13,10 +13,7 @@ import { test } from "node:test";
 import { parse } from "yaml";
 
 const { jobs } = parse(
-  readFileSync(
-    new URL("../.github/workflows/ci.yml", import.meta.url),
-    "utf8",
-  ),
+  readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"),
 );
 
 /** Cheap validation and browser feedback must not acquire unrelated build barriers. */
