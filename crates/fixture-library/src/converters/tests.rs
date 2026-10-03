@@ -588,6 +588,10 @@ mod ofl_tests {
             fixture.elements[0].parameters[0].native_unit,
             ParameterUnit::Percent
         );
+        // A profile without a physical block still gets the backend's photometry defaults.
+        let physical = fixture.physical.expect("default photometry");
+        assert_eq!((physical.beam_angle, physical.field_angle), (15.0, 40.0));
+        assert_eq!(physical.lumens, DEFAULT_LUMENS);
     }
 
     /// Verifies OFL focus metadata turns raw position channels into degree-valued parameters.
