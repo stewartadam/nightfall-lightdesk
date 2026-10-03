@@ -326,10 +326,12 @@ export function useFloatingGuide(
         ? Math.abs(point.y + height / 2 - target.y - target.height / 2)
         : Math.abs(point.x + width / 2 - target.x - target.width / 2);
     /**
-     * Never covers protected surfaces and keeps header actions nearby. Without explicit focus areas,
-     * panel actions also prefer to leave their teaching panel and the Visualizer clear.
+     * Never covers protected surfaces and keeps header actions nearby. When no position clears them
+     * all, the target outranks dialogs, menus, and focus areas. Without explicit focus areas, panel
+     * actions also prefer to leave their teaching panel and the Visualizer clear.
      */
     const score = (point: { x: number; y: number }) =>
+      overlap(point, target) * 1_000_000 +
       avoid.reduce((sum, rect) => sum + overlap(point, rect) * 10000, 0) +
       (panel && focus === undefined ? overlap(point, panel) * 2 : 0) +
       (visualizer && (panel || !anchor()) ? overlap(point, visualizer) : 0) +
