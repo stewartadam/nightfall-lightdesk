@@ -31,10 +31,24 @@ pub(super) struct ChannelSemantics {
     pub highlight_dmx: Option<u32>,
 }
 
-/// Converts a GDTF DMX value to the parameter's resolution.
+/// Converts a GDTF DMX value to the parameter's resolution, honoring the GDTF shift flag.
+///
+/// Per the GDTF spec, values are byte-mirrored when widened (`255/1` on a 16-bit channel is
+/// 65535) and zero-padded only with the shift operator (`255/1s` is 65280). Narrowing keeps
+/// the most significant bytes. gdtf-rs's `DmxValue::to` zero-pads unshifted values too, so it
+/// cannot be used here.
 pub(super) fn scaled(value: DmxValue, resolution: DmxValueResolution) -> u32 {
-    let bytes = resolution.channel_width() as u8;
-    value.to(bytes).min(resolution.dmx_max() as u64) as u32
+    let source_bytes = value.bytes().get();
+    let mut result = 0u32;
+    for index in 0..resolution.channel_width() as u8 {
+        let byte = if index >= source_bytes && value.shifting() {
+            0
+        } else {
+            (value.value() >> (8 * u32::from(source_bytes - 1 - index % source_bytes))) as u8
+        };
+        result = (result << 8) | u32::from(byte);
+    }
+    result
 }
 
 /// Converts a GDTF CIE color.
@@ -93,10 +107,13 @@ fn function_ranges(
 ) -> Vec<(u32, u32)> {
     let max = resolution.dmx_max();
     let condition = |function: &ChannelFunction| {
-        function
-            .mode_master
-            .as_ref()
-            .map(|master| (master.node.to_string(), master.from.to(4), master.to.to(4)))
+        function.mode_master.as_ref().map(|master| {
+            (
+                master.node.to_string(),
+                scaled(master.from, DmxValueResolution::Uber),
+                scaled(master.to, DmxValueResolution::Uber),
+            )
+        })
     };
     let conditions: Vec<_> = functions
         .iter()
@@ -408,5 +425,27 @@ mod tests {
         let sets = &fixture.elements[0].parameters[0].functions[0].sets;
         assert_eq!(sets[0].media, None);
         assert_eq!(sets[1].media.as_deref(), Some("stars"));
+    }
+
+    /// Verifies DMX values are byte-mirrored when widened, zero-padded only with the GDTF
+    /// shift operator, and truncated to their most significant bytes when narrowed.
+    #[test]
+    fn test_scaled_mirrors_unshifted_values() {
+        use nightfall_dmx::prelude::DmxValueResolution;
+
+        use super::scaled;
+
+        let value = |source: &str| -> gdtf::values::DmxValue {
+            serde_json::from_value(serde_json::json!(source)).unwrap()
+        };
+        assert_eq!(scaled(value("255/1"), DmxValueResolution::Fine), 65535);
+        assert_eq!(scaled(value("128/1"), DmxValueResolution::Fine), 32896);
+        assert_eq!(scaled(value("255/1s"), DmxValueResolution::Fine), 65280);
+        assert_eq!(scaled(value("32896/2"), DmxValueResolution::Coarse), 128);
+        assert_eq!(
+            scaled(value("4660/2"), DmxValueResolution::Uber),
+            0x1234_1234
+        );
+        assert_eq!(scaled(value("255/1"), DmxValueResolution::Uber), u32::MAX);
     }
 }
