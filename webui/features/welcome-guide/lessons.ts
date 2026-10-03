@@ -139,7 +139,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "watch",
         title: "Stop playback",
-        keepVisible: ["panel"],
         placement: "above",
         target: '[aria-label="Stop timeline"]',
         observe: {
