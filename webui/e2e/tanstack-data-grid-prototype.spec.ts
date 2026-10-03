@@ -255,6 +255,14 @@ async function prepareOwnedTanStackBackend(
   backendPort: number,
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
+  // Keep the fixture's auto-open of the seeded default show from replacing the
+  // fresh blank world on either page load.
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "nightfall.e2eAutoOpenStartupShowfile",
+      "false",
+    );
+  });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await page.evaluate(() => {
@@ -512,6 +520,26 @@ function fixtureDataGrid(page: Page) {
 }
 
 /**
+ * Moves a panel into the 3D Visualizer's group and activates it. The default
+ * layout keeps Fixtures and Clips in collapsed edge groups; these scenarios were
+ * written for them sharing the large visualizer group.
+ */
+async function dockBesideVisualizer(page: Page, panelId: string) {
+  await page.evaluate((id) => {
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.getPanel(id);
+    const visualizerGroup = api.getPanel("panel-Visualizer")?.api.group;
+    if (!panel || !visualizerGroup) {
+      throw new Error(`Cannot dock ${id} beside the visualizer`);
+    }
+    if (panel.api.group !== visualizerGroup) {
+      panel.api.moveTo({ group: visualizerGroup, position: "center" });
+    }
+    panel.api.setActive();
+  }, panelId);
+}
+
+/**
  * Opens the TanStack fixture grid and waits for it to render rows.
  */
 async function openTanStackFixturesGrid(page: Page) {
@@ -528,7 +556,7 @@ async function openTanStackFixturesGrid(page: Page) {
   });
   await openOwnedApp(page);
   await waitForFixtureGridData(page);
-  await page.getByText("Fixtures", { exact: true }).first().click();
+  await dockBesideVisualizer(page, "panel-FixtureGrid");
 
   const grid = fixtureDataGrid(page);
   await expect(grid).toBeVisible();
@@ -803,7 +831,7 @@ async function openSequenceEditorPanel(
           initialSequenceUid: sequenceUid,
         },
         position: {
-          referencePanel: "panel-FixtureGrid",
+          referencePanel: "panel-Visualizer",
           direction: "within",
         },
       });
@@ -946,7 +974,7 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
   });
   await openOwnedApp(page);
   await waitForFixtureGridData(page);
-  await page.getByText("Fixtures", { exact: true }).first().click();
+  await dockBesideVisualizer(page, "panel-FixtureGrid");
 
   const grid = fixtureDataGrid(page);
   await expect(grid).toBeVisible();
@@ -1796,7 +1824,7 @@ test("TanStack Fixtures panel collapses immediately after expanding a fixture ro
   await openOwnedApp(page);
   await waitForFixtureGridData(page);
   const { fixtureId, rowIndex } = await expandableFixtureRowIndex(page);
-  await page.getByText("Fixtures", { exact: true }).first().click();
+  await dockBesideVisualizer(page, "panel-FixtureGrid");
 
   const grid = fixtureDataGrid(page);
   await expect(grid).toBeVisible();
@@ -1876,6 +1904,7 @@ test("TanStack renderer is used by shared list tables", async ({ page }) => {
   });
   await openOwnedApp(page);
   const firstClipLabel = await openClipListPanel(page);
+  await dockBesideVisualizer(page, "panel-ClipList");
 
   const clipPanel = page.locator(
     '[data-panel-kind="clips"][data-panel-id="panel-ClipList"]',

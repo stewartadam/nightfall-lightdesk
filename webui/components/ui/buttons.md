@@ -2,7 +2,7 @@
 
 Use `Button` from `visual-language/button` for ordinary actions. `variant` selects `secondary` (default), `primary`, `subtle`, or `danger`; `size` selects `standard`, `compact`, or `icon`. Native attributes, refs, form submission and event handlers pass through to the button. Icon-only buttons need an accessible label.
 
-Use `ToolbarButton` or `ToggleToolbarButton` for panel tools. `label` names the action for assistive technology and supplies the default tooltip. Set `tooltip` separately when help text includes a shortcut or changes with state. Toggles expose `pressed` through `aria-pressed`; `disabled` preserves the state while preventing activation. Use `variant="danger"` for destructive tools and `size="labeled"` for text alongside or instead of an icon.
+Use `ToolbarButton` or `ToggleToolbarButton` for panel tools. `label` names the action for assistive technology and supplies the default tooltip. Set `tooltip` separately when help text includes a shortcut or changes with state. Toggles expose `pressed` through `aria-pressed`; `disabled` preserves the state while preventing activation. Use `variant="danger"` for destructive tools and `size="labeled"` for text alongside or instead of an icon. Pass `count` to show how many items an action applies to (such as a selection) as a corner badge; it never changes the button's width, so selection changes cannot reflow the toolbar.
 
 `PanelToolbar` arranges left and right action groups and wraps them in narrow panels. `ToolbarSeparator` separates related actions without taking focus. Callers own command availability, selection and preview state. Shared styles own hover, focus, selection, disabled and momentary press feedback, including reduced-motion behavior.
 

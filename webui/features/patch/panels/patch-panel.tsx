@@ -229,7 +229,7 @@ export default function PatchPanel(props: PatchPanelProps) {
               </ToolbarButton>
 
               <ToolbarButton
-                size="labeled"
+                count={selectedFixtureIds().length}
                 tooltip={
                   canMorphFixtures()
                     ? `Morph selected fixtures (${selectedFixtureIds().length})`
@@ -241,16 +241,11 @@ export default function PatchPanel(props: PatchPanelProps) {
                 onClick={handleMorphFixtures}
               >
                 <ArrowsClockwiseIcon class="size-4" aria-hidden />
-                <Show when={selectedFixtureIds().length > 0}>
-                  <span class="rounded bg-blue-800 px-1 text-[10px] leading-4 text-blue-100">
-                    {selectedFixtureIds().length}
-                  </span>
-                </Show>
               </ToolbarButton>
 
               <ToolbarButton
                 variant="danger"
-                size="labeled"
+                count={fixturesSelectedCount()}
                 tooltip={
                   canDeleteFixtures()
                     ? `Delete selected fixtures (${fixturesSelectedCount()})`
@@ -262,18 +257,13 @@ export default function PatchPanel(props: PatchPanelProps) {
                 onClick={handleDeleteFixtures}
               >
                 <TrashIcon class="size-4" aria-hidden />
-                <Show when={fixturesSelectedCount() > 0}>
-                  <span class="rounded bg-red-800 px-1 text-[10px] leading-4 text-red-100">
-                    {fixturesSelectedCount()}
-                  </span>
-                </Show>
               </ToolbarButton>
             </Show>
 
             <Show when={activeTab() === "bindings"}>
               <ToolbarButton
                 variant="danger"
-                size="labeled"
+                count={bindingsSelectedCount()}
                 tooltip={
                   canDeleteBindings()
                     ? `Delete selected bindings (${bindingsSelectedCount()})`
@@ -285,11 +275,6 @@ export default function PatchPanel(props: PatchPanelProps) {
                 onClick={handleDeleteBindings}
               >
                 <TrashIcon class="size-4" aria-hidden />
-                <Show when={bindingsSelectedCount() > 0}>
-                  <span class="rounded bg-red-800 px-1 text-[10px] leading-4 text-red-100">
-                    {bindingsSelectedCount()}
-                  </span>
-                </Show>
               </ToolbarButton>
             </Show>
 

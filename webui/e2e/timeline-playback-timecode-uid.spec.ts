@@ -145,7 +145,7 @@ test("timeline playback targets linked timecode uid when numeric ids differ", as
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });
@@ -265,7 +265,7 @@ test("deleting linked timecode stops visible timeline playhead", async ({
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });

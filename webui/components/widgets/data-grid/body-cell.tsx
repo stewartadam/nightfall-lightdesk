@@ -27,6 +27,7 @@ import type {
   DataGridCellEditFactory,
   DataGridEditCommitContext,
   DataGridEditCommitMode,
+  DataGridEditCommitOptions,
   DataGridInlineEditTooltipContext,
   DataGridRichCellExtension,
   EditingCell,
@@ -112,7 +113,10 @@ export interface BodyCellProps {
   cellDecorations?: DataGridCellDecorationCallback;
   cellsUpdating: Accessor<boolean>;
   cellUpdateVersion: Accessor<number>;
-  commitEdit: (mode?: DataGridEditCommitMode) => void;
+  commitEdit: (
+    mode?: DataGridEditCommitMode,
+    options?: DataGridEditCommitOptions,
+  ) => void;
   currentSelection: Accessor<GridSelection["current"] | undefined>;
   customRenderers?: readonly CustomRenderer<any>[];
   richCellExtensions?: readonly DataGridRichCellExtension[];

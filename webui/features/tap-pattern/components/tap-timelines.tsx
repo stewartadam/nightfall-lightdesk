@@ -10,7 +10,7 @@ import { For, Show } from "solid-js";
 import {
   clusterColor,
   formatMs,
-  segmentTimelinePercent,
+  segmentTimelineLeft,
 } from "../model/panel-model";
 import type {
   TapEvent,
@@ -70,7 +70,7 @@ export function TapCaptureTimeline(props: TapCaptureTimelineProps) {
               class="absolute top-0 h-full w-px bg-neutral-700"
               data-tap-segment-cycle-boundary="true"
               style={{
-                left: `${segmentTimelinePercent(timeMs, props.segmentSpanMs)}%`,
+                left: segmentTimelineLeft(timeMs, props.segmentSpanMs),
               }}
             />
           )}
@@ -104,7 +104,7 @@ export function TapCaptureTimeline(props: TapCaptureTimelineProps) {
                   data-highlighted-step={isHighlighted() ? "true" : "false"}
                   data-tap-segment-marker="true"
                   style={{
-                    left: `${segmentTimelinePercent(timeMs, props.segmentSpanMs)}%`,
+                    left: segmentTimelineLeft(timeMs, props.segmentSpanMs),
                   }}
                   title={`Tap ${index() + 1}: ${formatMs(timeMs)}`}
                   onMouseEnter={() => {
@@ -185,10 +185,10 @@ export function GroupedTapTimeline(props: GroupedTapTimelineProps) {
                             : "-translate-x-1/2"
                       }`}
                       style={{
-                        left: `${segmentTimelinePercent(
+                        left: segmentTimelineLeft(
                           (pattern().loopLengthMs / props.beatsPerLoop) * beat,
                           pattern().loopLengthMs,
-                        )}%`,
+                        ),
                       }}
                     >
                       <span>{beat}</span>
@@ -218,11 +218,11 @@ export function GroupedTapTimeline(props: GroupedTapTimelineProps) {
                           class="absolute top-0 h-full w-px bg-neutral-700/70"
                           data-tap-grouped-beat-divider="true"
                           style={{
-                            left: `${segmentTimelinePercent(
+                            left: segmentTimelineLeft(
                               (pattern().loopLengthMs / props.beatsPerLoop) *
                                 beat,
                               pattern().loopLengthMs,
-                            )}%`,
+                            ),
                           }}
                         />
                       )}
@@ -246,10 +246,10 @@ export function GroupedTapTimeline(props: GroupedTapTimelineProps) {
                             }
                             data-tap-grouped-marker="true"
                             style={{
-                              left: `${segmentTimelinePercent(
+                              left: segmentTimelineLeft(
                                 assignment.phaseMs,
                                 pattern().loopLengthMs,
-                              )}%`,
+                              ),
                             }}
                             title={`Step ${assignment.clusterId + 1}: ${formatMs(
                               assignment.phaseMs,

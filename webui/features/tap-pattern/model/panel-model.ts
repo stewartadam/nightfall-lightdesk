@@ -24,6 +24,8 @@ const CLUSTER_COLORS = [
 ];
 
 const SEGMENT_TIMELINE_X_PADDING_PERCENT = 1.5;
+/** Radius of the largest centred timeline marker (`size-4`). */
+const SEGMENT_TIMELINE_MARKER_INSET_PX = 8;
 
 export interface TapPatternSequencePattern {
   clusters: TapPatternCluster[];
@@ -78,6 +80,18 @@ export function segmentTimelinePercent(timeMs: number, spanMs: number): number {
   return (
     SEGMENT_TIMELINE_X_PADDING_PERCENT + (clamped / 100) * usableWidthPercent
   );
+}
+
+/**
+ * Returns a CSS `left` offset for a timeline time. The padded percentage is
+ * applied inside an inset of one marker radius on each side, so centred step
+ * markers stay within their track even in a narrow edge panel.
+ */
+export function segmentTimelineLeft(timeMs: number, spanMs: number): string {
+  const fraction = segmentTimelinePercent(timeMs, spanMs) / 100;
+  return `calc(${SEGMENT_TIMELINE_MARKER_INSET_PX}px + (100% - ${
+    SEGMENT_TIMELINE_MARKER_INSET_PX * 2
+  }px) * ${fraction})`;
 }
 
 /** Builds beat scale markers, preserving a fractional final loop endpoint. */

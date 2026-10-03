@@ -142,7 +142,7 @@ async function createContainmentTimeline(
       component: "Timeline",
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
-      position: { referencePanel: "panel-FixtureGrid", direction: "below" },
+      position: { referencePanel: "panel-Groups", direction: "below" },
     });
     panel.api.setActive();
 
@@ -173,8 +173,7 @@ test("timeline stays inside its panel above the expanded Clips edge", async ({
     if (!clips) throw new Error("Clips panel missing");
     const edge = api.getEdgeGroup("bottom");
     clips.api.moveTo({
-      group: api.panels.find((panel: any) => panel.title === "Console").api
-        .group,
+      group: api.getPanel("panel-ProgrammerGrid").api.group,
       position: "center",
     });
     clips.api.setActive();
@@ -182,7 +181,26 @@ test("timeline stays inside its panel above the expanded Clips edge", async ({
     edge.setSize({ height: 500 });
     edge.collapse();
   });
-  await page.getByRole("tab", { name: "Clips", exact: true }).click();
+  // Click by coordinates: locator.click scrolls the overflow-hidden dock
+  // container while the edge expands, which a real pointer never does.
+  const clipsTab = await page
+    .getByRole("tab", { name: "Clips", exact: true })
+    .boundingBox();
+  expect(clipsTab).not.toBeNull();
+  await page.mouse.click(
+    (clipsTab?.x ?? 0) + (clipsTab?.width ?? 0) / 2,
+    (clipsTab?.y ?? 0) + (clipsTab?.height ?? 0) / 2,
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.dockApi
+          .get()
+          .getEdgeGroup("bottom")
+          .isCollapsed(),
+      ),
+    )
+    .toBe(false);
   const surface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${fixture.timelineUid}"]`,
   );
