@@ -12,6 +12,7 @@ import { float } from "three/tsl";
 import {
   ConeGeometry,
   type InstancedMesh,
+  type InterleavedBufferAttribute,
   Object3D,
   Scene,
   Vector3,
@@ -378,4 +379,43 @@ test("cone profiles draw faceted cones without allocating a mask atlas", () => {
     expected.dispose();
     batch.dispose();
   }
+});
+
+/**
+ * Steady playback republishes every lit aperture each frame; only frames whose written values
+ * actually change may re-upload the instance records and matrices.
+ */
+test("unchanged aperture updates do not re-upload instance buffers", () => {
+  const scene = new Scene();
+  const batch = new EmitterVolumeBatch(scene);
+  const parent = new Object3D();
+  const optics = roundOptics();
+  const color = { ...WHITE };
+  /** Republishes the aperture with the current color. */
+  const update = () => batch.update("fixture:beam", parent, { optics, color });
+  /** Runs the draw's pre-render upload hook and returns the buffers' upload versions. */
+  const frame = () => {
+    const mesh = draw(scene);
+    (mesh.onBeforeRender as () => void)();
+    const records = mesh.geometry.getAttribute(
+      "volumeOrigin",
+    ) as InterleavedBufferAttribute;
+    return [records.data.version, mesh.instanceMatrix.version];
+  };
+  update();
+  const initial = frame();
+  update();
+  assert.deepEqual(frame(), initial, "identical values skip the upload");
+  color.red = 0.5;
+  update();
+  const recolored = frame();
+  assert.ok(recolored[0] > initial[0], "changed color re-uploads records");
+  parent.position.set(1, 0, 0);
+  update();
+  assert.ok(frame()[1] > recolored[1], "moved aperture re-uploads matrices");
+  batch.remove("fixture:beam");
+  const removed = frame();
+  batch.remove("fixture:beam");
+  assert.deepEqual(frame(), removed, "removing a dark aperture again is free");
+  batch.dispose();
 });

@@ -202,7 +202,12 @@ export class EmitterVolumeBatch {
   /** Instance keys reserved per aperture: the aperture ID for its first facet, then one per extra facet. */
   private readonly groups = new Map<string, string[]>();
   private reservedCount = 0;
+  /** Instance buffers changed since the last upload; set only when written values differ. */
   private dirty = false;
+  /** One slot's record before an update, compared afterwards to skip unchanged uploads. */
+  private readonly previousRecord = new Float32Array(RECORD_SIZE);
+  /** One slot's instance matrix before an update, compared afterwards to skip unchanged uploads. */
+  private readonly previousMatrix = new Float32Array(16);
   private readonly origin = new Vector3();
   private readonly worldOrigin = new Vector3();
   private readonly worldScale = new Vector3();
@@ -363,6 +368,7 @@ export class EmitterVolumeBatch {
     const prismRotation = aperture.prismRotation ?? 0;
     const focusDistance = aperture.focusDistance ?? 0;
     let slot = this.slots.get(key);
+    const created = slot === undefined;
     if (slot === undefined) {
       slot = this.slotKeys.length;
       if (slot === this.capacity) this.resize(this.capacity * 2);
@@ -370,6 +376,9 @@ export class EmitterVolumeBatch {
       this.slotKeys.push(key);
       this.mesh.count = this.slotKeys.length;
     }
+    // A pending upload already covers this slot; otherwise snapshot it to detect real changes.
+    const compare = !created && !this.dirty;
+    if (compare) this.snapshotSlot(slot);
     const frost = Number.isFinite(color.frost)
       ? Math.max(0, Math.min(1, color.frost!))
       : 0;
@@ -548,7 +557,32 @@ export class EmitterVolumeBatch {
       light.goboRotation = 0;
       light.focusDistance = focusDistance;
     }
-    this.dirty = true;
+    if (!compare || this.slotChanged(slot)) this.dirty = true;
+  }
+
+  /** Copies a slot's instance record and matrix so {@link slotChanged} can compare after writes. */
+  private snapshotSlot(slot: number): void {
+    const record = slot * RECORD_SIZE;
+    this.previousRecord.set(
+      this.records.array.subarray(record, record + RECORD_SIZE),
+    );
+    const matrix = slot * 16;
+    this.previousMatrix.set(
+      this.mesh.instanceMatrix.array.subarray(matrix, matrix + 16),
+    );
+  }
+
+  /** Reports whether a slot's record or matrix differs from its {@link snapshotSlot} copy. */
+  private slotChanged(slot: number): boolean {
+    const records = this.records.array;
+    const record = slot * RECORD_SIZE;
+    for (let i = 0; i < RECORD_SIZE; i++)
+      if (records[record + i] !== this.previousRecord[i]) return true;
+    const matrices = this.mesh.instanceMatrix.array;
+    const matrix = slot * 16;
+    for (let i = 0; i < 16; i++)
+      if (matrices[matrix + i] !== this.previousMatrix[i]) return true;
+    return false;
   }
 
   /** Removes an inactive aperture and compacts its slot without moving other scene objects. */
