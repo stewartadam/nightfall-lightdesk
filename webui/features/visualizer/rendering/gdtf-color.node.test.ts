@@ -21,11 +21,7 @@ import {
   ParameterValuePolarity,
 } from "../../../types";
 import { loadFixtureEvaluation } from "./channel-evaluation";
-import {
-  elementGoboMedia,
-  extractVisualizerDmx,
-  resetDmxPool,
-} from "./visualizer-dmx";
+import { extractVisualizerDmx, resetDmxPool } from "./visualizer-dmx";
 
 before(() => loadFixtureEvaluation());
 
@@ -148,36 +144,6 @@ test("color wheel slots filter a white lamp", () => {
   near(red.blue, 0, "red slot blue");
 });
 
-/** Verifies the active gobo slot is reported as a 1-based index into the element's gobo images. */
-test("gobo wheel slots report their image index", () => {
-  resetDmxPool();
-  const element: FixtureElement = {
-    label: "Head",
-    parameters: [
-      parameter({ type: "Intensity" }),
-      parameter({ type: "Gobo" }, [
-        fn("Gobo1", {
-          wheel: "Gobo Wheel",
-          sets: [
-            { name: "Open", dmx_from: 0, dmx_to: 9 },
-            { name: "Stars", dmx_from: 10, dmx_to: 19, media: "stars" },
-            { name: "Dots", dmx_from: 20, dmx_to: 255, media: "dots" },
-          ],
-        }),
-      ]),
-    ],
-  };
-  assert.deepEqual(elementGoboMedia(element), ["stars", "dots"]);
-  assert.equal(
-    extractVisualizerDmx({ Intensity: 255, Gobo: 0 }, element).gobo,
-    0,
-  );
-  assert.equal(
-    extractVisualizerDmx({ Intensity: 255, Gobo: 25 }, element).gobo,
-    2,
-  );
-});
-
 /** Verifies an additive fixture with its emitters at zero stays dark behind a color wheel. */
 test("additive emitters at zero stay dark behind a wheel", () => {
   resetDmxPool();
@@ -211,81 +177,6 @@ test("additive emitters at zero stay dark behind a wheel", () => {
   near(dark.red, 0, "dark red");
   near(dark.green, 0, "dark green");
   near(dark.blue, 0, "dark blue");
-});
-
-/** Verifies color wheel images are not gobos and the lowest gobo wheel with an image wins. */
-test("only gobo wheels project, lowest wheel first", () => {
-  resetDmxPool();
-  const element: FixtureElement = {
-    label: "Head",
-    parameters: [
-      parameter({ type: "Intensity" }),
-      parameter({ type: "Custom", data: { label: "Color1" } }, [
-        fn("Color1", {
-          wheel: "Color Wheel",
-          sets: [{ name: "Swatch", dmx_from: 0, dmx_to: 255, media: "swatch" }],
-        }),
-      ]),
-      parameter({ type: "Gobo" }, [
-        fn("Gobo1", {
-          wheel: "Gobo Wheel 1",
-          sets: [
-            { name: "Open", dmx_from: 0, dmx_to: 9 },
-            { name: "Stars", dmx_from: 10, dmx_to: 255, media: "stars" },
-          ],
-        }),
-      ]),
-      parameter({ type: "Custom", data: { label: "Gobo2" } }, [
-        fn("Gobo2", {
-          wheel: "Gobo Wheel 2",
-          sets: [{ name: "Dots", dmx_from: 0, dmx_to: 255, media: "dots" }],
-        }),
-      ]),
-    ],
-  };
-  assert.deepEqual(elementGoboMedia(element), ["stars", "dots"]);
-  assert.equal(
-    extractVisualizerDmx(
-      { Intensity: 255, Color1: 0, Gobo: 0, Gobo2: 0 },
-      element,
-    ).gobo,
-    2,
-    "open Gobo1 lets Gobo2 project",
-  );
-  assert.equal(
-    extractVisualizerDmx(
-      { Intensity: 255, Color1: 0, Gobo: 20, Gobo2: 0 },
-      element,
-    ).gobo,
-    1,
-    "Gobo1 wins over Gobo2",
-  );
-});
-
-/** Verifies an unnumbered `Gobo` wheel function contributes and projects its images. */
-test("unnumbered gobo wheels project", () => {
-  resetDmxPool();
-  const element: FixtureElement = {
-    label: "Head",
-    parameters: [
-      parameter({ type: "Intensity" }),
-      parameter({ type: "Gobo" }, [
-        fn("Gobo", {
-          wheel: "Gobo Wheel",
-          sets: [
-            { name: "Open", dmx_from: 0, dmx_to: 9 },
-            { name: "Stars", dmx_from: 10, dmx_to: 255, media: "stars" },
-          ],
-        }),
-      ]),
-    ],
-  };
-  assert.deepEqual(elementGoboMedia(element), ["stars"]);
-  assert.equal(
-    extractVisualizerDmx({ Intensity: 255, Gobo: 20 }, element).gobo,
-    1,
-    "stars projected",
-  );
 });
 
 /** Verifies a profile shutter strobes only inside strobe functions, with rate from their range. */

@@ -40,6 +40,10 @@ import {
   updateFixtureColors,
 } from "./fixture-renderers";
 import { type EmitterColor, updateEmitterColors } from "./geometry-builder";
+import { resolveQualityProfile } from "./quality-profile";
+
+/** Previews show luminous faces at full exposure, as the High preset does. */
+const PREVIEW_QUALITY = resolveQualityProfile("high");
 
 /** Default camera distance as multiplier of fixture size */
 const CAMERA_DISTANCE_FACTOR = 2.5;
@@ -185,14 +189,14 @@ export function setPreviewFixture(
           fixture.geometry,
           fixture.elements,
           fixture.beamType,
-          "high",
+          PREVIEW_QUALITY,
           fixture.layout,
         )
       : buildFixtureWithoutGeometry(
           "preview",
           fixture.elements,
           fixture.beamType,
-          "high",
+          PREVIEW_QUALITY,
           fixture.layout,
         );
 

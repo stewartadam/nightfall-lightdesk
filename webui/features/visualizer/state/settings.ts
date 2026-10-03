@@ -8,7 +8,7 @@
 
 import { persistentAtom } from "@nanostores/persistent";
 import type { WritableAtom } from "nanostores";
-import { atom } from "nanostores";
+import { atom, computed } from "nanostores";
 import type { VisualizerCameraRotationMode } from "../rendering/renderers/renderer-api";
 
 const STORAGE_KEY = "nightfall-visualizer-settings";
@@ -19,6 +19,7 @@ type VisualizerSettings = {
   highlightSelection: boolean;
   snapPointsEnabled: boolean;
   qualityPreset: VisualizerQualityPreset;
+  darkness: number;
   cameraRotationMode: VisualizerCameraRotationMode;
   showOrbitTargetIndicator: boolean;
 };
@@ -27,6 +28,7 @@ const DEFAULT_SETTINGS: VisualizerSettings = {
   highlightSelection: true,
   snapPointsEnabled: false,
   qualityPreset: "medium",
+  darkness: 50,
   cameraRotationMode: "camera-locked",
   showOrbitTargetIndicator: false,
 };
@@ -59,6 +61,10 @@ function sanitizeVisualizerSettings(value: unknown): VisualizerSettings {
 
   const parsed = value as Partial<VisualizerSettings>;
   return {
+    darkness:
+      typeof parsed.darkness === "number" && Number.isFinite(parsed.darkness)
+        ? Math.max(0, Math.min(100, parsed.darkness))
+        : DEFAULT_SETTINGS.darkness,
     highlightSelection:
       typeof parsed.highlightSelection === "boolean"
         ? parsed.highlightSelection
@@ -103,6 +109,7 @@ const visualizerSettings = persistentAtom<VisualizerSettings>(
 );
 
 const initialSettings = visualizerSettings.get();
+export const visualizerDarkness = atom(initialSettings.darkness);
 
 export const visualizerHighlightSelection = atom<boolean>(
   initialSettings.highlightSelection,
@@ -112,6 +119,19 @@ export const visualizerSnapPointsEnabled = atom<boolean>(
 );
 export const visualizerQualityPreset = atom<VisualizerQualityPreset>(
   initialSettings.qualityPreset,
+);
+/**
+ * Session-only quality applied by the `visualizer:beamQuality` diagnostic URL
+ * parameter. It is never persisted, survives persisted-settings sync, and is
+ * dropped only when the user explicitly picks a preset.
+ */
+export const visualizerQualityOverride = atom<
+  VisualizerQualityPreset | undefined
+>(undefined);
+/** Quality the renderer should use: the diagnostic override, else the saved preset. */
+export const visualizerEffectiveQuality = computed(
+  [visualizerQualityPreset, visualizerQualityOverride],
+  (preset, override) => override ?? preset,
 );
 export const visualizerCameraRotationMode = atom<VisualizerCameraRotationMode>(
   initialSettings.cameraRotationMode,
@@ -154,6 +174,7 @@ function syncVisualizerSetting<Key extends keyof VisualizerSettings>(
 syncVisualizerSetting("highlightSelection", visualizerHighlightSelection);
 syncVisualizerSetting("snapPointsEnabled", visualizerSnapPointsEnabled);
 syncVisualizerSetting("qualityPreset", visualizerQualityPreset);
+syncVisualizerSetting("darkness", visualizerDarkness);
 syncVisualizerSetting("cameraRotationMode", visualizerCameraRotationMode);
 syncVisualizerSetting(
   "showOrbitTargetIndicator",
@@ -162,6 +183,8 @@ syncVisualizerSetting(
 
 visualizerSettings.listen((settings) => {
   applyingPersistedSettings = true;
+  if (visualizerDarkness.get() !== settings.darkness)
+    visualizerDarkness.set(settings.darkness);
   if (visualizerHighlightSelection.get() !== settings.highlightSelection) {
     visualizerHighlightSelection.set(settings.highlightSelection);
   }
