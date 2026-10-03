@@ -10,6 +10,8 @@ import type { DockviewApi, EdgeGroupPosition } from "dockview";
 
 /** One open Dockview panel as the guide sees it. */
 export interface GuidePanel {
+  /** Dockview panel ID, which its tab carries as `data-tab-panel-id`. */
+  id: string;
   component: string;
   timelineUid?: string;
   sequenceUid?: string;
@@ -75,6 +77,7 @@ function readPanels(api: DockviewApi): GuidePanel[] {
   return api.panels.map((entry) => {
     const visible = entry.api.isVisible && !entry.group.api.isCollapsed();
     return {
+      id: entry.id,
       component: entry.api.component,
       timelineUid: entry.params?.initialTimelineUid,
       sequenceUid: entry.params?.initialSequenceUid,

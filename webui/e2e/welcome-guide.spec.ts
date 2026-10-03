@@ -464,7 +464,22 @@ test("guide content waits for prerequisites and renders text after actions", asy
   await expect(guide.locator(".nf-guide-action")).toHaveCount(0);
   await expect(guide).not.toContainText("The @ command");
   await expect(guide).not.toContainText("Text after the action callout.");
-  await expect(page.getByTestId("guide-target")).toHaveCount(0);
+  // The hidden action is not highlighted; the Programmer tab that reveals the missing panel is.
+  const programmerTab = await activeLayout(page)
+    .getByRole("tab", { name: "Programmer", exact: true })
+    .boundingBox();
+  await expect
+    .poll(async () => {
+      const highlight = await page
+        .getByTestId("guide-target")
+        .locator(".nf-guide-highlight")
+        .boundingBox();
+      return highlight && programmerTab
+        ? Math.abs(highlight.x + 4 - programmerTab.x) < 2 &&
+            Math.abs(highlight.y + 4 - programmerTab.y) < 2
+        : false;
+    })
+    .toBe(true);
   await guide
     .getByRole("button", { name: "Open Programmer", exact: true })
     .click();
@@ -2263,15 +2278,18 @@ test("lessons never take over a user layout named Lesson", async ({ page }) => {
   ).toHaveAttribute("aria-pressed", "false");
 });
 
-/** Lessons start from the default panels in their own layout and leave the user's layout intact. */
-test("lessons switch to the Lesson layout and can return to the user's layout", async ({
+/**
+ * Lessons start from the default panels in their own layout. The save step returns to the
+ * user's layout so the saved show reopens in it.
+ */
+test("lessons use the Lesson layout and return to the user's layout to save", async ({
   page,
 }, testInfo) => {
   await openSample(page);
   const userLayout = page.getByRole("button", { name: /^Layout 1: / });
-  const userLayoutName = (
-    (await userLayout.getAttribute("aria-label")) ?? ""
-  ).replace(/^Layout 1: /, "");
+  const lessonLayout = page.getByRole("button", {
+    name: /^Layout \d+: Lesson$/,
+  });
   await page.getByRole("tab", { name: "Clips", exact: true }).click();
   await expect(
     activeLayout(page).locator('[data-component="ClipList"]'),
@@ -2285,18 +2303,38 @@ test("lessons switch to the Lesson layout and can return to the user's layout", 
   await expect(
     guide.getByRole("heading", { name: "Meet your sample rig" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /^Layout \d+: Lesson$/ }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(lessonLayout).toHaveAttribute("aria-pressed", "true");
   // The default arrangement keeps Clips collapsed, unlike the user's layout above.
   await expect(
     activeLayout(page).locator('[data-component="ClipList"]'),
   ).toBeHidden();
   await page.screenshot({ path: testInfo.outputPath("lesson-layout.png") });
-  await guide.getByRole("button", { name: "Exit welcome guide" }).click();
+  await reachStep(page, "Keep a saved version of your show");
+  await expect(userLayout).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    activeLayout(page).locator('[data-component="ClipList"]'),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("save-step.png") });
+});
+
+/** Finishing a lesson switches back to the layout the user had before it, with no separate return button. */
+test("finishing a lesson restores the user's layout", async ({ page }) => {
+  await openSample(page);
+  const userLayout = page.getByRole("button", { name: /^Layout 1: / });
+  const lessonLayout = page.getByRole("button", {
+    name: /^Layout \d+: Lesson$/,
+  });
+  await page.getByRole("tab", { name: "Clips", exact: true }).click();
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await openLesson(guide, /Patching fixtures/);
+  await expect(lessonLayout).toHaveAttribute("aria-pressed", "true");
+  await reachStep(page, "Ready to explore");
+  await expect(guide.getByRole("button", { name: /^Return to / })).toHaveCount(
+    0,
+  );
   await guide
-    .getByRole("button", { name: `Return to ${userLayoutName}`, exact: true })
+    .getByRole("button", { name: "Finish lesson", exact: true })
     .click();
   await expect(userLayout).toHaveAttribute("aria-pressed", "true");
   await expect(

@@ -82,8 +82,3 @@ export async function leaveLessonLayout(
   if (!getStoredLayout(layoutId)) return false;
   return activateStoredLayout(api, layoutId);
 }
-
-/** Resolves a layout's display name for the return button. */
-export function layoutName(layoutId: string): string | undefined {
-  return getStoredLayout(layoutId)?.name;
-}

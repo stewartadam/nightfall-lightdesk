@@ -54,7 +54,6 @@ import {
   enterLessonLayout,
   findLessonLayoutId,
   LESSON_LAYOUT_NAME,
-  layoutName,
   leaveLessonLayout,
 } from "./lesson-layout";
 import { guideLessons } from "./lesson-store";
@@ -159,18 +158,23 @@ export default function WelcomeGuide() {
     }
     startGuideLesson(id);
   };
-  /** Offers the user's own layout back only while another layout is showing. */
-  const returnLayoutName = createMemo(() => {
-    const id = returnLayoutId();
-    return id && id !== activeLayout() ? layoutName(id) : undefined;
-  });
-  /** Switches back to the layout the user had before lessons began. */
+  let returning = false;
+  /**
+   * Switches back to the layout the user had before lessons began, if the guide switched away from it.
+   * Ignores repeated requests while a switch is already running.
+   */
   const returnToLayout = async () => {
     const api = dockviewApi();
-    const id = returnLayoutId();
-    if (!api || !id) return;
-    if (await leaveLessonLayout(api, id)) guideReturnLayoutId.set(null);
-    else pushToast("error", "Could not switch back to your layout.");
+    const id = guideReturnLayoutId.get();
+    if (!api || !id || returning) return;
+    returning = true;
+    try {
+      if (id === activeLayoutId.get() || (await leaveLessonLayout(api, id)))
+        guideReturnLayoutId.set(null);
+      else pushToast("error", "Could not switch back to your layout.");
+    } finally {
+      returning = false;
+    }
   };
   const [workspace, setWorkspace] = createSignal<GuidePanelSnapshot>({
     panels: [],
@@ -209,6 +213,20 @@ export default function WelcomeGuide() {
     return instruction && capabilities()?.persistence === "Unavailable"
       ? { ...instruction, ...instruction.persistenceUnavailable }
       : instruction;
+  });
+  /**
+   * Returns to the user's own layout for steps that save the show, because a save also records
+   * which layout is showing and the show would otherwise reopen in the Lesson layout.
+   */
+  createEffect(() => {
+    if (
+      !opened() ||
+      !step()?.userLayout ||
+      capabilities()?.persistence === "Unavailable"
+    )
+      return;
+    const id = returnLayoutId();
+    if (id && id !== activeLayout()) void returnToLayout();
   });
   const [visitedPanels, setVisitedPanels] = createSignal(new Set<string>());
   let visitedStep = "";
@@ -254,8 +272,39 @@ export default function WelcomeGuide() {
   );
   const [card, setCard] = createSignal<HTMLElement>();
   const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
+  /**
+   * Points at what reveals the first unmet prerequisite: the tab of an open panel that is
+   * collapsed or behind another tab, or the sample timeline's card in the Timelines list.
+   * Panels that are closed or merely covered have nothing to point at; their buttons handle them.
+   */
+  const prerequisiteSelector = createMemo(() => {
+    const item = content().find(
+      (entry): entry is GuidePrerequisite =>
+        entry.type === "prerequisite" && !prerequisiteReady(entry),
+    );
+    if (!item) return undefined;
+    const timeline = sampleTimeline();
+    const timelineKey = `timeline:${timeline?.identifiers.uid}`;
+    const pending =
+      item.sampleTimeline && !panelReady(timelineKey)
+        ? workspace().panels.find((panel) =>
+            panelKeys(panel).includes(timelineKey),
+          )
+        : workspace().panels.find(
+            (panel) =>
+              item.panels?.includes(panel.component as PanelComponentName) &&
+              !panelReady(panel.component),
+          );
+    if (pending && !pending.visible)
+      return `[data-workspace-active="true"] .dv-tab[data-tab-panel-id="${CSS.escape(pending.id)}"]`;
+    if (item.sampleTimeline && !pending && timeline) {
+      const uid = CSS.escape(normalizeTimelineUid(timeline.identifiers.uid));
+      return `[data-workspace-active="true"] [data-panel-kind="timeline-list"] [data-crud-select-id="${uid}"]`;
+    }
+    return undefined;
+  });
   /** Resolves authored object identities to clip tiles, inspect buttons, sequence cards, or Trigger cells. */
-  const targetSelector = createMemo(() => {
+  const actionSelector = createMemo(() => {
     const actionTarget = step()?.targetTimelineAction;
     if (actionTarget) {
       const timeline = sampleTimeline();
@@ -306,6 +355,10 @@ export default function WelcomeGuide() {
       ? `[data-grid-column-key="trigger"][data-grid-row-key="${cue.identifiers.uid}:cue"]`
       : undefined;
   });
+  /** Aims the card at the step's action, or at what reveals a missing panel while prerequisites are unmet. */
+  const targetSelector = createMemo(() =>
+    blocked() ? prerequisiteSelector() : actionSelector(),
+  );
   const floating = useFloatingGuide(
     () => (lesson() && opened() ? card() : undefined),
     () => `${lessonId()}:${index()}`,
@@ -416,12 +469,13 @@ export default function WelcomeGuide() {
     () => programmerSelectionList().length > 0 || programmerRows().length > 0,
   );
 
-  /** Records lesson completion only when the user explicitly finishes the lesson. */
+  /** Records lesson completion only when the user explicitly finishes the lesson, then restores their own layout. */
   const finish = () => {
     const id = lessonId();
     if (id && !completed().includes(id))
       guideCompleted.set([...completed(), id]);
     guideLessonId.set(null);
+    void returnToLayout();
   };
 
   /** Observes the current step from its start, so actions finished while prerequisites settle still count. */
@@ -531,18 +585,8 @@ export default function WelcomeGuide() {
                 >
                   {startingLesson()
                     ? `Switching to the ${LESSON_LAYOUT_NAME} layout…`
-                    : `Lessons open in a separate ${LESSON_LAYOUT_NAME} layout with the default panels, so your own layout stays as it is. Switch back any time from the layout switcher.`}
+                    : `Lessons open in a separate ${LESSON_LAYOUT_NAME} layout with the default panels, so your own layout stays as it is. Finishing a lesson brings your layout back.`}
                 </p>
-                <Show when={returnLayoutName()}>
-                  {(name) => (
-                    <Button
-                      size="compact"
-                      onClick={() => void returnToLayout()}
-                    >
-                      Return to {name()}
-                    </Button>
-                  )}
-                </Show>
                 <For each={lessons()}>
                   {(entry) => (
                     <button
@@ -596,7 +640,6 @@ export default function WelcomeGuide() {
                       <GuideTarget
                         stepId={instruction().id}
                         selector={targetSelector()}
-                        highlight={!blocked()}
                         focusTarget={!blocked() && instruction().focusTarget}
                         onBounds={setAnchor}
                       />
@@ -694,19 +737,6 @@ export default function WelcomeGuide() {
                       restores the sample show; it does not erase your lesson
                       completion badges.
                     </p>
-                  </Show>
-                  <Show when={returnLayoutName()}>
-                    {(name) => (
-                      <p>
-                        You’re in the {LESSON_LAYOUT_NAME} layout.{" "}
-                        <Button
-                          size="compact"
-                          onClick={() => void returnToLayout()}
-                        >
-                          Return to {name()}
-                        </Button>
-                      </p>
-                    )}
                   </Show>
                   <div class="nf-guide-navigation">
                     <Button size="compact" onClick={() => moveTo(index() - 1)}>
