@@ -64,14 +64,10 @@ export type ElementDmxData = Record<string, number>;
 export type FixtureElementDmxMap = Map<string, ElementDmxData>;
 
 /**
- * Batch of fixture DMX updates carried across the visualizer worker boundary.
+ * Complete fixture DMX snapshot carried across the visualizer worker boundary,
+ * keyed by fixture UID. Fixtures absent from the snapshot keep their last state.
  */
-export type FixtureDmxBatch = Array<
-  [
-    fixtureUid: string,
-    elements: Array<[elementKey: string, dmx: ElementDmxData]>,
-  ]
->;
+export type FixtureDmxBatch = ReadonlyMap<string, FixtureElementDmxMap>;
 
 /**
  * Configuration for initializing a visualizer renderer.
@@ -87,7 +83,13 @@ export interface VisualizerInitConfig {
   devicePixelRatio: number;
   /** Proxy ID for event forwarding (worker mode only) */
   proxyId?: number;
-  /** Initial camera state (loaded from localStorage by main thread) */
+  /**
+   * Publishes developer diagnostics with renderer stats. Resolved on the main
+   * thread from the `visualizer:inspector` or `visualizer:framePacing` URL
+   * flags, because the worker cannot see the page URL.
+   */
+  diagnostics?: boolean;
+  /** Initial camera pose; renderers fall back to the persisted camera state when absent. */
   initialCameraState?: CameraState;
   /** Beam render quality selected by visualizer runtime settings. */
   beamQuality: VisualizerBeamQuality;
@@ -131,7 +133,9 @@ export interface IVisualizerRenderer {
 
   /**
    * Update DMX parameter state for multiple fixtures in one renderer call.
-   * Used by worker mode to avoid one cross-thread call per fixture per frame.
+   * Worker mode sends a snapshot only when the engine output changes and the
+   * worker re-applies the retained snapshot every frame, so strobes and wheel
+   * rotation keep advancing between engine updates.
    */
   setElementDmxBatch(batch: FixtureDmxBatch): void;
 

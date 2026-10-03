@@ -130,6 +130,15 @@ export function loadFixtureEvaluation(): Promise<void> {
   return loading;
 }
 
+/**
+ * Returns whether the WebAssembly fixture model has loaded. Until then every
+ * channel evaluates as having no output, so callers that cache evaluated
+ * output must re-evaluate once this turns true.
+ */
+export function isFixtureEvaluationLoaded(): boolean {
+  return loadedWasmBridge() !== null;
+}
+
 /** Returns the output record key of an attribute. */
 export function attributeOutputKey(attribute: Attribute): string {
   return attribute.type === "Custom" ? attribute.data.label : attribute.type;
