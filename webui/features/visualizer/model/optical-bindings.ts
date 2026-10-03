@@ -38,39 +38,28 @@ function bindElement(
 }
 
 /**
- * Resolves the optical parameters each beam of a geometry tree inherits,
- * once per fixture build. GDTF names an element after the geometry its
- * channels sit on, and optics set on an ancestor (a head's gobo wheel) reach
- * every beam below it. The nearest geometry wins per attribute, so a local
- * control overrides its ancestor's only for its own descendants.
+ * Resolves the optical parameters the backend assigned to each beam of a
+ * geometry tree into element parameter indices, once per fixture build.
+ * References to elements or attributes the fixture no longer has are skipped.
  */
 export function bindEmitterOpticalParameters(
   geometry: FixtureGeometry,
   elements: readonly FixtureElement[],
 ): Map<string, OpticalParameterBinding[]> {
-  const elementsByGeometry = new Map(
-    elements.map((element) => [element.label, element]),
-  );
   const result = new Map<string, OpticalParameterBinding[]>();
-  for (let index = 0; index < geometry.nodes.length; index++) {
-    const emitter = geometry.nodes[index];
-    if (emitter.geometryType !== "beam") continue;
+  for (const node of geometry.nodes) {
+    if (node.geometryType !== "beam") continue;
     const bindings: OpticalParameterBinding[] = [];
-    const bound = new Set<string>();
-    const visited = new Set<number>();
-    let ancestor = index;
-    while (
-      ancestor >= 0 &&
-      ancestor < geometry.nodes.length &&
-      !visited.has(ancestor)
-    ) {
-      visited.add(ancestor);
-      const node = geometry.nodes[ancestor];
-      const element = elementsByGeometry.get(node.name);
-      if (element) bindElement(element, bound, bindings);
-      ancestor = node.parentIndex;
+    for (const reference of node.opticalParameters ?? []) {
+      const element = elements[reference.element];
+      if (!element) continue;
+      const key = attributeOutputKey(reference.attribute);
+      const parameterIndex = element.parameters.findIndex(
+        (parameter) => attributeOutputKey(parameter.attribute) === key,
+      );
+      if (parameterIndex >= 0) bindings.push({ element, parameterIndex });
     }
-    result.set(emitter.name, bindings);
+    result.set(node.name, bindings);
   }
   return result;
 }

@@ -70,9 +70,6 @@ export interface ResolvedEmitterOptics {
 
 /** Widest full beam angle, in degrees, an aperture may project. */
 const MAX_BEAM_ANGLE_DEGREES = 170;
-/** Beam angle assumed when imported photometry omits or corrupts it. */
-const DEFAULT_BEAM_ANGLE_DEGREES = 15;
-
 /** Sanitizes optional imported values without allowing NaN into GPU buffers. */
 function finite(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isFinite(value) ? value : fallback;
@@ -102,7 +99,7 @@ export function emitterZoomScale(
   physical: BeamOptics["physical"],
   zoomAngleDegrees: number | undefined,
 ): number {
-  const native = beamAngle(physical.beamAngle, DEFAULT_BEAM_ANGLE_DEGREES);
+  const native = beamAngle(physical.beamAngle, 0);
   const nativeSlope = coneSlope(native);
   if (nativeSlope <= 1e-6) return 1;
   const zoom =
@@ -132,7 +129,7 @@ export function zoomedBeamAngleDegrees(
   if (zoomDegrees !== undefined && Number.isFinite(zoomDegrees))
     return zoomDegrees;
   if (zoom === undefined || !Number.isFinite(zoom)) return undefined;
-  const native = beamAngle(physical.beamAngle, DEFAULT_BEAM_ANGLE_DEGREES);
+  const native = beamAngle(physical.beamAngle, 0);
   const field = Math.max(native, beamAngle(physical.fieldAngle, native));
   const fieldSlope = coneSlope(field);
   if (fieldSlope <= 1e-6) return undefined;
@@ -153,7 +150,7 @@ export function emitterIrisScale(
   iris: number | undefined,
 ): number {
   if (iris === undefined || !Number.isFinite(iris) || iris >= 1) return 1;
-  const native = beamAngle(physical.beamAngle, DEFAULT_BEAM_ANGLE_DEGREES);
+  const native = beamAngle(physical.beamAngle, 0);
   const halfAngle = Math.atan(
     coneSlope(native) * emitterZoomScale(physical, zoomAngleDegrees),
   );
@@ -168,7 +165,7 @@ export function resolveEmitterOptics(
 ): ResolvedEmitterOptics | undefined {
   const physical = optics.physical;
   if (physical.beamType === BeamType.Glow) return undefined;
-  const nativeAngle = beamAngle(physical.beamAngle, DEFAULT_BEAM_ANGLE_DEGREES);
+  const nativeAngle = beamAngle(physical.beamAngle, 0);
   const fieldAngle = Math.max(
     nativeAngle,
     beamAngle(physical.fieldAngle, nativeAngle),
@@ -199,6 +196,6 @@ export function resolveEmitterOptics(
         Math.log(Math.log(10) / Math.log(2)) / Math.log(1 / halfPowerRatio),
       ),
     ),
-    lumens: Math.max(0, finite(physical.lumens, 1000)),
+    lumens: Math.max(0, finite(physical.lumens, 0)),
   };
 }

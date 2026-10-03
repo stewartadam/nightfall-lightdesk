@@ -15,9 +15,11 @@ import {
   DmxValueResolution,
   type FixtureElement,
   MergeStrategy,
+  OpticalFunctionKind,
   type ParameterFunction,
   type ParameterMetadata,
   ParameterValuePolarity,
+  PhysicalUnit,
 } from "../../../types";
 import { loadFixtureEvaluation } from "./channel-evaluation";
 import { kelvinToRgb } from "./gdtf-physical";
@@ -239,7 +241,12 @@ test("iris and zoom use physical values", () => {
   const element = lamp(
     custom("Iris", 1, 0.16),
     parameter({ type: "Zoom" }, [
-      fn("Zoom", 0, 255, { physical_from: 50, physical_to: 3 }),
+      fn("Zoom", 0, 255, {
+        physical_from: 50,
+        physical_to: 3,
+        physical_unit: PhysicalUnit.Angle,
+        optical: { kind: OpticalFunctionKind.Zoom, wheel: 0 },
+      }),
     ]),
   );
   const dmx = extractVisualizerDmx(

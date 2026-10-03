@@ -16,6 +16,8 @@ import {
   type GeometryNode,
   GeometryType,
   MergeStrategy,
+  type OpticalFunction,
+  OpticalFunctionKind,
   type ParameterFunction,
   type ParameterFunctionSet,
   type ParameterMetadata,
@@ -56,7 +58,23 @@ function parameter(
   };
 }
 
-/** Builds a profile function over a DMX range with a linear physical range. */
+/**
+ * Optical classifications the backend's `OpticalFunction::classify` assigns to the attributes
+ * these tests use, given the units and ranges the tests author for them.
+ */
+const BACKEND_OPTICAL: Record<string, OpticalFunction> = {
+  Gobo: { kind: OpticalFunctionKind.GoboSelect, wheel: 1 },
+  Gobo1: { kind: OpticalFunctionKind.GoboSelect, wheel: 1 },
+  Gobo1Pos: { kind: OpticalFunctionKind.GoboIndex, wheel: 1 },
+  Gobo1PosRotate: { kind: OpticalFunctionKind.GoboRotate, wheel: 1 },
+  Gobo2: { kind: OpticalFunctionKind.GoboSelect, wheel: 2 },
+  Prism1: { kind: OpticalFunctionKind.PrismSelect, wheel: 1 },
+  Prism2: { kind: OpticalFunctionKind.PrismSelect, wheel: 2 },
+  Focus1: { kind: OpticalFunctionKind.Focus, wheel: 0 },
+  Zoom: { kind: OpticalFunctionKind.Zoom, wheel: 0 },
+};
+
+/** Builds a profile function over a DMX range with a linear physical range, classified as the backend would. */
 function fn(
   attribute: string,
   extra: Partial<ParameterFunction> = {},
@@ -68,6 +86,7 @@ function fn(
     dmx_to: 255,
     physical_from: 0,
     physical_to: 1,
+    optical: BACKEND_OPTICAL[attribute],
     ...extra,
   };
 }
@@ -149,13 +168,12 @@ test("inherited zoom follows the evaluated angle and clears inactive functions",
     ]),
   ]);
   const cell: FixtureElement = { label: "Cell", parameters: [] };
-  const geometry = {
-    nodes: [
-      node("Head", -1),
-      { ...node("Cell", 0), geometryType: GeometryType.Beam },
-    ],
-    roots: [0],
+  const beam: GeometryNode = {
+    ...node("Cell", 0),
+    geometryType: GeometryType.Beam,
+    opticalParameters: [{ element: 0, attribute: { type: "Zoom" } }],
   };
+  const geometry = { nodes: [node("Head", -1), beam], roots: [0] };
   const state = new EmitterOpticalState(
     {
       mesh: new Mesh(),
@@ -192,41 +210,31 @@ test("zoom accepts finite nonpositive physical angles", () => {
 });
 
 /**
- * GDTF defaults PhysicalFrom/To to 0/1, so an Angle zoom that omits its range states no degrees
- * and must leave the aperture to its normalized zoom instead of a sub-degree pencil beam, while a
- * real descending angular range (34°→1°) is read as degrees.
+ * A descending angular range (34°→1°) the backend classified as zoom is read as degrees, while a
+ * zoom function the backend left unclassified (an unauthored or non-angular range) keeps the
+ * aperture's native beam.
  */
-test("angle zoom reads degrees only from a real angular range", () => {
-  const zoomHead = (physical_from: number, physical_to: number) =>
-    head("Head", [
-      parameter({ type: "Zoom" }, [
-        fn("Zoom", {
-          physical_from,
-          physical_to,
-          physical_unit: PhysicalUnit.Angle,
-        }),
-      ]),
-    ]);
-  const unitRange = zoomHead(0, 1);
-  const unit = new EmitterOpticalState(emitter([unitRange]), atlas().load);
-  unit.update(records([unitRange], [{ Intensity: 255, Zoom: 128 }]));
-  assert.equal(unit.zoomDegrees, undefined);
-
-  const angular = zoomHead(34, 1);
+test("zoom reads degrees only from classified zoom functions", () => {
+  const angular = head("Head", [
+    parameter({ type: "Zoom" }, [
+      fn("Zoom", {
+        physical_from: 34,
+        physical_to: 1,
+        physical_unit: PhysicalUnit.Angle,
+      }),
+    ]),
+  ]);
   const degrees = new EmitterOpticalState(emitter([angular]), atlas().load);
   degrees.update(records([angular], [{ Intensity: 255, Zoom: 0 }]));
   assert.equal(degrees.zoomDegrees, 34);
-});
 
-/** Zoom functions without an angular unit give no beam angle to replace the aperture's own. */
-test("zoom without an angle unit leaves the native beam", () => {
-  const optics = head("Head", [
+  const unclassified = head("Head", [
     parameter({ type: "Zoom" }, [
-      fn("Zoom", { physical_unit: PhysicalUnit.Percent }),
+      fn("Zoom", { physical_unit: PhysicalUnit.Angle, optical: undefined }),
     ]),
   ]);
-  const state = new EmitterOpticalState(emitter([optics]), atlas().load);
-  state.update(records([optics], [{ Intensity: 255, Zoom: 128 }]));
+  const state = new EmitterOpticalState(emitter([unclassified]), atlas().load);
+  state.update(records([unclassified], [{ Intensity: 255, Zoom: 128 }]));
   assert.equal(state.zoomDegrees, undefined);
 });
 
@@ -444,8 +452,8 @@ test("prism reduction follows active DMX combinations", () => {
   assert.equal(state.prism, undefined);
 });
 
-/** Only calibrated length values move the focal plane; uncalibrated positions keep default focus. */
-test("focus distance follows length-valued functions only", () => {
+/** Backend-classified focus functions move the focal plane; unclassified ones keep default focus. */
+test("focus distance follows classified focus functions only", () => {
   const calibrated = head("Head", [
     parameter({ type: "Focus" }, [
       fn("Focus1", {
@@ -463,7 +471,10 @@ test("focus distance follows length-valued functions only", () => {
 
   const generic = head("Head", [
     parameter({ type: "Focus" }, [
-      fn("Focus1", { physical_unit: PhysicalUnit.Percent }),
+      fn("Focus1", {
+        physical_unit: PhysicalUnit.Percent,
+        optical: undefined,
+      }),
     ]),
   ]);
   const uncalibrated = new EmitterOpticalState(

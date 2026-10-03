@@ -7,12 +7,11 @@
  */
 
 import {
+  OpticalFunctionKind,
   type ParameterFunction,
-  PhysicalUnit,
   type PrismFacet,
 } from "../../../../types";
 import type { EmitterData } from "../../model/types";
-import { statesZoomDegrees } from "../gdtf-physical";
 import type { EmitterColor } from "../geometry-builder";
 import {
   type OpticalReadoutKeys,
@@ -101,13 +100,6 @@ interface OpticalControl {
   /** Role of each profile function, indexed like `parameter.functions`. */
   roles: (OpticalRole | undefined)[];
 }
-
-/**
- * Matches GDTF wheel function attributes: the family (`Gobo`, `Prism`), the
- * wheel number (empty for the unnumbered wheel, which is wheel 1) and the
- * function kind after it (`Pos`, `PosRotate`, `SelectSpin`, ...).
- */
-const WHEEL_FUNCTION = /^(Gobo|Prism)(\d*)(.*)$/;
 
 /** Collected prism stage with the facet counts its sets can select. */
 interface PrismFamily {
@@ -199,52 +191,53 @@ export class EmitterOpticalState implements ApertureControls {
       }
       return wheel;
     };
+    /** Builds a function's render role from the optical meaning the backend classified. */
     const role = (fn: ParameterFunction): OpticalRole | undefined => {
-      if (/^Zoom\d*$/.test(fn.attribute))
-        return fn.physical_unit === PhysicalUnit.Angle && statesZoomDegrees(fn)
-          ? { kind: "zoom" }
-          : undefined;
-      if (/^Focus\d*(Distance)?$/.test(fn.attribute))
-        return fn.physical_unit === PhysicalUnit.Length
-          ? { kind: "focus" }
-          : undefined;
-      const match = WHEEL_FUNCTION.exec(fn.attribute);
-      if (!match) return undefined;
-      const [, family, digits, kind] = match;
-      const number = digits ? Number(digits) : 1;
-      const key = `${family}${number}`;
-      const continuous = kind === "PosRotate";
-      if (family === "Gobo") {
-        if (kind === "Pos" || continuous)
+      const optical = fn.optical;
+      if (!optical) return undefined;
+      const gobo = `Gobo${optical.wheel}`;
+      const prism = `Prism${optical.wheel}`;
+      switch (optical.kind) {
+        case OpticalFunctionKind.Zoom:
+          return { kind: "zoom" };
+        case OpticalFunctionKind.Focus:
+          return { kind: "focus" };
+        case OpticalFunctionKind.GoboIndex:
+        case OpticalFunctionKind.GoboRotate:
           return {
             kind: "goboRotation",
-            stage: goboStage(key, number),
-            rotation: rotation(key),
-            continuous,
+            stage: goboStage(gobo, optical.wheel),
+            rotation: rotation(gobo),
+            continuous: optical.kind === OpticalFunctionKind.GoboRotate,
           };
-        // Selection, shake and spin functions pick slots; only slots with an image project.
-        if (kind.startsWith("Pos")) return undefined;
-        const slots = (fn.sets ?? []).map((set) => loadMedia(set.media));
-        return slots.some(Boolean)
-          ? { kind: "gobo", stage: goboStage(key, number), slots }
-          : undefined;
+        case OpticalFunctionKind.GoboSelect: {
+          // Only slots with an image project.
+          const slots = (fn.sets ?? []).map((set) => loadMedia(set.media));
+          return slots.some(Boolean)
+            ? { kind: "gobo", stage: goboStage(gobo, optical.wheel), slots }
+            : undefined;
+        }
+        case OpticalFunctionKind.PrismIndex:
+        case OpticalFunctionKind.PrismRotate:
+          return {
+            kind: "prismRotation",
+            stage: prismFamily(prism).stage,
+            rotation: rotation(prism),
+            continuous: optical.kind === OpticalFunctionKind.PrismRotate,
+          };
+        case OpticalFunctionKind.PrismSelect: {
+          const entry = prismFamily(prism);
+          const facets = (fn.sets ?? []).map((set) =>
+            compileFacets(set.facets),
+          );
+          for (const split of facets) {
+            this.maxFacetCount = Math.max(this.maxFacetCount, split.length);
+            entry.capacity = Math.max(entry.capacity, split.length);
+            entry.counts.add(Math.max(1, split.length));
+          }
+          return { kind: "prism", stage: entry.stage, facets };
+        }
       }
-      if (kind === "Pos" || continuous)
-        return {
-          kind: "prismRotation",
-          stage: prismFamily(key).stage,
-          rotation: rotation(key),
-          continuous,
-        };
-      if (kind !== "") return undefined;
-      const entry = prismFamily(key);
-      const facets = (fn.sets ?? []).map((set) => compileFacets(set.facets));
-      for (const split of facets) {
-        this.maxFacetCount = Math.max(this.maxFacetCount, split.length);
-        entry.capacity = Math.max(entry.capacity, split.length);
-        entry.counts.add(Math.max(1, split.length));
-      }
-      return { kind: "prism", stage: entry.stage, facets };
     };
 
     for (const { element, parameterIndex } of emitter.opticalParameters ?? []) {

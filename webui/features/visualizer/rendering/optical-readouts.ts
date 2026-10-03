@@ -21,9 +21,6 @@ import type { FixtureElement, ParameterMetadata } from "../../../types";
 import type { EvaluatedChannel } from "./channel-evaluation";
 import { attributeOutputKey } from "./channel-evaluation";
 
-/** Profile function attributes whose selected function, set and physical value drive aperture optics. */
-const OPTICAL_FUNCTION_ATTRIBUTE = /^(?:Gobo|Prism|Zoom|Focus)\d*/;
-
 /** Record keys of one optical parameter's evaluated function, set and physical value. */
 export interface OpticalReadoutKeys {
   /** Index of the active function in `parameter.functions`, or -1 when none is active. */
@@ -40,11 +37,9 @@ const readoutKeysCache = new WeakMap<
   (OpticalReadoutKeys | undefined)[]
 >();
 
-/** Returns whether any of a parameter's profile functions controls aperture optics. */
-function isOpticalParameter(parameter: ParameterMetadata): boolean {
-  return (parameter.functions ?? []).some((fn) =>
-    OPTICAL_FUNCTION_ATTRIBUTE.test(fn.attribute),
-  );
+/** Returns whether the backend classified any of a parameter's profile functions as optical. */
+export function isOpticalParameter(parameter: ParameterMetadata): boolean {
+  return (parameter.functions ?? []).some((fn) => fn.optical !== undefined);
 }
 
 /**
@@ -87,12 +82,8 @@ export function writeOpticalReadouts(
     const readout = keys[index];
     const channel = channels[index];
     if (!readout || !channel) continue;
-    const functions = channel.parameter.functions ?? [];
-    const fn = channel.function;
-    const functionIndex = fn ? functions.indexOf(fn) : -1;
-    record[readout.function] = functionIndex;
-    record[readout.set] =
-      fn && channel.set ? (fn.sets ?? []).indexOf(channel.set) : -1;
+    record[readout.function] = channel.functionIndex;
+    record[readout.set] = channel.setIndex;
     record[readout.physical] = channel.physical;
   }
 }

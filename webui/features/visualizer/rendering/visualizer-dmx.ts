@@ -16,7 +16,6 @@ import {
   type CieColor,
   type FixtureElement,
   type ParameterFunction,
-  ParameterUnit,
   ParameterValuePolarity,
 } from "../../../types";
 import {
@@ -357,21 +356,12 @@ function visualizerDmxFromChannels(
   let filterBlue = 1;
   let hasFilter = false;
   let declaresIntensityControl = elementDeclaresIntensityControl(element);
-  let nativeZoomDegrees: number | undefined;
   const physical = resetPhysicalState(physicalState);
 
   for (const channel of channels) {
     if (!channel) continue;
     const param = channel.parameter;
     const attrType = param.attribute.type;
-    if (
-      attrType === "Zoom" &&
-      param.native_unit === ParameterUnit.Degrees &&
-      Number.isFinite(channel.value)
-    ) {
-      // A zoom without profile functions states its beam angle as its value.
-      nativeZoomDegrees = channel.value;
-    }
     const prop = ATTR_TO_PROP[attrType];
     const color = ATTR_TO_COLOR[attrType];
     if (prop === "intensity" && channel.mastersOwnEmitters) {
@@ -494,7 +484,7 @@ function visualizerDmxFromChannels(
   dmx.frost = Math.max(dmx.frost, physical.frost ?? 0);
   dmx.strobeHz = dmx.strobeShutter > 0 ? physical.strobeHz : undefined;
   dmx.iris = physical.iris;
-  dmx.zoomDegrees = physical.zoomDegrees ?? nativeZoomDegrees;
+  dmx.zoomDegrees = physical.zoomDegrees;
 
   return dmx;
 }

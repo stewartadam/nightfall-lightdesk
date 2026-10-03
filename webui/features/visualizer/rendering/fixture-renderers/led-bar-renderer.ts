@@ -294,10 +294,7 @@ export function buildSimpleLedBar(
             physical: {
               ...physical,
               // Fixture-level flux is shared across independently controlled cells.
-              lumens:
-                physical.lumens === undefined
-                  ? undefined
-                  : physical.lumens / cellCount,
+              lumens: physical.lumens / cellCount,
             },
             radius: Math.min(cellWidth, 0.03) / 2,
             throwRatio: 1,

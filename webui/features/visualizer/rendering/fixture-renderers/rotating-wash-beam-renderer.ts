@@ -23,11 +23,7 @@ import {
   MeshStandardMaterial,
   Object3D,
 } from "three/webgpu";
-import {
-  BeamType,
-  type FixtureElement,
-  type FixturePhysical,
-} from "../../../../types";
+import type { FixtureElement, FixturePhysical } from "../../../../types";
 import { excludeFromSelection } from "../../model/selection-exclusion";
 import type { EmitterData, FixtureInstance } from "../../model/types";
 import {
@@ -66,8 +62,6 @@ const STRIP_PIXEL_WIDTH = 0.052;
 const STRIP_PIXEL_HEIGHT = 0.026;
 const STRIP_TOP_Y = 0.08;
 const STRIP_BOTTOM_Y = -0.08;
-const DEFAULT_BEAM_ANGLE = 6;
-const DEFAULT_FIELD_ANGLE = 28;
 const TILT_RANGE_DEGREES = 270;
 const TILT_UP_REFERENCE_DEGREES = -90;
 const DEFAULT_TILT_SPEED_DEG_PER_SEC = 180;
@@ -184,24 +178,15 @@ export function buildRotatingWashBeamFixture(
       mesh: lensMesh,
       controlledElement: elementLabel,
       nodeGroup: aperture,
-      optics: {
-        physical: physical
-          ? {
-              ...physical,
-              lumens:
-                physical.lumens === undefined
-                  ? undefined
-                  : physical.lumens / beamCount,
-            }
-          : {
-              beamType: BeamType.Wash,
-              beamAngle: DEFAULT_BEAM_ANGLE,
-              fieldAngle: DEFAULT_BEAM_ANGLE + DEFAULT_FIELD_ANGLE,
-            },
-        radius: LENS_RADIUS,
-        throwRatio: 1,
-        rectangleRatio: 1,
-      },
+      // Fixture-level flux is shared across the independently controlled beams.
+      optics: physical
+        ? {
+            physical: { ...physical, lumens: physical.lumens / beamCount },
+            radius: LENS_RADIUS,
+            throwRatio: 1,
+            rectangleRatio: 1,
+          }
+        : undefined,
       beamColor: { red: 0, green: 0, blue: 0, intensity: 0 },
     };
     beamEmitters.push({

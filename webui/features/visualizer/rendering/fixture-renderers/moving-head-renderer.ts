@@ -33,7 +33,6 @@ import type {
   FixtureGeometry,
   FixturePhysical,
 } from "../../../../types";
-import { BeamType } from "../../../../types";
 import {
   bindElementOpticalParameters,
   bindEmitterOpticalParameters,
@@ -48,11 +47,6 @@ const HEAD_OFFSET_Y = 0.32;
 /** Default pan/tilt ranges in degrees */
 const DEFAULT_PAN_RANGE = 540;
 const DEFAULT_TILT_RANGE = 270;
-
-/** Default beam specification */
-const DEFAULT_BEAM_ANGLE = 15;
-const DEFAULT_FIELD_ANGLE = 30;
-const DEFAULT_LUMENS = 10000;
 
 /** Default pan/tilt movement speed in degrees per second */
 const DEFAULT_PAN_SPEED_DEG_PER_SEC = 180;
@@ -85,10 +79,10 @@ export interface MovingHeadData {
   panRangeDeg: number;
   /** Tilt range in degrees */
   tiltRangeDeg: number;
-  /** Beam angle in degrees */
-  beamAngleDeg: number;
-  /** Field angle in degrees */
-  fieldAngleDeg: number;
+  /** Beam angle in degrees, when the profile states photometry */
+  beamAngleDeg?: number;
+  /** Field angle in degrees, when the profile states photometry */
+  fieldAngleDeg?: number;
   /** Element label for DMX lookup (first element) */
   elementLabel: string;
 }
@@ -288,9 +282,8 @@ export function buildMovingHeadFixture(
 
   const sourceNode = geometry?.nodes.find((node) => node.beam);
   const source = sourceNode?.beam?.physical ?? physical;
-  const beamAngleDeg = source?.beamAngle ?? DEFAULT_BEAM_ANGLE;
-  const fieldAngleDeg = source?.fieldAngle ?? DEFAULT_FIELD_ANGLE;
-  const lumens = source?.lumens ?? DEFAULT_LUMENS;
+  const beamAngleDeg = source?.beamAngle;
+  const fieldAngleDeg = source?.fieldAngle;
 
   // Get element label from first element (moving heads typically have one main element)
   const elementLabel = elements[0]?.label ?? "Main";
@@ -312,18 +305,12 @@ export function buildMovingHeadFixture(
         : bindElementOpticalParameters(elements),
     gdtfPath: geometry?.gdtfPath,
     gdtfRevision: geometry?.gdtfRevision,
-    optics: sourceNode?.beam ?? {
-      physical: source ?? {
-        beamType: BeamType.Spot,
-        beamAngle: beamAngleDeg,
-        fieldAngle: fieldAngleDeg,
-        lumens,
-        colorTemperature: 6500,
-      },
-      radius: 0.06,
-      throwRatio: 1,
-      rectangleRatio: 1,
-    },
+    // The aperture radius matches the drawn lens; photometry always comes from the profile.
+    optics:
+      sourceNode?.beam ??
+      (source
+        ? { physical: source, radius: 0.06, throwRatio: 1, rectangleRatio: 1 }
+        : undefined),
     beamColor: { red: 0, green: 0, blue: 0, intensity: 0 },
   });
 

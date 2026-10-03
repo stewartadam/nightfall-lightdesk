@@ -28,9 +28,10 @@ import {
   type FixtureElement,
   type FixtureGeometry,
   FixtureLayout,
+  type FixturePhysical,
   GeometryType,
   MergeStrategy,
-  ParameterUnit,
+  OpticalFunctionKind,
   ParameterValuePolarity,
   PhysicalUnit,
   type Transform,
@@ -77,6 +78,22 @@ import {
 
 const HIGH = resolveQualityProfile("high");
 const LOW = resolveQualityProfile("low");
+
+/** Photometry of a 15°/30° built-in moving spot, as the backend sends it. */
+const SPOT_PHYSICAL: FixturePhysical = {
+  beamType: BeamType.Spot,
+  beamAngle: 15,
+  fieldAngle: 30,
+  lumens: 10000,
+};
+
+/** Photometry of the built-in rotating wash, as the backend's profile normalization sends it. */
+const WASH_PHYSICAL: FixturePhysical = {
+  beamType: BeamType.Wash,
+  beamAngle: 1,
+  fieldAngle: 1.2,
+  lumens: 12000,
+};
 
 before(() => loadFixtureEvaluation());
 
@@ -160,17 +177,27 @@ function parameter(
   };
 }
 
-/** Carries physical zoom to both rendering modes without interpreting raw percentages as degrees. */
+/** Carries classified physical zoom to both rendering modes without interpreting raw percentages as degrees. */
 test("physical zoom survives visualizer and worker DMX extraction", () => {
   const zoom = {
-    ...parameter("Zoom", 45),
-    min: 5,
-    native_unit: ParameterUnit.Degrees,
+    ...parameter("Zoom"),
+    functions: [
+      {
+        name: "Zoom",
+        attribute: "Zoom",
+        dmx_from: 0,
+        dmx_to: 255,
+        physical_from: 5,
+        physical_to: 45,
+        physical_unit: PhysicalUnit.Angle,
+        optical: { kind: OpticalFunctionKind.Zoom, wheel: 0 },
+      },
+    ],
   };
   const element: FixtureElement = { label: "Head", parameters: [zoom] };
-  assert.equal(extractVisualizerDmx({ Zoom: 25 }, element).zoomDegrees, 25);
-  assert.equal(extractElementDmxData({ Zoom: 25 }, element).zoomDegrees, 25);
-  approx(extractVisualizerDmx({ Zoom: 25 }, element).zoom!, 128 / 255);
+  assert.equal(extractVisualizerDmx({ Zoom: 255 }, element).zoomDegrees, 45);
+  assert.equal(extractElementDmxData({ Zoom: 255 }, element).zoomDegrees, 45);
+  approx(extractVisualizerDmx({ Zoom: 255 }, element).zoom!, 1);
   const raw: FixtureElement = {
     label: "Head",
     parameters: [parameter("Zoom")],
@@ -220,6 +247,7 @@ test("fixture DMX selects indexed and rotating gobo modes across elements", () =
           {
             name: "Index",
             attribute: "Gobo1Pos",
+            optical: { kind: OpticalFunctionKind.GoboIndex, wheel: 1 },
             dmx_from: 0,
             dmx_to: 255,
             physical_from: 0,
@@ -234,6 +262,7 @@ test("fixture DMX selects indexed and rotating gobo modes across elements", () =
           {
             name: "Rotate",
             attribute: "Gobo1PosRotate",
+            optical: { kind: OpticalFunctionKind.GoboRotate, wheel: 1 },
             dmx_from: 0,
             dmx_to: 255,
             physical_from: -180,
@@ -1684,7 +1713,8 @@ test("moving heads publish resolved output to the shared atmospheric batch", () 
     rotation: { x: 0, y: 0, z: 0 },
     elements: [{ label: "Head", parameters: [] } as unknown as FixtureElement],
     layout: FixtureLayout.MovingHead,
-    physicalSignature: fixturePhysicalSignature(undefined),
+    physical: SPOT_PHYSICAL,
+    physicalSignature: fixturePhysicalSignature(SPOT_PHYSICAL),
   };
   manager.syncFixtures([fixture]);
   const instance = manager.getFixtureInstance(fixture.uid)!;
@@ -1738,7 +1768,8 @@ test("built-in moving-head zoom maps across native optics in the shared batch", 
     rotation: { x: 0, y: 0, z: 0 },
     elements: [{ label: "Head", parameters: [] } as unknown as FixtureElement],
     layout: FixtureLayout.MovingHead,
-    physicalSignature: fixturePhysicalSignature(undefined),
+    physical: SPOT_PHYSICAL,
+    physicalSignature: fixturePhysicalSignature(SPOT_PHYSICAL),
   };
   manager.syncFixtures([fixture]);
   const instance = manager.getFixtureInstance(fixture.uid)!;
@@ -1804,6 +1835,10 @@ test("moving-head layout preserves inherited optical controls", () => {
           throwRatio: 1,
           rectangleRatio: 1,
         },
+        opticalParameters: [
+          { element: 0, attribute: { type: "Zoom" } },
+          { element: 0, attribute: { type: "Gobo" } },
+        ],
       },
     ],
   };
@@ -1821,6 +1856,7 @@ test("moving-head layout preserves inherited optical controls", () => {
             physical_from: 5,
             physical_to: 45,
             physical_unit: PhysicalUnit.Angle,
+            optical: { kind: OpticalFunctionKind.Zoom, wheel: 0 },
           },
         ],
       },
@@ -1830,6 +1866,7 @@ test("moving-head layout preserves inherited optical controls", () => {
           {
             name: "Gobo",
             attribute: "Gobo1",
+            optical: { kind: OpticalFunctionKind.GoboSelect, wheel: 1 },
             dmx_from: 0,
             dmx_to: 255,
             physical_from: 0,
@@ -1918,7 +1955,8 @@ test("rotating wash routes each lens independently to shared atmosphere", () => 
     rotation: { x: 0, y: 0, z: 0 },
     elements,
     layout: FixtureLayout.RotatingWashBeam,
-    physicalSignature: fixturePhysicalSignature(undefined),
+    physical: WASH_PHYSICAL,
+    physicalSignature: fixturePhysicalSignature(WASH_PHYSICAL),
   };
   manager.syncFixtures([fixture]);
   const instance = manager.getFixtureInstance(fixture.uid)! as ReturnType<

@@ -11,10 +11,13 @@ import test from "node:test";
 import {
   type Attribute,
   DmxValueResolution,
+  type ElementParameterRef,
   type FixtureElement,
   type GeometryNode,
   GeometryType,
   MergeStrategy,
+  type OpticalFunction,
+  OpticalFunctionKind,
   type ParameterMetadata,
 } from "../../../types";
 import {
@@ -23,21 +26,27 @@ import {
   type OpticalParameterBinding,
 } from "./optical-bindings";
 
-/** Builds minimal source geometry without fixture-specific classification. */
-function node(name: string, parentIndex: number, beam = false): GeometryNode {
+/** Builds a minimal geometry node, a beam carrying the backend's optical references when given. */
+function node(
+  name: string,
+  parentIndex: number,
+  opticalParameters?: ElementParameterRef[],
+): GeometryNode {
   return {
     name,
     parentIndex,
     children: [],
-    geometryType: beam ? GeometryType.Beam : GeometryType.Generic,
+    geometryType: opticalParameters ? GeometryType.Beam : GeometryType.Generic,
     transform: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+    opticalParameters,
   };
 }
 
-/** Builds a parameter with one profile function of the given GDTF attribute. */
+/** Builds a parameter with one profile function, optically classified when `optical` is given. */
 function parameter(
   attribute: Attribute,
   fnAttribute: string,
+  optical?: OpticalFunction,
 ): ParameterMetadata {
   return {
     attribute,
@@ -57,12 +66,13 @@ function parameter(
         dmx_to: 255,
         physical_from: 0,
         physical_to: 1,
+        optical,
       },
     ],
   };
 }
 
-/** Builds an element named after the geometry its channels sit on. */
+/** Builds an element from its label and parameters. */
 function element(
   label: string,
   parameters: ParameterMetadata[],
@@ -78,25 +88,36 @@ function describe(bindings: readonly OpticalParameterBinding[] | undefined) {
   );
 }
 
-/** Sibling apertures share ancestor optics, while local overrides affect only their descendants. */
-test("optical control inheritance follows source geometry and specificity", () => {
+const ZOOM: OpticalFunction = { kind: OpticalFunctionKind.Zoom, wheel: 0 };
+const GOBO: OpticalFunction = {
+  kind: OpticalFunctionKind.GoboSelect,
+  wheel: 1,
+};
+const FOCUS: OpticalFunction = { kind: OpticalFunctionKind.Focus, wheel: 0 };
+
+/** Each beam binds the element parameters its backend references name, in reference order. */
+test("beams resolve backend optical references to element parameters", () => {
   const head = element("Head", [
-    parameter({ type: "Zoom" }, "Zoom"),
-    parameter({ type: "Gobo" }, "Gobo1"),
+    parameter({ type: "Zoom" }, "Zoom", ZOOM),
+    parameter({ type: "Gobo" }, "Gobo1", GOBO),
   ]);
-  const cellA = element("CellA", [parameter({ type: "Zoom" }, "Zoom")]);
-  const other = element("Other", [parameter({ type: "Prism" }, "Prism1")]);
+  const cellA = element("CellA", [parameter({ type: "Zoom" }, "Zoom", ZOOM)]);
   const bindings = bindEmitterOpticalParameters(
     {
       nodes: [
         node("Head", -1),
-        node("CellA", 0, true),
-        node("CellB", 0, true),
-        node("Other", -1),
+        node("CellA", 0, [
+          { element: 1, attribute: { type: "Zoom" } },
+          { element: 0, attribute: { type: "Gobo" } },
+        ]),
+        node("CellB", 0, [
+          { element: 0, attribute: { type: "Zoom" } },
+          { element: 0, attribute: { type: "Gobo" } },
+        ]),
       ],
-      roots: [0, 3],
+      roots: [0],
     },
-    [head, cellA, other],
+    [head, cellA],
   );
   assert.deepEqual(describe(bindings.get("CellA")), [
     "CellA:Zoom",
@@ -109,28 +130,33 @@ test("optical control inheritance follows source geometry and specificity", () =
   assert.equal(bindings.has("Head"), false);
 });
 
-/** Parameters without optical functions, such as dimmers and color wheels, are never bound. */
-test("optical binding skips non-optical parameters", () => {
-  const cell = element("Cell", [
-    parameter({ type: "Intensity" }, "Dimmer"),
-    parameter({ type: "Custom", data: { label: "Color1" } }, "Color1"),
-    parameter({ type: "Focus" }, "Focus1"),
-  ]);
-  assert.deepEqual(describe(bindElementOpticalParameters([cell])), [
-    "Cell:Focus1",
-  ]);
-});
-
-/** Malformed parent links cannot hang fixture loading or borrow unrelated controls. */
-test("optical binding terminates malformed ancestry", () => {
-  const cell = element("Cell", [parameter({ type: "Focus" }, "Focus1")]);
+/** References to elements or attributes the fixture does not have bind nothing. */
+test("optical binding skips unknown references", () => {
+  const cell = element("Cell", [parameter({ type: "Focus" }, "Focus1", FOCUS)]);
   const bindings = bindEmitterOpticalParameters(
     {
-      nodes: [node("Cell", 0, true), node("Lost", 999, true)],
-      roots: [],
+      nodes: [
+        node("Cell", -1, [
+          { element: 0, attribute: { type: "Focus" } },
+          { element: 0, attribute: { type: "Prism" } },
+          { element: 7, attribute: { type: "Focus" } },
+        ]),
+      ],
+      roots: [0],
     },
     [cell],
   );
   assert.deepEqual(describe(bindings.get("Cell")), ["Cell:Focus1"]);
-  assert.deepEqual(describe(bindings.get("Lost")), []);
+});
+
+/** Without geometry, only parameters with backend-classified optical functions are bound. */
+test("optical binding skips non-optical parameters", () => {
+  const cell = element("Cell", [
+    parameter({ type: "Intensity" }, "Dimmer"),
+    parameter({ type: "Custom", data: { label: "Color1" } }, "Color1"),
+    parameter({ type: "Focus" }, "Focus1", FOCUS),
+  ]);
+  assert.deepEqual(describe(bindElementOpticalParameters([cell])), [
+    "Cell:Focus1",
+  ]);
 });
