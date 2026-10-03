@@ -199,7 +199,9 @@ test("guide resizes the whole app and leaves right-hand panels clickable", async
     .getByRole("navigation", { name: "Global", exact: true })
     .boundingBox())!;
   expect(header.x + header.width).toBeLessThanOrEqual(lesson.x);
-  const visualizer = page.getByLabel("3D visualizer viewport", { exact: true });
+  const visualizer = activeLayout(page).getByLabel("3D visualizer viewport", {
+    exact: true,
+  });
   await expect(visualizer).toBeVisible();
   const canvas = (await visualizer.boundingBox())!;
   expect(canvas.x + canvas.width).toBeLessThanOrEqual(lesson.x + 1);
@@ -216,7 +218,7 @@ test("guide resizes the whole app and leaves right-hand panels clickable", async
       position: { referencePanel: "panel-Visualizer", direction: "within" },
     });
   });
-  const panel = page.locator(
+  const panel = activeLayout(page).locator(
     '[data-panel-id="guide-right-fixtures"][data-component="FixtureGrid"]',
   );
   await expect(panel).toBeVisible();
