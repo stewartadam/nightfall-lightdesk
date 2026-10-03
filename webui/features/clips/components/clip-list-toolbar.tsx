@@ -59,7 +59,7 @@ export function ClipListToolbar(props: ClipListToolbarProps) {
 
           <ToolbarButton
             variant="danger"
-            size="labeled"
+            count={props.selectedCount}
             tooltip={
               props.selectedCount > 0
                 ? `Delete selected clips (${props.selectedCount})`
@@ -71,11 +71,6 @@ export function ClipListToolbar(props: ClipListToolbarProps) {
             label="Delete selected clips"
           >
             <TrashIcon class="size-4" aria-hidden />
-            <Show when={props.selectedCount > 0}>
-              <span class="rounded bg-red-800 px-1 text-[10px] leading-4 text-red-100">
-                {props.selectedCount}
-              </span>
-            </Show>
           </ToolbarButton>
 
           <Show when={props.viewMode === "grid"}>

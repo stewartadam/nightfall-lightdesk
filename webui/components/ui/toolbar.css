@@ -43,6 +43,28 @@
   color: #c7cdca;
   background: transparent;
   cursor: pointer;
+  position: relative;
+}
+/* Overlays the button corner so a selection count never changes toolbar width. */
+.nf-toolbar-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: #dbeafe;
+  background: #1e40af;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+.nf-toolbar-button[data-variant="danger"] .nf-toolbar-badge {
+  color: #fee2e2;
+  background: #991b1b;
 }
 .nf-toolbar-button[data-size="labeled"] {
   width: auto;
