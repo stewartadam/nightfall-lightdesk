@@ -39,13 +39,13 @@ async function openOwnedNetworkDmxApp(page: Page): Promise<void> {
  * and waits for its lazily loaded content, which queues behind the default
  * layout's background panel imports on the Vite dev server.
  */
-async function openPanel(page: Page, panelName: string) {
+async function openIoTransportsPanel(page: Page) {
   await waitForDockviewApp(page);
   await page.getByRole("button", { name: "Open command palette" }).click();
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();
-  await commandInput.fill(`Open ${panelName}`);
+  await commandInput.fill("Open I/O Transports");
   await page.keyboard.press("Enter");
   await expect(networkDmxPanel(page)).toBeVisible({ timeout: 20_000 });
 }
@@ -222,7 +222,7 @@ test("I/O transports panel keeps table columns usable", async ({ page }) => {
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForTimeout(3_000);
 
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   await expect(panel).toBeVisible();
@@ -263,6 +263,45 @@ test("I/O transports panel keeps table columns usable", async ({ page }) => {
 });
 
 /**
+ * Verifies a host that forbids physical transports, as the Playwright backend
+ * pool does, leaves every transport switch disabled and off.
+ */
+test("I/O transports panel disables switches the host forbids", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto("/?e2e=1");
+  await openIoTransportsPanel(page);
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const capabilities = (
+          window as any
+        ).appStores.runtimeCapabilities.get();
+        return capabilities
+          ? [
+              capabilities.network_dmx_input,
+              capabilities.network_dmx_output,
+              capabilities.usb_dmx_output,
+            ]
+          : null;
+      }),
+    )
+    .toEqual([false, false, false]);
+  const panel = networkDmxPanel(page);
+  for (const name of [
+    "Enable network input",
+    "Enable network output",
+    "Enable USB output",
+  ]) {
+    const transportSwitch = panel.getByRole("switch", { name });
+    await expect(transportSwitch).toBeDisabled();
+    await expect(transportSwitch).not.toBeChecked();
+  }
+});
+
+/**
  * Verifies I/O Transports output can be globally disabled and enabled from the panel.
  */
 test("I/O transports panel toggles network output", async ({ page }) => {
@@ -274,7 +313,7 @@ test("I/O transports panel toggles network output", async ({ page }) => {
     Boolean((window as any).appStores?.ioSettings),
   );
   await page.waitForTimeout(3_000);
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   await expect(panel).toBeVisible();
@@ -329,7 +368,7 @@ test("I/O transports panel toggles network input", async ({ page }) => {
     Boolean((window as any).appStores?.ioSettings),
   );
   await page.waitForTimeout(3_000);
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   await expect(panel).toBeVisible();
@@ -381,7 +420,7 @@ test("I/O transports panel toggles USB output", async ({ page }) => {
     Boolean((window as any).appStores?.ioSettings),
   );
   await page.waitForTimeout(3_000);
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   await expect(panel).toBeVisible();
@@ -433,7 +472,7 @@ test("I/O transports panel enables new transport IP after protocol mode normaliz
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForTimeout(3_000);
 
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   const mode = panel.getByLabel("New transport delivery mode");
@@ -463,7 +502,7 @@ test("I/O transports panel updates network interface badges after unplug", async
   await page.waitForFunction(() =>
     Boolean((window as any).appStores?.availableNetworkInterfaces),
   );
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   const summary = panel.locator('[data-slot="interface-summary"]');
@@ -535,7 +574,7 @@ test("I/O transports panel shows new transport validation status", async ({
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForTimeout(3_000);
 
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   const newRow = panel.locator('[data-slot="new-target-row"]');
@@ -596,7 +635,7 @@ test("I/O transports panel configures named unicast targets", async ({
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForTimeout(3_000);
 
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   await expect(panel).toBeVisible();
@@ -643,7 +682,7 @@ test("I/O transports panel configures named USB targets", async ({ page }) => {
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForTimeout(3_000);
 
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
 
   const panel = networkDmxPanel(page);
   await expect(
@@ -703,7 +742,7 @@ test("I/O transports panel keeps no USB devices state neutral", async ({
   await page.waitForFunction(() =>
     Boolean((window as any).appStores?.availableUsbDmxDevices),
   );
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
   await seedUsbDmxDevices(page, []);
 
   const newUsbRow = networkDmxPanel(page).locator(
@@ -734,7 +773,7 @@ test("I/O transports panel preserves missing saved USB devices", async ({
   await page.waitForFunction(() =>
     Boolean((window as any).appStores?.availableUsbDmxDevices),
   );
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
   const panel = networkDmxPanel(page);
   await expect(panel).toBeVisible();
   await enableTransportOutput(
@@ -776,7 +815,7 @@ test("I/O transports panel lists connected compatible USB devices", async ({
   await page.goto("/?e2e=1");
 
   await expect(page.locator("main#app")).toBeVisible();
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
   await seedUsbDmxDevices(page, [
     {
       id: firstDevice,
@@ -846,7 +885,7 @@ test("I/O transports panel distinguishes same-SKU USB devices", async ({
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForTimeout(3_000);
 
-  await openPanel(page, "I/O Transports");
+  await openIoTransportsPanel(page);
   await seedUsbDmxTargets(page, [{ id: "udmx", device: "default" }]);
   await seedUsbDmxDevices(page, [
     {
@@ -921,7 +960,7 @@ test.describe("owned blank showfile", () => {
     await openOwnedNetworkDmxApp(page);
 
     await expect(page.locator("main#app")).toBeVisible();
-    await openPanel(page, "I/O Transports");
+    await openIoTransportsPanel(page);
 
     const summary = networkDmxPanel(page).locator(
       '[data-slot="interface-summary"]',
@@ -998,7 +1037,7 @@ test.describe("owned blank showfile", () => {
     await openOwnedNetworkDmxApp(page);
 
     await expect(page.locator("main#app")).toBeVisible();
-    await openPanel(page, "I/O Transports");
+    await openIoTransportsPanel(page);
     await seedUsbDmxDevices(page, [
       {
         id: deviceId,
@@ -1051,7 +1090,7 @@ test.describe("owned blank showfile", () => {
     await openOwnedNetworkDmxApp(page);
 
     await expect(page.locator("main#app")).toBeVisible();
-    await openPanel(page, "I/O Transports");
+    await openIoTransportsPanel(page);
     await page.evaluate((targetId) => {
       const stores = (window as any).appStores;
       const settings = stores.ioSettings.get();
@@ -1106,7 +1145,7 @@ test.describe("owned blank showfile", () => {
 
     await expect(page.locator("main#app")).toBeVisible();
 
-    await openPanel(page, "I/O Transports");
+    await openIoTransportsPanel(page);
 
     const panel = networkDmxPanel(page);
     await enableTransportOutput(
