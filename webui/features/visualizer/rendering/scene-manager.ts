@@ -23,6 +23,7 @@ import {
 } from "../model/selection-utils";
 import type { RenderableFixture, RenderableSceneObject } from "../model/types";
 import { BeamManager, BeamUpdater } from "./effects";
+import { FixtureColorState, type StrobeState } from "./fixture-color-state";
 import { FixtureManager } from "./fixture-manager";
 import {
   type ExtendedFixtureInstance,
@@ -42,9 +43,6 @@ import {
 } from "./visualizer-dmx";
 
 const log = createLogger("visualizer:scene-manager");
-
-/** An element's strobe rate and, when the profile states it, frequency. */
-type StrobeState = { strobeShutter?: number; strobeHz?: number };
 
 /** Returns the element with the strongest strobe in an element map, if any strobes. */
 function getFixtureStrobeShutter(
@@ -87,6 +85,11 @@ export class SceneManager {
   private selectionHighlighter: SelectionHighlighter;
   private raycaster = new Raycaster();
   private mouseNdc = new Vector2();
+  /** Per-instance color records, released with rebuilt or removed instances. */
+  private readonly fixtureColors = new WeakMap<
+    ExtendedFixtureInstance,
+    FixtureColorState
+  >();
 
   constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
     this.fixtureManager = new FixtureManager(scene, beamQuality);
@@ -446,43 +449,17 @@ export class SceneManager {
     const instance = this.fixtureManager.getFixtureInstance(fixtureUid);
     if (!instance) return;
 
-    // Convert to the format expected by update functions
-    const colorMap = new Map<
-      string,
-      Record<string, number | undefined> &
-        EmitterColor & {
-          pan?: number;
-          tilt?: number;
-          tiltSpeed?: number;
-          zoom?: number;
-          frost?: number;
-          strobeShutter?: number;
-        }
-    >();
-    const nowSeconds = performance.now() / 1000;
-    const fixtureStrobeShutter = getFixtureStrobeShutter(elementDmx);
-    for (const [key, dmx] of elementDmx) {
-      const intensity = strobeAdjustedIntensity(
-        dmx.intensity ?? 0,
-        dmx,
-        fixtureStrobeShutter,
-        nowSeconds,
-      );
-      colorMap.set(key, {
-        ...dmx,
-        red: dmx.red ?? 0,
-        green: dmx.green ?? 0,
-        blue: dmx.blue ?? 0,
-        intensity,
-        pan: dmx.pan,
-        tilt: dmx.tilt,
-        tiltSpeed: dmx.tiltSpeed,
-        zoom: dmx.zoom,
-        frost: dmx.frost,
-        white: dmx.white,
-        strobeShutter: dmx.strobeShutter,
-      });
+    // Reuse this fixture's color records; strobes advance on every frame.
+    let colorState = this.fixtureColors.get(instance);
+    if (!colorState) {
+      colorState = new FixtureColorState();
+      this.fixtureColors.set(instance, colorState);
     }
+    const colorMap = colorState.update(
+      elementDmx,
+      getFixtureStrobeShutter(elementDmx),
+      performance.now() / 1000,
+    );
 
     // Use appropriate update function based on renderer type
     if (instance.rendererType !== "gdtf") {

@@ -152,7 +152,8 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
               forceMainThread={!isOffscreenCanvasEnabled()}
               apiRef={(api) => {
                 visualizerApi = api;
-                setVisualizerHandle(api);
+                setVisualizerHandle(api ?? undefined);
+                if (!api) return;
                 syncVisualizerVisibility();
                 if (isDockviewVisible()) {
                   setActiveVisualizerDebugApiPanel(panelId);

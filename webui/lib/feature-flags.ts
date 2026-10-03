@@ -46,6 +46,29 @@ function parseVisualizerBeamQuality(value: unknown): VisualizerBeamQuality {
 
 let startupDraftRecoveryUrlOverride: boolean | undefined;
 let visualizerDefaultPanelUrlOverride: boolean | undefined;
+let visualizerInspectorUrlOverride = false;
+let visualizerFramePacingUrlOverride = false;
+
+/**
+ * Returns whether this session opted into visualizer diagnostics with the
+ * `visualizer:inspector` URL flag: the full Three.js developer inspector on
+ * the main thread, and frame pacing and per-pass GPU timings in the stats.
+ * The inspector profiles every pass and replaces the production GPU timer,
+ * so performance measurements should use `visualizer:framePacing` instead.
+ */
+export function isVisualizerInspectorEnabled(): boolean {
+  return visualizerInspectorUrlOverride;
+}
+
+/**
+ * Returns whether this session opted into visualizer stats diagnostics with
+ * the `visualizer:framePacing` URL flag: frame pacing and per-pass GPU
+ * timings in the stats, measured by the production GPU timer without
+ * attaching the Three.js developer inspector.
+ */
+export function isVisualizerFramePacingEnabled(): boolean {
+  return visualizerFramePacingUrlOverride;
+}
 
 /** Parses permissive boolean values from URL feature flag parameters. */
 function parseBooleanFeatureFlag(value: string): boolean {
@@ -129,6 +152,18 @@ function parseFeatureFlagUrlParams(): boolean {
     const params = new URLSearchParams(window.location.search);
     let changed = false;
 
+    const inspector = params.get("visualizer:inspector");
+    if (inspector !== null) {
+      visualizerInspectorUrlOverride = parseBooleanFeatureFlag(inspector);
+      changed = true;
+    }
+
+    const framePacing = params.get("visualizer:framePacing");
+    if (framePacing !== null) {
+      visualizerFramePacingUrlOverride = parseBooleanFeatureFlag(framePacing);
+      changed = true;
+    }
+
     const offscreenCanvas = params.get("visualizer:offscreenCanvas");
     if (offscreenCanvas !== null) {
       const value = parseVisualizerOffscreenCanvas(offscreenCanvas);
@@ -182,6 +217,8 @@ function cleanFeatureFlagUrlParams(): void {
     params.delete("visualizer:offscreenCanvas");
     params.delete("visualizer:beamQuality");
     params.delete("visualizer:defaultPanel");
+    params.delete("visualizer:inspector");
+    params.delete("visualizer:framePacing");
     params.delete("startup:draftRecovery");
 
     const nextUrl =

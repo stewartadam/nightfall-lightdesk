@@ -294,3 +294,217 @@ test("disposes a worker initialized after its visualizer panel closes", async ({
     contentType: "image/png",
   });
 });
+
+for (const offscreenCanvas of [true, false]) {
+  const mode = offscreenCanvas ? "worker" : "main-thread";
+
+  /**
+   * Verifies closing a visualizer panel retires its published API: the debug
+   * registry drops it, and a caller still holding the handle cannot resume
+   * the disposed renderer or restart its loops. The renderer instance itself
+   * is captured at creation, so its own disposal guards are exercised rather
+   * than the API's cleared renderer signal.
+   */
+  test(`closing the panel leaves the retired ${mode} renderer API inert`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const NativeWorker = window.Worker;
+      const state = {
+        created: 0,
+        terminated: 0,
+        postsAfterTermination: 0,
+        renderer: undefined as unknown,
+      };
+      (window as any).__visualizerRetiredApiTest = state;
+      (window as any).__nightfallE2eVisualizerRendererInitializationGate =
+        async (renderer: unknown) => {
+          state.renderer = renderer;
+        };
+      /** Counts visualizer renderer workers, their termination, and any later messages. */
+      class TrackingWorker extends NativeWorker {
+        private readonly isVisualizerWorker: boolean;
+        private isTerminated = false;
+
+        /** Records creation of visualizer renderer workers. */
+        constructor(scriptURL: string | URL, options?: WorkerOptions) {
+          super(scriptURL, options);
+          this.isVisualizerWorker =
+            String(scriptURL).includes("worker-renderer");
+          if (this.isVisualizerWorker) state.created += 1;
+        }
+
+        /** Counts messages a disposed renderer still tries to send its terminated worker. */
+        override postMessage(...args: [any, any?]): void {
+          if (this.isVisualizerWorker && this.isTerminated)
+            state.postsAfterTermination += 1;
+          super.postMessage(...args);
+        }
+
+        /** Records renderer disposal before terminating the worker. */
+        override terminate(): void {
+          if (this.isVisualizerWorker) {
+            state.terminated += 1;
+            this.isTerminated = true;
+          }
+          super.terminate();
+        }
+      }
+      window.Worker = TrackingWorker;
+      window.localStorage.clear();
+    });
+    await page.goto(`/?e2e=1&visualizer:offscreenCanvas=${offscreenCanvas}`);
+    await waitForDockviewApp(page);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (panelId) =>
+            (window as any).visualizerApis?.[panelId]?.isUsingWorker(),
+          VISUALIZER_PANEL_ID,
+        ),
+      )
+      .toBe(offscreenCanvas);
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as any).appStores.visualizerStats.get()),
+      )
+      .toMatchObject({ renderMode: mode });
+
+    await page.evaluate((panelId) => {
+      (window as any).__retiredVisualizerApi = (window as any).visualizerApis[
+        panelId
+      ];
+      (window as any).appStores.dockApi.get().getPanel(panelId).api.close();
+    }, VISUALIZER_PANEL_ID);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (panelId) => Boolean((window as any).visualizerApis?.[panelId]),
+          VISUALIZER_PANEL_ID,
+        ),
+      )
+      .toBe(false);
+
+    const retired = await page.evaluate(() => {
+      const api = (window as any).__retiredVisualizerApi;
+      api.pause();
+      api.resume();
+      return { paused: api.isPaused(), scene: api.getScene() === undefined };
+    });
+    expect(retired).toEqual({ paused: true, scene: true });
+    if (offscreenCanvas) {
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const state = (window as any).__visualizerRetiredApiTest;
+            return { created: state.created, terminated: state.terminated };
+          }),
+        )
+        .toEqual({ created: 1, terminated: 1 });
+    }
+
+    const lateCalls = await page.evaluate(() => {
+      const renderer = (window as any).__visualizerRetiredApiTest.renderer;
+      const errors: string[] = [];
+      const calls: [string, () => unknown][] = [
+        ["pause", () => renderer.pause()],
+        ["resume", () => renderer.resume()],
+        ["resize", () => renderer.resize(320, 240, 1)],
+        ["zoomToFit", () => renderer.zoomToFit()],
+        ["setFixtures", () => renderer.setFixtures([])],
+        ["setSceneObjects", () => renderer.setSceneObjects([])],
+        ["setElementDmxBatch", () => renderer.setElementDmxBatch(new Map())],
+        ["setSelection", () => renderer.setSelection([])],
+        ["dispose", () => renderer.dispose()],
+      ];
+      for (const [name, call] of calls) {
+        try {
+          call();
+        } catch (error) {
+          errors.push(`${name}: ${String(error)}`);
+        }
+      }
+      return {
+        errors,
+        paused: renderer.isPaused(),
+        scene: renderer.getScene?.() === undefined,
+      };
+    });
+    expect(lateCalls).toEqual({ errors: [], paused: true, scene: true });
+    await page.waitForTimeout(500);
+    expect(
+      await page.evaluate(() =>
+        (window as any).appStores.visualizerStats.get(),
+      ),
+    ).toBeNull();
+    expect(
+      await page.evaluate(() => {
+        const state = (window as any).__visualizerRetiredApiTest;
+        return {
+          created: state.created,
+          terminated: state.terminated,
+          postsAfterTermination: state.postsAfterTermination,
+        };
+      }),
+    ).toEqual(
+      offscreenCanvas
+        ? { created: 1, terminated: 1, postsAfterTermination: 0 }
+        : { created: 0, terminated: 0, postsAfterTermination: 0 },
+    );
+  });
+}
+
+for (const { flag, offscreenCanvas, diagnostics } of [
+  {
+    flag: "visualizer:inspector=false",
+    offscreenCanvas: true,
+    diagnostics: false,
+  },
+  {
+    flag: "visualizer:inspector=true",
+    offscreenCanvas: true,
+    diagnostics: true,
+  },
+  {
+    flag: "visualizer:framePacing=true",
+    offscreenCanvas: true,
+    diagnostics: true,
+  },
+  {
+    flag: "visualizer:framePacing=true",
+    offscreenCanvas: false,
+    diagnostics: true,
+  },
+]) {
+  const mode = offscreenCanvas ? "worker" : "main-thread";
+
+  /**
+   * Verifies a renderer publishes the shared instrumentation stats, and
+   * includes frame-pacing diagnostics only when the `visualizer:inspector` or
+   * the inspector-free `visualizer:framePacing` flag is set on the page URL.
+   */
+  test(`${mode} stats ${diagnostics ? "include" : "omit"} diagnostics with ${flag}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => window.localStorage.clear());
+    await page.goto(
+      `/?e2e=1&visualizer:offscreenCanvas=${offscreenCanvas}&${flag}`,
+    );
+    await waitForDockviewApp(page);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const stats = (window as any).appStores.visualizerStats.get();
+            return stats && stats.fps > 0 ? stats.renderMode : null;
+          }),
+        { timeout: 60_000 },
+      )
+      .toBe(mode);
+    const keys = await page.evaluate(() =>
+      Object.keys((window as any).appStores.visualizerStats.get()),
+    );
+    expect(keys).toContain("updateFixturesMs");
+    expect(keys.includes("framePacing")).toBe(diagnostics);
+  });
+}

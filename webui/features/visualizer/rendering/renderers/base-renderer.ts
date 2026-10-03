@@ -48,6 +48,8 @@ const log = createLogger("visualizer:base-renderer");
 export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   protected sceneManager: SceneManager | undefined;
   protected debugOverlays: DebugOverlayRegistry | undefined;
+  /** Set by dispose(); scene updates arriving afterwards are dropped instead of reported as calls made before init. */
+  protected disposed = false;
 
   /**
    * Initialize debug overlays. Call from subclass init() after creating the scene.
@@ -78,6 +80,7 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   abstract zoomToFit(uids?: string[]): void;
 
   setFixtures(fixtures: readonly RenderableFixture[]): void {
+    if (this.disposed) return;
     if (!this.sceneManager || !this.debugOverlays) {
       throw new Error("setFixtures called before init() completed");
     }
@@ -101,6 +104,7 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   }
 
   setSceneObjects(sceneObjects: readonly RenderableSceneObject[]): void {
+    if (this.disposed) return;
     if (!this.sceneManager || !this.debugOverlays) {
       throw new Error("setSceneObjects called before init() completed");
     }
@@ -132,11 +136,12 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
    */
   setElementDmxBatch(batch: FixtureDmxBatch): void {
     for (const [fixtureUid, elements] of batch) {
-      this.setElementDmx(fixtureUid, new Map(elements));
+      this.setElementDmx(fixtureUid, elements);
     }
   }
 
   setSelection(selectedUids: string[]): void {
+    if (this.disposed) return;
     if (!this.sceneManager) {
       throw new Error("setSelection called before init() completed");
     }
@@ -148,6 +153,7 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
    * Set panel edit-target UIDs for yellow visualizer highlighting.
    */
   setEditSelection(selectedUids: string[]): void {
+    if (this.disposed) return;
     if (!this.sceneManager) {
       throw new Error("setEditSelection called before init() completed");
     }
@@ -159,6 +165,7 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
    * Set fixture UIDs that currently have values in the programmer.
    */
   setProgrammerValues(fixtureUids: string[]): void {
+    if (this.disposed) return;
     if (!this.sceneManager) {
       throw new Error("setProgrammerValues called before init() completed");
     }
@@ -170,6 +177,7 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
    * Set detailed active-span selection targets for fixture-element highlighting.
    */
   setActiveSelectionTargets(targets: SelectionTarget[]): void {
+    if (this.disposed) return;
     if (!this.sceneManager) {
       throw new Error(
         "setActiveSelectionTargets called before init() completed",

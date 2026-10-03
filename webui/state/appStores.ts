@@ -11,6 +11,7 @@
 import { deepMap } from "@nanostores/deepmap";
 import type { DockviewApi } from "dockview";
 import { atom } from "nanostores";
+import type { FramePacingSnapshot } from "../features/visualizer";
 import {
   appendConsoleScrollbackEntry,
   type ConsoleScrollbackEntry,
@@ -330,6 +331,11 @@ function getFixtureById(id: number): types.Fixture | undefined {
 
 /** Per-element output map for visualizer: uid -> array of element outputs (index = element number) */
 export type ParameterOutputMap = Map<string, Record<string, number>[]>;
+/** Read-only engine snapshot; publishers replace the map when output changes. */
+export type ParameterOutputSnapshot = ReadonlyMap<
+  string,
+  Record<string, number>[]
+>;
 /**
  * Immediate parameter output for non-reactive hot paths.
  * Updated synchronously on every WebSocket message with minimal processing.
@@ -340,8 +346,12 @@ const parametersImmediateHolder = {
   current: new Map<string, Record<string, number>[]>(),
 };
 
-/** Returns the latest parameter output map without subscribing to nanostore updates. */
-export function getParametersImmediate(): ParameterOutputMap {
+/**
+ * Returns the latest immutable snapshot without subscribing to nanostore
+ * updates. Renderers convert it only when its identity changes, so publish
+ * changes through {@link setParametersImmediate} rather than mutating it.
+ */
+export function getParametersImmediate(): ParameterOutputSnapshot {
   return parametersImmediateHolder.current;
 }
 
@@ -620,7 +630,15 @@ export interface VisualizerStats {
   postProcessMs: number;
   totalRenderMs: number;
   frameToFrameMs: number; // Wall clock time between actual renders
-  gpuMs: number; // GPU execution time (from CPU render end to next frame start)
+  gpuMs?: number; // GPU timestamp duration; absent when unsupported or unresolved
+  /** Unsmoothed pass durations from the most recently completed GPU sample (diagnostics only). */
+  gpuPasses?: Record<string, number>;
+  /**
+   * Raw render submission counters; window maximum is not smoothed like FPS.
+   * Published only with the `visualizer:framePacing` or `visualizer:inspector`
+   * diagnostics flags.
+   */
+  framePacing?: FramePacingSnapshot;
   scenePassMs: number;
   volumetricPassMs: number;
   gaussianBlurMs: number;
@@ -1014,6 +1032,7 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     parameters,
     getFixtureById,
     getParametersImmediate,
+    setParametersImmediate,
     bindings,
     bindingValidationSettings,
     patchBindingNavigationRequest,

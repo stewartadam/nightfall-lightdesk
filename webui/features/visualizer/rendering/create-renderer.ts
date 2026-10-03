@@ -14,7 +14,11 @@
  */
 
 import * as Comlink from "comlink";
-import { getVisualizerBeamQuality } from "../../../lib/feature-flags";
+import {
+  getVisualizerBeamQuality,
+  isVisualizerFramePacingEnabled,
+  isVisualizerInspectorEnabled,
+} from "../../../lib/feature-flags";
 import { MainThreadRenderer } from "./renderers/main-thread-renderer";
 import type { IVisualizerRenderer } from "./renderers/renderer-api";
 import {
@@ -31,7 +35,9 @@ export interface CreateRendererOptions {
 }
 
 interface VisualizerRendererInitializationTestWindow extends Window {
-  __nightfallE2eVisualizerRendererInitializationGate?: () => Promise<void>;
+  __nightfallE2eVisualizerRendererInitializationGate?: (
+    renderer: IVisualizerRenderer,
+  ) => Promise<void>;
 }
 
 /**
@@ -46,12 +52,17 @@ function supportsOffscreenCanvas(): boolean {
 
 /**
  * Allows E2E tests to suspend renderer creation after initialization but before
- * the component takes ownership of the renderer.
+ * the component takes ownership of the renderer. The gate receives the raw
+ * renderer so tests can keep a reference that outlives its disposal.
  */
-async function waitAtRendererInitializationTestGate(): Promise<void> {
+async function waitAtRendererInitializationTestGate(
+  renderer: IVisualizerRenderer,
+): Promise<void> {
   if (new URLSearchParams(window.location.search).get("e2e") !== "1") return;
   const testWindow = window as VisualizerRendererInitializationTestWindow;
-  await testWindow.__nightfallE2eVisualizerRendererInitializationGate?.();
+  await testWindow.__nightfallE2eVisualizerRendererInitializationGate?.(
+    renderer,
+  );
 }
 
 /**
@@ -97,10 +108,12 @@ export async function createVisualizerRenderer(
     width,
     height,
     devicePixelRatio: window.devicePixelRatio,
+    diagnostics:
+      isVisualizerInspectorEnabled() || isVisualizerFramePacingEnabled(),
     beamQuality: getVisualizerBeamQuality(),
   });
 
-  await waitAtRendererInitializationTestGate();
+  await waitAtRendererInitializationTestGate(renderer);
 
   if (renderer.setupResizeObserver) {
     renderer.setupResizeObserver(container);

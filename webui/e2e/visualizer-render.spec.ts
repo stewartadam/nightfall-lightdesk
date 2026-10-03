@@ -1552,7 +1552,12 @@ async function holdRgbStrobeBarImmediateOutput(
       let framesRemaining = 120;
       const writeOutput = () => {
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(fixtureUid, elementOutputs);
+        stores.setParametersImmediate(
+          new Map(stores.getParametersImmediate()).set(
+            fixtureUid,
+            elementOutputs,
+          ),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);
@@ -1698,7 +1703,9 @@ async function holdRotatingWashBeamImmediateOutput(
     let framesRemaining = 120;
     const writeOutput = () => {
       const stores = (window as any).appStores;
-      stores.getParametersImmediate().set(uid, output);
+      stores.setParametersImmediate(
+        new Map(stores.getParametersImmediate()).set(uid, output),
+      );
       framesRemaining -= 1;
       if (framesRemaining > 0) {
         requestAnimationFrame(writeOutput);
@@ -1744,7 +1751,9 @@ async function writeRotatingWashBeamImmediateOutput(
       let framesRemaining = 60;
       const writeOutput = () => {
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(uid, output);
+        stores.setParametersImmediate(
+          new Map(stores.getParametersImmediate()).set(uid, output),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);
@@ -1991,7 +2000,9 @@ async function setFixtureImmediateOutput(
   await page.evaluate(
     ({ fixtureUid, output }) => {
       const stores = (window as any).appStores;
-      stores.getParametersImmediate().set(fixtureUid, [output]);
+      stores.setParametersImmediate(
+        new Map(stores.getParametersImmediate()).set(fixtureUid, [output]),
+      );
     },
     { fixtureUid, output },
   );
@@ -2008,7 +2019,9 @@ async function holdFixtureImmediateOutput(
       let framesRemaining = 120;
       const writeOutput = () => {
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(fixtureUid, [output]);
+        stores.setParametersImmediate(
+          new Map(stores.getParametersImmediate()).set(fixtureUid, [output]),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);

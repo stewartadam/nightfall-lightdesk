@@ -40,3 +40,37 @@ test("consumeDueFrame caps high-refresh callbacks", () => {
   assert.ok(renderedFrames >= 59);
   assert.ok(renderedFrames <= 60);
 });
+
+/** Browser timestamp quantization must not turn a steady 60 Hz display into a 40 FPS renderer. */
+test("consumeDueFrame preserves every quantized 60 Hz refresh", () => {
+  let accumulator = 0;
+  let previousTime = 0;
+  let renderedFrames = 0;
+  for (let callback = 1; callback <= 720; callback++) {
+    const time = Math.round(callback * TARGET_FRAME_TIME * 10) / 10;
+    accumulator += time - previousTime;
+    previousTime = time;
+    const remainder = consumeDueFrame(accumulator);
+    if (remainder === null) continue;
+    renderedFrames++;
+    accumulator = remainder;
+  }
+  assert.equal(renderedFrames, 720);
+});
+
+/** The timestamp tolerance must still throttle high-refresh displays after quantization. */
+test("consumeDueFrame caps quantized 120 Hz refreshes", () => {
+  let accumulator = 0;
+  let previousTime = 0;
+  let renderedFrames = 0;
+  for (let callback = 1; callback <= 1440; callback++) {
+    const time = Math.round(callback * (1000 / 120) * 10) / 10;
+    accumulator += time - previousTime;
+    previousTime = time;
+    const remainder = consumeDueFrame(accumulator);
+    if (remainder === null) continue;
+    renderedFrames++;
+    accumulator = remainder;
+  }
+  assert.equal(renderedFrames, 720);
+});
