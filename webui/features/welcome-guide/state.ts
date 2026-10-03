@@ -22,6 +22,7 @@ type GuideSession = {
   open: WritableAtom<boolean>;
   lessonId: WritableAtom<string | null>;
   stepIndex: WritableAtom<number>;
+  returnLayoutId: WritableAtom<string | null>;
 };
 
 const hotData = import.meta.hot?.data as
@@ -31,13 +32,18 @@ const session = hotData?.guideSession ?? {
   open: atom(false),
   lessonId: atom<string | null>(null),
   stepIndex: atom(0),
+  returnLayoutId: atom<string | null>(null),
 };
+// Sessions carried over from an older module version may predate newer fields.
+session.returnLayoutId ??= atom<string | null>(null);
 // Preserve store identity when lesson edits re-evaluate this module and its importers.
 if (hotData) hotData.guideSession = session;
 
 export const guideOpen = session.open;
 export const guideLessonId = session.lessonId;
 export const guideStepIndex = session.stepIndex;
+/** The user's own layout from before lessons switched to the Lesson layout. */
+export const guideReturnLayoutId = session.returnLayoutId;
 export const guideCompleted = bestEffortPersistentAtom<string[]>(
   "nightfall.guide.v1.completed",
   [],

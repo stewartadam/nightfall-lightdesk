@@ -23,6 +23,12 @@ export type GuideContent =
 
 export type GuidePrerequisite = Extract<GuideContent, { type: "prerequisite" }>;
 
+/**
+ * An area the card must leave uncovered in addition to the target:
+ * the target's whole panel, its grid row, or the 3D Visualizer viewport.
+ */
+export type GuideFocusArea = "panel" | "row" | "visualizer";
+
 export interface GuideStep {
   persistenceUnavailable?: Pick<
     GuideStep,
@@ -42,6 +48,11 @@ export interface GuideStep {
   /** Targets a regular FX card or list row in FX List by its user-facing ID. */
   targetFx?: { id: number };
   placement?: "above";
+  /**
+   * Areas the user needs to see during this step. When set, the card may cover the rest of the
+   * target's panel; without it, the card only prefers to avoid that panel.
+   */
+  keepVisible?: GuideFocusArea[];
   focusTarget?: boolean;
   observe?: GuideObservation;
 }
@@ -104,6 +115,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "play-timeline",
         title: "Start the sample show",
+        keepVisible: ["panel"],
         target: '[aria-label="Play timeline"]',
         observe: {
           type: "timeline-playing",
@@ -127,6 +139,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "watch",
         title: "Stop playback",
+        keepVisible: ["panel"],
         placement: "above",
         target: '[aria-label="Stop timeline"]',
         observe: {
@@ -147,6 +160,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "start-clip",
         title: "Launch a clip",
+        keepVisible: ["visualizer"],
         targetClip: { id: 1 },
         observe: { type: "clip-playing", clipId: 1 },
         content: [
@@ -473,6 +487,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "red",
         title: "Make a red look",
+        keepVisible: ["visualizer"],
         target: "#header-cmdline",
         observe: {
           type: "color",
@@ -523,6 +538,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "blue",
         title: "Make a blue look",
+        keepVisible: ["visualizer"],
         target: "#header-cmdline",
         observe: {
           type: "color",
@@ -614,6 +630,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "manual-blue",
         title: "Let Go advance to Blue",
+        keepVisible: ["row"],
         targetSequence: { id: 50, cueId: 2 },
         observe: { type: "cue-manual", sequenceId: 50, id: 2 },
         content: [
@@ -715,6 +732,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "go",
         title: "Start First Lights",
+        keepVisible: ["visualizer"],
         target: '[data-control-go-index="6"]:not(:disabled)',
         observe: {
           type: "clip-playing",
@@ -738,6 +756,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "advance",
         title: "Advance to blue",
+        keepVisible: ["visualizer"],
         target: '[data-control-go-index="6"]:not(:disabled)',
         observe: {
           type: "cue-playing",
@@ -758,6 +777,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "fader",
         title: "Control the level",
+        keepVisible: ["visualizer"],
         target:
           '[data-control-index="6"] .noUi-target:not([disabled]) [role="slider"]',
         content: [
