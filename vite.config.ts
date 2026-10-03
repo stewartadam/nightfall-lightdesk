@@ -7,7 +7,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
@@ -157,6 +157,28 @@ const appBuildId = readBuildId();
 const appBuildName = readBuildName();
 const appTitle = formatAppTitle(appName, appBuildName);
 const viteWatchIgnored = ["**/*.spec.ts"];
+const embeddedRuntimeModule = resolve(
+  projectRoot,
+  "webui/assets/browser-runtime/nightfall_browser_runtime.js",
+);
+
+/**
+ * Decides whether the engine worker bundles the embedded demo runtime.
+ *
+ * Demo builds always include it. The dev server includes it only when
+ * `pnpm run wasm-build:browser-demo` output exists, so native-backend sessions
+ * and CI smoke tests do not depend on the demo engine build; without it, the
+ * worker reports that the build lacks the embedded demo engine.
+ */
+function includesEmbeddedRuntime(command: string, mode: string): boolean {
+  if (mode === "browser-demo") return true;
+  if (command !== "serve") return false;
+  if (existsSync(embeddedRuntimeModule)) return true;
+  console.warn(
+    "Embedded demo engine not found; the dev server serves the native-only worker. Run `pnpm run wasm-build:browser-demo` to enable demo mode.",
+  );
+  return false;
+}
 
 export default defineConfig(({ mode, command }) => {
   // Load env vars from project root (where .env lives)
@@ -177,7 +199,7 @@ export default defineConfig(({ mode, command }) => {
       alias: {
         "#engine-runtime-worker?worker": `${resolve(
           projectRoot,
-          command === "serve" || mode === "browser-demo"
+          includesEmbeddedRuntime(command, mode)
             ? "webui/lib/engine-runtime-demo-worker.ts"
             : "webui/lib/engine-runtime-worker.ts",
         )}?worker`,

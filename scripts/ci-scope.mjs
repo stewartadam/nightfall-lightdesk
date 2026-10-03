@@ -21,7 +21,7 @@ const sharedPackaging = [
   /^scripts\/.*notices/,
   /^scripts\/(package-sample-audio|check-distribution-wasm)/,
   /^scripts\/ci-scope/,
-  /^\.github\/workflows\/(ci-precommit|wasm)\.yml$/,
+  /^\.github\/workflows\/(ci|wasm)\.yml$/,
   /^\.github\/actions\/wasm-assets\//,
   /^crates\/wasm-bridge\//,
   /^crates\/app-runtime\/assets\//,

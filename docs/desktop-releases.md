@@ -1,6 +1,6 @@
 # Desktop builds and releases
 
-The [CI workflow](../.github/workflows/ci-precommit.yml) calls the [Desktop artifacts workflow](../.github/workflows/desktop-artifacts.yml) to build these installers using the repository's Rust toolchain and Node 24:
+The [CI workflow](../.github/workflows/ci.yml) calls the [Desktop artifacts workflow](../.github/workflows/desktop-artifacts.yml) to build these installers using the repository's Rust toolchain and Node 24:
 
 | Platform | Native runner | Installer |
 | --- | --- | --- |

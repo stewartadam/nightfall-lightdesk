@@ -104,9 +104,9 @@ function validateApp(directory, environment = {}) {
 /** Restricts repository authority to source acquisition and the isolated release boundary. */
 test("builds and tests have no GitHub permissions or release secrets", () => {
   const exceptions = {
-    "ci-precommit.yml/scope": { contents: "read" },
-    "ci-precommit.yml/desktop": { contents: "read", "pull-requests": "read" },
-    "ci-precommit.yml/release": { contents: "write" },
+    "ci.yml/scope": { contents: "read" },
+    "ci.yml/desktop": { contents: "read", "pull-requests": "read" },
+    "ci.yml/release": { contents: "write" },
     "desktop-artifacts.yml/release-note-metadata": {
       contents: "read",
       "pull-requests": "read",
@@ -142,7 +142,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       }
     }
   }
-  const source = workflows["ci-precommit.yml"].jobs.scope;
+  const source = workflows["ci.yml"].jobs.scope;
   assert.equal(source.steps[0].with["persist-credentials"], false);
   assert.equal(source.steps[0].with.lfs, true);
   assert.doesNotMatch(
@@ -171,7 +171,7 @@ test("signing and publishing only use pinned artifact actions and reviewed inlin
     }
   }
   assert.deepEqual(release.jobs.publish.needs, "sign");
-  assert.deepEqual(workflows["ci-precommit.yml"].jobs.release.needs, "desktop");
+  assert.deepEqual(workflows["ci.yml"].jobs.release.needs, "desktop");
 });
 
 /** Source transfer retains tracked files and history while rejecting persisted authentication. */
@@ -215,7 +215,7 @@ test("source handoff retains Git metadata and media without hooks or credentials
   );
   mkdirSync(join(source, ".git/lfs"));
   writeFileSync(join(source, ".git/lfs/redundant-object"), "media bytes");
-  const archive = workflows["ci-precommit.yml"].jobs.scope.steps.find(
+  const archive = workflows["ci.yml"].jobs.scope.steps.find(
     (step) => step.name === "Archive credential-free source and Git history",
   ).run;
   execFileSync("bash", ["-e", "-c", archive], options);
@@ -224,9 +224,9 @@ test("source handoff retains Git metadata and media without hooks or credentials
     join(directory, "source.tar"),
     join(restored, ".ci-source"),
   ]);
-  const restore = workflows["ci-precommit.yml"].jobs[
-    "source-checks"
-  ].steps.find((step) => step.name === "Restore source and Git history").run;
+  const restore = workflows["ci.yml"].jobs["source-checks"].steps.find(
+    (step) => step.name === "Restore source and Git history",
+  ).run;
   execFileSync("bash", ["-e", "-c", restore], { ...options, cwd: restored });
   assert.equal(
     execFileSync("git", ["rev-parse", "HEAD"], { ...options, cwd: restored }),

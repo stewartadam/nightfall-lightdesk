@@ -406,10 +406,10 @@ Each crate links its integration tests into a single `tests/it` binary, because 
 
 After changing Rust command parsing or shared types, regenerate with `pnpm run typeshare` and `pnpm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
 
-CI runs source checks and script tests independently of native compilation and
-WASM builds. TypeScript and WebUI Node checks wait for the WASM assets; Chromium
-smoke tests additionally wait for the tested native backend, but not Clippy or
-the UI checks. The required `Run prek hooks` check aggregates all these results
+CI runs prek hooks and script tests independently of native compilation and
+WASM builds. TypeScript and WebUI Node checks wait for the WASM assets. Chromium
+smoke tests wait for the WASM bridge and the native job, which builds the tested
+backend, but not the demo engine or the UI checks. The required `CI gate` check aggregates all these results
 and fails if any required job fails or is unexpectedly skipped. Local hook
 commands are unchanged.
 

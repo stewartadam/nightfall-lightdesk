@@ -1,4 +1,4 @@
-name: CI (Prek Parity + WebUI Tests)
+name: CI
 
 on:
   pull_request:
@@ -103,11 +103,13 @@ jobs:
           node scripts/ci-scope.mjs
 
   desktop-check:
+    name: Desktop check
     needs: [scope, selection]
     if: needs.selection.outputs.desktop_check == 'true'
     uses: ./.github/workflows/desktop-check.yml
 
   wasm-bridge:
+    name: WASM bridge
     needs: scope
     uses: ./.github/workflows/wasm.yml
     with:
@@ -115,6 +117,7 @@ jobs:
       directory: wasm
 
   browser-runtime:
+    name: Browser runtime
     needs: scope
     if: ${{ !startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     uses: ./.github/workflows/wasm.yml
@@ -123,6 +126,7 @@ jobs:
       directory: browser-runtime
 
   desktop:
+    name: Desktop installers
     needs: [scope, selection, wasm-bridge]
     if: needs.selection.outputs.desktop_package == 'true'
     uses: ./.github/workflows/desktop-artifacts.yml
@@ -132,6 +136,7 @@ jobs:
       pull-requests: read
 
   release:
+    name: Release
     needs: desktop
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/release.yml
@@ -146,12 +151,13 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
   browser-demo:
+    name: Browser demo
     needs: [scope, selection, wasm-bridge, browser-runtime]
     if: needs.selection.outputs.browser_package == 'true'
     uses: ./.github/workflows/browser-demo.yml
 
   source-checks:
-    name: Source checks and script tests
+    name: Prek hooks and script tests
     needs: scope
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
@@ -185,7 +191,7 @@ jobs:
         run: pnpm exec prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
 
   native:
-    name: Rust tests, Clippy and backend
+    name: Native
     needs: scope
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/native-validation.yml
@@ -236,7 +242,7 @@ jobs:
 
   browser-smoke:
     name: Chromium product flows
-    needs: [scope, native, wasm-bridge, browser-runtime]
+    needs: [scope, native, wasm-bridge]
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -267,11 +273,6 @@ jobs:
         with:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
-      - name: Download shared release demo engine
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: release-browser-runtime-${{ github.sha }}
-          path: webui/assets/browser-runtime
       - name: Install native runtime dependencies
         run: |
           sudo apt-get update
@@ -286,9 +287,9 @@ jobs:
           NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-headless
         uses: ./.github/actions/playwright-smoke
 
-  precommit:
-    # Keep the required check name stable while individual jobs report earlier.
-    name: Run prek hooks
+  gate:
+    # Single required check that aggregates every validation job.
+    name: CI gate
     needs: [scope, source-checks, native, wasm-bridge, browser-runtime, webui, browser-smoke]
     if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest

@@ -10,6 +10,7 @@ permissions: {}
 
 jobs:
   check:
+    name: Rust tests, Clippy and backend
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:

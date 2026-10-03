@@ -26,7 +26,7 @@ macOS signing (fresh runner; permissions: {}; Apple credentials)
 Publication (fresh runner; contents: write; no Apple credentials)
 ```
 
-- **Acquire:** `ci-precommit.yml`'s `scope` job checks out the event's exact SHA,
+- **Acquire:** `ci.yml`'s `scope` job checks out the event's exact SHA,
   including the PR merge revision and two commits of history for change
   selection. Tag runs acquire full history/tags for release-note ancestry.
   Checkout has `persist-credentials: false`. The source tar preserves

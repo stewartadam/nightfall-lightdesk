@@ -69,7 +69,7 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 
 ## Native execution and caching
 
-`ci-precommit.yml` runs all native Rust validation in one Linux job so the
+`ci.yml` runs all native Rust validation in one Linux job so the
 dependency graph compiles once per run. The job runs the `cargo-nextest` push hook,
 uploads the tested backend for Playwright, then runs the desktop shell tests
 (`cargo test -p app-tauri --all-targets`), Rust doctests through the
