@@ -231,7 +231,8 @@ fn compose_frame(
     }
 
     for input_window in routing.input_routes(key) {
-        if let Some(source) = inputs.universe(input_window.transport, input_window.universe) {
+        if let Some(source) = inputs.active_universe(input_window.transport, input_window.universe)
+        {
             input_window.window.overlay(source, &mut channels);
             has_data = true;
         }
@@ -417,6 +418,108 @@ mod tests {
         let frame = composed(&mut app, &sacn(), 1).expect("passthrough frame is composed");
 
         assert_eq!(frame[0..2], [0, 9]);
+    }
+
+    /// A passthrough source released as stale stops feeding its window: the wire frame goes
+    /// quiet when nothing else is routed to it, and it returns once the source sends again.
+    #[test]
+    fn released_passthrough_source_stops_feeding_wire_frame() {
+        let mut app = compose_app();
+        let now = Instant::now();
+        let mut input = [0; MAX_CHANNELS_PER_UNIVERSE];
+        input[0] = 123;
+        {
+            let mut inputs = app.world_mut().resource_mut::<InputDmxUniverses>();
+            inputs.set_universe(
+                BindingTransport::Sacn,
+                10,
+                input,
+                now - std::time::Duration::from_secs(5),
+            );
+            inputs.release_stale(now, std::time::Duration::from_secs(2));
+        }
+        app.world_mut()
+            .resource_mut::<ResolvedInputBindings>()
+            .bindings = vec![ResolvedInputBinding {
+            source: ResolvedInputSource::Transport {
+                transport: BindingTransport::Sacn,
+                universe: 10,
+                address: 1,
+            },
+            priority: 0,
+            destination: ResolvedInputDestination::Transport {
+                target: ResolvedTransportTarget {
+                    target: "sacn".to_string(),
+                    protocol: BindingTransport::Sacn,
+                    transport: sacn(),
+                    universe: 1,
+                    address: 1,
+                },
+            },
+        }];
+
+        assert_eq!(composed(&mut app, &sacn(), 1), None);
+
+        app.world_mut()
+            .resource_mut::<InputDmxUniverses>()
+            .set_universe(BindingTransport::Sacn, 10, input, Instant::now());
+
+        let frame = composed(&mut app, &sacn(), 1).expect("resumed source is composed again");
+        assert_eq!(frame[0], 123);
+    }
+
+    /// Fixture output routed to a wire universe shows through again once the passthrough
+    /// source overriding it is released as stale.
+    #[test]
+    fn released_passthrough_source_no_longer_overrides_fixture_output() {
+        let mut app = compose_app();
+        let now = Instant::now();
+        app.world_mut()
+            .resource_mut::<ConsoleDmxUniverses>()
+            .set_output_values(&sacn(), 1, 1, &[7], ConsoleChannelOrigin::OutputBinding);
+        app.world_mut()
+            .resource_mut::<OutputRouting>()
+            .set_output_routes(HashMap::from([(
+                (sacn(), 1),
+                OutputBindingRoute {
+                    console_windows: Vec::new(),
+                    direct: true,
+                },
+            )]));
+        let mut input = [0; MAX_CHANNELS_PER_UNIVERSE];
+        input[0] = 123;
+        app.world_mut()
+            .resource_mut::<InputDmxUniverses>()
+            .set_universe(BindingTransport::Sacn, 10, input, now);
+        app.world_mut()
+            .resource_mut::<ResolvedInputBindings>()
+            .bindings = vec![ResolvedInputBinding {
+            source: ResolvedInputSource::Transport {
+                transport: BindingTransport::Sacn,
+                universe: 10,
+                address: 1,
+            },
+            priority: 0,
+            destination: ResolvedInputDestination::Transport {
+                target: ResolvedTransportTarget {
+                    target: "sacn".to_string(),
+                    protocol: BindingTransport::Sacn,
+                    transport: sacn(),
+                    universe: 1,
+                    address: 1,
+                },
+            },
+        }];
+        assert_eq!(composed(&mut app, &sacn(), 1).unwrap()[0], 123);
+
+        app.world_mut()
+            .resource_mut::<InputDmxUniverses>()
+            .release_stale(
+                now + std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(2),
+            );
+
+        assert_eq!(composed(&mut app, &sacn(), 1).unwrap()[0], 7);
     }
 
     /// A console window route copies console universe 1 onto wire universe 10 at the
