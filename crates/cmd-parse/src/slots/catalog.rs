@@ -303,7 +303,6 @@ pub fn slot_spec(slot_id: SlotId) -> SlotSpec {
                 TokenId::Sacn,
                 TokenId::Artnet,
                 TokenId::Udmx,
-                TokenId::Disabled,
                 TokenId::Plus,
                 TokenId::Minus,
                 TokenId::GreaterThan,

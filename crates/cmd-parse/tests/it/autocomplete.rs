@@ -435,6 +435,97 @@ fn complete_command_keeps_uncovered_raw_candidates() {
     );
 }
 
+/// `disabled` is never offered as a patch source, since only transport inputs can be disabled.
+#[test]
+fn complete_command_omits_disabled_from_patch_source() {
+    for input in ["patch ", "patch sacn", "patch sacn:1", "rm patch "] {
+        let response = complete_command(input, input.len());
+        assert!(
+            !has_candidate_insert(&response, "disabled"),
+            "'{input}' should not suggest 'disabled' as a source"
+        );
+    }
+}
+
+/// Fixture and console sources are outputs, which the engine refuses to patch to `disabled`.
+#[test]
+fn complete_command_omits_disabled_target_for_output_sources() {
+    for input in [
+        "patch fix 1 @ ",
+        "patch fixture 1 @ ",
+        "patch console:1 @ ",
+        "patch console:1.1 @ ",
+        "rm patch fix 1 @ ",
+        "rm patch console:1 @ ",
+    ] {
+        let response = complete_command(input, input.len());
+        assert!(
+            has_candidate_insert(&response, "sacn"),
+            "'{input}' should still suggest transport targets"
+        );
+        assert!(
+            !has_candidate_insert(&response, "disabled"),
+            "'{input}' should not suggest 'disabled' for an output source"
+        );
+    }
+}
+
+/// Transport inputs, and target-only `rm patch` filters, still offer `disabled`.
+#[test]
+fn complete_command_offers_disabled_target_for_input_sources() {
+    for input in [
+        "patch sacn:1 @ ",
+        "patch artnet:1>5 @ ",
+        "patch udmx:1.1 @ ",
+        "rm patch sacn:1 @ ",
+        "rm patch @ ",
+    ] {
+        let response = complete_command(input, input.len());
+        assert!(
+            has_candidate_insert(&response, "disabled"),
+            "'{input}' should suggest 'disabled' for a transport input"
+        );
+    }
+}
+
+/// Console sources only offer transport targets; the engine rejects console -> console/fixture.
+#[test]
+fn complete_command_omits_console_target_for_console_sources() {
+    for input in [
+        "patch console:1 @ ",
+        "patch console:1>2 @ ",
+        "rm patch console:1 @ ",
+    ] {
+        let response = complete_command(input, input.len());
+        assert!(
+            has_candidate_insert(&response, "sacn"),
+            "'{input}' should still suggest transport targets"
+        );
+        assert!(
+            !has_candidate_insert(&response, "console"),
+            "'{input}' should not suggest a console target for a console source"
+        );
+        assert!(
+            !has_candidate_insert(&response, "0..9"),
+            "'{input}' should not suggest a fixture target for a console source"
+        );
+    }
+    for input in ["patch fix 1 @ ", "patch sacn:1 @ ", "rm patch @ "] {
+        let response = complete_command(input, input.len());
+        assert!(
+            has_candidate_insert(&response, "console"),
+            "'{input}' should still suggest a console target"
+        );
+    }
+    for input in ["patch console:1 @ sacn:", "patch console:1 @ sacn:1."] {
+        let response = complete_command(input, input.len());
+        assert!(
+            has_candidate_insert(&response, "0..9"),
+            "'{input}' should still suggest transport universe/address digits"
+        );
+    }
+}
+
 #[test]
 fn complete_command_uses_value_placeholder_for_numeric_entry() {
     let response = complete_command("channel 1.100 @", "channel 1.100 @".len());

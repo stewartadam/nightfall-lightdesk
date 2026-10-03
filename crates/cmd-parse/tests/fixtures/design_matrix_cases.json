@@ -552,7 +552,6 @@
           ">",
           "artnet",
           "console",
-          "disabled",
           "fixture",
           "sacn",
           "udmx"
@@ -588,7 +587,6 @@
           "@",
           "artnet",
           "console",
-          "disabled",
           "fixture",
           "sacn",
           "udmx"
@@ -617,7 +615,6 @@
           ">",
           "artnet",
           "console",
-          "disabled",
           "fixture",
           "sacn",
           "udmx"
@@ -652,7 +649,6 @@
           "@",
           "artnet",
           "console",
-          "disabled",
           "fixture",
           "sacn",
           "udmx"
@@ -681,7 +677,6 @@
           ">",
           "artnet",
           "console",
-          "disabled",
           "fixture",
           "sacn",
           "udmx"
@@ -701,7 +696,16 @@
           "status": "error"
         },
         "completion_groups": ["patch/target"],
-        "candidates": ["0..9", "@"],
+        "candidates": [
+          "(",
+          "0..9",
+          "@",
+          "artnet",
+          "console",
+          "disabled",
+          "sacn",
+          "udmx"
+        ],
         "current_breadcrumb": "Patch > Target",
         "breadcrumb": {
           "state": "current_clause_path",
