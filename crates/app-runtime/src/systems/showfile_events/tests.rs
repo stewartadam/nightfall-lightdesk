@@ -2377,11 +2377,11 @@ fn seed_world(world: &mut World) {
     world
         .resource_mut::<DisabledBindings>()
         .bindings
-        .push(DisabledBinding::Output {
-            source: OutputSource::Fixture {
-                uids: vec![fixture_uid],
-                element: None,
-                param: None,
+        .push(DisabledBinding::Input {
+            source: InputSource::Transport {
+                transport: BindingTransport::ArtNet,
+                universe: Some(DmxRange::single(3)),
+                address: None,
             },
             priority: 2,
             clone: false,
@@ -2701,7 +2701,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     console_dmx_addresses,
                     console_dmx_universes,
                     input_dmx_universes,
-                    universe_transport_map,
+                    output_routing,
                     instance_index,
                     final_layer_attributed_assertions,
                     pending_commands,
@@ -2741,7 +2741,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     console_dmx_addresses.as_deref_mut(),
                     console_dmx_universes.as_deref_mut(),
                     input_dmx_universes.as_deref_mut(),
-                    universe_transport_map.as_deref_mut(),
+                    output_routing.as_deref_mut(),
                     instance_index.as_deref_mut(),
                     final_layer_attributed_assertions.as_deref_mut(),
                     pending_commands.as_mut(),

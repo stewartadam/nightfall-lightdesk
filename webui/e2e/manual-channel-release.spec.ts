@@ -161,7 +161,6 @@ async function firstFixtureOutputChannel(page: Page) {
       const target = entry.target.data;
       return (
         entry.source.type === "Fixture" &&
-        entry.target.type !== "Disabled" &&
         target !== undefined &&
         target.address !== undefined
       );

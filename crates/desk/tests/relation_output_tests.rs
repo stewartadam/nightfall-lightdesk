@@ -172,8 +172,12 @@ fn slot_one_output(channels: Vec<Channel>) -> u8 {
     let output = |app: &App| {
         app.world()
             .resource::<ConsoleDmxUniverses>()
-            .get_value(1, 1)
-            .unwrap()
+            .get_output_universe(
+                &OutputTransport::Sacn {
+                    mode: SacnDelivery::Multicast,
+                },
+                1,
+            )[0]
     };
     app.update();
     let first = output(&app);

@@ -13,5 +13,6 @@ mod binding_resolution;
 mod clear_dmx_channels_system;
 mod compositor_pipeline_tests;
 mod compositor_system_tests;
+mod fixture_layout_dmx_order;
 mod restore_fixture_snapshot_system;
 mod transport_input;

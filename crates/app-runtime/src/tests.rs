@@ -39,8 +39,7 @@ use nightfall_engine::prelude::{
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, OutputSource, Parameter,
-    ParameterValues,
+    Fixture, FixtureDataProviderExt, FixtureElement, OutputBindings, Parameter, ParameterValues,
 };
 #[cfg(feature = "midi")]
 use nightfall_input_midi::prelude::*;
@@ -827,9 +826,9 @@ fn world_factory_build_propagates_network_enabled_states() {
     assert!(settings.usb_output_enabled);
 }
 
-/// Verifies the inner wash arc is seeded with output disabled even when transports are enabled.
+/// Verifies the inner wash arc is seeded unpatched, so nothing is sent even when transports are enabled.
 #[test]
-fn sample_data_build_seeds_rotating_wash_beam_with_disabled_output() {
+fn sample_data_build_seeds_rotating_wash_beam_unpatched() {
     let factory = WorldFactory::new(test_log_config(), false, false, true);
 
     let app = factory
@@ -852,15 +851,12 @@ fn sample_data_build_seeds_rotating_wash_beam_with_disabled_output() {
     assert_eq!(fixture.placement.position.z, -2.5);
 
     assert!(app.world().resource::<OutputBindings>().bindings.is_empty());
-    let disabled = app
-        .world()
-        .resource::<nightfall_fixtures::prelude::DisabledBindings>();
-    assert_eq!(disabled.bindings.len(), 56);
-    assert!(disabled.bindings.iter().any(|binding| matches!(binding,
-        nightfall_fixtures::prelude::DisabledBinding::Output {
-            source: OutputSource::Fixture { uids, .. }, ..
-        } if uids.contains(&fixture.identifiers.uid)
-    )));
+    assert!(
+        app.world()
+            .resource::<nightfall_fixtures::prelude::DisabledBindings>()
+            .bindings
+            .is_empty()
+    );
 }
 
 /// Verifies fixture 601 white output is scaled by its virtual dimmer.
@@ -1582,7 +1578,7 @@ fn named_sample_show_is_standalone_and_recoverable() {
         "sample stage must use built-in primitives"
     );
     assert!(snapshot.bindings.output.is_empty());
-    assert_eq!(snapshot.bindings.disabled.len(), 56);
+    assert!(snapshot.bindings.disabled.is_empty());
 
     // Resolve every programmed selection against the generated inventory, including cue parts.
     let mut selections: Vec<_> = snapshot

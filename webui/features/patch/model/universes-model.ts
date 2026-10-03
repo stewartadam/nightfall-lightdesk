@@ -187,8 +187,6 @@ export function collectUniversesFromOutputTarget(
       if (expanded === "wildcard") return ["*"];
       return expanded ?? [];
     }
-    case "Disabled":
-      return [];
   }
 }
 

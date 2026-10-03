@@ -14,7 +14,6 @@ import {
   type ContextMenuEntry,
   openContextMenu,
 } from "../../../components/providers/context-menu";
-import { buildFixturePatchMapFromBindings } from "../../../lib/binding-utils";
 import {
   networkDmxOutputsFromSettings,
   usbDmxOutputsFromSettings,
@@ -33,10 +32,9 @@ import type * as types from "../../../types";
 import { DmxIoMode } from "../../../types";
 import type { ChannelInfo } from "../model/dmx-universe-model";
 import {
-  normalizeSelectedTransport,
-  outputTransportMatchesSelection,
-} from "../model/dmx-universe-model";
-import { findInputBindingIdForOutputChannel } from "../model/output-binding-follow";
+  findInputBindingIdForOutputChannel,
+  findOutputBindingIdForChannel,
+} from "../model/output-binding-follow";
 import type { DmxUniverseSelectionController } from "./dmx-universe-selection-controller";
 
 interface DmxChannelNavigationControllerOptions {
@@ -143,52 +141,29 @@ export function createDmxChannelNavigationController(
     if (options.selection.ioMode() !== DmxIoMode.Output) return null;
     const universeId = options.selection.selectedUniverse();
     if (universeId === null) return null;
-    const transport = normalizeSelectedTransport(
-      options.selection.selectedTransport(),
-    );
+    const space = options.selection.selectedOutputSpace();
     const snapshot = bindingSnapshot();
-    const fixturesByUid = fixtureMap();
-    const inputBindingId = findInputBindingIdForOutputChannel(
-      snapshot,
-      transport,
-      universeId,
-      address,
-    );
-    if (inputBindingId) return inputBindingId;
-
-    for (const [bindingIndex, binding] of snapshot.output.entries()) {
-      if (
-        (binding.source.type !== "Fixture" &&
-          binding.source.type !== "FixtureBreak") ||
-        binding.target.type !== "Transport"
+    const targets = {
+      networkDmxOutputs: networkDmxOutputs(),
+      usbDmxOutputs: usbDmxOutputs(),
+    };
+    return (
+      findInputBindingIdForOutputChannel(
+        snapshot,
+        space,
+        universeId,
+        address,
+        targets,
+      ) ??
+      findOutputBindingIdForChannel(
+        snapshot,
+        fixtureMap(),
+        space,
+        universeId,
+        address,
+        targets,
       )
-        continue;
-      const patchMap = buildFixturePatchMapFromBindings(
-        {
-          input: [],
-          output: [binding],
-          disabled: snapshot.disabled,
-        },
-        fixturesByUid,
-        networkDmxOutputs(),
-        usbDmxOutputs(),
-      );
-      for (const patchesByElement of Object.values(patchMap)) {
-        for (const patches of Object.values(patchesByElement)) {
-          for (const patch of patches) {
-            if (
-              patch.universe === universeId &&
-              outputTransportMatchesSelection(patch.transport, transport) &&
-              patch.parameterAddresses.some((addresses) =>
-                addresses.includes(address),
-              )
-            )
-              return `output-${bindingIndex}`;
-          }
-        }
-      }
-    }
-    return null;
+    );
   };
 
   /** Navigates to the patch binding supplying one output channel. */

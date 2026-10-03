@@ -221,6 +221,11 @@ impl Plugin for OutputUdmxUsbPlugin {
             Update,
             refresh_available_usb_dmx_devices.in_set(EventHandling),
         );
-        app.add_systems(Update, udmx::output.in_set(DmxOutput));
+        app.add_systems(
+            Update,
+            udmx::output
+                .after(nightfall_fixtures::output_frames::compose_output_frames)
+                .in_set(DmxOutput),
+        );
     }
 }

@@ -176,7 +176,7 @@ pub struct DeskMetrics {
     pub framepace_overrun_ms: Option<f64>,
     /// Number of active compositor layers
     pub active_layers: u32,
-    /// Number of active DMX universes
+    /// Number of DMX wire frames being output: one per concrete transport and wire universe
     pub active_universes: u32,
     /// Time spent sending Art-Net universes in milliseconds
     pub artnet_send_time_ms: Option<f64>,

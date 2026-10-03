@@ -260,7 +260,7 @@ fn parameter_metadata(
     }
 }
 
-/// Add output and disabled binding declarations.
+/// Add input, output, and disabled input binding declarations.
 fn add_bindings(world: &mut World, fixture_uid: Uuid) {
     world
         .resource_mut::<InputBindings>()
@@ -298,8 +298,9 @@ fn add_bindings(world: &mut World, fixture_uid: Uuid) {
     world
         .resource_mut::<DisabledBindings>()
         .bindings
-        .push(DisabledBinding::Output {
-            source: OutputSource::Console {
+        .push(DisabledBinding::Input {
+            source: InputSource::Transport {
+                transport: BindingTransport::Sacn,
                 universe: Some(DmxRange::single(1)),
                 address: Some(512),
             },

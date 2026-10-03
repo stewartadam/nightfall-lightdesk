@@ -82,7 +82,7 @@ const FIXTURE_LAYOUT: &[(u32, &str, &str, [f32; 3], [f32; 3])] = &[
     (1015, "12-segment Rotating Wash Beam", "Beam", [2.25, 0.25, -2.5], [0.0, -90.0, 0.0]),
 ];
 
-/// Seed the default-show arrangement from built-in profiles with disabled output bindings.
+/// Seed the default-show arrangement from built-in profiles, leaving every fixture unpatched.
 pub(super) fn add_fixtures(world: &mut World) {
     for &(id, model, mode, [x, y, z], [rx, ry, rz]) in FIXTURE_LAYOUT {
         let mut fixture =
@@ -167,16 +167,4 @@ fn add_fixture(world: &mut World, fixture: Fixture) {
             .add(fixture.clone())
             .expect("sample fixture IDs must be unique");
     }
-    world
-        .resource_mut::<DisabledBindings>()
-        .bindings
-        .push(DisabledBinding::Output {
-            source: OutputSource::Fixture {
-                uids: vec![fixture.identifiers.uid],
-                element: None,
-                param: None,
-            },
-            priority: 0,
-            clone: false,
-        });
 }

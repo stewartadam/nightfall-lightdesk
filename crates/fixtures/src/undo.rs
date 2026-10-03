@@ -49,8 +49,6 @@ pub struct BindingSnapshot {
     pub fixture_id: u32,
     /// Output bindings tied to the fixture.
     pub output_bindings: Vec<OutputBinding>,
-    /// Disabled bindings tied to the fixture.
-    pub disabled_bindings: Vec<DisabledBinding>,
 }
 
 /// Command to restore binding configuration for a fixture.
@@ -435,20 +433,10 @@ fn output_binding_matches_fixture(binding: &OutputBinding, uid: uuid::Uuid) -> b
         .is_some_and(|uids| uids.contains(&uid))
 }
 
-fn disabled_binding_matches_fixture(binding: &DisabledBinding, uid: uuid::Uuid) -> bool {
-    match binding {
-        DisabledBinding::Output { source, .. } => source
-            .fixture_uids()
-            .is_some_and(|uids| uids.contains(&uid)),
-        _ => false,
-    }
-}
-
 fn snapshot_binding_state(ctx: &UndoContext, fixture_id: u32) -> Option<BindingSnapshot> {
     let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
     let fixture = fixtures.inner.from_id(fixture_id).ok()?;
     let output_bindings = ctx.world.resource::<OutputBindings>();
-    let disabled_bindings = ctx.world.resource::<DisabledBindings>();
 
     let output_snapshot = output_bindings
         .bindings
@@ -456,17 +444,10 @@ fn snapshot_binding_state(ctx: &UndoContext, fixture_id: u32) -> Option<BindingS
         .filter(|binding| output_binding_matches_fixture(binding, fixture.identifiers.uid))
         .cloned()
         .collect();
-    let disabled_snapshot = disabled_bindings
-        .bindings
-        .iter()
-        .filter(|binding| disabled_binding_matches_fixture(binding, fixture.identifiers.uid))
-        .cloned()
-        .collect();
 
     Some(BindingSnapshot {
         fixture_id,
         output_bindings: output_snapshot,
-        disabled_bindings: disabled_snapshot,
     })
 }
 
@@ -575,23 +556,10 @@ mod tests {
             ],
         });
 
-        world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Output {
-                source: OutputSource::Fixture {
-                    uids: vec![fixture_uid],
-                    element: None,
-                    param: None,
-                },
-                priority: 0,
-                clone: false,
-            }],
-        });
-
         let ctx = UndoContext { world: &world };
         let snapshot = snapshot_binding_state(&ctx, 1).expect("Snapshot should exist");
 
         assert_eq!(snapshot.output_bindings.len(), 1);
-        assert_eq!(snapshot.disabled_bindings.len(), 1);
 
         let binding = &snapshot.output_bindings[0];
         assert!(matches!(
@@ -852,18 +820,6 @@ mod tests {
             ],
         });
 
-        world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Output {
-                source: OutputSource::Fixture {
-                    uids: vec![fixture_uid],
-                    element: None,
-                    param: None,
-                },
-                priority: 0,
-                clone: false,
-            }],
-        });
-
         let ctx = UndoContext { world: &world };
 
         let command = FixtureCommand::UpdateFixturePatch {
@@ -883,7 +839,6 @@ mod tests {
             .expect("Should be RestoreBindingSnapshot");
 
         assert_eq!(restore_cmd.0.output_bindings.len(), 1);
-        assert_eq!(restore_cmd.0.disabled_bindings.len(), 1);
     }
 
     #[test]
@@ -927,8 +882,8 @@ mod tests {
         });
 
         world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Output {
-                source: OutputSource::Fixture {
+            bindings: vec![DisabledBinding::Input {
+                source: InputSource::Fixture {
                     uids: vec![fixture_uid],
                     element: None,
                     param: None,
@@ -1002,8 +957,8 @@ mod tests {
         });
 
         world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Output {
-                source: OutputSource::Fixture {
+            bindings: vec![DisabledBinding::Input {
+                source: InputSource::Fixture {
                     uids: vec![fixture_uid],
                     element: None,
                     param: None,

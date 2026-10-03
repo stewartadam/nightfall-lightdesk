@@ -229,11 +229,12 @@ pub enum OutputTarget {
         /// Optional address.
         address: Option<u16>,
     },
-    /// Disabled target (filter).
-    Disabled,
 }
 
 /// Disabled binding filter rule.
+///
+/// Only inputs can be disabled: an output that should not be sent is simply
+/// left unbound.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
@@ -242,15 +243,6 @@ pub enum DisabledBinding {
     Input {
         /// Binding source to disable.
         source: InputSource,
-        /// Priority (lower runs first).
-        priority: i32,
-        /// If true, duplicate the source address across a range destination.
-        clone: bool,
-    },
-    /// Disable output bindings that match the source.
-    Output {
-        /// Binding source to disable.
-        source: OutputSource,
         /// Priority (lower runs first).
         priority: i32,
         /// If true, duplicate the source address across a range destination.
@@ -402,6 +394,25 @@ pub struct ResolvedOutputDestinations {
     pub destinations: Vec<OutputDestination>,
 }
 
+/// Component storing the console-space DMX address of one parameter.
+///
+/// Mirrors [`ConsoleDmxAddresses::parameters`]. `None` when no active console binding
+/// covers the parameter.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Component)]
+pub struct ResolvedConsoleDestination {
+    /// Console universe and per-byte addresses of the parameter, when console-bound.
+    pub address: Option<ConsoleParameterAddress>,
+}
+
+/// Console-space placement of one parameter's bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsoleParameterAddress {
+    /// Console universe.
+    pub universe: u16,
+    /// 1-indexed console address of every byte, most significant first.
+    pub addresses: Vec<u16>,
+}
+
 /// Console DMX address mapping for a fixture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -412,9 +423,34 @@ pub struct ConsoleDmxAddress {
     pub address: u16,
 }
 
-/// Resource mapping fixture UIDs to their console DMX addresses.
+/// Resource mapping fixtures and parameters to their console DMX addresses.
 #[derive(Debug, Default, Clone, Resource)]
 pub struct ConsoleDmxAddresses {
-    /// Map of fixture UID to console address.
+    /// Map of fixture UID to the first console address of its bound footprint.
     pub addresses: HashMap<Uuid, ConsoleDmxAddress>,
+    /// Map of parameter entity to the console addresses of its bytes.
+    ///
+    /// Only parameters selected by the winning console binding's element/parameter filter
+    /// occupy console channels, placed by the selection's wire layout in DMX order.
+    pub parameters: HashMap<Entity, ConsoleParameterAddress>,
+}
+
+impl ConsoleDmxAddresses {
+    /// Clears fixture and parameter console addresses.
+    pub fn clear(&mut self) {
+        self.addresses.clear();
+        self.parameters.clear();
+    }
+
+    /// Returns the sorted, deduplicated console universes occupied by bound parameters.
+    pub fn universes(&self) -> Vec<u16> {
+        let mut universes: Vec<u16> = self
+            .parameters
+            .values()
+            .map(|address| address.universe)
+            .collect();
+        universes.sort_unstable();
+        universes.dedup();
+        universes
+    }
 }

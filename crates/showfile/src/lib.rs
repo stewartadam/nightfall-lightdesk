@@ -15,6 +15,7 @@
 
 mod apply;
 mod contributors;
+mod migrations;
 mod selection_refs;
 mod snapshot;
 mod world;
@@ -24,7 +25,7 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 17;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 18;
 pub use selection_refs::stabilize_showfile_group_refs;
 pub use snapshot::{
     BindingsSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
@@ -32,7 +33,9 @@ pub use snapshot::{
 };
 pub use world::{ShowfileSaveState, snapshot_from_save_state, snapshot_from_world};
 
-/// Parse a current-version showfile without transforming its persisted data.
+/// Parse a showfile, upgrading one written by an older supported schema to the current one.
+///
+/// Current-version showfiles are deserialized without transforming their persisted data.
 pub fn parse_showfile_snapshot_json(json: &str, source: &str) -> Result<ShowfileSnapshot, String> {
     #[derive(serde::Deserialize)]
     struct VersionedShowfile {
@@ -42,13 +45,28 @@ pub fn parse_showfile_snapshot_json(json: &str, source: &str) -> Result<Showfile
     let header: VersionedShowfile =
         serde_json::from_str(json).map_err(|error| showfile_parse_error(source, &error))?;
     let version = header.metadata.showfile_version;
-    if version != CURRENT_SHOWFILE_VERSION {
+    if !(migrations::OLDEST_MIGRATABLE_SHOWFILE_VERSION..=CURRENT_SHOWFILE_VERSION)
+        .contains(&version)
+    {
         return Err(format!(
             "unsupported showfile version {version} in {source}; this nightfall build requires version {CURRENT_SHOWFILE_VERSION}"
         ));
     }
+    if version == CURRENT_SHOWFILE_VERSION {
+        return serde_json::from_str(json).map_err(|error| showfile_parse_error(source, &error));
+    }
 
-    serde_json::from_str(json).map_err(|error| showfile_parse_error(source, &error))
+    let mut showfile: serde_json::Value =
+        serde_json::from_str(json).map_err(|error| showfile_parse_error(source, &error))?;
+    migrations::migrate_showfile_json(&mut showfile, version)
+        .map_err(|error| showfile_parse_error(source, &error))?;
+    tracing::info!(
+        filename = source,
+        from = version,
+        to = CURRENT_SHOWFILE_VERSION,
+        "Migrated showfile schema"
+    );
+    serde_json::from_value(showfile).map_err(|error| showfile_parse_error(source, &error))
 }
 
 /// Serialize a canonical showfile snapshot as stable, human-readable JSON.
@@ -117,10 +135,13 @@ mod tests {
         );
     }
 
-    /// Reject every retired schema and future schemas before deserializing their data.
+    /// Reject schemas older than the oldest migratable one and future schemas before
+    /// deserializing their data.
     #[test]
     fn unsupported_showfile_versions_are_rejected() {
-        for version in (0..CURRENT_SHOWFILE_VERSION).chain([CURRENT_SHOWFILE_VERSION + 1]) {
+        for version in (0..migrations::OLDEST_MIGRATABLE_SHOWFILE_VERSION)
+            .chain([CURRENT_SHOWFILE_VERSION + 1])
+        {
             let json = serde_json::json!({"metadata": {"showfileVersion": version}}).to_string();
             let error = parse_showfile_snapshot_json(&json, "unsupported").unwrap_err();
             assert!(
@@ -128,6 +149,36 @@ mod tests {
                 "{error}"
             );
         }
+    }
+
+    /// Load a released schema 17 showfile whose output disabled rules no longer have a
+    /// runtime type: the rules and the outputs they silenced are dropped on parse.
+    #[test]
+    fn schema_17_showfile_with_output_disabled_rules_loads() {
+        let uid = "4ae7db64-12d9-4a7f-982e-268791b84766";
+        let snapshot = contributors::collect_save_contributions(&[]);
+        let mut showfile = serde_json::to_value(&snapshot).unwrap();
+        showfile["metadata"]["showfileVersion"] = 17.into();
+        showfile["bindings"] = serde_json::json!({
+            "input": [],
+            "output": [{
+                "source": {"type": "Fixture", "data": {"uids": [uid], "element": null, "param": null}},
+                "target": {"type": "Console", "data": {"universe": null, "address": null}},
+                "priority": 0,
+                "clone": false
+            }],
+            "disabled": [{"type": "Output", "data": {
+                "source": {"type": "Fixture", "data": {"uids": [uid], "element": null, "param": null}},
+                "priority": 0,
+                "clone": false
+            }}]
+        });
+
+        let parsed = parse_showfile_snapshot_json(&showfile.to_string(), "schema-17").unwrap();
+
+        assert_eq!(parsed.metadata.showfile_version, CURRENT_SHOWFILE_VERSION);
+        assert!(parsed.bindings.output.is_empty());
+        assert!(parsed.bindings.disabled.is_empty());
     }
 
     /// Reject absent and malformed schema metadata instead of assuming a legacy version.

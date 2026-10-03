@@ -62,7 +62,7 @@ test("new show optionally includes standalone sample data", async ({
   expect(snapshot.fixtures).toHaveLength(56);
   expect(snapshot.sceneObjects).toHaveLength(3);
   expect(snapshot.bindings.output).toEqual([]);
-  expect(snapshot.bindings.disabled).toHaveLength(56);
+  expect(snapshot.bindings.disabled).toEqual([]);
   expect(
     snapshot.sceneObjects.every(
       (object: any) =>

@@ -1,7 +1,7 @@
 {
   "metadata": {
     "nightfallVersion": "0.1.0",
-    "showfileVersion": 17,
+    "showfileVersion": 18,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -230,11 +230,12 @@
     ],
     "disabled": [
       {
-        "type": "Output",
+        "type": "Input",
         "data": {
           "source": {
-            "type": "Console",
+            "type": "Transport",
             "data": {
+              "transport": "sacn",
               "universe": {
                 "start": 1,
                 "end": 1
