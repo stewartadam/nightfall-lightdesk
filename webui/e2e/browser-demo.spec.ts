@@ -19,6 +19,14 @@ const DEMO_CUE_LABEL = "Red 100%";
 /** RGB pixel tape and moving spot fixture IDs patched by the sample rig. */
 const DEMO_RGB_FIXTURE_ID = 310;
 const DEMO_SPOT_FIXTURE_ID = 501;
+/**
+ * Budget for the embedded runtime to fetch and apply the multi-megabyte demo show. CI runs
+ * one browser per core, so a cold load can take far longer than the default expect timeout.
+ */
+const DEMO_SHOW_LOAD_TIMEOUT_MS = 45_000;
+
+// Every test loads the full sample rig before it starts, which can use most of the default budget.
+test.describe.configure({ timeout: 90_000 });
 
 /** Read the domain collection sizes the embedded runtime should load from the demo showfile. */
 async function readDemoShowfileCounts() {
@@ -129,6 +137,19 @@ async function readDemoState(page: Page) {
       resyncComplete: stores?.resyncComplete?.() ?? false,
     };
   }, DEMO_TIMELINE_LABEL);
+}
+
+/**
+ * Wait for the shell to become interactive and for the embedded runtime to publish the demo
+ * show's Lo-fi timeline, so later assertions can use the default expect timeout.
+ */
+async function waitForDemoShow(page: Page): Promise<void> {
+  await waitForDockviewApp(page);
+  await expect
+    .poll(async () => (await readDemoState(page)).timelineUid, {
+      timeout: DEMO_SHOW_LOAD_TIMEOUT_MS,
+    })
+    .toBeTruthy();
 }
 
 /** Open a playback workspace independent of the bundled showfile's saved panel layout. */
@@ -261,10 +282,13 @@ async function activateVisualizer(page: Page): Promise<void> {
   await expect(panel).toBeVisible();
   await expect(panel.locator("canvas").first()).toBeVisible();
   await expect
-    .poll(() =>
-      page.evaluate(() =>
-        Boolean((window as any).visualizerApis?.["panel-Visualizer"]),
-      ),
+    .poll(
+      () =>
+        page.evaluate(() =>
+          Boolean((window as any).visualizerApis?.["panel-Visualizer"]),
+        ),
+      // The renderer worker and its scene start cold, like the demo show itself.
+      { timeout: DEMO_SHOW_LOAD_TIMEOUT_MS },
     )
     .toBe(true);
 }
@@ -354,8 +378,6 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   browserName,
   page,
 }, testInfo) => {
-  // The full sample rig takes longer to load, reset, and render than the default budget.
-  test.setTimeout(90_000);
   if (
     browserName === "chromium" &&
     process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview"
@@ -397,6 +419,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
     localStorage.setItem("nightfall.currentShowfileName", "local-show");
   });
   await page.goto(demoPath);
+  await waitForDemoShow(page);
 
   await expect(
     page
@@ -668,9 +691,7 @@ test("embedded demo decodes and plays timeline audio", async ({
   await page.goto(
     `${basePath}?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false`,
   );
-  await expect
-    .poll(async () => (await readDemoState(page)).timelineUid)
-    .toBeTruthy();
+  await waitForDemoShow(page);
   const { timelineUid } = await readDemoState(page);
   await openDemoTimeline(page, timelineUid);
   const surface = page.locator(
@@ -745,7 +766,7 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
       ? "/demo/app/?e2e=1"
       : "/?engine=embedded-demo&e2e=1";
   await page.goto(path);
-  await waitForDockviewApp(page);
+  await waitForDemoShow(page);
   await expect(page).toHaveTitle("nightfall");
   const bar = page.getByRole("region", { name: "Application status bar" });
   const banner = bar.getByTestId("browser-demo-banner");
@@ -884,6 +905,7 @@ test.describe("packaged demo show", () => {
     await page.goto(
       "/demo/app/?startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false",
     );
+    await waitForDemoShow(page);
     const showfileUrl = new URL(
       "nightfall-demo.nightfall-show/showfile.json",
       page.url(),
