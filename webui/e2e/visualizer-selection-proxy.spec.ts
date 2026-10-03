@@ -65,6 +65,7 @@ test("selection proxies skip beauty submission and retain outlines", async ({
       opacity: 0,
       depthWrite: false,
     });
+    let pipelineDisposed = false;
     try {
       const empty = await capture();
       const proxies = Array.from({ length: 100 }, () => {
@@ -88,7 +89,9 @@ test("selection proxies skip beauty submission and retain outlines", async ({
       const deselectedProxyCount = proxies.filter(
         (mesh) => mesh.visible,
       ).length;
+      // Disposal is part of the scenario: it must restore the renderer's hooks.
       disposePostProcessing(pipeline);
+      pipelineDisposed = true;
       const restoredRenderer =
         renderer.lighting === originalLighting &&
         renderer.getRenderObjectFunction() === null;
@@ -104,6 +107,7 @@ test("selection proxies skip beauty submission and retain outlines", async ({
         deselectedProxyCount,
       };
     } finally {
+      if (!pipelineDisposed) disposePostProcessing(pipeline);
       geometry.dispose();
       material.dispose();
       renderer.dispose();
