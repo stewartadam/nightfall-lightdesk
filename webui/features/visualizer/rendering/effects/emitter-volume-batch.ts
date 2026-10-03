@@ -224,16 +224,21 @@ export class EmitterVolumeBatch {
     intensity: 0,
   };
 
-  /** Capabilities of the pipeline drawing this batch; High when no pipeline owns the scene. */
+  /**
+   * Capabilities of the pipeline drawing this batch; without a pipeline, the caller's
+   * fallback profile, else High.
+   */
   readonly profile: QualityProfile;
 
   /**
    * Allocates one scene-local batch drawn in the scene's atmospheric pass when a pipeline
-   * owns one; capacity grows only when fixture topology changes.
+   * owns one, else directly in `scene` as `fallbackProfile` describes; capacity grows only
+   * when fixture topology changes.
    */
-  constructor(scene: Scene) {
+  constructor(scene: Scene, fallbackProfile?: QualityProfile) {
     const context = getOpticalRenderContext(scene);
-    const profile = context?.profile ?? resolveQualityProfile("high");
+    const profile =
+      context?.profile ?? fallbackProfile ?? resolveQualityProfile("high");
     this.profile = profile;
     this.beamStyle = profile.beamStyle;
     this.goboAtlas = profile.gobos

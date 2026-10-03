@@ -16,6 +16,7 @@ import type { BeamOptics } from "../../../../types";
 import type { ExtendedFixtureInstance } from "../fixture-renderers";
 import type { EmitterColor } from "../geometry-builder";
 import { gdtfWheelMediaUrl } from "../mesh-loader";
+import type { QualityProfile } from "../quality-profile";
 import type { ApertureControls } from "./emitter-optical-state";
 import {
   emitterIrisScale,
@@ -41,9 +42,12 @@ export class BeamManager {
     ResolvedEmitterOptics | undefined
   >();
 
-  /** Creates the scene's shared batch, which adopts the quality profile of the scene's pipeline. */
-  constructor(scene: Scene) {
-    this.volumeBatch = new EmitterVolumeBatch(scene);
+  /**
+   * Creates the scene's shared batch, which adopts the quality profile of the scene's pipeline,
+   * or `profile` for a scene rendered without one (such as the fixture preview).
+   */
+  constructor(scene: Scene, profile?: QualityProfile) {
+    this.volumeBatch = new EmitterVolumeBatch(scene, profile);
   }
 
   /** Reports illuminated emitters whose active masks exceed the shader sampling budget. */

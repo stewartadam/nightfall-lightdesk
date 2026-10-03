@@ -20,6 +20,7 @@
 
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
+  ACESFilmicToneMapping,
   AmbientLight,
   Box3,
   DirectionalLight,
@@ -32,6 +33,7 @@ import {
 } from "three/webgpu";
 import type { FixtureGeometry } from "../../../types";
 import type { RenderableFixture } from "../model/types";
+import { BeamManager, BeamUpdater } from "./effects";
 import type { ExtendedFixtureInstance } from "./fixture-renderers";
 import {
   buildFixtureWithoutGeometry,
@@ -42,8 +44,15 @@ import {
 import { type EmitterColor, updateEmitterColors } from "./geometry-builder";
 import { resolveQualityProfile } from "./quality-profile";
 
-/** Previews show luminous faces at full exposure, as the High preset does. */
-const PREVIEW_QUALITY = resolveQualityProfile("high");
+/**
+ * The preview renders straight to the canvas with no bloom pass, so it uses the Medium
+ * preset: luminous faces at the unbloomed exposure and shaded cone beams drawn in the
+ * preview scene itself, which need no atmospheric pass.
+ */
+export const PREVIEW_QUALITY = resolveQualityProfile("medium");
+
+/** Fixture UID of the single previewed fixture, used to key its beam apertures. */
+const PREVIEW_FIXTURE_UID = "preview";
 
 /** Default camera distance as multiplier of fixture size */
 const CAMERA_DISTANCE_FACTOR = 2.5;
@@ -58,10 +67,16 @@ const PREVIEW_EMITTER_COLOR: EmitterColor = {
   intensity: 1,
 };
 
-function colorPreviewEmitters(instance: ExtendedFixtureInstance): void {
-  if (instance.emitters.size === 0) return;
-
+/**
+ * Lights every emitter of the previewed fixture with the preview color and returns the
+ * per-element colors so beams can be published from the same values.
+ */
+function colorPreviewEmitters(
+  instance: ExtendedFixtureInstance,
+): Map<string, EmitterColor> {
   const elementColors = new Map<string, EmitterColor>();
+  if (instance.emitters.size === 0) return elementColors;
+
   for (const [, emitter] of instance.emitters) {
     elementColors.set(emitter.controlledElement, PREVIEW_EMITTER_COLOR);
   }
@@ -70,6 +85,7 @@ function colorPreviewEmitters(instance: ExtendedFixtureInstance): void {
   } else {
     updateFixtureColors(instance, elementColors);
   }
+  return elementColors;
 }
 
 /**
@@ -100,6 +116,8 @@ export interface PreviewRendererState {
   controls: OrbitControls;
   ambientLight: AmbientLight;
   directionalLight: DirectionalLight;
+  /** Publishes the previewed fixture's apertures through the visualizer's shared beam batch. */
+  beamUpdater: BeamUpdater;
   fixtureInstance: ExtendedFixtureInstance | null;
   isPaused: boolean;
 }
@@ -118,6 +136,8 @@ export function initPreviewRenderer(
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x1a1a2e, 1);
+  // Match the main visualizer's output transform so lit faces and beams roll off the same way.
+  renderer.toneMapping = ACESFilmicToneMapping;
 
   // Create scene
   const scene = new Scene();
@@ -154,6 +174,8 @@ export function initPreviewRenderer(
   directionalLight.position.set(2, 3, 2);
   scene.add(directionalLight);
 
+  const beamUpdater = new BeamUpdater(new BeamManager(scene, PREVIEW_QUALITY));
+
   return {
     renderer,
     scene,
@@ -161,6 +183,7 @@ export function initPreviewRenderer(
     controls,
     ambientLight,
     directionalLight,
+    beamUpdater,
     fixtureInstance: null,
     isPaused: false,
   };
@@ -179,6 +202,7 @@ export function setPreviewFixture(
     state.scene.remove(state.fixtureInstance.group);
     disposeFixtureWithRenderer(state.fixtureInstance);
     state.fixtureInstance = null;
+    state.beamUpdater.syncWithFixtures(new Map());
   }
 
   // Load new fixture if provided
@@ -203,8 +227,17 @@ export function setPreviewFixture(
     if (!instance) return;
 
     state.fixtureInstance = instance;
-    colorPreviewEmitters(instance);
+    const elementColors = colorPreviewEmitters(instance);
     state.scene.add(instance.group);
+    // Apertures are posed from the fixture's world matrices, so publish once it is in the scene.
+    state.beamUpdater.syncWithFixtures(
+      new Map([[PREVIEW_FIXTURE_UID, instance]]),
+    );
+    state.beamUpdater.updateFixtureBeam(
+      PREVIEW_FIXTURE_UID,
+      instance,
+      elementColors,
+    );
 
     // Frame the camera on the new fixture
     frameCameraOnFixture(state);
@@ -288,6 +321,8 @@ export function disposePreviewRenderer(state: PreviewRendererState): void {
     state.scene.remove(state.fixtureInstance.group);
     disposeFixtureWithRenderer(state.fixtureInstance);
   }
+  // Removes the shared beam draw before the scene traversal below disposes what remains.
+  state.beamUpdater.dispose();
 
   // Dispose controls
   state.controls.dispose();
