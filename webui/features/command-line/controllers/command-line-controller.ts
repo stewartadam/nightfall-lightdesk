@@ -36,6 +36,33 @@ const commandSequenceRunner = new CommandSequenceRunner(
   new CommandClient(engineRuntime),
 );
 
+/** Tail of the serial chain that keeps command-line submissions in submission order. */
+let commandSequenceTail: Promise<void> = Promise.resolve();
+
+/**
+ * Runs a parsed command sequence after every earlier submission has settled,
+ * without blocking the input. Failed command results are toasted by the engine
+ * runtime, so only transport failures are reported here.
+ */
+function queueCommandSequence(input: string) {
+  commandSequenceTail = commandSequenceTail.then(async () => {
+    try {
+      await commandSequenceRunner.run(input);
+    } catch (error) {
+      // Loads and new shows replace the backend world, which ends the session
+      // before a result can arrive; the command was delivered, so keep going.
+      if (error instanceof EngineRuntimeCommandDisconnectedError) {
+        log.info("Command session ended before its result", input);
+        return;
+      }
+      const message =
+        error instanceof Error ? error.message : "Command submission failed";
+      log.error("Command sequence transport failed", error);
+      pushToast("error", message);
+    }
+  });
+}
+
 interface CommandLineControllerOptions {
   variant: "panel" | "nav";
   componentId: string;
@@ -112,32 +139,14 @@ export function createCommandLineController(
           trimmedInput,
         );
       } else {
-        try {
-          await commandSequenceRunner.run(trimmedInput);
-        } catch (error) {
-          // Loads and new shows replace the backend world, which ends the session
-          // before a result can arrive; the command was delivered, so keep going.
-          if (error instanceof EngineRuntimeCommandDisconnectedError) {
-            log.info("Command session ended before its result", trimmedInput);
-            recordSubmittedCommand(trimmedInput);
-            return;
-          }
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Command submission failed";
-          log.error("Command sequence transport failed", error);
-          pushToast("error", message);
-          queueMicrotask(() => inputElement?.focus());
-          return;
-        }
+        queueCommandSequence(trimmedInput);
       }
     }
 
     recordSubmittedCommand(trimmedInput);
   };
 
-  /** Appends a delivered command to history and clears the input for the next one. */
+  /** Appends a submitted command to history and clears the input for the next one. */
   const recordSubmittedCommand = (submitted: string) => {
     const currentHistory = commandLineHistory.get();
     if (currentHistory[currentHistory.length - 1] !== submitted) {
