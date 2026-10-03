@@ -47,7 +47,7 @@ pub(super) fn branch_frontier_state_for_branch(
         let (immediate, blocks_ancestors) =
             immediate_frontier_for_clause(branch, &frame.clause, &parser);
         for mut expectation in immediate {
-            restrict_patch_target_disabled(branch, &mut expectation);
+            restrict_patch_target_by_source(branch, &mut expectation);
             if !frontier.contains(&expectation) {
                 frontier.push(expectation);
             }
@@ -61,40 +61,63 @@ pub(super) fn branch_frontier_state_for_branch(
     (frontier, has_blocking_expectations)
 }
 
-/// Drops `disabled` from patch target offers unless the source is a transport input.
+/// Drops patch target offers that the engine rejects for the branch's patch source.
 ///
-/// Only inputs can be disabled; the engine rejects fixture and console (output) sources
-/// patched to `disabled`. A target-only `rm patch @ ...` filter has no source and keeps it.
-fn restrict_patch_target_disabled(
+/// Only transport inputs can be disabled, so `disabled` is kept only for transport sources
+/// and for a target-only `rm patch @ ...` filter with no source. Console sources may only
+/// target transports, so they also lose `console` and fixture-number targets.
+fn restrict_patch_target_by_source(
     branch: &ParseBranchState<'_>,
     expectation: &mut ClauseExpectation,
 ) {
     let ContinuationTarget::Slot(slot_ref) = &expectation.target else {
         return;
     };
-    if slot_ref.slot != SlotId::PatchTargetEndpoint || patch_source_allows_disabled_target(branch) {
+    if slot_ref.slot != SlotId::PatchTargetEndpoint {
         return;
     }
-    expectation
-        .expected_tokens
-        .retain(|token| *token != ExpectedToken::Token(TokenId::Disabled));
+    let source_head = patch_source_head(branch);
+    let keep_disabled = matches!(
+        source_head,
+        None | Some(Some(TokenId::Sacn | TokenId::Artnet | TokenId::Udmx))
+    );
+    let console_source = source_head == Some(Some(TokenId::Console));
+    // Fixture-number targets are only rejected at the endpoint's start; later placeholders
+    // are universe and address values.
+    let keep_fixture_target = !console_source || patch_target_endpoint_started(branch);
+    expectation.expected_tokens.retain(|token| match token {
+        ExpectedToken::Token(TokenId::Disabled) => keep_disabled,
+        ExpectedToken::Token(TokenId::Console) => !console_source,
+        ExpectedToken::Placeholder(_) => keep_fixture_target,
+        _ => true,
+    });
 }
 
-/// Returns whether the branch's patch source (if any) is a transport input endpoint.
-fn patch_source_allows_disabled_target(branch: &ParseBranchState<'_>) -> bool {
-    let source_head = branch
+/// Returns whether the patch target has consumed an endpoint token beyond `@` and `(`.
+fn patch_target_endpoint_started(branch: &ParseBranchState<'_>) -> bool {
+    branch
+        .consumed_items
+        .iter()
+        .filter(|item| item.slot.slot == SlotId::PatchTargetEndpoint)
+        .any(|item| {
+            !matches!(
+                token_id_for_text(item.surface.as_str()),
+                Some(TokenId::AtSign | TokenId::LeftParen)
+            )
+        })
+}
+
+/// Returns the leading token of the branch's patch source, skipping grouping parentheses.
+///
+/// The outer `None` means no source was given (a target-only `rm patch` filter); the inner
+/// `None` means the source starts with a non-keyword token such as a fixture number.
+fn patch_source_head(branch: &ParseBranchState<'_>) -> Option<Option<TokenId>> {
+    branch
         .consumed_items
         .iter()
         .filter(|item| item.slot.slot == SlotId::PatchSourceEndpoint)
         .map(|item| token_id_for_text(item.surface.as_str()))
-        .find(|token_id| *token_id != Some(TokenId::LeftParen));
-    match source_head {
-        None => true,
-        Some(token_id) => matches!(
-            token_id,
-            Some(TokenId::Sacn | TokenId::Artnet | TokenId::Udmx)
-        ),
-    }
+        .find(|token_id| *token_id != Some(TokenId::LeftParen))
 }
 
 /// Compute the next legal expectations for the active structural clause.

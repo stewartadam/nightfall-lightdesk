@@ -488,6 +488,44 @@ fn complete_command_offers_disabled_target_for_input_sources() {
     }
 }
 
+/// Console sources only offer transport targets; the engine rejects console -> console/fixture.
+#[test]
+fn complete_command_omits_console_target_for_console_sources() {
+    for input in [
+        "patch console:1 @ ",
+        "patch console:1>2 @ ",
+        "rm patch console:1 @ ",
+    ] {
+        let response = complete_command(input, input.len());
+        assert!(
+            has_candidate_insert(&response, "sacn"),
+            "'{input}' should still suggest transport targets"
+        );
+        assert!(
+            !has_candidate_insert(&response, "console"),
+            "'{input}' should not suggest a console target for a console source"
+        );
+        assert!(
+            !has_candidate_insert(&response, "0..9"),
+            "'{input}' should not suggest a fixture target for a console source"
+        );
+    }
+    for input in ["patch fix 1 @ ", "patch sacn:1 @ ", "rm patch @ "] {
+        let response = complete_command(input, input.len());
+        assert!(
+            has_candidate_insert(&response, "console"),
+            "'{input}' should still suggest a console target"
+        );
+    }
+    for input in ["patch console:1 @ sacn:", "patch console:1 @ sacn:1."] {
+        let response = complete_command(input, input.len());
+        assert!(
+            has_candidate_insert(&response, "0..9"),
+            "'{input}' should still suggest transport universe/address digits"
+        );
+    }
+}
+
 #[test]
 fn complete_command_uses_value_placeholder_for_numeric_entry() {
     let response = complete_command("channel 1.100 @", "channel 1.100 @".len());
