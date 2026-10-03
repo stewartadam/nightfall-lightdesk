@@ -54,7 +54,6 @@ test("instrumentation drops GPU timing when the timer stops producing samples", 
         render: {
           timestamps: new Map(),
           currentQueryIndex: 1,
-          lastInterval: [0n, 3_000_000n],
         },
       },
     },

@@ -89,7 +89,7 @@
     "serialize-error": "^13.0.1",
     "solid-js": "^1.9.15",
     "tailwindcss": "^4.3.3",
-    "three": "0.186.1",
+    "three": "^0.186.1",
     "tinykeys": "^4.0.1",
     "toastify-js": "^1.12.0",
     "uuid": "^14.0.2",

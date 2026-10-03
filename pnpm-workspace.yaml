@@ -2,6 +2,4 @@
 allowBuilds:
   wasm-pack: true
 # Run package scripts in pnpm's POSIX shell on every platform, including Windows.
-patchedDependencies:
-  three@0.186.1: patches/three@0.186.1.patch
 shellEmulator: true

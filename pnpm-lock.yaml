@@ -162,9 +162,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  three@0.186.1: 94758f14c80b7c5a57cfd42336a40c706f572fc79138308cf92284a9e90c592f
-
 importers:
 
   .:
@@ -266,8 +263,8 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3
       three:
-        specifier: 0.186.1
-        version: 0.186.1(patch_hash=94758f14c80b7c5a57cfd42336a40c706f572fc79138308cf92284a9e90c592f)
+        specifier: ^0.186.1
+        version: 0.186.1
       tinykeys:
         specifier: ^4.0.1
         version: 4.0.1
@@ -3690,7 +3687,7 @@ snapshots:
     dependencies:
       execa: 6.1.0
 
-  three@0.186.1(patch_hash=94758f14c80b7c5a57cfd42336a40c706f572fc79138308cf92284a9e90c592f): {}
+  three@0.186.1: {}
 
   tinyglobby@0.2.17:
     dependencies:

@@ -49,9 +49,8 @@ class GpuPassLabels extends InspectorBase {
 /**
  * Minimal renderer interface keeps GPU timing testable without creating a device.
  * `timestampQueryPool`, `trackTimestamp` and the inspector are three.js
- * internals; `lastInterval` and `frameIntervals` only exist via
- * patches/three@0.186.1.patch. scripts/three-timestamp-query.node.test.mjs
- * fails when a three upgrade drops any of them.
+ * internals; scripts/three-timestamp-query.node.test.mjs fails when a three
+ * upgrade drops any of them.
  */
 export interface TimestampRenderer {
   backend: {
@@ -62,8 +61,6 @@ export interface TimestampRenderer {
         {
           timestamps: Map<string, number>;
           currentQueryIndex?: number;
-          lastInterval?: readonly [bigint, bigint];
-          frameIntervals?: ReadonlyMap<number, readonly [bigint, bigint]>;
         } | null
       >
     >;
@@ -73,22 +70,6 @@ export interface TimestampRenderer {
   resolveTimestampsAsync(
     type: "render" | "compute",
   ): Promise<number | undefined>;
-}
-
-/** Measures elapsed GPU time across overlapping or disjoint queue intervals without double-counting passes. */
-export function gpuIntervalSpan(
-  intervals: readonly (readonly [bigint, bigint])[],
-): number | undefined {
-  let start: bigint | undefined;
-  let end: bigint | undefined;
-  for (const [first, last] of intervals) {
-    if (last < first) return undefined;
-    if (start === undefined || first < start) start = first;
-    if (end === undefined || last > end) end = last;
-  }
-  return start === undefined || end === undefined
-    ? undefined
-    : Number(end - start) / 1e6;
 }
 
 /** The timestamp-bearing subset of Three's inspector frame records. */
@@ -102,14 +83,13 @@ export interface InspectorGpuFrame {
 }
 
 /**
- * Reuses frame-specific inspector readbacks, excluding other frames and
- * overlapping pass double-counting. Returns `undefined` while no frame has
+ * Reuses the inspector's own per-frame GPU total, the sum of the frame's
+ * render and compute pass durations. Returns `undefined` while no frame has
  * resolved yet, and `null` when the newest resolved frame reports that GPU
  * timing is unavailable.
  */
 export function readInspectorGpuSample(
   frames: readonly InspectorGpuFrame[],
-  pools: TimestampRenderer["backend"]["timestampQueryPool"],
 ): { id: number; milliseconds: number } | null | undefined {
   for (let i = frames.length - 1; i >= Math.max(0, frames.length - 60); i--) {
     const frame = frames[i];
@@ -119,13 +99,10 @@ export function readInspectorGpuSample(
       frame.computes.some((pass) => pass.gpuNotAvailable)
     )
       return null;
-    const render = pools?.render?.frameIntervals?.get(frame.frameId);
-    const compute = pools?.compute?.frameIntervals?.get(frame.frameId);
-    if (!render || (frame.computes.length > 0 && !compute)) continue;
-    const milliseconds = gpuIntervalSpan(
-      frame.computes.length > 0 && compute ? [render, compute] : [render],
-    );
-    return milliseconds === undefined
+    const milliseconds = frame.gpu;
+    return milliseconds === undefined ||
+      !Number.isFinite(milliseconds) ||
+      milliseconds < 0
       ? undefined
       : { id: frame.frameId, milliseconds };
   }
@@ -242,19 +219,9 @@ export class GpuFrameTimer {
         this.consecutiveFailures = 0;
         const render = hasRenderQueries ? renderResult.value : undefined;
         const compute = hasComputeQueries ? computeResult.value : undefined;
-        const pools = renderer.backend.timestampQueryPool;
-        const renderInterval = pools?.render?.lastInterval;
-        const computeInterval = pools?.compute?.lastInterval;
+        // Summed pass durations; passes on one queue mostly run back to back.
         const milliseconds =
-          render === undefined ||
-          !renderInterval ||
-          (compute !== undefined && !computeInterval)
-            ? undefined
-            : gpuIntervalSpan(
-                compute !== undefined && computeInterval
-                  ? [renderInterval, computeInterval]
-                  : [renderInterval],
-              );
+          render === undefined ? undefined : render + (compute ?? 0);
         if (
           !this.disposed &&
           milliseconds !== undefined &&

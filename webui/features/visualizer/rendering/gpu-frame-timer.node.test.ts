@@ -16,7 +16,6 @@ import {
 } from "three/webgpu";
 import {
   GpuFrameTimer,
-  gpuIntervalSpan,
   type InspectorGpuFrame,
   MAX_READBACK_RETRIES,
   READBACK_RETRY_BASE_MS,
@@ -24,33 +23,11 @@ import {
   type TimestampRenderer,
 } from "./gpu-frame-timer";
 
-/** Overlap counts once, queue gaps remain part of elapsed time, and subtraction preserves large timestamp precision. */
-test("GPU elapsed spans handle overlap, gaps and invalid intervals", () => {
-  const epoch = 9007199254740993000n;
-  assert.equal(
-    gpuIntervalSpan([
-      [epoch, epoch + 8000000n],
-      [epoch + 1000000n, epoch + 7500000n],
-    ]),
-    8,
-  );
-  assert.equal(
-    gpuIntervalSpan([
-      [epoch, epoch + 2000000n],
-      [epoch + 4000000n, epoch + 6000000n],
-    ]),
-    6,
-  );
-  assert.equal(gpuIntervalSpan([[epoch, epoch]]), 0);
-  assert.equal(gpuIntervalSpan([]), undefined);
-  assert.equal(gpuIntervalSpan([[epoch + 1n, epoch]]), undefined);
-});
-
 /** Pending or unsupported inspector frames must not turn into zero-cost GPU measurements. */
 test("inspector timing reuses the latest fully resolved frame", () => {
   const completed: InspectorGpuFrame = {
     frameId: 1,
-    gpu: 99,
+    gpu: 4.5,
     resolvedRender: true,
     resolvedCompute: true,
     renders: [{}],
@@ -62,44 +39,23 @@ test("inspector timing reuses the latest fully resolved frame", () => {
     gpu: undefined,
     resolvedRender: false,
   };
-  const pools = {
-    render: {
-      timestamps: new Map<string, number>(),
-      frameIntervals: new Map([[1, [1000000n, 5500000n] as const]]),
-    },
-    compute: {
-      timestamps: new Map<string, number>(),
-      frameIntervals: new Map([[1, [2000000n, 4000000n] as const]]),
-    },
-  };
-  assert.deepEqual(readInspectorGpuSample([completed, pending], pools), {
+  assert.deepEqual(readInspectorGpuSample([completed, pending]), {
     id: 1,
     milliseconds: 4.5,
   });
-  assert.deepEqual(
-    readInspectorGpuSample([{ ...completed, computes: [{}] }], pools),
-    {
-      id: 1,
-      milliseconds: 4.5,
-    },
-  );
-  assert.equal(readInspectorGpuSample([pending], pools), undefined);
-  assert.equal(readInspectorGpuSample([completed], undefined), undefined);
+  assert.equal(readInspectorGpuSample([pending]), undefined);
   assert.equal(
-    readInspectorGpuSample([{ ...completed, computes: [{}] }], {
-      render: pools.render,
-    }),
+    readInspectorGpuSample([{ ...completed, gpu: undefined }]),
     undefined,
   );
   assert.equal(
-    readInspectorGpuSample([{ ...completed, frameId: 3 }], pools),
+    readInspectorGpuSample([{ ...completed, gpu: Number.NaN }]),
     undefined,
   );
   assert.equal(
-    readInspectorGpuSample(
-      [{ ...completed, renders: [{ gpuNotAvailable: true }] }],
-      pools,
-    ),
+    readInspectorGpuSample([
+      { ...completed, renders: [{ gpuNotAvailable: true }] },
+    ]),
     null,
   );
 });
@@ -116,7 +72,7 @@ test("GPU timing samples at a bounded rate without catching up missed samples", 
     backend: {
       trackTimestamp: false,
       timestampQueryPool: {
-        render: { timestamps: new Map(), lastInterval: [0n, 3000000n] },
+        render: { timestamps: new Map() },
       },
     },
     hasFeature: () => true,
@@ -146,7 +102,6 @@ test("GPU timing supports a null compute pool", async () => {
         render: {
           timestamps: new Map(),
           currentQueryIndex: 2,
-          lastInterval: [0n, 3000000n],
         },
         compute: null,
       },
@@ -170,7 +125,7 @@ test("GPU timing groups named passes and bounds backend timestamp history", asyn
     backend: {
       trackTimestamp: false,
       timestampQueryPool: {
-        render: { timestamps, lastInterval: [0n, 6000000n] },
+        render: { timestamps },
       },
     },
     hasFeature: () => true,
@@ -209,12 +164,10 @@ test("GPU timing excludes an idle pool's previous frame duration", async () => {
   const renderPool = {
     currentQueryIndex: 2,
     timestamps: new Map(),
-    lastInterval: [0n, 4000000n] as const,
   };
   const computePool = {
     currentQueryIndex: 2,
     timestamps: new Map(),
-    lastInterval: [2000000n, 9000000n] as const,
   };
   const renderer: TimestampRenderer = {
     backend: {
@@ -232,7 +185,7 @@ test("GPU timing excludes an idle pool's previous frame duration", async () => {
   timer.begin(renderer);
   timer.end(renderer);
   await flush();
-  assert.deepEqual(timer.sample, { id: 1, milliseconds: 9 });
+  assert.deepEqual(timer.sample, { id: 1, milliseconds: 11 });
 
   renderPool.currentQueryIndex = 2;
   timer.begin(renderer);
@@ -255,8 +208,8 @@ test("GPU samples remain bounded while the GPU is busy", async () => {
     backend: {
       trackTimestamp: false,
       timestampQueryPool: {
-        render: { timestamps: new Map(), lastInterval: [0n, 4500000n] },
-        compute: { timestamps: new Map(), lastInterval: [4500000n, 6000000n] },
+        render: { timestamps: new Map() },
+        compute: { timestamps: new Map() },
       },
     },
     hasFeature: () => true,
@@ -338,7 +291,6 @@ test("GPU timing retries failed readback with bounded backoff", async () => {
         render: {
           timestamps: new Map(),
           currentQueryIndex: 2,
-          lastInterval: [0n, 2000000n],
         },
       },
     },
