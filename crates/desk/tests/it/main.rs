@@ -12,6 +12,7 @@ mod ast_conv_clip;
 mod ast_conv_logging;
 mod ast_conv_management;
 mod ast_conv_system;
+mod patch_priority;
 mod release_system_tests;
 mod settings_sync;
 mod undo_ast_conv;

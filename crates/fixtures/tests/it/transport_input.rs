@@ -10,6 +10,7 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::RunSystemOnce;
 use nightfall_compositor::types::Layer;
 use nightfall_dmx::prelude::{DmxValueResolution, MAX_CHANNELS_PER_UNIVERSE, ParameterValue};
 use nightfall_engine::{Compositing, LayerGeneration};
@@ -355,4 +356,175 @@ fn routing_preserves_binding_precedence_and_consumes_each_frame_once() {
             .absolute
             .is_empty()
     );
+}
+
+/// Builds resolved bindings from Art-Net universes 1 and 2 (address 1) to `destination`, in
+/// resolved precedence order: universe 1 at priority 10 ahead of universe 2 at priority 1.
+fn competing_source_bindings(destination: ResolvedInputDestination) -> Vec<ResolvedInputBinding> {
+    [(1, 10), (2, 1)]
+        .into_iter()
+        .map(|(universe, priority)| ResolvedInputBinding {
+            source: ResolvedInputSource::Transport {
+                transport: BindingTransport::ArtNet,
+                universe,
+                address: 1,
+            },
+            priority,
+            destination: destination.clone(),
+        })
+        .collect()
+}
+
+/// Delivers one frame per `(universe, channel 1 value)` entry, each in its own update, and
+/// returns the app so the caller can inspect the routed result.
+fn deliver_frames_in_separate_updates(mut app: App, frames: &[(u16, u8)]) -> App {
+    for &(universe, value) in frames {
+        app.world_mut()
+            .write_message(make_frame(universe, &[(1, value)]));
+        app.update();
+    }
+    app
+}
+
+/// Returns the absolute value the transport input layer asserts for its single parameter.
+fn single_layer_value(app: &App, input_layer: Entity) -> ParameterValue {
+    let layer = app
+        .world()
+        .get::<Layer>(input_layer)
+        .expect("input layer must exist");
+    assert_eq!(layer.absolute.len(), 1);
+    layer.absolute.values().next().expect("one assertion").0
+}
+
+/// Verifies that when two source universes drive one fixture parameter, the higher-priority
+/// binding's value holds no matter which source's frame arrives last.
+#[test]
+fn fixture_target_keeps_highest_priority_source_across_frames() {
+    for arrival_order in [[(1, 42), (2, 99)], [(2, 99), (1, 42)]] {
+        let mut app = App::new();
+        app.add_plugins(TransportInputPlugin);
+        let parameter = app.world_mut().spawn(make_coarse_parameter()).id();
+        let input_layer = spawn_transport_input_layer(&mut app);
+        app.world_mut()
+            .resource_mut::<ResolvedInputBindings>()
+            .bindings = competing_source_bindings(ResolvedInputDestination::Fixture {
+            targets: vec![ResolvedInputTarget {
+                entity: parameter,
+                offsets: vec![0],
+            }],
+        });
+
+        let app = deliver_frames_in_separate_updates(app, &arrival_order);
+
+        assert_eq!(
+            single_layer_value(&app, input_layer),
+            ParameterValue::AbsolutePercent {
+                value: (42.0_f32 / 255.0).into()
+            },
+            "arrival order {arrival_order:?}"
+        );
+    }
+}
+
+/// Verifies a lower-priority source takes over a fixture parameter once the higher-priority
+/// owner's assertion is cleared as stale.
+#[test]
+fn fixture_target_falls_back_to_lower_priority_source_after_owner_goes_stale() {
+    let mut app = App::new();
+    app.add_plugins(TransportInputPlugin);
+    let parameter = app.world_mut().spawn(make_coarse_parameter()).id();
+    let input_layer = spawn_transport_input_layer(&mut app);
+    app.world_mut()
+        .resource_mut::<ResolvedInputBindings>()
+        .bindings = competing_source_bindings(ResolvedInputDestination::Fixture {
+        targets: vec![ResolvedInputTarget {
+            entity: parameter,
+            offsets: vec![0],
+        }],
+    });
+    let mut app = deliver_frames_in_separate_updates(app, &[(1, 42)]);
+
+    app.world_mut()
+        .run_system_once(
+            |mut layers: Query<(&mut Layer, &mut TransportInputAssertionOwners)>,
+             input_universes: Res<InputDmxUniverses>| {
+                let (mut layer, mut owners) = layers.single_mut().expect("one input layer");
+                // A zero timeout treats every source, including the priority 10 owner, as stale.
+                clear_stale_parameter_assertions(
+                    &mut layer,
+                    &mut owners,
+                    &input_universes,
+                    Instant::now(),
+                    std::time::Duration::ZERO,
+                );
+            },
+        )
+        .expect("stale clearing should run");
+    let app = deliver_frames_in_separate_updates(app, &[(2, 99)]);
+
+    assert_eq!(
+        single_layer_value(&app, input_layer),
+        ParameterValue::AbsolutePercent {
+            value: (99.0_f32 / 255.0).into()
+        }
+    );
+}
+
+/// Verifies a lower-priority source takes over a console channel once the higher-priority
+/// binding is removed, even though the old owner's origin is still recorded on the channel.
+#[test]
+fn console_target_falls_back_to_lower_priority_source_after_owner_binding_removed() {
+    let mut app = App::new();
+    app.add_plugins(TransportInputPlugin);
+    app.world_mut()
+        .resource_mut::<ResolvedInputBindings>()
+        .bindings = competing_source_bindings(ResolvedInputDestination::Console {
+        target: ResolvedConsoleTarget {
+            universe: 3,
+            address: 1,
+        },
+        targets: vec![],
+    });
+    let mut app = deliver_frames_in_separate_updates(app, &[(1, 17)]);
+
+    app.world_mut()
+        .resource_mut::<ResolvedInputBindings>()
+        .bindings
+        .remove(0);
+    let app = deliver_frames_in_separate_updates(app, &[(2, 66)]);
+
+    assert_eq!(
+        app.world()
+            .resource::<ConsoleDmxUniverses>()
+            .get_value(3, 1),
+        Some(66)
+    );
+}
+
+/// Verifies that when two source universes map onto one console channel, the higher-priority
+/// binding's value holds no matter which source's frame arrives last.
+#[test]
+fn console_target_keeps_highest_priority_source_across_frames() {
+    for arrival_order in [[(1, 17), (2, 66)], [(2, 66), (1, 17)]] {
+        let mut app = App::new();
+        app.add_plugins(TransportInputPlugin);
+        app.world_mut()
+            .resource_mut::<ResolvedInputBindings>()
+            .bindings = competing_source_bindings(ResolvedInputDestination::Console {
+            target: ResolvedConsoleTarget {
+                universe: 3,
+                address: 1,
+            },
+            targets: vec![],
+        });
+
+        let app = deliver_frames_in_separate_updates(app, &arrival_order);
+
+        let universes = app.world().resource::<ConsoleDmxUniverses>();
+        assert_eq!(
+            universes.get_value(3, 1),
+            Some(17),
+            "arrival order {arrival_order:?}"
+        );
+    }
 }

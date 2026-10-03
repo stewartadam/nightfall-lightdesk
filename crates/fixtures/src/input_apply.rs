@@ -22,6 +22,7 @@ use nightfall_io::{AcceptedDmxFrame, DmxInputSet};
 use web_time::Instant;
 
 use crate::compositor::apply_parameter_assertions;
+use crate::output_frames::ChannelWindow;
 use crate::prelude::*;
 use crate::wire_layout::combine_dmx_bytes;
 
@@ -88,7 +89,7 @@ fn apply_accepted_frames(
             &routing.parameters,
         );
         if let Some((layer, owners)) = input_layer.as_mut() {
-            apply_parameter_assertions(layer, owners, assertions);
+            apply_parameter_assertions(layer, owners, assertions, &routing.bindings);
         }
     }
 }
@@ -102,6 +103,19 @@ pub struct ParameterAssertion {
     pub value: ParameterValue,
     /// Transport source that produced this assertion.
     pub source: ParameterAssertionSource,
+    /// Position of the asserting binding in [`ResolvedInputBindings`]; lower positions win.
+    pub precedence: usize,
+}
+
+/// The resolved binding an input frame is currently being routed through.
+#[derive(Debug, Clone, Copy)]
+struct RoutedBinding {
+    /// Transport source that delivered the frame.
+    source: ParameterAssertionSource,
+    /// First source channel the binding reads (1-based).
+    source_address: u16,
+    /// Position of the binding in [`ResolvedInputBindings`]; lower positions win.
+    precedence: usize,
 }
 
 /// Transport source metadata for an input-driven parameter assertion.
@@ -136,16 +150,12 @@ fn apply_transport_input_frame(
     let mut updated_targets = HashSet::new();
     let mut updated_console_channels = HashSet::new();
     let mut assertions = Vec::new();
-    let source_origin = ConsoleChannelOrigin::InputTransport {
-        transport,
-        universe: universe_id,
-    };
-    let assertion_source = ParameterAssertionSource {
+    let source = ParameterAssertionSource {
         transport,
         universe: universe_id,
     };
 
-    for binding in &resolved_input_bindings.bindings {
+    for (precedence, binding) in resolved_input_bindings.bindings.iter().enumerate() {
         let ResolvedInputSource::Transport {
             transport: binding_transport,
             universe,
@@ -158,15 +168,19 @@ fn apply_transport_input_frame(
         if *binding_transport != transport || *universe != universe_id {
             continue;
         }
+        let routed = RoutedBinding {
+            source,
+            source_address: *address,
+            precedence,
+        };
 
         match &binding.destination {
             ResolvedInputDestination::Fixture { targets } => {
                 apply_parameter_targets(
                     targets,
-                    *address,
                     data,
                     parameter_query,
-                    assertion_source,
+                    routed,
                     &mut updated_targets,
                     &mut assertions,
                 );
@@ -177,18 +191,17 @@ fn apply_transport_input_frame(
             } => {
                 apply_console_input_mapping(
                     universes,
+                    resolved_input_bindings,
                     data,
-                    *address,
+                    routed,
                     console_target,
-                    source_origin,
                     &mut updated_console_channels,
                 );
                 apply_parameter_targets(
                     targets,
-                    *address,
                     data,
                     parameter_query,
-                    assertion_source,
+                    routed,
                     &mut updated_targets,
                     &mut assertions,
                 );
@@ -207,10 +220,9 @@ fn apply_transport_input_frame(
 /// Decodes each bound parameter once, retaining the first resolved binding for a target.
 fn apply_parameter_targets(
     targets: &[ResolvedInputTarget],
-    source_base_address: u16,
     data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
     parameter_query: &Query<InstanceRef<Parameter>>,
-    source: ParameterAssertionSource,
+    routed: RoutedBinding,
     updated_targets: &mut HashSet<Entity>,
     assertions: &mut Vec<ParameterAssertion>,
 ) {
@@ -223,12 +235,13 @@ fn apply_parameter_targets(
             continue;
         };
 
-        let dmx_value = dmx_value_from_frame(data, source_base_address, &target.offsets);
+        let dmx_value = dmx_value_from_frame(data, routed.source_address, &target.offsets);
         let parameter_value = dmx_value_to_parameter_value(dmx_value, &parameter.metadata);
         assertions.push(ParameterAssertion {
             parameter: parameter.instance(),
             value: parameter_value,
-            source,
+            source: routed.source,
+            precedence: routed.precedence,
         });
         updated_targets.insert(target.entity);
     }
@@ -241,65 +254,112 @@ fn apply_transport_input_mapping(
     source_address: u16,
     transport_target: &ResolvedTransportTarget,
 ) {
-    if source_address == 0 || transport_target.address == 0 {
+    let window = ChannelWindow {
+        source_address,
+        target_address: transport_target.address,
+    };
+    if window
+        .span(MAX_CHANNELS_PER_UNIVERSE, MAX_CHANNELS_PER_UNIVERSE)
+        .is_none()
+    {
         return;
     }
-
-    let source_start = (source_address - 1) as usize;
-    let target_start = (transport_target.address - 1) as usize;
-
-    if source_start >= MAX_CHANNELS_PER_UNIVERSE || target_start >= MAX_CHANNELS_PER_UNIVERSE {
-        return;
-    }
-
-    let copy_len =
-        (MAX_CHANNELS_PER_UNIVERSE - source_start).min(MAX_CHANNELS_PER_UNIVERSE - target_start);
-
     let target =
         input_universes.get_universe_mut(transport_target.protocol, transport_target.universe);
+    window.overlay(source_data, target);
+}
 
-    for offset in 0..copy_len {
-        let source_idx = source_start + offset;
-        let target_idx = target_start + offset;
-        target[target_idx] = source_data[source_idx];
+/// Copies source transport DMX values into mapped console universe channels once per channel,
+/// leaving channels held by a different source through a stronger binding untouched.
+fn apply_console_input_mapping(
+    universes: &mut ConsoleDmxUniverses,
+    resolved_input_bindings: &ResolvedInputBindings,
+    source_data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
+    routed: RoutedBinding,
+    console_target: &ResolvedConsoleTarget,
+    updated_console_channels: &mut HashSet<(u16, u16)>,
+) {
+    let window = ChannelWindow {
+        source_address: routed.source_address,
+        target_address: console_target.address,
+    };
+    let Some((source_start, target_start, len)) =
+        window.span(MAX_CHANNELS_PER_UNIVERSE, MAX_CHANNELS_PER_UNIVERSE)
+    else {
+        return;
+    };
+    let origin = ConsoleChannelOrigin::InputTransport {
+        transport: routed.source.transport,
+        universe: routed.source.universe,
+    };
+
+    for offset in 0..len {
+        let target_address = (target_start + offset + 1) as u16;
+        if !updated_console_channels.insert((console_target.universe, target_address))
+            || console_channel_held_by_stronger_binding(
+                universes,
+                resolved_input_bindings,
+                console_target.universe,
+                target_address,
+                routed,
+            )
+        {
+            continue;
+        }
+        universes.set_value(
+            console_target.universe,
+            target_address,
+            source_data[source_start + offset],
+            origin,
+        );
     }
 }
 
-/// Copies source transport DMX values into mapped console universe channels once per channel.
-fn apply_console_input_mapping(
-    universes: &mut ConsoleDmxUniverses,
-    source_data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
-    source_address: u16,
-    console_target: &ResolvedConsoleTarget,
-    source_origin: ConsoleChannelOrigin,
-    updated_console_channels: &mut HashSet<(u16, u16)>,
-) {
-    if source_address == 0 || console_target.address == 0 {
-        return;
+/// Returns whether a console channel is owned by another input source that still maps onto it
+/// through a binding with higher precedence than `routed`.
+fn console_channel_held_by_stronger_binding(
+    universes: &ConsoleDmxUniverses,
+    resolved_input_bindings: &ResolvedInputBindings,
+    console_universe: u16,
+    address: u16,
+    routed: RoutedBinding,
+) -> bool {
+    let Some(ConsoleChannelOrigin::InputTransport {
+        transport,
+        universe,
+    }) = universes.get_origin(console_universe, address)
+    else {
+        return false;
+    };
+    if transport == routed.source.transport && universe == routed.source.universe {
+        return false;
     }
 
-    let source_start = (source_address - 1) as usize;
-    let target_start = (console_target.address - 1) as usize;
-
-    if source_start >= MAX_CHANNELS_PER_UNIVERSE || target_start >= MAX_CHANNELS_PER_UNIVERSE {
-        return;
-    }
-
-    let copy_len =
-        (MAX_CHANNELS_PER_UNIVERSE - source_start).min(MAX_CHANNELS_PER_UNIVERSE - target_start);
-
-    for offset in 0..copy_len {
-        let source_idx = source_start + offset;
-        let target_address = (target_start + offset + 1) as u16;
-        if updated_console_channels.insert((console_target.universe, target_address)) {
-            universes.set_value(
-                console_target.universe,
-                target_address,
-                source_data[source_idx],
-                source_origin,
-            );
-        }
-    }
+    resolved_input_bindings
+        .transport_source_precedence(transport, universe, |binding| {
+            let (
+                ResolvedInputSource::Transport {
+                    address: source_address,
+                    ..
+                },
+                ResolvedInputDestination::Console { target, .. },
+            ) = (&binding.source, &binding.destination)
+            else {
+                return false;
+            };
+            let window = ChannelWindow {
+                source_address: *source_address,
+                target_address: target.address,
+            };
+            target.universe == console_universe
+                && window
+                    .span(MAX_CHANNELS_PER_UNIVERSE, MAX_CHANNELS_PER_UNIVERSE)
+                    .is_some_and(|(_, target_start, len)| {
+                        (target_start..target_start + len)
+                            .contains(&usize::from(address.saturating_sub(1)))
+                    })
+        })
+        .is_some_and(|owner_precedence| owner_precedence < routed.precedence)
 }
 
 /// Reads a DMX value from a frame, combining the bytes at `base_address + offset` for each offset.

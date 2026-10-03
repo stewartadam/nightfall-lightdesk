@@ -44,7 +44,7 @@ pub struct InputBinding {
     pub source: InputSource,
     /// Binding target.
     pub target: InputTarget,
-    /// Priority (lower runs first).
+    /// Priority; when bindings conflict, the higher value wins and ties go to the earlier binding.
     pub priority: i32,
     /// If true, duplicate the source address across a range destination.
     pub clone: bool,
@@ -58,7 +58,7 @@ pub struct OutputBinding {
     pub source: OutputSource,
     /// Binding target.
     pub target: OutputTarget,
-    /// Priority (lower runs first).
+    /// Priority; when bindings conflict, the higher value wins and ties go to the earlier binding.
     pub priority: i32,
     /// If true, duplicate the source address across a range destination.
     pub clone: bool,
@@ -361,7 +361,7 @@ pub enum ResolvedInputDestination {
 pub struct ResolvedInputBinding {
     /// Resolved source.
     pub source: ResolvedInputSource,
-    /// Priority (higher runs later).
+    /// Priority; when bindings write the same destination, the higher value wins.
     pub priority: i32,
     /// Resolved destination.
     pub destination: ResolvedInputDestination,
@@ -370,8 +370,40 @@ pub struct ResolvedInputBinding {
 /// Resource cache of resolved input bindings.
 #[derive(Debug, Default, Clone, Resource)]
 pub struct ResolvedInputBindings {
-    /// Resolved bindings.
+    /// Resolved bindings in precedence order: highest priority first, with equal priorities in
+    /// authoring order. Consumers that keep the first write to a destination iterate this
+    /// directly; consumers that overwrite use [`Self::iter_overlay_order`].
     pub bindings: Vec<ResolvedInputBinding>,
+}
+
+impl ResolvedInputBindings {
+    /// Iterates bindings lowest precedence first, so a consumer that copies each binding's data
+    /// over the previous one leaves the highest-priority (then earliest-authored) binding's data
+    /// in place.
+    pub fn iter_overlay_order(&self) -> impl Iterator<Item = &ResolvedInputBinding> {
+        self.bindings.iter().rev()
+    }
+
+    /// Returns the precedence (position in [`Self::bindings`], lower wins) of the strongest binding
+    /// fed by `transport` universe `universe` for which `drives` holds, or `None` when no binding
+    /// from that source qualifies.
+    pub fn transport_source_precedence(
+        &self,
+        transport: BindingTransport,
+        universe: u16,
+        drives: impl Fn(&ResolvedInputBinding) -> bool,
+    ) -> Option<usize> {
+        self.bindings.iter().position(|binding| {
+            matches!(
+                binding.source,
+                ResolvedInputSource::Transport {
+                    transport: source_transport,
+                    universe: source_universe,
+                    ..
+                } if source_transport == transport && source_universe == universe
+            ) && drives(binding)
+        })
+    }
 }
 
 /// Destination for output processing.

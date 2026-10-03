@@ -659,6 +659,56 @@ fn resolve_output_bindings_supports_floating_fixtures() {
     );
 }
 
+/// Verifies transport passthroughs resolve highest priority first regardless of authoring
+/// order, and that the overlay iterator walks them in the reverse, lowest-first order.
+#[test]
+fn resolve_input_bindings_orders_transport_passthroughs_by_priority() {
+    let mut app = App::new();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.init_resource::<InputBindings>();
+    app.init_resource::<DisabledBindings>();
+    app.init_resource::<ConsoleDmxAddresses>();
+    app.init_resource::<NetworkDmxOutputTargets>();
+    app.init_resource::<UsbDmxOutputTargets>();
+    app.init_resource::<ConsoleDmxUniverses>();
+    app.init_resource::<ResolvedInputBindings>();
+
+    app.world_mut().resource_mut::<InputBindings>().bindings = [(2, 1), (1, 10), (3, 1)]
+        .into_iter()
+        .map(|(source_universe, priority)| InputBinding {
+            source: InputSource::Transport {
+                transport: BindingTransport::Sacn,
+                universe: Some(DmxRange::single(source_universe)),
+                address: None,
+            },
+            target: InputTarget::Transport {
+                target: "artnet".to_string(),
+                universe: Some(DmxRange::single(5)),
+                address: None,
+            },
+            priority,
+            clone: false,
+        })
+        .collect();
+
+    app.add_systems(Update, resolve_input_bindings);
+    app.update();
+
+    /// Returns the source universe of a resolved transport binding.
+    fn source_universe(binding: &ResolvedInputBinding) -> u16 {
+        match binding.source {
+            ResolvedInputSource::Transport { universe, .. } => universe,
+            ref other => panic!("expected a transport source, got {other:?}"),
+        }
+    }
+
+    let resolved = app.world().resource::<ResolvedInputBindings>();
+    let precedence: Vec<u16> = resolved.bindings.iter().map(source_universe).collect();
+    assert_eq!(precedence, vec![1, 2, 3]);
+    let overlay: Vec<u16> = resolved.iter_overlay_order().map(source_universe).collect();
+    assert_eq!(overlay, vec![3, 2, 1]);
+}
+
 #[test]
 fn resolve_input_bindings_is_stable_for_equal_priority() {
     let mut app = App::new();
@@ -1773,4 +1823,97 @@ fn console_input_targets_use_explicit_profile_slots() {
             },
         ]
     );
+}
+
+/// Verifies that when two console output bindings for one fixture share a priority, the
+/// first-authored binding keeps the console address, matching the input-binding tie-break.
+#[test]
+fn derive_console_addresses_keeps_first_binding_on_equal_priority() {
+    let mut app = output_app();
+    let uid = Uuid::new_v4();
+    spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Intensity);
+    app.world_mut().resource_mut::<OutputBindings>().bindings = [(2, 100), (1, 1)]
+        .into_iter()
+        .map(|(universe, address)| OutputBinding {
+            source: OutputSource::Fixture {
+                uids: vec![uid],
+                element: None,
+                param: None,
+            },
+            target: OutputTarget::Console {
+                universe: Some(DmxRange::single(universe)),
+                address: Some(address),
+            },
+            priority: 5,
+            clone: false,
+        })
+        .collect();
+
+    app.add_systems(Update, derive_console_addresses);
+    app.update();
+
+    assert_eq!(
+        app.world()
+            .resource::<ConsoleDmxAddresses>()
+            .addresses
+            .get(&uid),
+        Some(&ConsoleDmxAddress {
+            universe: 2,
+            address: 100
+        })
+    );
+}
+
+/// Verifies that when two equal-priority console→transport bindings route different console
+/// universes onto one wire window, the first-authored binding's channels reach the wire.
+#[test]
+fn console_windows_with_equal_priority_favor_first_binding_on_the_wire() {
+    let mut app = output_app();
+    app.init_resource::<InputDmxUniverses>();
+    app.init_resource::<OutputDmxFrames>();
+    {
+        let mut universes = app.world_mut().resource_mut::<ConsoleDmxUniverses>();
+        // Manual values survive the output-binding reset that resolution performs.
+        universes.set_value(1, 1, 11, ConsoleChannelOrigin::ManualCommand);
+        universes.set_value(2, 1, 22, ConsoleChannelOrigin::ManualCommand);
+    }
+    app.world_mut().resource_mut::<OutputBindings>().bindings = [1, 2]
+        .into_iter()
+        .map(|console_universe| OutputBinding {
+            source: OutputSource::Console {
+                universe: Some(DmxRange::single(console_universe)),
+                address: None,
+            },
+            target: OutputTarget::Transport {
+                target: "sacn".to_string(),
+                universe: Some(DmxRange::single(9)),
+                address: Some(1),
+            },
+            priority: 0,
+            clone: false,
+        })
+        .collect();
+
+    app.add_systems(
+        Update,
+        (
+            resolve_output_bindings,
+            nightfall_fixtures::output_frames::compose_output_frames,
+        )
+            .chain(),
+    );
+    app.update();
+
+    let frame = app
+        .world()
+        .resource::<OutputDmxFrames>()
+        .get(
+            &OutputTransport::Sacn {
+                mode: SacnDelivery::Multicast,
+            },
+            9,
+        )
+        .expect("composed sACN frame")
+        .channels[0];
+    assert_eq!(frame, 11);
 }
