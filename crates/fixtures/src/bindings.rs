@@ -383,6 +383,27 @@ impl ResolvedInputBindings {
     pub fn iter_overlay_order(&self) -> impl Iterator<Item = &ResolvedInputBinding> {
         self.bindings.iter().rev()
     }
+
+    /// Returns the precedence (position in [`Self::bindings`], lower wins) of the strongest binding
+    /// fed by `transport` universe `universe` for which `drives` holds, or `None` when no binding
+    /// from that source qualifies.
+    pub fn transport_source_precedence(
+        &self,
+        transport: BindingTransport,
+        universe: u16,
+        drives: impl Fn(&ResolvedInputBinding) -> bool,
+    ) -> Option<usize> {
+        self.bindings.iter().position(|binding| {
+            matches!(
+                binding.source,
+                ResolvedInputSource::Transport {
+                    transport: source_transport,
+                    universe: source_universe,
+                    ..
+                } if source_transport == transport && source_universe == universe
+            ) && drives(binding)
+        })
+    }
 }
 
 /// Destination for output processing.

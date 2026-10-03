@@ -26,7 +26,7 @@ use crate::prelude::{
     ConsoleChannelOrigin, ConsoleDmxUniverses, DmxAction, FixtureCommand, InputDmxUniverses,
     ManualDmxChannelState, Parameter, ParameterAssertion, ParameterAssertionSource,
     ResolvedConsoleDestination, ResolvedInputBindings, ResolvedInputDestination,
-    ResolvedInputSource, ResolvedOutputDestinations,
+    ResolvedOutputDestinations,
 };
 use crate::universe::parameter_dmx_bytes;
 use crate::wire_layout::combine_dmx_bytes;
@@ -110,12 +110,25 @@ pub fn spawn_assertion_layer_entities_in_world(world: &mut World) {
 }
 
 /// Insert decoded fixture parameter assertions into a compositor layer.
+///
+/// An assertion from a different source does not replace a parameter whose current owner is still
+/// driven by a binding with higher precedence; the owner keeps the parameter until its binding is
+/// removed or its source goes stale and the owner is cleared.
 pub(crate) fn apply_parameter_assertions(
     layer: &mut Layer,
     owners: &mut TransportInputAssertionOwners,
     assertions: Vec<ParameterAssertion>,
+    resolved_input_bindings: &ResolvedInputBindings,
 ) {
     for assertion in assertions {
+        let parameter: ParameterRef = assertion.parameter.into();
+        if let Some(owner) = owners.absolute.get(parameter)
+            && *owner != assertion.source
+            && parameter_owner_precedence(parameter, owner, resolved_input_bindings)
+                .is_some_and(|owner_precedence| owner_precedence < assertion.precedence)
+        {
+            continue;
+        }
         layer
             .absolute
             .insert(assertion.parameter, (assertion.value, None));
@@ -208,20 +221,21 @@ fn resolved_input_binding_owns_parameter(
     source: &ParameterAssertionSource,
     resolved_input_bindings: &ResolvedInputBindings,
 ) -> bool {
-    resolved_input_bindings.bindings.iter().any(|binding| {
-        let ResolvedInputSource::Transport {
-            transport,
-            universe,
-            ..
-        } = binding.source
-        else {
-            return false;
-        };
+    parameter_owner_precedence(parameter, source, resolved_input_bindings).is_some()
+}
 
-        transport == source.transport
-            && universe == source.universe
-            && resolved_input_destination_contains_parameter(&binding.destination, parameter)
-    })
+/// Return the precedence of the strongest binding through which `source` drives `parameter`, or
+/// `None` when no binding from that source reaches it anymore.
+fn parameter_owner_precedence(
+    parameter: ParameterRef,
+    source: &ParameterAssertionSource,
+    resolved_input_bindings: &ResolvedInputBindings,
+) -> Option<usize> {
+    resolved_input_bindings.transport_source_precedence(
+        source.transport,
+        source.universe,
+        |binding| resolved_input_destination_contains_parameter(&binding.destination, parameter),
+    )
 }
 
 /// Return whether a resolved input destination contains the asserted parameter.
@@ -469,7 +483,7 @@ mod tests {
     use nightfall_io::BindingTransport;
 
     use super::*;
-    use crate::prelude::{ResolvedInputBinding, ResolvedInputTarget};
+    use crate::prelude::{ResolvedInputBinding, ResolvedInputSource, ResolvedInputTarget};
 
     /// Verifies manual DMX channel assertions decode signed pan/tilt around the midpoint.
     #[test]
