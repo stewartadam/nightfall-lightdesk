@@ -238,7 +238,12 @@ export default defineConfig(({ mode, command }) => {
       warmup: {
         clientFiles:
           process.env.NIGHTFALL_VITE_WARMUP_PANELS === "1"
-            ? ["./main.tsx", "./features/*/panels/*.tsx"]
+            ? [
+                "./main.tsx",
+                "./features/**/panels/*.tsx",
+                "./features/**/panel.tsx",
+                "./features/**/*-panel.tsx",
+              ]
             : [],
       },
     },

@@ -61,6 +61,7 @@
   line-height: 16px;
   text-align: center;
   pointer-events: none;
+  z-index: 1;
 }
 .nf-toolbar-button[data-variant="danger"] .nf-toolbar-badge {
   color: #fee2e2;
