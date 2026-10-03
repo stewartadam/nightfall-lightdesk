@@ -172,6 +172,9 @@ pub struct SlotSpec {
     pub color: [f64; 3],
     /// Optional PNG name (without extension) under `wheels/` in the archive.
     pub media: Option<String>,
+    /// Prism `<Facet>`s as CIE `(x, y, Y)` colour and the 3x3 rotation's `{…}` groups in
+    /// file order (GDTF columns, the third carrying the translation).
+    pub facets: Vec<([f64; 3], [[f64; 3]; 3])>,
 }
 
 impl SlotSpec {
@@ -181,7 +184,15 @@ impl SlotSpec {
             name: name.to_string(),
             color: [0.3127, 0.329, 100.0],
             media: None,
+            facets: Vec::new(),
         }
+    }
+
+    /// Appends a prism facet with a CIE `(x, y, Y)` colour and a 3x3 rotation given as its
+    /// `{…}` groups in file order, i.e. GDTF columns with the translation third.
+    pub fn facet(mut self, color: [f64; 3], rotation: [[f64; 3]; 3]) -> Self {
+        self.facets.push((color, rotation));
+        self
     }
 
     /// Sets the slot colour as CIE 1931 `x`, `y` and luminance `Y`.
@@ -698,11 +709,27 @@ impl GdtfBuilder {
                     .as_ref()
                     .map(|media| format!(" MediaFileName=\"{}\"", escape(media)))
                     .unwrap_or_default();
-                let _ = writeln!(
+                let _ = write!(
                     xml,
-                    "<Slot Name=\"{}\" Color=\"{x},{y},{luminance}\"{media}/>",
+                    "<Slot Name=\"{}\" Color=\"{x},{y},{luminance}\"{media}",
                     escape(&slot.name)
                 );
+                if slot.facets.is_empty() {
+                    xml.push_str("/>\n");
+                    continue;
+                }
+                xml.push_str(">\n");
+                for ([x, y, luminance], rotation) in &slot.facets {
+                    let rows: String = rotation
+                        .iter()
+                        .map(|[a, b, c]| format!("{{{a},{b},{c}}}"))
+                        .collect();
+                    let _ = writeln!(
+                        xml,
+                        "<Facet Color=\"{x},{y},{luminance}\" Rotation=\"{rows}\"/>"
+                    );
+                }
+                xml.push_str("</Slot>\n");
             }
             xml.push_str("</Wheel>\n");
         }

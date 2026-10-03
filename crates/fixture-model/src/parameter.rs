@@ -53,6 +53,68 @@ pub struct CieColor {
     pub luminance: f32,
 }
 
+/// Physical quantity of a function's physical values, from the profile's attribute definition.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum PhysicalUnit {
+    /// No physical unit, or the attribute definition could not be resolved.
+    #[default]
+    None,
+    /// Percentage (%).
+    Percent,
+    /// Meters (m).
+    Length,
+    /// Kilograms (kg).
+    Mass,
+    /// Seconds (s).
+    Time,
+    /// Kelvin (K).
+    Temperature,
+    /// Candela (cd).
+    LuminousIntensity,
+    /// Degrees.
+    Angle,
+    /// Newtons (N).
+    Force,
+    /// Hertz (Hz).
+    Frequency,
+    /// Amperes (A).
+    Current,
+    /// Volts (V).
+    Voltage,
+    /// Watts (W).
+    Power,
+    /// Joules (J).
+    Energy,
+    /// Square meters (m²).
+    Area,
+    /// Cubic meters (m³).
+    Volume,
+    /// Meters per second (m/s).
+    Speed,
+    /// Meters per second squared (m/s²).
+    Acceleration,
+    /// Degrees per second.
+    AngularSpeed,
+    /// Degrees per second squared.
+    AngularAcceleration,
+    /// Nanometers (nm).
+    WaveLength,
+    /// Abstract color component intensity from 0 to 1.
+    ColorComponent,
+}
+
+/// One facet of a prism wheel slot: how it displaces the beam and the color it transmits.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct PrismFacet {
+    /// Column-major homogeneous 2D facet transform: `[0..3]` and `[3..6]` are the scaled x
+    /// and y axes, `[6]`/`[7]` the translation, and `[2]`, `[5]`, `[8]` are `0, 0, 1`.
+    pub transform: [f32; 9],
+    /// Transmission color of the facet.
+    pub color: CieColor,
+}
+
 /// A named DMX sub-range within a parameter function, e.g. one gobo or color slot.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -72,6 +134,9 @@ pub struct ParameterFunctionSet {
     /// Image of the selected wheel slot (e.g. a gobo), as its archive media name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<String>,
+    /// Facets of the selected wheel slot when it is a prism; empty means the beam is not split.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub facets: Vec<PrismFacet>,
     /// Physical value at `dmx_from` when the set overrides its function's scale.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physical_from: Option<f32>,
@@ -178,6 +243,10 @@ pub struct ParameterFunction {
     pub physical_from: f32,
     /// Physical value at `dmx_to`.
     pub physical_to: f32,
+    /// Unit of the physical values; values with [`PhysicalUnit::None`] must not be read as
+    /// metres or degrees.
+    #[serde(default)]
+    pub physical_unit: PhysicalUnit,
     /// Wheel the range indexes into, when it selects wheel slots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wheel: Option<String>,
