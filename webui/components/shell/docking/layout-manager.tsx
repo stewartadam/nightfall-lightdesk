@@ -35,6 +35,7 @@ import { useAppShell } from "../../providers/app-shell";
 import {
   DialogBackdrop,
   DialogBody,
+  DialogCloseButton,
   DialogHeader,
   DialogSurface,
   DialogTitle,
@@ -156,21 +157,18 @@ export default function LayoutManager(props: LayoutManagerProps) {
           role="dialog"
           aria-modal="true"
           aria-label="Manage layouts"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) props.onClose();
+          }}
         >
           <DialogSurface style={{ "max-width": "768px" }}>
             <DialogHeader>
               <DialogTitle>Layouts</DialogTitle>
-              <Tooltip content={() => "Close layouts"}>
-                <Button
-                  size="icon"
-                  type="button"
-                  class="items-center justify-center"
-                  aria-label="Close layouts"
-                  onClick={props.onClose}
-                >
-                  <XIcon class="size-5" aria-hidden />
-                </Button>
-              </Tooltip>
+              <DialogCloseButton
+                type="button"
+                aria-label="Close layouts"
+                onClick={props.onClose}
+              />
             </DialogHeader>
             <DialogBody scrollable={false} class="flex flex-col">
               <div class="shrink-0 pb-4">

@@ -7,7 +7,6 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import { invoke } from "@tauri-apps/api/core";
 import {
   createEffect,
@@ -17,9 +16,18 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import {
+  DialogBackdrop,
+  DialogCloseButton,
+  DialogFooter,
+  DialogHeader,
+  DialogSurface,
+  DialogTitle,
+} from "../../components/ui/dialog";
 import Modal from "../../components/ui/modal";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import Tooltip from "../../components/ui/tooltip";
+import { Button } from "../../components/ui/visual-language/button";
 import {
   type DiagnosticLogEntry,
   type DiagnosticLogMode,
@@ -85,7 +93,7 @@ export function DiagnosticsDialog() {
   let disposed = false;
   let copyButton: HTMLButtonElement | undefined;
   let downloadButton: HTMLButtonElement | undefined;
-  let dialogElement: HTMLElement | undefined;
+  let dialogElement: HTMLDivElement | undefined;
   let focusedDefault = false;
   let collectionId = 0;
   let previewElement: HTMLDivElement | undefined;
@@ -234,33 +242,28 @@ export function DiagnosticsDialog() {
     );
   });
 
-  const buttonClass =
-    "rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 hover:bg-neutral-700 focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50";
   /** Styles the selected segment while keeping its radio input keyboard accessible. */
   const segmentClass = (selected: boolean) =>
     `relative cursor-pointer whitespace-nowrap rounded px-2.5 py-1 text-center text-sm has-focus-visible:ring-2 has-focus-visible:ring-blue-400 ${selected ? "bg-blue-600 text-white" : "text-neutral-300 hover:bg-neutral-800"}`;
 
   return (
     <Modal isOpen={isOpen()} onEscape={closeDiagnostics}>
-      <div class="fixed inset-0 nightfall-top-layer flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-        <section
+      <DialogBackdrop role="presentation">
+        <DialogSurface
           ref={dialogElement}
           role="dialog"
           aria-modal="true"
           aria-label="Collect Diagnostics"
-          class="nightfall-modal-surface flex h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 text-neutral-200 shadow-xl"
+          class="h-[calc(100dvh-32px)] max-w-5xl"
         >
-          <div class="flex shrink-0 items-center justify-between border-b border-neutral-700 p-4">
-            <h2 class="text-lg font-semibold">Collect Diagnostics</h2>
-            <button
+          <DialogHeader>
+            <DialogTitle>Collect Diagnostics</DialogTitle>
+            <DialogCloseButton
               type="button"
               aria-label="Close diagnostics"
-              class={buttonClass}
               onClick={closeDiagnostics}
-            >
-              <XIcon class="size-4" aria-hidden />
-            </button>
-          </div>
+            />
+          </DialogHeader>
           <div class="flex min-h-0 flex-1 flex-col gap-3 p-4">
             <details class="shrink-0 text-sm text-neutral-300">
               <summary class="cursor-pointer">System info</summary>
@@ -449,16 +452,15 @@ export function DiagnosticsDialog() {
               </p>
             </Show>
           </div>
-          <div class="flex shrink-0 flex-wrap justify-between gap-2 border-t border-neutral-700 p-4">
+          <DialogFooter class="justify-between">
             <div>
-              <button
+              <Button
                 ref={copyButton}
                 type="button"
-                class={buttonClass}
                 onClick={() => void copySystemInfo()}
               >
                 Copy System Info
-              </button>
+              </Button>
               <Show when={copied()}>
                 <Tooltip
                   content={() => "System info copied."}
@@ -470,26 +472,22 @@ export function DiagnosticsDialog() {
               </Show>
             </div>
             <div class="flex gap-2">
-              <button
-                type="button"
-                class={buttonClass}
-                onClick={closeDiagnostics}
-              >
+              <Button type="button" onClick={closeDiagnostics}>
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 ref={downloadButton}
                 type="button"
-                class="rounded border border-blue-500 bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+                variant="primary"
                 disabled={(collecting() && !page()) || saving()}
                 onClick={() => void download()}
               >
                 {saving() ? "Saving diagnostics…" : "Download Diagnostics"}
-              </button>
+              </Button>
             </div>
-          </div>
-        </section>
-      </div>
+          </DialogFooter>
+        </DialogSurface>
+      </DialogBackdrop>
     </Modal>
   );
 }

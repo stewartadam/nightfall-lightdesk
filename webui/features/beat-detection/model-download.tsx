@@ -12,6 +12,8 @@ import notice from "../../assets/models/beat-this/NOTICE.md?raw";
 import {
   DialogBackdrop,
   DialogBody,
+  DialogCloseButton,
+  DialogFooter,
   DialogHeader,
   DialogSurface,
   DialogTitle,
@@ -152,6 +154,11 @@ export function createBeatModelDownload() {
         >
           <DialogHeader>
             <DialogTitle>Beat detection model</DialogTitle>
+            <DialogCloseButton
+              type="button"
+              aria-label="Close beat detection model"
+              onClick={close}
+            />
           </DialogHeader>
           <DialogBody class="space-y-4 overflow-y-auto">
             <p>
@@ -248,48 +255,43 @@ export function createBeatModelDownload() {
                 </pre>
               </div>
             </details>
-            <div class="flex justify-end gap-2">
-              <Button onClick={close}>Back</Button>
-              <Show when={status()?.phase === "downloading"}>
-                <Button
-                  disabled={busy()}
-                  onClick={() => void refresh("DELETE")}
-                >
-                  Cancel download
-                </Button>
-              </Show>
-              <Show
-                when={
-                  status() &&
-                  ["missing", "failed", "cancelled"].includes(status()!.phase)
-                }
-              >
-                <Button
-                  ref={downloadButton}
-                  variant="primary"
-                  disabled={busy()}
-                  onClick={() => void refresh("POST")}
-                >
-                  {status()?.phase === "missing"
-                    ? "Download"
-                    : "Retry download"}
-                </Button>
-              </Show>
-              <Show
-                when={
-                  error() &&
-                  (!status() ||
-                    !["missing", "failed", "cancelled"].includes(
-                      status()!.phase,
-                    ))
-                }
-              >
-                <Button disabled={busy()} onClick={() => void refresh()}>
-                  Retry connection
-                </Button>
-              </Show>
-            </div>
           </DialogBody>
+          <DialogFooter>
+            <Button type="button" onClick={close}>
+              Close
+            </Button>
+            <Show when={status()?.phase === "downloading"}>
+              <Button disabled={busy()} onClick={() => void refresh("DELETE")}>
+                Cancel download
+              </Button>
+            </Show>
+            <Show
+              when={
+                status() &&
+                ["missing", "failed", "cancelled"].includes(status()!.phase)
+              }
+            >
+              <Button
+                ref={downloadButton}
+                variant="primary"
+                disabled={busy()}
+                onClick={() => void refresh("POST")}
+              >
+                {status()?.phase === "missing" ? "Download" : "Retry download"}
+              </Button>
+            </Show>
+            <Show
+              when={
+                error() &&
+                (!status() ||
+                  !["missing", "failed", "cancelled"].includes(status()!.phase))
+              }
+            >
+              <Button disabled={busy()} onClick={() => void refresh()}>
+                Retry connection
+              </Button>
+            </Show>
+          </DialogFooter>
         </DialogSurface>
       </DialogBackdrop>
     </Modal>

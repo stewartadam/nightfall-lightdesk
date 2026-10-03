@@ -8,7 +8,6 @@
 
 import { useStore } from "@nanostores/solid";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   createEffect,
   createSignal,
@@ -20,6 +19,7 @@ import { useAppShell } from "../../components/providers/app-shell";
 import {
   DialogBackdrop,
   DialogBody,
+  DialogCloseButton,
   DialogHeader,
   DialogSurface,
   DialogTitle,
@@ -355,14 +355,11 @@ export function SettingsOverlay() {
         >
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
-            <Button
-              size="icon"
-              variant="subtle"
+            <DialogCloseButton
+              type="button"
               aria-label="Close settings"
               onClick={closeSettings}
-            >
-              <XIcon class="size-4" aria-hidden />
-            </Button>
+            />
           </DialogHeader>
 
           <div class="px-4 pt-3">

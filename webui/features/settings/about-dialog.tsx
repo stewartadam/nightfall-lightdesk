@@ -10,13 +10,13 @@ import { useStore } from "@nanostores/solid";
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import { createSignal } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useAppShell } from "../../components/providers/app-shell";
 import {
   DialogBackdrop,
   DialogBody,
+  DialogCloseButton,
   DialogHeader,
   DialogSurface,
   DialogTitle,
@@ -142,15 +142,11 @@ export function AboutDialog() {
           >
             <DialogHeader>
               <DialogTitle>About</DialogTitle>
-              <Button
-                size="icon"
-                variant="subtle"
+              <DialogCloseButton
                 type="button"
                 onClick={handleCloseAbout}
                 aria-label="Close about dialog"
-              >
-                <XIcon class="size-5" aria-hidden />
-              </Button>
+              />
             </DialogHeader>
 
             <DialogBody class="space-y-5">
@@ -277,15 +273,11 @@ export function AboutDialog() {
                   Bundled notices for nightfall
                 </p>
               </div>
-              <Button
-                size="icon"
-                variant="subtle"
+              <DialogCloseButton
                 type="button"
                 onClick={closeThirdPartyLicenses}
                 aria-label="Close third-party licenses dialog"
-              >
-                <XIcon class="size-5" aria-hidden />
-              </Button>
+              />
             </DialogHeader>
 
             <DialogBody class="space-y-4">

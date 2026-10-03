@@ -6,11 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   createSignal,
   createUniqueId,
-  For,
   type JSX,
   onCleanup,
   Show,
@@ -55,8 +53,8 @@ interface StandardDialogProps {
 }
 
 /**
- * Candidate shared dialog shell that derives every close affordance from `kind`,
- * so callers cannot mix header close styles or omit Cancel on task dialogs.
+ * Lab dialog shell that derives every close affordance from `kind`, demonstrating
+ * the rules in `components/ui/dialog/README.md` that app dialogs follow.
  */
 export function StandardDialog(props: StandardDialogProps) {
   const titleId = createUniqueId();
@@ -111,65 +109,7 @@ export function StandardDialog(props: StandardDialogProps) {
   );
 }
 
-/** Close-button styles found across the app, reproduced from each dialog's markup. */
-const currentVariants: {
-  name: string;
-  usedBy: string;
-  render: () => JSX.Element;
-}[] = [
-  {
-    name: "Shared close button",
-    usedBy:
-      "Entity editor, delete confirm, create object, add object, patch wizard, store cue/group, showfiles, import, new showfile, add parameter lane, settings",
-    render: () => <DialogCloseButton type="button" />,
-  },
-  {
-    name: "Subtle, large glyph",
-    usedBy: "About, third-party licenses",
-    render: () => (
-      <Button size="icon" variant="subtle" type="button" aria-label="Close">
-        <XIcon class="size-5" aria-hidden />
-      </Button>
-    ),
-  },
-  {
-    name: "Filled, large glyph",
-    usedBy: "Layouts",
-    render: () => (
-      <Button size="icon" type="button" aria-label="Close">
-        <XIcon class="size-5" aria-hidden />
-      </Button>
-    ),
-  },
-  {
-    name: "Borderless",
-    usedBy: "Export showfile",
-    render: () => (
-      <button
-        type="button"
-        aria-label="Close"
-        class="rounded p-2 hover:bg-neutral-800"
-      >
-        <XIcon class="size-4" aria-hidden />
-      </button>
-    ),
-  },
-  {
-    name: "Wide bordered",
-    usedBy: "Collect diagnostics",
-    render: () => (
-      <button
-        type="button"
-        aria-label="Close"
-        class="rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 hover:bg-neutral-700"
-      >
-        <XIcon class="size-4" aria-hidden />
-      </button>
-    ),
-  },
-];
-
-/** Compares today's close styles and launches one example of each proposed dialog kind. */
+/** Launches one example of each dialog kind so their close affordances can be compared. */
 export function DialogsDemo() {
   const [open, setOpen] = createSignal<DialogKind | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -209,25 +149,7 @@ export function DialogsDemo() {
       <div class="eyebrow">DIALOGS</div>
       <h2>One way out.</h2>
       <div class="property-section">
-        <div class="section-label">Current close buttons</div>
-        <ul class="dialog-variant-list" aria-label="Current close buttons">
-          <For each={currentVariants}>
-            {(variant) => (
-              <li class="dialog-variant">
-                <DialogSurface class="dialog-variant-surface">
-                  <DialogHeader class="border-b-0">
-                    <DialogTitle>{variant.name}</DialogTitle>
-                    {variant.render()}
-                  </DialogHeader>
-                </DialogSurface>
-                <p class="field-help">{variant.usedBy}</p>
-              </li>
-            )}
-          </For>
-        </ul>
-      </div>
-      <div class="property-section">
-        <div class="section-label">Proposed pattern</div>
+        <div class="section-label">Close pattern</div>
         <div class="button-samples">
           <Button onClick={(event) => launch("task", event)}>
             Task dialog

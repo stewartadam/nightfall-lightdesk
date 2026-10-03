@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   createEffect,
   createSignal,
@@ -14,8 +13,17 @@ import {
   For,
   Show,
 } from "solid-js";
-import { DialogBody } from "../../../components/ui/dialog";
+import {
+  DialogBackdrop,
+  DialogBody,
+  DialogCloseButton,
+  DialogFooter,
+  DialogHeader,
+  DialogSurface,
+  DialogTitle,
+} from "../../../components/ui/dialog";
 import Modal from "../../../components/ui/modal";
+import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
 import {
   exportShowfile,
@@ -88,30 +96,23 @@ export function ExportShowfileModal(props: {
 
   return (
     <Modal isOpen={props.open} onEscape={close} closeOnEscape={!busy()}>
-      <div class="fixed inset-0 nightfall-top-layer flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
-        <section
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-          aria-busy={busy()}
-          class="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 text-neutral-200 shadow-xl"
-        >
-          <header class="flex shrink-0 items-center justify-between border-b border-neutral-700 px-4 py-3">
-            <h2 id={titleId} class="text-lg font-semibold">
-              Export Showfile
-            </h2>
-            <button
+      <DialogBackdrop
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-busy={busy()}
+      >
+        <DialogSurface class="max-w-xl">
+          <DialogHeader>
+            <DialogTitle id={titleId}>Export Showfile</DialogTitle>
+            <DialogCloseButton
               type="button"
               aria-label="Close export showfile dialog"
               onClick={close}
               disabled={busy()}
-              class="rounded p-2 hover:bg-neutral-800 disabled:opacity-50"
-            >
-              <XIcon class="size-4" aria-hidden />
-            </button>
-          </header>
+            />
+          </DialogHeader>
           <form
-            class="flex min-h-0 flex-col overflow-hidden"
             onSubmit={(event) => {
               event.preventDefault();
               void submit();
@@ -196,30 +197,25 @@ export function ExportShowfileModal(props: {
                 )}
               </Show>
             </DialogBody>
-            <footer class="flex shrink-0 justify-end gap-2 border-t border-neutral-700 px-4 py-3">
-              <button
-                type="button"
-                onClick={close}
-                disabled={busy()}
-                class="rounded-lg border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-800 disabled:opacity-50"
-              >
+            <DialogFooter>
+              <Button type="button" onClick={close} disabled={busy()}>
                 {result() ? "Close" : "Cancel"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
+                variant="primary"
                 disabled={busy() || !validName()}
-                class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
               >
                 {busy()
                   ? "Exporting…"
                   : desktop
                     ? "Choose Folder…"
                     : "Download Showfile"}
-              </button>
-            </footer>
+              </Button>
+            </DialogFooter>
           </form>
-        </section>
-      </div>
+        </DialogSurface>
+      </DialogBackdrop>
     </Modal>
   );
 }

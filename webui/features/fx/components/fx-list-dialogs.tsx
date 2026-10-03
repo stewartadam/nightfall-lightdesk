@@ -10,6 +10,7 @@ import { createEffect, createSignal, For, Show } from "solid-js";
 import {
   DialogBackdrop,
   DialogBody,
+  DialogCloseButton,
   DialogFooter,
   DialogHeader,
   DialogSurface,
@@ -139,6 +140,7 @@ export function ModuleFxDialog(props: ModuleFxDialogProps) {
         <DialogSurface class="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Module FX</DialogTitle>
+            <DialogCloseButton type="button" onClick={props.onCancel} />
           </DialogHeader>
           <DialogBody class="space-y-4">
             <label class="block space-y-1 text-sm">
