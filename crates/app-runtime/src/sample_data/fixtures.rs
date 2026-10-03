@@ -82,7 +82,35 @@ const FIXTURE_LAYOUT: &[(u32, &str, &str, [f32; 3], [f32; 3])] = &[
     (1015, "12-segment Rotating Wash Beam", "Beam", [2.25, 0.25, -2.5], [0.0, -90.0, 0.0]),
 ];
 
-/// Seed the default-show arrangement from built-in profiles, leaving every fixture unpatched.
+/// Console DMX patch for the rig: fixture IDs in patch order and the first and last console
+/// universe they fill, starting at address 1. Each rig section gets its own universe; a
+/// universe range places one fixture per universe. Nothing is routed to a transport, so
+/// the patch can be inspected in Console DMX without sending anything on the wire.
+#[rustfmt::skip]
+const CONSOLE_PATCH: &[(&[u32], u16, u16)] = &[
+    // RGB pixel tapes, one bstrip half-row (4 × 120 channels) per universe.
+    (&[310, 311, 312, 313], 1, 1),
+    (&[320, 321, 322, 323], 2, 2),
+    (&[330, 331, 332, 333], 3, 3),
+    (&[340, 341, 342, 343], 4, 4),
+    (&[350, 351, 352, 353], 5, 5),
+    (&[360, 361, 362, 363], 6, 6),
+    (&[370, 371, 372, 373], 7, 7),
+    (&[380, 381, 382, 383], 8, 8),
+    // Moving head spots (6 × 16 channels).
+    (&[501, 502, 503, 504, 505, 506], 9, 9),
+    // Matrix strobes, one per universe (308 or 312 channels).
+    (&[601, 602, 603, 604, 605, 606], 10, 15),
+    // Strobe bars, left and right (3 × 168 channels each).
+    (&[1004, 1005, 1006], 16, 16),
+    (&[1007, 1008, 1009], 17, 17),
+    // Rotating wash beams, two per universe (2 × 194 channels).
+    (&[1010, 1011], 18, 18),
+    (&[1012, 1013], 19, 19),
+    (&[1014, 1015], 20, 20),
+];
+
+/// Seed the default-show arrangement from built-in profiles, patched to console universes.
 pub(super) fn add_fixtures(world: &mut World) {
     for &(id, model, mode, [x, y, z], [rx, ry, rz]) in FIXTURE_LAYOUT {
         let mut fixture =
@@ -99,6 +127,7 @@ pub(super) fn add_fixtures(world: &mut World) {
         };
         add_fixture(world, fixture);
     }
+    add_console_patch(world);
 
     let mut objects = world.resource_mut::<SceneObjectDataProvider>();
     for (id, x) in [(1, 0.0), (2, -1.0), (3, 1.0)] {
@@ -112,7 +141,47 @@ pub(super) fn add_fixtures(world: &mut World) {
     }
 }
 
-/// Persist an embedded profile and initialize its runtime parameters with output disabled.
+/// Binds every rig section of [`CONSOLE_PATCH`] to its console universes.
+fn add_console_patch(world: &mut World) {
+    let bindings: Vec<OutputBinding> = {
+        let provider = world.resource::<FixtureDataProviderExt>();
+        CONSOLE_PATCH
+            .iter()
+            .map(|&(ids, first_universe, last_universe)| OutputBinding {
+                source: OutputSource::Fixture {
+                    uids: ids
+                        .iter()
+                        .map(|&id| {
+                            provider
+                                .inner
+                                .from_id(id)
+                                .expect("console patch must reference sample fixtures")
+                                .identifiers
+                                .uid
+                        })
+                        .collect(),
+                    element: None,
+                    param: None,
+                },
+                target: OutputTarget::Console {
+                    universe: Some(DmxRange {
+                        start: first_universe,
+                        end: last_universe,
+                    }),
+                    address: Some(1),
+                },
+                priority: 0,
+                clone: false,
+            })
+            .collect()
+    };
+    world
+        .resource_mut::<OutputBindings>()
+        .bindings
+        .extend(bindings);
+}
+
+/// Persist an embedded profile and initialize its runtime parameters, unpatched.
 fn add_fixture(world: &mut World, fixture: Fixture) {
     for (element_idx, element) in fixture.elements.iter().enumerate() {
         let element_ref = FixtureRef {

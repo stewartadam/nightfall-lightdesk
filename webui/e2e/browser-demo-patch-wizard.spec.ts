@@ -264,9 +264,13 @@ test("embedded demo patches a built-in fixture through the patch wizard", async 
   await expect(
     dialog.getByRole("checkbox", { name: "Assign Console DMX" }),
   ).toBeChecked();
-  // The e2e sample has no console patch yet, so no universe can be suggested.
-  await dialog.getByRole("spinbutton", { name: "Universe" }).fill("1");
-  await dialog.getByRole("spinbutton", { name: "Start address" }).fill("1");
+  // The sample patches its six spots to console universe 9 (96 channels), so Auto
+  // places the new spot right after them.
+  await dialog.getByRole("spinbutton", { name: "Universe" }).fill("9");
+  await dialog.getByRole("button", { name: "Auto", exact: true }).click();
+  await expect(
+    dialog.getByRole("spinbutton", { name: "Start address" }),
+  ).toHaveValue("97");
   await dialog.locator(".nf-dialog-surface").screenshot({
     path: testInfo.outputPath("demo-patch-wizard-configure.png"),
   });
