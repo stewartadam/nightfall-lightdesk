@@ -70,3 +70,29 @@
   align-items: center;
   gap: 12px;
 }
+.dialog-variant-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dialog-variant {
+  display: grid;
+  gap: 6px;
+}
+.dialog-variant-surface {
+  max-width: 360px;
+}
+.dialog-variant-surface .nf-dialog-title {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.dialog-rules {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+}
