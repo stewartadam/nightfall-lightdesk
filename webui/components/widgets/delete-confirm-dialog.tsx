@@ -6,22 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { createEffect, createSignal, onCleanup } from "solid-js";
 import {
-  createEffect,
-  createSignal,
-  createUniqueId,
-  onCleanup,
-} from "solid-js";
-import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../ui/dialog";
-import Modal from "../ui/modal";
 import { Button } from "../ui/visual-language/button";
 
 interface DeleteConfirmModalProps {
@@ -33,8 +24,15 @@ interface DeleteConfirmModalProps {
   onConfirm: () => void;
 }
 
+/** Tags the backdrop for tests and keeps legacy overlay keyboard handling off it. */
+const backdropAttributes = {
+  "data-modal-kind": "delete-confirm",
+  tabIndex: -1,
+  "data-hs-overlay-keyboard": "false",
+};
+
+/** Asks the user to confirm a destructive action, focusing the confirm button once the dialog fades in. */
 export default function DeleteConfirmModal(props: DeleteConfirmModalProps) {
-  const titleId = createUniqueId();
   const [isEntered, setIsEntered] = createSignal(false);
   let enterAnimationFrame: number | null = null;
   let confirmButtonRef: HTMLButtonElement | undefined;
@@ -86,55 +84,30 @@ export default function DeleteConfirmModal(props: DeleteConfirmModalProps) {
   });
 
   return (
-    <Modal isOpen={props.isOpen} onEscape={props.onCancel}>
-      <DialogBackdrop
-        role="dialog"
-        data-modal-kind="delete-confirm"
-        tabIndex={-1}
-        aria-modal="true"
-        aria-labelledby={titleId}
-        data-hs-overlay-keyboard="false"
+    <Dialog
+      kind="task"
+      isOpen={props.isOpen}
+      title={props.title}
+      onDismiss={props.onCancel}
+      class={`max-w-lg transition-opacity duration-150 ${isEntered() ? "opacity-100" : "opacity-0"}`}
+      backdropProps={backdropAttributes}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          props.onConfirm();
+        }}
       >
-        <div
-          class="w-full max-w-lg transition-opacity duration-150"
-          classList={{
-            "opacity-0": !isEntered(),
-            "opacity-100": isEntered(),
-          }}
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <DialogSurface>
-            <DialogHeader>
-              <DialogTitle id={titleId}>{props.title}</DialogTitle>
-              <DialogCloseButton
-                type="button"
-                aria-label="Close"
-                onClick={props.onCancel}
-              />
-            </DialogHeader>
-
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                props.onConfirm();
-              }}
-            >
-              <DialogBody class="overflow-y-auto">
-                <p class="text-neutral-200">{props.message}</p>
-              </DialogBody>
-              <DialogFooter>
-                <Button type="button" onClick={props.onCancel}>
-                  Cancel
-                </Button>
-                <Button variant="danger" ref={confirmButtonRef} type="submit">
-                  {props.confirmLabel ?? "Delete"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogSurface>
-        </div>
-      </DialogBackdrop>
-    </Modal>
+        <DialogBody class="overflow-y-auto">
+          <p class="text-neutral-200">{props.message}</p>
+        </DialogBody>
+        <DialogFooter>
+          <DialogCancelButton />
+          <Button variant="danger" ref={confirmButtonRef} type="submit">
+            {props.confirmLabel ?? "Delete"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }

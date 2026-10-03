@@ -14,15 +14,11 @@ import {
   Show,
 } from "solid-js";
 import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../../../components/ui/dialog";
-import Modal from "../../../components/ui/modal";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -95,127 +91,117 @@ export function ExportShowfileModal(props: {
   };
 
   return (
-    <Modal isOpen={props.open} onEscape={close} closeOnEscape={!busy()}>
-      <DialogBackdrop
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-busy={busy()}
+    <Dialog
+      kind="task"
+      isOpen={props.open}
+      title="Export Showfile"
+      closeLabel="Close export showfile dialog"
+      class="max-w-xl"
+      busy={busy()}
+      onDismiss={close}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
       >
-        <DialogSurface class="max-w-xl">
-          <DialogHeader>
-            <DialogTitle id={titleId}>Export Showfile</DialogTitle>
-            <DialogCloseButton
-              type="button"
-              aria-label="Close export showfile dialog"
-              onClick={close}
+        <DialogBody class="space-y-5">
+          <p class="text-sm text-neutral-400">
+            Create a separate copy of your current show, including unsaved
+            changes.
+          </p>
+          <div class="space-y-2">
+            <label for={nameId} class="block text-sm font-medium">
+              Export name
+            </label>
+            <input
+              id={nameId}
+              value={name()}
+              onInput={(event) => setName(event.currentTarget.value)}
               disabled={busy()}
+              required
+              class="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-          </DialogHeader>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submit();
-            }}
-          >
-            <DialogBody class="space-y-5">
-              <p class="text-sm text-neutral-400">
-                Create a separate copy of your current show, including unsaved
-                changes.
-              </p>
-              <div class="space-y-2">
-                <label for={nameId} class="block text-sm font-medium">
-                  Export name
+            <p class="text-xs text-neutral-400">
+              The local date and time (YYYYMMDD-HHMMSS) are added to the export
+              name.{" "}
+              {desktop
+                ? "A .nightfall-show folder will be created in the folder you choose."
+                : "Download a ZIP, then extract its .nightfall-show folder to open the exported show."}
+            </p>
+          </div>
+          <fieldset disabled={busy()} class="space-y-2">
+            <legend class="mb-2 text-sm font-medium">
+              References to include
+            </legend>
+            <For each={showfileExportOptions}>
+              {(option) => (
+                <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-700 p-3 has-checked:border-blue-500 has-checked:bg-blue-950/30">
+                  <input
+                    type="radio"
+                    aria-label={option.label}
+                    name={`${titleId}-policy`}
+                    value={option.value}
+                    checked={policy() === option.value}
+                    onChange={() => setPolicy(option.value)}
+                    class="mt-1 accent-blue-500"
+                  />
+                  <span>
+                    <span class="block text-sm font-medium">
+                      {option.label}
+                    </span>
+                    <span class="mt-1 block text-xs text-neutral-400">
+                      {option.description}
+                    </span>
+                  </span>
                 </label>
-                <input
-                  id={nameId}
-                  value={name()}
-                  onInput={(event) => setName(event.currentTarget.value)}
-                  disabled={busy()}
-                  required
-                  class="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <p class="text-xs text-neutral-400">
-                  The local date and time (YYYYMMDD-HHMMSS) are added to the
-                  export name.{" "}
-                  {desktop
-                    ? "A .nightfall-show folder will be created in the folder you choose."
-                    : "Download a ZIP, then extract its .nightfall-show folder to open the exported show."}
+              )}
+            </For>
+          </fieldset>
+          <Show when={error()}>
+            <p role="alert" class="text-sm text-red-400">
+              {error()}
+            </p>
+          </Show>
+          <Show when={result()}>
+            {(completed) => (
+              <div role="status" class="space-y-2 text-sm">
+                <p class="break-all text-green-400">
+                  {desktop ? "Exported to " : "Download started: "}
+                  {completed().path}
                 </p>
+                <Show when={completed().warnings.length > 0}>
+                  <p class="text-amber-300">
+                    The export completed with warnings:
+                  </p>
+                  <ul class="list-disc space-y-1 pl-5 text-amber-300">
+                    <For each={completed().warnings}>
+                      {(warning) => <li class="break-words">{warning}</li>}
+                    </For>
+                  </ul>
+                </Show>
               </div>
-              <fieldset disabled={busy()} class="space-y-2">
-                <legend class="mb-2 text-sm font-medium">
-                  References to include
-                </legend>
-                <For each={showfileExportOptions}>
-                  {(option) => (
-                    <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-700 p-3 has-checked:border-blue-500 has-checked:bg-blue-950/30">
-                      <input
-                        type="radio"
-                        aria-label={option.label}
-                        name={`${titleId}-policy`}
-                        value={option.value}
-                        checked={policy() === option.value}
-                        onChange={() => setPolicy(option.value)}
-                        class="mt-1 accent-blue-500"
-                      />
-                      <span>
-                        <span class="block text-sm font-medium">
-                          {option.label}
-                        </span>
-                        <span class="mt-1 block text-xs text-neutral-400">
-                          {option.description}
-                        </span>
-                      </span>
-                    </label>
-                  )}
-                </For>
-              </fieldset>
-              <Show when={error()}>
-                <p role="alert" class="text-sm text-red-400">
-                  {error()}
-                </p>
-              </Show>
-              <Show when={result()}>
-                {(completed) => (
-                  <div role="status" class="space-y-2 text-sm">
-                    <p class="break-all text-green-400">
-                      {desktop ? "Exported to " : "Download started: "}
-                      {completed().path}
-                    </p>
-                    <Show when={completed().warnings.length > 0}>
-                      <p class="text-amber-300">
-                        The export completed with warnings:
-                      </p>
-                      <ul class="list-disc space-y-1 pl-5 text-amber-300">
-                        <For each={completed().warnings}>
-                          {(warning) => <li class="break-words">{warning}</li>}
-                        </For>
-                      </ul>
-                    </Show>
-                  </div>
-                )}
-              </Show>
-            </DialogBody>
-            <DialogFooter>
-              <Button type="button" onClick={close} disabled={busy()}>
-                {result() ? "Close" : "Cancel"}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={busy() || !validName()}
-              >
-                {busy()
-                  ? "Exporting…"
-                  : desktop
-                    ? "Choose Folder…"
-                    : "Download Showfile"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogSurface>
-      </DialogBackdrop>
-    </Modal>
+            )}
+          </Show>
+        </DialogBody>
+        <DialogFooter>
+          <DialogCancelButton>
+            {result() ? "Close" : "Cancel"}
+          </DialogCancelButton>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy() || !validName()}
+          >
+            {busy()
+              ? "Exporting…"
+              : desktop
+                ? "Choose Folder…"
+                : "Download Showfile"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }

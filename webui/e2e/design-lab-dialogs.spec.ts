@@ -65,7 +65,7 @@ test("design lab dialogs follow the task, info and required close pattern", asyn
   await expect(info).toBeHidden();
 
   await panel.getByRole("button", { name: "Required choice" }).click();
-  const required = page.getByRole("alertdialog", { name: "Resume your work?" });
+  const required = page.getByRole("dialog", { name: "Resume your work?" });
   await expect(required.getByRole("button", { name: "Close" })).toHaveCount(0);
   await required.screenshot({
     animations: "disabled",

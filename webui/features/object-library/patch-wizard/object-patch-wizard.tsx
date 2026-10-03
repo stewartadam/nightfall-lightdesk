@@ -16,16 +16,12 @@ import {
   Show,
 } from "solid-js";
 import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/form-controls";
-import Modal from "../../../components/ui/modal";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
@@ -217,201 +213,177 @@ const ObjectPatchWizard: Component<ObjectPatchWizardProps> = (props) => {
   };
 
   return (
-    <Modal
+    <Dialog
+      kind="task"
       isOpen={props.isOpen}
-      onEscape={() => {
-        if (!isSubmitting()) {
-          handleClose();
-        }
+      title="Add Object"
+      onDismiss={handleClose}
+      onSubmit={() => {
+        if (selectedObject()) handleSubmit();
       }}
-      onEnter={() => {
-        if (selectedObject() && !isSubmitting()) handleSubmit();
-      }}
+      busy={isSubmitting()}
+      class="max-w-5xl"
     >
-      <DialogBackdrop>
-        <DialogSurface
-          role="dialog"
-          aria-modal="true"
-          aria-label="Add Object"
-          class="max-w-5xl"
-        >
-          <DialogHeader>
-            <DialogTitle>Add Object</DialogTitle>
-            <DialogCloseButton
-              type="button"
-              onClick={handleClose}
-            ></DialogCloseButton>
-          </DialogHeader>
+      <DialogBody>
+        <div class="flex flex-col lg:flex-row gap-4">
+          <div class="min-w-0 flex-1 space-y-4">
+            <div>
+              <Input
+                density="compact"
+                type="text"
+                value={filterText()}
+                onInput={(e) => setFilterText(e.currentTarget.value)}
+                aria-label="Search objects"
+                placeholder="Search objects, categories, or tags..."
+                class="w-full"
+              />
+            </div>
 
-          <DialogBody>
-            <div class="flex flex-col lg:flex-row gap-4">
-              <div class="min-w-0 flex-1 space-y-4">
-                <div>
-                  <Input
-                    density="compact"
-                    type="text"
-                    value={filterText()}
-                    onInput={(e) => setFilterText(e.currentTarget.value)}
-                    aria-label="Search objects"
-                    placeholder="Search objects, categories, or tags..."
-                    class="w-full"
-                  />
+            <div>
+              <label class="block text-sm text-gray-400 mb-2">
+                Select Object
+              </label>
+              <Show
+                when={filteredObjects().length > 0}
+                fallback={
+                  <div class="p-4 text-center text-gray-500 border border-neutral-600 rounded">
+                    No objects match your search.
+                  </div>
+                }
+              >
+                <ScrollArea
+                  class="max-h-[24rem] border border-neutral-600 rounded"
+                  viewportProps={{
+                    role: "region",
+                    "aria-label": "Objects to patch",
+                    tabIndex: 0,
+                  }}
+                >
+                  <For each={groupedObjects()}>
+                    {([category, objects]) => (
+                      <>
+                        <div class="px-3 py-1 text-xs text-gray-500 bg-neutral-700 sticky top-0">
+                          {category}
+                        </div>
+                        <For each={objects}>
+                          {(object) => (
+                            <Button
+                              size="compact"
+                              type="button"
+                              onClick={() => setSelectedObject(object)}
+                              class="w-full flex-col !items-start text-left"
+                              variant={
+                                selectedObject()?.key === object.key
+                                  ? "primary"
+                                  : "subtle"
+                              }
+                              aria-pressed={
+                                selectedObject()?.key === object.key
+                              }
+                            >
+                              <div class="text-sm">{object.name}</div>
+                              <Show when={object.description}>
+                                <div class="text-xs opacity-70 truncate">
+                                  {object.description}
+                                </div>
+                              </Show>
+                            </Button>
+                          )}
+                        </For>
+                      </>
+                    )}
+                  </For>
+                </ScrollArea>
+              </Show>
+            </div>
+
+            <div>
+              <label for={quantityId} class="block text-sm text-gray-400 mb-1">
+                Quantity
+              </label>
+              <Input
+                density="compact"
+                type="number"
+                id={quantityId}
+                value={quantity()}
+                onInput={(e) =>
+                  setQuantity(
+                    Math.max(
+                      1,
+                      Number.parseInt(e.currentTarget.value, 10) || 1,
+                    ),
+                  )
+                }
+                min="1"
+                max="100"
+                class="w-full"
+              />
+            </div>
+
+            <div class="text-xs text-gray-500">
+              Will assign ID{quantity() > 1 ? "s" : ""}: {nextAvailableId()}
+              {quantity() > 1 ? ` - ${nextAvailableId() + quantity() - 1}` : ""}
+            </div>
+
+            <Show when={error()}>
+              <div class="text-red-400 text-sm whitespace-pre-line">
+                {error()}
+              </div>
+            </Show>
+          </div>
+
+          <div class="w-full lg:w-80 xl:w-96 flex-shrink-0 space-y-3">
+            <ObjectSelectionPreview selectedObject={selectedObject()} />
+            <Show
+              when={selectedObject()}
+              fallback={
+                <div class="p-3 bg-neutral-700/40 rounded text-xs text-gray-400">
+                  Select an object to see source and metadata.
                 </div>
-
-                <div>
-                  <label class="block text-sm text-gray-400 mb-2">
-                    Select Object
-                  </label>
-                  <Show
-                    when={filteredObjects().length > 0}
-                    fallback={
-                      <div class="p-4 text-center text-gray-500 border border-neutral-600 rounded">
-                        No objects match your search.
-                      </div>
-                    }
-                  >
-                    <ScrollArea
-                      class="max-h-[24rem] border border-neutral-600 rounded"
-                      viewportProps={{
-                        role: "region",
-                        "aria-label": "Objects to patch",
-                        tabIndex: 0,
-                      }}
-                    >
-                      <For each={groupedObjects()}>
-                        {([category, objects]) => (
-                          <>
-                            <div class="px-3 py-1 text-xs text-gray-500 bg-neutral-700 sticky top-0">
-                              {category}
-                            </div>
-                            <For each={objects}>
-                              {(object) => (
-                                <Button
-                                  size="compact"
-                                  type="button"
-                                  onClick={() => setSelectedObject(object)}
-                                  class="w-full flex-col !items-start text-left"
-                                  variant={
-                                    selectedObject()?.key === object.key
-                                      ? "primary"
-                                      : "subtle"
-                                  }
-                                  aria-pressed={
-                                    selectedObject()?.key === object.key
-                                  }
-                                >
-                                  <div class="text-sm">{object.name}</div>
-                                  <Show when={object.description}>
-                                    <div class="text-xs opacity-70 truncate">
-                                      {object.description}
-                                    </div>
-                                  </Show>
-                                </Button>
-                              )}
-                            </For>
-                          </>
+              }
+            >
+              {(selected) => (
+                <div class="p-3 bg-neutral-700 rounded">
+                  <div class="text-sm font-medium text-white">
+                    {selected().name}
+                  </div>
+                  <div class="text-xs text-gray-400">
+                    Source:{" "}
+                    {selected().source.type === "library"
+                      ? "Library Bundle"
+                      : "Built-in Default"}{" "}
+                    | Scale: {selected().scale.toFixed(2)}x
+                  </div>
+                  <Show when={selected().tags.length > 0}>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                      <For each={selected().tags}>
+                        {(tag) => (
+                          <span class="text-xs bg-neutral-600 px-1.5 py-0.5 rounded">
+                            {tag}
+                          </span>
                         )}
                       </For>
-                    </ScrollArea>
+                    </div>
                   </Show>
                 </div>
+              )}
+            </Show>
+          </div>
+        </div>
+      </DialogBody>
 
-                <div>
-                  <label
-                    for={quantityId}
-                    class="block text-sm text-gray-400 mb-1"
-                  >
-                    Quantity
-                  </label>
-                  <Input
-                    density="compact"
-                    type="number"
-                    id={quantityId}
-                    value={quantity()}
-                    onInput={(e) =>
-                      setQuantity(
-                        Math.max(
-                          1,
-                          Number.parseInt(e.currentTarget.value, 10) || 1,
-                        ),
-                      )
-                    }
-                    min="1"
-                    max="100"
-                    class="w-full"
-                  />
-                </div>
-
-                <div class="text-xs text-gray-500">
-                  Will assign ID{quantity() > 1 ? "s" : ""}: {nextAvailableId()}
-                  {quantity() > 1
-                    ? ` - ${nextAvailableId() + quantity() - 1}`
-                    : ""}
-                </div>
-
-                <Show when={error()}>
-                  <div class="text-red-400 text-sm whitespace-pre-line">
-                    {error()}
-                  </div>
-                </Show>
-              </div>
-
-              <div class="w-full lg:w-80 xl:w-96 flex-shrink-0 space-y-3">
-                <ObjectSelectionPreview selectedObject={selectedObject()} />
-                <Show
-                  when={selectedObject()}
-                  fallback={
-                    <div class="p-3 bg-neutral-700/40 rounded text-xs text-gray-400">
-                      Select an object to see source and metadata.
-                    </div>
-                  }
-                >
-                  {(selected) => (
-                    <div class="p-3 bg-neutral-700 rounded">
-                      <div class="text-sm font-medium text-white">
-                        {selected().name}
-                      </div>
-                      <div class="text-xs text-gray-400">
-                        Source:{" "}
-                        {selected().source.type === "library"
-                          ? "Library Bundle"
-                          : "Built-in Default"}{" "}
-                        | Scale: {selected().scale.toFixed(2)}x
-                      </div>
-                      <Show when={selected().tags.length > 0}>
-                        <div class="flex flex-wrap gap-1 mt-1">
-                          <For each={selected().tags}>
-                            {(tag) => (
-                              <span class="text-xs bg-neutral-600 px-1.5 py-0.5 rounded">
-                                {tag}
-                              </span>
-                            )}
-                          </For>
-                        </div>
-                      </Show>
-                    </div>
-                  )}
-                </Show>
-              </div>
-            </div>
-          </DialogBody>
-
-          <DialogFooter>
-            <Button size="compact" type="button" onClick={handleClose}>
-              Cancel
-            </Button>
-            <Button
-              size="compact"
-              variant="primary"
-              type="button"
-              onClick={handleSubmit}
-              disabled={!selectedObject() || isSubmitting()}
-            >
-              {isSubmitting() ? "Adding..." : "Add Object"}
-            </Button>
-          </DialogFooter>
-        </DialogSurface>
-      </DialogBackdrop>
+      <DialogFooter>
+        <DialogCancelButton size="compact" />
+        <Button
+          size="compact"
+          variant="primary"
+          type="button"
+          onClick={handleSubmit}
+          disabled={!selectedObject() || isSubmitting()}
+        >
+          {isSubmitting() ? "Adding..." : "Add Object"}
+        </Button>
+      </DialogFooter>
       <DeleteConfirmModal
         isOpen={isVersionConflictModalOpen()}
         title="Version Mismatch Detected"
@@ -423,7 +395,7 @@ const ObjectPatchWizard: Component<ObjectPatchWizardProps> = (props) => {
           void submitWithOptions(true);
         }}
       />
-    </Modal>
+    </Dialog>
   );
 };
 

@@ -6,110 +6,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { createSignal, onCleanup } from "solid-js";
 import {
-  createSignal,
-  createUniqueId,
-  type JSX,
-  onCleanup,
-  Show,
-} from "solid-js";
-import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
+  type DialogKind,
 } from "../components/ui/dialog";
 import { Input } from "../components/ui/form-controls";
-import Modal from "../components/ui/modal";
 import { Button } from "../components/ui/visual-language/button";
 import "./widget-demos.css";
 
-/**
- * Dismissal contract for a dialog.
- * - `task`: commits work. Header close, footer Cancel plus actions; outside clicks are ignored so drafts survive.
- * - `info`: nothing to commit. Header close only, no footer; Escape and outside clicks dismiss.
- * - `required`: the user must pick an action. No header close, Escape or outside dismissal.
- */
-export type DialogKind = "task" | "info" | "required";
-
-interface StandardDialogProps {
-  kind: DialogKind;
-  isOpen: boolean;
-  title: string;
-  /** Single dismissal handler shared by the header close, Cancel, Escape and outside clicks. */
-  onDismiss?: () => void;
-  /** Locks every dismissal path while work that cannot be cancelled is running. */
-  busy?: boolean;
-  /** Renames Cancel when nothing remains to undo, such as after a completed export. */
-  cancelLabel?: string;
-  /** Footer actions placed after Cancel; the only footer content for required dialogs. */
-  actions?: JSX.Element;
-  /** Width constraint applied to the surface. */
-  class?: string;
-  children: JSX.Element;
-}
-
-/**
- * Lab dialog shell that derives every close affordance from `kind`, demonstrating
- * the rules in `components/ui/dialog/README.md` that app dialogs follow.
- */
-export function StandardDialog(props: StandardDialogProps) {
-  const titleId = createUniqueId();
-  /** Dismisses through the caller's handler unless the dialog is required or busy. */
-  const dismiss = () => {
-    if (props.kind === "required" || props.busy) return;
-    props.onDismiss?.();
-  };
-  return (
-    <Modal
-      isOpen={props.isOpen}
-      onEscape={dismiss}
-      closeOnEscape={props.kind !== "required" && !props.busy}
-    >
-      <DialogBackdrop
-        role={props.kind === "required" ? "alertdialog" : "dialog"}
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-busy={props.busy}
-        data-dialog-kind={props.kind}
-        onMouseDown={(event) => {
-          if (props.kind === "info" && event.target === event.currentTarget) {
-            dismiss();
-          }
-        }}
-      >
-        <DialogSurface class={props.class ?? "max-w-lg"}>
-          <DialogHeader>
-            <DialogTitle id={titleId}>{props.title}</DialogTitle>
-            <Show when={props.kind !== "required"}>
-              <DialogCloseButton
-                type="button"
-                disabled={props.busy}
-                onClick={dismiss}
-              />
-            </Show>
-          </DialogHeader>
-          <DialogBody class="space-y-4">{props.children}</DialogBody>
-          <Show when={props.kind !== "info"}>
-            <DialogFooter>
-              <Show when={props.kind === "task"}>
-                <Button type="button" disabled={props.busy} onClick={dismiss}>
-                  {props.cancelLabel ?? "Cancel"}
-                </Button>
-              </Show>
-              {props.actions}
-            </DialogFooter>
-          </Show>
-        </DialogSurface>
-      </DialogBackdrop>
-    </Modal>
-  );
-}
-
-/** Launches one example of each dialog kind so their close affordances can be compared. */
+/** Launches one shared `Dialog` of each kind so their inherited close affordances can be compared. */
 export function DialogsDemo() {
   const [open, setOpen] = createSignal<DialogKind | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -136,6 +45,7 @@ export function DialogsDemo() {
   };
   /** Simulates a save that cannot be interrupted, locking dismissal until it finishes. */
   const save = () => {
+    if (busy()) return;
     setBusy(true);
     saveTimer = setTimeout(() => {
       setBusy(false);
@@ -184,13 +94,25 @@ export function DialogsDemo() {
         {notice()}
       </p>
 
-      <StandardDialog
+      <Dialog
         kind="task"
         isOpen={open() === "task"}
         title="Rename sample group"
         busy={busy()}
         onDismiss={() => close("Rename cancelled")}
-        actions={
+        onSubmit={save}
+      >
+        <DialogBody class="space-y-4">
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-neutral-300">Label</span>
+            <Input
+              value={draft()}
+              onInput={(event) => setDraft(event.currentTarget.value)}
+            />
+          </label>
+        </DialogBody>
+        <DialogFooter>
+          <DialogCancelButton />
           <Button
             type="button"
             variant="primary"
@@ -199,53 +121,48 @@ export function DialogsDemo() {
           >
             {busy() ? "Saving…" : "Save"}
           </Button>
-        }
-      >
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-neutral-300">Label</span>
-          <Input
-            value={draft()}
-            onInput={(event) => setDraft(event.currentTarget.value)}
-          />
-        </label>
-      </StandardDialog>
+        </DialogFooter>
+      </Dialog>
 
-      <StandardDialog
+      <Dialog
         kind="info"
         isOpen={open() === "info"}
         title="About this sample"
         onDismiss={() => close("Info closed")}
       >
-        <p class="text-sm text-neutral-300">
-          “{name()}” is local sample data. Nothing here needs saving, so the
-          dialog has no footer.
-        </p>
-      </StandardDialog>
+        <DialogBody>
+          <p class="m-0 text-sm text-neutral-300">
+            “{name()}” is local sample data. Nothing here needs saving, so the
+            dialog has no footer.
+          </p>
+        </DialogBody>
+      </Dialog>
 
-      <StandardDialog
+      <Dialog
         kind="required"
         isOpen={open() === "required"}
         title="Resume your work?"
-        actions={
-          <>
-            <Button type="button" onClick={() => close("Kept saved version")}>
-              Keep saved
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              onClick={() => close("Loaded draft")}
-            >
-              Load draft
-            </Button>
-          </>
-        }
+        onSubmit={() => close("Loaded draft")}
       >
-        <p class="text-sm text-neutral-300">
-          An unsaved draft of “{name()}” was found. Choose which version to
-          open.
-        </p>
-      </StandardDialog>
+        <DialogBody>
+          <p class="m-0 text-sm text-neutral-300">
+            An unsaved draft of “{name()}” was found. Choose which version to
+            open.
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button type="button" onClick={() => close("Kept saved version")}>
+            Keep saved
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => close("Loaded draft")}
+          >
+            Load draft
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </section>
   );
 }

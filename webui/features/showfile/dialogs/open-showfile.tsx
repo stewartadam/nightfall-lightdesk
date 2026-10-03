@@ -24,15 +24,7 @@ import {
   Show,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import {
-  DialogBackdrop,
-  DialogBody,
-  DialogCloseButton,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
-} from "../../../components/ui/dialog";
-import Modal from "../../../components/ui/modal";
+import { Dialog, DialogBody } from "../../../components/ui/dialog";
 import { SearchPickerOption } from "../../../components/ui/search-picker";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -287,231 +279,166 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
   );
 
   return (
-    <Modal isOpen={props.open} usePortal={false} onEscape={props.onClose}>
-      <DialogBackdrop
-        role="presentation"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) props.onClose();
-        }}
+    <>
+      <Dialog
+        kind="info"
+        isOpen={props.open}
+        usePortal={false}
+        title="Showfiles"
+        label="Open Showfile"
+        closeLabel="Close open showfile dialog"
+        class="max-w-2xl"
+        onDismiss={props.onClose}
+        headerActions={
+          <Button
+            type="button"
+            aria-label="New showfile"
+            onClick={() => void openNewShowfile()}
+          >
+            <FilePlusIcon class="size-4" aria-hidden />
+            <span>New Show</span>
+          </Button>
+        }
       >
-        <DialogSurface
-          role="dialog"
-          aria-modal="true"
-          aria-label="Open Showfile"
-          class="max-w-2xl"
-        >
-          <DialogHeader>
-            <DialogTitle>Showfiles</DialogTitle>
-            <div class="flex items-center gap-2">
-              <Button
-                type="button"
-                aria-label="New showfile"
-                onClick={() => void openNewShowfile()}
-              >
-                <FilePlusIcon class="size-4" aria-hidden />
-                <span>New Show</span>
-              </Button>
-              <DialogCloseButton
-                type="button"
-                aria-label="Close open showfile dialog"
-                onClick={props.onClose}
-              />
+        <DialogBody class="max-h-[60vh] overflow-y-auto">
+          <Show when={isLoading()}>
+            <div class="rounded border border-gray-800 bg-gray-950 px-4 py-5 text-sm text-gray-400">
+              Loading showfiles...
             </div>
-          </DialogHeader>
+          </Show>
 
-          <DialogBody class="max-h-[60vh] overflow-y-auto">
-            <Show when={isLoading()}>
-              <div class="rounded border border-gray-800 bg-gray-950 px-4 py-5 text-sm text-gray-400">
-                Loading showfiles...
-              </div>
-            </Show>
-
-            <Show when={!isLoading() && error()}>
-              {(message) => (
-                <div
-                  role="alert"
-                  class="space-y-3 rounded border border-red-900/60 bg-red-950/30 px-4 py-4"
+          <Show when={!isLoading() && error()}>
+            {(message) => (
+              <div
+                role="alert"
+                class="space-y-3 rounded border border-red-900/60 bg-red-950/30 px-4 py-4"
+              >
+                <p class="text-sm text-red-200">{message()}</p>
+                <Button
+                  variant="danger"
+                  type="button"
+                  onClick={() => void loadShowfiles()}
                 >
-                  <p class="text-sm text-red-200">{message()}</p>
-                  <Button
-                    variant="danger"
-                    type="button"
-                    onClick={() => void loadShowfiles()}
-                  >
-                    Retry
-                  </Button>
-                </div>
-              )}
-            </Show>
-
-            <Show when={!isLoading() && !error() && showfiles().length === 0}>
-              <div class="rounded border border-gray-800 bg-gray-950 px-4 py-5 text-sm text-gray-400">
-                No showfiles found.
+                  Retry
+                </Button>
               </div>
-            </Show>
+            )}
+          </Show>
 
-            <Show when={!isLoading() && !error() && showfiles().length > 0}>
-              <div class="overflow-hidden rounded border border-gray-700">
-                <For each={showfiles()}>
-                  {(showfile) => (
-                    <div class="border-t border-gray-800 first:border-t-0">
-                      <div class="group flex w-full items-stretch hover:bg-gray-800 focus-within:bg-gray-800">
-                        <SearchPickerOption
-                          type="button"
-                          class="min-w-0 flex-1"
-                          aria-label={
-                            expandedShowfiles().has(showfile.name)
-                              ? `Hide revisions for ${showfile.name}`
-                              : `Show revisions for ${showfile.name}`
-                          }
-                          onClick={() => toggleExpanded(showfile.name)}
-                        >
-                          <span class="flex w-4 shrink-0 items-center justify-center text-gray-400">
-                            <Dynamic
-                              component={
-                                expandedShowfiles().has(showfile.name)
-                                  ? CaretDownIcon
-                                  : CaretRightIcon
-                              }
-                              class="size-4"
-                              aria-hidden
-                            />
-                          </span>
-                          <span class="flex min-w-0 flex-1 flex-col gap-1">
-                            <span class="flex min-w-0 flex-wrap items-center gap-2">
-                              <span class="inline-flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold text-gray-100">
-                                <FolderOpenIcon
-                                  class="size-4 shrink-0 text-gray-400"
-                                  aria-hidden
-                                />
-                                <span class="truncate">{showfile.name}</span>
-                              </span>
-                            </span>
-                            <span class="truncate text-xs text-gray-400">
-                              {formatModifiedTime(
-                                showfileGroupModifiedTimeMs(showfile),
-                              )}
-                            </span>
-                          </span>
-                          <Show when={mostRecentShowfiles().has(showfile.name)}>
-                            <span class="shrink-0 self-center rounded border border-sky-700/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-300">
-                              Most recent
-                            </span>
-                          </Show>
-                        </SearchPickerOption>
-                        <Show when={showfileLoadError(showfile)}>
-                          {(loadError) => (
-                            <span class="inline-flex shrink-0 items-center py-3 pr-4 pl-2">
-                              <ShowfileLoadErrorBadge error={loadError()} />
-                            </span>
-                          )}
-                        </Show>
-                        <span class="inline-flex shrink-0 items-center pr-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                          <Tooltip
-                            content={() =>
-                              isOpenShowfile(showfile)
-                                ? "Open another show first"
-                                : "Delete show"
+          <Show when={!isLoading() && !error() && showfiles().length === 0}>
+            <div class="rounded border border-gray-800 bg-gray-950 px-4 py-5 text-sm text-gray-400">
+              No showfiles found.
+            </div>
+          </Show>
+
+          <Show when={!isLoading() && !error() && showfiles().length > 0}>
+            <div class="overflow-hidden rounded border border-gray-700">
+              <For each={showfiles()}>
+                {(showfile) => (
+                  <div class="border-t border-gray-800 first:border-t-0">
+                    <div class="group flex w-full items-stretch hover:bg-gray-800 focus-within:bg-gray-800">
+                      <SearchPickerOption
+                        type="button"
+                        class="min-w-0 flex-1"
+                        aria-label={
+                          expandedShowfiles().has(showfile.name)
+                            ? `Hide revisions for ${showfile.name}`
+                            : `Show revisions for ${showfile.name}`
+                        }
+                        onClick={() => toggleExpanded(showfile.name)}
+                      >
+                        <span class="flex w-4 shrink-0 items-center justify-center text-gray-400">
+                          <Dynamic
+                            component={
+                              expandedShowfiles().has(showfile.name)
+                                ? CaretDownIcon
+                                : CaretRightIcon
                             }
-                          >
-                            <span>
-                              <Button
-                                size="icon"
-                                variant="subtle"
-                                type="button"
-                                aria-label={`Delete showfile ${showfile.name}`}
-                                disabled={isOpenShowfile(showfile)}
-                                onClick={() => setPendingDelete(showfile)}
-                              >
-                                <TrashIcon class="size-4" aria-hidden />
-                              </Button>
-                            </span>
-                          </Tooltip>
+                            class="size-4"
+                            aria-hidden
+                          />
                         </span>
-                      </div>
-                      <Show when={expandedShowfiles().has(showfile.name)}>
-                        <div class="border-t border-gray-800 bg-gray-950/60 py-1 pl-10">
-                          <Show
-                            when={
-                              hasSavedShowfileRevision(showfile) ||
-                              showfile.draft ||
-                              (showfile.revisions ?? []).length > 0
-                            }
-                            fallback={
-                              <div class="px-4 py-2 text-sm text-gray-500">
-                                No revisions available.
-                              </div>
-                            }
-                          >
-                            <Show when={showfile.draft}>
-                              {(draft) => (
-                                <div class="flex w-full items-center">
-                                  <SearchPickerOption
-                                    type="button"
-                                    class="min-w-0 flex-1"
-                                    aria-label={`Load draft for ${showfile.name}`}
-                                    disabled={Boolean(
-                                      showfileLoadError(draft()),
-                                    )}
-                                    onClick={() =>
-                                      void openSelection({
-                                        type: "draft",
-                                        showfileName: draftShowfileName(
-                                          draft(),
-                                          showfile.name,
-                                        ),
-                                      })
-                                    }
-                                  >
-                                    <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-1">
-                                      <span class="inline-flex shrink-0 items-center gap-2 text-xs text-gray-100">
-                                        <span>
-                                          {formatModifiedTime(
-                                            modifiedTimeMs(draft()),
-                                          )}
-                                        </span>
-                                        <span class="rounded border border-amber-700/70 px-1.5 py-0.5 text-[10px] uppercase text-amber-300">
-                                          Draft
-                                        </span>
-                                      </span>
-                                      <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
-                                        {showfileRevisionPathLabel(
-                                          draft().path,
-                                          draft().name,
-                                        )}
-                                      </span>
-                                    </div>
-                                  </SearchPickerOption>
-                                  <Show when={showfileLoadError(draft())}>
-                                    {(loadError) => (
-                                      <span class="shrink-0 pr-4">
-                                        <ShowfileLoadErrorBadge
-                                          error={loadError()}
-                                        />
-                                      </span>
-                                    )}
-                                  </Show>
-                                </div>
-                              )}
-                            </Show>
-                            <Show when={hasSavedShowfileRevision(showfile)}>
+                        <span class="flex min-w-0 flex-1 flex-col gap-1">
+                          <span class="flex min-w-0 flex-wrap items-center gap-2">
+                            <span class="inline-flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold text-gray-100">
+                              <FolderOpenIcon
+                                class="size-4 shrink-0 text-gray-400"
+                                aria-hidden
+                              />
+                              <span class="truncate">{showfile.name}</span>
+                            </span>
+                          </span>
+                          <span class="truncate text-xs text-gray-400">
+                            {formatModifiedTime(
+                              showfileGroupModifiedTimeMs(showfile),
+                            )}
+                          </span>
+                        </span>
+                        <Show when={mostRecentShowfiles().has(showfile.name)}>
+                          <span class="shrink-0 self-center rounded border border-sky-700/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-300">
+                            Most recent
+                          </span>
+                        </Show>
+                      </SearchPickerOption>
+                      <Show when={showfileLoadError(showfile)}>
+                        {(loadError) => (
+                          <span class="inline-flex shrink-0 items-center py-3 pr-4 pl-2">
+                            <ShowfileLoadErrorBadge error={loadError()} />
+                          </span>
+                        )}
+                      </Show>
+                      <span class="inline-flex shrink-0 items-center pr-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                        <Tooltip
+                          content={() =>
+                            isOpenShowfile(showfile)
+                              ? "Open another show first"
+                              : "Delete show"
+                          }
+                        >
+                          <span>
+                            <Button
+                              size="icon"
+                              variant="subtle"
+                              type="button"
+                              aria-label={`Delete showfile ${showfile.name}`}
+                              disabled={isOpenShowfile(showfile)}
+                              onClick={() => setPendingDelete(showfile)}
+                            >
+                              <TrashIcon class="size-4" aria-hidden />
+                            </Button>
+                          </span>
+                        </Tooltip>
+                      </span>
+                    </div>
+                    <Show when={expandedShowfiles().has(showfile.name)}>
+                      <div class="border-t border-gray-800 bg-gray-950/60 py-1 pl-10">
+                        <Show
+                          when={
+                            hasSavedShowfileRevision(showfile) ||
+                            showfile.draft ||
+                            (showfile.revisions ?? []).length > 0
+                          }
+                          fallback={
+                            <div class="px-4 py-2 text-sm text-gray-500">
+                              No revisions available.
+                            </div>
+                          }
+                        >
+                          <Show when={showfile.draft}>
+                            {(draft) => (
                               <div class="flex w-full items-center">
                                 <SearchPickerOption
                                   type="button"
                                   class="min-w-0 flex-1"
-                                  aria-label={
-                                    showfile.draft
-                                      ? `Revert to saved showfile ${showfile.name}`
-                                      : `Open saved showfile ${showfile.name}`
-                                  }
-                                  disabled={Boolean(
-                                    showfileLoadError(showfile),
-                                  )}
+                                  aria-label={`Load draft for ${showfile.name}`}
+                                  disabled={Boolean(showfileLoadError(draft()))}
                                   onClick={() =>
                                     void openSelection({
-                                      type: "showfile",
-                                      name: showfile.name,
-                                      discardDraft: Boolean(showfile.draft),
+                                      type: "draft",
+                                      showfileName: draftShowfileName(
+                                        draft(),
+                                        showfile.name,
+                                      ),
                                     })
                                   }
                                 >
@@ -519,19 +446,22 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                                     <span class="inline-flex shrink-0 items-center gap-2 text-xs text-gray-100">
                                       <span>
                                         {formatModifiedTime(
-                                          modifiedTimeMs(showfile),
+                                          modifiedTimeMs(draft()),
                                         )}
                                       </span>
-                                      <span class="rounded border border-green-700/70 px-1.5 py-0.5 text-[10px] uppercase text-green-300">
-                                        Saved
+                                      <span class="rounded border border-amber-700/70 px-1.5 py-0.5 text-[10px] uppercase text-amber-300">
+                                        Draft
                                       </span>
                                     </span>
                                     <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
-                                      {savedShowfileRevisionName(showfile)}
+                                      {showfileRevisionPathLabel(
+                                        draft().path,
+                                        draft().name,
+                                      )}
                                     </span>
                                   </div>
                                 </SearchPickerOption>
-                                <Show when={showfileLoadError(showfile)}>
+                                <Show when={showfileLoadError(draft())}>
                                   {(loadError) => (
                                     <span class="shrink-0 pr-4">
                                       <ShowfileLoadErrorBadge
@@ -541,111 +471,154 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                                   )}
                                 </Show>
                               </div>
-                            </Show>
-                            <For each={showfile.revisions ?? []}>
-                              {(revision) => (
-                                <div class="flex w-full items-center">
-                                  <SearchPickerOption
-                                    type="button"
-                                    class="min-w-0 flex-1"
-                                    aria-label={`Load backup ${revision.name} for ${showfile.name}`}
-                                    disabled={Boolean(
-                                      showfileLoadError(revision),
-                                    )}
-                                    onClick={() =>
-                                      void openSelection({
-                                        type: "revision",
-                                        showfileName: showfile.name,
-                                        revisionName: revision.name,
-                                      })
-                                    }
-                                  >
-                                    <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-1">
-                                      <span class="shrink-0 text-xs text-gray-100">
-                                        {formatModifiedTime(
-                                          modifiedTimeMs(revision),
-                                        )}
-                                      </span>
-                                      <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
-                                        {showfileRevisionPathLabel(
-                                          revision.path,
-                                          revision.name,
-                                        )}
-                                      </span>
-                                    </div>
-                                  </SearchPickerOption>
-                                  <Show when={showfileLoadError(revision)}>
-                                    {(loadError) => (
-                                      <span class="shrink-0 pr-4">
-                                        <ShowfileLoadErrorBadge
-                                          error={loadError()}
-                                        />
-                                      </span>
-                                    )}
-                                  </Show>
-                                </div>
-                              )}
-                            </For>
+                            )}
                           </Show>
-                        </div>
-                      </Show>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
+                          <Show when={hasSavedShowfileRevision(showfile)}>
+                            <div class="flex w-full items-center">
+                              <SearchPickerOption
+                                type="button"
+                                class="min-w-0 flex-1"
+                                aria-label={
+                                  showfile.draft
+                                    ? `Revert to saved showfile ${showfile.name}`
+                                    : `Open saved showfile ${showfile.name}`
+                                }
+                                disabled={Boolean(showfileLoadError(showfile))}
+                                onClick={() =>
+                                  void openSelection({
+                                    type: "showfile",
+                                    name: showfile.name,
+                                    discardDraft: Boolean(showfile.draft),
+                                  })
+                                }
+                              >
+                                <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-1">
+                                  <span class="inline-flex shrink-0 items-center gap-2 text-xs text-gray-100">
+                                    <span>
+                                      {formatModifiedTime(
+                                        modifiedTimeMs(showfile),
+                                      )}
+                                    </span>
+                                    <span class="rounded border border-green-700/70 px-1.5 py-0.5 text-[10px] uppercase text-green-300">
+                                      Saved
+                                    </span>
+                                  </span>
+                                  <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
+                                    {savedShowfileRevisionName(showfile)}
+                                  </span>
+                                </div>
+                              </SearchPickerOption>
+                              <Show when={showfileLoadError(showfile)}>
+                                {(loadError) => (
+                                  <span class="shrink-0 pr-4">
+                                    <ShowfileLoadErrorBadge
+                                      error={loadError()}
+                                    />
+                                  </span>
+                                )}
+                              </Show>
+                            </div>
+                          </Show>
+                          <For each={showfile.revisions ?? []}>
+                            {(revision) => (
+                              <div class="flex w-full items-center">
+                                <SearchPickerOption
+                                  type="button"
+                                  class="min-w-0 flex-1"
+                                  aria-label={`Load backup ${revision.name} for ${showfile.name}`}
+                                  disabled={Boolean(
+                                    showfileLoadError(revision),
+                                  )}
+                                  onClick={() =>
+                                    void openSelection({
+                                      type: "revision",
+                                      showfileName: showfile.name,
+                                      revisionName: revision.name,
+                                    })
+                                  }
+                                >
+                                  <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-1">
+                                    <span class="shrink-0 text-xs text-gray-100">
+                                      {formatModifiedTime(
+                                        modifiedTimeMs(revision),
+                                      )}
+                                    </span>
+                                    <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
+                                      {showfileRevisionPathLabel(
+                                        revision.path,
+                                        revision.name,
+                                      )}
+                                    </span>
+                                  </div>
+                                </SearchPickerOption>
+                                <Show when={showfileLoadError(revision)}>
+                                  {(loadError) => (
+                                    <span class="shrink-0 pr-4">
+                                      <ShowfileLoadErrorBadge
+                                        error={loadError()}
+                                      />
+                                    </span>
+                                  )}
+                                </Show>
+                              </div>
+                            )}
+                          </For>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
 
-            <Show when={!isLoading() && !error() && trash().length > 0}>
-              <section
-                aria-label="Recently deleted"
-                class="mt-4 overflow-hidden rounded border border-gray-700"
-              >
-                <div class="flex items-center justify-between gap-2 px-4 py-2">
-                  <h3 class="text-xs font-semibold uppercase text-gray-400">
-                    Recently deleted
-                  </h3>
-                  <Button
-                    size="compact"
-                    variant="danger"
-                    type="button"
-                    onClick={() => setConfirmingEmptyTrash(true)}
-                  >
-                    <TrashIcon class="size-3.5" aria-hidden />
-                    <span>Empty trash</span>
-                  </Button>
-                </div>
-                <For each={trash()}>
-                  {(entry) => (
-                    <div class="flex items-center gap-3 border-t border-gray-800 px-4 py-2">
-                      <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span class="truncate text-sm text-gray-200">
-                          {entry.name}
-                        </span>
-                        <span class="truncate text-xs text-gray-500">
-                          Deleted {formatModifiedTime(entry.deletedAtMs)} ·
-                          Expires {formatModifiedTime(entry.expiresAtMs)}
-                        </span>
+          <Show when={!isLoading() && !error() && trash().length > 0}>
+            <section
+              aria-label="Recently deleted"
+              class="mt-4 overflow-hidden rounded border border-gray-700"
+            >
+              <div class="flex items-center justify-between gap-2 px-4 py-2">
+                <h3 class="text-xs font-semibold uppercase text-gray-400">
+                  Recently deleted
+                </h3>
+                <Button
+                  size="compact"
+                  variant="danger"
+                  type="button"
+                  onClick={() => setConfirmingEmptyTrash(true)}
+                >
+                  <TrashIcon class="size-3.5" aria-hidden />
+                  <span>Empty trash</span>
+                </Button>
+              </div>
+              <For each={trash()}>
+                {(entry) => (
+                  <div class="flex items-center gap-3 border-t border-gray-800 px-4 py-2">
+                    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span class="truncate text-sm text-gray-200">
+                        {entry.name}
                       </span>
-                      <Button
-                        size="compact"
-                        type="button"
-                        aria-label={`Restore showfile ${entry.name}`}
-                        onClick={() => void restoreDeleted(entry)}
-                      >
-                        <ArrowCounterClockwiseIcon
-                          class="size-3.5"
-                          aria-hidden
-                        />
-                        <span>Restore</span>
-                      </Button>
-                    </div>
-                  )}
-                </For>
-              </section>
-            </Show>
-          </DialogBody>
-        </DialogSurface>
-      </DialogBackdrop>
+                      <span class="truncate text-xs text-gray-500">
+                        Deleted {formatModifiedTime(entry.deletedAtMs)} ·
+                        Expires {formatModifiedTime(entry.expiresAtMs)}
+                      </span>
+                    </span>
+                    <Button
+                      size="compact"
+                      type="button"
+                      aria-label={`Restore showfile ${entry.name}`}
+                      onClick={() => void restoreDeleted(entry)}
+                    >
+                      <ArrowCounterClockwiseIcon class="size-3.5" aria-hidden />
+                      <span>Restore</span>
+                    </Button>
+                  </div>
+                )}
+              </For>
+            </section>
+          </Show>
+        </DialogBody>
+      </Dialog>
       <DeleteConfirmModal
         isOpen={pendingDelete() !== null}
         title="Delete Showfile"
@@ -665,6 +638,6 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
         onCancel={() => setConfirmingEmptyTrash(false)}
         onConfirm={() => void confirmEmptyTrash()}
       />
-    </Modal>
+    </>
   );
 }
