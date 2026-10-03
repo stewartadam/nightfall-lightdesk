@@ -932,6 +932,38 @@ test("flags unknown output transport patch targets", async ({ page }) => {
   ).toBeVisible();
 });
 
+/**
+ * Verifies patch targets only offer `disabled` for transport inputs, since outputs cannot be disabled.
+ */
+test("offers disabled patch targets only for transport sources", async ({
+  page,
+}, testInfo) => {
+  /** Locates the expanded suggestion row that inserts one target token. */
+  const targetRow = (insertText: string) =>
+    page.locator(`${suggestionRowsSelector}[data-insert-text="${insertText}"]`);
+  /** Opens the sole patch target intent from a cleared input and expands it into token rows. */
+  const expandTargets = async (command: string) => {
+    await page.locator(inputSelector).fill("");
+    await openAutocomplete(page, command);
+    await page.locator(inputSelector).press("Tab");
+    await expect(targetRow("sacn")).toBeVisible();
+  };
+
+  for (const command of [`patch fix ${FIXTURE_ID} @ `, "patch console:1 @ "]) {
+    await expandTargets(command);
+    await expect(targetRow("disabled")).toHaveCount(0);
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("output-patch-targets.png"),
+  });
+
+  await expandTargets("patch sacn:1 @ ");
+  await expect(targetRow("disabled")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("input-patch-targets.png"),
+  });
+});
+
 /** Verifies the sole attribute intent opens automatically and Tab inserts its selected token. */
 test("tab inserts the selected @ token from the sole attribute intent", async ({
   page,

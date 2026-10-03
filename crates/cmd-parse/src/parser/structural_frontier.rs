@@ -46,7 +46,8 @@ pub(super) fn branch_frontier_state_for_branch(
         let parser = structural_clause_parser(frame.clause.clause);
         let (immediate, blocks_ancestors) =
             immediate_frontier_for_clause(branch, &frame.clause, &parser);
-        for expectation in immediate {
+        for mut expectation in immediate {
+            restrict_patch_target_disabled(branch, &mut expectation);
             if !frontier.contains(&expectation) {
                 frontier.push(expectation);
             }
@@ -58,6 +59,42 @@ pub(super) fn branch_frontier_state_for_branch(
     }
 
     (frontier, has_blocking_expectations)
+}
+
+/// Drops `disabled` from patch target offers unless the source is a transport input.
+///
+/// Only inputs can be disabled; the engine rejects fixture and console (output) sources
+/// patched to `disabled`. A target-only `rm patch @ ...` filter has no source and keeps it.
+fn restrict_patch_target_disabled(
+    branch: &ParseBranchState<'_>,
+    expectation: &mut ClauseExpectation,
+) {
+    let ContinuationTarget::Slot(slot_ref) = &expectation.target else {
+        return;
+    };
+    if slot_ref.slot != SlotId::PatchTargetEndpoint || patch_source_allows_disabled_target(branch) {
+        return;
+    }
+    expectation
+        .expected_tokens
+        .retain(|token| *token != ExpectedToken::Token(TokenId::Disabled));
+}
+
+/// Returns whether the branch's patch source (if any) is a transport input endpoint.
+fn patch_source_allows_disabled_target(branch: &ParseBranchState<'_>) -> bool {
+    let source_head = branch
+        .consumed_items
+        .iter()
+        .filter(|item| item.slot.slot == SlotId::PatchSourceEndpoint)
+        .map(|item| token_id_for_text(item.surface.as_str()))
+        .find(|token_id| *token_id != Some(TokenId::LeftParen));
+    match source_head {
+        None => true,
+        Some(token_id) => matches!(
+            token_id,
+            Some(TokenId::Sacn | TokenId::Artnet | TokenId::Udmx)
+        ),
+    }
 }
 
 /// Compute the next legal expectations for the active structural clause.
@@ -463,14 +500,38 @@ fn immediate_frontier_for_clause(
                 }
             }
             crate::parser::structural::SlotState::ValuePending => {
-                if clause.clause == ClauseId::Rm
+                if matches!(clause.clause, ClauseId::Rm | ClauseId::PatchTarget)
                     && slot.slot == SlotId::PatchTargetEndpoint
                     && slot_fills.len() == 1
                     && slot_fills.first().is_some_and(|item| {
                         token_id_for_text(item.surface.as_str()) == Some(TokenId::AtSign)
                     })
                 {
-                    frontier.push(slot_expectation(parser, clause.clone(), *slot));
+                    let mut expected_tokens = expected_tokens_for_slot(SlotRef {
+                        slot: slot.slot,
+                        clause: Some(clause.clone()),
+                    });
+                    // Only tokens that can begin an endpoint follow a lone `@`.
+                    expected_tokens.retain(|token| {
+                        !matches!(
+                            token,
+                            ExpectedToken::Token(
+                                TokenId::AtSign
+                                    | TokenId::Colon
+                                    | TokenId::Dot
+                                    | TokenId::Plus
+                                    | TokenId::Minus
+                                    | TokenId::GreaterThan
+                                    | TokenId::RightParen
+                            )
+                        )
+                    });
+                    frontier.push(filtered_slot_expectation(
+                        parser,
+                        clause.clone(),
+                        *slot,
+                        expected_tokens,
+                    ));
                     continue;
                 } else if matches!(
                     slot.slot,
