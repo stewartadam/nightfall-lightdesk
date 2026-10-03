@@ -8,7 +8,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultPostProcessingConfig } from "./effects/post-processing";
+import { SRGBColorSpace } from "three/webgpu";
+import {
+  defaultPostProcessingConfig,
+  displayColorComponents,
+} from "./effects/post-processing";
 
 /** Verifies visualizer outline classes use distinct colors. */
 test("selection outlines use separate programmer, edit, and value colors", () => {
@@ -30,4 +34,18 @@ test("selection outlines use separate programmer, edit, and value colors", () =>
     defaultPostProcessingConfig.programmerValueOutlineHiddenColor,
     "#991b1b",
   );
+});
+
+/**
+ * Outlines are composited after tone mapping and sRGB encoding, so their colors must be the
+ * configured sRGB components rather than linear working-space values.
+ */
+test("outline colors resolve to their exact display-space components", () => {
+  const { r, g, b } = displayColorComponents(
+    defaultPostProcessingConfig.editSelectionOutlineVisibleColor,
+    SRGBColorSpace,
+  );
+  assert.ok(Math.abs(r - 0xfa / 255) < 1e-4, `red ${r}`);
+  assert.ok(Math.abs(g - 0xcc / 255) < 1e-4, `green ${g}`);
+  assert.ok(Math.abs(b - 0x15 / 255) < 1e-4, `blue ${b}`);
 });

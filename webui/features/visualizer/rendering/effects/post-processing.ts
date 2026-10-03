@@ -15,7 +15,6 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { outline } from "three/addons/tsl/display/OutlineNode.js";
 import {
-  color,
   Fn,
   float,
   fwidth,
@@ -26,10 +25,12 @@ import {
   smoothstep,
   uv,
   vec2,
+  vec3,
   vec4,
 } from "three/tsl";
 import type { Camera, Node, Object3D } from "three/webgpu";
 import {
+  Color,
   NodeMaterial,
   QuadMesh,
   RenderPipeline,
@@ -139,7 +140,7 @@ export interface PostProcessingState {
   volumePass: ReturnType<typeof pass>;
   postProcessing: RenderPipeline;
   scenePass: ReturnType<typeof pass>;
-  /** Display conversion precedes FXAA edge filtering to preserve HDR coverage. */
+  /** Display conversion and outline compositing precede FXAA edge filtering to preserve HDR coverage. */
   displayPass?: ReturnType<typeof pass>;
   displayMaterial?: NodeMaterial;
   /** Present only when the quality profile blooms. */
@@ -207,6 +208,49 @@ function createBloomPass(
     },
   );
   return bloomPass;
+}
+
+/**
+ * Returns a configured CSS color as components in the display's output color space, for
+ * compositing after the output transform where working-space (linear) values would be wrong.
+ */
+export function displayColorComponents(
+  css: string,
+  outputColorSpace: string,
+): { r: number; g: number; b: number } {
+  const components = { r: 0, g: 0, b: 0 };
+  new Color(css).getRGB(components, outputColorSpace);
+  return components;
+}
+
+/** Builds a display-space color node for an outline composited after the output transform. */
+function displayColor(css: string, outputColorSpace: string): Node<"vec3"> {
+  const { r, g, b } = displayColorComponents(css, outputColorSpace);
+  return vec3(r, g, b);
+}
+
+/**
+ * Lays one outline pass over display-space color: hidden edges first, then visible edges, each
+ * covering the image with its exact configured color where its edge mask (scaled by `strength`)
+ * saturates.
+ */
+function compositeOutline(
+  base: Node<"vec3">,
+  outlineNode: ReturnType<typeof outline>,
+  visibleColor: Node<"vec3">,
+  hiddenColor: Node<"vec3">,
+  strength: number,
+): Node<"vec3"> {
+  const behind = mix(
+    base,
+    hiddenColor,
+    outlineNode.hiddenEdge.mul(strength).saturate(),
+  );
+  return mix(
+    behind,
+    visibleColor,
+    outlineNode.visibleEdge.mul(strength).saturate(),
+  );
 }
 
 /**
@@ -295,52 +339,59 @@ export function createPostProcessing(
     edgeThickness: float(config.activeSpanOutlineThickness),
     edgeGlow: float(config.activeSpanOutlineGlow),
   });
-  const selectionOutlineColor = outlinePass.visibleEdge
-    .mul(color(config.outlineVisibleColor))
-    .add(outlinePass.hiddenEdge.mul(color(config.outlineHiddenColor)))
-    .mul(float(config.outlineStrength));
-  const editSelectionOutlineColor = editSelectionOutlinePass.visibleEdge
-    .mul(color(config.editSelectionOutlineVisibleColor))
-    .add(
-      editSelectionOutlinePass.hiddenEdge.mul(
-        color(config.editSelectionOutlineHiddenColor),
-      ),
-    )
-    .mul(float(config.editSelectionOutlineStrength));
-  const programmerValueOutlineColor = programmerValueOutlinePass.visibleEdge
-    .mul(color(config.programmerValueOutlineVisibleColor))
-    .add(
-      programmerValueOutlinePass.hiddenEdge.mul(
-        color(config.programmerValueOutlineHiddenColor),
-      ),
-    )
-    .mul(float(config.programmerValueOutlineStrength));
-  const activeSpanOutlineColor = activeSpanOutlinePass.visibleEdge
-    .mul(color(config.activeSpanOutlineVisibleColor))
-    .add(
-      activeSpanOutlinePass.hiddenEdge.mul(
-        color(config.activeSpanOutlineHiddenColor),
-      ),
-    )
-    .mul(float(config.activeSpanOutlineStrength));
-
-  // Create post-processing with combined output.
+  // Create post-processing whose HDR light is tone mapped before outlines are composited, so
+  // configured outline colors reach the display unchanged by exposure or tone curves.
   const postProcessing = new RenderPipeline(renderer);
-  postProcessing.outputNode = litColor
-    .add(bloomPass ?? float(0))
-    .add(selectionOutlineColor)
-    .add(editSelectionOutlineColor)
-    .add(programmerValueOutlineColor)
-    .add(activeSpanOutlineColor);
+  const display = renderOutput(
+    litColor.add(bloomPass ?? float(0)),
+    renderer.toneMapping,
+    renderer.outputColorSpace,
+  );
+  const outputColorSpace = renderer.outputColorSpace;
+  let outlined: Node<"vec3"> = display.rgb;
+  for (const [outlineNode, visible, hidden, strength] of [
+    [
+      outlinePass,
+      config.outlineVisibleColor,
+      config.outlineHiddenColor,
+      config.outlineStrength,
+    ],
+    [
+      editSelectionOutlinePass,
+      config.editSelectionOutlineVisibleColor,
+      config.editSelectionOutlineHiddenColor,
+      config.editSelectionOutlineStrength,
+    ],
+    [
+      programmerValueOutlinePass,
+      config.programmerValueOutlineVisibleColor,
+      config.programmerValueOutlineHiddenColor,
+      config.programmerValueOutlineStrength,
+    ],
+    [
+      activeSpanOutlinePass,
+      config.activeSpanOutlineVisibleColor,
+      config.activeSpanOutlineHiddenColor,
+      config.activeSpanOutlineStrength,
+    ],
+  ] as const) {
+    outlined = compositeOutline(
+      outlined,
+      outlineNode,
+      displayColor(visible, outputColorSpace),
+      displayColor(hidden, outputColorSpace),
+      strength,
+    );
+  }
+  const outlinedDisplay = vec4(outlined, display.a);
+  // The display transform is already applied above, on every preset.
+  postProcessing.outputColorTransform = false;
+  postProcessing.outputNode = outlinedDisplay;
   let displayPass: ReturnType<typeof pass> | undefined;
   let displayMaterial: NodeMaterial | undefined;
   if (profile.fxaa) {
     displayMaterial = new NodeMaterial();
-    displayMaterial.fragmentNode = renderOutput(
-      postProcessing.outputNode,
-      renderer.toneMapping,
-      renderer.outputColorSpace,
-    );
+    displayMaterial.fragmentNode = outlinedDisplay;
     const quad = new QuadMesh(displayMaterial);
     const displayScene = new Scene();
     displayScene.add(quad);
@@ -350,7 +401,6 @@ export function createPostProcessing(
       depthBuffer: false,
     });
     postProcessing.outputNode = fxaa(displayPass.getTextureNode("output"));
-    postProcessing.outputColorTransform = false;
   }
 
   const state: PostProcessingState = {
