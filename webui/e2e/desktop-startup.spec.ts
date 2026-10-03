@@ -78,8 +78,10 @@ test("desktop startup can access a backend on another origin", async ({
       headers: { "Content-Type": "application/json" },
       body: "invalid JSON",
     });
+    // The snapshot is decoded from gzip and always returned whole, so ranged
+    // reads target a plain file that every saved showfile carries.
     const resource = await fetch(
-      `${baseUrl}/api/showfiles/current/showfile.json`,
+      `${baseUrl}/api/showfiles/current/showfile-manifest.json`,
       {
         headers: { Range: "bytes=0-31" },
       },
