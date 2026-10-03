@@ -43,6 +43,12 @@ export interface SceneEnvironment {
   axesHelper: AxesHelper;
   floor: Mesh;
   orbitTargetIndicator: Group;
+  /** Configured light intensities that scene darkness scales, rather than replaces. */
+  baseIntensities: {
+    ambient: number;
+    directional: number;
+    fill: number;
+  };
 }
 
 /**
@@ -71,10 +77,16 @@ export interface SceneEnvironmentOptions {
 
 export const DEFAULT_STAGE_FLOOR_TOP_Y = 0.0;
 
-/** Adjusts environment visibility independently of fixture radiance and optical effects. */
+/**
+ * Adjusts environment visibility independently of fixture radiance and optical effects,
+ * scaling each light's configured base intensity by the darkness illumination factor.
+ */
 export function setSceneDarkness(
   scene: Scene,
-  environment: SceneEnvironment,
+  environment: Pick<
+    SceneEnvironment,
+    "ambientLight" | "directionalLight" | "fillLight" | "baseIntensities"
+  >,
   darkness: number,
 ): void {
   const amount = Number.isFinite(darkness)
@@ -82,9 +94,10 @@ export function setSceneDarkness(
     : 0.5;
   scene.background = new Color(0x303044).lerp(new Color(0x080812), amount);
   const illumination = 1.8 + (0.25 - 1.8) * amount;
-  environment.ambientLight.intensity = 0.6 * illumination;
-  environment.directionalLight.intensity = 0.8 * illumination;
-  environment.fillLight.intensity = 0.4 * illumination;
+  const base = environment.baseIntensities;
+  environment.ambientLight.intensity = base.ambient * illumination;
+  environment.directionalLight.intensity = base.directional * illumination;
+  environment.fillLight.intensity = base.fill * illumination;
 }
 
 const DEFAULT_OPTIONS: Required<SceneEnvironmentOptions> = {
@@ -238,6 +251,11 @@ export function createSceneEnvironment(
     axesHelper,
     floor,
     orbitTargetIndicator,
+    baseIntensities: {
+      ambient: opts.ambientIntensity,
+      directional: opts.directionalIntensity,
+      fill: opts.fillIntensity,
+    },
   };
 }
 
