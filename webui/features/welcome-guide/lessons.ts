@@ -24,8 +24,8 @@ export type GuideContent =
 export type GuidePrerequisite = Extract<GuideContent, { type: "prerequisite" }>;
 
 /**
- * An area the card must leave uncovered in addition to the target:
- * the target's whole panel, its panel tab, its grid row, or the 3D Visualizer viewport.
+ * An area the card must leave uncovered in addition to the target: the target's whole panel
+ * including its tab, just the panel's tab, its grid row, or the 3D Visualizer viewport.
  */
 export type GuideFocusArea = "panel" | "tab" | "row" | "visualizer";
 
@@ -47,6 +47,8 @@ export interface GuideStep {
   targetPatchFixture?: { id: number };
   /** Targets a regular FX card or list row in FX List by its user-facing ID. */
   targetFx?: { id: number };
+  /** Targets the sample timeline's card in the Timelines list. */
+  targetSampleTimeline?: boolean;
   placement?: "above";
   /**
    * Areas the user needs to see during this step. When set, the card may cover the rest of the
@@ -98,6 +100,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "open-timeline",
         title: "Open the sample timeline",
+        targetSampleTimeline: true,
         keepVisible: ["tab"],
         observe: {
           type: "sample-panels",

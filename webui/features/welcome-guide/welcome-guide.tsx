@@ -305,6 +305,11 @@ export default function WelcomeGuide() {
   });
   /** Resolves authored object identities to clip tiles, inspect buttons, sequence cards, or Trigger cells. */
   const actionSelector = createMemo(() => {
+    if (step()?.targetSampleTimeline) {
+      const timeline = sampleTimeline();
+      if (!timeline) return undefined;
+      return `[data-workspace-active="true"] [data-panel-kind="timeline-list"] [data-crud-select-id="${CSS.escape(normalizeTimelineUid(timeline.identifiers.uid))}"]`;
+    }
     const actionTarget = step()?.targetTimelineAction;
     if (actionTarget) {
       const timeline = sampleTimeline();
