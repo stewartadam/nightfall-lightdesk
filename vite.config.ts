@@ -232,6 +232,15 @@ export default defineConfig(({ mode, command }) => {
       watch: {
         ignored: viteWatchIgnored,
       },
+      // Playwright starts one dev server per worker and opens panels right
+      // after startup; transforming the app and every lazily loaded panel up
+      // front keeps those first opens from queueing behind cold transforms.
+      warmup: {
+        clientFiles:
+          process.env.NIGHTFALL_VITE_WARMUP_PANELS === "1"
+            ? ["./main.tsx", "./features/*/panels/*.tsx"]
+            : [],
+      },
     },
   };
 });

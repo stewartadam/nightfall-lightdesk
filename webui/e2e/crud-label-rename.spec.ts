@@ -232,7 +232,10 @@ async function exerciseRenameSurfaces(
   await expect(updatedRowLabel).toBeVisible();
   await updatedRowLabel.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Rename" }).click();
-  const listInlineEditor = page.locator('[role="gridcell"] input').last();
+  // Scope to this list: background-mounted grids elsewhere carry checkbox cells.
+  const listInlineEditor = page.locator(
+    '[data-panel-id="panel-SequenceList-crud-rename"] [role="gridcell"] input:not([type="checkbox"])',
+  );
   await expect(listInlineEditor).toBeVisible();
   await listInlineEditor.fill(context.listLabel);
   await listInlineEditor.blur();
