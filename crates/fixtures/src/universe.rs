@@ -363,6 +363,27 @@ impl ConsoleDmxUniverses {
         universe.origins[index] = Some(origin);
     }
 
+    /// Frees a console DMX channel so nothing owns it, zeroing its value.
+    ///
+    /// A console universe left without any owned channel is removed so routes stop
+    /// overlaying it until something writes to it again. Address is 1-indexed (DMX convention).
+    pub fn release_value(&mut self, universe_id: u16, address: u16) {
+        if !is_valid_address(address) {
+            tracing::warn!(universe_id, address, "Address is invalid, skipping");
+            return;
+        }
+
+        let Some(universe) = self.universes.get_mut(&universe_id) else {
+            return;
+        };
+        let index = (address - 1) as usize;
+        universe.values[index] = 0;
+        universe.origins[index] = None;
+        if universe.origins.iter().all(Option::is_none) {
+            self.universes.remove(&universe_id);
+        }
+    }
+
     /// Checks if a universe exists.
     pub fn has_universe(&self, universe_id: u16) -> bool {
         self.universes.contains_key(&universe_id)
@@ -513,6 +534,12 @@ pub fn dmx_universes(
 
         if let Some(console_address) = console_address {
             for (address, byte) in console_address.addresses.iter().zip(&bytes) {
+                // A manual write keeps owning its console slot until it is released.
+                if universes.get_origin(console_address.universe, *address)
+                    == Some(ConsoleChannelOrigin::ManualCommand)
+                {
+                    continue;
+                }
                 universes.set_value(
                     console_address.universe,
                     *address,

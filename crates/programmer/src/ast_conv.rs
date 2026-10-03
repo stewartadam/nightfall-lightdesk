@@ -15,7 +15,6 @@ use nightfall_cmd_parse::{ast, conv, parse_spatial_selection_text};
 use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::undo::{ClearDmxChannels, DmxChannelSnapshot};
 
 use crate::action_model::{ClearCommand, ClearTarget, ReleaseCommand, ReleaseTarget, UserCommand};
 use crate::events::{StoreCueId, StoreCuePartId, StoreMode};
@@ -223,19 +222,11 @@ impl AstConvert for ProgrammerAstConverter {
                         }
                     };
 
-                    match release_target {
-                        Some(ReleaseTarget::Channels { channels }) => {
-                            Ok(vec![Box::new(ClearDmxChannels(DmxChannelSnapshot {
-                                channels,
-                                value: 0,
-                            }))])
-                        }
-                        target => Ok(vec![Box::new(UserCommand::Release(ReleaseCommand {
-                            target,
-                            allow_selection_flatten: false,
-                            selection_flatten_approval: None,
-                        }))]),
-                    }
+                    Ok(vec![Box::new(UserCommand::Release(ReleaseCommand {
+                        target: release_target,
+                        allow_selection_flatten: false,
+                        selection_flatten_approval: None,
+                    }))])
                 }
                 ast::GeneralCommandAst::Clear(clear_ast) => {
                     if clear_ast.targets.is_empty() {

@@ -274,31 +274,6 @@ pub fn handle_restore_offset_snapshot(
     }
 }
 
-/// Handle ClearDmxChannels commands to clear manual DMX override.
-///
-/// Resets affected parameters to their default values.
-pub fn handle_clear_dmx_channels(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::ClearDmxChannels>>,
-    mut universes: ResMut<ConsoleDmxUniverses>,
-    mut responder: CommandResponder,
-) {
-    for event in events.read() {
-        let snapshot = &event.action.0;
-        let expanded_channels = snapshot.channels.expand();
-
-        tracing::debug!(
-            "Clearing DMX channels {} (manual override)",
-            snapshot.channels
-        );
-
-        // Step 1: Set DMX values to 0
-        for ch in &expanded_channels {
-            universes.set_value(ch.universe, ch.address, 0, ConsoleChannelOrigin::System);
-        }
-        succeed_action(&mut responder, event.command_id);
-    }
-}
-
 /// Handle RestoreColorPathDefaultsSnapshot commands to restore fixture default assignments.
 pub fn handle_restore_color_path_defaults_snapshot(
     mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreColorPathDefaultsSnapshot>>,
