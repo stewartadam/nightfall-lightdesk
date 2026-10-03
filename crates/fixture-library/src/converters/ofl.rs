@@ -365,9 +365,7 @@ fn map_ofl_capability_to_attribute(cap: &open_fixture_library::OflCapability) ->
         }
         "Pan" => Some(Attribute::Pan),
         "Tilt" => Some(Attribute::Tilt),
-        "Focus" => Some(Attribute::Custom {
-            label: "Focus".to_string(),
-        }),
+        "Focus" => Some(Attribute::Focus),
         "Zoom" => Some(Attribute::Zoom),
         "Iris" => Some(Attribute::Custom {
             label: "Iris".to_string(),
@@ -427,9 +425,7 @@ pub(super) fn map_channel_key_to_attribute(key: &str) -> Option<Attribute> {
     } else if key_lower.contains("zoom") {
         Some(Attribute::Zoom)
     } else if key_lower.contains("focus") {
-        Some(Attribute::Custom {
-            label: "Focus".to_string(),
-        })
+        Some(Attribute::Focus)
     } else if key_lower.contains("iris") {
         Some(Attribute::Custom {
             label: "Iris".to_string(),

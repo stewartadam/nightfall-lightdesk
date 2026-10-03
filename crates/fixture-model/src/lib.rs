@@ -23,6 +23,6 @@ pub mod prelude {
     pub use crate::parameter::{
         CieColor, DmxSlots, ElementParameterRef, FunctionRelation, MergeStrategy,
         ModeMasterCondition, ParameterFunction, ParameterFunctionSet, ParameterMetadata,
-        ProfilePoint, RelationKind, evaluate_profile,
+        PhysicalUnit, PrismFacet, ProfilePoint, RelationKind, evaluate_profile,
     };
 }

@@ -82,8 +82,13 @@ export class BeamUpdater {
     if (!this.enabled) return;
     if (instance.rendererType !== "gdtf") return;
     if (instance.emitters.size === 0) return;
-    // Skip spotlight rendering for Glow beam types (LED bars, pixel fixtures)
-    if (instance.beamType === BeamType.Glow) return;
+    // Skip spotlight rendering for Glow and Rectangle beam types (LED bars,
+    // pixel fixtures); this cone renderer has no rectangular projection model.
+    if (
+      instance.beamType === BeamType.Glow ||
+      instance.beamType === BeamType.Rectangle
+    )
+      return;
 
     // Create/update a beam for each emitter
     for (const [emitterName, emitter] of instance.emitters) {
