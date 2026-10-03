@@ -29,7 +29,6 @@ test("validation jobs wait only for their preparation prerequisites", () => {
     "scope",
     "native",
     "wasm-bridge",
-    "browser-runtime",
   ]);
   for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
     assert.equal(jobs[id].if, `\${{ !startsWith(github.ref, 'refs/tags/') }}`);
