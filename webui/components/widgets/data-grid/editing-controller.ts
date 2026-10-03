@@ -28,6 +28,7 @@ import {
 import type {
   DataGridCellEditFactory,
   DataGridEditCommitMode,
+  DataGridEditCommitOptions,
   DataGridProps,
   EditingCell,
 } from "./model/types";
@@ -87,17 +88,28 @@ export function createDataGridEditingController(
     });
   };
 
-  /** Commits the current inline edit and restores active-cell focus. */
-  const commitEdit = (mode: DataGridEditCommitMode = "default") => {
+  /**
+   * Commits the current inline edit and, unless the caller reports focus moving
+   * elsewhere, restores active-cell focus.
+   */
+  const commitEdit = (
+    mode: DataGridEditCommitMode = "default",
+    { restoreFocus = true }: DataGridEditCommitOptions = {},
+  ) => {
+    /** Returns focus to the grid when the commit keeps the user in it. */
+    const focusRoot = () => {
+      if (restoreFocus) options.focusRoot();
+    };
     if (options.props.readOnly) {
-      cancelEdit();
+      setEditingCell(undefined);
+      focusRoot();
       return;
     }
     const editing = editingCell();
     if (!editing) return;
     if (editing.kind === "dropdown" || editing.kind === "rich") {
       setEditingCell(undefined);
-      options.focusRoot();
+      focusRoot();
       return;
     }
     if (
@@ -127,7 +139,7 @@ export function createDataGridEditingController(
       type: "setActiveCell",
       cell: [editing.col, editing.row],
     });
-    options.focusRoot();
+    focusRoot();
 
     if (options.props.onCellsEdited && edits.length > 1) {
       options.props.onCellsEdited(edits, selection, context);
@@ -148,7 +160,7 @@ export function createDataGridEditingController(
         options.props.onCellsEdited(edits, selection, context);
       }
     }
-    options.focusRoot();
+    focusRoot();
   };
 
   /** Commits a non-text editor value across the active selection. */

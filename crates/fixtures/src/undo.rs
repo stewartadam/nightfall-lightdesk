@@ -8,7 +8,7 @@
 
 //! Undo/redo implementations for fixture commands.
 
-use nightfall::command_types::DmxChannelExpr;
+use nightfall::command_types::DmxChannelRef;
 use nightfall::prelude::{ColorPathDefault, FixtureRef};
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
@@ -85,22 +85,6 @@ pub struct OffsetSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 pub struct RestoreOffsetSnapshot(pub OffsetSnapshot);
 
-/// Snapshot of DMX channel values for restoration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DmxChannelSnapshot {
-    /// The original channel expression
-    pub channels: DmxChannelExpr,
-    /// The DMX value that was set (used for description)
-    pub value: ChannelDmxValue,
-}
-
-/// Command to clear DMX channel manual override.
-///
-/// Restores the affected parameters to their default values, clearing
-/// the manual override set by SetDmxChannels.
-#[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub struct ClearDmxChannels(pub DmxChannelSnapshot);
-
 /// Snapshot of all color path defaults before restoring a fixture-default edit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColorPathDefaultsSnapshot {
@@ -123,8 +107,6 @@ impl EngineAction for RestoreBindingSnapshot {}
 impl EngineAction for RestorePatchBindingsSnapshot {}
 
 impl EngineAction for RestoreOffsetSnapshot {}
-
-impl EngineAction for ClearDmxChannels {}
 
 impl EngineAction for RestoreColorPathDefaultsSnapshot {}
 
@@ -202,17 +184,49 @@ impl UndoableOperation for RestoreOffsetSnapshot {
     }
 }
 
-impl UndoableOperation for ClearDmxChannels {
-    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
-        // Inverse of clearing is to set the value again
-        Some(Box::new(FixtureCommand::SetDmxChannels {
-            channels: self.0.channels.clone(),
-            value: self.0.value,
-        }))
+/// Captures the current manual write state of each channel so undo can put it back.
+fn snapshot_manual_channels(
+    ctx: &UndoContext,
+    channels: impl IntoIterator<Item = DmxChannelRef>,
+) -> Vec<ManualDmxChannelState> {
+    let universes = ctx.world.resource::<ConsoleDmxUniverses>();
+    channels
+        .into_iter()
+        .map(|channel| ManualDmxChannelState {
+            channel,
+            manual_value: (universes.get_origin(channel.universe, channel.address)
+                == Some(ConsoleChannelOrigin::ManualCommand))
+            .then(|| universes.get_value(channel.universe, channel.address))
+            .flatten(),
+        })
+        .collect()
+}
+
+impl UndoableOperation for DmxAction {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+        match self {
+            DmxAction::ReleaseChannels { channels } => {
+                let snapshot = snapshot_manual_channels(ctx, channels.expand());
+                // Releasing channels that carry no manual write changes nothing worth undoing.
+                snapshot
+                    .iter()
+                    .any(|state| state.manual_value.is_some())
+                    .then(|| {
+                        Box::new(DmxAction::RestoreChannels { channels: snapshot })
+                            as Box<dyn UndoableOperation>
+                    })
+            }
+            DmxAction::RestoreChannels { channels } => Some(Box::new(DmxAction::RestoreChannels {
+                channels: snapshot_manual_channels(ctx, channels.iter().map(|state| state.channel)),
+            })),
+        }
     }
 
     fn description(&self) -> String {
-        format!("Clear DMX {}", self.0.channels)
+        match self {
+            DmxAction::ReleaseChannels { channels } => format!("Release DMX {channels}"),
+            DmxAction::RestoreChannels { .. } => "Restore DMX Channels".to_string(),
+        }
     }
 }
 
@@ -264,12 +278,10 @@ impl UndoableOperation for FixtureCommand {
                     new_id: *id,
                 }))
             }
-            FixtureCommand::SetDmxChannels { channels, value } => {
-                // Undo clears the manual override by setting affected parameters to default
-                Some(Box::new(ClearDmxChannels(DmxChannelSnapshot {
-                    channels: channels.clone(),
-                    value: *value,
-                })))
+            FixtureCommand::SetDmxChannels { channels, .. } => {
+                Some(Box::new(DmxAction::RestoreChannels {
+                    channels: snapshot_manual_channels(ctx, channels.expand()),
+                }))
             }
             FixtureCommand::UpdateFixturePlacements { updates } => {
                 let mut inverse_updates = Vec::new();

@@ -1,18 +1,8 @@
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..23776a399fc1d5b571f777f042df2f104f8d24f6 100644
+index 48b30e6bf4bf114ba5524ae509c81c4a043d27ea..f09565a5c0759760191e3450ef2cc3aa31874f45 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
-@@ -24270,7 +24270,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
- 
- 	const uv = vec2( roughness, dotNV );
- 
--	return texture( lut, uv ).rg;
-+	// Materialize the LUT pair before component access to avoid nested swizzle views in Tint.
-+	return texture( lut, uv ).rg.toVar();
- 
- } );
- 
-@@ -83362,6 +83363,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -86604,6 +86604,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  	 */
  	async _resolveQueries() {
  
@@ -22,7 +12,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..23776a399fc1d5b571f777f042df2f10
  		if ( this.isDisposed ) {
  
  			return this.lastValue;
-@@ -83430,6 +83434,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -86672,6 +86675,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  			const times = new BigUint64Array( this.resultBuffer.getMappedRange( 0, bytesUsed ) );
  			const framesDuration = {};
@@ -32,7 +22,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..23776a399fc1d5b571f777f042df2f10
  
  			const frames = [];
  
-@@ -83448,6 +83455,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -86692,6 +86698,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  				const startTime = times[ baseOffset ];
  				const endTime = times[ baseOffset + 1 ];
@@ -43,7 +33,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..23776a399fc1d5b571f777f042df2f10
  				const duration = Number( endTime - startTime ) / 1e6;
  
  				this.timestamps.set( uid, duration );
-@@ -83462,6 +83473,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -86706,6 +86716,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  			this.resultBuffer.unmap();
  			this.lastValue = totalDuration;
  			this.frames = frames;
@@ -52,7 +42,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..23776a399fc1d5b571f777f042df2f10
  
  			return totalDuration;
  
-@@ -85966,6 +85979,9 @@ class WebGPUBackend extends Backend {
+@@ -89540,6 +89552,9 @@ class WebGPUBackend extends Backend {
  	 */
  	initTimestampQuery( type, uid, descriptor ) {
  
@@ -63,20 +53,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..23776a399fc1d5b571f777f042df2f10
  
  		if ( ! this.timestampQueryPool[ type ] ) {
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc24f5711fdae065ce920b08435b0869c1b..7c793ebbee735dc9f03dacf4053adcb883074b95 100644
+index e96c4ae08d528fea66c58e5869923c1675822ac9..22b66e6a9044fa6c1ff5e594c3b3d1f5f7470cd3 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
-@@ -24270,7 +24270,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
- 
- 	const uv = vec2( roughness, dotNV );
- 
--	return texture( lut, uv ).rg;
-+	// Materialize the LUT pair before component access to avoid nested swizzle views in Tint.
-+	return texture( lut, uv ).rg.toVar();
- 
- } );
- 
-@@ -83362,6 +83363,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -86604,6 +86604,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  	 */
  	async _resolveQueries() {
  
@@ -86,7 +66,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..7c793ebbee735dc9f03dacf4053adcb8
  		if ( this.isDisposed ) {
  
  			return this.lastValue;
-@@ -83430,6 +83434,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -86672,6 +86675,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  			const times = new BigUint64Array( this.resultBuffer.getMappedRange( 0, bytesUsed ) );
  			const framesDuration = {};
@@ -96,7 +76,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..7c793ebbee735dc9f03dacf4053adcb8
  
  			const frames = [];
  
-@@ -83448,6 +83455,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -86692,6 +86698,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  				const startTime = times[ baseOffset ];
  				const endTime = times[ baseOffset + 1 ];
@@ -107,7 +87,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..7c793ebbee735dc9f03dacf4053adcb8
  				const duration = Number( endTime - startTime ) / 1e6;
  
  				this.timestamps.set( uid, duration );
-@@ -83462,6 +83473,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -86706,6 +86716,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  			this.resultBuffer.unmap();
  			this.lastValue = totalDuration;
  			this.frames = frames;
@@ -116,7 +96,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..7c793ebbee735dc9f03dacf4053adcb8
  
  			return totalDuration;
  
-@@ -85966,6 +85979,9 @@ class WebGPUBackend extends Backend {
+@@ -89540,6 +89552,9 @@ class WebGPUBackend extends Backend {
  	 */
  	initTimestampQuery( type, uid, descriptor ) {
  
@@ -126,25 +106,11 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..7c793ebbee735dc9f03dacf4053adcb8
  		if ( ! this.trackTimestamp ) return;
  
  		if ( ! this.timestampQueryPool[ type ] ) {
-diff --git a/src/nodes/functions/BSDF/DFGLUT.js b/src/nodes/functions/BSDF/DFGLUT.js
-index 464dc5b8981012c3ae28ebb9263e61a82ac8e15e..7ff0c76cf30f5bc2c3e26b6fbd74a48f5e6cdf8d 100644
---- a/src/nodes/functions/BSDF/DFGLUT.js
-+++ b/src/nodes/functions/BSDF/DFGLUT.js
-@@ -49,7 +49,8 @@ const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
- 
- 	const uv = vec2( roughness, dotNV );
- 
--	return texture( lut, uv ).rg;
-+	// Materialize the LUT pair before component access to avoid nested swizzle views in Tint.
-+	return texture( lut, uv ).rg.toVar();
- 
- } );
- 
 diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
-index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..09e175b6ca37dca127ce75fc35a1b17089ac9543 100644
+index e6345e42e2008f6606971c626326d6479e50a51a..1a2778e6c2ba30165dc5798ad66d6c4484db0e4f 100644
 --- a/src/renderers/webgpu/WebGPUBackend.js
 +++ b/src/renderers/webgpu/WebGPUBackend.js
-@@ -2254,6 +2254,9 @@ class WebGPUBackend extends Backend {
+@@ -2584,6 +2584,9 @@ class WebGPUBackend extends Backend {
  	 */
  	initTimestampQuery( type, uid, descriptor ) {
  
@@ -155,10 +121,10 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..09e175b6ca37dca127ce75fc35a1b170
  
  		if ( ! this.timestampQueryPool[ type ] ) {
 diff --git a/src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js b/src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js
-index b19dde83e50bb570f148f46628c9c0cef1609c90..f8cdb01d80f8400572f53e2c76d631dfae417602 100644
+index 4c417487d7ab9ed66945ebe7119770d79dd1902e..a8f8db61e366b843503be10d454c86c96f8e1aaf 100644
 --- a/src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js
 +++ b/src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js
-@@ -129,6 +129,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -131,6 +131,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  	 */
  	async _resolveQueries() {
  
@@ -168,7 +134,7 @@ index b19dde83e50bb570f148f46628c9c0cef1609c90..f8cdb01d80f8400572f53e2c76d631df
  		if ( this.isDisposed ) {
  
  			return this.lastValue;
-@@ -197,6 +200,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -199,6 +202,9 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  			const times = new BigUint64Array( this.resultBuffer.getMappedRange( 0, bytesUsed ) );
  			const framesDuration = {};
@@ -178,7 +144,7 @@ index b19dde83e50bb570f148f46628c9c0cef1609c90..f8cdb01d80f8400572f53e2c76d631df
  
  			const frames = [];
  
-@@ -215,6 +221,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -219,6 +225,10 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  
  				const startTime = times[ baseOffset ];
  				const endTime = times[ baseOffset + 1 ];
@@ -189,7 +155,7 @@ index b19dde83e50bb570f148f46628c9c0cef1609c90..f8cdb01d80f8400572f53e2c76d631df
  				const duration = Number( endTime - startTime ) / 1e6;
  
  				this.timestamps.set( uid, duration );
-@@ -229,6 +239,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
+@@ -233,6 +243,8 @@ class WebGPUTimestampQueryPool extends TimestampQueryPool {
  			this.resultBuffer.unmap();
  			this.lastValue = totalDuration;
  			this.frames = frames;

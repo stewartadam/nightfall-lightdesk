@@ -37,7 +37,7 @@ byteorder = { version = "1.5.0" }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "wasmbind"] }
 clap = { version = "4.6.7", features = ["derive"] }
 clap_builder = { version = "4.6.7", default-features = false, features = ["color", "help", "std", "suggestions", "usage"] }
-cranelift-bitset = { version = "0.135.2", default-features = false, features = ["enable-serde"] }
+cranelift-bitset = { version = "0.136.2", default-features = false, features = ["enable-serde"] }
 crc32fast = { version = "1.5.2" }
 crossbeam-channel = { version = "0.5.17" }
 crossbeam-utils = { version = "0.8.23" }
@@ -68,7 +68,7 @@ once_cell = { version = "1.21.4" }
 percent-encoding = { version = "2.3.2" }
 phf_shared = { version = "0.13.1" }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
-pulley-interpreter = { version = "48.0.2", default-features = false, features = ["disas", "interp", "std"] }
+pulley-interpreter = { version = "49.0.2", default-features = false, features = ["disas", "interp", "std"] }
 regex = { version = "1.13.1" }
 regex-automata = { version = "0.4.18" }
 regex-syntax = { version = "0.8.11" }
@@ -77,14 +77,14 @@ semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.229", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1.0.229", features = ["alloc", "rc"] }
 serde_json = { version = "1.0.151", features = ["alloc", "preserve_order", "raw_value", "unbounded_depth"] }
-serde_with = { version = "3.23.0", features = ["json"] }
+serde_with = { version = "3.24.0", features = ["json"] }
 sha2 = { version = "0.10.9" }
 simd-adler32 = { version = "0.3.10" }
 slab = { version = "0.4.12" }
-smallvec = { version = "1.16.1", default-features = false, features = ["const_new", "serde", "union"] }
+smallvec = { version = "1.16.2", default-features = false, features = ["const_new", "serde", "union"] }
 stable_deref_trait = { version = "1.2.1" }
 sync_wrapper = { version = "1.0.2", default-features = false, features = ["futures"] }
-thiserror = { version = "2.0.20" }
+thiserror = { version = "2.0.21" }
 time = { version = "0.3.55", features = ["formatting", "local-offset", "macros", "parsing"] }
 tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-util = { version = "0.7.19", features = ["io"] }
@@ -96,14 +96,12 @@ tracing-core = { version = "0.1.36" }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 typenum = { version = "1.20.1", default-features = false, features = ["const-generics"] }
 url = { version = "2.5.8", features = ["serde"] }
-uuid = { version = "1.26.1", features = ["js", "serde", "v4", "v5"] }
-wasm-encoder-74cf2303c005493d = { package = "wasm-encoder", version = "0.259.0", default-features = false, features = ["component-model", "std", "wasmparser"] }
-wasm-encoder-9e5443d9dd57f896 = { package = "wasm-encoder", version = "0.254.0", features = ["wasmparser"] }
-wasmparser-74cf2303c005493d = { package = "wasmparser", version = "0.259.0", default-features = false, features = ["component-model", "features", "hash-collections", "simd", "std", "validate"] }
-wasmparser-9e5443d9dd57f896 = { package = "wasmparser", version = "0.254.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
-wasmtime-internal-core = { version = "48.0.2", default-features = false, features = ["anyhow", "backtrace", "serde"] }
+uuid = { version = "1.27.0", features = ["js", "serde", "v4", "v5"] }
+wasm-encoder = { version = "0.258.3", features = ["wasmparser"] }
+wasmparser = { version = "0.258.3", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
+wasmtime-internal-core = { version = "49.0.2", default-features = false, features = ["anyhow", "backtrace", "serde"] }
 winnow = { version = "1.0.4" }
-zerocopy = { version = "0.8.57", default-features = false, features = ["derive", "simd"] }
+zerocopy = { version = "0.8.59", default-features = false, features = ["derive", "simd"] }
 zlib-rs = { version = "0.6.8", default-features = false, features = ["std"] }
 
 [build-dependencies]
@@ -125,7 +123,7 @@ byteorder = { version = "1.5.0" }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "wasmbind"] }
 clap = { version = "4.6.7", features = ["derive"] }
 clap_builder = { version = "4.6.7", default-features = false, features = ["color", "help", "std", "suggestions", "usage"] }
-cranelift-bitset = { version = "0.135.2", default-features = false, features = ["enable-serde"] }
+cranelift-bitset = { version = "0.136.2", default-features = false, features = ["enable-serde"] }
 crc32fast = { version = "1.5.2" }
 crossbeam-channel = { version = "0.5.17" }
 crossbeam-utils = { version = "0.8.23" }
@@ -157,7 +155,7 @@ once_cell = { version = "1.21.4" }
 percent-encoding = { version = "2.3.2" }
 phf_shared = { version = "0.13.1" }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
-pulley-interpreter = { version = "48.0.2", default-features = false, features = ["disas", "interp", "std"] }
+pulley-interpreter = { version = "49.0.2", default-features = false, features = ["disas", "interp", "std"] }
 regex = { version = "1.13.1" }
 regex-automata = { version = "0.4.18" }
 regex-syntax = { version = "0.8.11" }
@@ -166,16 +164,16 @@ semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.229", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1.0.229", features = ["alloc", "rc"] }
 serde_json = { version = "1.0.151", features = ["alloc", "preserve_order", "raw_value", "unbounded_depth"] }
-serde_with = { version = "3.23.0", features = ["json"] }
+serde_with = { version = "3.24.0", features = ["json"] }
 sha2 = { version = "0.10.9" }
 simd-adler32 = { version = "0.3.10" }
 slab = { version = "0.4.12" }
-smallvec = { version = "1.16.1", default-features = false, features = ["const_new", "serde", "union"] }
+smallvec = { version = "1.16.2", default-features = false, features = ["const_new", "serde", "union"] }
 stable_deref_trait = { version = "1.2.1" }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3.0.6", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 syn-f595c2ba2a3f28df = { package = "syn", version = "2.0.119", features = ["extra-traits", "full", "visit", "visit-mut"] }
 sync_wrapper = { version = "1.0.2", default-features = false, features = ["futures"] }
-thiserror = { version = "2.0.20" }
+thiserror = { version = "2.0.21" }
 time = { version = "0.3.55", features = ["formatting", "local-offset", "macros", "parsing"] }
 tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-util = { version = "0.7.19", features = ["io"] }
@@ -187,25 +185,22 @@ tracing-core = { version = "0.1.36" }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 typenum = { version = "1.20.1", default-features = false, features = ["const-generics"] }
 url = { version = "2.5.8", features = ["serde"] }
-uuid = { version = "1.26.1", features = ["js", "serde", "v4", "v5"] }
-wasm-encoder-74cf2303c005493d = { package = "wasm-encoder", version = "0.259.0", default-features = false, features = ["component-model", "std", "wasmparser"] }
-wasm-encoder-9e5443d9dd57f896 = { package = "wasm-encoder", version = "0.254.0", features = ["wasmparser"] }
-wasmparser-74cf2303c005493d = { package = "wasmparser", version = "0.259.0", default-features = false, features = ["component-model", "features", "hash-collections", "simd", "std", "validate"] }
-wasmparser-9e5443d9dd57f896 = { package = "wasmparser", version = "0.254.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
-wasmtime-internal-core = { version = "48.0.2", default-features = false, features = ["anyhow", "backtrace", "serde"] }
+uuid = { version = "1.27.0", features = ["js", "serde", "v4", "v5"] }
+wasm-encoder = { version = "0.258.3", features = ["wasmparser"] }
+wasmparser = { version = "0.258.3", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
+wasmtime-internal-core = { version = "49.0.2", default-features = false, features = ["anyhow", "backtrace", "serde"] }
 winnow = { version = "1.0.4" }
-zerocopy = { version = "0.8.57", default-features = false, features = ["derive", "simd"] }
+zerocopy = { version = "0.8.59", default-features = false, features = ["derive", "simd"] }
 zlib-rs = { version = "0.6.8", default-features = false, features = ["std"] }
 
 [target.aarch64-apple-darwin.dependencies]
 block2 = { version = "0.6.2" }
 dispatch2 = { version = "0.3.1" }
 errno = { version = "0.3.14" }
-getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3.4", default-features = false, features = ["std"] }
-getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
+getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 hyper = { version = "1.11.1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1.20", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
-libc = { version = "0.2.189", features = ["extra_traits"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
+libc = { version = "0.2.190", features = ["extra_traits"] }
 mio = { version = "1.2.3", features = ["net", "os-ext"] }
 nix = { version = "0.31.3", features = ["net", "signal"] }
 objc2 = { version = "0.6.4", features = ["disable-encoding-assertions", "exception"] }
@@ -216,14 +211,13 @@ tower = { version = "0.5.3", default-features = false, features = ["log", "make"
 
 [target.aarch64-apple-darwin.build-dependencies]
 block2 = { version = "0.6.2" }
-cc = { version = "1.4.6", default-features = false, features = ["parallel"] }
+cc = { version = "1.6.0", default-features = false, features = ["parallel"] }
 dispatch2 = { version = "0.3.1" }
 errno = { version = "0.3.14" }
-getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3.4", default-features = false, features = ["std"] }
-getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
+getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 hyper = { version = "1.11.1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1.20", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
-libc = { version = "0.2.189", features = ["extra_traits"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
+libc = { version = "0.2.190", features = ["extra_traits"] }
 mio = { version = "1.2.3", features = ["net", "os-ext"] }
 nix = { version = "0.31.3", features = ["net", "signal"] }
 objc2 = { version = "0.6.4", features = ["disable-encoding-assertions", "exception"] }
@@ -233,38 +227,33 @@ rustix = { version = "1.1.5", features = ["fs", "mm", "param", "process", "stdio
 tower = { version = "0.5.3", default-features = false, features = ["log", "make", "retry", "timeout"] }
 
 [target.x86_64-pc-windows-msvc.dependencies]
-getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3.4", default-features = false, features = ["std"] }
-getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
+getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 hyper = { version = "1.11.1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1.20", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
 tower = { version = "0.5.3", default-features = false, features = ["log", "make", "retry", "timeout"] }
 winapi = { version = "0.3.9", default-features = false, features = ["consoleapi", "handleapi", "impl-default", "knownfolders", "objbase", "processenv", "shlobj", "synchapi", "sysinfoapi", "winbase", "winerror", "winuser"] }
 windows = { version = "0.62.2", features = ["Win32_Devices_Properties", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com_StructuredStorage", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Variant", "Win32_UI_Shell_PropertiesSystem"] }
 windows-sys-4db8c43aad08e7ae = { package = "windows-sys", version = "0.60.2", features = ["Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Controls", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
-windows-sys-73dcd821b1037cfd = { package = "windows-sys", version = "0.59.0", features = ["Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Time", "Win32_UI_WindowsAndMessaging"] }
-windows-sys-b21d60becc0929df = { package = "windows-sys", version = "0.52.0", default-features = false, features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security_Cryptography", "Win32_System_Com", "Win32_UI_Shell"] }
-windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys-73dcd821b1037cfd = { package = "windows-sys", version = "0.59.0", features = ["Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_Debug", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Time", "Win32_UI_WindowsAndMessaging"] }
+windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
-cc = { version = "1.4.6", default-features = false, features = ["parallel"] }
-getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3.4", default-features = false, features = ["std"] }
-getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
+cc = { version = "1.6.0", default-features = false, features = ["parallel"] }
+getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 hyper = { version = "1.11.1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1.20", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
 tower = { version = "0.5.3", default-features = false, features = ["log", "make", "retry", "timeout"] }
 winapi = { version = "0.3.9", default-features = false, features = ["consoleapi", "handleapi", "impl-default", "knownfolders", "objbase", "processenv", "shlobj", "synchapi", "sysinfoapi", "winbase", "winerror", "winuser"] }
 windows = { version = "0.62.2", features = ["Win32_Devices_Properties", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com_StructuredStorage", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Variant", "Win32_UI_Shell_PropertiesSystem"] }
 windows-sys-4db8c43aad08e7ae = { package = "windows-sys", version = "0.60.2", features = ["Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Controls", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
-windows-sys-73dcd821b1037cfd = { package = "windows-sys", version = "0.59.0", features = ["Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Time", "Win32_UI_WindowsAndMessaging"] }
-windows-sys-b21d60becc0929df = { package = "windows-sys", version = "0.52.0", default-features = false, features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security_Cryptography", "Win32_System_Com", "Win32_UI_Shell"] }
-windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys-73dcd821b1037cfd = { package = "windows-sys", version = "0.59.0", features = ["Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_Debug", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Time", "Win32_UI_WindowsAndMessaging"] }
+windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.x86_64-unknown-linux-gnu.dependencies]
-getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3.4", default-features = false, features = ["std"] }
-getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
+getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 hyper = { version = "1.11.1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1.20", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
-libc = { version = "0.2.189", features = ["extra_traits"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
+libc = { version = "0.2.190", features = ["extra_traits"] }
 linux-raw-sys = { version = "0.12.1", features = ["auxvec", "elf", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "xdp"] }
 mio = { version = "1.2.3", features = ["net", "os-ext"] }
 nix = { version = "0.31.3", features = ["net", "signal"] }
@@ -272,12 +261,11 @@ rustix = { version = "1.1.5", features = ["event", "fs", "mm", "net", "param", "
 tower = { version = "0.5.3", default-features = false, features = ["log", "make", "retry", "timeout"] }
 
 [target.x86_64-unknown-linux-gnu.build-dependencies]
-cc = { version = "1.4.6", default-features = false, features = ["parallel"] }
-getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3.4", default-features = false, features = ["std"] }
-getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
+cc = { version = "1.6.0", default-features = false, features = ["parallel"] }
+getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 hyper = { version = "1.11.1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1.20", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
-libc = { version = "0.2.189", features = ["extra_traits"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
+libc = { version = "0.2.190", features = ["extra_traits"] }
 linux-raw-sys = { version = "0.12.1", features = ["auxvec", "elf", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "xdp"] }
 mio = { version = "1.2.3", features = ["net", "os-ext"] }
 nix = { version = "0.31.3", features = ["net", "signal"] }

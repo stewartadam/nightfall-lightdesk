@@ -395,7 +395,7 @@ fn infer_binding_scopes(
     // Only inputs can be disabled, so a disabled filter never matches output bindings.
     if target_kind == Some(Disabled) {
         return match source_kind {
-            None | Some(Transport) | Some(Fixture) => Ok((true, false)),
+            None | Some(Transport) => Ok((true, false)),
             Some(_) => Err(OUTPUT_DISABLE_ERROR.to_string()),
         };
     }
@@ -2013,6 +2013,46 @@ mod tests {
         )
         .expect("removing disabled rules should succeed");
         assert!(disabled_bindings.bindings.is_empty());
+    }
+
+    /// Verifies `rm patch` rejects output sources filtered by `disabled`, which can never match.
+    #[test]
+    fn apply_patch_binding_remove_rejects_disabled_output_sources() {
+        let fixture = create_test_fixture(12);
+        let mut data_provider = FixtureDataProviderExt::default();
+        let _ = data_provider.inner.add(fixture);
+        let mut input_bindings = InputBindings::default();
+        let mut output_bindings = OutputBindings::default();
+        let mut disabled_bindings = DisabledBindings::default();
+
+        for source in [
+            BindingEndpoint::Fixture {
+                ids: vec![12],
+                element: None,
+                param: None,
+            },
+            BindingEndpoint::FixtureBreak {
+                ids: vec![12],
+                dmx_break: 2,
+            },
+            BindingEndpoint::Console {
+                universe: Some(DmxRange::single(1)),
+                address: None,
+            },
+        ] {
+            let error = apply_patch_binding_remove(
+                Some(&source),
+                Some(&BindingEndpoint::Disabled),
+                None,
+                None,
+                &mut input_bindings,
+                &mut output_bindings,
+                &mut disabled_bindings,
+                &data_provider,
+            )
+            .expect_err("output sources cannot have disabled rules");
+            assert_eq!(error, OUTPUT_DISABLE_ERROR);
+        }
     }
 
     /// Verifies a fixture break patches only to transports and is removed by a whole-fixture unpatch.

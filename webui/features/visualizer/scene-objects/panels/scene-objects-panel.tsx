@@ -10,13 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import PanelToolbar from "../../../../components/ui/panel-toolbar";
 import { ToolbarButton } from "../../../../components/ui/toolbar-button";
 import CrudPanelSearch, {
@@ -622,7 +616,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
 
             <ToolbarButton
               variant="danger"
-              size="labeled"
+              count={selectedRows().length}
               tooltip={
                 selectedRows().length > 0
                   ? `Delete selected scene objects (${selectedRows().length})`
@@ -634,11 +628,6 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
               label="Delete selected scene objects"
             >
               <TrashIcon class="size-4" aria-hidden />
-              <Show when={selectedRows().length > 0}>
-                <span class="rounded bg-red-800 px-1 text-[10px] leading-4 text-red-100">
-                  {selectedRows().length}
-                </span>
-              </Show>
             </ToolbarButton>
 
             <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />

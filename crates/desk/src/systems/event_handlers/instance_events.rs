@@ -51,8 +51,10 @@ pub fn handle_events(
             for mut parameter in &mut parameter_query {
                 parameter.values.current_value = parameter.values.default_value;
             }
+            // Free every console slot; fixture output is rewritten later this frame and
+            // console universes nothing feeds anymore stop being routed.
             if let Some(universes) = dmx_universes.as_deref_mut() {
-                universes.clear_values();
+                universes.clear();
             }
         }
 

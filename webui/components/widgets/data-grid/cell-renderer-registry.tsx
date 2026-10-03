@@ -39,6 +39,8 @@ import { findRichCellExtension } from "./model/rich-cell-extension";
 import type {
   DataGridCellEditFactory,
   DataGridEditCommitContext,
+  DataGridEditCommitMode,
+  DataGridEditCommitOptions,
   DataGridInlineEditTooltipContext,
   DataGridRichCellExtension,
   EditingCell,
@@ -73,7 +75,10 @@ export interface CellContentContext {
   setActiveCell: (cell: Item | undefined) => void;
   setEditingCell: Setter<EditingCell | undefined>;
   setInputRef: (element: HTMLInputElement) => void;
-  commitEdit: (mode?: "default" | "alternate") => void;
+  commitEdit: (
+    mode?: DataGridEditCommitMode,
+    options?: DataGridEditCommitOptions,
+  ) => void;
   cancelEdit: () => void;
 }
 
@@ -95,6 +100,16 @@ interface DataGridCellEditor {
   matches: (context: CellContentContext) => boolean;
   render: (context: CellContentContext) => JSX.Element;
   padded?: boolean;
+}
+
+/**
+ * Returns whether an editor blur hands focus to an element outside its grid,
+ * such as another panel the user clicked, which the commit must not take back.
+ */
+function focusLeavesGrid(event: FocusEvent & { currentTarget: Element }) {
+  const next = event.relatedTarget;
+  const grid = event.currentTarget.closest('[role="grid"]');
+  return next instanceof Node && grid !== null && !grid.contains(next);
 }
 
 const textCellEditor: DataGridCellEditor = {
@@ -332,7 +347,11 @@ function renderTextInputEditor(context: CellContentContext) {
             event.stopPropagation();
           }
         }}
-        onBlur={() => context.commitEdit()}
+        onBlur={(event) =>
+          context.commitEdit("default", {
+            restoreFocus: !focusLeavesGrid(event),
+          })
+        }
       />
       <Show when={tooltipContent()}>
         {(content) => (

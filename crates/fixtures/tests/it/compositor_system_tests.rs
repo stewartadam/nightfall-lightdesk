@@ -27,10 +27,7 @@ use nightfall_engine::prelude::{
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::undo::{
-    ClearDmxChannels, DmxChannelSnapshot, FixtureSnapshot, ParameterSnapshot,
-    RestoreFixtureSnapshot,
-};
+use nightfall_fixtures::undo::{FixtureSnapshot, ParameterSnapshot, RestoreFixtureSnapshot};
 use nightfall_instances::{PlaybackAction, PlaybackScope};
 use nightfall_io::prelude::*;
 
@@ -1489,7 +1486,6 @@ fn test_compositor_resets_inverted_parameter_to_logical_default() {
 fn manual_channel_app(value: f32, components: impl Bundle) -> (App, Entity) {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<FixtureCommand>>();
-    app.add_message::<EngineActionEnvelope<ClearDmxChannels>>();
     app.add_message::<EngineActionEnvelope<PlaybackAction>>();
     app.add_message::<EngineActionEnvelope<DmxAction>>();
     init_command_lifecycle(&mut app);
@@ -1687,7 +1683,6 @@ fn test_manual_dmx_channel_falls_back_to_wire_address_for_direct_patch() {
 fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<FixtureCommand>>();
-    app.add_message::<EngineActionEnvelope<ClearDmxChannels>>();
     app.add_message::<EngineActionEnvelope<PlaybackAction>>();
     app.add_message::<EngineActionEnvelope<DmxAction>>();
     app.add_message::<CommandResult>();
@@ -1783,7 +1778,6 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
         Update,
         (
             nightfall_fixtures::events::handle_set_dmx_channels,
-            nightfall_fixtures::events::handle_clear_dmx_channels,
             nightfall_fixtures::compositor::update_manual_assertion_layer,
             compositor::<Parameter>,
         )
@@ -1807,15 +1801,12 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     const { assert!(MANUAL_ASSERTION_LAYER_PRIORITY.0 > TRANSPORT_INPUT_LAYER_PRIORITY.0) };
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(ClearDmxChannels(
-            DmxChannelSnapshot {
-                channels: DmxChannelExpr::Single(DmxChannelRef {
-                    universe: 5,
-                    address: 13,
-                }),
-                value: 200,
-            },
-        )));
+        .write_message(EngineActionEnvelope::detached(DmxAction::ReleaseChannels {
+            channels: DmxChannelExpr::Single(DmxChannelRef {
+                universe: 5,
+                address: 13,
+            }),
+        }));
     app.update();
 
     let parameter = app.world().get::<Parameter>(parameter_entity).unwrap();

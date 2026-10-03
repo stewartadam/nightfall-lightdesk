@@ -51,9 +51,7 @@ test("programmer column visibility control is right aligned", async ({
   await expect(columnButton).toBeVisible();
 
   const metrics = await columnButton.evaluate((button) => {
-    const toolbar = button.closest(
-      '[class*="justify-between"][class*="border-b"]',
-    );
+    const toolbar = button.closest('[data-component="PanelToolbar"]');
     if (!toolbar) {
       throw new Error("Programmer toolbar not found");
     }

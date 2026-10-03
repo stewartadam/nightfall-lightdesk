@@ -365,7 +365,7 @@ export function startRenderLoop(
 
     // Render scene and track timing. `inspector.frames` and the pools'
     // `frameIntervals` are three.js internals (the latter added by
-    // patches/three@0.185.1.patch), guarded by scripts/three-timestamp-query.node.test.mjs.
+    // patches/three@0.186.1.patch), guarded by scripts/three-timestamp-query.node.test.mjs.
     const timedRenderer = state.renderer as unknown as TimestampRenderer;
     const gpu = state.inspector
       ? readInspectorGpuSample(

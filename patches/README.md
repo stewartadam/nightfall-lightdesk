@@ -1,17 +1,6 @@
-# Three.js WebGPU fixes
+# Three.js WebGPU timing fixes
 
-`three@0.185.1.patch` materializes the two-channel DFG lookup as a TSL variable
-before the lighting code reads its individual components. This preserves the
-lookup texture, coordinates, values, and BRDF calculations, while emitting
-`pair = sample.xy; pair.x` instead of `sample.xy.x`.
-
-Chromium 153.0.8010.12 on macOS fails the latter form during Metal shader
-compilation with `swizzle view instruction still has usages after lowering`.
-This affects standard materials even in an empty visualizer scene. The patch
-covers the upstream source and both unminified WebGPU distribution entry points;
-Nightfall imports `three/webgpu`, which resolves to `build/three.webgpu.js`.
-
-`three@0.185.1.patch` is registered under `patchedDependencies` in
+`three@0.186.1.patch` is registered under `patchedDependencies` in
 `pnpm-workspace.yaml`, so `pnpm install` applies it and fails if it no longer
 applies. pnpm records the patch hash in its installed lockfile
 (`node_modules/.pnpm/lock.yaml`), which Vite includes in its
@@ -19,13 +8,16 @@ applies. pnpm records the patch hash in its installed lockfile
 so a previously optimized, unpatched Three.js bundle cannot survive a patch
 change. Restart any running Vite server after changing a patch.
 
-Edit the patch with `pnpm patch three@0.185.1`, change the extracted copy, then
+Edit the patch with `pnpm patch three@0.186.1`, change the extracted copy, then
 run `pnpm patch-commit <directory>`.
 
-The Three.js version is pinned so an upgrade requires checking this patch.
-The minified distribution files are not used by Nightfall.
+The Three.js version is pinned so an upgrade requires checking this patch. The
+patch covers the upstream source and both unminified WebGPU distribution entry
+points; Nightfall imports `three/webgpu`, which resolves to
+`build/three.webgpu.js`. The minified distribution files are not used by
+Nightfall.
 
-The patch also clears `timestampWrites` before `initTimestampQuery` returns when
+The patch clears `timestampWrites` before `initTimestampQuery` returns when
 tracking is disabled. Three reuses the canvas render-pass descriptor without
 resetting it; otherwise a sampled frame leaves GPU timestamp writes enabled on
 subsequent unsampled frames. Nightfall samples at 10 Hz to limit profiling
@@ -39,15 +31,3 @@ when the developer inspector resolves several together. Nightfall reports GPU
 work using the earliest start and latest end across render and compute passes.
 Summing individual durations can double-count overlapping work. Missing bounds
 remain unavailable, and each readback replaces the frame map to bound retention.
-
-Regression coverage:
-
-- `webui/e2e/browser-demo.spec.ts` checks the real demo flow without filtering
-  console errors and captures the lit sample rig.
-- `webui/e2e/visualizer-render.spec.ts` checks main-thread and worker rendering,
-  fixture appearance and output, and rejects shader/pipeline diagnostics.
-
-When upgrading Three.js or Chromium, reproduce without the patch before removing
-it. The latest published release checked during investigation, r186, still has
-the same lookup and nested-swizzle generation. Upstream source:
-https://github.com/mrdoob/three.js/blob/r186/src/nodes/functions/BSDF/DFGLUT.js

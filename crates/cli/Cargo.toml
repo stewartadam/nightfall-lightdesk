@@ -13,7 +13,7 @@ path = "src/main.rs"
 futures-util.workspace = true
 itertools = "0.15"
 minicbor-serde.workspace = true
-reedline = "0.51"
+reedline = "0.52"
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-config = { path = "../config" }
 serde_json.workspace = true

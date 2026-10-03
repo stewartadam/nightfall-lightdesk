@@ -182,7 +182,10 @@ export async function startPlaywrightWorkerSlot({ runRoot, workerIndex }) {
   const registryPath = join(runRoot, `worker-${workerIndex}-vite.jsonl`);
   try {
     const viteService = await startService({
-      environment: { NIGHTFALL_PORT: String(backendPort) },
+      environment: {
+        NIGHTFALL_PORT: String(backendPort),
+        NIGHTFALL_VITE_WARMUP_PANELS: "1",
+      },
       registryPath,
       scriptName: "run-playwright-vite.mjs",
       timeoutMs: 120_000,

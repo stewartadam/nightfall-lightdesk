@@ -9,10 +9,10 @@ axum.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 base64.workspace = true
-gdtf = { git = "https://github.com/stewartadam/gdtf-rs.git", branch = "update-deps" }
+gdtf.workspace = true
 notify.workspace = true
 open-fixture-library = { path = "../open-fixture-library" }
-quick-xml = "0.41"
+quick-xml = "0.42"
 nightfall = { path = "../common" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
@@ -33,7 +33,7 @@ test-support = []
 
 [dev-dependencies]
 async-channel.workspace = true
-sha2 = "0.10"
+sha2 = "0.11"
 tempfile.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

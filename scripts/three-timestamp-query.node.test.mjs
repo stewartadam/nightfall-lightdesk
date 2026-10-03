@@ -21,7 +21,7 @@ const UPGRADE_HINT =
 
 /**
  * GPU timing reads private three.js members, some of which only exist because
- * of patches/three@0.185.1.patch. This fails with an actionable message when
+ * of patches/three@0.186.1.patch. This fails with an actionable message when
  * an upgrade drops or renames any of them, instead of timing silently vanishing.
  */
 test("three exposes the members visualizer GPU timing depends on", (t) => {
@@ -101,7 +101,7 @@ test("three exposes the members visualizer GPU timing depends on", (t) => {
         "number",
         `${name} pool.currentQueryIndex missing: ${UPGRADE_HINT}`,
       );
-      // Written by `_resolveQueries` only via patches/three@0.185.1.patch; the
+      // Written by `_resolveQueries` only via patches/three@0.186.1.patch; the
       // interval tests below verify their values.
       const resolver = String(pool._resolveQueries);
       for (const member of ["lastInterval", "frameIntervals"])

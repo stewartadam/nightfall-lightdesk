@@ -829,13 +829,21 @@ export default function TanStackDataGrid(props: DataGridProps) {
     return true;
   };
 
-  /** Restores keyboard focus to the grid root once editing has settled. */
+  /**
+   * Restores keyboard focus to the grid root once editing has settled. The
+   * deferred retry yields if focus has since moved to an element outside the
+   * grid, so a slow frame cannot pull focus back from another panel.
+   */
   const focusRoot = () => {
     if (!editingCell()) {
       rootRef?.focus();
     }
     requestAnimationFrame(() => {
       if (editingCell() || typeSeekActive()) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && !rootRef?.contains(active)) {
+        return;
+      }
       rootRef?.focus();
     });
   };

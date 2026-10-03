@@ -50,7 +50,7 @@ async function openTimelineListPanel(page: Page) {
       title: "Timelines",
       params: {},
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });

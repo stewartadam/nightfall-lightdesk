@@ -16,10 +16,12 @@ use nightfall_fixtures::prelude::{
     ConsoleChannelOrigin, ConsoleDmxUniverses, FixtureDataProviderExt,
 };
 use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_io::BindingTransport;
 
-/// Verifies releasing every parameter also clears console DMX universe values.
+/// Verifies releasing every parameter frees every console slot instead of leaving system-owned
+/// zeros, so released console universes stop being routed to transports.
 #[test]
-fn test_release_all_clears_dmx_universes() {
+fn test_release_all_frees_dmx_universes() {
     let mut app = App::new();
     app.add_message::<EngineActionEnvelope<PlaybackAction>>();
     app.add_message::<OperationResult<(), CommandError>>();
@@ -30,11 +32,17 @@ fn test_release_all_clears_dmx_universes() {
 
     {
         let mut universes = app.world_mut().resource_mut::<ConsoleDmxUniverses>();
-        universes.set_value(1, 1, 255, ConsoleChannelOrigin::System);
-        universes.set_value(1, 2, 128, ConsoleChannelOrigin::System);
-        universes.set_value(2, 1, 64, ConsoleChannelOrigin::System);
-        let universe = universes.get_universe(1);
-        assert!(universe.iter().any(|value| *value != 0));
+        universes.set_value(1, 1, 255, ConsoleChannelOrigin::ManualCommand);
+        universes.set_value(1, 2, 128, ConsoleChannelOrigin::OutputBinding);
+        universes.set_value(
+            2,
+            1,
+            64,
+            ConsoleChannelOrigin::InputTransport {
+                transport: BindingTransport::Sacn,
+                universe: 4,
+            },
+        );
     }
 
     app.world_mut()
@@ -45,9 +53,11 @@ fn test_release_all_clears_dmx_universes() {
         ));
     app.update();
 
-    let universes = app.world_mut().resource::<ConsoleDmxUniverses>();
-    let universe_1 = universes.get_universe(1);
-    let universe_2 = universes.get_universe(2);
-    assert!(universe_1.iter().all(|value| *value == 0));
-    assert!(universe_2.iter().all(|value| *value == 0));
+    let universes = app.world().resource::<ConsoleDmxUniverses>();
+    assert_eq!(universes.get_origin(1, 1), None);
+    assert_eq!(universes.get_origin(2, 1), None);
+    assert!(
+        !universes.has_universe(1) && !universes.has_universe(2),
+        "released console universes should no longer be output"
+    );
 }

@@ -440,7 +440,7 @@ export default function FlowListPanel(props: FlowListPanelProps) {
 
             <ToolbarButton
               variant="danger"
-              size="labeled"
+              count={selectedCount()}
               tooltip={
                 selectedCount() > 0
                   ? `Delete selected flows (${selectedCount()})`
@@ -452,11 +452,6 @@ export default function FlowListPanel(props: FlowListPanelProps) {
               label="Delete selected flows"
             >
               <TrashIcon class="size-4" aria-hidden />
-              <Show when={selectedCount() > 0}>
-                <span class="rounded bg-red-800 px-1 text-[10px] leading-4 text-red-100">
-                  {selectedCount()}
-                </span>
-              </Show>
             </ToolbarButton>
 
             <Show when={viewMode() === "grid"}>
