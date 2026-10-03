@@ -40,6 +40,7 @@ import {
   timecodes,
   timelines,
 } from "../../state/appStores";
+import { activeLayoutId } from "../../state/layout-switcher";
 import { normalizeTimelineUid } from "../timeline";
 import {
   clearProgrammerCompletely,
@@ -49,14 +50,28 @@ import {
 import { visibleGuideContent } from "./content";
 import { GuideContentItem } from "./guide-content";
 import { GuideTarget } from "./guide-target";
+import {
+  enterLessonLayout,
+  findLessonLayoutId,
+  LESSON_LAYOUT_NAME,
+  layoutName,
+  leaveLessonLayout,
+} from "./lesson-layout";
 import { guideLessons } from "./lesson-store";
 import type { GuidePrerequisite } from "./lessons";
+import {
+  collapseCoveringEdgeGroups,
+  type GuidePanel,
+  type GuidePanelSnapshot,
+  trackGuidePanels,
+} from "./panel-tracking";
 import {
   closeWelcomeGuide,
   guideCompleted,
   guideDismissed,
   guideLessonId,
   guideOpen,
+  guideReturnLayoutId,
   guideStepIndex,
   openWelcomeGuide,
   startGuideLesson,
@@ -111,40 +126,77 @@ export default function WelcomeGuide() {
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
   );
-  const { dockviewApi } = useAppShell();
-  const [visiblePanels, setVisiblePanels] = createSignal<
-    { component: string; timelineUid?: string }[]
-  >([]);
-  /** Tracks usable panels as tabs activate, groups expand, and the workspace layout changes. */
-  createEffect(() => {
-    const api = dockviewApi();
-    /** Excludes inactive tabs and collapsed groups from the guide's ready panels. */
-    const update = () =>
-      setVisiblePanels(
-        api?.panels
-          .filter((panel) => {
-            return panel.api.isVisible && !panel.group.api.isCollapsed();
-          })
-          .map((panel) => ({
-            component: panel.api.component,
-            timelineUid: panel.params?.initialTimelineUid,
-          })) ?? [],
-      );
-    update();
-    const subscriptions = [
-      api?.onDidLayoutChange(update),
-      api?.onDidActivePanelChange(update),
-      api?.onDidAddPanel(update),
-      api?.onDidRemovePanel(update),
-      api?.onDidTabGroupCollapsedChange(update),
-      ...(["left", "right", "top", "bottom"] as const).map((position) =>
-        api?.getEdgeGroup(position)?.onDidCollapsedChange(update),
-      ),
-    ];
-    onCleanup(() => {
-      for (const subscription of subscriptions) subscription?.dispose();
-    });
+  const { dockviewApi, resetDockviewLayout } = useAppShell();
+  const activeLayout = useStore(activeLayoutId);
+  const returnLayoutId = useStore(guideReturnLayoutId);
+  const [startingLesson, setStartingLesson] = createSignal(false);
+  /**
+   * Starts a lesson from the default arrangement in the Lesson layout,
+   * remembering the user's own layout so they can return to it.
+   */
+  const startLesson = async (id: string) => {
+    if (startingLesson()) return;
+    setStartingLesson(true);
+    try {
+      const api = dockviewApi();
+      const entered = api
+        ? await enterLessonLayout(api, resetDockviewLayout)
+        : null;
+      if (!entered)
+        pushToast(
+          "warning",
+          "Could not switch to the Lesson layout, so this lesson uses your current layout.",
+        );
+      else if (
+        entered.previousLayoutId &&
+        entered.previousLayoutId !== findLessonLayoutId()
+      )
+        guideReturnLayoutId.set(entered.previousLayoutId);
+    } catch (error) {
+      log.error("Failed to prepare the Lesson layout", error);
+    } finally {
+      setStartingLesson(false);
+    }
+    startGuideLesson(id);
+  };
+  /** Offers the user's own layout back only while another layout is showing. */
+  const returnLayoutName = createMemo(() => {
+    const id = returnLayoutId();
+    return id && id !== activeLayout() ? layoutName(id) : undefined;
   });
+  /** Switches back to the layout the user had before lessons began. */
+  const returnToLayout = async () => {
+    const api = dockviewApi();
+    const id = returnLayoutId();
+    if (!api || !id) return;
+    if (await leaveLessonLayout(api, id)) guideReturnLayoutId.set(null);
+    else pushToast("error", "Could not switch back to your layout.");
+  };
+  const [workspace, setWorkspace] = createSignal<GuidePanelSnapshot>({
+    panels: [],
+  });
+  /** Tracks open panels and whether each is actually unobstructed, across layout restores. */
+  createEffect(() => {
+    onCleanup(trackGuidePanels(dockviewApi(), setWorkspace));
+  });
+  /** Lists panels the user can currently see; anything else gets an Open or Show button. */
+  const visiblePanels = createMemo(() =>
+    workspace().panels.filter((panel) => panel.onScreen),
+  );
+  /** Identifies a panel for prerequisite tracking, telling timeline editors apart. */
+  const panelKeys = (panel: GuidePanel) => [
+    panel.component,
+    ...(panel.timelineUid ? [`timeline:${panel.timelineUid}`] : []),
+  ];
+  /** Lists active panels that something else currently covers, which keeps their prerequisite unmet. */
+  const coveredPanels = createMemo(
+    () =>
+      new Set(
+        workspace()
+          .panels.filter((panel) => panel.visible && !panel.onScreen)
+          .flatMap(panelKeys),
+      ),
+  );
   let heading: HTMLHeadingElement | undefined;
   /** Resolves lesson data without retaining stale content when returning to the library. */
   const lesson = createMemo(() =>
@@ -162,11 +214,9 @@ export default function WelcomeGuide() {
   /** Remembers prerequisite panels visited during this step, even when they share a tab group. */
   createEffect(() => {
     const key = `${lessonId()}:${step()?.id}`;
-    const visible = visiblePanels();
-    const keys = visible.flatMap((panel) => [
-      panel.component,
-      ...(panel.timelineUid ? [`timeline:${panel.timelineUid}`] : []),
-    ]);
+    const keys = workspace()
+      .panels.filter((panel) => panel.visible)
+      .flatMap(panelKeys);
     const reset = key !== visitedStep;
     visitedStep = key;
     setVisitedPanels(
@@ -183,11 +233,14 @@ export default function WelcomeGuide() {
         panel.component === "Timeline" &&
         panel.timelineUid === sampleTimeline()?.identifiers.uid,
     );
+  /** Accepts a panel shown during this step that nothing currently covers. */
+  const panelReady = (key: string) =>
+    visitedPanels().has(key) && !coveredPanels().has(key);
   /** Requires every panel in a prerequisite block before revealing subsequent content. */
   const prerequisiteReady = (item: GuidePrerequisite) =>
     (!item.sampleTimeline ||
-      visitedPanels().has(`timeline:${sampleTimeline()?.identifiers.uid}`)) &&
-    (item.panels ?? []).every((name) => visitedPanels().has(name));
+      panelReady(`timeline:${sampleTimeline()?.identifiers.uid}`)) &&
+    (item.panels ?? []).every(panelReady);
   /** Stops the rendered sequence at the first unmet prerequisite. */
   const content = createMemo(() =>
     visibleGuideContent(step()?.content ?? [], prerequisiteReady),
@@ -258,6 +311,7 @@ export default function WelcomeGuide() {
     anchor,
     targetSelector,
     () => step()?.placement,
+    () => step()?.keepVisible,
   );
   const { draggable } = createDraggable();
   void draggable;
@@ -295,10 +349,34 @@ export default function WelcomeGuide() {
     execute: openWelcomeGuide,
   });
 
-  /** Opens panels through the same placement and expansion policy as the palette. */
+  /** Lists every panel the current step asks for, so making room never hides one of them. */
+  const requiredPanels = createMemo(() =>
+    (step()?.content ?? []).flatMap((item) =>
+      item.type === "prerequisite" ? (item.panels ?? []) : [],
+    ),
+  );
+  /**
+   * Opens panels through the same placement and expansion policy as the palette,
+   * then collapses edge panels that still cover it and aren't needed by this step.
+   */
   const openPanel = (name: PanelComponentName) => {
-    openOrFocusPanelDefinition(dockviewApi(), panelDefinitionByName(name));
+    const api = dockviewApi();
+    openOrFocusPanelDefinition(api, panelDefinitionByName(name));
+    requestAnimationFrame(() => {
+      const panel = api?.panels.find((entry) => entry.api.component === name);
+      if (api && panel)
+        collapseCoveringEdgeGroups(
+          api,
+          panel.view.content.element,
+          requiredPanels(),
+        );
+    });
   };
+  /** Reports whether a panel is open and active in Dockview, even if something covers it. */
+  const panelOpen = (name: PanelComponentName) =>
+    workspace().panels.some(
+      (panel) => panel.component === name && panel.visible,
+    );
 
   /** Opens the sample editor using the same identity and parameters as the timeline list. */
   const openSampleTimeline = () => {
@@ -345,20 +423,24 @@ export default function WelcomeGuide() {
     guideLessonId.set(null);
   };
 
-  /** Keeps prerequisite-opening observations active while suppressing actions not yet revealed. */
-  const observation = createMemo(() => {
-    const target = step()?.observe;
-    if (!opened()) return undefined;
-    if (
+  /** Observes the current step from its start, so actions finished while prerequisites settle still count. */
+  const observation = createMemo(() =>
+    opened() ? step()?.observe : undefined,
+  );
+  /**
+   * Holds advancement while the step's action is still hidden behind prerequisites,
+   * except for observations that the prerequisite panels themselves satisfy.
+   */
+  const held = createMemo(() => {
+    const target = observation();
+    return (
       blocked() &&
       target?.type !== "panel" &&
       target?.type !== "sequence-editor" &&
       target?.type !== "sample-panels"
-    )
-      return undefined;
-    return target;
+    );
   });
-  useGuideProgress(observation, dockviewApi, () =>
+  useGuideProgress(observation, held, workspace, () =>
     guideStepIndex.set(guideStepIndex.get() + 1),
   );
 
@@ -441,12 +523,32 @@ export default function WelcomeGuide() {
                   through making your first lights. Then choose what to learn
                   next. You can leave at any time and return using Guide.
                 </p>
+                <p
+                  class="nf-guide-note"
+                  data-testid="guide-layout-notice"
+                  role="status"
+                >
+                  {startingLesson()
+                    ? `Switching to the ${LESSON_LAYOUT_NAME} layout…`
+                    : `Lessons open in a separate ${LESSON_LAYOUT_NAME} layout with the default panels, so your own layout stays as it is. Switch back any time from the layout switcher.`}
+                </p>
+                <Show when={returnLayoutName()}>
+                  {(name) => (
+                    <Button
+                      size="compact"
+                      onClick={() => void returnToLayout()}
+                    >
+                      Return to {name()}
+                    </Button>
+                  )}
+                </Show>
                 <For each={lessons()}>
                   {(entry) => (
                     <button
                       class="nf-guide-lesson"
                       type="button"
-                      onClick={() => startGuideLesson(entry.id)}
+                      disabled={startingLesson()}
+                      onClick={() => void startLesson(entry.id)}
                     >
                       <span class="nf-guide-lesson-meta">
                         {entry.label ?? "Follow-on lesson"} · {entry.duration}
@@ -477,6 +579,7 @@ export default function WelcomeGuide() {
                           <GuideContentItem
                             item={item}
                             panelVisible={panelVisible}
+                            panelOpen={panelOpen}
                             timelineVisible={timelineVisible}
                             canOpenPanels={Boolean(dockviewApi())}
                             canOpenTimeline={Boolean(
@@ -590,6 +693,19 @@ export default function WelcomeGuide() {
                       restores the sample show; it does not erase your lesson
                       completion badges.
                     </p>
+                  </Show>
+                  <Show when={returnLayoutName()}>
+                    {(name) => (
+                      <p>
+                        You’re in the {LESSON_LAYOUT_NAME} layout.{" "}
+                        <Button
+                          size="compact"
+                          onClick={() => void returnToLayout()}
+                        >
+                          Return to {name()}
+                        </Button>
+                      </p>
+                    )}
                   </Show>
                   <div class="nf-guide-navigation">
                     <Button size="compact" onClick={() => moveTo(index() - 1)}>

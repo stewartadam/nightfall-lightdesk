@@ -52,6 +52,8 @@ function GuideText(props: { text: string }) {
 export function GuideContentItem(props: {
   item: GuideContent;
   panelVisible: (name: PanelComponentName) => boolean;
+  /** Reports a panel already active in Dockview, so its button reveals it rather than opening it. */
+  panelOpen: (name: PanelComponentName) => boolean;
   timelineVisible: () => boolean;
   canOpenPanels: boolean;
   canOpenTimeline: boolean;
@@ -98,7 +100,8 @@ export function GuideContentItem(props: {
                     onClick={() => props.openPanel(name)}
                     disabled={!props.canOpenPanels}
                   >
-                    Open {panelDefinitionByName(name).title}
+                    {props.panelOpen(name) ? "Show" : "Open"}{" "}
+                    {panelDefinitionByName(name).title}
                   </Button>
                 )}
               </For>
