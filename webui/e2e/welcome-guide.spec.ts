@@ -2237,6 +2237,30 @@ test("lesson end clears the programmer in one press", async ({ page }) => {
   ).toHaveCount(0);
 });
 
+/** A user layout that happens to be named Lesson is left alone; lessons get their own layout. */
+test("lessons never take over a user layout named Lesson", async ({ page }) => {
+  await openSample(page);
+  await page.evaluate(async () => {
+    const path = "/lib/layout-management.ts";
+    const { createNamedLayout } = await import(path);
+    await createNamedLayout(
+      (window as any).appStores.dockApi.get(),
+      "Lesson",
+      true,
+    );
+  });
+  await expect(
+    page.getByRole("button", { name: "Layout 2: Lesson", exact: true }),
+  ).toBeVisible();
+  await startLesson(page, /Welcome to Nightfall/);
+  await expect(
+    page.getByRole("button", { name: "Layout 3: Lesson 2", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Layout 2: Lesson", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+});
+
 /** Lessons start from the default panels in their own layout and leave the user's layout intact. */
 test("lessons switch to the Lesson layout and can return to the user's layout", async ({
   page,
