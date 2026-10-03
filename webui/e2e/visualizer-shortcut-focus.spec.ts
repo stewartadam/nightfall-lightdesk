@@ -307,7 +307,8 @@ test("visualizer shortcut does not leak after editing a TanStack grid cell", asy
         await page.evaluate(
           () => new Promise((resolve) => requestAnimationFrame(resolve)),
         );
-        return before === (await editableCell.boundingBox())?.y;
+        const after = (await editableCell.boundingBox())?.y;
+        return before !== undefined && before === after;
       })
       .toBe(true);
     await editableCell.dblclick();
