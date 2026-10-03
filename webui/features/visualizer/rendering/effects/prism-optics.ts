@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { xyzToLinearSrgb } from "../../../../lib/color-path-preview";
 import type { PrismFacet } from "../../../../types";
 
 /** A compiled affine projection, in units of the unsplit beam radius. */
@@ -163,6 +164,7 @@ export function compilePrismFacet(
   const Y = Math.max(0, luminance / 100);
   const X = y > 1e-8 ? (x * Y) / y : 0;
   const Z = y > 1e-8 ? ((1 - x - y) * Y) / y : 0;
+  const transmission = xyzToLinearSrgb(X, Y, Z);
   return {
     a: m[0],
     b: m[3],
@@ -171,8 +173,8 @@ export function compilePrismFacet(
     x: m[6],
     y: m[7],
     determinant,
-    red: Math.max(0, 3.2406 * X - 1.5372 * Y - 0.4986 * Z),
-    green: Math.max(0, -0.9689 * X + 1.8758 * Y + 0.0415 * Z),
-    blue: Math.max(0, 0.0557 * X - 0.204 * Y + 1.057 * Z),
+    red: Math.max(0, transmission.red),
+    green: Math.max(0, transmission.green),
+    blue: Math.max(0, transmission.blue),
   };
 }

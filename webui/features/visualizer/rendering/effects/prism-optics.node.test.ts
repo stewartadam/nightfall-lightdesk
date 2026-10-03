@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { PrismFacet } from "../../../../types";
 import { compilePrismFacet, PrismStack } from "./prism-optics";
 
 /** Budget reduction samples the full combination range and still applies later optical stages. */
@@ -120,4 +121,28 @@ test("prism compilation rejects singular and non-affine transforms", () => {
     }),
     undefined,
   );
+});
+
+/** Facet transmission converts xyY to linear sRGB, keeping luminance and dropping negative lobes. */
+test("prism facet transmission is linear sRGB from xyY", () => {
+  const identity: PrismFacet["transform"] = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const white = compilePrismFacet({
+    transform: identity,
+    color: { x: 0.3127, y: 0.329, Y: 100 },
+  })!;
+  for (const channel of [white.red, white.green, white.blue])
+    assert.ok(Math.abs(channel - 1) < 0.01, `D65 white channel ${channel}`);
+  const halfWhite = compilePrismFacet({
+    transform: identity,
+    color: { x: 0.3127, y: 0.329, Y: 50 },
+  })!;
+  assert.ok(Math.abs(halfWhite.green - white.green / 2) < 1e-9);
+  // Monochromatic green lies outside the sRGB gamut, so its red and blue lobes clamp to 0.
+  const green = compilePrismFacet({
+    transform: identity,
+    color: { x: 0.1, y: 0.8, Y: 100 },
+  })!;
+  assert.equal(green.red, 0);
+  assert.equal(green.blue, 0);
+  assert.ok(green.green > 1);
 });
