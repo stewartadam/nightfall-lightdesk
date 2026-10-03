@@ -14,7 +14,7 @@ The **Fixtures** tab lists IDs, labels, make/model, mode, channel width, and 3D 
 
 The **DMX I/O** tab shows bindings. Group by fixture or universe to inspect routes, and check Source, Target, Priority, and Clone values. Resolve highlighted conflicts before outputting to hardware; overlapping addresses can make one command affect the wrong light.
 
-A console address alone does not select a network destination or USB device. Configure output targets in [I/O Transports](io-transports.md), then use bindings to route console channels to those targets. Use [Console DMX](console-dmx.md) to inspect channel values independently of the physical transport.
+A console address alone does not select a network destination or USB device. Configure output targets in [I/O Transports](io-transports.md), then use bindings to route console channels to those targets. Use [Console DMX](console-dmx.md) to inspect console universe values, or the wire frames each transport sends.
 
 Output is sent only where a binding routes it: a fixture or console range with no output binding sends nothing. To stop output, remove the binding, for example `rm patch fix 12 @ artnet:1`. Only inputs can be patched to `disabled`, which ignores incoming DMX that matches the source.
 
