@@ -44,6 +44,7 @@ const browserPackaging = [
   /^crates\/browser-runtime\//,
   /^scripts\/.*browser-demo/,
   /^\.github\/workflows\/browser-demo\.yml$/,
+  /^webui\/e2e\/(browser-demo|distribution-notices)\.spec\.ts$/,
 ];
 
 /**
