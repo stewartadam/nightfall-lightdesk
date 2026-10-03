@@ -130,7 +130,13 @@ export function ModuleFxDialog(props: ModuleFxDialogProps) {
   };
 
   return (
-    <Modal isOpen={props.isOpen} onEscape={props.onCancel}>
+    <Modal
+      isOpen={props.isOpen}
+      onEscape={props.onCancel}
+      onEnter={() => {
+        if (props.modules.length > 0) submit();
+      }}
+    >
       <DialogBackdrop
         role="dialog"
         aria-modal="true"

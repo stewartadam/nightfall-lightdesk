@@ -8,6 +8,7 @@
 
 import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
 import { matchKeybindingPress, parseKeybinding, tinykeys } from "tinykeys";
+import { isInsideOpenDialog } from "../components/ui/modal/dialog-stack";
 import {
   getFocusedComponentId,
   suppressDockFallbackAfterEditableBlur,
@@ -265,6 +266,13 @@ function dispatchShortcutForKey(
 ): boolean {
   // Capture-phase shortcuts run before the connection overlay's document listener.
   if (document.querySelector('[data-overlay-kind="connection"]')) {
+    return false;
+  }
+  // Enter and Escape inside an open dialog belong to that dialog, never to panel shortcuts behind it.
+  if (
+    (event.key === "Enter" || event.key === "Escape") &&
+    isInsideOpenDialog(target ?? event.target)
+  ) {
     return false;
   }
 

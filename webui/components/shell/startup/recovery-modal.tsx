@@ -43,40 +43,13 @@ export function ShowfileDraftRecoveryModal(
   let focusFrameId: number | undefined;
   let loadDraftButtonRef: HTMLButtonElement | undefined;
   let keepSavedButtonRef: HTMLButtonElement | undefined;
-  let dialogRef: HTMLDivElement | undefined;
 
-  /** Submits the default action without allowing page shortcuts to run. */
-  const submitDefaultAction = (event: Event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
+  /** Loads the draft, or keeps the saved copy when no draft exists, as the prompt's Enter action. */
+  const submitDefaultAction = () => {
     if (props.disabled || !props.draft) return;
     if (props.draft.hasDraft) props.onLoadDraft();
     else if (props.draft.hasSavedSnapshot) props.onKeepSaved();
   };
-
-  /** Detects keys aimed at another dialog opened above this prompt, such as the new show name prompt. */
-  const belongsToStackedDialog = (target: EventTarget | null): boolean => {
-    if (!(target instanceof Element)) return false;
-    const owningDialog = target.closest('[role="dialog"]');
-    return owningDialog !== null && owningDialog !== dialogRef;
-  };
-
-  /** Keeps Enter scoped to the recovery prompt's default action while open. */
-  createEffect(() => {
-    if (!props.draft) return;
-
-    /** Routes Enter to draft loading while the modal owns keyboard focus. */
-    const handleDefaultActionKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.repeat || event.isComposing) return;
-      if (belongsToStackedDialog(event.target)) return;
-      submitDefaultAction(event);
-    };
-    document.addEventListener("keydown", handleDefaultActionKeyDown, true);
-    onCleanup(() => {
-      document.removeEventListener("keydown", handleDefaultActionKeyDown, true);
-    });
-  });
 
   /** Focuses the default action when the recovery prompt becomes visible. */
   createEffect(() => {
@@ -97,11 +70,10 @@ export function ShowfileDraftRecoveryModal(
   });
 
   return (
-    <Modal isOpen={props.draft !== null}>
+    <Modal isOpen={props.draft !== null} onEnter={submitDefaultAction}>
       <Show when={props.draft}>
         {(draft) => (
           <DialogBackdrop
-            ref={dialogRef}
             class="nightfall-top-layer"
             role="dialog"
             aria-modal="true"

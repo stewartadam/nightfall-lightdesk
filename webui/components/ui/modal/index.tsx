@@ -16,6 +16,7 @@ import {
   useContext,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { registerDialog } from "./dialog-stack";
 import { createModalScrollLock } from "./scroll-lock";
 
 /** Allows an owning UI region to suspend its dialogs without clearing their open state. */
@@ -28,44 +29,42 @@ interface ModalProps {
   children: JSX.Element;
   onEscape?: () => void;
   closeOnEscape?: boolean;
+  /** Default action for Enter pressed on content that has no Enter behavior of its own. */
+  onEnter?: () => void;
   usePortal?: boolean;
 }
 
 /**
- * Shared modal wrapper that centralizes Escape handling so modal UIs can
- * keep Escape scoped to the modal that currently owns it.
+ * Shared modal wrapper. While visible it joins the dialog stack, so only the
+ * frontmost dialog receives Escape and Enter, and keys never leak to dialogs
+ * or panels behind it.
  */
 export default function Modal(props: ModalProps) {
   const regionVisible = useContext(ModalVisibilityContext);
   /** Suspends the dialog without clearing its owner's open state. */
   const visible = () => props.isOpen && regionVisible();
   createModalScrollLock(visible);
+  let rootRef: HTMLDivElement | undefined;
 
-  /** Only a visible dialog may capture Escape. */
+  /** Holds a place on the dialog stack for as long as the dialog is visible. */
   createEffect(() => {
-    if (!visible() || !props.onEscape || props.closeOnEscape === false) {
-      return;
-    }
-
-    /** Prevents the active dialog escape key from reaching background handlers. */
-    const handleEscapeKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      props.onEscape?.();
-    };
-
-    document.addEventListener("keydown", handleEscapeKeyDown, true);
-
-    onCleanup(() => {
-      document.removeEventListener("keydown", handleEscapeKeyDown, true);
-    });
+    if (!visible()) return;
+    onCleanup(
+      registerDialog({
+        element: () => rootRef,
+        escapeAction: () =>
+          props.closeOnEscape === false ? undefined : props.onEscape,
+        enterAction: () => props.onEnter,
+      }),
+    );
   });
 
-  const content = <Show when={visible()}>{props.children}</Show>;
+  const content = (
+    <Show when={visible()}>
+      <div ref={rootRef} class="contents" data-modal-root="">
+        {props.children}
+      </div>
+    </Show>
+  );
   return props.usePortal === false ? content : <Portal>{content}</Portal>;
 }
