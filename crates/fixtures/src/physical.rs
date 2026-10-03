@@ -32,6 +32,14 @@ pub enum BeamType {
     Glow,
 }
 
+/// Luminous flux assumed for a fixture whose profile states none.
+pub const DEFAULT_LUMENS: f32 = 10000.0;
+
+/// Supplies [`DEFAULT_LUMENS`] when deserializing photometry without a flux.
+fn default_lumens() -> f32 {
+    DEFAULT_LUMENS
+}
+
 /// Optical properties of one emitting aperture, independent of fixture layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -56,9 +64,10 @@ pub struct FixturePhysical {
     pub beam_angle: f32,
     /// Outer beam angle in degrees (GDTF: FieldAngle, OFL: degreesMinMax[1])
     pub field_angle: f32,
-    /// Light output in lumens (GDTF: LuminousFlux, OFL: bulb.lumens)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lumens: Option<f32>,
+    /// Light output in lumens (GDTF: LuminousFlux, OFL: bulb.lumens), or
+    /// [`DEFAULT_LUMENS`] when the profile omits it.
+    #[serde(default = "default_lumens")]
+    pub lumens: f32,
     /// Native color temperature in Kelvin (GDTF/OFL: colorTemperature)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color_temperature: Option<f32>,
@@ -71,7 +80,7 @@ impl Default for FixturePhysical {
         Self {
             beam_angle: 15.0,
             field_angle: 15.0,
-            lumens: None,
+            lumens: DEFAULT_LUMENS,
             color_temperature: None,
             beam_type: BeamType::default(),
         }

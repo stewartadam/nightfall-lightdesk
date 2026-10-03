@@ -267,7 +267,7 @@ fn rotating_wash_physical() -> crate::physical::FixturePhysical {
     crate::physical::FixturePhysical {
         beam_angle: ROTATING_WASH_ZOOM_NARROW_DEGREES,
         field_angle: 1.2,
-        lumens: Some(12000.0),
+        lumens: 12000.0,
         color_temperature: None,
         beam_type: crate::physical::BeamType::Wash,
     }
@@ -287,6 +287,41 @@ fn rotating_wash_zoom_function() -> ParameterFunction {
         physical_from: ROTATING_WASH_ZOOM_WIDE_DEGREES,
         physical_to: ROTATING_WASH_ZOOM_NARROW_DEGREES,
         physical_unit: PhysicalUnit::Angle,
+        optical: Some(OpticalFunction {
+            kind: OpticalFunctionKind::Zoom,
+            wheel: 0,
+        }),
+        ..Default::default()
+    }
+}
+
+/// Native full beam angle of the built-in moving spot, in degrees.
+const MOVING_SPOT_BEAM_DEGREES: f32 = 8.0;
+/// Native full field angle of the built-in moving spot, in degrees.
+const MOVING_SPOT_FIELD_DEGREES: f32 = 40.0;
+/// Full beam angle at the moving spot's tightest zoom, in degrees.
+///
+/// Fully zoomed in, the spot's visible 40° field edge narrows to its native 8° beam angle,
+/// which scales the beam angle to 2·atan(tan(4°)² / tan(20°)) ≈ 1.5°.
+const MOVING_SPOT_ZOOM_NARROW_DEGREES: f32 = 1.5;
+
+/// Describes the moving spot's zoom channel as one angular function over its whole DMX range.
+///
+/// DMX 0 keeps the native optics and DMX 255 focuses to the narrowest beam, so the fixture
+/// evaluator reports the rendered full beam angle directly.
+fn moving_spot_zoom_function() -> ParameterFunction {
+    ParameterFunction {
+        name: "Zoom".to_owned(),
+        attribute: "Zoom".to_owned(),
+        dmx_from: 0,
+        dmx_to: 255,
+        physical_from: MOVING_SPOT_BEAM_DEGREES,
+        physical_to: MOVING_SPOT_ZOOM_NARROW_DEGREES,
+        physical_unit: PhysicalUnit::Angle,
+        optical: Some(OpticalFunction {
+            kind: OpticalFunctionKind::Zoom,
+            wheel: 0,
+        }),
         ..Default::default()
     }
 }
@@ -417,7 +452,7 @@ pub(super) fn create_moving_spot_16ch(id: u32, make: &str, model: &str) -> Fixtu
     let physical = FixturePhysical {
         beam_angle: 8.0,
         field_angle: 15.0,
-        lumens: Some(8000.0),
+        lumens: 8000.0,
         color_temperature: Some(6500.0),
         beam_type: BeamType::Spot,
     };
@@ -570,7 +605,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
         },
         ParameterMetadata {
             dmx_slots: Default::default(),
-            functions: Vec::new(),
+            functions: vec![moving_spot_zoom_function()],
             default_dmx: None,
             highlight_dmx: None,
             attribute: Attribute::Zoom,
@@ -588,9 +623,9 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
     ];
 
     let physical = FixturePhysical {
-        beam_angle: 8.0,
-        field_angle: 40.0,
-        lumens: Some(20000.0),
+        beam_angle: MOVING_SPOT_BEAM_DEGREES,
+        field_angle: MOVING_SPOT_FIELD_DEGREES,
+        lumens: 20000.0,
         color_temperature: Some(6500.0),
         beam_type: BeamType::Spot,
     };

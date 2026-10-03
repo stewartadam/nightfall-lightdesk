@@ -144,10 +144,6 @@ export function setupInspectorParams(
     cameraStats.elevationDeg = Number(toDeg(elevation).toFixed(1));
   };
 
-  const scheduleCameraStatsUpdate = () => {
-    updateCameraStats();
-    requestAnimationFrame(scheduleCameraStatsUpdate);
-  };
-  requestAnimationFrame(scheduleCameraStatsUpdate);
+  updateCameraStats();
   return updateCameraStats;
 }

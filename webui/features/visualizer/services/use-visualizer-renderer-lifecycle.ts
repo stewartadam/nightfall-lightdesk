@@ -37,6 +37,8 @@ interface UseVisualizerRendererLifecycleOptions {
   onStats: (stats: VisualizerStats | null) => void;
   /** Receives the active renderer API, then `null` once that renderer is disposed. */
   apiRef?: (api: VisualizerRendererPublicApi | null) => void;
+  /** Camera pose carried over from a renderer this one replaces. */
+  initialCameraState?: CameraState;
 }
 
 /**
@@ -81,6 +83,7 @@ export function useVisualizerRendererLifecycle(
         () =>
           createVisualizerRenderer(canvas, container, {
             forceMainThread: options.forceMainThread,
+            initialCameraState: options.initialCameraState,
           }),
         () => disposed,
         (newRenderer) => {

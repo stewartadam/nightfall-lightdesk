@@ -27,6 +27,11 @@ const PUBLISH_INTERVAL = 10;
  * Metrics collected each frame.
  */
 export interface FrameMetrics {
+  atmosphereScale?: number;
+  sceneScale?: number;
+  omittedSurfaceLights?: number;
+  reducedPrismEmitters?: number;
+  reducedGoboEmitters?: number;
   /** Actual completion of render submission, separate from the RAF scheduler timestamp. */
   completedAt?: number;
   /** Entry into the animation callback, before controls or fixture updates. */
@@ -53,7 +58,8 @@ export interface InstrumentationOptions {
   /** Rendering mode reported with every published stats record. */
   renderMode: "worker" | "main-thread";
   /**
-   * Publishes developer diagnostics (frame pacing and per-pass GPU timings). Off by default so normal sessions skip the
+   * Publishes developer diagnostics (frame pacing, adaptive resolution scales
+   * and per-pass GPU timings). Off by default so normal sessions skip the
    * per-frame bookkeeping and the extra payload on every stats tick.
    */
   diagnostics?: boolean;
@@ -64,6 +70,11 @@ export interface InstrumentationOptions {
  * Collects timing data and publishes aggregated stats.
  */
 export class Instrumentation {
+  private atmosphereScale: number | undefined;
+  private sceneScale: number | undefined;
+  private omittedSurfaceLights: number | undefined;
+  private reducedPrismEmitters: number | undefined;
+  private reducedGoboEmitters: number | undefined;
   /** Present only when diagnostics are enabled. */
   private readonly pacing: FramePacing | undefined;
   private frameCount = 0;
@@ -100,13 +111,20 @@ export class Instrumentation {
    * @param metrics Frame timing measurements
    */
   recordFrame(currentTime: number, metrics: FrameMetrics): void {
-    this.pacing?.record(
-      metrics.completedAt ?? currentTime,
-      metrics.updateMs,
-      metrics.renderMs,
-      metrics.startedAt,
-      currentTime,
-    );
+    this.omittedSurfaceLights = metrics.omittedSurfaceLights;
+    this.reducedPrismEmitters = metrics.reducedPrismEmitters;
+    this.reducedGoboEmitters = metrics.reducedGoboEmitters;
+    if (this.pacing) {
+      this.atmosphereScale = metrics.atmosphereScale;
+      this.sceneScale = metrics.sceneScale;
+      this.pacing.record(
+        metrics.completedAt ?? currentTime,
+        metrics.updateMs,
+        metrics.renderMs,
+        metrics.startedAt,
+        currentTime,
+      );
+    }
     // Calculate frame-to-frame time
     const frameToFrameMs =
       this.lastFrameTime > 0 ? currentTime - this.lastFrameTime : 0;
@@ -223,9 +241,14 @@ export class Instrumentation {
       ...(this.pacing
         ? {
             framePacing: this.pacing.snapshot(),
+            atmosphereScale: this.atmosphereScale,
+            sceneScale: this.sceneScale,
             gpuPasses: this.gpuPasses,
           }
         : {}),
+      omittedSurfaceLights: this.omittedSurfaceLights,
+      reducedPrismEmitters: this.reducedPrismEmitters,
+      reducedGoboEmitters: this.reducedGoboEmitters,
       fps,
       frameToFrameMs: avgFrameTime,
       updateFixturesMs: this.average(this.updateTimesMs),

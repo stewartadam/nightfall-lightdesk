@@ -108,7 +108,7 @@ pub mod prelude {
     };
     pub use crate::parameter::{Parameter, ParameterValues};
     pub use crate::parameter_index::{ParameterIndex, ParameterLocation};
-    pub use crate::physical::{BeamOptics, BeamType, FixturePhysical};
+    pub use crate::physical::{BeamOptics, BeamType, DEFAULT_LUMENS, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
     pub use crate::universe::{

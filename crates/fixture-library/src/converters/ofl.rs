@@ -45,7 +45,7 @@ pub fn convert_ofl_to_fixture(
     apply_ofl_position_ranges(&mut elements, ofl, mode);
 
     // Extract physical properties
-    let physical = extract_physical_properties(ofl, mode);
+    let physical = Some(extract_physical_properties(ofl, mode));
 
     let fixture = Fixture {
         identifiers: Identifiers {
@@ -456,39 +456,34 @@ pub(super) fn parse_dmx_value(value: &Option<serde_json::Value>) -> Option<Param
     }
 }
 
-/// Extract physical properties from OFL
+/// Lens angles, in degrees, assumed when an OFL profile states none.
+const DEFAULT_LENS_DEGREES: (f32, f32) = (15.0, 40.0);
+
+/// Extracts photometry from OFL, filling what the profile omits.
+///
+/// Every OFL fixture gets photometry so renderers never invent their own: a
+/// profile without a physical block, bulb flux or lens angles falls back to
+/// [`DEFAULT_LUMENS`] and [`DEFAULT_LENS_DEGREES`].
 fn extract_physical_properties(
     ofl: &open_fixture_library::OflFixture,
     mode: &open_fixture_library::OflMode,
-) -> Option<FixturePhysical> {
+) -> FixturePhysical {
     // Check mode-specific physical first, then fixture-level
-    let physical = mode.physical.as_ref().or_else(|| ofl.physical())?;
+    let physical = mode.physical.as_ref().or_else(|| ofl.physical());
+    let bulb = physical.and_then(|physical| physical.bulb.as_ref());
+    let (beam_angle, field_angle) = physical
+        .and_then(|physical| physical.lens.as_ref())
+        .and_then(|lens| lens.degrees_min_max)
+        .map_or(DEFAULT_LENS_DEGREES, |[min, max]| (min, max));
 
-    // Extract bulb/lens information
-    let lumens = physical.bulb.as_ref().and_then(|b| b.lumens);
-    let color_temperature = physical.bulb.as_ref().and_then(|b| b.color_temperature);
-
-    // Extract lens angles
-    let (beam_angle, field_angle) = if let Some(lens) = &physical.lens {
-        if let Some([min, max]) = lens.degrees_min_max {
-            (min, max)
-        } else {
-            (15.0, 40.0) // Default values
-        }
-    } else {
-        (15.0, 40.0) // Default values
-    };
-
-    // Infer beam type from fixture categories
-    let beam_type = infer_beam_type_from_categories(ofl.categories());
-
-    Some(FixturePhysical {
+    FixturePhysical {
         beam_angle,
         field_angle,
-        lumens,
-        color_temperature,
-        beam_type,
-    })
+        lumens: bulb.and_then(|bulb| bulb.lumens).unwrap_or(DEFAULT_LUMENS),
+        color_temperature: bulb.and_then(|bulb| bulb.color_temperature),
+        // Infer beam type from fixture categories
+        beam_type: infer_beam_type_from_categories(ofl.categories()),
+    }
 }
 
 /// Infer beam type from OFL fixture categories

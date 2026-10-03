@@ -16,19 +16,29 @@
  * - Panel is scrolled out of view (IntersectionObserver)
  */
 
+import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
   createSignal,
+  on,
   onCleanup,
   onMount,
+  Show,
 } from "solid-js";
-import { isOffscreenCanvasEnabled } from "../../../lib/feature-flags";
+import {
+  consumeVisualizerQualityUrlOverride,
+  isOffscreenCanvasEnabled,
+} from "../../../lib/feature-flags";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { usePropertiesInspector } from "../../property-inspector";
+import {
+  visualizerEffectiveQuality,
+  visualizerQualityOverride,
+} from "../state/settings";
 
 const log = getLogger(import.meta.url);
 
@@ -46,16 +56,49 @@ import {
   setActiveVisualizerDebugApiPanel,
   unregisterVisualizerDebugApi,
 } from "../services/visualizer-debug-api-registry";
+import { createCameraHandoff } from "./camera-handoff";
 
 interface VisualizerPanelProps extends BasePanelComponentProps {
   initialPanelId?: string;
 }
 
 const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
+  const override = consumeVisualizerQualityUrlOverride();
+  if (override) visualizerQualityOverride.set(override);
+  const quality = useStore(visualizerEffectiveQuality);
   log.trace("mounting");
   let visualizerApi: VisualizerCanvasApi | null = null;
   const [visualizerHandle, setVisualizerHandle] =
     createSignal<VisualizerCanvasApi>();
+  /** Quality the mounted renderer was built with; trails `quality` while the outgoing camera is captured. */
+  const [mountedQuality, setMountedQuality] = createSignal(quality());
+  const cameraHandoff = createCameraHandoff();
+
+  /** Captures the outgoing renderer's camera pose, then remounts the canvas at the new quality. */
+  createEffect(
+    on(
+      quality,
+      (next) => {
+        if (next === mountedQuality()) return;
+        const outgoing = visualizerApi;
+        void (async () => {
+          cameraHandoff.offer(
+            outgoing
+              ? await outgoing.getCameraState().catch((error: unknown) => {
+                  log.warn("Could not capture camera before quality change", {
+                    error,
+                  });
+                  return undefined;
+                })
+              : undefined,
+          );
+          // A newer quality change supersedes this one and performs its own remount.
+          if (quality() === next) setMountedQuality(next);
+        })();
+      },
+      { defer: true },
+    ),
+  );
   let containerRef: HTMLDivElement | undefined;
   const panelId = props.initialPanelId ?? props.id;
   const visualizerContext = createVisualizerContextValue({ panelId });
@@ -147,19 +190,28 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
         <VisualizerToolToolbar />
         <VisualizerErrorBoundary>
           <div class="min-h-0 flex-1">
-            <VisualizerCanvas
-              class="h-full w-full"
-              forceMainThread={!isOffscreenCanvasEnabled()}
-              apiRef={(api) => {
-                visualizerApi = api;
-                setVisualizerHandle(api ?? undefined);
-                if (!api) return;
-                syncVisualizerVisibility();
-                if (isDockviewVisible()) {
-                  setActiveVisualizerDebugApiPanel(panelId);
-                }
+            <Show when={mountedQuality()} keyed>
+              {(_preset) => {
+                // Consumed once per mount so later remounts use the current persisted camera.
+                const initialCameraState = cameraHandoff.take();
+                return (
+                  <VisualizerCanvas
+                    class="h-full w-full"
+                    forceMainThread={!isOffscreenCanvasEnabled()}
+                    initialCameraState={initialCameraState}
+                    apiRef={(api) => {
+                      visualizerApi = api;
+                      setVisualizerHandle(api ?? undefined);
+                      if (!api) return;
+                      syncVisualizerVisibility();
+                      if (isDockviewVisible()) {
+                        setActiveVisualizerDebugApiPanel(panelId);
+                      }
+                    }}
+                  />
+                );
               }}
-            />
+            </Show>
           </div>
         </VisualizerErrorBoundary>
       </div>

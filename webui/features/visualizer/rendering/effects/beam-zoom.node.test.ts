@@ -8,42 +8,135 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { BeamType, type FixturePhysical } from "../../../../types";
+import { MIN_CONE_ANGLE_DEGREES } from "./beam-zoom";
 import {
-  beamConeAngleDegrees,
-  MIN_CONE_ANGLE_DEGREES,
-  renderableConeAngleDegrees,
-} from "./beam-zoom";
+  emitterZoomScale,
+  resolveEmitterOptics,
+  zoomedBeamAngleDegrees,
+} from "./emitter-optics";
 
-/** Verifies a profile-stated zoom angle replaces the normalized zoom range. */
-test("renderable cone angle prefers a stated zoom angle", () => {
-  assert.equal(renderableConeAngleDegrees(8, 40, 0, 12), 12);
-  assert.equal(renderableConeAngleDegrees(8, 40, 0), 40);
-});
+/** Half-width per metre of a full cone angle, for comparing zoom scales against angles. */
+function slope(degrees: number): number {
+  return Math.tan((degrees * Math.PI) / 360);
+}
 
-/** Verifies zero or negative stated zoom angles still render a visible cone. */
-test("renderable cone angle floors nonpositive zoom angles", () => {
-  assert.equal(renderableConeAngleDegrees(8, 40, 0, 0), MIN_CONE_ANGLE_DEGREES);
-  assert.equal(
-    renderableConeAngleDegrees(8, 40, 0, -5),
-    MIN_CONE_ANGLE_DEGREES,
+/** Verifies a profile-stated zoom angle replaces the aperture's native spread. */
+test("emitter zoom scale follows a stated zoom angle", () => {
+  const physical = {
+    beamType: BeamType.Spot,
+    lumens: 1000,
+    beamAngle: 8,
+    fieldAngle: 40,
+  };
+  assert.ok(
+    Math.abs(emitterZoomScale(physical, 12) - slope(12) / slope(8)) < 1e-12,
   );
-  assert.equal(renderableConeAngleDegrees(0, 0, 1), MIN_CONE_ANGLE_DEGREES);
 });
 
-/** Verifies a non-finite stated zoom angle falls back to the beam spec range. */
-test("renderable cone angle ignores non-finite zoom angles", () => {
-  assert.equal(renderableConeAngleDegrees(8, 40, 1, Number.NaN), 8);
+/** Verifies zero or negative stated zoom angles still render a visible cone instead of the native one. */
+test("emitter zoom scale floors nonpositive zoom angles", () => {
+  const physical = {
+    beamType: BeamType.Spot,
+    lumens: 1000,
+    beamAngle: 8,
+    fieldAngle: 40,
+  };
+  const floor = slope(MIN_CONE_ANGLE_DEGREES) / slope(8);
+  for (const zoom of [0, -5, 0.1])
+    assert.ok(Math.abs(emitterZoomScale(physical, zoom) - floor) < 1e-12);
+  assert.ok(floor > 0);
 });
 
-/** Verifies normalized zoom follows operator semantics where 100% is focused. */
-test("beam cone angle narrows as zoom increases", () => {
-  assert.equal(beamConeAngleDegrees(8, 40, 0), 40);
-  assert.equal(beamConeAngleDegrees(8, 40, 0.5), 24);
-  assert.equal(beamConeAngleDegrees(8, 40, 1), 8);
+/** Degree-valued zoom travel must not double as a broad field contour at the focused endpoint. */
+test("linear aperture arrays stay thin at full zoom and spread at wide zoom", () => {
+  const physical = {
+    beamType: BeamType.Wash,
+    lumens: 1000,
+    beamAngle: 1,
+    fieldAngle: 1.2,
+  };
+  const optics = { physical, radius: 0.034, throwRatio: 1, rectangleRatio: 1 };
+  const focused = resolveEmitterOptics(optics, 1)!;
+  const wide = resolveEmitterOptics(optics, 34)!;
+  assert.ok(2 * (focused.radius + 10 * focused.slopeY) < 0.3);
+  assert.ok(2 * (wide.radius + 10 * wide.slopeY) > 7);
+  assert.equal(focused.distributionPower, wide.distributionPower);
 });
 
-/** Verifies out-of-range zoom values clamp to the physical beam range. */
-test("beam cone angle clamps zoom to the physical range", () => {
-  assert.equal(beamConeAngleDegrees(8, 40, -1), 40);
-  assert.equal(beamConeAngleDegrees(8, 40, 2), 8);
+/** Full angle, in degrees, of the rendered field (10%) edge of an aperture at a zoom input. */
+function fieldEdgeDegrees(
+  physical: FixturePhysical,
+  zoomDegrees: number | undefined,
+  zoom: number | undefined,
+): number {
+  const optics = { physical, radius: 0, throwRatio: 1, rectangleRatio: 1 };
+  const zoomed = zoomedBeamAngleDegrees(physical, zoomDegrees, zoom);
+  const resolved = resolveEmitterOptics(optics, zoomed)!;
+  return (360 / Math.PI) * Math.atan(resolved.slopeX);
+}
+
+/**
+ * A 15°/30° built-in head's normalized zoom sweeps the visible field edge across the same
+ * 30°→15° cone the hard-edged renderer drew, rather than widening the field a second time.
+ */
+test("normalized zoom sweeps the field edge across the native range", () => {
+  const head = {
+    beamType: BeamType.Spot,
+    lumens: 1000,
+    beamAngle: 15,
+    fieldAngle: 30,
+  };
+  const near = (actual: number, expected: number) =>
+    assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≉ ${expected}`);
+  near(fieldEdgeDegrees(head, undefined, 0), 30);
+  near(fieldEdgeDegrees(head, undefined, 0.5), 22.5);
+  near(fieldEdgeDegrees(head, undefined, 1), 15);
+  near(zoomedBeamAngleDegrees(head, undefined, 0)!, 15);
+  near(fieldEdgeDegrees(head, undefined, -1), 30);
+  near(fieldEdgeDegrees(head, undefined, 2), 15);
+});
+
+/** An aperture without a zoom channel keeps its native optics instead of a mid-zoom guess. */
+test("missing or non-finite zoom keeps native optics", () => {
+  const head = {
+    beamType: BeamType.Spot,
+    lumens: 1000,
+    beamAngle: 15,
+    fieldAngle: 30,
+  };
+  for (const zoom of [undefined, NaN, Infinity, -Infinity])
+    assert.equal(zoomedBeamAngleDegrees(head, undefined, zoom), undefined);
+  assert.ok(Math.abs(fieldEdgeDegrees(head, undefined, undefined) - 30) < 1e-9);
+});
+
+/** A stated zoom angle is the beam angle itself and wins over the normalized position. */
+test("stated zoom degrees take precedence over normalized zoom", () => {
+  const head = {
+    beamType: BeamType.Spot,
+    lumens: 1000,
+    beamAngle: 15,
+    fieldAngle: 30,
+  };
+  assert.equal(zoomedBeamAngleDegrees(head, 34, 0.25), 34);
+  assert.equal(zoomedBeamAngleDegrees(head, 0, 0.25), 0);
+});
+
+/** Zoom slopes stay finite for degenerate, missing and out-of-range angles. */
+test("emitter zoom scale clamps angles and ignores non-finite zoom", () => {
+  const physical = {
+    beamType: BeamType.Spot,
+    lumens: 1000,
+    beamAngle: 10,
+    fieldAngle: 20,
+  };
+  assert.equal(emitterZoomScale(physical, undefined), 1);
+  assert.equal(emitterZoomScale(physical, NaN), 1);
+  assert.equal(emitterZoomScale(physical, 10), 1);
+  assert.ok(emitterZoomScale(physical, 20) > 2);
+  assert.equal(
+    emitterZoomScale(physical, 500),
+    emitterZoomScale(physical, 170),
+  );
+  assert.equal(emitterZoomScale({ ...physical, beamAngle: 0 }, 30), 1);
 });

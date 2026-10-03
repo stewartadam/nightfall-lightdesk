@@ -292,7 +292,7 @@ impl From<&FixturePhysical> for BeamSpec {
         Self {
             beam_angle: physical.beam_angle,
             field_angle: physical.field_angle,
-            lumens: physical.lumens.unwrap_or(10000.0),
+            lumens: physical.lumens,
             beam_type: physical.beam_type,
         }
     }

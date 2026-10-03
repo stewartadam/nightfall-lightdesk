@@ -31,6 +31,7 @@ import {
   type PhysicalState,
   resetPhysicalState,
 } from "./gdtf-physical";
+import { writeOpticalReadouts } from "./optical-readouts";
 
 /** Visualizer-friendly parameter state */
 export interface VisualizerDmx {
@@ -52,7 +53,8 @@ export interface VisualizerDmx {
   panRotation: number;
   /** Continuous tilt rotation speed in degrees per second; 0 when not spinning. */
   tiltRotation: number;
-  zoom: number;
+  /** Normalized zoom (1 = focused), only when the element has a zoom channel. */
+  zoom?: number;
   /** Beam angle in degrees from the profile's zoom function, when it states one. */
   zoomDegrees?: number;
   /** Iris aperture as a fraction of the open beam, when the element has an iris. */
@@ -61,8 +63,6 @@ export interface VisualizerDmx {
   strobeShutter: number;
   /** Strobe frequency in hertz from the profile, while a strobe function is active. */
   strobeHz?: number;
-  /** 1-based index into the element's gobo images (see `elementGoboMedia`), or 0 for none. */
-  gobo: number;
 }
 
 export const STROBE_SHUTTER_MIN_HZ = 1;
@@ -137,10 +137,8 @@ function getDmxFromPool(): VisualizerDmx {
       uv: 0,
       panRotation: 0,
       tiltRotation: 0,
-      zoom: 0.5,
       tiltSpeed: DEFAULT_TILT_SPEED_NORMALIZED,
       strobeShutter: 0,
-      gobo: 0,
     });
   }
   const dmx = dmxPool[dmxPoolIndex++];
@@ -159,10 +157,10 @@ function getDmxFromPool(): VisualizerDmx {
   dmx.tiltDegrees = undefined;
   dmx.panRotation = 0;
   dmx.tiltRotation = 0;
-  dmx.zoom = 0.5;
+  dmx.zoom = undefined;
   dmx.tiltSpeed = DEFAULT_TILT_SPEED_NORMALIZED;
   dmx.strobeShutter = 0;
-  dmx.gobo = 0;
+  dmx.zoomDegrees = undefined;
   return dmx;
 }
 
@@ -232,52 +230,6 @@ function normalizeSignedPositionOutput(
     return value / DEFAULT_TILT_RANGE_DEG;
   }
   return value;
-}
-
-/** Gobo image lists per element, computed once per element object. */
-const elementGoboMediaCache = new WeakMap<FixtureElement, string[]>();
-
-/**
- * Matches GDTF gobo wheel attributes (`Gobo1`, `Gobo2SelectSpin`, and the
- * unnumbered `Gobo`, `GoboSelectSpin`, ...), capturing the wheel number.
- */
-const GOBO_WHEEL_ATTRIBUTE = /^Gobo(\d*)/;
-
-/**
- * Returns the gobo wheel number a profile function selects slots on, or
- * undefined for functions on other wheels (color, prism, animation) whose
- * slot images are swatches or effects rather than projected gobos. An
- * unnumbered gobo wheel is wheel 1, as the fixture library imports it.
- */
-function goboWheelNumber(
-  fn: ParameterFunction | undefined,
-): number | undefined {
-  const match = fn && GOBO_WHEEL_ATTRIBUTE.exec(fn.attribute);
-  if (!match) return undefined;
-  return match[1] ? Number(match[1]) : 1;
-}
-
-/**
- * Returns the distinct gobo images an element's gobo wheels can select, in
- * parameter/function/set order. Renderers and DMX extraction share this
- * ordering so a numeric gobo index identifies the same image on both sides.
- */
-export function elementGoboMedia(element: FixtureElement): string[] {
-  let media = elementGoboMediaCache.get(element);
-  if (!media) {
-    const names = new Set<string>();
-    for (const parameter of element.parameters) {
-      for (const fn of parameter.functions ?? []) {
-        if (goboWheelNumber(fn) === undefined) continue;
-        for (const set of fn.sets ?? []) {
-          if (set.media) names.add(set.media);
-        }
-      }
-    }
-    media = [...names];
-    elementGoboMediaCache.set(element, media);
-  }
-  return media;
 }
 
 /** Display colors of profile CIE colors, keyed by chromaticity. */
@@ -403,7 +355,6 @@ function visualizerDmxFromChannels(
   let filterGreen = 1;
   let filterBlue = 1;
   let hasFilter = false;
-  let goboWheel = Number.POSITIVE_INFINITY;
   let declaresIntensityControl = elementDeclaresIntensityControl(element);
   const physical = resetPhysicalState(physicalState);
 
@@ -447,12 +398,6 @@ function visualizerDmxFromChannels(
       filterGreen *= filter.g * transmission;
       filterBlue *= filter.b * transmission;
       hasFilter = true;
-    }
-    const wheel = goboWheelNumber(channel.function);
-    // One gobo is projected: the lowest-numbered wheel with an image in place.
-    if (slot?.media && wheel !== undefined && wheel < goboWheel) {
-      dmx.gobo = elementGoboMedia(element).indexOf(slot.media) + 1;
-      goboWheel = wheel;
     }
     if (prop === "strobeShutter" && channel.function) {
       dmx.strobeShutter = profileStrobeRate(channel.function, channel.dmx);
@@ -697,13 +642,13 @@ function elementDmxData(
   elementDmx.prism = dmx.prism;
   elementDmx.uv = dmx.uv;
   elementDmx.tiltSpeed = dmx.tiltSpeed;
-  elementDmx.gobo = dmx.gobo;
   if (elementDmx.StrobeShutter !== undefined) {
     elementDmx.strobeShutter = dmx.strobeShutter;
   }
   if (dmx.strobeHz !== undefined) elementDmx.strobeHz = dmx.strobeHz;
   if (dmx.iris !== undefined) elementDmx.iris = dmx.iris;
   if (dmx.zoomDegrees !== undefined) elementDmx.zoomDegrees = dmx.zoomDegrees;
+  writeOpticalReadouts(element, channels, elementDmx);
 
   if (elementDmx.Pan !== undefined && dmx.pan !== undefined) {
     elementDmx.pan = dmx.pan;
@@ -715,7 +660,7 @@ function elementDmxData(
   if (dmx.tiltDegrees !== undefined) elementDmx.tiltDegrees = dmx.tiltDegrees;
   if (dmx.panRotation !== 0) elementDmx.panRotation = dmx.panRotation;
   if (dmx.tiltRotation !== 0) elementDmx.tiltRotation = dmx.tiltRotation;
-  if (elementDmx.Zoom !== undefined) {
+  if (elementDmx.Zoom !== undefined && dmx.zoom !== undefined) {
     elementDmx.zoom = dmx.zoom;
   }
 

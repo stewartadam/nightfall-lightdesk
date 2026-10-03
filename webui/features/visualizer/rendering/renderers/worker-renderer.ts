@@ -41,6 +41,7 @@ import {
   createPostProcessing,
   disposePostProcessing,
   type PostProcessingState,
+  preparePostProcessing,
   renderWithPostProcessing,
   setActiveSpanOutlineSelectedObjects,
   setEditSelectionOutlineSelectedObjects,
@@ -51,6 +52,7 @@ import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
 import { consumeDueFrame } from "../frame-rate-limiter";
 import { GpuFrameTimer, type TimestampRenderer } from "../gpu-frame-timer";
 import { LatestFrameMailbox } from "../latest-frame-mailbox";
+import { resolveQualityProfile } from "../quality-profile";
 import {
   cancelControlsInteraction,
   createCamera,
@@ -68,6 +70,7 @@ import {
 import {
   createSceneEnvironment,
   type SceneEnvironment,
+  setSceneDarkness,
   updateFloorTransparency,
   updateOrbitTargetIndicator,
 } from "../scene-environment";
@@ -172,7 +175,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
       proxyId: this.proxy.id,
       initialCameraState,
       diagnostics: config.diagnostics,
-      beamQuality: config.beamQuality,
+      quality: config.quality,
     };
     // The main thread converts DMX for the worker, so it needs the fixture model too.
     await Promise.all([
@@ -356,6 +359,11 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
 
   setGridEnabled(enabled: boolean): void {
     this.liveApi?.setGridEnabled(enabled);
+  }
+
+  /** Forwards ambient visibility changes to the rendering worker. */
+  setDarkness(darkness: number): void {
+    this.liveApi?.setDarkness(darkness);
   }
 
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {
@@ -610,12 +618,6 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     // Setup scene environment
     this.environment = createSceneEnvironment(this.scene);
 
-    // Create scene manager (handles fixtures, beams, selection)
-    this.sceneManager = new SceneManager(this.scene, config.beamQuality);
-
-    // Create debug overlays (from base class)
-    this.initDebugOverlays();
-
     // Create camera with initial state if provided
     this.camera = createCamera(width / height);
     if (initialCameraState) {
@@ -654,11 +656,18 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     this.setCameraRotationMode(this.cameraRotationMode);
     this.setOrbitTargetIndicatorEnabled(this.orbitTargetIndicatorEnabled);
 
+    const profile = resolveQualityProfile(config.quality);
     this.postProcessing = createPostProcessing(
       this.renderer,
       this.scene,
       this.camera,
+      { profile },
     );
+    await preparePostProcessing(this.postProcessing);
+    // Create scene manager (handles fixtures, beams, selection)
+    this.sceneManager = new SceneManager(this.scene, profile);
+    // Create debug overlays (from base class)
+    this.initDebugOverlays();
     setOutlineSelectedObjects(
       this.postProcessing,
       this.sceneManager.getSelectionOutlineObjects(),
@@ -883,6 +892,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     this.environment.axesHelper.visible = enabled;
   }
 
+  /** Updates ambient lighting and background without rebuilding the renderer. */
+  setDarkness(darkness: number): void {
+    if (this.scene && this.environment)
+      setSceneDarkness(this.scene, this.environment, darkness);
+  }
+
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {
     this.orbitTargetIndicatorEnabled = enabled;
     if (!this.environment) return;
@@ -963,7 +978,11 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       const timedRenderer = this.renderer! as unknown as TimestampRenderer;
       this.gpuTimer.begin(timedRenderer);
       if (this.postProcessing) {
-        renderWithPostProcessing(this.postProcessing);
+        renderWithPostProcessing(
+          this.postProcessing,
+          this.gpuTimer.sample,
+          updateMs,
+        );
       } else {
         this.renderer!.render(this.scene, this.camera);
       }
@@ -975,6 +994,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
         updateMs,
         renderMs: renderEnd - renderStart,
         gpu: this.gpuTimer.reading,
+        reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
+        reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
+        omittedSurfaceLights:
+          this.postProcessing?.surfaceLighting?.omittedPointLights,
+        atmosphereScale: this.postProcessing?.volumePass.getResolutionScale(),
+        sceneScale: this.postProcessing?.scenePass.getResolutionScale(),
       });
     });
   }
@@ -1037,6 +1062,8 @@ const workerApi = {
     renderer.setEmitterDebugEnabled(enabled),
   toggleBeams: () => renderer.toggleBeams(),
   setGridEnabled: (enabled: boolean) => renderer.setGridEnabled(enabled),
+  /** Applies the main thread's persisted environment preference. */
+  setDarkness: (darkness: number) => renderer.setDarkness(darkness),
   setOrbitTargetIndicatorEnabled: (enabled: boolean) =>
     renderer.setOrbitTargetIndicatorEnabled(enabled),
   setSnapPointsEnabled: (enabled: boolean) =>
