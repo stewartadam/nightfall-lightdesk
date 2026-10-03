@@ -105,20 +105,29 @@ async function closeTimelinePanel(page: Page, timelineUid: string) {
   }, timelineUid);
 }
 
+/**
+ * Selects a timeline card in the e2e list panel, reactivating the list tab
+ * until the card shows, since a timeline editor opening in the same group
+ * can take the active tab after the first activation.
+ */
 async function selectTimelineCard(
   page: Page,
   timelineId: number,
   timelineLabel: string,
 ) {
-  await focusTimelineListPanel(page);
   const panel = page.locator(
     '[data-panel-kind="timeline-list"][data-panel-id="panel-TimelinesPanel-e2e"]',
   );
-  await panel
-    .getByRole("button", {
-      name: new RegExp(`Timeline ${timelineId}: ${timelineLabel}`),
+  const card = panel.getByRole("button", {
+    name: new RegExp(`Timeline ${timelineId}: ${timelineLabel}`),
+  });
+  await expect
+    .poll(async () => {
+      await focusTimelineListPanel(page);
+      return card.isVisible();
     })
-    .click();
+    .toBe(true);
+  await card.click();
   return panel;
 }
 
