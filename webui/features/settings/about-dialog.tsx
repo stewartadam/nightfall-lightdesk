@@ -132,7 +132,6 @@ export function AboutDialog() {
           aria-modal="true"
           aria-label={`About ${APP_NAME}`}
           onClick={handleCloseAbout}
-          onKeyDown={(e) => e.key === "Enter" && handleCloseAbout()}
         >
           <DialogSurface
             role="document"
@@ -258,7 +257,6 @@ export function AboutDialog() {
           aria-modal="true"
           aria-label="Third-Party Licenses"
           onClick={closeThirdPartyLicenses}
-          onKeyDown={(e) => e.key === "Enter" && closeThirdPartyLicenses()}
         >
           <DialogSurface
             role="document"

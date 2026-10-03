@@ -287,11 +287,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
   );
 
   return (
-    <Modal
-      isOpen={props.open}
-      onEscape={props.onClose}
-      closeOnEscape={pendingDelete() === null && !isConfirmingEmptyTrash()}
-    >
+    <Modal isOpen={props.open} usePortal={false} onEscape={props.onClose}>
       <DialogBackdrop
         role="presentation"
         onMouseDown={(event) => {

@@ -21,6 +21,7 @@ Detailed contribution guides live in [`docs/contributing/`](docs/contributing/).
     - [Optional tools](#optional-tools)
   - [Running Nightfall](#running-nightfall)
   - [Quality checks and browser tests](#quality-checks-and-browser-tests)
+    - [Visualizer optics and performance tests](#visualizer-optics-and-performance-tests)
   - [Building the documentation](#building-the-documentation)
   - [Validating showfile restore idempotency](#validating-showfile-restore-idempotency)
   - [Debugging command parser](#debugging-command-parser)
@@ -427,6 +428,52 @@ pnpm run test:webui-playwright --headed webui/e2e/clip-go-button.spec.ts
 ```
 
 Use `--grep` to select a scenario and `--workers=1` to reduce concurrent load. Inspect screenshots and traces under `test-results/playwright/`; verify the visible result, not just command acknowledgements. Stop timeline playback at the end of a test that starts it. The wrapper disables timeline audio during its test runs.
+
+#### Visualizer optics and performance tests
+
+The optics GPU specs render production visualizer components into `/e2e/fixtures/optics.html` without a backend, so run them with `--target embedded-demo`:
+
+```sh
+pnpm run test:webui-playwright --target embedded-demo webui/e2e/emitter-volume.spec.ts webui/e2e/optical-surface.spec.ts webui/e2e/optical-shadow.spec.ts webui/e2e/surface-light-budget.spec.ts webui/e2e/gobo-texture-growth.spec.ts webui/e2e/led-bar-optics.spec.ts webui/e2e/emitter-glow.spec.ts webui/e2e/visualizer-strobe-instancing.spec.ts webui/e2e/visualizer-antialias.spec.ts webui/e2e/visualizer-selection-proxy.spec.ts webui/e2e/visualizer-gpu-timing.spec.ts
+```
+
+They share `webui/e2e/optics-harness.ts` (Node side) and `webui/e2e/fixtures/optics-harness.ts` (browser side, imported inside `page.evaluate`). Specs that name a backend in their title run once on WebGPU and once on forced WebGL; the WebGPU variant verifies the backend the renderer actually initialized, fails if it fell back to WebGL although an adapter exists, and is skipped when the browser exposes no WebGPU adapter. The remaining specs use the default backend and record it as a `backend` annotation. `visualizer-gpu-timing.spec.ts` is skipped on devices without the `timestamp-query` feature. Captured images and metrics are attached only when a test fails.
+
+Performance specs are opt-in because their timings depend on the machine. `optical-playback-perf.spec.ts` and `visualizer-playback-perf.spec.ts` fail on the percentile and ratio budgets in `webui/e2e/perf-budgets.ts` (p99 frame interval, share of skipped, late or dropped frames) rather than on single outliers. They measure the display's refresh interval first and count a frame as skipped when its interval exceeds 1.5 refreshes. The production visualizer caps its own rendering at 60 FPS, so `visualizer-playback-perf.spec.ts` budgets the renderer's frames at the slower of 60 Hz and the display. Its frame-pacing counters keep their fixed 25 ms and 60 Hz thresholds. Every performance spec attaches its measurements.
+
+- `pnpm run test:visualizer-perf` runs the synthetic workload of 300 moving optical sources (`optical-playback-perf.spec.ts`) through the High preset's fog, surface, shadow and bloom passes on the embedded-demo target, and checks both its own frame pacing and a Chromium presentation trace over twelve seconds at the display's measured refresh rate. It requires WebGPU: it is skipped when the browser exposes no adapter and fails if the renderer falls back to WebGL.
+- `gdtf-bench-argo-perf.spec.ts` measures the Ayrton Argo 6 FX close-up (337 beams) at High quality in both renderer modes on the native target and records its frame rate; it only fails if rendering stops. It needs the curated GDTF bench (see [GDTF regression testing](docs/src/developer-reference/gdtf-regression-testing.md)); never copy or commit the archives into this repository:
+
+  ```sh
+  NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench NIGHTFALL_VISUALIZER_PERF=1 pnpm run test:webui-playwright webui/e2e/gdtf-bench-argo-perf.spec.ts
+  ```
+
+- `visualizer-playback-perf.spec.ts` benchmarks timeline 4, beat 47 of the operator's `default` showfile on the native target. It needs that show in the seed data directory, and opens the app with the `visualizer:framePacing=true` URL flag, which publishes frame-pacing diagnostics without attaching the three.js Inspector, so the production GPU timer stays active:
+
+  ```sh
+  NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1 pnpm run test:webui-playwright webui/e2e/visualizer-playback-perf.spec.ts
+  ```
+
+| Variable | Effect |
+| --- | --- |
+| `NIGHTFALL_OPTICS_ARTIFACTS=1` | Attach optics images and metrics for passing tests too. |
+| `NIGHTFALL_VISUALIZER_ANTIALIAS_SWEEP=1` | Run the full backend × DPR × quality matrix of the antialias motion test instead of DPR 2 with the Medium and High presets. |
+| `NIGHTFALL_GDTF_BENCH_DIR` | Directory holding the GDTF bench archives. `gdtf-bench-visual`, `gdtf-bench-evaluation` and `gdtf-bench-argo-perf` are skipped without it. |
+| `NIGHTFALL_GDTF_BENCH_SCREENSHOTS=1` | Compare the unlit `gdtf-bench-visual` captures with the reviewed per-platform baselines. |
+| `NIGHTFALL_OPTICAL_PLAYBACK_PERF=1` | Enable `optical-playback-perf.spec.ts` (set by `pnpm run test:visualizer-perf`). |
+| `NIGHTFALL_VISUALIZER_PERF=1` | Enable `gdtf-bench-argo-perf.spec.ts`, together with `NIGHTFALL_GDTF_BENCH_DIR`. |
+| `NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1` | Enable `visualizer-playback-perf.spec.ts`. |
+| `NIGHTFALL_VISUALIZER_RENDER_MODE=worker` | Render the playback benchmark in the OffscreenCanvas worker instead of the main thread. |
+| `NIGHTFALL_VISUALIZER_QUALITY` | Quality preset of the playback benchmark (`low`, `medium`, `high`; default `high`). |
+| `NIGHTFALL_VISUALIZER_DISABLE_GPU_TIMING=1` | Disable GPU timestamp queries during the playback benchmark's measured interval. |
+| `NIGHTFALL_VISUALIZER_WASH_STRESS=1` | Drive every rotating wash fixture to full intensity before the playback benchmark measures. |
+| `NIGHTFALL_VISUALIZER_WASH_ZOOM` | Zoom value used with the wash stress (default `0`, the widest beam). |
+| `NIGHTFALL_VISUALIZER_WARMUP_PROFILE=1` | Record a CPU profile of the playback benchmark's warm-up. |
+| `NIGHTFALL_VISUALIZER_MESSAGE_PROFILE=1` | Measure worker message deserialization time by message type. |
+| `NIGHTFALL_VISUALIZER_CPU_PROFILE=1` | Record a CPU profile of the measured playback. |
+| `NIGHTFALL_VISUALIZER_CPU_PROFILE_TARGET=main` | In worker mode, profile the main thread instead of the worker. |
+| `NIGHTFALL_VISUALIZER_PRESENTATION_TRACE=1` | Record a Chromium presentation trace of the playback benchmark and check its dropped-frame budgets. |
+| `NIGHTFALL_VISUALIZER_DETAILED_TRACE=1` | Add DevTools timeline, V8 execution and GC categories to the presentation traces of both playback specs. |
 
 ### Building the documentation
 

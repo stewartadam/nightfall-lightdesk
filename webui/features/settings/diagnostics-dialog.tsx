@@ -213,41 +213,16 @@ export function DiagnosticsDialog() {
     onCleanup(() => cancelAnimationFrame(frame));
   });
 
-  /** Routes Enter to Download while preserving explicitly focused controls and text selection. */
-  createEffect(() => {
-    if (!isOpen()) return;
-    /** Keeps the default action inside this dialog without intercepting Cancel or Copy activation. */
-    const handleDefaultAction = (event: KeyboardEvent) => {
-      if (
-        event.key !== "Enter" ||
-        event.repeat ||
-        event.isComposing ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey
-      )
-        return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("button, summary, textarea, [contenteditable=true]"))
-        return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      void download();
-    };
-    document.addEventListener("keydown", handleDefaultAction, true);
-    onCleanup(() =>
-      document.removeEventListener("keydown", handleDefaultAction, true),
-    );
-  });
-
   /** Styles the selected segment while keeping its radio input keyboard accessible. */
   const segmentClass = (selected: boolean) =>
     `relative cursor-pointer whitespace-nowrap rounded px-2.5 py-1 text-center text-sm has-focus-visible:ring-2 has-focus-visible:ring-blue-400 ${selected ? "bg-blue-600 text-white" : "text-neutral-300 hover:bg-neutral-800"}`;
 
   return (
-    <Modal isOpen={isOpen()} onEscape={closeDiagnostics}>
+    <Modal
+      isOpen={isOpen()}
+      onEscape={closeDiagnostics}
+      onEnter={() => void download()}
+    >
       <DialogBackdrop role="presentation">
         <DialogSurface
           ref={dialogElement}

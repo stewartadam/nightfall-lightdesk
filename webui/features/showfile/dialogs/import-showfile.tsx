@@ -195,7 +195,12 @@ export function ShowfileImportModal(props: ShowfileImportModalProps) {
   };
 
   return (
-    <Modal isOpen={props.open} onEscape={props.onClose}>
+    <Modal
+      isOpen={props.open}
+      usePortal={false}
+      onEscape={props.onClose}
+      onEnter={submitImport}
+    >
       <DialogBackdrop role="presentation">
         <DialogSurface
           role="dialog"

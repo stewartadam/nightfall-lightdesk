@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, onCleanup, type ParentComponent, Show } from "solid-js";
+import { createSignal, onCleanup, type ParentComponent } from "solid-js";
 import {
   type CommandAction,
   CommandPaletteContext,
@@ -14,6 +14,7 @@ import {
   DEFAULT_CATEGORY,
 } from "../../providers/command-registry";
 import { useShellOverlayCoordinator } from "../../providers/shell-overlay-coordinator";
+import Modal from "../../ui/modal";
 import { CommandPaletteUI } from "./command-palette";
 import OpenCommandPalette from "./commands/open-command-palette";
 
@@ -73,7 +74,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
   return (
     <CommandPaletteContext.Provider value={contextValue}>
       {props.children}
-      <Show when={isOpen()}>
+      <Modal isOpen={isOpen()} usePortal={false}>
         <CommandPaletteUI
           isOpen={isOpen()}
           onClose={hidePalette}
@@ -81,7 +82,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
           selectedCommandId={selectedCommandId()}
           onSelectedCommandIdChange={setSelectedCommandId}
         />
-      </Show>
+      </Modal>
       <OpenCommandPalette />
     </CommandPaletteContext.Provider>
   );

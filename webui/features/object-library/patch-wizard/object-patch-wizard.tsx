@@ -224,6 +224,9 @@ const ObjectPatchWizard: Component<ObjectPatchWizardProps> = (props) => {
           handleClose();
         }
       }}
+      onEnter={() => {
+        if (selectedObject() && !isSubmitting()) handleSubmit();
+      }}
     >
       <DialogBackdrop>
         <DialogSurface

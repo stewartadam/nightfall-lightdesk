@@ -139,9 +139,22 @@ export function createBeatModelDownload() {
     void refresh();
   };
 
+  /** Starts or retries the download as Enter's default action, only while that consent button is shown. */
+  const downloadFromKeyboard = () => {
+    const phase = status()?.phase;
+    if (busy() || !phase || !["missing", "failed", "cancelled"].includes(phase))
+      return;
+    void refresh("POST");
+  };
+
   /** Render availability, explicit consent, transfer controls, and the complete local license notice. */
   const dialog = (usePortal = true) => (
-    <Modal isOpen={open()} onEscape={close} usePortal={usePortal}>
+    <Modal
+      isOpen={open()}
+      onEscape={close}
+      onEnter={downloadFromKeyboard}
+      usePortal={usePortal}
+    >
       <DialogBackdrop
         role="dialog"
         aria-modal="true"
