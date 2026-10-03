@@ -45,11 +45,70 @@ test("header command input clears once a valid command is submitted", async ({
   await input.press("Enter");
 
   await expect(input).toHaveValue("", { timeout: 1_000 });
-  expect(await scrollbackStatus(page, command)).toBe("pending");
+  await expect.poll(() => scrollbackStatus(page, command)).toBe("pending");
 
   await expect
     .poll(() => scrollbackStatus(page, command), { timeout: 10_000 })
     .toBe("success");
+});
+
+/**
+ * Verifies a showfile save submitted behind a running command waits for it, so
+ * the save captures everything the operator entered before it, and that the
+ * input shows the running and queued commands until they settle.
+ */
+test("header command input sends save after earlier commands settle", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.consoleScrollback),
+  );
+  const input = page.getByRole("textbox", {
+    name: "Command input",
+    exact: true,
+  });
+
+  await input.fill("sleep 4s");
+  await input.press("Enter");
+  await expect.poll(() => scrollbackStatus(page, "sleep 4s")).toBe("pending");
+  await input.fill("save");
+  await input.press("Enter");
+  await expect(input).toHaveValue("");
+
+  expect(await scrollbackStatus(page, "save")).toBeUndefined();
+  const queueStatus = page
+    .locator(".nf-header-command-group")
+    .getByRole("status", { name: "1 command running, 1 queued" });
+  await expect(queueStatus).toBeVisible();
+  await expect(input).toHaveAttribute(
+    "placeholder",
+    "Running sleep 4s… (+1 queued)",
+  );
+  await page
+    .locator(".nf-header-command-group")
+    .screenshot({ path: testInfo.outputPath("queue-empty-input.png") });
+  await input.fill("fixture 1");
+  await expect(queueStatus).toBeVisible();
+  await page
+    .locator(".nf-header-command-group")
+    .screenshot({ path: testInfo.outputPath("queue-with-input.png") });
+  await queueStatus.hover();
+  await expect(page.getByText("Queued: save")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("queue-tooltip.png"),
+    clip: { x: 0, y: 0, width: 640, height: 200 },
+  });
+  await input.fill("");
+  await expect
+    .poll(() => scrollbackStatus(page, "sleep 4s"), { timeout: 10_000 })
+    .toBe("success");
+  await expect
+    .poll(() => scrollbackStatus(page, "save"), { timeout: 10_000 })
+    .not.toBeUndefined();
+  await expect(page.locator("[data-command-queue-count]")).toHaveCount(0);
+  await expect(input).toHaveAttribute("placeholder", /to enter command/);
 });
 
 /** Verifies an input that fails to parse stays in place for the operator to fix. */

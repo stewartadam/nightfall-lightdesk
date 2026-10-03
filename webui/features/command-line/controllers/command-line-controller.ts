@@ -36,18 +36,33 @@ const commandSequenceRunner = new CommandSequenceRunner(
   new CommandClient(engineRuntime),
 );
 
+/** One accepted command-line submission that has not settled yet. */
+export interface PendingCommandSubmission {
+  id: number;
+  command: string;
+}
+
 /** Tail of the serial chain that keeps command-line submissions in submission order. */
-let commandSequenceTail: Promise<void> = Promise.resolve();
+let commandSubmissionTail: Promise<void> = Promise.resolve();
+let nextSubmissionId = 0;
+const [pendingSubmissions, setPendingSubmissions] = createSignal<
+  readonly PendingCommandSubmission[]
+>([]);
 
 /**
- * Runs a parsed command sequence after every earlier submission has settled,
+ * Runs one accepted submission after every earlier submission has settled,
  * without blocking the input. Failed command results are toasted by the engine
- * runtime, so only transport failures are reported here.
+ * runtime, so only transport failures are reported here. A submission that
+ * returns a promise settles with it; one that only sends settles once sent.
+ * The submission is listed in `pendingSubmissions` until it settles so the
+ * input can show that accepted commands are still running or waiting their turn.
  */
-function queueCommandSequence(input: string) {
-  commandSequenceTail = commandSequenceTail.then(async () => {
+function queueCommandSubmission(input: string, submit: () => unknown) {
+  const id = nextSubmissionId++;
+  setPendingSubmissions((pending) => [...pending, { id, command: input }]);
+  commandSubmissionTail = commandSubmissionTail.then(async () => {
     try {
-      await commandSequenceRunner.run(input);
+      await submit();
     } catch (error) {
       // Loads and new shows replace the backend world, which ends the session
       // before a result can arrive; the command was delivered, so keep going.
@@ -57,8 +72,12 @@ function queueCommandSequence(input: string) {
       }
       const message =
         error instanceof Error ? error.message : "Command submission failed";
-      log.error("Command sequence transport failed", error);
+      log.error("Command submission transport failed", error);
       pushToast("error", message);
+    } finally {
+      setPendingSubmissions((pending) =>
+        pending.filter((submission) => submission.id !== id),
+      );
     }
   });
 }
@@ -129,18 +148,18 @@ export function createCommandLineController(
         queueMicrotask(() => inputElement?.focus());
         return;
       }
-      newShowfile(options);
+      queueCommandSubmission(trimmedInput, () => newShowfile(options));
     } else {
       const showfileSaveCommand = showfileSaveCommandForInput(trimmedInput);
-      if (showfileSaveCommand) {
-        engineRuntime.sendCommand(
-          { module: "DeskCommand", command: showfileSaveCommand },
-          true,
-          trimmedInput,
-        );
-      } else {
-        queueCommandSequence(trimmedInput);
-      }
+      queueCommandSubmission(trimmedInput, () =>
+        showfileSaveCommand
+          ? engineRuntime.sendCommand(
+              { module: "DeskCommand", command: showfileSaveCommand },
+              true,
+              trimmedInput,
+            )
+          : commandSequenceRunner.run(trimmedInput),
+      );
     }
 
     recordSubmittedCommand(trimmedInput);
@@ -282,6 +301,7 @@ export function createCommandLineController(
     handlePanelKeyDown,
     onInputChange,
     clearProgrammer,
+    pendingSubmissions,
     analysis,
     history,
   };
