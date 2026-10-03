@@ -12,9 +12,10 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install browsers and system dependencies
+    # Chromium's system dependencies include ALSA, the headless backend's only native runtime library.
+    - name: Install Chromium and system dependencies
       shell: bash
-      run: pnpm run playwright:install --with-deps
+      run: node scripts/run-playwright.mjs install --with-deps --no-shell chromium
 
     # Saved fixtures keep each isolated backend at its normal startup picker.
     - name: Seed disposable showfiles from the repository fixture
