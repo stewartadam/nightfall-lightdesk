@@ -134,7 +134,8 @@ export interface PostProcessingState {
   visibleOutlineProxies: Set<Object3D>;
   /** Every outline pass's live selection, re-read before each render so in-place edits take effect. */
   outlineSelections: Object3D[][];
-  surfaceLighting: OpticalSurfaceLighting;
+  /** Clustered optical surface shading, installed only when the profile lights surfaces. */
+  surfaceLighting?: OpticalSurfaceLighting;
   volumePass: ReturnType<typeof pass>;
   postProcessing: RenderPipeline;
   scenePass: ReturnType<typeof pass>;
@@ -239,8 +240,10 @@ export function createPostProcessing(
     },
   );
   const profile = options?.profile ?? resolveQualityProfile("high");
-  const surfaceLighting = new OpticalSurfaceLighting(profile);
-  renderer.lighting = surfaceLighting;
+  const surfaceLighting = profile.surfaceLighting
+    ? new OpticalSurfaceLighting(profile)
+    : undefined;
+  if (surfaceLighting) renderer.lighting = surfaceLighting;
   const config = {
     ...defaultPostProcessingConfig,
     ...options?.configOverrides,
@@ -257,9 +260,9 @@ export function createPostProcessing(
     scenePass.getViewZNode(),
     {
       profile,
-      surfaceLighting: true,
-      goboAtlas: surfaceLighting.goboAtlas,
-      shadows: surfaceLighting.shadows,
+      surfaceLighting: !!surfaceLighting,
+      goboAtlas: surfaceLighting?.goboAtlas,
+      shadows: surfaceLighting?.shadows,
     },
   );
   const volumePass = pass(opticalContext.scene, camera, {
@@ -443,7 +446,7 @@ export function updateBloomConfig(
 export async function preparePostProcessing(
   state: PostProcessingState,
 ): Promise<void> {
-  await state.surfaceLighting.shadows?.prepare(state.renderer);
+  await state.surfaceLighting?.shadows?.prepare(state.renderer);
 }
 
 /**
@@ -464,7 +467,7 @@ export function renderWithPostProcessing(
   // Preserve native-resolution geometry; only the soft effects trade pixels for GPU headroom.
   if (state.bloomPass && state.bloomPass.getResolutionScale() !== scale)
     state.bloomPass.setResolutionScale(scale);
-  const shadows = state.surfaceLighting.shadows;
+  const shadows = state.surfaceLighting?.shadows;
   if (shadows)
     shadows.update(
       state.renderer,
@@ -492,10 +495,10 @@ export function disposePostProcessing(
 ): void {
   if (!state) return;
   const { renderer, replacedRendererHooks } = state;
-  if (renderer.lighting === state.surfaceLighting)
+  if (state.surfaceLighting && renderer.lighting === state.surfaceLighting)
     renderer.lighting = replacedRendererHooks.lighting;
   renderer.setRenderObjectFunction(replacedRendererHooks.renderObjectFunction);
-  state.surfaceLighting.dispose();
+  state.surfaceLighting?.dispose();
   state.outlinePass.dispose();
   state.editSelectionOutlinePass.dispose();
   state.programmerValueOutlinePass.dispose();

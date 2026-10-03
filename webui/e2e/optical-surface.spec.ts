@@ -162,7 +162,7 @@ for (const forceWebGL of [false, true]) {
         const camera = new THREE.PerspectiveCamera(45, 640 / 480, 0.1, 100);
         camera.position.z = 4;
         const pipeline = createPostProcessing(renderer, scene, camera);
-        const goboAtlas = pipeline.surfaceLighting.goboAtlas!;
+        const goboAtlas = pipeline.surfaceLighting!.goboAtlas!;
         const wall = new THREE.Mesh(
           new THREE.PlaneGeometry(8, 6),
           new THREE.MeshStandardNodeMaterial({ color: 0xffffff, roughness: 1 }),

@@ -772,7 +772,7 @@ export function SettingsOverlay() {
                     </span>
                     <p class="mt-1 text-xs text-gray-500" aria-live="polite">
                       {quality() === "low"
-                        ? "Simple geometry beams for maximum performance."
+                        ? "Simple geometry beams without surface lighting, for maximum performance."
                         : quality() === "medium"
                           ? "Smoothly shaded beams and surface lighting, without fog or glow."
                           : "Atmospheric beams, fog, glow, and optical effects."}

@@ -36,6 +36,8 @@ export interface QualityProfile {
   readonly gobos: boolean;
   /** Prism wheels split apertures into their declared facets instead of a single beam. */
   readonly prismFacets: boolean;
+  /** Beams light scene surfaces through clustered optical surface lights. */
+  readonly surfaceLighting: boolean;
   /** Occluders render optical shadow maps sampled by surfaces and haze. */
   readonly shadows: boolean;
   /** Bright pixels spread into a bloom glow. */
@@ -58,6 +60,7 @@ const QUALITY_PROFILES: Record<VisualizerQualityPreset, QualityProfile> = {
     beamStyle: { kind: "schematic-cone", segments: 12 },
     gobos: false,
     prismFacets: false,
+    surfaceLighting: false,
     shadows: false,
     bloom: false,
     fxaa: false,
@@ -70,6 +73,7 @@ const QUALITY_PROFILES: Record<VisualizerQualityPreset, QualityProfile> = {
     beamStyle: { kind: "shaded-cone", segments: 48 },
     gobos: false,
     prismFacets: false,
+    surfaceLighting: true,
     shadows: false,
     bloom: false,
     fxaa: false,
@@ -81,6 +85,7 @@ const QUALITY_PROFILES: Record<VisualizerQualityPreset, QualityProfile> = {
     beamStyle: { kind: "volumetric" },
     gobos: true,
     prismFacets: true,
+    surfaceLighting: true,
     shadows: true,
     bloom: true,
     fxaa: true,

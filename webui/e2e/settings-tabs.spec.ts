@@ -79,7 +79,9 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await quality.press("Home");
   await expect(quality).toHaveAttribute("aria-valuetext", "Low (faster)");
   await expect(
-    dialog.getByText("Simple geometry beams for maximum performance."),
+    dialog.getByText(
+      "Simple geometry beams without surface lighting, for maximum performance.",
+    ),
   ).toBeVisible();
   await quality.press("ArrowRight");
   await expect(quality).toHaveAttribute("aria-valuetext", "Medium");

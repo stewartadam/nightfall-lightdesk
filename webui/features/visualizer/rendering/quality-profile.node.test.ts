@@ -39,3 +39,12 @@ test("emitter display gain compensates for a missing bloom pass", () => {
     );
   }
 });
+
+/** Low skips clustered surface shading entirely, while shadows are only ever sampled by lit surfaces. */
+test("only low skips optical surface lighting", () => {
+  for (const preset of PRESETS) {
+    const profile = resolveQualityProfile(preset);
+    assert.equal(profile.surfaceLighting, preset !== "low", preset);
+    if (profile.shadows) assert.ok(profile.surfaceLighting, preset);
+  }
+});
