@@ -7,6 +7,14 @@
  */
 
 import {
+  computePosition,
+  type Middleware,
+  offset,
+  type Placement,
+  type Side,
+  shift,
+} from "@floating-ui/dom";
+import {
   type Accessor,
   createEffect,
   createMemo,
@@ -69,6 +77,103 @@ function rectsKey(rects: DOMRect[]): string {
     .join(";");
 }
 
+/** Space between the card and what it points at. */
+const GAP = 16;
+/** Space the card keeps from the window edges. */
+const MARGIN = 12;
+
+/** Measures how much of a set of rectangles a card box covers. */
+function covered(
+  box: { x: number; y: number; width: number; height: number },
+  rects: DOMRect[],
+): number {
+  return rects.reduce(
+    (sum, rect) =>
+      sum +
+      Math.max(
+        0,
+        Math.min(box.x + box.width, rect.right) - Math.max(box.x, rect.left),
+      ) *
+        Math.max(
+          0,
+          Math.min(box.y + box.height, rect.bottom) - Math.max(box.y, rect.top),
+        ),
+    0,
+  );
+}
+
+/** Measures the empty gap between a card box and a surface, independent of their sizes. */
+function gap(
+  box: { x: number; y: number; width: number; height: number },
+  rect: DOMRect,
+): number {
+  return Math.hypot(
+    Math.max(rect.left - box.x - box.width, box.x - rect.right, 0),
+    Math.max(rect.top - box.y - box.height, box.y - rect.bottom, 0),
+  );
+}
+
+/** Joins rectangles into the smallest rectangle containing all of them. */
+function union(rects: DOMRect[]): DOMRect {
+  const left = Math.min(...rects.map((rect) => rect.left));
+  const top = Math.min(...rects.map((rect) => rect.top));
+  return new DOMRect(
+    left,
+    top,
+    Math.max(...rects.map((rect) => rect.right)) - left,
+    Math.max(...rects.map((rect) => rect.bottom)) - top,
+  );
+}
+
+/** Lists placements side by side in order of preference, each centered first and then aligned to either end. */
+function placementOrder(above: boolean): Placement[] {
+  const sides: Side[] = above
+    ? ["top", "right", "left", "bottom"]
+    : ["right", "left", "bottom", "top"];
+  return sides.flatMap((side): Placement[] => [
+    side,
+    `${side}-start`,
+    `${side}-end`,
+  ]);
+}
+
+/** Progress of the avoidSurfaces middleware across Floating UI's placement resets. */
+interface AvoidSurfacesData {
+  index?: number;
+  settled?: boolean;
+  tried?: { placement: Placement; covered: number }[];
+}
+
+/**
+ * Floating UI middleware that tries each placement in turn until the card covers none of the given
+ * surfaces. When every placement covers something, it settles on the one covering the least.
+ */
+function avoidSurfaces(placements: Placement[], avoid: DOMRect[]): Middleware {
+  return {
+    name: "avoidSurfaces",
+    fn({ x, y, placement, rects, middlewareData }) {
+      const data = (middlewareData.avoidSurfaces ?? {}) as AvoidSurfacesData;
+      const area = covered(
+        { x, y, width: rects.floating.width, height: rects.floating.height },
+        avoid,
+      );
+      if (data.settled || area === 0) return { data: { settled: true } };
+      const tried = [...(data.tried ?? []), { placement, covered: area }];
+      const index = (data.index ?? 0) + 1;
+      if (index < placements.length)
+        return {
+          data: { index, tried },
+          reset: { placement: placements[index] },
+        };
+      const best = tried.reduce((a, b) => (b.covered < a.covered ? b : a));
+      return {
+        data: { index, tried, settled: true },
+        reset: { placement: best.placement },
+      };
+    },
+  };
+}
+
 /** Places cards beside their target and preserves manual placement until the next step. */
 export function useFloatingGuide(
   element: Accessor<HTMLElement | undefined>,
@@ -129,18 +234,24 @@ export function useFloatingGuide(
       12,
       Math.min(
         point.x,
-        window.innerWidth - (element()?.offsetWidth ?? 360) - 12,
+        window.innerWidth - (element()?.offsetWidth ?? 360) - MARGIN,
       ),
     ),
     y: Math.max(
       12,
       Math.min(
         point.y,
-        window.innerHeight - (element()?.offsetHeight ?? 400) - 12,
+        window.innerHeight - (element()?.offsetHeight ?? 400) - MARGIN,
       ),
     ),
   });
-  /** Chooses a nearby placement that leaves the target clear and minimizes Visualizer overlap. */
+  let placing = 0;
+  /**
+   * Places the card beside its target with Floating UI. Each attempt walks the placements until the
+   * card covers nothing it must leave clear. Attempts first anchor to the target, then to the target
+   * together with the areas it must keep visible, and finally let the card cover the teaching panel
+   * or Visualizer when nothing else fits.
+   */
   const place = () => {
     const card = element();
     if (!card) return;
@@ -157,7 +268,7 @@ export function useFloatingGuide(
     const width = card.offsetWidth;
     const height = card.offsetHeight;
     if (!target) {
-      setPosition(clamp({ x: window.innerWidth - width - 12, y: 80 }));
+      setPosition(clamp({ x: window.innerWidth - width - MARGIN, y: 80 }));
       return;
     }
     const targetElement = selector()
@@ -200,159 +311,87 @@ export function useFloatingGuide(
     ];
     const popovers = popoverBounds();
     // The card never covers the action, an open dialog or menu, or an area the step asks the user to watch.
-    const avoid = [target, ...(dialog ? [dialog] : []), ...popovers, ...kept];
-    /** Offers placements outside both the action and the panel whose content explains the lesson. */
-    const beside = (rect: DOMRect) => [
-      { x: rect.right + 16, y: target.y + target.height / 2 - height / 2 },
-      {
-        x: rect.left - width - 16,
-        y: target.y + target.height / 2 - height / 2,
-      },
-      { x: target.x + target.width / 2 - width / 2, y: rect.bottom + 16 },
-      { x: target.x + target.width / 2 - width / 2, y: rect.top - height - 16 },
+    const protect = [target, ...(dialog ? [dialog] : []), ...popovers, ...kept];
+    // Without explicit focus areas, panel actions also prefer to leave their teaching panel and the Visualizer clear.
+    const teaching = panel && focus === undefined ? panel : undefined;
+    const prefer = [
+      ...(teaching ? [teaching] : []),
+      ...(visualizer && (panel || !anchor()) ? [visualizer] : []),
     ];
-    const candidates = [
-      ...beside(target),
-      ...(dialog ? beside(dialog) : []),
-      ...(panel ? beside(panel) : []),
-      ...kept.flatMap(beside),
-      ...popovers.flatMap(beside),
-      ...(panel
-        ? [
-            {
-              x: panel.right + 16,
-              y: panel.top,
-            },
-            {
-              x: panel.left - width - 16,
-              y: panel.top,
-            },
-            {
-              x: panel.left,
-              y: panel.bottom + 16,
-            },
-            {
-              x: panel.left,
-              y: panel.top - height - 16,
-            },
-          ]
-        : []),
-      { x: 12, y: 80 },
-      { x: window.innerWidth - width - 12, y: 80 },
-      { x: 12, y: window.innerHeight - height - 12 },
-      {
-        x: window.innerWidth - width - 12,
-        y: window.innerHeight - height - 12,
-      },
-    ].map(clamp);
-    /** Measures the covered area of a rectangle for a candidate position. */
-    const overlap = (point: { x: number; y: number }, rect: DOMRect) =>
-      Math.max(
-        0,
-        Math.min(point.x + width, rect.right) - Math.max(point.x, rect.left),
-      ) *
-      Math.max(
-        0,
-        Math.min(point.y + height, rect.bottom) - Math.max(point.y, rect.top),
-      );
-    const geometry = `${target.x},${target.y},${target.width},${target.height},${width},${height}|${rectsKey([...popovers, ...kept])}`;
-    /** Reports whether a position leaves every protected surface uncovered. */
-    const clear = (point: { x: number; y: number }) =>
-      avoid.every((rect) => overlap(point, rect) === 0);
-    // Honor teaching-specific placement before falling back to general overlap scoring.
-    const preferred = dialog
-      ? beside(dialog).slice(0, 2).map(clamp)
-      : targetElement?.matches("[data-panel-id]")
-        ? beside(target).map(clamp)
-        : preference() === "above"
-          ? [
-              {
-                x: target.x + target.width / 2 - width / 2,
-                y: (panel?.top ?? target.top) - height - 16,
-              },
-            ]
-          : [];
-    const preferredPosition = preferred.find((point) => {
-      const bounded = clamp(point);
+    /** Ranks a card position: covering a protected surface always costs more than covering a preferred one. */
+    const cost = (point: { x: number; y: number }) => {
+      const box = { ...point, width, height };
       return (
-        point.x === bounded.x &&
-        point.y === bounded.y &&
-        clear(point) &&
-        (focus !== undefined || !panel || overlap(point, panel) === 0)
+        covered(box, [target]) * 1_000_000 +
+        covered(box, protect) * 10_000 +
+        covered(box, prefer)
       );
-    });
-    if (preferredPosition) {
-      placedGeometry = geometry;
-      setPosition(preferredPosition);
-      return;
-    }
-    /** Measures the empty gap between the card and the relevant surface, independent of their sizes. */
-    const gap = (point: { x: number; y: number }, rect: DOMRect) =>
-      Math.hypot(
-        Math.max(rect.left - point.x - width, point.x - rect.right, 0),
-        Math.max(rect.top - point.y - height, point.y - rect.bottom, 0),
-      );
+    };
+    const geometry = `${target.x},${target.y},${target.width},${target.height},${width},${height}|${rectsKey([...popovers, ...kept])}`;
     const current = untrack(position);
     const bounded = clamp(current);
-    // Small result-list changes preserve placement; a large empty gap requires reattachment.
+    // Small result-list changes preserve placement; a large empty gap to a dialog requires reattachment.
     if (
       geometry === placedGeometry &&
       current.x === bounded.x &&
       current.y === bounded.y &&
-      clear(current) &&
-      (!dialog || gap(current, dialog) <= 64)
+      covered({ ...current, width, height }, protect) === 0 &&
+      (!dialog || gap({ ...current, width, height }, dialog) <= 64)
     )
       return;
-    placedGeometry = geometry;
-    const panels = [
-      ...document.querySelectorAll<HTMLElement>("[data-panel-id]"),
-    ]
-      .map((entry) => entry.getBoundingClientRect())
-      .filter((rect) => rect.width > 0 && rect.height > 0);
-    for (const point of [...candidates]) {
-      for (const rect of panels) {
-        for (const x of [rect.left, rect.right - width]) {
-          if (Math.abs(x - point.x) <= 12)
-            candidates.push(clamp({ ...point, x }));
-        }
-        for (const y of [rect.top, rect.bottom - height]) {
-          if (Math.abs(y - point.y) <= 12)
-            candidates.push(clamp({ ...point, y }));
-        }
+    const cluster = union([
+      target,
+      ...kept,
+      ...(dialog ? [dialog] : []),
+      ...(teaching ? [teaching] : []),
+    ]);
+    const attempts = [
+      { reference: target, avoid: [...protect, ...prefer] },
+      { reference: cluster, avoid: [...protect, ...prefer] },
+      { reference: target, avoid: protect },
+      { reference: cluster, avoid: protect },
+    ];
+    const placements = placementOrder(preference() === "above");
+    const token = ++placing;
+    void (async () => {
+      const corners = [
+        { x: MARGIN, y: 80 },
+        { x: window.innerWidth - width - MARGIN, y: 80 },
+        { x: MARGIN, y: window.innerHeight - height - MARGIN },
+        {
+          x: window.innerWidth - width - MARGIN,
+          y: window.innerHeight - height - MARGIN,
+        },
+      ].map(clamp);
+      let best = { point: corners[0], cost: Number.POSITIVE_INFINITY };
+      for (const attempt of attempts) {
+        const { reference, avoid } = attempt;
+        const result = await computePosition(
+          { getBoundingClientRect: () => reference },
+          card,
+          {
+            strategy: "fixed",
+            placement: placements[0],
+            middleware: [
+              offset(GAP),
+              shift({ padding: MARGIN, crossAxis: true }),
+              avoidSurfaces(placements, avoid),
+            ],
+          },
+        );
+        if (token !== placing) return;
+        const point = clamp({ x: result.x, y: result.y });
+        const score = cost(point);
+        if (score < best.cost) best = { point, cost: score };
+        if (score === 0) break;
       }
-    }
-    /** Prefers clean alignment with nearby panel edges without pulling a centered pointer away. */
-    const alignment = (point: { x: number; y: number }) =>
-      Math.min(
-        16,
-        ...panels.flatMap((rect) => [
-          Math.abs(point.x - rect.left),
-          Math.abs(point.x + width - rect.right),
-          Math.abs(point.y - rect.top),
-          Math.abs(point.y + height - rect.bottom),
-        ]),
-      );
-    /** Measures how far the target is from the center of the pointer-bearing card edge. */
-    const centering = (point: { x: number; y: number }) =>
-      point.x >= target.right || point.x + width <= target.left
-        ? Math.abs(point.y + height / 2 - target.y - target.height / 2)
-        : Math.abs(point.x + width / 2 - target.x - target.width / 2);
-    /**
-     * Never covers protected surfaces and keeps header actions nearby. When no position clears them
-     * all, the target outranks dialogs, menus, and focus areas. Without explicit focus areas, panel
-     * actions also prefer to leave their teaching panel and the Visualizer clear.
-     */
-    const score = (point: { x: number; y: number }) =>
-      overlap(point, target) * 1_000_000 +
-      avoid.reduce((sum, rect) => sum + overlap(point, rect) * 10000, 0) +
-      (panel && focus === undefined ? overlap(point, panel) * 2 : 0) +
-      (visualizer && (panel || !anchor()) ? overlap(point, visualizer) : 0) +
-      gap(point, dialog ?? target) * 2 +
-      centering(point) * 0.25 +
-      alignment(point) * 0.1 +
-      Math.hypot(point.x - target.x, point.y - target.y) * 0.001;
-    candidates.sort((a, b) => score(a) - score(b));
-    setPosition(candidates[0]);
+      for (const point of corners) {
+        const score = cost(point);
+        if (score < best.cost) best = { point, cost: score };
+      }
+      placedGeometry = geometry;
+      setPosition(best.point);
+    })();
   };
   /** Resets manual placement when the lesson advances. */
   createEffect(() => {

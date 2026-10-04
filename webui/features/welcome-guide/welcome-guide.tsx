@@ -24,7 +24,11 @@ import {
   type PanelComponentName,
   panelDefinitionByName,
 } from "../../lib/panel-definitions";
-import { openOrFocusPanelDefinition } from "../../lib/panel-open-command";
+import {
+  openOrFocusPanel,
+  openOrFocusPanelDefinition,
+  type PanelOpenTarget,
+} from "../../lib/panel-open-command";
 import { isEmbeddedDemoRuntime } from "../../lib/runtime-config";
 import {
   activeInstances,
@@ -104,6 +108,9 @@ export function GuideInvitation() {
 }
 
 /** Hosts the lesson library and floating instructions; all engine actions remain user initiated. */
+/** The header command input, which steps teaching typed commands point at. */
+const COMMAND_INPUT = "#header-cmdline";
+
 export default function WelcomeGuide() {
   const lessons = useStore(guideLessons);
   const opened = useStore(guideOpen);
@@ -125,7 +132,12 @@ export default function WelcomeGuide() {
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
   );
-  const { dockviewApi, resetDockviewLayout } = useAppShell();
+  const {
+    dockviewApi,
+    resetDockviewLayout,
+    closeSettings,
+    hideShortcutsPopup,
+  } = useAppShell();
   const activeLayout = useStore(activeLayoutId);
   const returnLayoutId = useStore(guideReturnLayoutId);
   const [startingLesson, setStartingLesson] = createSignal(false);
@@ -415,12 +427,34 @@ export default function WelcomeGuide() {
     ),
   );
   /**
+   * Places a panel the step asks for as a tab beside the panel its prerequisite names, when that
+   * panel is open; otherwise the palette's placement applies.
+   */
+  const openTarget = (
+    key: PanelComponentName | "sampleTimeline",
+  ): PanelOpenTarget => {
+    const beside = (step()?.content ?? [])
+      .map((item) =>
+        item.type === "prerequisite" ? item.openBeside?.[key] : undefined,
+      )
+      .find((name) => name !== undefined);
+    const reference =
+      beside ?? (key === "sampleTimeline" ? "TimelinesPanel" : undefined);
+    return reference
+      ? { besidePanel: panelDefinitionByName(reference).panelId }
+      : "default";
+  };
+  /**
    * Opens panels through the same placement and expansion policy as the palette,
    * then collapses edge panels that still cover it and aren't needed by this step.
    */
   const openPanel = (name: PanelComponentName) => {
     const api = dockviewApi();
-    openOrFocusPanelDefinition(api, panelDefinitionByName(name));
+    openOrFocusPanelDefinition(
+      api,
+      panelDefinitionByName(name),
+      openTarget(name),
+    );
     requestAnimationFrame(() => {
       const panel = api?.panels.find((entry) => entry.api.component === name);
       if (api && panel)
@@ -443,20 +477,23 @@ export default function WelcomeGuide() {
     const timeline = sampleTimeline();
     if (!api || !timeline) return;
     const uid = normalizeTimelineUid(timeline.identifiers.uid);
-    const id = `panel-Timeline-${uid}`;
-    const existing = api.getPanel(id);
-    if (existing) {
-      if (existing.api.location.type === "edge")
-        api.getEdgeGroup(existing.api.location.position)?.expand();
-      existing.focus();
-      return;
+    openOrFocusPanel(
+      api,
+      `panel-Timeline-${uid}`,
+      "Timeline",
+      `Timeline ${timeline.identifiers.id}`,
+      openTarget("sampleTimeline"),
+      { initialTimelineUid: uid },
+    );
+  };
+
+  /** Closes what a step left open when the user moves on, exactly as its Close button would. */
+  const advance = () => {
+    for (const action of step()?.onAdvance ?? []) {
+      if (action.surface === "settings") closeSettings();
+      else hideShortcutsPopup();
     }
-    api.addPanel({
-      id,
-      component: "Timeline",
-      title: "Timeline 1",
-      params: { initialTimelineUid: uid },
-    });
+    moveTo(index() + 1);
   };
 
   /** Changes instructional position and returns focus to its heading for keyboard users. */
@@ -645,7 +682,11 @@ export default function WelcomeGuide() {
                       <GuideTarget
                         stepId={instruction().id}
                         selector={targetSelector()}
-                        focusTarget={!blocked() && instruction().focusTarget}
+                        focusTarget={
+                          !blocked() &&
+                          (instruction().focusTarget ??
+                            instruction().target === COMMAND_INPUT)
+                        }
                         onBounds={setAnchor}
                       />
                       <GuideTarget
@@ -680,7 +721,7 @@ export default function WelcomeGuide() {
                             <Button
                               size="compact"
                               variant="primary"
-                              onClick={() => moveTo(index() + 1)}
+                              onClick={advance}
                             >
                               Continue
                             </Button>
@@ -688,7 +729,7 @@ export default function WelcomeGuide() {
                         >
                           <Button
                             size="compact"
-                            onClick={() => moveTo(index() + 1)}
+                            onClick={advance}
                             title="Move on without completing this step"
                           >
                             Skip
