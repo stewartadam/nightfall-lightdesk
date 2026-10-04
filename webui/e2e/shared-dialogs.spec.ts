@@ -119,7 +119,7 @@ test("shared dialog presentation covers lab, store and creation forms", async ({
   await expect(
     objectDialog.getByText("Please select a GLB file", { exact: true }),
   ).toBeVisible();
-  const bounds = await objectDialog.boundingBox();
+  const bounds = await objectDialog.locator(".nf-dialog-surface").boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
   expect(bounds!.height).toBeLessThanOrEqual(668);

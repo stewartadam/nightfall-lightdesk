@@ -8,19 +8,16 @@
 
 import { createEffect, createSignal, For, Show } from "solid-js";
 import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../../../components/ui/dialog";
 import {
   Input,
   NativeSelect,
   Textarea,
 } from "../../../components/ui/form-controls";
-import Modal from "../../../components/ui/modal";
 import { Button } from "../../../components/ui/visual-language/button";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import { pushToast } from "../../../state/appStores";
@@ -130,85 +127,74 @@ export function ModuleFxDialog(props: ModuleFxDialogProps) {
   };
 
   return (
-    <Modal
+    <Dialog
+      kind="task"
       isOpen={props.isOpen}
-      onEscape={props.onCancel}
-      onEnter={() => {
+      title="Add Module FX"
+      onDismiss={props.onCancel}
+      onSubmit={() => {
         if (props.modules.length > 0) submit();
       }}
     >
-      <DialogBackdrop
-        role="dialog"
-        aria-modal="true"
-        aria-label="Add Module FX"
-      >
-        <DialogSurface class="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Add Module FX</DialogTitle>
-          </DialogHeader>
-          <DialogBody class="space-y-4">
-            <label class="block space-y-1 text-sm">
-              <span class="text-neutral-300">Module</span>
-              <NativeSelect
-                value={selectedModule()}
-                onInput={(event) => selectModule(event.currentTarget.value)}
-              >
-                <For each={props.modules}>
-                  {(moduleInfo) => (
-                    <option value={moduleInfo.name}>{moduleInfo.name}</option>
-                  )}
-                </For>
-              </NativeSelect>
-            </label>
-            <div class="grid grid-cols-[110px_1fr] gap-3">
-              <label class="block space-y-1 text-sm">
-                <span class="text-neutral-300">ID</span>
-                <Input
-                  inputMode="numeric"
-                  value={idText()}
-                  onInput={(event) => setIdText(event.currentTarget.value)}
-                />
-              </label>
-              <label class="block space-y-1 text-sm">
-                <span class="text-neutral-300">Label</span>
-                <Input
-                  value={label()}
-                  onInput={(event) => setLabel(event.currentTarget.value)}
-                />
-              </label>
-            </div>
-            <label class="block space-y-1 text-sm">
-              <span class="text-neutral-300">Config</span>
-              <Textarea
-                class="min-h-32"
-                spellcheck={false}
-                value={configText()}
-                onInput={(event) => setConfigText(event.currentTarget.value)}
-              />
-            </label>
-            <Show when={props.modules.length === 0}>
-              <div class="rounded border border-yellow-800 bg-yellow-950/40 px-3 py-2 text-sm text-yellow-100">
-                No WebAssembly modules found in this showfile or the app data
-                fx-modules directory.
-              </div>
-            </Show>
-          </DialogBody>
-          <DialogFooter>
-            <Button type="button" onClick={props.onCancel}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              type="button"
-              disabled={props.modules.length === 0}
-              onClick={submit}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogSurface>
-      </DialogBackdrop>
-    </Modal>
+      <DialogBody class="space-y-4">
+        <label class="block space-y-1 text-sm">
+          <span class="text-neutral-300">Module</span>
+          <NativeSelect
+            value={selectedModule()}
+            onInput={(event) => selectModule(event.currentTarget.value)}
+          >
+            <For each={props.modules}>
+              {(moduleInfo) => (
+                <option value={moduleInfo.name}>{moduleInfo.name}</option>
+              )}
+            </For>
+          </NativeSelect>
+        </label>
+        <div class="grid grid-cols-[110px_1fr] gap-3">
+          <label class="block space-y-1 text-sm">
+            <span class="text-neutral-300">ID</span>
+            <Input
+              inputMode="numeric"
+              value={idText()}
+              onInput={(event) => setIdText(event.currentTarget.value)}
+            />
+          </label>
+          <label class="block space-y-1 text-sm">
+            <span class="text-neutral-300">Label</span>
+            <Input
+              value={label()}
+              onInput={(event) => setLabel(event.currentTarget.value)}
+            />
+          </label>
+        </div>
+        <label class="block space-y-1 text-sm">
+          <span class="text-neutral-300">Config</span>
+          <Textarea
+            class="min-h-32"
+            spellcheck={false}
+            value={configText()}
+            onInput={(event) => setConfigText(event.currentTarget.value)}
+          />
+        </label>
+        <Show when={props.modules.length === 0}>
+          <div class="rounded border border-yellow-800 bg-yellow-950/40 px-3 py-2 text-sm text-yellow-100">
+            No WebAssembly modules found in this showfile or the app data
+            fx-modules directory.
+          </div>
+        </Show>
+      </DialogBody>
+      <DialogFooter>
+        <DialogCancelButton />
+        <Button
+          variant="primary"
+          type="button"
+          disabled={props.modules.length === 0}
+          onClick={submit}
+        >
+          Create
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 }
 

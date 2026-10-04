@@ -10,15 +10,11 @@ import "./patch-wizard.css";
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../../../components/ui/dialog";
-import Modal from "../../../components/ui/modal";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import {
@@ -250,175 +246,148 @@ export function PatchWizard() {
 
   return (
     <Show when={isOpen()}>
-      <Modal
+      <Dialog
+        kind="task"
         isOpen
-        onEscape={closeWizard}
-        closeOnEscape={!isCreating()}
-        onEnter={advanceFromKeyboard}
+        title={isMorphMode() ? "Morph Fixture" : "Patch Wizard"}
+        label="Patch Wizard"
+        onDismiss={closeWizard}
+        onSubmit={advanceFromKeyboard}
+        busy={isCreating()}
+        class="nf-patch-wizard max-w-[700px] h-[85dvh]"
       >
-        <DialogBackdrop
-          role="dialog"
-          aria-modal="true"
-          aria-label="Patch Wizard"
+        {/* Stepper */}
+        <div class="py-6 px-8 border-b border-gray-700">
+          <ul class="relative flex flex-row gap-x-2">
+            <For each={allSteps()}>
+              {(step, index) => (
+                <StepIndicator
+                  step={step}
+                  index={index()}
+                  currentIndex={currentStepIndex()}
+                  label={stepLabel(step)}
+                  isLast={index() === allSteps().length - 1}
+                />
+              )}
+            </For>
+          </ul>
+        </div>
+
+        {/* Content Area */}
+        <DialogBody>
+          <Switch>
+            <Match when={currentStep() === "fixture-selection"}>
+              <StepSelectFixture />
+            </Match>
+            <Match when={currentStep() === "mode-selection"}>
+              <StepSelectMode />
+            </Match>
+            <Match when={currentStep() === "configure"}>
+              <StepConfigure />
+            </Match>
+            <Match when={currentStep() === "review"}>
+              <StepFinalize />
+            </Match>
+          </Switch>
+        </DialogBody>
+
+        {/* Footer with navigation */}
+        <DialogFooter
+          style={{ "flex-direction": "column", "align-items": "stretch" }}
         >
-          <DialogSurface
-            role="document"
-            class="nf-patch-wizard max-w-[700px] h-[85dvh]"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <DialogHeader>
-              <DialogTitle>
-                {isMorphMode() ? "Morph Fixture" : "Patch Wizard"}
-              </DialogTitle>
-              <DialogCloseButton
-                type="button"
-                onClick={closeWizard}
-              ></DialogCloseButton>
-            </DialogHeader>
-
-            {/* Stepper */}
-            <div class="py-6 px-8 border-b border-gray-700">
-              <ul class="relative flex flex-row gap-x-2">
-                <For each={allSteps()}>
-                  {(step, index) => (
-                    <StepIndicator
-                      step={step}
-                      index={index()}
-                      currentIndex={currentStepIndex()}
-                      label={stepLabel(step)}
-                      isLast={index() === allSteps().length - 1}
-                    />
-                  )}
-                </For>
-              </ul>
-            </div>
-
-            {/* Content Area */}
-            <DialogBody>
-              <Switch>
-                <Match when={currentStep() === "fixture-selection"}>
-                  <StepSelectFixture />
-                </Match>
-                <Match when={currentStep() === "mode-selection"}>
-                  <StepSelectMode />
-                </Match>
-                <Match when={currentStep() === "configure"}>
-                  <StepConfigure />
-                </Match>
-                <Match when={currentStep() === "review"}>
-                  <StepFinalize />
-                </Match>
-              </Switch>
-            </DialogBody>
-
-            {/* Footer with navigation */}
-            <DialogFooter
-              style={{ "flex-direction": "column", "align-items": "stretch" }}
-            >
-              {/* ID conflict warning */}
-              <Show when={hasIdConflict() && isLastStep()}>
-                <div class="px-4 pt-3 pb-0">
-                  <div class="bg-yellow-900/40 border border-yellow-700 rounded px-3 py-2 text-sm text-yellow-200 flex items-center gap-2">
-                    <svg
-                      class="w-4 h-4 flex-shrink-0"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                        clip-rule="evenodd"
-                      />
-                    </svg>
-                    <span>
-                      Warning: One or more fixture IDs already exist. Creating
-                      will overwrite existing fixtures.
-                    </span>
-                  </div>
-                </div>
-              </Show>
-
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <Button
-                  size="compact"
-                  type="button"
-                  onClick={goToPreviousStep}
-                  disabled={isFirstStep() || isCreating()}
+          {/* ID conflict warning */}
+          <Show when={hasIdConflict() && isLastStep()}>
+            <div class="px-4 pt-3 pb-0">
+              <div class="bg-yellow-900/40 border border-yellow-700 rounded px-3 py-2 text-sm text-yellow-200 flex items-center gap-2">
+                <svg
+                  class="w-4 h-4 flex-shrink-0"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
                 >
-                  Previous
-                </Button>
+                  <path
+                    fill-rule="evenodd"
+                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <span>
+                  Warning: One or more fixture IDs already exist. Creating will
+                  overwrite existing fixtures.
+                </span>
+              </div>
+            </div>
+          </Show>
 
-                <div class="flex gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              size="compact"
+              type="button"
+              onClick={goToPreviousStep}
+              disabled={isFirstStep() || isCreating()}
+            >
+              Previous
+            </Button>
+
+            <div class="flex gap-3">
+              <DialogCancelButton size="compact" />
+
+              <Show
+                when={!isLastStep()}
+                fallback={
                   <Button
                     size="compact"
                     type="button"
-                    onClick={closeWizard}
-                    disabled={isCreating()}
+                    onClick={handleFinish}
+                    disabled={!canGoNext() || isCreating()}
+                    variant="primary"
                   >
-                    Cancel
-                  </Button>
-
-                  <Show
-                    when={!isLastStep()}
-                    fallback={
-                      <Button
-                        size="compact"
-                        type="button"
-                        onClick={handleFinish}
-                        disabled={!canGoNext() || isCreating()}
-                        variant="primary"
+                    <Show when={isCreating()}>
+                      <svg
+                        class="w-4 h-4 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
                       >
-                        <Show when={isCreating()}>
-                          <svg
-                            class="w-4 h-4 animate-spin"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                          >
-                            <circle
-                              class="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              stroke-width="4"
-                            />
-                            <path
-                              class="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                            />
-                          </svg>
-                        </Show>
-                        <span>
-                          {isCreating()
-                            ? isMorphMode()
-                              ? "Morphing..."
-                              : "Creating..."
-                            : isMorphMode()
-                              ? "Morph"
-                              : "Finish"}
-                        </span>
-                      </Button>
-                    }
-                  >
-                    <Button
-                      size="compact"
-                      type="button"
-                      onClick={goToNextStep}
-                      disabled={!canGoNext()}
-                      variant="primary"
-                    >
-                      Next
-                    </Button>
-                  </Show>
-                </div>
-              </div>
-            </DialogFooter>
-          </DialogSurface>
-        </DialogBackdrop>
-      </Modal>
+                        <circle
+                          class="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          stroke-width="4"
+                        />
+                        <path
+                          class="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                    </Show>
+                    <span>
+                      {isCreating()
+                        ? isMorphMode()
+                          ? "Morphing..."
+                          : "Creating..."
+                        : isMorphMode()
+                          ? "Morph"
+                          : "Finish"}
+                    </span>
+                  </Button>
+                }
+              >
+                <Button
+                  size="compact"
+                  type="button"
+                  onClick={goToNextStep}
+                  disabled={!canGoNext()}
+                  variant="primary"
+                >
+                  Next
+                </Button>
+              </Show>
+            </div>
+          </div>
+        </DialogFooter>
+      </Dialog>
       <DeleteConfirmModal
         isOpen={isVersionConflictModalOpen()}
         title="Version Mismatch Detected"

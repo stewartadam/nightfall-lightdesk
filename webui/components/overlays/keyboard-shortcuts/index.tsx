@@ -6,14 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, For, Match, Switch } from "solid-js";
+import { createMemo, For, type JSX, Match, Switch } from "solid-js";
 import {
   allShortcuts,
   type KeyboardShortcut,
 } from "../../../lib/keyboardShortcuts";
 import { useAppShell } from "../../providers/app-shell";
-import Modal from "../../ui/modal";
-import { ScrollArea } from "../../ui/scroll-area";
+import { Dialog, DialogBody } from "../../ui/dialog";
 
 // Detect if running on macOS
 const isMac =
@@ -215,63 +214,48 @@ export default function ShortcutsPopup() {
   };
 
   return (
-    <Modal isOpen={isShortcutsPopupVisible()} onEscape={hideShortcutsPopup}>
-      {/** biome-ignore lint/a11y/useKeyWithClickEvents: this is a click-only interaction */}
-      <div
-        class="fixed inset-0 nightfall-top-layer bg-black bg-opacity-70 flex items-center justify-center"
-        data-dialog-kind="shortcuts"
-        onClick={hideShortcutsPopup}
-      >
-        <ScrollArea
-          class="bg-[#252525] border border-gray-700 rounded-lg max-w-4xl max-h-[80vh]"
-          viewportClass="p-6"
-          viewportProps={{
-            role: "region",
-            "aria-label": "Keyboard shortcuts",
-            tabIndex: 0,
-            onClick: (event) => event.stopPropagation(),
-          }}
-        >
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-semibold text-white">Keyboard Shortcuts</h2>
-            <button
-              class="text-gray-400 hover:text-white"
-              title="Close"
-              onClick={hideShortcutsPopup}
-            >
-              ✕
-            </button>
-          </div>
-
-          <div class="columns-1 md:columns-2 lg:columns-3 gap-8">
-            <For each={organizedShortcuts()}>
-              {([panelName, panelShortcuts]) => (
-                <div class="mb-8 break-inside-avoid">
-                  <h3 class="text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
-                    {getDisplayName(panelName)}
-                  </h3>
-                  <div class="space-y-2">
-                    <For each={panelShortcuts}>
-                      {(shortcut) => (
-                        <div class="flex items-center text-sm gap-2">
-                          <ShortcutKeys shortcut={shortcut.key} />
-                          <span class="text-gray-300">
-                            {shortcut.description}
-                          </span>
-                        </div>
-                      )}
-                    </For>
-                  </div>
+    <Dialog
+      kind="info"
+      isOpen={isShortcutsPopupVisible()}
+      title="Keyboard Shortcuts"
+      onDismiss={hideShortcutsPopup}
+      class="max-w-4xl"
+      style={{ "max-height": "80vh" }}
+      backdropProps={
+        {
+          "data-dialog-kind": "shortcuts",
+        } as JSX.HTMLAttributes<HTMLDivElement>
+      }
+    >
+      <DialogBody role="region" aria-label="Keyboard shortcuts">
+        <div class="columns-1 md:columns-2 lg:columns-3 gap-8">
+          <For each={organizedShortcuts()}>
+            {([panelName, panelShortcuts]) => (
+              <div class="mb-8 break-inside-avoid">
+                <h3 class="text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
+                  {getDisplayName(panelName)}
+                </h3>
+                <div class="space-y-2">
+                  <For each={panelShortcuts}>
+                    {(shortcut) => (
+                      <div class="flex items-center text-sm gap-2">
+                        <ShortcutKeys shortcut={shortcut.key} />
+                        <span class="text-gray-300">
+                          {shortcut.description}
+                        </span>
+                      </div>
+                    )}
+                  </For>
                 </div>
-              )}
-            </For>
-          </div>
+              </div>
+            )}
+          </For>
+        </div>
 
-          <div class="mt-4 text-xs text-gray-500 text-center flex items-center justify-center gap-1">
-            Press <kbd class={kbdClasses}>Esc</kbd> to close
-          </div>
-        </ScrollArea>
-      </div>
-    </Modal>
+        <div class="mt-4 text-xs text-gray-500 text-center flex items-center justify-center gap-1">
+          Press <kbd class={kbdClasses}>Esc</kbd> to close
+        </div>
+      </DialogBody>
+    </Dialog>
   );
 }

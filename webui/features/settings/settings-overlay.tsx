@@ -8,7 +8,6 @@
 
 import { useStore } from "@nanostores/solid";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   createEffect,
   createSignal,
@@ -17,19 +16,12 @@ import {
   Show,
 } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
-import {
-  DialogBackdrop,
-  DialogBody,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
-} from "../../components/ui/dialog";
+import { Dialog, DialogBody } from "../../components/ui/dialog";
 import {
   Checkbox,
   Input,
   NativeSelect,
 } from "../../components/ui/form-controls";
-import Modal from "../../components/ui/modal";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
@@ -330,511 +322,480 @@ export function SettingsOverlay() {
   };
 
   return (
-    <Modal
-      isOpen={isSettingsOpen()}
-      onEscape={closeSettings}
-      closeOnEscape={!modelDownload.isOpen()}
-    >
-      <DialogBackdrop
-        role="dialog"
-        aria-modal="true"
-        aria-label="Settings"
-        class="nightfall-top-layer"
-        onClick={closeSettings}
+    <>
+      <Dialog
+        kind="info"
+        isOpen={isSettingsOpen()}
+        title="Settings"
+        label="Settings"
+        closeLabel="Close settings"
+        onDismiss={closeSettings}
+        class="max-w-[500px]"
+        style={{ "max-height": "80vh" }}
       >
-        <DialogSurface
-          role="document"
-          style={{
-            width: "500px",
-            "max-width": "100%",
-            "max-height": "80vh",
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
+        <div class="px-4 pt-3">
+          <SegmentedTabs
+            id={tabId}
+            label="Settings categories"
+            contentId={`${tabId}-content`}
+            options={SETTINGS_TABS}
+            value={activeTab()}
+            onChange={setActiveTab}
+          />
+        </div>
+
+        <DialogBody
+          class="space-y-6"
+          id={`${tabId}-content`}
+          role="tabpanel"
+          aria-labelledby={`${tabId}-${activeTab()}`}
         >
-          <DialogHeader>
-            <DialogTitle>Settings</DialogTitle>
-            <Button
-              size="icon"
-              variant="subtle"
-              aria-label="Close settings"
-              onClick={closeSettings}
-            >
-              <XIcon class="size-4" aria-hidden />
-            </Button>
-          </DialogHeader>
-
-          <div class="px-4 pt-3">
-            <SegmentedTabs
-              id={tabId}
-              label="Settings categories"
-              contentId={`${tabId}-content`}
-              options={SETTINGS_TABS}
-              value={activeTab()}
-              onChange={setActiveTab}
-            />
-          </div>
-
-          <DialogBody
-            class="space-y-6"
-            id={`${tabId}-content`}
-            role="tabpanel"
-            aria-labelledby={`${tabId}-${activeTab()}`}
-          >
-            <Show when={activeTab() === "appearance"}>
-              <AppearanceSettings />
-            </Show>
-            <Show when={activeTab() === "general"}>
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">
-                  Programmer
-                </h3>
-                <div class="space-y-3">
-                  <label class="flex items-center justify-between">
-                    <span class="text-sm text-gray-400">
-                      Auto-select on attribute set
-                    </span>
-                    <Checkbox
-                      checked={settings().programmer_auto_select}
-                      onChange={(e) =>
-                        setProgrammerAutoSelect(e.currentTarget.checked)
-                      }
-                    />
-                  </label>
-                  <label class="block">
-                    <span class="text-sm text-gray-400">
-                      Selection flatten behavior
-                    </span>
-                    <NativeSelect
-                      value={selectionFlattenPolicy()}
-                      onChange={(e) =>
-                        setSelectionFlattenPolicy(
-                          e.currentTarget.value as SelectionFlattenPolicy,
-                        )
-                      }
-                      class="mt-1"
-                    >
-                      <option value="Silent">Silent</option>
-                      <option value="Prompt">Prompt before flattening</option>
-                    </NativeSelect>
-                  </label>
-                </div>
-              </section>
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Audio</h3>
-                <label class="block">
-                  <span class="text-sm text-gray-400">Output Device</span>
-                  <NativeSelect
-                    value={settings().audio_device ?? ""}
+          <Show when={activeTab() === "appearance"}>
+            <AppearanceSettings />
+          </Show>
+          <Show when={activeTab() === "general"}>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Programmer</h3>
+              <div class="space-y-3">
+                <label class="flex items-center justify-between">
+                  <span class="text-sm text-gray-400">
+                    Auto-select on attribute set
+                  </span>
+                  <Checkbox
+                    checked={settings().programmer_auto_select}
                     onChange={(e) =>
-                      setAudioDevice(e.currentTarget.value || null)
+                      setProgrammerAutoSelect(e.currentTarget.checked)
+                    }
+                  />
+                </label>
+                <label class="block">
+                  <span class="text-sm text-gray-400">
+                    Selection flatten behavior
+                  </span>
+                  <NativeSelect
+                    value={selectionFlattenPolicy()}
+                    onChange={(e) =>
+                      setSelectionFlattenPolicy(
+                        e.currentTarget.value as SelectionFlattenPolicy,
+                      )
                     }
                     class="mt-1"
                   >
-                    <option value="">System Default</option>
-                    <For each={Object.entries(audioDevices())} fallback={null}>
-                      {([id, name]) => <option value={id}>{name}</option>}
-                    </For>
+                    <option value="Silent">Silent</option>
+                    <option value="Prompt">Prompt before flattening</option>
                   </NativeSelect>
                 </label>
-              </section>
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Showfile</h3>
+              </div>
+            </section>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Audio</h3>
+              <label class="block">
+                <span class="text-sm text-gray-400">Output Device</span>
+                <NativeSelect
+                  value={settings().audio_device ?? ""}
+                  onChange={(e) =>
+                    setAudioDevice(e.currentTarget.value || null)
+                  }
+                  class="mt-1"
+                >
+                  <option value="">System Default</option>
+                  <For each={Object.entries(audioDevices())} fallback={null}>
+                    {([id, name]) => <option value={id}>{name}</option>}
+                  </For>
+                </NativeSelect>
+              </label>
+            </section>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Showfile</h3>
+              <label class="block">
+                <span class="text-sm text-gray-400">Backups to keep</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={showfileBackupRetention()}
+                  onChange={(e) =>
+                    setShowfileBackupRetention(e.currentTarget.valueAsNumber)
+                  }
+                  class="mt-1"
+                />
+              </label>
+            </section>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Patch</h3>
+              <label class="block">
+                <span class="text-sm text-gray-400">
+                  Overlap validation mode
+                </span>
+                <NativeSelect
+                  value={patchValidationSettings().mode}
+                  onChange={(e) =>
+                    setBindingValidationMode(
+                      e.currentTarget.value as BindingValidationMode,
+                    )
+                  }
+                  class="mt-1"
+                >
+                  <option value="Strict">Strict Mode</option>
+                  <option value="Permissive">Permissive Mode</option>
+                </NativeSelect>
+              </label>
+            </section>
+          </Show>
+
+          <Show when={activeTab() === "editors"}>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">
+                Cue / Sequence Authoring
+              </h3>
+              <div class="space-y-3">
                 <label class="block">
-                  <span class="text-sm text-gray-400">Backups to keep</span>
+                  <span class="text-sm text-gray-400">
+                    Reorder cue renumber behavior
+                  </span>
+                  <NativeSelect
+                    value={sequenceReorderRenumberPolicy()}
+                    onChange={(e) =>
+                      setSequenceReorderRenumberPolicy(
+                        e.currentTarget.value as SequenceReorderRenumberPolicy,
+                      )
+                    }
+                    class="mt-1"
+                  >
+                    <option value="Preserve">Preserve cue IDs</option>
+                    <option value="AutoRenumber">
+                      Auto-renumber after reorder
+                    </option>
+                    <option value="Prompt">Prompt each time</option>
+                  </NativeSelect>
+                </label>
+                <label class="block">
+                  <span class="text-sm text-gray-400">
+                    Timing display units
+                  </span>
+                  <NativeSelect
+                    value={timeDisplayPreference()}
+                    onChange={(e) =>
+                      setTimeDisplayPreference(
+                        e.currentTarget.value as TimeDisplayPreference,
+                      )
+                    }
+                    class="mt-1"
+                  >
+                    <option value="Auto">Auto</option>
+                    <option value="Seconds">Seconds</option>
+                    <option value="Milliseconds">Milliseconds</option>
+                    <option value="Bpm">BPM</option>
+                    <option value="Hertz">Hz</option>
+                  </NativeSelect>
+                </label>
+              </div>
+            </section>
+
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Timeline</h3>
+              <Show when={capabilities()?.runtime_mode !== "EmbeddedDemo"}>
+                <div class="mb-4 space-y-2">
+                  <Show
+                    when={modelDownload.status()?.phase === "ready"}
+                    fallback={
+                      <>
+                        <p class="text-sm text-gray-400" role="status">
+                          {!modelDownload.status() ||
+                          ["unchecked", "checking"].includes(
+                            modelDownload.status()!.phase,
+                          )
+                            ? "Checking beat detection model…"
+                            : modelDownload.status()?.phase === "deleting"
+                              ? "Deleting beat detection model…"
+                              : "The optional Beat This model will enable offline and automatic beatgrid detection."}
+                        </p>
+                        <Button
+                          disabled={
+                            modelDownload.busy() ||
+                            !modelDownload.status() ||
+                            ["unchecked", "checking", "deleting"].includes(
+                              modelDownload.status()!.phase,
+                            )
+                          }
+                          onClick={() => modelDownload.request()}
+                        >
+                          <CloudArrowDownIcon class="size-4" aria-hidden />
+                          Download
+                        </Button>
+                      </>
+                    }
+                  >
+                    <p class="text-sm text-gray-400" role="status">
+                      <span class="text-[var(--accent)]">Beat This</span> ·{" "}
+                      {(
+                        (modelDownload.status()?.total_bytes ?? 0) / 1000000
+                      ).toFixed(1)}{" "}
+                      MB · Installed and available offline
+                    </p>
+                    <Button
+                      disabled={modelDownload.busy()}
+                      onClick={() => void modelDownload.remove()}
+                    >
+                      Delete model
+                    </Button>
+                  </Show>
+                  <Show when={modelDownload.error()}>
+                    <p role="alert" class="text-sm text-red-400">
+                      {modelDownload.error()}
+                    </p>
+                  </Show>
+                </div>
+              </Show>
+              <label class="block">
+                <span class="text-sm text-gray-400">
+                  Insert and paste position
+                </span>
+                <NativeSelect
+                  value={timelinePlacementPreference()}
+                  onChange={(e) =>
+                    setTimelinePlacementPreference(
+                      e.currentTarget.value as TimelinePlacementPreference,
+                    )
+                  }
+                  class="mt-1"
+                >
+                  <option value="Playhead">Playhead</option>
+                  <option value="Cursor">Cursor</option>
+                </NativeSelect>
+              </label>
+            </section>
+          </Show>
+
+          <Show when={activeTab() === "network"}>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Network</h3>
+              <label class="block">
+                <span class="text-sm text-gray-400">Interface</span>
+                <NativeSelect
+                  value={ioSettings().network_interface ?? ""}
+                  onChange={(e) =>
+                    setNetworkInterface(e.currentTarget.value || null)
+                  }
+                  class="mt-1"
+                >
+                  <option value="">
+                    {systemDefaultLabel(networkInterfaceStatus())}
+                  </option>
+                  <For each={networkInterfaces()}>
+                    {(iface) => (
+                      <option value={iface.name}>
+                        {iface.name} ({iface.addresses.join(", ")})
+                      </option>
+                    )}
+                  </For>
+                </NativeSelect>
+              </label>
+              <div class="mt-3 rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 text-sm text-gray-300 space-y-1">
+                <p>
+                  {configuredInterfaceDescription(
+                    networkInterfaceStatus(),
+                    ioSettings().network_interface,
+                  )}
+                </p>
+                <p class="text-gray-400">
+                  System default interface:{" "}
+                  {formatNetworkInterface(
+                    networkInterfaceStatus().default_interface,
+                  )}
+                </p>
+              </div>
+            </section>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Input</h3>
+              <label class="block mb-3">
+                <span class="text-sm text-gray-400">Input visibility</span>
+                <NativeSelect
+                  value={inputUniverseVisibilityMode()}
+                  onChange={(e) =>
+                    setInputUniverseVisibilityMode(
+                      e.currentTarget.value as InputUniverseVisibilityMode,
+                    )
+                  }
+                  class="mt-1"
+                >
+                  <option value="ExternalOnly">External only</option>
+                  <option value="AllDetected">All detected</option>
+                </NativeSelect>
+              </label>
+              <label class="block">
+                <span class="text-sm text-gray-400">
+                  Input signal loss policy
+                </span>
+                <NativeSelect
+                  value={inputSignalLossPolicy().type}
+                  onChange={(e) =>
+                    setInputSignalLossPolicyType(
+                      e.currentTarget.value as "Hold" | "ClearAfterTimeout",
+                    )
+                  }
+                  class="mt-1"
+                >
+                  <option value="Hold">Hold last values</option>
+                  <option value="ClearAfterTimeout">Clear after timeout</option>
+                </NativeSelect>
+              </label>
+              <div class="mt-3">
+                <label class="block">
+                  <span class="text-sm text-gray-400">
+                    Input stale timeout (ms)
+                  </span>
                   <Input
                     type="number"
                     min="0"
-                    step="1"
-                    value={showfileBackupRetention()}
+                    step="100"
+                    value={inputSignalLossTimeoutMs()}
                     onChange={(e) =>
-                      setShowfileBackupRetention(e.currentTarget.valueAsNumber)
+                      setInputSignalLossTimeout(e.currentTarget.valueAsNumber)
                     }
                     class="mt-1"
                   />
                 </label>
-              </section>
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Patch</h3>
+              </div>
+            </section>
+          </Show>
+
+          <Show when={activeTab() === "visualizer"}>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Visualizer</h3>
+              <div class="space-y-3">
+                <ToggleSwitch
+                  label="Highlight selection"
+                  ariaLabel="Highlight selection"
+                  class="w-full justify-between"
+                  checked={highlightSelection()}
+                  onChange={(enabled) =>
+                    setStoreAction(
+                      visualizerHighlightSelection,
+                      "Set Visualizer Highlight Selection",
+                      enabled,
+                    )
+                  }
+                />
+                <ToggleSwitch
+                  label="Show current orbit target"
+                  ariaLabel="Show current orbit target"
+                  class="w-full justify-between"
+                  checked={showOrbitTargetIndicator()}
+                  onChange={(enabled) =>
+                    setStoreAction(
+                      visualizerShowOrbitTargetIndicator,
+                      "Set Visualizer Orbit Target Indicator",
+                      enabled,
+                    )
+                  }
+                />
+                <label class="block">
+                  <span class="text-sm text-gray-400">Quality preset</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="1"
+                    aria-label="Quality preset"
+                    aria-valuetext={
+                      QUALITY_OPTIONS.find(
+                        (option) => option.value === quality(),
+                      )?.label
+                    }
+                    value={QUALITY_OPTIONS.findIndex(
+                      (option) => option.value === quality(),
+                    )}
+                    onInput={(e) =>
+                      setVisualizerQuality(
+                        QUALITY_OPTIONS[e.currentTarget.valueAsNumber].value,
+                      )
+                    }
+                    class="mt-2 w-full"
+                  />
+                  <span
+                    class="flex justify-between text-xs text-gray-400"
+                    aria-hidden="true"
+                  >
+                    <For each={QUALITY_OPTIONS}>
+                      {(option) => (
+                        <span
+                          class={
+                            quality() === option.value
+                              ? "text-gray-100 font-medium"
+                              : ""
+                          }
+                        >
+                          {option.label}
+                        </span>
+                      )}
+                    </For>
+                  </span>
+                  <p class="mt-1 text-xs text-gray-500" aria-live="polite">
+                    {quality() === "low"
+                      ? "Simple geometry beams without surface lighting, for maximum performance."
+                      : quality() === "medium"
+                        ? "Smoothly shaded beams and surface lighting, without fog or glow."
+                        : "Atmospheric beams, fog, glow, and optical effects."}
+                  </p>
+                </label>
                 <label class="block">
                   <span class="text-sm text-gray-400">
-                    Overlap validation mode
+                    Darkness ({darkness()}%)
                   </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={darkness()}
+                    class="mt-2 w-full"
+                    aria-label="Darkness"
+                    onInput={(e) =>
+                      setStoreAction(
+                        visualizerDarkness,
+                        "Set Visualizer Darkness",
+                        Number(e.currentTarget.value),
+                      )
+                    }
+                  />
+                  <p class="mt-1 text-xs text-gray-500">
+                    Lower for a visible rig; higher for a dark stage. Fixture
+                    brightness is unchanged.
+                  </p>
+                </label>
+                <label class="block">
+                  <span class="text-sm text-gray-400">Rotation mode</span>
                   <NativeSelect
-                    value={patchValidationSettings().mode}
-                    onChange={(e) =>
-                      setBindingValidationMode(
-                        e.currentTarget.value as BindingValidationMode,
+                    value={rotationMode()}
+                    onInput={(e) =>
+                      setStoreAction(
+                        visualizerCameraRotationMode,
+                        "Set Visualizer Camera Rotation Mode",
+                        e.currentTarget.value as VisualizerCameraRotationMode,
                       )
                     }
                     class="mt-1"
                   >
-                    <option value="Strict">Strict Mode</option>
-                    <option value="Permissive">Permissive Mode</option>
-                  </NativeSelect>
-                </label>
-              </section>
-            </Show>
-
-            <Show when={activeTab() === "editors"}>
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">
-                  Cue / Sequence Authoring
-                </h3>
-                <div class="space-y-3">
-                  <label class="block">
-                    <span class="text-sm text-gray-400">
-                      Reorder cue renumber behavior
-                    </span>
-                    <NativeSelect
-                      value={sequenceReorderRenumberPolicy()}
-                      onChange={(e) =>
-                        setSequenceReorderRenumberPolicy(
-                          e.currentTarget
-                            .value as SequenceReorderRenumberPolicy,
-                        )
-                      }
-                      class="mt-1"
-                    >
-                      <option value="Preserve">Preserve cue IDs</option>
-                      <option value="AutoRenumber">
-                        Auto-renumber after reorder
-                      </option>
-                      <option value="Prompt">Prompt each time</option>
-                    </NativeSelect>
-                  </label>
-                  <label class="block">
-                    <span class="text-sm text-gray-400">
-                      Timing display units
-                    </span>
-                    <NativeSelect
-                      value={timeDisplayPreference()}
-                      onChange={(e) =>
-                        setTimeDisplayPreference(
-                          e.currentTarget.value as TimeDisplayPreference,
-                        )
-                      }
-                      class="mt-1"
-                    >
-                      <option value="Auto">Auto</option>
-                      <option value="Seconds">Seconds</option>
-                      <option value="Milliseconds">Milliseconds</option>
-                      <option value="Bpm">BPM</option>
-                      <option value="Hertz">Hz</option>
-                    </NativeSelect>
-                  </label>
-                </div>
-              </section>
-
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Timeline</h3>
-                <Show when={capabilities()?.runtime_mode !== "EmbeddedDemo"}>
-                  <div class="mb-4 space-y-2">
-                    <Show
-                      when={modelDownload.status()?.phase === "ready"}
-                      fallback={
-                        <>
-                          <p class="text-sm text-gray-400" role="status">
-                            {!modelDownload.status() ||
-                            ["unchecked", "checking"].includes(
-                              modelDownload.status()!.phase,
-                            )
-                              ? "Checking beat detection model…"
-                              : modelDownload.status()?.phase === "deleting"
-                                ? "Deleting beat detection model…"
-                                : "The optional Beat This model will enable offline and automatic beatgrid detection."}
-                          </p>
-                          <Button
-                            disabled={
-                              modelDownload.busy() ||
-                              !modelDownload.status() ||
-                              ["unchecked", "checking", "deleting"].includes(
-                                modelDownload.status()!.phase,
-                              )
-                            }
-                            onClick={() => modelDownload.request()}
-                          >
-                            <CloudArrowDownIcon class="size-4" aria-hidden />
-                            Download
-                          </Button>
-                        </>
-                      }
-                    >
-                      <p class="text-sm text-gray-400" role="status">
-                        <span class="text-[var(--accent)]">Beat This</span> ·{" "}
-                        {(
-                          (modelDownload.status()?.total_bytes ?? 0) / 1000000
-                        ).toFixed(1)}{" "}
-                        MB · Installed and available offline
-                      </p>
-                      <Button
-                        disabled={modelDownload.busy()}
-                        onClick={() => void modelDownload.remove()}
-                      >
-                        Delete model
-                      </Button>
-                    </Show>
-                    <Show when={modelDownload.error()}>
-                      <p role="alert" class="text-sm text-red-400">
-                        {modelDownload.error()}
-                      </p>
-                    </Show>
-                  </div>
-                </Show>
-                <label class="block">
-                  <span class="text-sm text-gray-400">
-                    Insert and paste position
-                  </span>
-                  <NativeSelect
-                    value={timelinePlacementPreference()}
-                    onChange={(e) =>
-                      setTimelinePlacementPreference(
-                        e.currentTarget.value as TimelinePlacementPreference,
-                      )
-                    }
-                    class="mt-1"
-                  >
-                    <option value="Playhead">Playhead</option>
-                    <option value="Cursor">Cursor</option>
-                  </NativeSelect>
-                </label>
-              </section>
-            </Show>
-
-            <Show when={activeTab() === "network"}>
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network</h3>
-                <label class="block">
-                  <span class="text-sm text-gray-400">Interface</span>
-                  <NativeSelect
-                    value={ioSettings().network_interface ?? ""}
-                    onChange={(e) =>
-                      setNetworkInterface(e.currentTarget.value || null)
-                    }
-                    class="mt-1"
-                  >
-                    <option value="">
-                      {systemDefaultLabel(networkInterfaceStatus())}
-                    </option>
-                    <For each={networkInterfaces()}>
-                      {(iface) => (
-                        <option value={iface.name}>
-                          {iface.name} ({iface.addresses.join(", ")})
-                        </option>
+                    <For each={ROTATION_MODE_OPTIONS}>
+                      {(option) => (
+                        <option value={option.value}>{option.label}</option>
                       )}
                     </For>
                   </NativeSelect>
                 </label>
-                <div class="mt-3 rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 text-sm text-gray-300 space-y-1">
-                  <p>
-                    {configuredInterfaceDescription(
-                      networkInterfaceStatus(),
-                      ioSettings().network_interface,
-                    )}
-                  </p>
-                  <p class="text-gray-400">
-                    System default interface:{" "}
-                    {formatNetworkInterface(
-                      networkInterfaceStatus().default_interface,
-                    )}
-                  </p>
-                </div>
-              </section>
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Input</h3>
-                <label class="block mb-3">
-                  <span class="text-sm text-gray-400">Input visibility</span>
-                  <NativeSelect
-                    value={inputUniverseVisibilityMode()}
-                    onChange={(e) =>
-                      setInputUniverseVisibilityMode(
-                        e.currentTarget.value as InputUniverseVisibilityMode,
-                      )
-                    }
-                    class="mt-1"
-                  >
-                    <option value="ExternalOnly">External only</option>
-                    <option value="AllDetected">All detected</option>
-                  </NativeSelect>
-                </label>
-                <label class="block">
-                  <span class="text-sm text-gray-400">
-                    Input signal loss policy
-                  </span>
-                  <NativeSelect
-                    value={inputSignalLossPolicy().type}
-                    onChange={(e) =>
-                      setInputSignalLossPolicyType(
-                        e.currentTarget.value as "Hold" | "ClearAfterTimeout",
-                      )
-                    }
-                    class="mt-1"
-                  >
-                    <option value="Hold">Hold last values</option>
-                    <option value="ClearAfterTimeout">
-                      Clear after timeout
-                    </option>
-                  </NativeSelect>
-                </label>
-                <div class="mt-3">
-                  <label class="block">
-                    <span class="text-sm text-gray-400">
-                      Input stale timeout (ms)
-                    </span>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="100"
-                      value={inputSignalLossTimeoutMs()}
-                      onChange={(e) =>
-                        setInputSignalLossTimeout(e.currentTarget.valueAsNumber)
-                      }
-                      class="mt-1"
-                    />
-                  </label>
-                </div>
-              </section>
-            </Show>
-
-            <Show when={activeTab() === "visualizer"}>
-              <section>
-                <h3 class="text-sm font-medium text-gray-300 mb-3">
-                  Visualizer
-                </h3>
-                <div class="space-y-3">
-                  <ToggleSwitch
-                    label="Highlight selection"
-                    ariaLabel="Highlight selection"
-                    class="w-full justify-between"
-                    checked={highlightSelection()}
-                    onChange={(enabled) =>
-                      setStoreAction(
-                        visualizerHighlightSelection,
-                        "Set Visualizer Highlight Selection",
-                        enabled,
-                      )
-                    }
-                  />
-                  <ToggleSwitch
-                    label="Show current orbit target"
-                    ariaLabel="Show current orbit target"
-                    class="w-full justify-between"
-                    checked={showOrbitTargetIndicator()}
-                    onChange={(enabled) =>
-                      setStoreAction(
-                        visualizerShowOrbitTargetIndicator,
-                        "Set Visualizer Orbit Target Indicator",
-                        enabled,
-                      )
-                    }
-                  />
-                  <label class="block">
-                    <span class="text-sm text-gray-400">Quality preset</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="2"
-                      step="1"
-                      aria-label="Quality preset"
-                      aria-valuetext={
-                        QUALITY_OPTIONS.find(
-                          (option) => option.value === quality(),
-                        )?.label
-                      }
-                      value={QUALITY_OPTIONS.findIndex(
-                        (option) => option.value === quality(),
-                      )}
-                      onInput={(e) =>
-                        setVisualizerQuality(
-                          QUALITY_OPTIONS[e.currentTarget.valueAsNumber].value,
-                        )
-                      }
-                      class="mt-2 w-full"
-                    />
-                    <span
-                      class="flex justify-between text-xs text-gray-400"
-                      aria-hidden="true"
-                    >
-                      <For each={QUALITY_OPTIONS}>
-                        {(option) => (
-                          <span
-                            class={
-                              quality() === option.value
-                                ? "text-gray-100 font-medium"
-                                : ""
-                            }
-                          >
-                            {option.label}
-                          </span>
-                        )}
-                      </For>
-                    </span>
-                    <p class="mt-1 text-xs text-gray-500" aria-live="polite">
-                      {quality() === "low"
-                        ? "Simple geometry beams without surface lighting, for maximum performance."
-                        : quality() === "medium"
-                          ? "Smoothly shaded beams and surface lighting, without fog or glow."
-                          : "Atmospheric beams, fog, glow, and optical effects."}
-                    </p>
-                  </label>
-                  <label class="block">
-                    <span class="text-sm text-gray-400">
-                      Darkness ({darkness()}%)
-                    </span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      step="1"
-                      value={darkness()}
-                      class="mt-2 w-full"
-                      aria-label="Darkness"
-                      onInput={(e) =>
-                        setStoreAction(
-                          visualizerDarkness,
-                          "Set Visualizer Darkness",
-                          Number(e.currentTarget.value),
-                        )
-                      }
-                    />
-                    <p class="mt-1 text-xs text-gray-500">
-                      Lower for a visible rig; higher for a dark stage. Fixture
-                      brightness is unchanged.
-                    </p>
-                  </label>
-                  <label class="block">
-                    <span class="text-sm text-gray-400">Rotation mode</span>
-                    <NativeSelect
-                      value={rotationMode()}
-                      onInput={(e) =>
-                        setStoreAction(
-                          visualizerCameraRotationMode,
-                          "Set Visualizer Camera Rotation Mode",
-                          e.currentTarget.value as VisualizerCameraRotationMode,
-                        )
-                      }
-                      class="mt-1"
-                    >
-                      <For each={ROTATION_MODE_OPTIONS}>
-                        {(option) => (
-                          <option value={option.value}>{option.label}</option>
-                        )}
-                      </For>
-                    </NativeSelect>
-                  </label>
-                </div>
-              </section>
-              <section>
-                <p class="text-xs text-gray-500">
-                  Tool mode, grid, emitter debug, and snap-point toggles are
-                  available in the visualizer toolbar.
-                </p>
-              </section>
-            </Show>
-          </DialogBody>
-        </DialogSurface>
-      </DialogBackdrop>
-      {modelDownload.dialog(false)}
-    </Modal>
+              </div>
+            </section>
+            <section>
+              <p class="text-xs text-gray-500">
+                Tool mode, grid, emitter debug, and snap-point toggles are
+                available in the visualizer toolbar.
+              </p>
+            </section>
+          </Show>
+        </DialogBody>
+      </Dialog>
+      {modelDownload.dialog()}
+    </>
   );
 }

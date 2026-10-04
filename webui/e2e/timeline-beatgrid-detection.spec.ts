@@ -540,7 +540,7 @@ test("beatgrid detection proposal can be rejected, applied, and used for ruler s
         )
         .toBe("ready");
       await modelDialog
-        .getByRole("button", { name: "Back", exact: true })
+        .getByRole("button", { name: "Close", exact: true })
         .click();
     }
     await expect(

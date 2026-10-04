@@ -7,18 +7,14 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../../../components/ui/dialog";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
-import Modal from "../../../components/ui/modal";
 import { Button } from "../../../components/ui/visual-language/button";
 import { clips } from "../../../state/appStores";
 import type { ParameterType } from "../../../types";
@@ -28,7 +24,6 @@ export function AddParameterLaneDialog(props: {
   onCancel: () => void;
   onSubmit: (name: string, target: ParameterType) => void;
 }) {
-  const titleId = createUniqueId();
   const $clips = useStore(clips);
   const [kind, setKind] = createSignal<ParameterType["type"]>("GlobalVariable");
   const [name, setName] = createSignal("");
@@ -77,94 +72,77 @@ export function AddParameterLaneDialog(props: {
   };
 
   return (
-    <Modal isOpen onEscape={props.onCancel}>
-      <DialogBackdrop role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div class="w-full max-w-lg">
-          <DialogSurface>
-            <DialogHeader>
-              <DialogTitle id={titleId}>Add parameter lane</DialogTitle>
-              <DialogCloseButton
-                type="button"
-                aria-label="Close"
-                onClick={props.onCancel}
-              />
-            </DialogHeader>
-            <form onSubmit={submit}>
-              <DialogBody class="space-y-4">
-                <label class="flex flex-col gap-1 text-sm">
-                  <span>Parameter type</span>
-                  <NativeSelect
-                    value={kind()}
-                    onChange={(event) =>
-                      setKind(
-                        event.currentTarget.value as ParameterType["type"],
-                      )
-                    }
-                  >
-                    <option value="GlobalVariable">Global variable</option>
-                    <option value="RateMaster">Clip rate</option>
-                  </NativeSelect>
-                </label>
-                <Show
-                  when={kind() === "GlobalVariable"}
-                  fallback={
-                    <label class="flex flex-col gap-1 text-sm">
-                      <span>Clip</span>
-                      <NativeSelect
-                        value={clipUid()}
-                        onChange={(event) =>
-                          setClipUid(event.currentTarget.value)
-                        }
-                      >
-                        <option value="">Select a clip</option>
-                        <For each={clipOptions()}>
-                          {(clip) => (
-                            <option value={clip.identifiers.uid}>
-                              {clip.identifiers.id}: {clip.identifiers.label}
-                            </option>
-                          )}
-                        </For>
-                      </NativeSelect>
-                      <Show when={clipOptions().length === 0}>
-                        <span class="text-xs text-neutral-400">
-                          Create a clip to add a clip rate lane.
-                        </span>
-                      </Show>
-                    </label>
-                  }
+    <Dialog
+      kind="task"
+      isOpen
+      title="Add parameter lane"
+      onDismiss={props.onCancel}
+    >
+      <form onSubmit={submit}>
+        <DialogBody class="space-y-4">
+          <label class="flex flex-col gap-1 text-sm">
+            <span>Parameter type</span>
+            <NativeSelect
+              value={kind()}
+              onChange={(event) =>
+                setKind(event.currentTarget.value as ParameterType["type"])
+              }
+            >
+              <option value="GlobalVariable">Global variable</option>
+              <option value="RateMaster">Clip rate</option>
+            </NativeSelect>
+          </label>
+          <Show
+            when={kind() === "GlobalVariable"}
+            fallback={
+              <label class="flex flex-col gap-1 text-sm">
+                <span>Clip</span>
+                <NativeSelect
+                  value={clipUid()}
+                  onChange={(event) => setClipUid(event.currentTarget.value)}
                 >
-                  <label class="flex flex-col gap-1 text-sm">
-                    <span>Variable name</span>
-                    <Input
-                      ref={focusTarget}
-                      value={variable()}
-                      onInput={(event) =>
-                        setVariable(event.currentTarget.value)
-                      }
-                    />
-                  </label>
+                  <option value="">Select a clip</option>
+                  <For each={clipOptions()}>
+                    {(clip) => (
+                      <option value={clip.identifiers.uid}>
+                        {clip.identifiers.id}: {clip.identifiers.label}
+                      </option>
+                    )}
+                  </For>
+                </NativeSelect>
+                <Show when={clipOptions().length === 0}>
+                  <span class="text-xs text-neutral-400">
+                    Create a clip to add a clip rate lane.
+                  </span>
                 </Show>
-                <label class="flex flex-col gap-1 text-sm">
-                  <span>Lane name (optional)</span>
-                  <Input
-                    value={name()}
-                    placeholder="Use target name"
-                    onInput={(event) => setName(event.currentTarget.value)}
-                  />
-                </label>
-              </DialogBody>
-              <DialogFooter>
-                <Button type="button" onClick={props.onCancel}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" disabled={!target()}>
-                  Add lane
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogSurface>
-        </div>
-      </DialogBackdrop>
-    </Modal>
+              </label>
+            }
+          >
+            <label class="flex flex-col gap-1 text-sm">
+              <span>Variable name</span>
+              <Input
+                ref={focusTarget}
+                value={variable()}
+                onInput={(event) => setVariable(event.currentTarget.value)}
+              />
+            </label>
+          </Show>
+          <label class="flex flex-col gap-1 text-sm">
+            <span>Lane name (optional)</span>
+            <Input
+              value={name()}
+              placeholder="Use target name"
+              onInput={(event) => setName(event.currentTarget.value)}
+            />
+          </label>
+        </DialogBody>
+        <DialogFooter>
+          <DialogCancelButton />
+          <Button type="submit" variant="primary" disabled={!target()}>
+            Add lane
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }

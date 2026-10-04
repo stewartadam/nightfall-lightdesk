@@ -7,16 +7,12 @@
  */
 
 import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/form-controls";
-import Modal from "../../../components/ui/modal";
 import { Button } from "../../../components/ui/visual-language/button";
 import ObjectSelector from "../../../components/widgets/object-selector";
 import {
@@ -52,184 +48,160 @@ export type ProgrammerStoreDialogsProps = {
 export function ProgrammerStoreDialogs(props: ProgrammerStoreDialogsProps) {
   return (
     <>
-      <Modal isOpen={props.showCue} onEscape={props.closeCue}>
-        <DialogBackdrop>
-          <DialogSurface
-            class="max-w-lg"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Store Cue"
-          >
-            <form onSubmit={props.storeCue}>
-              <DialogHeader>
-                <DialogTitle>Store Cue</DialogTitle>
-                <DialogCloseButton type="button" onClick={props.closeCue} />
-              </DialogHeader>
+      <Dialog
+        kind="task"
+        isOpen={props.showCue}
+        title="Store Cue"
+        onDismiss={props.closeCue}
+      >
+        <form onSubmit={props.storeCue}>
+          <DialogBody class="space-y-4">
+            <ObjectSelector
+              items={props.cueTargets}
+              selectedKey={`${props.cueSequenceId}.${props.cueId}`}
+              onSelect={(target) => {
+                props.setCueSequenceId(target.sequenceId);
+                props.setCueId(target.cueId);
+                props.setCueLabel(target.cueLabel || `Cue ${target.cueId}`);
+                props.setCueLabelEdited(false);
+              }}
+              getKey={(target) => target.key}
+              getPrimaryText={(target) =>
+                `Cue ${target.sequenceId}.${target.cueId}`
+              }
+              getSecondaryText={(target) =>
+                `${target.sequenceLabel} - ${target.cueLabel}`
+              }
+              filter={(target, query) => {
+                const text = query.toLowerCase();
+                return (
+                  `${target.sequenceId}.${target.cueId}`.includes(text) ||
+                  target.sequenceLabel.toLowerCase().includes(text) ||
+                  target.cueLabel.toLowerCase().includes(text)
+                );
+              }}
+              placeholder="Filter by sequence, cue number, or label..."
+              emptyMessage="No cues found. Enter IDs below to store a new cue."
+            />
 
-              <DialogBody class="space-y-4">
-                <ObjectSelector
-                  items={props.cueTargets}
-                  selectedKey={`${props.cueSequenceId}.${props.cueId}`}
-                  onSelect={(target) => {
-                    props.setCueSequenceId(target.sequenceId);
-                    props.setCueId(target.cueId);
-                    props.setCueLabel(target.cueLabel || `Cue ${target.cueId}`);
-                    props.setCueLabelEdited(false);
-                  }}
-                  getKey={(target) => target.key}
-                  getPrimaryText={(target) =>
-                    `Cue ${target.sequenceId}.${target.cueId}`
+            <div class="grid grid-cols-2 gap-3">
+              <label class="text-sm text-neutral-300">
+                <span class="block mb-1">Sequence ID</span>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={props.cueSequenceId}
+                  onInput={(event) =>
+                    props.setCueSequenceId(
+                      clampIdInput(event.currentTarget.valueAsNumber),
+                    )
                   }
-                  getSecondaryText={(target) =>
-                    `${target.sequenceLabel} - ${target.cueLabel}`
+                />
+              </label>
+
+              <label class="text-sm text-neutral-300">
+                <span class="block mb-1">Cue ID</span>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={props.cueId}
+                  onInput={(event) =>
+                    props.setCueId(
+                      clampIdInput(event.currentTarget.valueAsNumber),
+                    )
                   }
-                  filter={(target, query) => {
-                    const text = query.toLowerCase();
-                    return (
-                      `${target.sequenceId}.${target.cueId}`.includes(text) ||
-                      target.sequenceLabel.toLowerCase().includes(text) ||
-                      target.cueLabel.toLowerCase().includes(text)
-                    );
-                  }}
-                  placeholder="Filter by sequence, cue number, or label..."
-                  emptyMessage="No cues found. Enter IDs below to store a new cue."
                 />
+              </label>
+            </div>
 
-                <div class="grid grid-cols-2 gap-3">
-                  <label class="text-sm text-neutral-300">
-                    <span class="block mb-1">Sequence ID</span>
-                    <Input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={props.cueSequenceId}
-                      onInput={(event) =>
-                        props.setCueSequenceId(
-                          clampIdInput(event.currentTarget.valueAsNumber),
-                        )
-                      }
-                    />
-                  </label>
+            <label class="text-sm text-neutral-300 block">
+              <span class="block mb-1">Label</span>
+              <Input
+                type="text"
+                value={props.cueLabel}
+                onInput={(event) => {
+                  props.setCueLabel(event.currentTarget.value);
+                  props.setCueLabelEdited(true);
+                }}
+              />
+            </label>
+          </DialogBody>
+          <DialogFooter>
+            <DialogCancelButton />
+            <Button variant="primary" type="submit">
+              Store Cue
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
 
-                  <label class="text-sm text-neutral-300">
-                    <span class="block mb-1">Cue ID</span>
-                    <Input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={props.cueId}
-                      onInput={(event) =>
-                        props.setCueId(
-                          clampIdInput(event.currentTarget.valueAsNumber),
-                        )
-                      }
-                    />
-                  </label>
-                </div>
+      <Dialog
+        kind="task"
+        isOpen={props.showGroup}
+        title="Store Group"
+        onDismiss={props.closeGroup}
+      >
+        <form onSubmit={props.storeGroup}>
+          <DialogBody class="space-y-4">
+            <ObjectSelector
+              items={props.groupTargets}
+              selectedKey={`${props.groupId}`}
+              onSelect={(target) => {
+                props.setGroupId(target.groupId);
+                props.setGroupLabel(target.label || `Group ${target.groupId}`);
+                props.setGroupLabelEdited(false);
+              }}
+              getKey={(target) => target.key}
+              getPrimaryText={(target) => `Group ${target.groupId}`}
+              getSecondaryText={(target) => target.label}
+              filter={(target, query) => {
+                const text = query.toLowerCase();
+                return (
+                  `${target.groupId}`.includes(text) ||
+                  target.label.toLowerCase().includes(text)
+                );
+              }}
+              placeholder="Filter by group number or label..."
+              emptyMessage="No groups found. Enter an ID below to store a new group."
+            />
 
-                <label class="text-sm text-neutral-300 block">
-                  <span class="block mb-1">Label</span>
-                  <Input
-                    type="text"
-                    value={props.cueLabel}
-                    onInput={(event) => {
-                      props.setCueLabel(event.currentTarget.value);
-                      props.setCueLabelEdited(true);
-                    }}
-                  />
-                </label>
-              </DialogBody>
-              <DialogFooter>
-                <Button type="button" onClick={props.closeCue}>
-                  Cancel
-                </Button>
-                <Button variant="primary" type="submit">
-                  Store Cue
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogSurface>
-        </DialogBackdrop>
-      </Modal>
+            <label class="text-sm text-neutral-300 block">
+              <span class="block mb-1">Group ID</span>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={props.groupId}
+                onInput={(event) =>
+                  props.setGroupId(
+                    clampIdInput(event.currentTarget.valueAsNumber),
+                  )
+                }
+              />
+            </label>
 
-      <Modal isOpen={props.showGroup} onEscape={props.closeGroup}>
-        <DialogBackdrop>
-          <DialogSurface
-            class="max-w-lg"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Store Group"
-          >
-            <form onSubmit={props.storeGroup}>
-              <DialogHeader>
-                <DialogTitle>Store Group</DialogTitle>
-                <DialogCloseButton type="button" onClick={props.closeGroup} />
-              </DialogHeader>
-
-              <DialogBody class="space-y-4">
-                <ObjectSelector
-                  items={props.groupTargets}
-                  selectedKey={`${props.groupId}`}
-                  onSelect={(target) => {
-                    props.setGroupId(target.groupId);
-                    props.setGroupLabel(
-                      target.label || `Group ${target.groupId}`,
-                    );
-                    props.setGroupLabelEdited(false);
-                  }}
-                  getKey={(target) => target.key}
-                  getPrimaryText={(target) => `Group ${target.groupId}`}
-                  getSecondaryText={(target) => target.label}
-                  filter={(target, query) => {
-                    const text = query.toLowerCase();
-                    return (
-                      `${target.groupId}`.includes(text) ||
-                      target.label.toLowerCase().includes(text)
-                    );
-                  }}
-                  placeholder="Filter by group number or label..."
-                  emptyMessage="No groups found. Enter an ID below to store a new group."
-                />
-
-                <label class="text-sm text-neutral-300 block">
-                  <span class="block mb-1">Group ID</span>
-                  <Input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={props.groupId}
-                    onInput={(event) =>
-                      props.setGroupId(
-                        clampIdInput(event.currentTarget.valueAsNumber),
-                      )
-                    }
-                  />
-                </label>
-
-                <label class="text-sm text-neutral-300 block">
-                  <span class="block mb-1">Label</span>
-                  <Input
-                    type="text"
-                    value={props.groupLabel}
-                    onInput={(event) => {
-                      props.setGroupLabel(event.currentTarget.value);
-                      props.setGroupLabelEdited(true);
-                    }}
-                  />
-                </label>
-              </DialogBody>
-              <DialogFooter>
-                <Button type="button" onClick={props.closeGroup}>
-                  Cancel
-                </Button>
-                <Button variant="primary" type="submit">
-                  Store Group
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogSurface>
-        </DialogBackdrop>
-      </Modal>
+            <label class="text-sm text-neutral-300 block">
+              <span class="block mb-1">Label</span>
+              <Input
+                type="text"
+                value={props.groupLabel}
+                onInput={(event) => {
+                  props.setGroupLabel(event.currentTarget.value);
+                  props.setGroupLabelEdited(true);
+                }}
+              />
+            </label>
+          </DialogBody>
+          <DialogFooter>
+            <DialogCancelButton />
+            <Button variant="primary" type="submit">
+              Store Group
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
     </>
   );
 }
