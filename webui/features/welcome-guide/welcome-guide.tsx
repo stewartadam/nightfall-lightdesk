@@ -15,6 +15,7 @@ import {
   For,
   onCleanup,
   Show,
+  untrack,
 } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommand } from "../../components/providers/command-registry";
@@ -59,6 +60,7 @@ import {
   findLessonLayoutId,
   LESSON_LAYOUT_NAME,
   leaveLessonLayout,
+  removeLessonLayout,
 } from "./lesson-layout";
 import { guideLessons } from "./lesson-store";
 import type { GuidePrerequisite } from "./lessons";
@@ -107,10 +109,12 @@ export function GuideInvitation() {
   );
 }
 
-/** Hosts the lesson library and floating instructions; all engine actions remain user initiated. */
 /** The header command input, which steps teaching typed commands point at. */
 const COMMAND_INPUT = "#header-cmdline";
+/** How long the card keeps its anchor after the target vanishes, so a step about to advance doesn't jump. */
+const ANCHOR_GRACE_MS = 400;
 
+/** Hosts the lesson library and floating instructions; all engine actions remain user initiated. */
 export default function WelcomeGuide() {
   const lessons = useStore(guideLessons);
   const opened = useStore(guideOpen);
@@ -284,6 +288,24 @@ export default function WelcomeGuide() {
   );
   const [card, setCard] = createSignal<HTMLElement>();
   const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
+  let anchorStep: string | undefined;
+  let anchorRelease: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Follows the step's target, but keeps the last anchor briefly when the target vanishes within
+   * the same step, such as a list row covered by the editor it opens just before the step advances.
+   * A new step lets go at once. Runs untracked, since GuideTarget reports from inside its own effect.
+   */
+  const followTarget = (bounds: DOMRect | null) =>
+    untrack(() => {
+      const stepId = step()?.id;
+      clearTimeout(anchorRelease);
+      anchorRelease = undefined;
+      const sameStep = anchorStep === stepId;
+      anchorStep = stepId;
+      if (bounds || !sameStep || !anchor()) setAnchor(bounds);
+      else anchorRelease = setTimeout(() => setAnchor(null), ANCHOR_GRACE_MS);
+    });
+  onCleanup(() => clearTimeout(anchorRelease));
   /**
    * Points at what reveals the first unmet prerequisite: the tab of an open panel that is
    * collapsed or behind another tab, or the sample timeline's card in the Timelines list.
@@ -496,8 +518,17 @@ export default function WelcomeGuide() {
     moveTo(index() + 1);
   };
 
-  /** Changes instructional position and returns focus to its heading for keyboard users. */
+  /** The step the user last went Back to, whose already-met condition must not advance it again. */
+  const [returnedTo, setReturnedTo] = createSignal<number>();
+  /** Whether the user reached the current step by going Back rather than forward. */
+  const revisited = () => returnedTo() === index();
+
+  /**
+   * Changes instructional position and returns focus to its heading for keyboard users.
+   * Moving back remembers the step, so its condition only counts once the user acts again.
+   */
   const moveTo = (position: number) => {
+    setReturnedTo(position < index() ? position : undefined);
     guideStepIndex.set(position);
     heading?.focus();
   };
@@ -511,13 +542,13 @@ export default function WelcomeGuide() {
     () => programmerSelectionList().length > 0 || programmerRows().length > 0,
   );
 
-  /** Records lesson completion only when the user explicitly finishes the lesson, then restores their own layout. */
+  /** Records lesson completion only when the user explicitly finishes the lesson, then restores their own layout and removes the Lesson layout. */
   const finish = () => {
     const id = lessonId();
     if (id && !completed().includes(id))
       guideCompleted.set([...completed(), id]);
     guideLessonId.set(null);
-    void returnToLayout();
+    void returnToLayout().then(removeLessonLayout);
   };
 
   /** Observes the current step from its start, so actions finished while prerequisites settle still count. */
@@ -537,7 +568,7 @@ export default function WelcomeGuide() {
       target?.type !== "sample-panels"
     );
   });
-  useGuideProgress(observation, held, workspace, () =>
+  useGuideProgress(observation, held, revisited, workspace, () =>
     guideStepIndex.set(guideStepIndex.get() + 1),
   );
 
@@ -687,7 +718,7 @@ export default function WelcomeGuide() {
                           (instruction().focusTarget ??
                             instruction().target === COMMAND_INPUT)
                         }
-                        onBounds={setAnchor}
+                        onBounds={followTarget}
                       />
                       <GuideTarget
                         stepId={instruction().id}

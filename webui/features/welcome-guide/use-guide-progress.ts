@@ -39,10 +39,14 @@ import {
   guideCompletionToken,
 } from "./progress";
 
-/** Advances on fresh actions, or immediately when the required sample panels are already open. */
+/**
+ * Advances on fresh actions, or immediately when a state-based condition is already met.
+ * A step the user went Back to only advances on a fresh change, so it can be read again.
+ */
 export function useGuideProgress(
   observation: Accessor<GuideObservation | undefined>,
   held: Accessor<boolean>,
+  revisited: Accessor<boolean>,
   workspace: Accessor<GuidePanelSnapshot>,
   advance: () => void,
 ): void {
@@ -175,12 +179,13 @@ export function useGuideProgress(
         timecodes: clocks(),
       });
     let previous =
-      target.type === "sample-panels" ||
-      target.type === "sequence-editor" ||
-      target.type === "panel-hidden" ||
-      target.type === "panel-closed" ||
-      target.type === "playback-idle" ||
-      target.type === "timeline-action-selected"
+      !untrack(revisited) &&
+      (target.type === "sample-panels" ||
+        target.type === "sequence-editor" ||
+        target.type === "panel-hidden" ||
+        target.type === "panel-closed" ||
+        target.type === "playback-idle" ||
+        target.type === "timeline-action-selected")
         ? ""
         : untrack(token);
     let pending: ReturnType<typeof setTimeout> | undefined;

@@ -22,7 +22,7 @@ import {
   onCleanup,
   untrack,
 } from "solid-js";
-import type { GuideFocusArea } from "./lessons";
+import type { GuideFocusArea, GuidePlacement } from "./lessons";
 
 /** Open menus and dropdown lists the card must never cover, since the user is choosing from them. */
 const POPOVER_SELECTOR =
@@ -125,11 +125,17 @@ function union(rects: DOMRect[]): DOMRect {
   );
 }
 
-/** Lists placements side by side in order of preference, each centered first and then aligned to either end. */
-function placementOrder(above: boolean): Placement[] {
-  const sides: Side[] = above
-    ? ["top", "right", "left", "bottom"]
-    : ["right", "left", "bottom", "top"];
+/**
+ * Lists placements in order of preference, each side centered first and then aligned to either end.
+ * A side preference only offers left and right, so the card never moves below or above the target.
+ */
+function placementOrder(preference: GuidePlacement | undefined): Placement[] {
+  const sides: Side[] =
+    preference === "above"
+      ? ["top", "right", "left", "bottom"]
+      : preference === "side"
+        ? ["right", "left"]
+        : ["right", "left", "bottom", "top"];
   return sides.flatMap((side): Placement[] => [
     side,
     `${side}-start`,
@@ -180,7 +186,7 @@ export function useFloatingGuide(
   step: Accessor<string>,
   anchor: Accessor<DOMRect | null>,
   selector: Accessor<string | undefined>,
-  preference: Accessor<"above" | undefined>,
+  preference: Accessor<GuidePlacement | undefined>,
   keepVisible: Accessor<GuideFocusArea[] | undefined>,
 ) {
   const [position, setPosition] = createSignal({ x: 12, y: 80 });
@@ -351,7 +357,7 @@ export function useFloatingGuide(
       { reference: target, avoid: protect },
       { reference: cluster, avoid: protect },
     ];
-    const placements = placementOrder(preference() === "above");
+    const placements = placementOrder(preference());
     const token = ++placing;
     void (async () => {
       const corners = [

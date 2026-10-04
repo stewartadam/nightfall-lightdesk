@@ -30,6 +30,9 @@ export type GuideContent =
 
 export type GuidePrerequisite = Extract<GuideContent, { type: "prerequisite" }>;
 
+/** Where a step prefers its card relative to the target. */
+export type GuidePlacement = "above" | "side";
+
 /** Tidies up after a step when the user moves on with Continue or Skip, as Close or Escape would. */
 export type GuideAdvanceAction = {
   type: "close";
@@ -62,15 +65,20 @@ export interface GuideStep {
   targetFx?: { id: number };
   /** Targets the sample timeline's card in the Timelines list. */
   targetSampleTimeline?: boolean;
-  placement?: "above";
+  /**
+   * Preferred card position: above the target, or beside it (left or right) so menus that open
+   * below the target never push the card away.
+   */
+  placement?: GuidePlacement;
   /**
    * Areas the user needs to see during this step. When set, the card may cover the rest of the
    * target's panel; without it, the card only prefers to avoid that panel.
    */
   keepVisible?: GuideFocusArea[];
   /**
-   * Focuses the target once when the step starts. Steps that target the command input focus it
-   * by default, so users can type the suggested command straight away.
+   * Focuses the target once when it appears, and again whenever the step's target moves to another
+   * element. Steps that target the command input focus it by default, so users can type the
+   * suggested command straight away.
    */
   focusTarget?: boolean;
   /**
@@ -127,7 +135,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "Lo-fi starts the RGB cycle (full) clip and the red waveform effect fx3.",
+            text: "Lo-fi layers a pastel rainbow on the pixel strips with white flashes on the snare and on the music’s breaks.",
           },
           {
             type: "prerequisite",
@@ -176,7 +184,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "RGB cycle (full) advances through colors; fx3 varies the red channel across the pixel strips.",
+            text: "Each chip on the timeline starts or stops a clip in time with the music: the rainbow pulse, the strobe snaps, and the flashes.",
           },
           {
             type: "action",
@@ -666,6 +674,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "manual-blue",
         title: "Let Go advance to Blue",
         keepVisible: ["row"],
+        placement: "side",
         targetSequence: { id: 50, cueId: 2 },
         observe: { type: "cue-manual", sequenceId: 50, id: 2 },
         content: [
@@ -683,7 +692,10 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "create-clip",
         title: "Create a clip to play your sequence",
-        target: '[aria-label="Add clip"]',
+        // Points at Add clip, then the dialog's ID field until it reads 50, then its Label field.
+        target:
+          '[aria-label="Add clip"], [role="dialog"] [data-entity-field="id"]:not([data-value="50"]), [role="dialog"] [data-entity-field="label"]',
+        focusTarget: true,
         observe: { type: "clip-created", clipId: 50 },
         content: [
           {
@@ -937,19 +949,19 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         ],
       },
       {
-        id: "disabled-bindings",
-        title: "The sample needs no DMX",
+        id: "console-bindings",
+        title: "Patched to console universes",
         target:
-          '[data-panel-kind="patch"] [data-grid-column-key="target"][data-grid-row-key^="disabled-"]',
+          '[data-panel-kind="patch"] [data-grid-column-key="target"][data-grid-row-key^="output-"]',
         content: [
           {
             type: "text",
-            text: "Every sample fixture has a Disabled output binding, so none has a DMX address. The Visualizer shows fixture values directly, so the sample works without DMX.",
+            text: "Each sample fixture has an output binding to a console universe, starting at address 1. The pixel strips fill universes 1 to 8, and each other rig section gets universes of its own.",
           },
           { type: "prerequisite", panels: ["PatchEditor"] },
           {
             type: "action",
-            body: "Look at the Target column: every row says Disabled.",
+            body: "Look at the Target column to see the universe each binding writes to.",
           },
           {
             type: "details",
@@ -1055,18 +1067,18 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         ],
       },
       {
-        id: "no-universes",
-        title: "Nothing to send yet",
+        id: "console-universes",
+        title: "The show’s DMX, kept local",
         target: '[data-component="DmxUniverse"][data-panel-id]',
         content: [
           {
             type: "text",
-            text: "The sample fixtures’ output bindings are disabled, so they write to no universe and no transport has anything to send.",
+            text: "The sample patches its fixtures to console universes 1 to 20, so Console DMX shows the channels the show produces. No universe is routed to a transport, so nothing leaves this computer.",
           },
           { type: "prerequisite", panels: ["DmxUniverse"] },
           {
             type: "action",
-            body: "Notice that Console DMX has no universe data.",
+            body: "Look at Univ. 1, which holds pixel strips 310 to 313.",
           },
           {
             type: "details",
@@ -1082,7 +1094,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     title: "Waveform effects",
     duration: "6 min",
     introduction:
-      "Reshape fx3, the sample’s red sine wave, then play your version from its clip.",
+      "Reshape Red Chase, the sample’s red sine wave, then play your version from its clip.",
     steps: [
       {
         id: "quiet",
@@ -1091,7 +1103,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "fx3 changes only the red channel. Other running clips or timelines would mix their own colors into what you see.",
+            text: "Red Chase changes only the red channel. Other running clips or timelines would mix their own colors into what you see.",
           },
           {
             type: "action",
@@ -1102,18 +1114,18 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "open-fx",
-        title: "Open fx3",
-        targetFx: { id: 3 },
+        title: "Open Red Chase",
+        targetFx: { id: 6 },
         observe: { type: "panel", component: "FxEditor" },
         content: [
           {
             type: "text",
-            text: "fx3 is a waveform effect: a repeating sine wave on the red channel of all 32 pixel strips. Each strip starts at a different point in the cycle, so the red appears to travel.",
+            text: "Red Chase is a waveform effect: a repeating sine wave on the red channel of all 32 pixel strips. Each strip starts at a different point in the cycle, so the red appears to travel.",
           },
           { type: "prerequisite", panels: ["FxList", "Visualizer"] },
           {
             type: "action",
-            body: "In FX List, click 3: fx3 to open it in the FX Editor. In list view, select the row and press Enter.",
+            body: "In FX List, click 6: Red Chase to open it in the FX Editor. In list view, select the row and press Enter.",
           },
         ],
       },
@@ -1125,7 +1137,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "The FX Editor previews fx3 on the rig while it is open and updates as you edit. Rate is the length of one cycle; fx3 repeats every 4 seconds.",
+            text: "The FX Editor previews Red Chase on the rig while it is open and updates as you edit. Rate is the length of one cycle; Red Chase repeats every 4 seconds.",
           },
           { type: "prerequisite", panels: ["Visualizer"] },
           {
@@ -1152,13 +1164,13 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "save",
-        title: "Save your version of fx3",
+        title: "Save your version of Red Chase",
         target: '[data-guide-target="fx-save"]',
-        observe: { type: "fx-saved", fxId: 3 },
+        observe: { type: "fx-saved", fxId: 6 },
         content: [
           {
             type: "text",
-            text: "Edits in the FX Editor are a preview until you save. Saving stores the new rate and shape in fx3, so clip 6 and the Lo-fi timeline use them the next time they start.",
+            text: "Edits in the FX Editor are a preview until you save. Saving stores the new rate and shape in Red Chase, so clip 6 uses them the next time it starts.",
           },
           { type: "action", body: "Click Save in the FX Editor toolbar." },
         ],
@@ -1167,41 +1179,41 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "close-editor",
         title: "Close the FX Editor",
         target:
-          '.dv-default-tab[aria-label^="FX 3: fx3"] .dv-default-tab-action',
+          '.dv-default-tab[aria-label^="FX 6: Red Chase"] .dv-default-tab-action',
         observe: { type: "panel-closed", component: "FxEditor" },
         content: [
           {
             type: "text",
             text: "The preview runs only while the FX Editor is open. Close it to hand the strips back to playback.",
           },
-          { type: "action", body: "Click × on the FX 3: fx3 tab." },
+          { type: "action", body: "Click × on the FX 6: Red Chase tab." },
         ],
       },
       {
         id: "play-clip",
-        title: "Play your saved fx3",
+        title: "Play your saved Red Chase",
         targetClip: { id: 6 },
         observe: { type: "clip-playing", clipId: 6 },
         content: [
           {
             type: "text",
-            text: "Clip 6: fx3 plays the saved effect. The Lo-fi timeline launches this same clip.",
+            text: "Clip 6: Red Chase plays the effect you saved.",
           },
           { type: "prerequisite", panels: ["ClipList", "Visualizer"] },
           {
             type: "action",
-            body: "Click clip 6: fx3 and watch your slower, square red wave in the Visualizer.",
+            body: "Click clip 6: Red Chase and watch your slower, square red wave in the Visualizer.",
           },
         ],
       },
       {
         id: "stop-clip",
-        title: "Stop fx3",
+        title: "Stop Red Chase",
         targetClip: { id: 6 },
         observe: { type: "clip-stopped", clipId: 6 },
         content: [
           { type: "text", text: "Clicking a running clip again stops it." },
-          { type: "action", body: "Click fx3 again to stop it." },
+          { type: "action", body: "Click Red Chase again to stop it." },
         ],
       },
     ],
@@ -1375,7 +1387,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     title: "Timeline programming",
     duration: "5 min",
     introduction:
-      "Move when Lo-fi starts the fx3 red wave, then rehearse the change.",
+      "Move one of Lo-fi’s strobe snaps a beat later, then rehearse the change.",
     steps: [
       {
         id: "open",
@@ -1384,7 +1396,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "Lo-fi has two tracks. Seq Track starts RGB cycle (full), advances it through its cues, and stops it at 3.6 seconds. FX Track starts the fx3 red wave at the same moment.",
+            text: "Lo-fi has four tracks that follow the music: Wash pulses a pastel rainbow, Snaps flashes the strobes on the backbeat, Snares flashes the wash lights, and Breaks flashes the pixel strips.",
           },
           {
             type: "prerequisite",
@@ -1399,17 +1411,17 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "select",
-        title: "Select the fx3 action",
-        targetTimelineAction: { trackId: "1", actionId: "1" },
+        title: "Select the first snap",
+        targetTimelineAction: { trackId: "snaps", actionId: "snaps-1" },
         observe: {
           type: "timeline-action-selected",
-          trackId: "1",
-          actionId: "1",
+          trackId: "snaps",
+          actionId: "snaps-1",
         },
         content: [
           {
             type: "text",
-            text: "Each chip on a track is an action. Exec 6: fx3 on FX Track starts clip 6, which plays the red waveform effect.",
+            text: "Each chip on a track is an action. The first Snap chip on Snaps starts a white strobe flash on beat 3 of the first bar.",
           },
           {
             type: "prerequisite",
@@ -1418,26 +1430,26 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Click the Exec 6: fx3 chip on FX Track to select it.",
+            body: "Click the first Snap chip on Snaps to select it.",
           },
         ],
       },
       {
         id: "timing",
-        title: "Start the wave earlier",
+        title: "Move the snap a beat later",
         target: '[aria-label="Action position (ms)"]',
         focusTarget: true,
         observe: {
           type: "timeline-action-position",
-          trackId: "1",
-          actionId: "1",
-          positionMs: 3000,
+          trackId: "snaps",
+          actionId: "snaps-1",
+          positionMs: 1742,
           toleranceMs: 50,
         },
         content: [
           {
             type: "text",
-            text: "Properties shows the selected action. Its position, 3600 ms, sets when it fires.",
+            text: "Properties shows the selected action. Its position, 1186 ms, sets when it fires; at Lo-fi’s 108 BPM one beat lasts about 556 ms.",
           },
           {
             type: "prerequisite",
@@ -1446,13 +1458,13 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            title: "Set Position (ms) to 3000",
-            body: "Type 3000 in Position (ms), then press Enter.",
+            title: "Set Position (ms) to 1742",
+            body: "Type 1742 in Position (ms), then press Enter.",
           },
           {
             type: "details",
             title: "Drag instead",
-            text: "You can also drag the chip left along FX Track. At the default zoom, each pixel is 10 ms.",
+            text: "You can also drag the chip right along Snaps. At the default zoom, each pixel is 10 ms.",
           },
         ],
       },
@@ -1465,7 +1477,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "fx3 now starts 0.6 seconds earlier, while the color cycle is still on its last cue.",
+            text: "The first snap now lands on beat 4 instead of beat 3, off the backbeat the other snaps keep.",
           },
           {
             type: "prerequisite",
@@ -1474,7 +1486,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Press Play timeline and watch the red wave reach the pixel strips at 3 seconds.",
+            body: "Press Play timeline and watch the strobes flash a beat late in the first bar.",
           },
         ],
       },

@@ -66,7 +66,7 @@ async function openSample(page: Page, offscreenCanvas = true) {
   expect(targets.clips).toEqual(
     expect.arrayContaining([
       [1, "RGB cycle (full)"],
-      [6, "fx3"],
+      [6, "Red Chase"],
     ]),
   );
   expect(targets.timelines).toContainEqual([1, "Lo-fi"]);
@@ -897,8 +897,8 @@ test("welcome saving explains unavailable persistence", async ({
   ).toBeVisible();
 });
 
-/** Confirms duplicate clip creation preserves identity and cancellation leaves its source intact. */
-test("clip overwrite confirms and advances the guide", async ({
+/** Confirms overwriting an existing clip waits for Alt, preserves its identity, and advances the guide. */
+test("clip overwrite holds for Alt and advances the guide", async ({
   page,
 }, testInfo) => {
   await openSample(page);
@@ -941,23 +941,23 @@ test("clip overwrite confirms and advances the guide", async ({
   const create = page.getByRole("dialog", { name: "Create clip" });
   await create.getByLabel("Label", { exact: true }).fill("Replacement");
   await create.getByLabel("ID", { exact: true }).fill("50");
-  await create.getByRole("button", { name: "Create", exact: true }).click();
-  const confirm = page.getByRole("dialog", { name: "Overwrite clip?" });
-  await expect(confirm).toBeVisible();
-  await expect(confirm.locator(":scope > div")).toHaveCSS("opacity", "1");
-  await page.screenshot({
-    path: testInfo.outputPath("clip-overwrite-confirmation.png"),
+  const overwrite = create.getByRole("button", {
+    name: "Overwrite",
+    exact: true,
   });
-  await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(create.getByLabel("ID", { exact: true })).toHaveValue("50");
+  await expect(overwrite).toBeDisabled();
+  await page.screenshot({
+    path: testInfo.outputPath("clip-overwrite-warning.png"),
+  });
   expect(
     await page.evaluate(
       (uid) => (window as any).appStores.clips.get()[uid][0],
       original.identifiers.uid,
     ),
   ).toEqual(original);
-  await create.getByRole("button", { name: "Create", exact: true }).click();
-  await confirm.getByRole("button", { name: "Overwrite", exact: true }).click();
+  await page.keyboard.down("Alt");
+  await overwrite.click();
+  await page.keyboard.up("Alt");
   await expect(
     guide.getByRole("heading", { name: "Choose your clip’s sequence" }),
   ).toBeVisible();
@@ -1523,6 +1523,18 @@ test("first lights builds its own Red and Blue sequence", async ({
   await expect(
     guide.getByRole("heading", { name: "Let Go advance to Blue" }),
   ).toBeVisible();
+  // Going Back to a step whose condition still holds stays there until the user moves on.
+  await guide.getByRole("button", { name: "Back", exact: true }).click();
+  const openSequence = guide.getByRole("heading", {
+    name: "Edit your new sequence",
+  });
+  await expect(openSequence).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(openSequence).toBeVisible();
+  await guide.getByRole("button", { name: NEXT_STEP }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Let Go advance to Blue" }),
+  ).toBeVisible();
   await expect(page.getByTestId("guide-target")).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("guide-blue-trigger.png"),
@@ -1929,7 +1941,7 @@ test("patch lesson follows fixture picking, selection, and DMX I/O", async ({
   await activeLayout(page)
     .locator('[data-panel-kind="patch"] [role="tab"][id$="-bindings"]')
     .click();
-  await expectStep(page, "The sample needs no DMX", { target: true });
+  await expectStep(page, "Patched to console universes", { target: true });
   await page.screenshot({ path: testInfo.outputPath("patch-bindings.png") });
   await page
     .getByTestId("welcome-guide")
@@ -1942,7 +1954,7 @@ test("patch lesson follows fixture picking, selection, and DMX I/O", async ({
   ).toBeVisible();
 });
 
-/** Walks the transports lesson and checks each target row and the empty Console DMX view. */
+/** Walks the transports lesson and checks each target row and the sample's console universes. */
 test("transports lesson highlights output targets and Console DMX", async ({
   page,
 }, testInfo) => {
@@ -1959,22 +1971,22 @@ test("transports lesson highlights output targets and Console DMX", async ({
   await guide.getByRole("button", { name: "Continue", exact: true }).click();
   await expectStep(page, "Open Console DMX", { target: true });
   await paletteCommand(page, "Open Console DMX");
-  await expectStep(page, "Nothing to send yet", { target: true });
+  await expectStep(page, "The show’s DMX, kept local", { target: true });
   await expect(
     activeLayout(page).locator('[data-component="DmxUniverse"][data-panel-id]'),
-  ).toContainText("No universe data");
+  ).toContainText("Univ. 1");
   await page.screenshot({
     path: testInfo.outputPath("transports-console-dmx.png"),
   });
 });
 
-/** Walks the waveform lesson from a quiet stage through saving fx3 and playing its clip. */
-test("waveform lesson edits, saves, and plays fx3", async ({
+/** Walks the waveform lesson from a quiet stage through saving Red Chase and playing its clip. */
+test("waveform lesson edits, saves, and plays Red Chase", async ({
   page,
 }, testInfo) => {
   await openSample(page);
   const guide = await startLesson(page, /Waveform effects/);
-  await expectStep(page, "Open fx3");
+  await expectStep(page, "Open Red Chase");
   const fxList = guide.getByRole("button", {
     name: "Open FX List",
     exact: true,
@@ -1985,15 +1997,17 @@ test("waveform lesson edits, saves, and plays fx3", async ({
     .getByTestId("guide-target")
     .first()
     .screenshot({
-      path: testInfo.outputPath("waveform-fx3-target.png"),
+      path: testInfo.outputPath("waveform-red-chase-target.png"),
     });
-  const fx3 = await page.evaluate(
+  const redChase = await page.evaluate(
     () =>
       (Object.values((window as any).appStores.fx.get()) as any[]).find(
-        (entry) => entry.identifiers.id === 3,
+        (entry) => entry.identifiers.id === 6,
       ).identifiers.uid,
   );
-  await activeLayout(page).locator(`[data-crud-select-id="${fx3}"]`).click();
+  await activeLayout(page)
+    .locator(`[data-crud-select-id="${redChase}"]`)
+    .click();
   await expectStep(page, "Slow the wave down", { target: true });
   const rate = activeLayout(page).locator(
     '[data-component="FxEditor"] input[aria-label="Rate"]',
@@ -2007,11 +2021,11 @@ test("waveform lesson edits, saves, and plays fx3", async ({
     )
     .click();
   await guide.getByRole("button", { name: "Continue", exact: true }).click();
-  await expectStep(page, "Save your version of fx3", { target: true });
+  await expectStep(page, "Save your version of Red Chase", { target: true });
   await activeLayout(page).locator('[data-guide-target="fx-save"]').click();
   await expectStep(page, "Close the FX Editor", { target: true });
   const closeTab = activeLayout(page).locator(
-    '.dv-default-tab[aria-label^="FX 3: fx3"] .dv-default-tab-action',
+    '.dv-default-tab[aria-label^="FX 6: Red Chase"] .dv-default-tab-action',
   );
   const closeBox = await closeTab.boundingBox();
   const highlightBox = await page.locator(".nf-guide-highlight").boundingBox();
@@ -2020,7 +2034,7 @@ test("waveform lesson edits, saves, and plays fx3", async ({
   expect(highlightBox?.y).toBeCloseTo(closeBox!.y - 4, 0);
   await page.screenshot({ path: testInfo.outputPath("close-editor.png") });
   await closeTab.click();
-  await expectStep(page, "Play your saved fx3");
+  await expectStep(page, "Play your saved Red Chase");
   const clipList = guide.getByRole("button", {
     name: "Open Clips",
     exact: true,
@@ -2035,7 +2049,7 @@ test("waveform lesson edits, saves, and plays fx3", async ({
   );
   const tile = activeLayout(page).locator(`[data-crud-select-id="${clip6}"]`);
   await tile.click();
-  await expectStep(page, "Stop fx3", { target: true });
+  await expectStep(page, "Stop Red Chase", { target: true });
   await tile.click();
   await expect(
     page.getByRole("button", { name: "Finish lesson" }),
@@ -2060,7 +2074,7 @@ test("waveform quiet step stops running playback", async ({ page }) => {
   await guide
     .getByRole("button", { name: "Stop all playback", exact: true })
     .click();
-  await expectStep(page, "Open fx3");
+  await expectStep(page, "Open Red Chase");
 });
 
 /** Walks the Step FX lesson from a red base to a slowed, spread chase and a cleared Programmer. */
@@ -2144,8 +2158,8 @@ test("step fx lesson builds a chase and releases the red base", async ({
   ).toBeVisible();
 });
 
-/** Walks the timeline lesson from selecting the fx3 action to rehearsing the earlier start. */
-test("timeline lesson moves the fx3 action and rehearses it", async ({
+/** Walks the timeline lesson from selecting the first snap to rehearsing it a beat later. */
+test("timeline lesson moves the first snap and rehearses it", async ({
   page,
 }, testInfo) => {
   await openSample(page);
@@ -2156,7 +2170,7 @@ test("timeline lesson moves the fx3 action and rehearses it", async ({
     exact: true,
   });
   if (await timeline.isVisible()) await timeline.click();
-  await expectStep(page, "Select the fx3 action");
+  await expectStep(page, "Select the first snap");
   const properties = guide.getByRole("button", {
     name: "Open Properties",
     exact: true,
@@ -2172,15 +2186,15 @@ test("timeline lesson moves the fx3 action and rehearses it", async ({
     });
   await activeLayout(page)
     .locator(
-      '[data-timeline-action="true"][data-track-id="1"][data-action-id="1"]:not([data-drag-preview]) [data-timeline-action-chip="true"]',
+      '[data-timeline-action="true"][data-track-id="snaps"][data-action-id="snaps-1"]:not([data-drag-preview]) [data-timeline-action-chip="true"]',
     )
     .first()
     .click();
-  await expectStep(page, "Start the wave earlier", { target: true });
+  await expectStep(page, "Move the snap a beat later", { target: true });
   const position = activeLayout(page).getByLabel("Action position (ms)", {
     exact: true,
   });
-  await position.fill("3000");
+  await position.fill("1742");
   await position.press("Enter");
   await expectStep(page, "Rehearse the change", { target: true });
   await page
@@ -2260,11 +2274,9 @@ test("lessons never take over a user layout named Lesson", async ({ page }) => {
   await page.evaluate(async () => {
     const path = "/lib/layout-management.ts";
     const { createNamedLayout } = await import(path);
-    await createNamedLayout(
-      (window as any).appStores.dockApi.get(),
-      "Lesson",
-      true,
-    );
+    await createNamedLayout((window as any).appStores.dockApi.get(), "Lesson", {
+      blank: true,
+    });
   });
   await expect(
     page.getByRole("button", { name: "Layout 2: Lesson", exact: true }),
@@ -2317,8 +2329,10 @@ test("lessons use the Lesson layout and return to the user's layout to save", as
   await page.screenshot({ path: testInfo.outputPath("save-step.png") });
 });
 
-/** Finishing a lesson switches back to the layout the user had before it, with no separate return button. */
-test("finishing a lesson restores the user's layout", async ({ page }) => {
+/** Finishing a lesson switches back to the layout the user had before it and deletes the Lesson layout, with no separate return button. */
+test("finishing a lesson restores the user's layout and removes the Lesson layout", async ({
+  page,
+}) => {
   await openSample(page);
   const userLayout = page.getByRole("button", { name: /^Layout 1: / });
   const lessonLayout = page.getByRole("button", {
@@ -2340,6 +2354,7 @@ test("finishing a lesson restores the user's layout", async ({ page }) => {
   await expect(
     activeLayout(page).locator('[data-component="ClipList"]'),
   ).toBeVisible();
+  await expect(lessonLayout).toHaveCount(0);
 });
 
 /** A panel covered by an edge panel is not ready; its button collapses the covering edge panel. */

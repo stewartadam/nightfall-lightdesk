@@ -120,6 +120,8 @@ export default function EntityEditorModal(props: EntityEditorModalProps) {
               type="number"
               min={1}
               step={1}
+              data-entity-field="id"
+              data-value={idValue()}
               value={idValue()}
               onInput={(event) =>
                 setIdValue(Number.parseInt(event.currentTarget.value, 10) || 1)
@@ -153,6 +155,7 @@ export default function EntityEditorModal(props: EntityEditorModalProps) {
             </span>
             <Input
               ref={labelInputRef}
+              data-entity-field="label"
               type="text"
               value={labelValue()}
               onInput={(event) => setLabelValue(event.currentTarget.value)}
