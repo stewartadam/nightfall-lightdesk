@@ -145,6 +145,10 @@ test("queue indicator counts down statements of a sequence", async ({
   );
   await indicator.click();
   await expect(page.locator("[data-command-queued]")).toHaveCount(2);
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(page.locator("[data-command-queued]")).toHaveCount(2);
+  await expect(page.getByText("History: 0")).toBeVisible();
+  expect(await page.getByText(/No commands yet/).count()).toBe(0);
   await page.screenshot({
     path: testInfo.outputPath("queue-sequence-console.png"),
   });

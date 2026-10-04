@@ -104,9 +104,11 @@ export const CommandHistory = (props: CommandHistoryProps) => (
       <Show
         when={props.totalEntries() > 0}
         fallback={
-          <div class="text-xs font-mono text-neutral-500">
-            No commands yet. Enter a command below.
-          </div>
+          <Show when={props.queued().length === 0}>
+            <div class="text-xs font-mono text-neutral-500">
+              No commands yet. Enter a command below.
+            </div>
+          </Show>
         }
       >
         <Show
