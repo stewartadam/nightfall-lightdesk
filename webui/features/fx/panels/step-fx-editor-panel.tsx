@@ -51,6 +51,7 @@ import {
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { RangeSlider } from "../../../components/ui/range-slider";
 import { Table } from "../../../components/ui/table";
+import { Toolbar } from "../../../components/ui/toolbar";
 import {
   ToggleToolbarButton,
   ToolbarButton,
@@ -947,7 +948,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     return target?.kind === "width" && target.stepUids.includes(stepUid);
   };
 
-  /** Applies Step Bar keyboard navigation and selection commands to the active track. */
+  /**
+   * Applies Step Bar keyboard navigation and selection commands to the active
+   * track. Arrow keys move the selection and keyboard focus together; past
+   * either end they fall through to the Step bar toolbar's roving focus.
+   */
   const handleStepBarKeyDown = (event: KeyboardEvent): void => {
     const track = activeTrack();
     if (!track || track.steps.length === 0) return;
@@ -962,7 +967,6 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
       return;
     }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
     const selectedIndexes = track.steps
       .map((step, index) => (selectedStepUids().has(step.uid) ? index : -1))
       .filter((index) => index >= 0);
@@ -974,13 +978,24 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
         anchor + (event.key === "ArrowLeft" ? -1 : 1),
       ),
     );
+    // At either end, leave the arrow to the Step bar toolbar so focus can
+    // reach the paging buttons.
+    if (target === anchor && selectedIndexes.length > 0 && !event.shiftKey)
+      return;
+    event.preventDefault();
     if (!event.shiftKey) {
       setSelectedStepUids(new Set([track.steps[target].uid]));
-      return;
+    } else {
+      const next = new Set(selectedStepUids());
+      next.add(track.steps[target].uid);
+      setSelectedStepUids(next);
     }
-    const next = new Set(selectedStepUids());
-    next.add(track.steps[target].uid);
-    setSelectedStepUids(next);
+    if (event.target instanceof HTMLElement) {
+      event.target
+        .closest("[data-step-fx-step-pager-viewport]")
+        ?.querySelector<HTMLElement>(`[data-step-index="${target}"]`)
+        ?.focus();
+    }
   };
 
   /** Handles panel-level step clipboard shortcuts without overriding native fields. */
@@ -1108,11 +1123,10 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     lane: () => types.FxLane,
     track?: () => types.FxTrack | undefined,
   ) => (
-    <div
+    <Toolbar
       class="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-neutral-700 bg-neutral-900 px-2"
       data-step-fx-step-actions-toolbar
-      role="toolbar"
-      aria-label="Step edit actions"
+      label="Step edit actions"
     >
       <ToolbarButton
         label="Add step"
@@ -1207,16 +1221,15 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
           }
         />
       </div>
-    </div>
+    </Toolbar>
   );
 
   /** Renders paged step navigation in a persistent overlay at the table pane's foot. */
   const renderStepNavigationToolbar = (track: () => types.FxTrack) => (
-    <div
+    <Toolbar
       class="absolute inset-x-0 bottom-0 z-20 flex h-12 min-w-0 items-center gap-1 border-t border-neutral-700 bg-neutral-900/95 px-2 shadow-lg backdrop-blur"
       data-step-fx-step-toolbar
-      role="toolbar"
-      aria-label="Step bar"
+      label="Step bar"
     >
       <StepFxStepPager onKeyDown={handleStepBarKeyDown}>
         <For each={track().steps}>
@@ -1251,7 +1264,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
           )}
         </For>
       </StepFxStepPager>
-    </div>
+    </Toolbar>
   );
 
   return (

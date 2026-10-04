@@ -161,7 +161,7 @@ function ContextMenuSubmenuRow(props: {
       <MenuSurface
         role="menu"
         data-menu-kind="context-submenu"
-        aria-hidden={!isOpen()}
+        inert={!isOpen()}
         class="absolute"
         classList={{ invisible: !isOpen(), visible: isOpen() }}
         style={props.submenuStyle(props.path)}

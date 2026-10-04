@@ -3000,6 +3000,106 @@ test("Step FX pages overflowing step selectors", async ({
   await editor.getByRole("button", { name: "Stop preview" }).click();
 });
 
+/**
+ * Verifies the Step FX toolbars are single Tab stops whose controls are
+ * reached with arrow/Home/End keys, skipping disabled actions, and that the
+ * Step bar's arrows move selection and focus together.
+ */
+test("Step FX toolbars rove keyboard focus between their controls", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await openStepFxEditorApp(page, backendSlot.backendPort);
+  await page.getByRole("tab", { name: "Fx" }).click();
+  await page.getByRole("button", { name: "Add effect" }).click();
+  await page.getByRole("button", { name: "Step FX", exact: true }).click();
+
+  const editor = page.locator("[data-step-fx-editor]");
+  await expect(editor).toBeVisible();
+  const actionToolbar = editor.getByRole("toolbar", {
+    name: "Step edit actions",
+  });
+  const stepToolbar = editor.getByRole("toolbar", { name: "Step bar" });
+  const addStep = actionToolbar.getByRole("button", {
+    name: "Add step",
+    exact: true,
+  });
+  const moveUp = actionToolbar.getByRole("button", {
+    name: "Move selected steps up",
+  });
+  const divide = actionToolbar.getByRole("button", {
+    name: "Divide step widths evenly",
+  });
+  const overrides = actionToolbar.getByRole("button", { name: "Overrides" });
+  const tabStops = actionToolbar.locator('[tabindex="0"]');
+
+  await expect(moveUp).toBeDisabled();
+  await expect(tabStops).toHaveCount(1);
+  await expect(tabStops).toHaveAccessibleName("Add step");
+
+  await addStep.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(divide).toBeFocused();
+  await expect(tabStops).toHaveCount(1);
+  await expect(tabStops).toHaveAccessibleName("Divide step widths evenly");
+  await page.screenshot({
+    path: testInfo.outputPath("step-fx-toolbar-roving-focus.png"),
+  });
+  await page.keyboard.press("ArrowLeft");
+  await expect(addStep).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(overrides).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(addStep).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(overrides).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(addStep).toBeFocused();
+
+  await page.keyboard.press("ArrowRight");
+  await expect(divide).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect
+    .poll(() =>
+      actionToolbar.evaluate((toolbar) =>
+        toolbar.contains(document.activeElement),
+      ),
+    )
+    .toBe(false);
+  await page.keyboard.press("Shift+Tab");
+  await expect(divide).toBeFocused();
+
+  const firstStep = stepToolbar.locator(
+    '[data-step-fx-step-selector][data-step-index="0"]',
+  );
+  const secondStep = stepToolbar.locator(
+    '[data-step-fx-step-selector][data-step-index="1"]',
+  );
+  await firstStep.click();
+  await expect(
+    editor.getByRole("checkbox", { name: "Select step 1", exact: true }),
+  ).toBeChecked();
+  await page.keyboard.press("ArrowRight");
+  await expect(secondStep).toBeFocused();
+  await expect(
+    editor.getByRole("checkbox", { name: "Select step 2", exact: true }),
+  ).toBeChecked();
+  await expect(
+    editor.getByRole("checkbox", { name: "Select step 1", exact: true }),
+  ).not.toBeChecked();
+  await expect(stepToolbar.locator('[tabindex="0"]')).toHaveCount(1);
+  await page.screenshot({
+    path: testInfo.outputPath("step-fx-step-bar-roving-focus.png"),
+  });
+
+  await expect(moveUp).toBeEnabled();
+  await addStep.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(moveUp).toBeFocused();
+
+  await editor.getByRole("button", { name: "Stop preview" }).click();
+});
+
 /** Verifies Overrides remains interactive when a stored draft loads after panel mount. */
 test("Step FX Overrides expands after reopening a stored effect", async ({
   backendSlot,
