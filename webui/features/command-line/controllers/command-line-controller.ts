@@ -8,7 +8,11 @@
 
 import { createSignal } from "solid-js";
 import { CommandClient } from "../../../lib/command-client";
-import { CommandSequenceRunner } from "../../../lib/command-sequence";
+import {
+  type CommandSequenceProgress,
+  CommandSequenceRunner,
+  splitCommandSequence,
+} from "../../../lib/command-sequence";
 import {
   EngineRuntimeCommandDisconnectedError,
   engineRuntime,
@@ -24,6 +28,10 @@ import {
 import { dockApi, pushToast } from "../../../state/appStores";
 import type * as types from "../../../types";
 import {
+  type PendingCommandSubmission,
+  remainingStatementCount,
+} from "../model/command-queue";
+import {
   isEditableKeyboardTarget,
   isHistorySearchShortcut,
   isNewShowPromptCommand,
@@ -38,12 +46,6 @@ const commandSequenceRunner = new CommandSequenceRunner(
   new CommandClient(engineRuntime),
 );
 
-/** One accepted command-line submission that has not settled yet. */
-export interface PendingCommandSubmission {
-  id: number;
-  command: string;
-}
-
 /** Tail of the serial chain that keeps command-line submissions in submission order. */
 let commandSubmissionTail: Promise<void> = Promise.resolve();
 let nextSubmissionId = 0;
@@ -51,20 +53,64 @@ const [pendingSubmissions, setPendingSubmissions] = createSignal<
   readonly PendingCommandSubmission[]
 >([]);
 
+/** Applies an update to one pending submission, ignoring submissions that already settled. */
+function updatePendingSubmission(
+  id: number,
+  update: (submission: PendingCommandSubmission) => PendingCommandSubmission,
+) {
+  setPendingSubmissions((pending) =>
+    pending.map((submission) =>
+      submission.id === id ? update(submission) : submission,
+    ),
+  );
+}
+
 /**
  * Runs one accepted submission after every earlier submission has settled,
  * without blocking the input. Failed command results are toasted by the engine
  * runtime, so only transport failures are reported here. A submission that
  * returns a promise settles with it; one that only sends settles once sent.
- * The submission is listed in `pendingSubmissions` until it settles so the
- * input can show that accepted commands are still running or waiting their turn.
+ * The submission is listed in `pendingSubmissions` until it settles, with
+ * per-statement progress, so the input can show how many statements are still
+ * running or waiting their turn.
  */
-function queueCommandSubmission(input: string, submit: () => unknown) {
+function queueCommandSubmission(
+  input: string,
+  statements: Promise<readonly string[]>,
+  submit: (
+    statements: readonly string[],
+    progress: CommandSequenceProgress,
+  ) => unknown,
+) {
   const id = nextSubmissionId++;
-  setPendingSubmissions((pending) => [...pending, { id, command: input }]);
+  setPendingSubmissions((pending) => [
+    ...pending,
+    { id, command: input, started: 0, settled: 0 },
+  ]);
+  statements.then(
+    (split) =>
+      updatePendingSubmission(id, (submission) => ({
+        ...submission,
+        statements: split,
+      })),
+    // Split failures are reported when the queued submission awaits them.
+    () => undefined,
+  );
+  const progress: CommandSequenceProgress = {
+    onStatementStarted: (index) =>
+      updatePendingSubmission(id, (submission) => ({
+        ...submission,
+        started: index + 1,
+      })),
+    onStatementSettled: (index) =>
+      updatePendingSubmission(id, (submission) => ({
+        ...submission,
+        settled: index + 1,
+      })),
+  };
   commandSubmissionTail = commandSubmissionTail.then(async () => {
     try {
-      await submit();
+      await submit(await statements, progress);
     } catch (error) {
       // Loads and new shows replace the backend world, which ends the session
       // before a result can arrive; the command was delivered, so keep going.
@@ -106,7 +152,7 @@ export function createCommandLineController(
     variant: options.variant,
     setInput,
     getInputElement,
-    pendingCount: () => pendingSubmissions().length,
+    pendingCount: () => remainingStatementCount(pendingSubmissions()),
     onHistoryValue: (value) => {
       analysis.setAutocompleteArmed(false);
       analysis.clearValidation("idle");
@@ -156,18 +202,37 @@ export function createCommandLineController(
         queueMicrotask(() => inputElement?.focus());
         return;
       }
-      queueCommandSubmission(trimmedInput, () => newShowfile(options));
+      queueCommandSubmission(
+        trimmedInput,
+        Promise.resolve([trimmedInput]),
+        (_statements, progress) => {
+          progress.onStatementStarted?.(0);
+          newShowfile(options);
+        },
+      );
     } else {
       const showfileSaveCommand = showfileSaveCommandForInput(trimmedInput);
-      queueCommandSubmission(trimmedInput, () =>
-        showfileSaveCommand
-          ? engineRuntime.sendCommand(
+      if (showfileSaveCommand) {
+        queueCommandSubmission(
+          trimmedInput,
+          Promise.resolve([trimmedInput]),
+          (_statements, progress) => {
+            progress.onStatementStarted?.(0);
+            engineRuntime.sendCommand(
               { module: "DeskCommand", command: showfileSaveCommand },
               true,
               trimmedInput,
-            )
-          : commandSequenceRunner.run(trimmedInput),
-      );
+            );
+          },
+        );
+      } else {
+        queueCommandSubmission(
+          trimmedInput,
+          splitCommandSequence(trimmedInput),
+          (statements, progress) =>
+            commandSequenceRunner.runStatements(statements, progress),
+        );
+      }
     }
 
     recordSubmittedCommand(trimmedInput);

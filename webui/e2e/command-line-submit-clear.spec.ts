@@ -116,6 +116,45 @@ test("header command input sends save after earlier commands settle", async ({
   await expect(input).toHaveAttribute("placeholder", /to enter command/);
 });
 
+/**
+ * Verifies the queue indicator counts each statement of a multi-statement
+ * submission and counts down as statements settle, while the Console lists
+ * the statements not yet sent.
+ */
+test("queue indicator counts down statements of a sequence", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.consoleScrollback),
+  );
+  const input = page.getByRole("textbox", {
+    name: "Command input",
+    exact: true,
+  });
+  const indicator = page
+    .locator(".nf-header-command-group")
+    .locator("[data-command-queue-count]");
+
+  await input.fill("sleep 2s; sleep 2s; sleep 2s");
+  await input.press("Enter");
+  await expect(indicator).toHaveText("3");
+  await expect(indicator).toHaveAccessibleName(
+    "1 command running, 2 queued. Show in Console",
+  );
+  await indicator.click();
+  await expect(page.locator("[data-command-queued]")).toHaveCount(2);
+  await page.screenshot({
+    path: testInfo.outputPath("queue-sequence-console.png"),
+  });
+  await expect(indicator).toHaveText("2", { timeout: 5_000 });
+  await expect(page.locator("[data-command-queued]")).toHaveCount(1);
+  await expect(indicator).toHaveText("1", { timeout: 5_000 });
+  await expect(page.locator("[data-command-queued]")).toHaveCount(0);
+  await expect(indicator).toHaveCount(0, { timeout: 5_000 });
+});
+
 /** Verifies an input that fails to parse stays in place for the operator to fix. */
 test("header command input keeps a command that fails to parse", async ({
   page,

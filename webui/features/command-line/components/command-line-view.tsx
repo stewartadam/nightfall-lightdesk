@@ -10,6 +10,10 @@ import { parseKeybinding } from "tinykeys";
 import { Input, InputGroup } from "../../../components/ui/form-controls";
 import { clearConsoleScrollback } from "../../../state/appStores";
 import type { CommandLineController } from "../controllers/command-line-controller";
+import {
+  remainingStatementCount,
+  unsentStatements,
+} from "../model/command-queue";
 import { CommandClearButton } from "./command-clear-button";
 import { CommandHistory } from "./command-history";
 import { CommandQueueStatus } from "./command-queue-status";
@@ -34,7 +38,7 @@ export function CommandLineView(props: CommandLineViewProps) {
   const hasInput = () => controller.input().trim().length > 0;
   /** Reserves room on the right for the validation and queue chips. */
   const inputPaddingRight = () =>
-    controller.pendingSubmissions().length > 0
+    remainingStatementCount(controller.pendingSubmissions()) > 0
       ? hasInput()
         ? "76px"
         : "48px"
@@ -119,7 +123,7 @@ export function CommandLineView(props: CommandLineViewProps) {
         <CommandHistory
           entries={history.visibleConsoleEntries}
           totalEntries={() => history.consoleEntries().length}
-          queued={() => controller.pendingSubmissions().slice(1)}
+          queued={() => unsentStatements(controller.pendingSubmissions())}
           normalizedSearch={history.normalizedHistorySearch}
           searchOpen={history.historySearchOpen}
           search={history.historySearch}
