@@ -484,7 +484,7 @@ test("returning from the compact view keeps the open layout", async ({
     const layout = await harness.layoutManagement.createNamedLayout(
       api,
       "Other",
-      true,
+      { blank: true },
     );
     if (
       !layout ||
