@@ -53,7 +53,7 @@ When the user provides implementation tasks while the current worktree is on `ma
 6. Commit the validated changes
    - When committing changes, do not add untracked files unless you created them.
 7. Perform a formal review pass before handing work back.
-   - Use the bug-finding code review (`/code-review` when available); do not substitute an implicit sanity check.
+   - Run a dedicated code review focused on finding bugs; do not substitute an implicit sanity check.
    - Surface review findings explicitly in the handoff, ordered by severity with file/line references when applicable.
    - If there are no findings, say that clearly and note any remaining test gaps or residual risk.
 8. Stop before pushing the branch or opening a PR so the user can review, manually test, and guide the next direction.
@@ -126,7 +126,7 @@ Application data (fixtures, fx modules, showfiles, etc) can be found at:
   - Keep the release notes current when updating a PR's scope, and verify the declaration before creating or handing off the PR.
 - If commit fails, resolve and retry until it succeeds
 - Run a code review at the end of every work session, including follow-up work on an existing branch or PR, before handing back.
-  - Use the bug-finding code review (`/code-review` when available); do not substitute an implicit sanity check.
+  - Make it a dedicated review focused on finding bugs; do not substitute an implicit sanity check.
   - Address findings or surface them in the handoff, ordered by severity with file/line references. If there are none, say so.
 - Attach screenshots or videos of completed UI-visible work to the handoff or PR.
   - Capture them with the Playwright wrapper (see above) against the real app, showing the actual end result rather than mockups or intermediate states.
