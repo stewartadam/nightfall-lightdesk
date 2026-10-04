@@ -166,14 +166,18 @@ A clean clone does not include a personal fixture or object library. Put compati
 
 Worktrunk is optional. `wt switch --create <branch>` runs the repository hooks to create the environment, install packages, generate types/assets, and seed build and application data from the main worktree. These hooks assume the general prerequisites above are installed. Check their output before starting services; a background build may still be running.
 
-After merging a GitHub PR, run `wt done` in its worktree, or `wt done <branch>`
-from another worktree. The alias requires an authenticated `gh` CLI and a merged
-PR in the `origin` repository. It fetches the PR's actual target (`main`, `develop`,
-or another branch) and uses it for Worktrunk's normal merge-safety checks without
-changing the repository's default branch or pulling another worktree. Local
-commits that are not integrated into the target keep their branch, and dirty
-worktrees are refused. For branches without merged PRs or manual cleanup, use
-`wt remove` directly. Run `wt done -- --help` for supported options.
+When a branch's work has landed, run `wt done` in its worktree, or
+`wt done <branch ...>` from another worktree. A branch whose commits are already
+in origin's default branch is removed without consulting GitHub; offline, the
+last fetched copy of that branch is used. Otherwise the alias asks the
+authenticated `gh` CLI for a merged PR in the `origin` repository (for example a
+squash merge), fetches the PR's actual target (`main`, `develop`, or another
+branch), and uses it for Worktrunk's normal merge-safety checks without changing
+the repository's default branch or pulling another worktree. Branches with
+neither are kept, their unmerged commits are listed, and the command exits with
+an error after cleaning up the rest. Local commits that are not integrated into
+the target keep their branch, and dirty worktrees are refused. For forced
+cleanup, use `wt remove` directly. Run `wt done -- --help` for supported options.
 
 Claude Code creates its own worktrees for `claude --worktree`, desktop app and
 Remote Control sessions, and isolated subagents. The `WorktreeCreate` and
