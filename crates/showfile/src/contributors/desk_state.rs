@@ -51,12 +51,13 @@ impl<'a> DeskStateSaveContributor<'a> {
 }
 
 impl ShowfileSaveContributor for DeskStateSaveContributor<'_> {
-    /// Copy global variables and desk settings into their stable showfile fields.
+    /// Copy global variables and desk settings into their stable showfile fields, leaving out
+    /// transient layouts.
     fn save_contribution(&self) -> ShowfileContribution<'static> {
         ShowfileContribution::DeskState(Box::new(DeskStateSnapshot {
             control_assignments: Cow::Owned(self.controls.assignments()),
             variables: Cow::Owned(self.global_variables.get_all()),
-            settings: Cow::Owned(self.desk_settings.clone()),
+            settings: Cow::Owned(self.desk_settings.for_showfile()),
             io_settings: Cow::Owned(self.io_settings.clone()),
         }))
     }

@@ -114,17 +114,22 @@ async function persistLayouts(
   }
 }
 
-/** Creates a visible saved layout without changing the currently mounted arrangement. */
+/**
+ * Creates a visible saved layout without changing the currently mounted arrangement.
+ * A blank layout starts empty instead of copying the mounted arrangement, and a transient
+ * one is left out of saved showfiles.
+ */
 export async function createNamedLayout(
   api: DockviewApi,
   name: string,
-  blank = false,
+  { blank = false, transient = false } = {},
 ): Promise<StoredPanelLayout | null> {
   const normalized = name.trim();
   if (!normalized) return null;
   const layout = createBlankStoredLayout(api);
   if (!blank) Object.assign(layout, createSerializedLayout(api));
   layout.name = normalized;
+  if (transient) layout.transient = true;
   return (await editLayouts((layouts) => [...layouts, layout], [layout.id]))
     ? layout
     : null;
@@ -212,6 +217,7 @@ export function duplicateNamedLayout(
           id: uuidv4(),
           name,
           shownInSwitcher: true,
+          transient: false,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         },

@@ -37,6 +37,8 @@ export interface StoredPanelLayout extends SerializedLayout {
   id: string;
   name: string;
   shownInSwitcher: boolean;
+  /** Whether the layout lives only for this session and is left out of saved showfiles. */
+  transient?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -79,6 +81,7 @@ function cloneStoredPanelLayout(layout: StoredPanelLayout): StoredPanelLayout {
     id: cloned.id,
     name: cloned.name,
     shownInSwitcher: cloned.shownInSwitcher !== false,
+    ...(cloned.transient ? { transient: true } : {}),
     createdAt: cloned.createdAt,
     updatedAt: cloned.updatedAt,
   };
@@ -344,6 +347,7 @@ export function overwriteStoredLayout(
     id: existing.id,
     name: existing.name,
     shownInSwitcher: existing.shownInSwitcher,
+    ...(existing.transient ? { transient: true } : {}),
     createdAt: existing.createdAt,
     updatedAt: nowMs(),
   };

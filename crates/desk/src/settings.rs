@@ -78,6 +78,10 @@ pub struct StoredPanelLayout {
     pub created_at: f64,
     /// Last layout update timestamp in milliseconds since Unix epoch.
     pub updated_at: f64,
+    /// Whether this layout lives only for the current session and is left out of saved showfiles,
+    /// such as the layout the welcome guide runs lessons in.
+    #[serde(default)]
+    pub transient: bool,
 }
 
 /// Keeps saved layouts discoverable when the showfile predates explicit switcher visibility.
@@ -129,6 +133,33 @@ impl Default for DeskSettings {
             panel_layouts: Vec::new(),
             active_panel_layout: None,
         }
+    }
+}
+
+impl DeskSettings {
+    /// Returns the settings as a showfile stores them: without transient layouts, and without
+    /// an active layout that belongs to one, so the show reopens in a layout it keeps.
+    pub fn for_showfile(&self) -> Self {
+        let transient: Vec<&str> = self
+            .panel_layouts
+            .iter()
+            .filter(|layout| layout.transient)
+            .map(|layout| layout.id.as_str())
+            .collect();
+        if transient.is_empty() {
+            return self.clone();
+        }
+        let mut settings = self.clone();
+        settings.panel_layouts.retain(|layout| !layout.transient);
+        if settings
+            .active_panel_layout
+            .as_ref()
+            .and_then(|active| active.layout_id.as_deref())
+            .is_some_and(|id| transient.contains(&id))
+        {
+            settings.active_panel_layout = None;
+        }
+        settings
     }
 }
 

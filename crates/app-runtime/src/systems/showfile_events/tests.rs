@@ -2453,6 +2453,7 @@ fn seed_world(world: &mut World) {
             }],
             created_at: 1_700_000_000_000.0,
             updated_at: 1_700_000_001_000.0,
+            transient: false,
         }];
     }
 

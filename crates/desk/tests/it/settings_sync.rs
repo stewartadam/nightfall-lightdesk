@@ -105,6 +105,7 @@ fn broadcasts_settings_when_desk_settings_changes() {
             }],
             created_at: 30.0,
             updated_at: 40.0,
+            transient: false,
         }];
     }
     app.update();
@@ -549,6 +550,7 @@ fn updates_panel_layouts_from_settings_command() {
         panels: Vec::new(),
         created_at: 10.0,
         updated_at: 20.0,
+        transient: false,
     };
     submit_settings_command(
         &mut app,
@@ -578,6 +580,7 @@ fn layout_visibility_and_order_round_trip() {
             panels: Vec::new(),
             created_at: 0.0,
             updated_at: 0.0,
+            transient: false,
         })
         .collect();
     submit_settings_command(&mut app, SettingsCommand::SetPanelLayouts(layouts.clone()));
@@ -614,5 +617,46 @@ fn updates_active_panel_layout_from_settings_command() {
     assert_eq!(
         app.world().resource::<DeskSettings>().active_panel_layout,
         Some(layout)
+    );
+}
+
+/// Verifies saved showfiles leave out transient layouts and an active layout that belongs to one.
+#[test]
+fn showfile_settings_skip_transient_layouts() {
+    let layout = |id: &str, transient: bool| StoredPanelLayout {
+        shown_in_switcher: true,
+        id: id.into(),
+        name: id.into(),
+        version: 2,
+        layout: serde_json::json!({}),
+        panels: Vec::new(),
+        created_at: 0.0,
+        updated_at: 0.0,
+        transient,
+    };
+    let active = |id: &str| ActivePanelLayout {
+        layout_id: Some(id.into()),
+        version: 2,
+        layout: serde_json::json!({}),
+        panels: Vec::new(),
+        updated_at: 0.0,
+    };
+    let settings = DeskSettings {
+        panel_layouts: vec![layout("user", false), layout("lesson", true)],
+        active_panel_layout: Some(active("lesson")),
+        ..DeskSettings::default()
+    };
+
+    let saved = settings.for_showfile();
+    assert_eq!(saved.panel_layouts, vec![layout("user", false)]);
+    assert_eq!(saved.active_panel_layout, None);
+
+    let settings = DeskSettings {
+        active_panel_layout: Some(active("user")),
+        ..settings
+    };
+    assert_eq!(
+        settings.for_showfile().active_panel_layout,
+        Some(active("user"))
     );
 }

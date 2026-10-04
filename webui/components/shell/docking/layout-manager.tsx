@@ -106,7 +106,7 @@ export default function LayoutManager(props: LayoutManagerProps) {
     }
     setCreating(true);
     try {
-      if (await createNamedLayout(api, name, blank)) setNewLayoutName("");
+      if (await createNamedLayout(api, name, { blank })) setNewLayoutName("");
     } finally {
       setCreating(false);
     }

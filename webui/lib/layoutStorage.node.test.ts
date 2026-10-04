@@ -393,6 +393,23 @@ test("showfile panel layouts replace only named layout storage", async () => {
   assert.equal(storage.getActiveStoredLayoutId(), null);
 });
 
+/** Keeps the transient flag through showfile replacement and overwrites, but never copies it to a duplicate. */
+test("transient layouts stay transient until duplicated", async () => {
+  const storage = await importLayoutStorage();
+
+  const stored = storage.storeCurrentLayout(createDockApi("lesson"), "Lesson");
+  assert.ok(stored);
+  const lesson = { ...stored, transient: true };
+  assert.equal(storage.replaceStoredLayoutsFromShowfile([lesson]), true);
+  assert.equal(storage.getStoredLayout(lesson.id)?.transient, true);
+
+  storage.overwriteStoredLayout(createDockApi("moved"), lesson.id);
+  assert.equal(storage.getStoredLayout(lesson.id)?.transient, true);
+
+  const copy = storage.duplicateStoredLayout(lesson.id, "Copy");
+  assert.equal(copy?.transient, undefined);
+});
+
 test("invalid layout store data falls back to an empty state", async () => {
   setTestStorageKey(LAYOUT_STORAGE_KEY, "{");
 
