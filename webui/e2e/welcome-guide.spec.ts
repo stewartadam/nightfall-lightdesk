@@ -2391,3 +2391,23 @@ test("collapsing Properties advances after the layout is reset", async ({
     guide.getByRole("heading", { name: "Put First Lights on control 6" }),
   ).toBeVisible();
 });
+
+/** Steps that ask for a typed command focus the command input, even without an explicit focus flag. */
+test("command steps focus the command input", async ({ page }) => {
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await openLesson(guide, /Your first lights/);
+  await reachStep(page, "Bring up the lights");
+  const programmer = guide.getByRole("button", {
+    name: "Open Programmer",
+    exact: true,
+  });
+  if (await programmer.isVisible()) await programmer.click();
+  await page.getByRole("button", { name: "Open command palette" }).focus();
+  await guide.getByRole("button", { name: NEXT_STEP }).click();
+  await expect(
+    guide.getByRole("heading", { name: "Make a red look" }),
+  ).toBeVisible();
+  await expect(page.locator("#header-cmdline")).toBeFocused();
+});
