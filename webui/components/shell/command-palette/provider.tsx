@@ -74,7 +74,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
   return (
     <CommandPaletteContext.Provider value={contextValue}>
       {props.children}
-      <Modal isOpen={isOpen()} usePortal={false}>
+      <Modal isOpen={isOpen()} onEscape={hidePalette} usePortal={false}>
         <CommandPaletteUI
           isOpen={isOpen()}
           onClose={hidePalette}

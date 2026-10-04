@@ -8,7 +8,10 @@
 
 import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
 import { matchKeybindingPress, parseKeybinding, tinykeys } from "tinykeys";
-import { isInsideOpenDialog } from "../components/ui/modal/dialog-stack";
+import {
+  dialogBlocksBackgroundKeys,
+  isInsideOpenDialog,
+} from "../components/ui/modal/dialog-stack";
 import {
   getFocusedComponentId,
   suppressDockFallbackAfterEditableBlur,
@@ -286,6 +289,11 @@ function dispatchShortcutForKey(
   const shortcutTarget = target ?? eventTarget ?? activeElement;
   handlers = shortcutHandlersForTarget(handlers, shortcutTarget, event);
   if (handlers.length === 0) {
+    return false;
+  }
+  // A blocking confirmation holds every shortcut, and the browser default behind it, until it closes.
+  if (dialogBlocksBackgroundKeys()) {
+    event.preventDefault();
     return false;
   }
 
