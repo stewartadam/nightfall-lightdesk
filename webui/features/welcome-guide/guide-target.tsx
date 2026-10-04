@@ -68,7 +68,7 @@ export function GuideTarget(props: GuideTargetProps) {
     props.onBounds?.(null);
     if (!selector) return;
     let previous = "";
-    let focused = false;
+    let focused: HTMLElement | undefined;
     let revealed = false;
     let focusFrame: number | undefined;
     /** Ignores hidden, clipped, disabled, or modal-obscured controls. */
@@ -135,10 +135,16 @@ export function GuideTarget(props: GuideTargetProps) {
         }
       }
       const rect = target?.getBoundingClientRect() ?? null;
-      if (target && focusTarget && !focused) {
-        focused = true;
+      // Focuses each new target once, so a step that moves through form fields follows along.
+      if (target && focusTarget && focused !== target) {
+        focused = target;
         focusFrame = requestAnimationFrame(() => {
-          if (target.isConnected) target.focus({ preventScroll: true });
+          // A dialog opened meanwhile owns focus; pulling it outside would dismiss it.
+          const dialog = document.querySelector(
+            '[role="dialog"][aria-modal="true"]',
+          );
+          if (target.isConnected && (!dialog || dialog.contains(target)))
+            target.focus({ preventScroll: true });
         });
       }
       const key = rect

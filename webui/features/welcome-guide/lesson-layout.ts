@@ -9,7 +9,10 @@
 import type { DockviewApi } from "dockview";
 import { bestEffortPersistentAtom } from "../../lib/best-effort-persistent-atom";
 import { activateStoredLayout } from "../../lib/layout-activation";
-import { createNamedLayout } from "../../lib/layout-management";
+import {
+  createNamedLayout,
+  deleteNamedLayout,
+} from "../../lib/layout-management";
 import {
   getShowfilePanelLayouts,
   getStoredLayout,
@@ -44,13 +47,15 @@ function availableLessonLayoutName(): string {
   return name;
 }
 
-/** Creates the layout lessons run in and remembers it as the guide's own. */
+/**
+ * Creates the layout lessons run in and remembers it as the guide's own.
+ * It is transient, so a show saved mid-lesson never stores it.
+ */
 async function createLessonLayout(api: DockviewApi): Promise<string | null> {
-  const layout = await createNamedLayout(
-    api,
-    availableLessonLayoutName(),
-    true,
-  );
+  const layout = await createNamedLayout(api, availableLessonLayoutName(), {
+    blank: true,
+    transient: true,
+  });
   if (!layout) return null;
   lessonLayoutId.set(layout.id);
   return layout.id;
@@ -81,4 +86,14 @@ export async function leaveLessonLayout(
 ): Promise<boolean> {
   if (!getStoredLayout(layoutId)) return false;
   return activateStoredLayout(api, layoutId);
+}
+
+/**
+ * Deletes the Lesson layout once the user has left it, so finished lessons leave nothing behind
+ * in the layout switcher. Leaves it in place while it is still showing.
+ */
+export async function removeLessonLayout(): Promise<void> {
+  const id = findLessonLayoutId();
+  if (!id || id === activeLayoutId.get()) return;
+  if (await deleteNamedLayout(id)) lessonLayoutId.set(null);
 }
