@@ -7,7 +7,6 @@
  */
 
 import { type JSX, onCleanup, onMount, splitProps } from "solid-js";
-import { isInputField } from "../../lib/keyboard-shortcut-targets";
 
 /** Controls a toolbar can hold; `[tabindex]` admits custom focusable widgets. */
 const TOOLBAR_ITEM_SELECTOR = [
@@ -35,7 +34,11 @@ const BUTTON_LIKE_INPUT_TYPES = new Set([
 function claimsArrowKeys(element: HTMLElement): boolean {
   if (element instanceof HTMLInputElement)
     return !BUTTON_LIKE_INPUT_TYPES.has(element.type);
-  return isInputField(element);
+  return (
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement ||
+    element.isContentEditable
+  );
 }
 
 interface ToolbarProps
