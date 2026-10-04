@@ -25,6 +25,7 @@ use axum::{
     http::{Method, header},
     response::{IntoResponse, Response},
     routing::get,
+    serve::ListenerExt,
 };
 use futures_util::SinkExt;
 use futures_util::StreamExt;
@@ -420,6 +421,13 @@ pub(crate) fn create_axum_task(
             for listener in listeners {
                 let app = axum_app.clone().layer(Extension(generation));
                 let mut shutdown = listener_shutdown.subscribe();
+                // Command results and other small frames follow larger state frames closely;
+                // Nagle's algorithm would hold them until the client acknowledges earlier data.
+                let listener = listener.tap_io(|stream| {
+                    if let Err(error) = stream.set_nodelay(true) {
+                        tracing::warn!(%error, "websocket_tcp_nodelay_failed");
+                    }
+                });
                 servers.spawn(async move {
                     axum::serve(
                         listener,
