@@ -19,7 +19,6 @@ build = "cargo build --tests --bin nightfall-headless"
 wasm-build = "pnpm run wasm-build:dev"
 
 [pre-remove]
-# Uses the primary checkout's script, so worktrees branched before it existed can still be removed.
-stop-services = "node {{ repo_path }}/worktree-dashboard/worktree-service.mjs --worktree={{ worktree_path }} stop -s all"
+stop-services = "wt -C {{ worktree_path }} --yes service stop -s all --best-effort"
 
 # note: merge hooks are handled by prek

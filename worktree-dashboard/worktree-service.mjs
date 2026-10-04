@@ -7,7 +7,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
   ALL_SELECTOR,
@@ -22,6 +23,8 @@ import {
 } from "./dashboard-client.mjs";
 
 const COMMAND_ACTIONS = { start: "start", stop: "stop", restart: "recycle" };
+const DEFAULT_WAIT_TIMEOUT_SECONDS = 600;
+const BEST_EFFORT_REQUEST_TIMEOUT_MS = 5000;
 
 const USAGE = `Usage: wt [-C <worktree>] service <command> [options]
 
@@ -39,21 +42,31 @@ Options:
   -s, --service <name>   Service to target, repeatable or comma separated:
                          ${[...WORKTREE_MANAGED_SERVICES, ALL_SELECTOR].join(", ")}
                          (default: backend)
+      --no-wait          Return once the dashboard accepts start/restart
+      --timeout <secs>   How long start/restart wait for services
+                         (default: ${DEFAULT_WAIT_TIMEOUT_SECONDS})
+      --best-effort      Give up after ${BEST_EFFORT_REQUEST_TIMEOUT_MS / 1000}s per request and always exit 0,
+                         reporting failures as warnings (used by hooks)
       --json             Print the raw result as JSON
   -h, --help             Show this help`;
 
 /**
  * Parses CLI arguments into a command, the target worktree path, the services
- * to target, and output flags. Throws on unknown commands or services, extra
- * positional arguments, or a missing worktree for commands that need one.
+ * to target, wait behavior, and output flags. Throws on unknown commands or
+ * services, extra positional arguments, options that do not apply to the
+ * command, or a missing worktree for commands that need one.
  */
 export function parseCliArgs(argv) {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
+    allowNegative: true,
     options: {
       worktree: { type: "string" },
       service: { type: "string", short: "s", multiple: true },
+      wait: { type: "boolean", default: true },
+      timeout: { type: "string" },
+      "best-effort": { type: "boolean", default: false },
       json: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -77,14 +90,31 @@ export function parseCliArgs(argv) {
     throw new Error("--worktree <path> is required");
   }
 
-  const requested = (values.service ?? ["backend"]).flatMap((value) =>
-    value.split(","),
-  );
+  const manages = Object.hasOwn(COMMAND_ACTIONS, command);
+  const waits = command === "start" || command === "restart";
+  if (!manages && values.service) {
+    throw new Error(`--service does not apply to ${command}`);
+  }
+  if (!waits && (!values.wait || values.timeout !== undefined)) {
+    throw new Error(`--no-wait and --timeout do not apply to ${command}`);
+  }
+
+  let waitTimeoutSeconds = DEFAULT_WAIT_TIMEOUT_SECONDS;
+  if (values.timeout !== undefined) {
+    waitTimeoutSeconds = Number(values.timeout);
+    if (!Number.isFinite(waitTimeoutSeconds) || waitTimeoutSeconds <= 0) {
+      throw new Error("--timeout must be a positive number of seconds");
+    }
+  }
+
+  const requested = (values.service ?? ["backend"])
+    .flatMap((value) => value.split(","))
+    .map((service) => service.trim());
   const unknown = requested.filter(
     (service) =>
-      service.trim() &&
-      service.trim() !== ALL_SELECTOR &&
-      !WORKTREE_MANAGED_SERVICES.includes(service.trim()),
+      service &&
+      service !== ALL_SELECTOR &&
+      !WORKTREE_MANAGED_SERVICES.includes(service),
   );
   if (unknown.length > 0) {
     throw new Error(
@@ -101,6 +131,9 @@ export function parseCliArgs(argv) {
     command,
     worktree: values.worktree ?? null,
     services,
+    wait: values.wait,
+    waitTimeoutMs: waitTimeoutSeconds * 1000,
+    bestEffort: values["best-effort"],
     json: values.json,
   };
 }
@@ -143,8 +176,9 @@ function formatWorktreeStatus(summary) {
 
 /**
  * Renders the outcome of a lifecycle action: each service's startup state
- * (with the log tail for failures) after start/restart, or the refreshed
- * status after stop.
+ * after a waited start/restart, with the error and log tail for failures and
+ * the log path for services still pending at the timeout, or the refreshed
+ * status after a stop or an unwaited start/restart.
  */
 function formatManageResult(command, services, result) {
   const lines = [`${command} ${result.worktree.name}: ${services.join(", ")}`];
@@ -163,20 +197,22 @@ function formatManageResult(command, services, result) {
         state.lastError ??
         `exited with ${state.lastExitSignal ?? `code ${state.lastExitCode}`}`;
       lines.push(`    ${detail}`);
-      if (state.logPath) lines.push(`    log: ${state.logPath}`);
-      if (state.logTail) {
-        lines.push(
-          state.logTail
-            .split("\n")
-            .map((line) => `    | ${line}`)
-            .join("\n"),
-        );
-      }
+    }
+    if (state.status !== "online" && state.logPath) {
+      lines.push(`    log: ${state.logPath}`);
+    }
+    if (state.logTail) {
+      lines.push(
+        state.logTail
+          .split("\n")
+          .map((line) => `    | ${line}`)
+          .join("\n"),
+      );
     }
   }
   if (result.startup.timedOut) {
     lines.push(
-      `  timed out after ${Math.round(result.startup.waitMs / 1000)}s waiting for services to come up`,
+      `  timed out after ${Math.round(result.startup.waitMs / 1000)}s waiting for services to come up; raise it with --timeout`,
     );
   }
   return lines.join("\n");
@@ -190,8 +226,9 @@ function serviceSummaryKey(service) {
 }
 
 /**
- * Reports whether a start/restart left every targeted service online; a stop
- * always counts as successful once the dashboard accepted it.
+ * Reports whether a waited start/restart left every targeted service online;
+ * a stop or an unwaited start/restart counts as successful once the dashboard
+ * accepted it.
  */
 function manageSucceeded(result) {
   if (!result.startup) return true;
@@ -202,21 +239,18 @@ function manageSucceeded(result) {
 }
 
 /**
- * Runs the CLI against the dashboard and returns the process exit code:
- * 0 on success, 1 when a service failed to come up. A stop succeeds when the
- * dashboard is unreachable, since no dashboard means no managed services, so
- * the worktree pre-remove hook never blocks on it.
+ * Runs a parsed command against the dashboard and returns the process exit
+ * code: 0 on success, 1 when a service failed to come up. A stop succeeds
+ * when no dashboard is running, since that means no managed services.
  */
-export async function main(argv) {
-  const options = parseCliArgs(argv);
-  if (options.command === "help") {
-    console.log(USAGE);
-    return 0;
-  }
+async function runCommand(options) {
+  const requestTimeoutMs = options.bestEffort
+    ? BEST_EFFORT_REQUEST_TIMEOUT_MS
+    : undefined;
 
   let worktrees;
   try {
-    worktrees = await fetchWorktrees();
+    worktrees = await fetchWorktrees({ requestTimeoutMs });
   } catch (error) {
     if (
       options.command === "stop" &&
@@ -252,15 +286,20 @@ export async function main(argv) {
     return 0;
   }
 
-  if (!options.json && options.command !== "stop") {
+  if (!options.json && options.wait && options.command !== "stop") {
     console.log(
       `${options.command === "restart" ? "Restarting" : "Starting"} ${options.services.join(", ")} for ${target.name}; waiting for it to come up...`,
     );
   }
   const result = await manageWorktree(
-    target.path,
+    target,
     COMMAND_ACTIONS[options.command],
     options.services,
+    {
+      wait: options.wait,
+      waitTimeoutMs: options.waitTimeoutMs,
+      requestTimeoutMs,
+    },
   );
   console.log(
     options.json
@@ -270,7 +309,50 @@ export async function main(argv) {
   return manageSucceeded(result) ? 0 : 1;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+/**
+ * Parses `argv` and runs the command, returning the process exit code. With
+ * --best-effort every failure is printed as a warning and the exit code is
+ * 0, so the worktree pre-remove hook never blocks removal.
+ */
+export async function main(argv) {
+  const options = parseCliArgs(argv);
+  if (options.command === "help") {
+    console.log(USAGE);
+    return 0;
+  }
+  if (!options.bestEffort) {
+    return runCommand(options);
+  }
+  try {
+    if ((await runCommand(options)) !== 0) {
+      console.error(`warning: ${options.command} did not fully succeed`);
+    }
+  } catch (error) {
+    console.error(
+      `warning: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return 0;
+}
+
+/**
+ * Reports whether this module is the process entry point. Both sides are
+ * resolved to real paths because Node reports `import.meta.url` with
+ * symlinks resolved while `argv[1]` keeps the path as invoked.
+ */
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return (
+      realpathSync(fileURLToPath(import.meta.url)) ===
+      realpathSync(process.argv[1])
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
   try {
     process.exitCode = await main(process.argv.slice(2));
   } catch (error) {

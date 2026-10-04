@@ -349,10 +349,12 @@ wt -C ../other service restart -s backend,ui
 `start`, `stop`, and `restart` target the backend unless `--service` (`-s`)
 names others (`backend`, `ui`, `wasm`, `artnet-sender`, `sacn-sender`, `all`).
 They act on the current worktree; use `wt -C <path>` for another one. Start and
-restart wait until each service is reachable, print the log tail of any service
-that fails, and exit non-zero on failure. `--json` prints the raw result. Removing
-a worktree runs `wt service stop -s all` first, which succeeds when the dashboard
-is not running. The alias reads the same dashboard address variables as the MCP
+restart wait until each service is reachable (up to `--timeout` seconds, 600 by
+default), print the log tail of any service that fails, and exit non-zero on
+failure; `--no-wait` returns once the dashboard accepts the request. `--json`
+prints the raw result. Removing a worktree first runs
+`wt service stop -s all --best-effort`, which gives up after 5 seconds and never
+blocks removal. The alias reads the same dashboard address variables as the MCP
 server described below.
 
 Agents can also manage their own worktree lifecycle through MCP (for example, from Codex/Claude) by running:

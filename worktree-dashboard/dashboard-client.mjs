@@ -281,16 +281,22 @@ function withFailureLogTails(states) {
 
 /**
  * Polls the dashboard until every service in `services` is online or failed,
- * or until the startup timeout elapses, and returns each service's final
- * state with log tails for failures.
+ * or until `waitTimeoutMs` elapses, and returns each service's final state
+ * with log tails for failures.
  */
-async function waitForStartupOutcome(worktreePath, services) {
-  const targets = uniqueNonEmptyStrings(services);
+async function waitForStartupOutcome(
+  worktreePath,
+  services,
+  { waitTimeoutMs, requestTimeoutMs },
+) {
   const startedAt = Date.now();
-  let latest = findWorktree(await fetchWorktrees(), worktreePath);
+  let latest = findWorktree(
+    await fetchWorktrees({ requestTimeoutMs }),
+    worktreePath,
+  );
 
-  while (Date.now() - startedAt < STARTUP_WAIT_TIMEOUT_MS) {
-    const states = targets.map((target) => classifyStartup(latest, target));
+  while (Date.now() - startedAt < waitTimeoutMs) {
+    const states = services.map((target) => classifyStartup(latest, target));
     const complete = states.every(
       (state) => state.status === "online" || state.status === "failed",
     );
@@ -304,49 +310,63 @@ async function waitForStartupOutcome(worktreePath, services) {
     }
 
     await delay(STARTUP_POLL_INTERVAL_MS);
-    latest = findWorktree(await fetchWorktrees(), worktreePath);
+    latest = findWorktree(
+      await fetchWorktrees({ requestTimeoutMs }),
+      worktreePath,
+    );
   }
 
   return {
     timedOut: true,
     waitMs: Date.now() - startedAt,
     services: await withFailureLogTails(
-      targets.map((target) => classifyStartup(latest, target)),
+      services.map((target) => classifyStartup(latest, target)),
     ),
     worktree: latest,
   };
 }
 
 /**
- * Raised when nothing answers at the dashboard address, as opposed to the
- * dashboard answering with an error, so callers can treat "no dashboard" as
- * "no managed services".
+ * Raised when the connection to the dashboard address is refused, meaning no
+ * dashboard is running, as opposed to a misconfigured address or a dashboard
+ * that answers with an error. Callers can treat it as "no managed services".
  */
 export class DashboardUnreachableError extends Error {}
 
 /**
  * Sends a request to the dashboard API and returns the response body,
- * throwing an actionable error when the dashboard is unreachable, times out,
- * or answers with a non-2xx status.
+ * throwing an actionable error when the dashboard is unreachable, times out
+ * after `requestTimeoutMs`, or answers with a non-2xx status.
  */
-async function fetchDashboard(path, options) {
+async function fetchDashboard(
+  path,
+  options,
+  requestTimeoutMs = DASHBOARD_REQUEST_TIMEOUT_MS,
+) {
   const url = `${DASHBOARD_BASE_URL}${path}`;
   let response;
   try {
     response = await fetch(url, {
       ...options,
-      signal: AbortSignal.timeout(DASHBOARD_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
   } catch (error) {
     const errorName = error instanceof Error ? error.name : "";
     if (errorName === "TimeoutError" || errorName === "AbortError") {
       throw new Error(
-        `Worktree dashboard request timed out after ${DASHBOARD_REQUEST_TIMEOUT_MS}ms: ${url}`,
+        `Worktree dashboard request timed out after ${requestTimeoutMs}ms: ${url}`,
         { cause: error },
       );
     }
-    throw new DashboardUnreachableError(
-      `Unable to reach worktree dashboard at ${DASHBOARD_BASE_URL}. Start it with: pnpm run worktree:dashboard`,
+    if (error?.cause?.code === "ECONNREFUSED") {
+      throw new DashboardUnreachableError(
+        `No worktree dashboard is running at ${DASHBOARD_BASE_URL}. Start it with: pnpm run worktree:dashboard`,
+        { cause: error },
+      );
+    }
+    const reason = error?.cause?.message ?? error?.message ?? String(error);
+    throw new Error(
+      `Unable to reach worktree dashboard at ${DASHBOARD_BASE_URL}: ${reason}`,
       { cause: error },
     );
   }
@@ -361,8 +381,12 @@ async function fetchDashboard(path, options) {
 }
 
 /** Fetches the full state of every worktree the dashboard discovered. */
-export async function fetchWorktrees() {
-  const raw = await fetchDashboard("/api/worktrees");
+export async function fetchWorktrees({ requestTimeoutMs } = {}) {
+  const raw = await fetchDashboard(
+    "/api/worktrees",
+    undefined,
+    requestTimeoutMs,
+  );
   const payload = JSON.parse(raw);
   if (!payload || !Array.isArray(payload.worktrees)) {
     throw new Error("Dashboard payload is missing worktrees");
@@ -390,20 +414,33 @@ export function findWorktree(worktrees, worktreePath) {
 }
 
 /**
- * Runs a lifecycle action against services of one worktree through the
- * dashboard API. For start and recycle it then waits for each service to come
- * online or fail, so the result reports the real outcome rather than just
- * that the process launched.
+ * Runs a lifecycle action against services of one worktree (a dashboard
+ * worktree entry) through the dashboard API. Targeting every managed service
+ * sends one `service=all` request. With `wait`, start and recycle then poll
+ * until each service comes online or fails, up to `waitTimeoutMs`, so the
+ * result reports the real outcome rather than just that the dashboard
+ * accepted the request.
  */
-export async function manageWorktree(worktreePath, action, services) {
-  const worktrees = await fetchWorktrees();
-  const current = findWorktree(worktrees, worktreePath);
+export async function manageWorktree(
+  worktree,
+  action,
+  services,
+  {
+    wait = true,
+    waitTimeoutMs = STARTUP_WAIT_TIMEOUT_MS,
+    requestTimeoutMs = DASHBOARD_REQUEST_TIMEOUT_MS,
+  } = {},
+) {
   const targets = uniqueNonEmptyStrings(services);
+  const targetsAll = WORKTREE_MANAGED_SERVICES.every((service) =>
+    targets.includes(service),
+  );
   const actionResults = await Promise.all(
-    targets.map(async (targetService) => {
+    (targetsAll ? [ALL_SELECTOR] : targets).map(async (targetService) => {
       const raw = await fetchDashboard(
-        `/api/worktrees/${encodeURIComponent(current.id)}/${encodeURIComponent(action)}?service=${encodeURIComponent(targetService)}`,
+        `/api/worktrees/${encodeURIComponent(worktree.id)}/${encodeURIComponent(action)}?service=${encodeURIComponent(targetService)}`,
         { method: "POST" },
+        requestTimeoutMs,
       );
       return {
         service: targetService,
@@ -411,21 +448,30 @@ export async function manageWorktree(worktreePath, action, services) {
       };
     }),
   );
-  let startup = null;
-  let refreshed = findWorktree(await fetchWorktrees(), worktreePath);
-  if (action === "start" || action === "recycle") {
-    const startupOutcome = await waitForStartupOutcome(worktreePath, targets);
-    refreshed = startupOutcome.worktree;
-    startup = {
-      timedOut: startupOutcome.timedOut,
-      waitMs: startupOutcome.waitMs,
-      services: startupOutcome.services,
+
+  if (wait && (action === "start" || action === "recycle")) {
+    const startupOutcome = await waitForStartupOutcome(worktree.path, targets, {
+      waitTimeoutMs,
+      requestTimeoutMs,
+    });
+    return {
+      worktree: summarizeWorktree(startupOutcome.worktree),
+      action: actionResults,
+      startup: {
+        timedOut: startupOutcome.timedOut,
+        waitMs: startupOutcome.waitMs,
+        services: startupOutcome.services,
+      },
     };
   }
 
+  const refreshed = findWorktree(
+    await fetchWorktrees({ requestTimeoutMs }),
+    worktree.path,
+  );
   return {
     worktree: summarizeWorktree(refreshed),
     action: actionResults,
-    startup,
+    startup: null,
   };
 }

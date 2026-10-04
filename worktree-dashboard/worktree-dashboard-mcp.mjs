@@ -557,7 +557,11 @@ async function runTool(name, args) {
       );
     }
 
-    const payload = await manageWorktree(worktreePath, action, services);
+    const payload = await manageWorktree(
+      findWorktree(await fetchWorktrees(), worktreePath),
+      action,
+      services,
+    );
     return asTextToolResult(JSON.stringify(payload, null, 2), {
       dashboardBaseUrl: DASHBOARD_BASE_URL,
       ...payload,
@@ -600,7 +604,11 @@ async function runTool(name, args) {
     }
     const services = senders.map(senderServiceForTarget);
 
-    const payload = await manageWorktree(worktreePath, action, services);
+    const payload = await manageWorktree(
+      findWorktree(await fetchWorktrees(), worktreePath),
+      action,
+      services,
+    );
     return asTextToolResult(JSON.stringify(payload, null, 2), {
       dashboardBaseUrl: DASHBOARD_BASE_URL,
       senders,
