@@ -336,6 +336,23 @@ the inherited settings. If the primary `.env` is missing, setup uses only the
 generated settings. Later edits to the primary `.env` do not update existing
 worktrees.
 
+To manage services from a terminal while the dashboard API runs, use the CLI:
+
+```sh
+pnpm run worktree list                  # every worktree with its port and status
+pnpm run worktree status                # services of the worktree you are in
+pnpm run worktree restart               # restart this worktree's backend and wait for it
+pnpm run worktree restart feature -s backend,ui
+```
+
+`start`, `stop`, and `restart` target the backend unless `--service` (`-s`)
+names others (`backend`, `ui`, `wasm`, `artnet-sender`, `sacn-sender`, `all`).
+A worktree can be named by path, name, branch, or dashboard id; without one, the
+CLI uses the worktree containing the current directory. Start and restart wait
+until each service is reachable, print the log tail of any service that fails,
+and exit non-zero on failure. `--json` prints the raw result. The CLI reads the
+same dashboard address variables as the MCP server described below.
+
 Agents can also manage their own worktree lifecycle through MCP (for example, from Codex/Claude) by running:
 
 ```sh
