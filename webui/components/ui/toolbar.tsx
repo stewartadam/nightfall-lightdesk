@@ -22,6 +22,22 @@ const TOOLBAR_ITEM_SELECTOR = [
 /** Marks controls whose `tabindex` the toolbar owns, distinguishing them from author-demoted ones. */
 const ROVING_ATTRIBUTE = "data-toolbar-roving";
 
+/** Input types whose arrow keys move the toolbar rather than edit a value. */
+const BUTTON_LIKE_INPUT_TYPES = new Set([
+  "button",
+  "checkbox",
+  "image",
+  "reset",
+  "submit",
+]);
+
+/** Returns whether a control uses arrow keys itself (text editing, choices, ranges). */
+function claimsArrowKeys(element: HTMLElement): boolean {
+  if (element instanceof HTMLInputElement)
+    return !BUTTON_LIKE_INPUT_TYPES.has(element.type);
+  return isInputField(element);
+}
+
 interface ToolbarProps
   extends Omit<
     JSX.HTMLAttributes<HTMLDivElement>,
@@ -49,7 +65,10 @@ export function Toolbar(props: ToolbarProps) {
   let active: HTMLElement | undefined;
   let activeIndex = 0;
 
-  /** Lists the toolbar's own enabled controls in DOM order. */
+  /** Whether keyboard focus was last inside the toolbar, rather than moved elsewhere. */
+  let holdsFocus = false;
+
+  /** Lists the toolbar's own enabled, rendered controls in DOM order. */
   const items = (): HTMLElement[] =>
     Array.from(
       root.querySelectorAll<HTMLElement>(TOOLBAR_ITEM_SELECTOR),
@@ -58,6 +77,8 @@ export function Toolbar(props: ToolbarProps) {
         element.closest('[role="toolbar"]') === root &&
         !element.matches(":disabled") &&
         element.closest("[inert]") === null &&
+        (element.checkVisibility?.({ visibilityProperty: true }) ??
+          element.getClientRects().length > 0) &&
         (element.getAttribute("tabindex") !== "-1" ||
           element.hasAttribute(ROVING_ATTRIBUTE)),
     );
@@ -73,25 +94,59 @@ export function Toolbar(props: ToolbarProps) {
   };
 
   /**
+   * Picks the control that inherits the Tab stop from a disabled or removed
+   * one: the next control after it in the document, else the last control.
+   */
+  const successor = (previous: HTMLElement, all: HTMLElement[]) => {
+    if (!previous.isConnected)
+      return all[Math.min(activeIndex, all.length - 1)];
+    return (
+      all.find(
+        (item) =>
+          previous.compareDocumentPosition(item) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ) ?? all[all.length - 1]
+    );
+  };
+
+  /**
    * Keeps exactly one tabbable control as controls mount, unmount, or toggle
-   * disabled. A vanished active control hands its Tab stop to whichever
-   * control now occupies its position.
+   * disabled. When the focused control is disabled or removed (for example a
+   * Delete button that disables itself), focus follows its Tab stop to the
+   * successor instead of dropping to the page body.
    */
   const sync = () => {
     const all = items();
-    const next =
-      active && all.includes(active)
-        ? active
-        : all[Math.min(activeIndex, all.length - 1)];
+    if (active && all.includes(active)) {
+      setActive(active, all);
+      return;
+    }
+    const next = active ? successor(active, all) : all[0];
+    // Browsers blur a disabled control lazily, so it may still hold focus here.
+    const focused = root.ownerDocument.activeElement;
+    const focusLost =
+      holdsFocus && (focused === active || focused === root.ownerDocument.body);
     setActive(next, all);
+    if (focusLost) next?.focus();
   };
 
   /** Remembers the control that received focus so Tab returns to it. */
   const handleFocusIn = (event: FocusEvent) => {
+    holdsFocus = true;
     const all = items();
     const target = event.target;
     if (target instanceof HTMLElement && all.includes(target))
       setActive(target, all);
+  };
+
+  /**
+   * Notes focus leaving for another element. A blur with no destination is
+   * what a disabled control produces, so it keeps the toolbar's claim.
+   */
+  const handleFocusOut = (event: FocusEvent) => {
+    const destination = event.relatedTarget;
+    if (destination instanceof Node && !root.contains(destination))
+      holdsFocus = false;
   };
 
   /**
@@ -103,7 +158,7 @@ export function Toolbar(props: ToolbarProps) {
     if (event.defaultPrevented || event.altKey || event.ctrlKey) return;
     if (event.metaKey || event.shiftKey) return;
     const target = event.target;
-    if (!(target instanceof HTMLElement) || isInputField(target)) return;
+    if (!(target instanceof HTMLElement) || claimsArrowKeys(target)) return;
     const all = items();
     const index = all.indexOf(target);
     if (index < 0) return;
@@ -156,6 +211,7 @@ export function Toolbar(props: ToolbarProps) {
       aria-orientation={local.orientation ?? "horizontal"}
       data-component="Toolbar"
       onFocusIn={handleFocusIn}
+      onFocusOut={handleFocusOut}
       onKeyDown={handleKeyDown}
     />
   );

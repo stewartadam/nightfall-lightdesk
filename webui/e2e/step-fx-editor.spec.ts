@@ -3092,11 +3092,37 @@ test("Step FX toolbars rove keyboard focus between their controls", async ({
   await page.screenshot({
     path: testInfo.outputPath("step-fx-step-bar-roving-focus.png"),
   });
+  // Past the last step the arrow wraps focus; the next arrow continues from
+  // the focused step rather than the stale selection.
+  await page.keyboard.press("ArrowRight");
+  await expect(firstStep).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(secondStep).toBeFocused();
+  await expect(
+    editor.getByRole("checkbox", { name: "Select step 2", exact: true }),
+  ).toBeChecked();
 
   await expect(moveUp).toBeEnabled();
   await addStep.focus();
   await page.keyboard.press("ArrowRight");
   await expect(moveUp).toBeFocused();
+
+  // Deleting disables the focused button; focus moves on instead of dropping.
+  const deleteSteps = actionToolbar.getByRole("button", {
+    name: "Delete selected steps",
+  });
+  await page.keyboard.press("End");
+  for (let step = 0; step < 10; step += 1) {
+    if (await deleteSteps.evaluate((el) => el === document.activeElement))
+      break;
+    await page.keyboard.press("ArrowLeft");
+  }
+  await expect(deleteSteps).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(deleteSteps).toBeDisabled();
+  await expect(
+    actionToolbar.getByRole("button", { name: "Toggle selection mode" }),
+  ).toBeFocused();
 
   await editor.getByRole("button", { name: "Stop preview" }).click();
 });

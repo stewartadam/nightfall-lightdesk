@@ -970,7 +970,15 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     const selectedIndexes = track.steps
       .map((step, index) => (selectedStepUids().has(step.uid) ? index : -1))
       .filter((index) => index >= 0);
-    const anchor = selectedIndexes[selectedIndexes.length - 1] ?? 0;
+    const focusedSelector =
+      event.target instanceof HTMLElement
+        ? event.target.closest<HTMLElement>("[data-step-fx-step-selector]")
+        : null;
+    const focusedIndex = Number(focusedSelector?.dataset.stepIndex);
+    // Arrows continue from the focused step so roving focus and selection agree.
+    const anchor = Number.isInteger(focusedIndex)
+      ? focusedIndex
+      : (selectedIndexes[selectedIndexes.length - 1] ?? 0);
     const target = Math.max(
       0,
       Math.min(
@@ -980,7 +988,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     );
     // At either end, leave the arrow to the Step bar toolbar so focus can
     // reach the paging buttons.
-    if (target === anchor && selectedIndexes.length > 0 && !event.shiftKey)
+    if (
+      target === anchor &&
+      selectedStepUids().has(track.steps[anchor].uid) &&
+      !event.shiftKey
+    )
       return;
     event.preventDefault();
     if (!event.shiftKey) {
