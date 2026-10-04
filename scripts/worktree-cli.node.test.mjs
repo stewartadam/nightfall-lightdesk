@@ -53,6 +53,7 @@ test("services accept repeats, commas, and all", () => {
 /** Verifies bad commands, services, and stray arguments are rejected. */
 test("invalid arguments are rejected", () => {
   assert.throws(() => parseCliArgs(["reboot"]), /Unknown command/);
+  assert.throws(() => parseCliArgs(["toString"]), /Unknown command/);
   assert.throws(() => parseCliArgs(["start", "-s", "db"]), /Unknown service/);
   assert.throws(() => parseCliArgs(["start", "-s", ","]), /at least one/);
   assert.throws(() => parseCliArgs(["list", "extra"]), /Unexpected argument/);

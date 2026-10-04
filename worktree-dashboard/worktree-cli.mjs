@@ -62,7 +62,11 @@ export function parseCliArgs(argv) {
   if (values.help || !command) {
     return { command: "help" };
   }
-  if (command !== "list" && command !== "status" && !COMMAND_ACTIONS[command]) {
+  if (
+    command !== "list" &&
+    command !== "status" &&
+    !Object.hasOwn(COMMAND_ACTIONS, command)
+  ) {
     throw new Error(`Unknown command "${command}"\n\n${USAGE}`);
   }
   if (extra.length > 0 || (command === "list" && selector)) {
