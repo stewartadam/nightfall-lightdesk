@@ -55,7 +55,7 @@ test("header command input clears once a valid command is submitted", async ({
 /**
  * Verifies a showfile save submitted behind a running command waits for it, so
  * the save captures everything the operator entered before it, and that the
- * input shows the running and queued commands until they settle.
+ * input's queue indicator opens the Console listing the queued command.
  */
 test("header command input sends save after earlier commands settle", async ({
   page,
@@ -70,39 +70,44 @@ test("header command input sends save after earlier commands settle", async ({
     exact: true,
   });
 
-  await input.fill("sleep 4s");
+  await input.fill("sleep 6s");
   await input.press("Enter");
-  await expect.poll(() => scrollbackStatus(page, "sleep 4s")).toBe("pending");
+  await expect.poll(() => scrollbackStatus(page, "sleep 6s")).toBe("pending");
   await input.fill("save");
   await input.press("Enter");
   await expect(input).toHaveValue("");
 
   expect(await scrollbackStatus(page, "save")).toBeUndefined();
-  const queueStatus = page
-    .locator(".nf-header-command-group")
-    .getByRole("status", { name: "1 command running, 1 queued" });
+  const headerGroup = page.locator(".nf-header-command-group");
+  const queueStatus = headerGroup.getByRole("button", {
+    name: "1 command running, 1 queued. Show in Console",
+  });
   await expect(queueStatus).toBeVisible();
-  await expect(input).toHaveAttribute(
-    "placeholder",
-    "Running sleep 4s… (+1 queued)",
-  );
-  await page
-    .locator(".nf-header-command-group")
-    .screenshot({ path: testInfo.outputPath("queue-empty-input.png") });
+  await expect(input).toHaveAttribute("placeholder", /to enter command/);
+  await headerGroup.screenshot({
+    path: testInfo.outputPath("queue-empty-input.png"),
+  });
   await input.fill("fixture 1");
   await expect(queueStatus).toBeVisible();
-  await page
-    .locator(".nf-header-command-group")
-    .screenshot({ path: testInfo.outputPath("queue-with-input.png") });
-  await queueStatus.hover();
-  await expect(page.getByText("Queued: save")).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("queue-tooltip.png"),
-    clip: { x: 0, y: 0, width: 640, height: 200 },
+  await headerGroup.screenshot({
+    path: testInfo.outputPath("queue-with-input.png"),
   });
   await input.fill("");
+
+  await queueStatus.click();
+  const queuedRow = page.locator("[data-command-queued]");
+  await expect(queuedRow).toBeVisible();
+  await expect(queuedRow).toContainText("save");
   await expect
-    .poll(() => scrollbackStatus(page, "sleep 4s"), { timeout: 10_000 })
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.dockApi.get()?.activePanel?.id,
+      ),
+    )
+    .toBe("panel-CommandLine");
+  await page.screenshot({ path: testInfo.outputPath("queue-console.png") });
+  await expect
+    .poll(() => scrollbackStatus(page, "sleep 6s"), { timeout: 10_000 })
     .toBe("success");
   await expect
     .poll(() => scrollbackStatus(page, "save"), { timeout: 10_000 })

@@ -15,18 +15,20 @@ import {
 } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
+import { openOrFocusPanelDefinition } from "../../../lib/panel-open-command";
 import {
   newShowfile,
   promptForNewShowfile,
   showfileSaveCommandForInput,
 } from "../../../lib/showfile-actions";
-import { pushToast } from "../../../state/appStores";
+import { dockApi, pushToast } from "../../../state/appStores";
 import type * as types from "../../../types";
 import {
   isEditableKeyboardTarget,
   isHistorySearchShortcut,
   isNewShowPromptCommand,
 } from "../model/keyboard";
+import commandLinePanelDefinition from "../panels/command-line.definition";
 import { commandLineHistory, setCommandHistory } from "../state/history";
 import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
@@ -104,6 +106,7 @@ export function createCommandLineController(
     variant: options.variant,
     setInput,
     getInputElement,
+    pendingCount: () => pendingSubmissions().length,
     onHistoryValue: (value) => {
       analysis.setAutocompleteArmed(false);
       analysis.clearValidation("idle");
@@ -126,6 +129,11 @@ export function createCommandLineController(
   const clearProgrammer = () => {
     const command: types.ProgrammerCommand = { type: "ClearProgrammer" };
     engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+  };
+
+  /** Opens or focuses the Console panel, whose scrollback lists running and queued commands. */
+  const openConsole = () => {
+    openOrFocusPanelDefinition(dockApi.get(), commandLinePanelDefinition);
   };
 
   /** Restores command input and transient controller state after submission. */
@@ -302,6 +310,7 @@ export function createCommandLineController(
     onInputChange,
     clearProgrammer,
     pendingSubmissions,
+    openConsole,
     analysis,
     history,
   };

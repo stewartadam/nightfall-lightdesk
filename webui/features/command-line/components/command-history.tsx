@@ -12,10 +12,13 @@ import { type Accessor, For, Show } from "solid-js";
 import { Input, InputGroup } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import type { ConsoleScrollbackEntry } from "../../../lib/console-scrollback";
+import type { PendingCommandSubmission } from "../controllers/command-line-controller";
 
 interface CommandHistoryProps {
   entries: Accessor<ConsoleScrollbackEntry[]>;
   totalEntries: Accessor<number>;
+  /** Accepted submissions waiting behind the running one, oldest first. */
+  queued: Accessor<readonly PendingCommandSubmission[]>;
   normalizedSearch: Accessor<string>;
   searchOpen: Accessor<boolean>;
   search: Accessor<string>;
@@ -161,6 +164,27 @@ export const CommandHistory = (props: CommandHistoryProps) => (
             </For>
           </div>
         </Show>
+      </Show>
+      <Show when={props.queued().length > 0}>
+        <div class="mt-1 space-y-1">
+          <For each={props.queued()}>
+            {(submission) => (
+              <div
+                class="rounded border border-dashed border-sky-800 bg-neutral-900/30 px-2 py-1"
+                data-command-queued
+              >
+                <div class="flex items-start gap-2">
+                  <span class="shrink-0 rounded border border-sky-700 px-1 py-0 text-[10px] uppercase tracking-wide text-sky-300">
+                    Queued
+                  </span>
+                  <span class="break-all font-mono text-neutral-300">
+                    {submission.command}
+                  </span>
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
       </Show>
     </div>
   </>

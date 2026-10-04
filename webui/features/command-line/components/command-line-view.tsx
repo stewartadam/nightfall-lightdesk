@@ -39,17 +39,6 @@ export function CommandLineView(props: CommandLineViewProps) {
         ? "76px"
         : "48px"
       : "32px";
-  /** Names the running command in the empty input so a cleared field is not mistaken for idle. */
-  const placeholder = () => {
-    const [running, ...queued] = controller.pendingSubmissions();
-    if (running) {
-      const suffix = queued.length > 0 ? ` (+${queued.length} queued)` : "";
-      return `Running ${running.command}…${suffix}`;
-    }
-    return controller.variant === "nav"
-      ? `${COMMAND_MODIFIER_LABEL}+L to enter command`
-      : "Enter command...";
-  };
   const input = (
     <div class="relative min-w-0 flex-1">
       <Input
@@ -67,7 +56,11 @@ export function CommandLineView(props: CommandLineViewProps) {
             ? "Panel command input"
             : "Command input"
         }
-        placeholder={placeholder()}
+        placeholder={
+          controller.variant === "nav"
+            ? `${COMMAND_MODIFIER_LABEL}+L to enter command`
+            : "Enter command..."
+        }
         value={controller.input()}
         onInput={(event) => controller.onInputChange(event.currentTarget)}
         onClick={(event) => analysis.onCursorChange(event.currentTarget)}
@@ -104,6 +97,7 @@ export function CommandLineView(props: CommandLineViewProps) {
         variant={controller.variant}
         pending={controller.pendingSubmissions}
         besideValidation={hasInput}
+        onReveal={controller.openConsole}
       />
       <CommandValidationStatus
         variant={controller.variant}
@@ -125,6 +119,7 @@ export function CommandLineView(props: CommandLineViewProps) {
         <CommandHistory
           entries={history.visibleConsoleEntries}
           totalEntries={() => history.consoleEntries().length}
+          queued={() => controller.pendingSubmissions().slice(1)}
           normalizedSearch={history.normalizedHistorySearch}
           searchOpen={history.historySearchOpen}
           search={history.historySearch}
