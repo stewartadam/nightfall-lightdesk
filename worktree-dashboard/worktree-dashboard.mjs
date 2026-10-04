@@ -526,7 +526,7 @@ function runGit(args) {
       reject(error);
     });
 
-    child.on("exit", (code) => {
+    child.on("close", (code) => {
       if (code !== 0) {
         reject(new Error(`git ${args.join(" ")} failed: ${stderr.trim()}`));
         return;
