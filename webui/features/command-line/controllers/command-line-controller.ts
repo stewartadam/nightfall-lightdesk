@@ -8,25 +8,35 @@
 
 import { createSignal } from "solid-js";
 import { CommandClient } from "../../../lib/command-client";
-import { CommandSequenceRunner } from "../../../lib/command-sequence";
+import {
+  type CommandSequenceProgress,
+  CommandSequenceRunner,
+  splitCommandSequence,
+} from "../../../lib/command-sequence";
 import {
   EngineRuntimeCommandDisconnectedError,
   engineRuntime,
 } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
+import { openOrFocusPanelDefinition } from "../../../lib/panel-open-command";
 import {
   newShowfile,
   promptForNewShowfile,
   showfileSaveCommandForInput,
 } from "../../../lib/showfile-actions";
-import { pushToast } from "../../../state/appStores";
+import { dockApi, pushToast } from "../../../state/appStores";
 import type * as types from "../../../types";
+import {
+  type PendingCommandSubmission,
+  remainingStatementCount,
+} from "../model/command-queue";
 import {
   isEditableKeyboardTarget,
   isHistorySearchShortcut,
   isNewShowPromptCommand,
 } from "../model/keyboard";
+import commandLinePanelDefinition from "../panels/command-line.definition";
 import { commandLineHistory, setCommandHistory } from "../state/history";
 import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
@@ -37,17 +47,70 @@ const commandSequenceRunner = new CommandSequenceRunner(
 );
 
 /** Tail of the serial chain that keeps command-line submissions in submission order. */
-let commandSequenceTail: Promise<void> = Promise.resolve();
+let commandSubmissionTail: Promise<void> = Promise.resolve();
+let nextSubmissionId = 0;
+const [pendingSubmissions, setPendingSubmissions] = createSignal<
+  readonly PendingCommandSubmission[]
+>([]);
+
+/** Applies an update to one pending submission, ignoring submissions that already settled. */
+function updatePendingSubmission(
+  id: number,
+  update: (submission: PendingCommandSubmission) => PendingCommandSubmission,
+) {
+  setPendingSubmissions((pending) =>
+    pending.map((submission) =>
+      submission.id === id ? update(submission) : submission,
+    ),
+  );
+}
 
 /**
- * Runs a parsed command sequence after every earlier submission has settled,
+ * Runs one accepted submission after every earlier submission has settled,
  * without blocking the input. Failed command results are toasted by the engine
- * runtime, so only transport failures are reported here.
+ * runtime, so only transport failures are reported here. A submission that
+ * returns a promise settles with it; one that only sends settles once sent.
+ * The submission is listed in `pendingSubmissions` until it settles, with
+ * per-statement progress, so the input can show how many statements are still
+ * running or waiting their turn.
  */
-function queueCommandSequence(input: string) {
-  commandSequenceTail = commandSequenceTail.then(async () => {
+function queueCommandSubmission(
+  input: string,
+  statements: Promise<readonly string[]>,
+  submit: (
+    statements: readonly string[],
+    progress: CommandSequenceProgress,
+  ) => unknown,
+) {
+  const id = nextSubmissionId++;
+  setPendingSubmissions((pending) => [
+    ...pending,
+    { id, command: input, started: 0, settled: 0 },
+  ]);
+  statements.then(
+    (split) =>
+      updatePendingSubmission(id, (submission) => ({
+        ...submission,
+        statements: split,
+      })),
+    // Split failures are reported when the queued submission awaits them.
+    () => undefined,
+  );
+  const progress: CommandSequenceProgress = {
+    onStatementStarted: (index) =>
+      updatePendingSubmission(id, (submission) => ({
+        ...submission,
+        started: index + 1,
+      })),
+    onStatementSettled: (index) =>
+      updatePendingSubmission(id, (submission) => ({
+        ...submission,
+        settled: index + 1,
+      })),
+  };
+  commandSubmissionTail = commandSubmissionTail.then(async () => {
     try {
-      await commandSequenceRunner.run(input);
+      await submit(await statements, progress);
     } catch (error) {
       // Loads and new shows replace the backend world, which ends the session
       // before a result can arrive; the command was delivered, so keep going.
@@ -57,8 +120,12 @@ function queueCommandSequence(input: string) {
       }
       const message =
         error instanceof Error ? error.message : "Command submission failed";
-      log.error("Command sequence transport failed", error);
+      log.error("Command submission transport failed", error);
       pushToast("error", message);
+    } finally {
+      setPendingSubmissions((pending) =>
+        pending.filter((submission) => submission.id !== id),
+      );
     }
   });
 }
@@ -85,6 +152,7 @@ export function createCommandLineController(
     variant: options.variant,
     setInput,
     getInputElement,
+    pendingCount: () => remainingStatementCount(pendingSubmissions()),
     onHistoryValue: (value) => {
       analysis.setAutocompleteArmed(false);
       analysis.clearValidation("idle");
@@ -109,6 +177,11 @@ export function createCommandLineController(
     engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
   };
 
+  /** Opens or focuses the Console panel, whose scrollback lists running and queued commands. */
+  const openConsole = () => {
+    openOrFocusPanelDefinition(dockApi.get(), commandLinePanelDefinition);
+  };
+
   /** Restores command input and transient controller state after submission. */
   const resetSubmittedCommandInput = () => {
     history.setHistoryIndex(-1);
@@ -129,17 +202,36 @@ export function createCommandLineController(
         queueMicrotask(() => inputElement?.focus());
         return;
       }
-      newShowfile(options);
+      queueCommandSubmission(
+        trimmedInput,
+        Promise.resolve([trimmedInput]),
+        (_statements, progress) => {
+          progress.onStatementStarted?.(0);
+          newShowfile(options);
+        },
+      );
     } else {
       const showfileSaveCommand = showfileSaveCommandForInput(trimmedInput);
       if (showfileSaveCommand) {
-        engineRuntime.sendCommand(
-          { module: "DeskCommand", command: showfileSaveCommand },
-          true,
+        queueCommandSubmission(
           trimmedInput,
+          Promise.resolve([trimmedInput]),
+          (_statements, progress) => {
+            progress.onStatementStarted?.(0);
+            engineRuntime.sendCommand(
+              { module: "DeskCommand", command: showfileSaveCommand },
+              true,
+              trimmedInput,
+            );
+          },
         );
       } else {
-        queueCommandSequence(trimmedInput);
+        queueCommandSubmission(
+          trimmedInput,
+          splitCommandSequence(trimmedInput),
+          (statements, progress) =>
+            commandSequenceRunner.runStatements(statements, progress),
+        );
       }
     }
 
@@ -282,6 +374,8 @@ export function createCommandLineController(
     handlePanelKeyDown,
     onInputChange,
     clearProgrammer,
+    pendingSubmissions,
+    openConsole,
     analysis,
     history,
   };

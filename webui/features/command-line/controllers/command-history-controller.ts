@@ -7,7 +7,13 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, createSignal, type Setter } from "solid-js";
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createSignal,
+  type Setter,
+} from "solid-js";
 import { consoleScrollback } from "../../../state/appStores";
 import { isHistorySearchShortcut } from "../model/keyboard";
 import { commandLineHistory } from "../state/history";
@@ -18,6 +24,8 @@ interface CommandHistoryControllerOptions {
   onHistoryValue: (value: string) => void;
   onHistoryCleared: () => void;
   getInputElement: () => HTMLInputElement | undefined;
+  /** Number of accepted submissions not yet settled, listed below the scrollback. */
+  pendingCount: Accessor<number>;
 }
 
 /** Owns persisted command navigation and searchable console history state. */
@@ -120,11 +128,13 @@ export function createCommandHistoryController(
     historySearchElement = element;
   };
 
-  /** Keeps a panel's console scrollback pinned to the newest entry. */
+  /** Keeps a panel's console scrollback pinned to the newest entry or queued command. */
   createEffect(() => {
     if (options.variant !== "panel") return;
     const entries = consoleEntries();
-    if (!scrollbackElement || entries.length === 0) return;
+    const pendingCount = options.pendingCount();
+    if (!scrollbackElement || (entries.length === 0 && pendingCount === 0))
+      return;
     queueMicrotask(() => {
       if (scrollbackElement)
         scrollbackElement.scrollTop = scrollbackElement.scrollHeight;
