@@ -55,28 +55,6 @@ export default function DeleteConfirmModal(props: DeleteConfirmModalProps) {
     });
   });
 
-  /** Keeps keys other than the stack-routed Enter and Escape away from background shortcuts. */
-  createEffect(() => {
-    if (!props.isOpen) {
-      return;
-    }
-
-    const blockKeyboard = (event: KeyboardEvent) => {
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    };
-
-    document.addEventListener("keydown", blockKeyboard, true);
-    document.addEventListener("keyup", blockKeyboard, true);
-    document.addEventListener("keypress", blockKeyboard, true);
-
-    onCleanup(() => {
-      document.removeEventListener("keydown", blockKeyboard, true);
-      document.removeEventListener("keyup", blockKeyboard, true);
-      document.removeEventListener("keypress", blockKeyboard, true);
-    });
-  });
-
   onCleanup(() => {
     if (enterAnimationFrame !== null) {
       cancelAnimationFrame(enterAnimationFrame);
@@ -91,6 +69,7 @@ export default function DeleteConfirmModal(props: DeleteConfirmModalProps) {
       onDismiss={props.onCancel}
       class={`max-w-lg transition-opacity duration-150 ${isEntered() ? "opacity-100" : "opacity-0"}`}
       backdropProps={backdropAttributes}
+      blockBackgroundKeys
     >
       <form
         onSubmit={(event) => {

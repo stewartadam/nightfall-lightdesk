@@ -52,6 +52,8 @@ export interface DialogProps {
   busy?: boolean;
   /** Accessible name for the header close button. */
   closeLabel?: string;
+  /** Holds back every key aimed outside the dialog while it is visible, for blocking confirmations. */
+  blockBackgroundKeys?: boolean;
   usePortal?: boolean;
   /** Width and height constraints for the surface. */
   class?: string;
@@ -81,6 +83,7 @@ export function Dialog(props: DialogProps) {
       usePortal={props.usePortal}
       onEscape={dismiss}
       closeOnEscape={canDismiss()}
+      blockBackgroundKeys={props.blockBackgroundKeys}
       onEnter={
         props.onSubmit
           ? () => {

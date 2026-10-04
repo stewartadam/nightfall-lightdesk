@@ -31,6 +31,8 @@ interface ModalProps {
   closeOnEscape?: boolean;
   /** Default action for Enter pressed on content that has no Enter behavior of its own. */
   onEnter?: () => void;
+  /** Holds back every key aimed outside the dialog while it is visible, for blocking confirmations. */
+  blockBackgroundKeys?: boolean;
   usePortal?: boolean;
 }
 
@@ -55,6 +57,7 @@ export default function Modal(props: ModalProps) {
         escapeAction: () =>
           props.closeOnEscape === false ? undefined : props.onEscape,
         enterAction: () => props.onEnter,
+        blocksBackgroundKeys: () => props.blockBackgroundKeys === true,
       }),
     );
   });

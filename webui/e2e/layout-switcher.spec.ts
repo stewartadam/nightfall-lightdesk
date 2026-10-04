@@ -1176,15 +1176,21 @@ test("paints content transitions during repeated slot clicks", async ({
   });
 });
 
-/** A retained panel dialog cannot cover another layout, lock scrolling, or consume its Escape key. */
+/** Layout recall waits for open dialogs, and a retained panel dialog switched away programmatically cannot cover another layout, lock scrolling, or consume its Escape key. */
 test("suspends workspace dialogs while another layout is selected", async ({
   page,
   backendSlot,
 }, testInfo) => {
   await setupSlots(page, backendSlot.backendPort);
-  await page
-    .getByRole("button", { name: "Layout 1: Programming", exact: true })
-    .click();
+  const programming = page.getByRole("button", {
+    name: "Layout 1: Programming",
+    exact: true,
+  });
+  const playback = page.getByRole("button", {
+    name: "Layout 2: Playback",
+    exact: true,
+  });
+  await programming.click();
   await page.getByRole("tab", { name: "FX List", exact: true }).click();
   await page.getByRole("button", { name: "Add effect", exact: true }).click();
   await page.getByRole("button", { name: "Module FX", exact: true }).click();
@@ -1197,9 +1203,22 @@ test("suspends workspace dialogs while another layout is selected", async ({
     .getByRole("heading", { name: "Add Module FX", exact: true })
     .click();
   await page.keyboard.press("F2");
-  await expect(
-    page.getByRole("button", { name: "Layout 2: Playback", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(programming).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog).toBeVisible();
+
+  await page.evaluate(async () => {
+    const { activateStoredLayout } = await import("/lib/layout-activation.ts");
+    const { layoutStorageStore } = await import("/lib/layoutStorage.ts");
+    const target = layoutStorageStore
+      .get()
+      .layouts.find((layout) => layout.name === "Playback");
+    if (!target) throw new Error("Playback layout missing");
+    await activateStoredLayout(
+      (window as any).appStores.dockApi.get(),
+      target.id,
+    );
+  });
+  await expect(playback).toHaveAttribute("aria-pressed", "true");
   await expect(dialog).not.toBeVisible();
   expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
     "hidden",
@@ -1212,6 +1231,37 @@ test("suspends workspace dialogs while another layout is selected", async ({
   });
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
+});
+
+/** A visible delete confirmation holds back global shortcuts and layout recall until it closes. */
+test("delete confirmation blocks background shortcuts only while open", async ({
+  page,
+  backendSlot,
+}) => {
+  await setupSlots(page, backendSlot.backendPort);
+  const programming = page.getByRole("button", {
+    name: "Layout 1: Programming",
+    exact: true,
+  });
+  const palette = page.locator('[data-dialog-kind="command-palette"]');
+  await slotAction(page, 2, "Delete");
+  const confirm = page.locator('[data-modal-kind="delete-confirm"]');
+  await expect(confirm).toBeVisible();
+
+  await page.keyboard.press("F2");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
+  await expect(palette).not.toBeVisible();
+  await expect(programming).toHaveAttribute("aria-pressed", "true");
+
+  await page.keyboard.press("Escape");
+  await expect(confirm).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Layout 2: Playback", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+P");
+  await expect(palette).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(palette).not.toBeVisible();
 });
 
 /** Shared Properties registration follows workspace ownership, reactive labels, and instance cleanup. */

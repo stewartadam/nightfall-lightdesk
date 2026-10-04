@@ -14,6 +14,8 @@ export interface DialogStackEntry {
   escapeAction: () => (() => void) | undefined;
   /** Runs the dialog's default action when Enter is not claimed by a focused control. */
   enterAction: () => (() => void) | undefined;
+  /** Keeps every key aimed outside the frontmost dialog away from background shortcuts. */
+  blocksBackgroundKeys: () => boolean;
 }
 
 /**
@@ -60,6 +62,16 @@ export function frontmostDialog(): DialogStackEntry | undefined {
   return openDialogs[openDialogs.length - 1];
 }
 
+/** Reports whether any dialog is visible, so user-initiated workspace changes can wait. */
+export function hasOpenDialog(): boolean {
+  return openDialogs.length > 0;
+}
+
+/** Reports whether any visible dialog asks to hold back background keys and shortcuts. */
+export function dialogBlocksBackgroundKeys(): boolean {
+  return openDialogs.some((entry) => entry.blocksBackgroundKeys());
+}
+
 /** Reports whether an event target sits inside any open dialog. */
 export function isInsideOpenDialog(target: EventTarget | null): boolean {
   if (!(target instanceof Node)) return false;
@@ -82,16 +94,26 @@ function claimKey(event: KeyboardEvent): void {
  * Gives Enter and Escape to the frontmost dialog. Keys aimed outside it (a
  * background dialog, a panel, or nothing focused) never reach other listeners.
  * Inside it, focused controls keep their own Enter handling; the default action
- * runs after dispatch only when no handler prevented the key's default.
+ * runs after dispatch only when no handler prevented the key's default. Other
+ * keys aimed outside it are held back too while any open dialog asks for it.
  */
 function routeDialogKey(event: KeyboardEvent): void {
-  if (event.key !== "Enter" && event.key !== "Escape") return;
   const dialog = frontmostDialog();
   if (!dialog) return;
 
   const root = dialog.element();
   const target = event.target instanceof Element ? event.target : null;
   const targetInside = target !== null && root?.contains(target) === true;
+
+  if (
+    event.type !== "keydown" ||
+    (event.key !== "Enter" && event.key !== "Escape")
+  ) {
+    if (!targetInside && dialogBlocksBackgroundKeys()) {
+      event.stopImmediatePropagation();
+    }
+    return;
+  }
 
   if (event.key === "Escape") {
     const dismiss = dialog.escapeAction();
@@ -134,19 +156,22 @@ const LISTENER_KEY = Symbol.for("nightfall.dialogStack.keydown");
 type ListenerHost = typeof globalThis & {
   [LISTENER_KEY]?: (event: KeyboardEvent) => void;
 };
+const ROUTED_KEY_EVENTS = ["keydown", "keyup", "keypress"] as const;
 
 /**
  * Installs the router once per page at module load, ahead of the shortcut and
  * panel listeners that register later on window, so the frontmost dialog sees
- * Enter and Escape first. A hot reload swaps the previous listener out.
+ * keys first. A hot reload swaps the previous listener out.
  */
 function installDialogKeyRouter(): void {
   if (typeof window === "undefined") return;
   const host = globalThis as ListenerHost;
   const previous = host[LISTENER_KEY];
-  if (previous) window.removeEventListener("keydown", previous, true);
+  for (const type of ROUTED_KEY_EVENTS) {
+    if (previous) window.removeEventListener(type, previous, true);
+    window.addEventListener(type, routeDialogKey, true);
+  }
   host[LISTENER_KEY] = routeDialogKey;
-  window.addEventListener("keydown", routeDialogKey, true);
 }
 
 installDialogKeyRouter();
