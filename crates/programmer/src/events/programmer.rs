@@ -21,7 +21,7 @@ use super::*;
 
 /// Cohesive runtime state used while mutating programmer selection and instructions.
 #[derive(SystemParam)]
-pub struct ProgrammerMutationState<'w, 's> {
+pub struct ProgrammerMutationState<'w> {
     /// Publishes terminal command outcomes and non-terminal notices.
     responder: CommandResponder<'w>,
     /// Active programmer selection, instructions, and recalled-cue context.
@@ -39,7 +39,7 @@ pub struct ProgrammerMutationState<'w, 's> {
     /// Retains high-level commands until their planned actions reach dispatch.
     pending_plans: ResMut<'w, PendingUserCommandPlans>,
     /// Joins delegated cue and playback operations for each programmer action.
-    pending_action_workflows: Local<'s, PendingProgrammerActionWorkflows>,
+    pending_action_workflows: ResMut<'w, PendingProgrammerActionWorkflows>,
 }
 
 /// Handles events related to the programmer and its instructions
@@ -51,7 +51,6 @@ pub fn handle_programmer_events(
         MessageWriter<EngineActionEnvelope<CueLifecycleAction>>,
         MessageWriter<EngineActionEnvelope<PlaybackAction>>,
         MessageWriter<EngineActionEnvelope<ProgrammerAction>>,
-        MessageReader<OperationResult<(), CommandError>>,
     )>,
     state: ProgrammerMutationState,
 ) {
@@ -269,29 +268,6 @@ pub fn handle_programmer_events(
             write_command_success(responder, command_id.into());
         } else {
             workflows.start(action_id, command_id, delegated_operations);
-        }
-    }
-
-    let release_results: Vec<_> = command_events
-        .p4()
-        .read()
-        .filter_map(|result| {
-            pending_action_workflows.resolve(result.operation_id, result.result.clone())
-        })
-        .collect();
-
-    for (command_id, result) in release_results {
-        match result {
-            Ok(()) => write_command_success(&mut responder, command_id.into()),
-            Err(error) => {
-                if let Err(completion_error) = responder.fail(command_id, error) {
-                    tracing::error!(
-                        %command_id,
-                        %completion_error,
-                        "programmer_parameter_release_failure_failed"
-                    );
-                }
-            }
         }
     }
 
@@ -745,6 +721,36 @@ pub fn handle_programmer_events(
                 CommandId::from(correlation_id),
                 delegated_operations,
             );
+        }
+    }
+}
+
+/// Reports programmer actions whose delegated cue and playback operations have all finished.
+///
+/// Scheduled after every `EventHandling` handler, so operation results written by delegated
+/// handlers this frame complete their programmer command in the same frame.
+pub fn finish_programmer_action_workflows(
+    mut results: MessageReader<OperationResult<(), CommandError>>,
+    mut workflows: ResMut<PendingProgrammerActionWorkflows>,
+    mut responder: CommandResponder,
+) {
+    let finished: Vec<_> = results
+        .read()
+        .filter_map(|result| workflows.resolve(result.operation_id, result.result.clone()))
+        .collect();
+
+    for (command_id, result) in finished {
+        match result {
+            Ok(()) => write_command_success(&mut responder, command_id.into()),
+            Err(error) => {
+                if let Err(completion_error) = responder.fail(command_id, error) {
+                    tracing::error!(
+                        %command_id,
+                        %completion_error,
+                        "programmer_parameter_release_failure_failed"
+                    );
+                }
+            }
         }
     }
 }
