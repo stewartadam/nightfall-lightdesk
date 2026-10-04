@@ -176,29 +176,15 @@ worktrees are refused. For branches without merged PRs or manual cleanup, use
 `wt remove` directly. Run `wt done -- --help` for supported options.
 
 Claude Code creates its own worktrees for `claude --worktree`, desktop app and
-Remote Control sessions, and isolated subagents. Without hooks it skips the
-Worktrunk setup above, so those worktrees have no `.env`, and they are left
-behind when a session ends with commits. To route them through Worktrunk, add
-these hooks to your `.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "WorktreeCreate": [
-      { "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/claude-worktree-hook.mjs\"" }] }
-    ],
-    "WorktreeRemove": [
-      { "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/claude-worktree-hook.mjs\"" }] }
-    ]
-  }
-}
-```
-
-New branches start from `origin/HEAD` at Worktrunk's configured path, with the
-blocking pre-start hooks (`.env`, `pnpm install`, typeshare) finished before the
-session starts. At session end, `wt remove` stops the worktree's services and
-removes it. Dirty worktrees are kept, and branches with unmerged commits survive
-the worktree.
+Remote Control sessions, and isolated subagents. The `WorktreeCreate` and
+`WorktreeRemove` hooks in `.claude/settings.json` route them through
+`scripts/claude-worktree-hook.mjs`, so they get the same Worktrunk setup as
+`wt switch --create`. New branches start from `origin/HEAD` at Worktrunk's
+configured path, with the blocking pre-start hooks (`.env`, `pnpm install`,
+typeshare) finished before the session starts. At session end, `wt remove`
+stops the worktree's services and removes it. Dirty worktrees are kept, and
+branches with unmerged commits survive the worktree. Keep personal Claude Code
+settings in `.claude/settings.local.json`.
 
 Sample MP3s are tracked with Git LFS and packaged as external resources. Run
 `git lfs pull` before packaging or creating a sample show in development. Rust
