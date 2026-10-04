@@ -17,11 +17,24 @@ export type GuideContent =
       type: "prerequisite";
       panels?: PanelComponentName[];
       sampleTimeline?: boolean;
+      /**
+       * Opens a panel as a tab beside another panel when that panel is open, instead of in the
+       * focused group. `sampleTimeline` opens beside the Timelines list unless set here.
+       */
+      openBeside?: Partial<
+        Record<PanelComponentName | "sampleTimeline", PanelComponentName>
+      >;
     }
   | { type: "details"; title: string; text: string }
   | { type: "stop-playback" };
 
 export type GuidePrerequisite = Extract<GuideContent, { type: "prerequisite" }>;
+
+/** Tidies up after a step when the user moves on with Continue or Skip, as Close or Escape would. */
+export type GuideAdvanceAction = {
+  type: "close";
+  surface: "settings" | "keyboard-shortcuts";
+};
 
 /**
  * An area the card must leave uncovered in addition to the target: the target's whole panel
@@ -55,6 +68,10 @@ export interface GuideStep {
    * target's panel; without it, the card only prefers to avoid that panel.
    */
   keepVisible?: GuideFocusArea[];
+  /**
+   * Focuses the target once when the step starts. Steps that target the command input focus it
+   * by default, so users can type the suggested command straight away.
+   */
   focusTarget?: boolean;
   /**
    * Runs the step in the layout the user had before the lesson. Saving the show records which
@@ -62,6 +79,8 @@ export interface GuideStep {
    */
   userLayout?: boolean;
   observe?: GuideObservation;
+  /** Runs when the user moves past this step with Continue or Skip. */
+  onAdvance?: GuideAdvanceAction[];
 }
 export interface GuideLesson {
   id: string;
@@ -125,7 +144,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "play-timeline",
         title: "Start the sample show",
         keepVisible: ["panel"],
-        target: '[aria-label="Play timeline"]',
+        // Play relabels itself Pause when pressed; matching both keeps the card anchored meanwhile.
+        target: '[aria-label="Play timeline"], [aria-label="Pause timeline"]',
         observe: {
           type: "timeline-playing",
         },
@@ -303,6 +323,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "accent",
         observe: { type: "accent-settings-closed" },
+        onAdvance: [{ type: "close", surface: "settings" }],
         title: "Choose your accent color",
         target:
           '[aria-label="Settings"] .nf-accent-picker, [aria-label="Settings"]:not(:has(.nf-accent-picker)) [role="tab"][id$="-appearance"]',
@@ -377,6 +398,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "keyboard-shortcuts",
         observe: { type: "shortcuts-closed" },
         title: "Discover keyboard shortcuts",
+        onAdvance: [{ type: "close", surface: "keyboard-shortcuts" }],
         target:
           '[data-dialog-kind="shortcuts"] [aria-label="Keyboard shortcuts"], [data-component="DropdownMenuItem"]:has([data-guide-target="keyboard-shortcuts"]), [aria-label="Menu"]:not([aria-expanded="true"])',
         content: [
@@ -1437,7 +1459,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "play",
         title: "Rehearse the change",
-        target: '[aria-label="Play timeline"]',
+        // Play relabels itself Pause when pressed; matching both keeps the card anchored meanwhile.
+        target: '[aria-label="Play timeline"], [aria-label="Pause timeline"]',
         observe: { type: "timeline-playing" },
         content: [
           {
