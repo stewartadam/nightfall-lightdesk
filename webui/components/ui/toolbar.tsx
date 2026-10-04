@@ -68,7 +68,26 @@ export function Toolbar(props: ToolbarProps) {
   /** Whether keyboard focus was last inside the toolbar, rather than moved elsewhere. */
   let holdsFocus = false;
 
-  /** Lists the toolbar's own enabled, rendered controls in DOM order. */
+  /** Returns whether a control sits in an inert subtree of the toolbar's own content. */
+  const inertWithinToolbar = (element: HTMLElement): boolean => {
+    const inertRoot = element.closest("[inert]");
+    return inertRoot !== null && inertRoot !== root && root.contains(inertRoot);
+  };
+
+  /** Lists the controls arrow keys can reach: enabled and currently rendered. */
+  const reachableItems = (): HTMLElement[] =>
+    items().filter(
+      (element) =>
+        element.checkVisibility?.({ visibilityProperty: true }) ??
+        element.getClientRects().length > 0,
+    );
+
+  /**
+   * Lists the toolbar's own enabled controls in DOM order. Only `inert`
+   * inside the toolbar counts: an inert or hidden ancestor (such as an
+   * inactive workspace) disables the whole toolbar without notifying it, so
+   * the Tab stop assignment must not depend on it.
+   */
   const items = (): HTMLElement[] =>
     Array.from(
       root.querySelectorAll<HTMLElement>(TOOLBAR_ITEM_SELECTOR),
@@ -76,9 +95,7 @@ export function Toolbar(props: ToolbarProps) {
       (element) =>
         element.closest('[role="toolbar"]') === root &&
         !element.matches(":disabled") &&
-        element.closest("[inert]") === null &&
-        (element.checkVisibility?.({ visibilityProperty: true }) ??
-          element.getClientRects().length > 0) &&
+        !inertWithinToolbar(element) &&
         (element.getAttribute("tabindex") !== "-1" ||
           element.hasAttribute(ROVING_ATTRIBUTE)),
     );
@@ -159,7 +176,7 @@ export function Toolbar(props: ToolbarProps) {
     if (event.metaKey || event.shiftKey) return;
     const target = event.target;
     if (!(target instanceof HTMLElement) || claimsArrowKeys(target)) return;
-    const all = items();
+    const all = reachableItems();
     const index = all.indexOf(target);
     if (index < 0) return;
     const vertical = local.orientation === "vertical";

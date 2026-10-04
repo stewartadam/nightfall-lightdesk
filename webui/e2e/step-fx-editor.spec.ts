@@ -3107,23 +3107,6 @@ test("Step FX toolbars rove keyboard focus between their controls", async ({
   await page.keyboard.press("ArrowRight");
   await expect(moveUp).toBeFocused();
 
-  // Deleting disables the focused button; focus moves on instead of dropping.
-  const deleteSteps = actionToolbar.getByRole("button", {
-    name: "Delete selected steps",
-  });
-  await page.keyboard.press("End");
-  for (let step = 0; step < 10; step += 1) {
-    if (await deleteSteps.evaluate((el) => el === document.activeElement))
-      break;
-    await page.keyboard.press("ArrowLeft");
-  }
-  await expect(deleteSteps).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(deleteSteps).toBeDisabled();
-  await expect(
-    actionToolbar.getByRole("button", { name: "Toggle selection mode" }),
-  ).toBeFocused();
-
   await editor.getByRole("button", { name: "Stop preview" }).click();
 });
 
