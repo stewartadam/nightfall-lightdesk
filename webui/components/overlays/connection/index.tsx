@@ -16,6 +16,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { Portal } from "solid-js/web";
 import { matchKeybindingPress, parseKeybinding } from "tinykeys";
 import { getWebSocketUrl } from "../../../lib/api";
 import {
@@ -188,92 +189,94 @@ const ConnectionOverlay = () => {
 
   return (
     <Show when={isOverlayPresented()}>
-      {/* overlay with background blur */}
-      <DialogBackdrop
-        class={`pointer-events-auto ${
-          hasStateChanged()
-            ? "data-[state=show]:animate-in fade-in data-[state=hide]:animate-out fade-out data-[state=hide]:delay-[var(--out-delay)] fill-mode-both"
-            : ""
-        }`}
-        style={{
-          "--tw-duration": `${animationLength}ms`,
-          "--out-delay": `${hideDelay}ms`,
-        }}
-        data-overlay-kind="connection"
-        data-state={isConnected() ? "hide" : "show"}
-        onKeyDown={(e) => {
-          if (shouldBlockDisconnectedOverlayKey(e, hasMatchingAppShortcut))
-            e.preventDefault();
-        }}
-        onKeyUp={(e) => {
-          if (shouldBlockDisconnectedOverlayKey(e, hasMatchingAppShortcut))
-            e.preventDefault();
-        }}
-        onKeyPress={(e) => {
-          if (shouldBlockDisconnectedOverlayKey(e, hasMatchingAppShortcut))
-            e.preventDefault();
-        }}
-        tabIndex={-1}
-      >
-        {/* card */}
-        <DialogSurface
-          class="max-w-md p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-label={isConnected() ? "Connected" : "Connection Lost"}
+      {/* Portaled so dialogs that make the app inert never block it. */}
+      <Portal>
+        <DialogBackdrop
+          class={`pointer-events-auto ${
+            hasStateChanged()
+              ? "data-[state=show]:animate-in fade-in data-[state=hide]:animate-out fade-out data-[state=hide]:delay-[var(--out-delay)] fill-mode-both"
+              : ""
+          }`}
+          style={{
+            "--tw-duration": `${animationLength}ms`,
+            "--out-delay": `${hideDelay}ms`,
+          }}
+          data-overlay-kind="connection"
+          data-state={isConnected() ? "hide" : "show"}
+          onKeyDown={(e) => {
+            if (shouldBlockDisconnectedOverlayKey(e, hasMatchingAppShortcut))
+              e.preventDefault();
+          }}
+          onKeyUp={(e) => {
+            if (shouldBlockDisconnectedOverlayKey(e, hasMatchingAppShortcut))
+              e.preventDefault();
+          }}
+          onKeyPress={(e) => {
+            if (shouldBlockDisconnectedOverlayKey(e, hasMatchingAppShortcut))
+              e.preventDefault();
+          }}
+          tabIndex={-1}
         >
-          {/* card content */}
-          <div class="flex flex-col items-center space-y-4">
-            <Show when={isConnected()}>
-              <div class="text-2xl font-semibold flex items-center">
-                {/* connected icon */}
-                <svg
-                  class="w-8 h-8 mr-2 text-green-300"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
-                Connected
-              </div>
-              <div class="text-gray-100 text-center">
-                Connection to engine restored
-              </div>
-            </Show>
-
-            <Show when={!isConnected()}>
-              <div class="flex items-center gap-2 text-2xl font-semibold">
-                <span>Connection Lost</span>
-                <Tooltip content={expectedBackendTooltip} position="right">
-                  <button
-                    type="button"
-                    class="inline-flex items-center justify-center rounded-full text-gray-300 transition-colors hover:text-white focus:outline-hidden focus:ring-2 focus:ring-gray-400"
-                    aria-label="Show connection address"
+          {/* card */}
+          <DialogSurface
+            class="max-w-md p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isConnected() ? "Connected" : "Connection Lost"}
+          >
+            {/* card content */}
+            <div class="flex flex-col items-center space-y-4">
+              <Show when={isConnected()}>
+                <div class="text-2xl font-semibold flex items-center">
+                  {/* connected icon */}
+                  <svg
+                    class="w-8 h-8 mr-2 text-green-300"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
                   >
-                    <InfoIcon class="size-5" aria-hidden />
-                  </button>
-                </Tooltip>
-              </div>
-              <div class="text-gray-300 text-center">
-                Re-establishing connection to nightfall session.
-              </div>
-              <div
-                class="flex h-10 w-7 items-center justify-between"
-                aria-hidden="true"
-              >
-                <span class="startup-status-dot" />
-                <span class="startup-status-dot" />
-                <span class="startup-status-dot" />
-              </div>
-            </Show>
-          </div>
-        </DialogSurface>
-      </DialogBackdrop>
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  Connected
+                </div>
+                <div class="text-gray-100 text-center">
+                  Connection to engine restored
+                </div>
+              </Show>
+
+              <Show when={!isConnected()}>
+                <div class="flex items-center gap-2 text-2xl font-semibold">
+                  <span>Connection Lost</span>
+                  <Tooltip content={expectedBackendTooltip} position="right">
+                    <button
+                      type="button"
+                      class="inline-flex items-center justify-center rounded-full text-gray-300 transition-colors hover:text-white focus:outline-hidden focus:ring-2 focus:ring-gray-400"
+                      aria-label="Show connection address"
+                    >
+                      <InfoIcon class="size-5" aria-hidden />
+                    </button>
+                  </Tooltip>
+                </div>
+                <div class="text-gray-300 text-center">
+                  Re-establishing connection to nightfall session.
+                </div>
+                <div
+                  class="flex h-10 w-7 items-center justify-between"
+                  aria-hidden="true"
+                >
+                  <span class="startup-status-dot" />
+                  <span class="startup-status-dot" />
+                  <span class="startup-status-dot" />
+                </div>
+              </Show>
+            </div>
+          </DialogSurface>
+        </DialogBackdrop>
+      </Portal>
     </Show>
   );
 };

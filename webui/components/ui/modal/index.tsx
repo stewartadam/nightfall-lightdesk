@@ -10,6 +10,7 @@ import {
   type Accessor,
   createContext,
   createEffect,
+  createRenderEffect,
   type JSX,
   onCleanup,
   Show,
@@ -17,6 +18,7 @@ import {
 } from "solid-js";
 import { Portal } from "solid-js/web";
 import { registerDialog } from "./dialog-stack";
+import { focusDialogOnOpen } from "./focus-scope";
 import { createModalScrollLock } from "./scroll-lock";
 
 /** Allows an owning UI region to suspend its dialogs without clearing their open state. */
@@ -47,10 +49,46 @@ export default function Modal(props: ModalProps) {
   const visible = () => props.isOpen && regionVisible();
   createModalScrollLock(visible);
   let rootRef: HTMLDivElement | undefined;
+  let opener: HTMLElement | undefined;
 
-  /** Holds a place on the dialog stack for as long as the dialog is visible. */
+  /**
+   * Remembers what had focus before the dialog appeared. Runs ahead of the
+   * dialog content rendering, so a field that focuses itself on mount is not
+   * mistaken for the opener.
+   */
+  createRenderEffect(() => {
+    if (!visible()) return;
+    const active = document.activeElement;
+    opener =
+      active instanceof HTMLElement && active !== document.body
+        ? active
+        : undefined;
+  });
+
+  /**
+   * Holds a place on the dialog stack for as long as the dialog is visible,
+   * moves focus into the dialog once its content has mounted, and hands focus
+   * back to the opener when the dialog closes, unless something else took it.
+   */
   createEffect(() => {
     if (!visible()) return;
+    const root = rootRef;
+    const returnTo = opener;
+    queueMicrotask(() => {
+      if (root?.isConnected && visible()) focusDialogOnOpen(root);
+    });
+    onCleanup(() => {
+      queueMicrotask(() => {
+        const active = document.activeElement;
+        const focusLeftWithDialog =
+          active === null ||
+          active === document.body ||
+          root?.contains(active) === true;
+        if (focusLeftWithDialog && returnTo?.isConnected) {
+          returnTo.focus({ preventScroll: true });
+        }
+      });
+    });
     onCleanup(
       registerDialog({
         element: () => rootRef,

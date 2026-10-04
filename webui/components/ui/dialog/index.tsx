@@ -97,6 +97,7 @@ export function Dialog(props: DialogProps) {
           {...props.backdropProps}
           role="dialog"
           aria-modal="true"
+          tabIndex={-1}
           aria-label={props.label}
           aria-labelledby={props.label ? undefined : titleId}
           aria-busy={props.busy || undefined}
@@ -164,7 +165,7 @@ export function DialogBackdrop(props: JSX.HTMLAttributes<HTMLDivElement>) {
   const [local, rest] = splitProps(props, ["class"]);
   return (
     <div
-      class={`nf-dialog-backdrop fixed inset-0 flex items-center justify-center overflow-x-hidden overflow-y-auto p-4 bg-black/60 backdrop-blur-[4px] nightfall-top-layer ${local.class ?? ""}`}
+      class={`nf-dialog-backdrop fixed inset-0 flex items-center justify-center overflow-x-hidden overflow-y-auto p-4 bg-black/60 backdrop-blur-[4px] outline-none nightfall-top-layer ${local.class ?? ""}`}
       {...rest}
     />
   );

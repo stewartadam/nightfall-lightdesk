@@ -6,6 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { inertOutside } from "./focus-scope";
+
 /** One visible dialog's keyboard contract, ordered by when it became visible. */
 export interface DialogStackEntry {
   /** Root element containing everything the dialog renders. */
@@ -48,12 +50,19 @@ const ENTER_OWNING_CONTROL_SELECTOR = [
 
 const openDialogs: DialogStackEntry[] = [];
 
-/** Adds a visible dialog to the top of the stack and returns its removal function. */
+/**
+ * Adds a visible dialog to the top of the stack and returns its removal
+ * function. Everything behind the frontmost dialog, including the dialogs
+ * below it, stays inert until it is removed.
+ */
 export function registerDialog(entry: DialogStackEntry): () => void {
   openDialogs.push(entry);
+  inertOutside(entry.element());
   return () => {
     const index = openDialogs.indexOf(entry);
-    if (index !== -1) openDialogs.splice(index, 1);
+    if (index === -1) return;
+    openDialogs.splice(index, 1);
+    inertOutside(frontmostDialog()?.element());
   };
 }
 
