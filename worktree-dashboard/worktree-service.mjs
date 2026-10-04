@@ -11,54 +11,55 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import {
   ALL_SELECTOR,
+  DASHBOARD_BASE_URL,
+  DashboardUnreachableError,
   fetchWorktrees,
+  findWorktree,
   manageWorktree,
   resolveWorktreeServiceTargets,
-  selectWorktree,
   summarizeWorktree,
   WORKTREE_MANAGED_SERVICES,
 } from "./dashboard-client.mjs";
 
 const COMMAND_ACTIONS = { start: "start", stop: "stop", restart: "recycle" };
 
-const USAGE = `Usage: pnpm run worktree <command> [worktree] [options]
+const USAGE = `Usage: wt [-C <worktree>] service <command> [options]
 
-Talks to the worktree dashboard API (pnpm run worktree:dashboard).
+Manages this worktree's services through the worktree dashboard API
+(pnpm run worktree:dashboard). Use wt -C <path> to target another worktree.
 
 Commands:
-  list                       List worktrees with their ports and service status
-  status [worktree]          Show service status for one worktree
-  start [worktree]           Start services and wait until they are reachable
-  stop [worktree]            Stop services
-  restart [worktree]         Restart services and wait until they are reachable
-
-[worktree] is a path, name, branch, or dashboard id. It defaults to the
-worktree containing the current directory.
+  list                   List worktrees with their ports and service status
+  status                 Show service status for this worktree
+  start                  Start services and wait until they are reachable
+  stop                   Stop services
+  restart                Restart services and wait until they are reachable
 
 Options:
-  -s, --service <name>       Service to target, repeatable or comma separated:
-                             ${[...WORKTREE_MANAGED_SERVICES, ALL_SELECTOR].join(", ")}
-                             (default: backend)
-      --json                 Print the raw result as JSON
-  -h, --help                 Show this help`;
+  -s, --service <name>   Service to target, repeatable or comma separated:
+                         ${[...WORKTREE_MANAGED_SERVICES, ALL_SELECTOR].join(", ")}
+                         (default: backend)
+      --json             Print the raw result as JSON
+  -h, --help             Show this help`;
 
 /**
- * Parses CLI arguments into a command, an optional worktree selector, the
- * services to target, and output flags. Throws on unknown commands, unknown
- * services, or extra positional arguments.
+ * Parses CLI arguments into a command, the target worktree path, the services
+ * to target, and output flags. Throws on unknown commands or services, extra
+ * positional arguments, or a missing worktree for commands that need one.
  */
 export function parseCliArgs(argv) {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
     options: {
+      worktree: { type: "string" },
       service: { type: "string", short: "s", multiple: true },
       json: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
 
-  const [command, selector, ...extra] = positionals;
+  const [command, ...extra] = positionals;
   if (values.help || !command) {
     return { command: "help" };
   }
@@ -69,8 +70,11 @@ export function parseCliArgs(argv) {
   ) {
     throw new Error(`Unknown command "${command}"\n\n${USAGE}`);
   }
-  if (extra.length > 0 || (command === "list" && selector)) {
-    throw new Error(`Unexpected argument "${extra[0] ?? selector}"`);
+  if (extra.length > 0) {
+    throw new Error(`Unexpected argument "${extra[0]}"`);
+  }
+  if (command !== "list" && !values.worktree) {
+    throw new Error("--worktree <path> is required");
   }
 
   const requested = (values.service ?? ["backend"]).flatMap((value) =>
@@ -95,7 +99,7 @@ export function parseCliArgs(argv) {
 
   return {
     command,
-    selector: selector ?? null,
+    worktree: values.worktree ?? null,
     services,
     json: values.json,
   };
@@ -199,16 +203,32 @@ function manageSucceeded(result) {
 
 /**
  * Runs the CLI against the dashboard and returns the process exit code:
- * 0 on success, 1 when a service failed to come up.
+ * 0 on success, 1 when a service failed to come up. A stop succeeds when the
+ * dashboard is unreachable, since no dashboard means no managed services, so
+ * the worktree pre-remove hook never blocks on it.
  */
-export async function main(argv, cwd) {
+export async function main(argv) {
   const options = parseCliArgs(argv);
   if (options.command === "help") {
     console.log(USAGE);
     return 0;
   }
 
-  const worktrees = await fetchWorktrees();
+  let worktrees;
+  try {
+    worktrees = await fetchWorktrees();
+  } catch (error) {
+    if (
+      options.command === "stop" &&
+      error instanceof DashboardUnreachableError
+    ) {
+      console.error(
+        `No worktree dashboard at ${DASHBOARD_BASE_URL}, so no managed services to stop.`,
+      );
+      return 0;
+    }
+    throw error;
+  }
 
   if (options.command === "list") {
     const summaries = worktrees.map(summarizeWorktree);
@@ -220,7 +240,7 @@ export async function main(argv, cwd) {
     return 0;
   }
 
-  const target = selectWorktree(worktrees, options.selector, cwd);
+  const target = findWorktree(worktrees, options.worktree);
 
   if (options.command === "status") {
     const summary = summarizeWorktree(target);
@@ -252,10 +272,7 @@ export async function main(argv, cwd) {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   try {
-    process.exitCode = await main(
-      process.argv.slice(2),
-      process.env.INIT_CWD ?? process.cwd(),
-    );
+    process.exitCode = await main(process.argv.slice(2));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

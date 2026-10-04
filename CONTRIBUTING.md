@@ -336,22 +336,24 @@ the inherited settings. If the primary `.env` is missing, setup uses only the
 generated settings. Later edits to the primary `.env` do not update existing
 worktrees.
 
-To manage services from a terminal while the dashboard API runs, use the CLI:
+To manage services from a terminal while the dashboard API runs, use the
+Worktrunk `service` alias:
 
 ```sh
-pnpm run worktree list                  # every worktree with its port and status
-pnpm run worktree status                # services of the worktree you are in
-pnpm run worktree restart               # restart this worktree's backend and wait for it
-pnpm run worktree restart feature -s backend,ui
+wt service list                         # every worktree with its port and status
+wt service status                       # services of the worktree you are in
+wt service restart                      # restart this worktree's backend and wait for it
+wt -C ../other service restart -s backend,ui
 ```
 
 `start`, `stop`, and `restart` target the backend unless `--service` (`-s`)
 names others (`backend`, `ui`, `wasm`, `artnet-sender`, `sacn-sender`, `all`).
-A worktree can be named by path, name, branch, or dashboard id; without one, the
-CLI uses the worktree containing the current directory. Start and restart wait
-until each service is reachable, print the log tail of any service that fails,
-and exit non-zero on failure. `--json` prints the raw result. The CLI reads the
-same dashboard address variables as the MCP server described below.
+They act on the current worktree; use `wt -C <path>` for another one. Start and
+restart wait until each service is reachable, print the log tail of any service
+that fails, and exit non-zero on failure. `--json` prints the raw result. Removing
+a worktree runs `wt service stop -s all` first, which succeeds when the dashboard
+is not running. The alias reads the same dashboard address variables as the MCP
+server described below.
 
 Agents can also manage their own worktree lifecycle through MCP (for example, from Codex/Claude) by running:
 

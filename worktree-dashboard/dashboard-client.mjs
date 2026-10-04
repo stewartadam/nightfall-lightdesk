@@ -8,7 +8,7 @@
 
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { resolve, sep } from "node:path";
+import { resolve } from "node:path";
 
 const DEFAULT_DASHBOARD_HOST =
   process.env.NIGHTFALL_WORKTREE_DASHBOARD_HOST ?? "127.0.0.1";
@@ -318,6 +318,13 @@ async function waitForStartupOutcome(worktreePath, services) {
 }
 
 /**
+ * Raised when nothing answers at the dashboard address, as opposed to the
+ * dashboard answering with an error, so callers can treat "no dashboard" as
+ * "no managed services".
+ */
+export class DashboardUnreachableError extends Error {}
+
+/**
  * Sends a request to the dashboard API and returns the response body,
  * throwing an actionable error when the dashboard is unreachable, times out,
  * or answers with a non-2xx status.
@@ -338,7 +345,7 @@ async function fetchDashboard(path, options) {
         { cause: error },
       );
     }
-    throw new Error(
+    throw new DashboardUnreachableError(
       `Unable to reach worktree dashboard at ${DASHBOARD_BASE_URL}. Start it with: pnpm run worktree:dashboard`,
       { cause: error },
     );
@@ -379,59 +386,6 @@ export function findWorktree(worktrees, worktreePath) {
   const known = worktrees.map((entry) => String(entry.path)).join("\n");
   throw new Error(
     `Worktree path was not found in dashboard data.\nrequested: ${worktreePath}\nknown:\n${known}`,
-  );
-}
-
-/**
- * Picks a worktree from a loose selector: its path, id, name, or branch.
- * Without a selector it returns the worktree that contains `cwd`, choosing the
- * deepest one when worktrees are nested. Throws with the known worktrees when
- * nothing or more than one entry matches.
- */
-export function selectWorktree(worktrees, selector, cwd) {
-  const describeKnown = () =>
-    worktrees
-      .map((entry) => `  ${entry.name} (${entry.branch ?? "detached"})`)
-      .join("\n");
-
-  if (!selector) {
-    const current = normalizePath(cwd);
-    const containing = worktrees
-      .filter((entry) => {
-        const root = normalizePath(String(entry.path));
-        return current === root || current.startsWith(`${root}${sep}`);
-      })
-      .sort(
-        (a, b) =>
-          normalizePath(String(b.path)).length -
-          normalizePath(String(a.path)).length,
-      );
-    if (containing.length > 0) return containing[0];
-    throw new Error(
-      `${cwd} is not inside a worktree the dashboard knows; name one of:\n${describeKnown()}`,
-    );
-  }
-
-  const byPath = normalizePath(selector);
-  const pathMatch = worktrees.find(
-    (entry) => normalizePath(String(entry.path)) === byPath,
-  );
-  if (pathMatch) return pathMatch;
-
-  const matches = worktrees.filter(
-    (entry) =>
-      entry.id === selector ||
-      entry.name === selector ||
-      entry.branch === selector,
-  );
-  if (matches.length === 1) return matches[0];
-  if (matches.length > 1) {
-    throw new Error(
-      `"${selector}" matches several worktrees; pass a path instead:\n${matches.map((entry) => `  ${entry.path}`).join("\n")}`,
-    );
-  }
-  throw new Error(
-    `No worktree matches "${selector}"; known:\n${describeKnown()}`,
   );
 }
 
