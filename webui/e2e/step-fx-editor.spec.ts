@@ -3075,6 +3075,7 @@ test("Step FX toolbars rove keyboard focus between their controls", async ({
   const secondStep = stepToolbar.locator(
     '[data-step-fx-step-selector][data-step-index="1"]',
   );
+  await editor.getByRole("button", { name: "Toggle selection mode" }).click();
   await firstStep.click();
   await expect(
     editor.getByRole("checkbox", { name: "Select step 1", exact: true }),
