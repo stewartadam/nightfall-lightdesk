@@ -109,6 +109,7 @@ fn broadcasts_settings_when_desk_settings_changes() {
             }],
             created_at: 30.0,
             updated_at: 40.0,
+            transient: false,
         }];
     }
     app.update();
@@ -555,6 +556,7 @@ fn stored_layout(id: &str, shown_in_switcher: bool) -> StoredPanelLayout {
         }],
         created_at: 10.0,
         updated_at: 20.0,
+        transient: false,
     }
 }
 
@@ -627,4 +629,31 @@ fn rejected_panel_layout_edit_changes_nothing() {
     app.update();
 
     assert_eq!(app.world().resource::<DeskSettings>().panel_layouts, before);
+}
+
+/// Verifies saved showfiles leave out transient layouts and a default layout that is one.
+#[test]
+fn showfile_settings_skip_transient_layouts() {
+    let layout = |id: &str, transient: bool| StoredPanelLayout {
+        transient,
+        ..stored_layout(id, true)
+    };
+    let settings = DeskSettings {
+        panel_layouts: vec![layout("user", false), layout("lesson", true)],
+        default_panel_layout_id: Some("lesson".into()),
+        ..DeskSettings::default()
+    };
+
+    let saved = settings.for_showfile();
+    assert_eq!(saved.panel_layouts, vec![layout("user", false)]);
+    assert_eq!(saved.default_panel_layout_id, None);
+
+    let settings = DeskSettings {
+        default_panel_layout_id: Some("user".into()),
+        ..settings
+    };
+    assert_eq!(
+        settings.for_showfile().default_panel_layout_id.as_deref(),
+        Some("user")
+    );
 }
