@@ -631,7 +631,7 @@ test("context submenus meet their parent on the left and right", async ({
   await page.getByRole("menuitem", { name: "Accent color" }).hover();
   const root = page.locator('[data-menu-kind="context"]');
   const submenu = page
-    .locator('[data-menu-kind="context-submenu"][aria-hidden="false"]')
+    .locator('[data-menu-kind="context-submenu"]:not([inert])')
     .first();
   const parentRight = (await root.boundingBox())!;
   const childRight = (await submenu.boundingBox())!;

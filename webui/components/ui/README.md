@@ -21,6 +21,10 @@ The accent picker and buttons in `visual-language` follow the same shared-compon
 
 Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups.
 
+Wrap a group of related controls in `Toolbar` (with a `label`) to make it one keyboard focus group, following the WAI-ARIA toolbar pattern. The group is a single Tab stop: Tab enters on the control used last, Left/Right (Up/Down with `orientation="vertical"`) move between controls and wrap at the ends, and Home/End jump to the first or last control. Disabled and inert controls are skipped. Text fields keep their arrow keys, and a child that handles an arrow key itself calls `preventDefault()` to keep it from the toolbar, as the step FX Step bar does to move its selection. Never set `tabIndex` on controls inside a `Toolbar`; it owns them.
+
+Mark content that is present but not usable, such as closed submenus, collapsed sections and inactive workspaces, with `inert` rather than `aria-hidden` or per-control `tabIndex={-1}`, so it leaves the focus order, pointer interaction and the accessibility tree together.
+
 ## Segmented tabs
 
 Use `SegmentedTabs` for compact horizontal content selectors, including toolbar grouping views. Supply labeled options, the selected value, and an `onChange` callback. The component owns selected styling, arrow/Home/End navigation, roving focus, and scrolling focused tabs into view. Selection changes replay a directional `tw-animate-css` entrance on the associated content element through `playContentEntrance`, respecting reduced motion. The same helper powers the design lab previews and accepts duration/delay in milliseconds, distance as a percentage, and starting opacity/scale as ratios.
