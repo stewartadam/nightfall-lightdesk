@@ -150,6 +150,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
         element: () => backdropRef,
         escapeAction: () => undefined,
         enterAction: () => undefined,
+        blocksBackgroundKeys: () => false,
       }),
     );
   });
