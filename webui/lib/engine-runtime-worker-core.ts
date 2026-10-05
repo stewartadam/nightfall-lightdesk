@@ -23,6 +23,7 @@
 
 import { decode } from "cborg";
 import type { OutboundParameterState } from "../types";
+import { peekCborMessageType } from "./cbor-message-type";
 import type {
   EngineRuntimeConfig,
   EngineRuntimeWorkerRequest,
@@ -78,6 +79,17 @@ export function startEngineRuntimeWorker(
     messageType: string;
   }
 
+  /**
+   * Newest droppable snapshot of one type, kept encoded until a pull decodes it. Holds
+   * the decoded value instead when its type tag could only be read by decoding it.
+   */
+  interface StagedSnapshot {
+    payload: { encoded: Uint8Array } | { decoded: unknown };
+    postedAtMs: number;
+    deliveryMessageId: number;
+    messageType: string;
+  }
+
   // Type-level metrics tracking
   interface TypeMetrics {
     totalCount: number;
@@ -104,31 +116,52 @@ export function startEngineRuntimeWorker(
     return "unknown";
   }
 
-  /** Updates rolling decode, processing, throughput, and drop metrics for one message type. */
-  function recordTypeMetrics(
+  /** Returns the metrics entry for one message type, creating it with initial averages. */
+  function typeMetricsFor(
     type: string,
-    decodeTimeMs: number,
-    processTimeMs: number,
-    wasDropped: boolean,
-  ): void {
-    const now = performance.now();
+    initialDecodeMs: number,
+    initialProcessMs: number,
+  ): TypeMetrics {
     let m = typeMetrics.get(type);
-
     if (!m) {
       m = {
         totalCount: 0,
         droppedCount: 0,
-        avgDecodeMs: decodeTimeMs,
-        avgProcessMs: processTimeMs,
+        avgDecodeMs: initialDecodeMs,
+        avgProcessMs: initialProcessMs,
         windowCount: 0,
-        windowStartMs: now,
+        windowStartMs: performance.now(),
       };
       typeMetrics.set(type, m);
     }
+    return m;
+  }
+
+  /** Folds one deferred snapshot decode into its type's rolling decode average. */
+  function recordSnapshotDecode(type: string, decodeTimeMs: number): void {
+    const m = typeMetricsFor(type, decodeTimeMs, 0);
+    m.avgDecodeMs = EMA_ALPHA * decodeTimeMs + (1 - EMA_ALPHA) * m.avgDecodeMs;
+  }
+
+  /**
+   * Updates rolling processing, throughput, and drop metrics for one received message, and
+   * its decode average when it was decoded on receipt rather than deferred to a pull.
+   */
+  function recordTypeMetrics(
+    type: string,
+    decodeTimeMs: number | undefined,
+    processTimeMs: number,
+    wasDropped: boolean,
+  ): void {
+    const now = performance.now();
+    const m = typeMetricsFor(type, decodeTimeMs ?? 0, processTimeMs);
 
     m.totalCount++;
     if (wasDropped) m.droppedCount++;
-    m.avgDecodeMs = EMA_ALPHA * decodeTimeMs + (1 - EMA_ALPHA) * m.avgDecodeMs;
+    if (decodeTimeMs !== undefined) {
+      m.avgDecodeMs =
+        EMA_ALPHA * decodeTimeMs + (1 - EMA_ALPHA) * m.avgDecodeMs;
+    }
     m.avgProcessMs =
       EMA_ALPHA * processTimeMs + (1 - EMA_ALPHA) * m.avgProcessMs;
 
@@ -152,9 +185,9 @@ export function startEngineRuntimeWorker(
   let lastStagedDeliveryMessageId = 0;
 
   // Pull-frame staging: non-droppable messages remain ordered and lossless, while
-  // droppable messages keep only the newest snapshot per message type.
+  // droppable messages keep only the newest encoded snapshot per message type.
   const structuralQueue: QueuedDecodedMessage[] = [];
-  const latestDroppableByType = new Map<string, QueuedDecodedMessage>();
+  const latestDroppableByType = new Map<string, StagedSnapshot>();
   let structuralOverflowNotified = false;
   let stagingSuspendedForResync = false;
 
@@ -205,27 +238,72 @@ export function startEngineRuntimeWorker(
     };
   }
 
-  /** Stages one decoded payload for the next main-thread frame pull. */
-  function stageDecodedMessage(
-    decoded: unknown,
+  /**
+   * Keeps the newest snapshot of one droppable type for the next pull, returning whether
+   * it replaced an older snapshot that will now never be delivered.
+   */
+  function stageSnapshot(
+    payload: StagedSnapshot["payload"],
     messageType: string,
-    isDroppable: boolean,
   ): boolean {
     if (stagingSuspendedForResync) {
       droppedCount++;
       return true;
     }
 
-    const message = createQueuedDecodedMessage(decoded, messageType);
-
-    if (isDroppable) {
-      const replacedExisting = latestDroppableByType.has(messageType);
-      if (replacedExisting) {
-        droppedCount++;
-      }
-      latestDroppableByType.set(messageType, message);
-      return replacedExisting;
+    const deliveryMessageId = nextDeliveryMessageId++;
+    lastStagedDeliveryMessageId = deliveryMessageId;
+    const replacedExisting = latestDroppableByType.has(messageType);
+    if (replacedExisting) {
+      droppedCount++;
     }
+    latestDroppableByType.set(messageType, {
+      payload,
+      postedAtMs: absolutePerformanceNowMs(),
+      deliveryMessageId,
+      messageType,
+    });
+    return replacedExisting;
+  }
+
+  /** Decodes staged snapshots into pullable messages, skipping any that fail to decode. */
+  function decodeStagedSnapshots(): QueuedDecodedMessage[] {
+    const messages: QueuedDecodedMessage[] = [];
+    for (const snapshot of latestDroppableByType.values()) {
+      let decoded: unknown;
+      if ("decoded" in snapshot.payload) {
+        decoded = snapshot.payload.decoded;
+      } else {
+        const decodeStart = performance.now();
+        try {
+          decoded = decode(snapshot.payload.encoded);
+        } catch (error) {
+          postError(`CBOR decode error: ${error}`);
+          continue;
+        }
+        const decodeElapsed = performance.now() - decodeStart;
+        decodeTimeMs += decodeElapsed;
+        recordSnapshotDecode(snapshot.messageType, decodeElapsed);
+      }
+      messages.push({
+        data: decoded,
+        postedAtMs: snapshot.postedAtMs,
+        deliveryMessageId: snapshot.deliveryMessageId,
+        messageType: snapshot.messageType,
+      });
+    }
+    latestDroppableByType.clear();
+    return messages;
+  }
+
+  /** Stages one decoded ordered payload for the next main-thread frame pull. */
+  function stageDecodedMessage(decoded: unknown, messageType: string): boolean {
+    if (stagingSuspendedForResync) {
+      droppedCount++;
+      return true;
+    }
+
+    const message = createQueuedDecodedMessage(decoded, messageType);
 
     if (structuralQueue.length >= STRUCTURAL_QUEUE_LIMIT) {
       droppedCount++;
@@ -249,13 +327,14 @@ export function startEngineRuntimeWorker(
     return false;
   }
 
-  /** Sends the currently staged websocket payload batch to the main thread. */
+  /**
+   * Sends the staged websocket payload batch to the main thread. Snapshots ride in the
+   * same batch as ordered messages so a command result is never applied before the state
+   * the engine published ahead of it.
+   */
   function postPulledMessageBatch(): void {
     const messages = structuralQueue.splice(0, structuralQueue.length);
-    for (const message of latestDroppableByType.values()) {
-      messages.push(message);
-    }
-    latestDroppableByType.clear();
+    messages.push(...decodeStagedSnapshots());
 
     const transfers: ArrayBuffer[] = [];
     const wireMessages = messages.map((message) => {
@@ -326,6 +405,19 @@ export function startEngineRuntimeWorker(
     const discriminator = bytes[0];
     const cborData = bytes.subarray(1);
 
+    // Snapshots are decoded when pulled, so one superseded before the next pull is never
+    // decoded and messages queued behind it are received without waiting on its decode.
+    if (discriminator === DISCRIMINATOR_DROPPABLE) {
+      const snapshotType = peekCborMessageType(cborData);
+      if (snapshotType !== undefined) {
+        const wasDropped = stageSnapshot({ encoded: cborData }, snapshotType);
+        const processElapsed = performance.now() - processStart;
+        processingSamples.record(processElapsed, performance.now());
+        recordTypeMetrics(snapshotType, undefined, processElapsed, wasDropped);
+        return;
+      }
+    }
+
     const decodeStart = performance.now();
     let decoded: unknown;
     try {
@@ -352,12 +444,10 @@ export function startEngineRuntimeWorker(
           pendingHeartbeats.delete(id);
         }
       }
+    } else if (discriminator === DISCRIMINATOR_DROPPABLE) {
+      wasDropped = stageSnapshot({ decoded }, msgType);
     } else {
-      wasDropped = stageDecodedMessage(
-        decoded,
-        msgType,
-        discriminator === DISCRIMINATOR_DROPPABLE,
-      );
+      wasDropped = stageDecodedMessage(decoded, msgType);
     }
 
     const processElapsed = performance.now() - processStart;

@@ -48,7 +48,9 @@ pub use contracts::{
 pub use cues::{ProgrammerCueState, handle_cue_events, resume_store_cue_workflows};
 pub use groups::handle_group_events;
 pub use planning::plan_pending_user_commands;
-pub use programmer::{ProgrammerMutationState, handle_programmer_events};
+pub use programmer::{
+    ProgrammerMutationState, finish_programmer_action_workflows, handle_programmer_events,
+};
 pub use removal::handle_remove_instruction_events;
 pub use undo::handle_undo_events;
 pub use workflows::{

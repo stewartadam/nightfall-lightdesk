@@ -88,7 +88,7 @@ test("CommandSequenceRunner stops after the first command failure", async () => 
   assert.equal(completed.stoppedOnFailure, true);
 });
 
-/** Verifies progress callbacks bracket each statement so callers can track what is left. */
+/** Verifies each statement reports starting once sent and settling once its result arrives. */
 test("CommandSequenceRunner reports each statement starting and settling", async () => {
   const events: string[] = [];
   const transport: CommandTransport = {
@@ -108,11 +108,11 @@ test("CommandSequenceRunner reports each statement starting and settling", async
   );
 
   assert.deepEqual(events, [
-    "start 0",
     "send fix 311 red @ 100",
+    "start 0",
     "settle 0",
-    "start 1",
     "send sleep 4",
+    "start 1",
     "settle 1",
   ]);
 });

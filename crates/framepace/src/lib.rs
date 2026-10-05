@@ -85,7 +85,7 @@ impl Plugin for FramepacePlugin {
         app.insert_resource(FrameTimer::default());
         app.insert_resource(stats.clone());
         app.add_systems(Update, handle_events.in_set(EventHandling));
-        app.add_systems(PostUpdate, framerate_limiter);
+        app.add_systems(PostUpdate, framerate_limiter.after(CommandFeedbackEgress));
     }
 }
 

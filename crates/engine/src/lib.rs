@@ -118,8 +118,9 @@ pub mod prelude {
     };
     pub use crate::variables::GlobalVariables;
     pub use crate::{
-        AppState, ClientOutput, ClockUpdate, Compositing, DeskEventSet, DmxOutput, EventHandling,
-        InputHandling, LayerGeneration, ResyncHandling, StartupFrameCounter, VdimProcessing,
+        AppState, ClientOutput, ClockUpdate, CommandFeedbackEgress, Compositing, DeskEventSet,
+        DmxOutput, EventHandling, InputHandling, LayerGeneration, ResyncHandling,
+        StartupFrameCounter, VdimProcessing,
     };
     pub use crate::{EngineCommand, ResyncRequested, register_engine_action};
 }
@@ -219,6 +220,13 @@ pub struct VdimProcessing;
 /// System set for publishing engine state changes to attached clients.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientOutput;
+
+/// `PostUpdate` system set that publishes command feedback produced during the frame.
+///
+/// Frame pacing sleeps after this set, so terminal results reach clients before the
+/// frame limiter waits for the next frame instead of one frame later.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CommandFeedbackEgress;
 
 /// System set for plugin state resend handlers during a resync.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
