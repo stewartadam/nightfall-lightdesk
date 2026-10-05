@@ -336,13 +336,14 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
         contributionSlideAnimation = incoming;
         return incoming.finished;
       })
+      // A cancelled animation rejects; settle anyway so later track switches are not blocked.
+      .catch(() => undefined)
       .then(() => {
         if (token !== contributionSlideToken) return;
         contributionSlideAnimation = undefined;
         setPendingContributionTrack(undefined);
         setContributionSlidePhase("idle");
-      })
-      .catch(() => undefined);
+      });
   };
 
   /** Returns the operator-facing label used by the panel and Properties heading. */
