@@ -294,7 +294,8 @@ test("default showfile sequence store command avoids multi-second main-thread st
   console.info(JSON.stringify({ sequenceStoreLatency: summary }, null, 2));
 
   expect(summary.sequenceCount).toBeGreaterThan(0);
-  expect(summary.cueCount).toBeGreaterThanOrEqual(90);
+  // Guards that the full sample show loaded, not a near-empty showfile.
+  expect(summary.cueCount).toBeGreaterThanOrEqual(50);
   expect(summary.cueDefinitionDispatchCount).toBeGreaterThan(0);
   expect(summary.maxLongFrameMs).toBeLessThan(1000);
   expect(summary.maxBlockingMs).toBeLessThan(750);

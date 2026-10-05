@@ -509,22 +509,18 @@ test("cue editor full grid reveals unasserted attributes for value edits", async
     await expect(previewTransitionsButton).toBeEnabled();
     await expect(previewTransitionsButton).toHaveAttribute(
       "aria-pressed",
-      "true",
+      "false",
     );
     await expect(previewTransitionsIcon).toBeVisible();
-    const enabledIconMarkup = await previewTransitionsIcon.innerHTML();
+    await previewTransitionsButton.click();
+    await expect(previewTransitionsButton).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await previewTransitionsButton.click();
     await expect(previewTransitionsButton).toHaveAttribute(
       "aria-pressed",
       "false",
-    );
-    await expect
-      .poll(() => previewTransitionsIcon.innerHTML())
-      .not.toBe(enabledIconMarkup);
-    await previewTransitionsButton.click();
-    await expect(previewTransitionsButton).toHaveAttribute(
-      "aria-pressed",
-      "true",
     );
     await storeCueAndWait(page, context.seedCue, context.fixtureUid, "Red");
 

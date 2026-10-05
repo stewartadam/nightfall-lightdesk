@@ -275,19 +275,25 @@ async function countBlueDominantPixels(canvas: Locator): Promise<number> {
 }
 
 /**
- * Scrolls the sequence grid horizontally and waits for the virtualized viewport to settle.
+ * Scrolls the sequence grid horizontally, clamped to its scrollable range, and
+ * waits for the virtualized viewport to settle at that offset.
  */
 async function scrollGridHorizontally(
   grid: Locator,
   scrollLeft: number,
 ): Promise<void> {
-  await grid.evaluate((element, nextScrollLeft) => {
-    element.scrollLeft = nextScrollLeft;
+  const target = await grid.evaluate((element, nextScrollLeft) => {
+    const clamped = Math.min(
+      nextScrollLeft,
+      element.scrollWidth - element.clientWidth,
+    );
+    element.scrollLeft = clamped;
     element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    return element.scrollLeft;
   }, scrollLeft);
   await expect
     .poll(() => grid.evaluate((element) => element.scrollLeft))
-    .toBe(scrollLeft);
+    .toBe(target);
 }
 
 /**
