@@ -390,7 +390,10 @@ test("fx list shows regular, step, and module fx in grid and list views", async 
       },
     });
 
-    await page.getByRole("button", { name: "Switch to list view" }).click();
+    await page
+      .locator('[data-panel-id="panel-FxList"]')
+      .getByRole("button", { name: "Switch to list view" })
+      .click();
     await page.waitForTimeout(500);
 
     await page.evaluate(() => {

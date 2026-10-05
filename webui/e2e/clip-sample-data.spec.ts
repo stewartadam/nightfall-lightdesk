@@ -234,17 +234,27 @@ async function openPanel(page: Page, panelName: string): Promise<void> {
 }
 
 /**
- * Opens the Clips panel and activates its dock tab before card assertions.
+ * Opens the Clips panel and activates it through Dockview before card
+ * assertions. The default layout keeps Clips in an edge group, where clicking
+ * the already-active tab would collapse the flyout again.
  */
 async function activateClipsPanel(page: Page): Promise<void> {
   await openPanel(page, CLIPS_PANEL_TITLE);
 
-  const clipsTab = page
-    .locator(".dv-tab")
-    .filter({ hasText: CLIPS_PANEL_TITLE })
-    .first();
-  await expect(clipsTab).toBeVisible();
-  await clipsTab.click();
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.getPanel("panel-ClipList");
+    if (!panel) throw new Error("Expected clip list panel");
+    panel.api.setActive();
+    const location = panel.api.location;
+    if (location.type === "edge") {
+      api.getEdgeGroup(location.position)?.expand();
+    }
+    panel.focus();
+  });
+  await expect(
+    page.locator('[data-panel-kind="clips"][data-panel-id="panel-ClipList"]'),
+  ).toBeVisible();
 }
 
 test("owned StepFx and Flow clips are visible and StepFx clips start instances", async ({

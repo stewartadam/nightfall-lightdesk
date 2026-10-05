@@ -211,6 +211,7 @@ for (const forceWebGL of [false, true]) {
                   dmx_to: 255,
                   physical_from: 0,
                   physical_to: 1,
+                  optical: { kind: "PrismSelect", wheel: index + 1 },
                   sets: [
                     {
                       name: "Split",

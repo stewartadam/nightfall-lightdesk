@@ -93,8 +93,10 @@ test("collects native diagnostics before the backend connects", async ({
     .toBeLessThanOrEqual(1);
   const layout = await dialog.evaluate((element) => {
     const body = element.querySelector("details")!.parentElement!;
+    // The dialog role sits on the full-viewport backdrop; measure its surface.
+    const surface = element.querySelector(".nf-dialog-surface")!;
     return {
-      height: element.getBoundingClientRect().height,
+      height: surface.getBoundingClientRect().height,
       viewport: innerHeight,
       scrollHeight: body.scrollHeight,
       clientHeight: body.clientHeight,

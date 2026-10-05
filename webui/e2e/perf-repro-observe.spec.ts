@@ -406,9 +406,19 @@ async function startClipComparisonWorkload(page: Page): Promise<void> {
   await commandInput.fill("Open Clips");
   await page.keyboard.press("Enter");
 
-  const clipsTab = page.locator(".dv-tab").filter({ hasText: "Clips" }).first();
-  await expect(clipsTab).toBeVisible();
-  await clipsTab.click();
+  // The default layout keeps Clips in an edge group, where clicking the
+  // already-active tab would collapse the flyout the command just opened.
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.getPanel("panel-ClipList");
+    if (!panel) throw new Error("Expected clip list panel");
+    panel.api.setActive();
+    const location = panel.api.location;
+    if (location.type === "edge") {
+      api.getEdgeGroup(location.position)?.expand();
+    }
+    panel.focus();
+  });
 
   const clipPanel = page.locator('[data-panel-kind="clips"]:visible');
   await expect(clipPanel).toBeVisible();
@@ -759,6 +769,12 @@ test("keeps sample_data multi-clip layer workload responsive", async ({
     window.localStorage.setItem(
       "nightfall-crud-panel-view-mode:clips-list",
       "grid",
+    );
+    // Collapsed controls keep the sample clip cards clear of the grid's
+    // scroll-edge indicators, which reject pointer input beneath them.
+    window.localStorage.setItem(
+      "nightfall-clip-panel:controls-collapsed",
+      "true",
     );
   });
   await seedStartupShowfileName(page, SAMPLE_DATA_SHOWFILE);

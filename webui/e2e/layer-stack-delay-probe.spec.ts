@@ -7,6 +7,7 @@
  */
 
 import { expect, type Page, test } from "./playwright-fixtures";
+import { waitForDockviewApp } from "./showfile-startup";
 
 type ProbeResult = {
   avgSetMs: number;
@@ -36,8 +37,12 @@ const ATTRIBUTES = [
   "Gobo",
 ] as const;
 
-/** Waits until the application stores needed by the probe are available. */
+/**
+ * Waits for the shared startup readiness gate (saved showfile load, resync,
+ * layout restore), then for the stores the probe drives directly.
+ */
 async function waitForAppReady(page: Page): Promise<void> {
+  await waitForDockviewApp(page);
   await expect
     .poll(() =>
       page.evaluate(() => {

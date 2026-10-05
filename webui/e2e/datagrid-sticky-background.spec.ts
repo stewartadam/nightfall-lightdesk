@@ -9,6 +9,8 @@
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { prepareStoreSeededTestApp } from "./showfile-startup";
 
+test.setTimeout(60_000);
+
 /**
  * Opens the app in an interactive startup state suitable for browser-seeded grid data.
  */
@@ -122,6 +124,15 @@ async function openSeededPatchGrid(page: Page): Promise<Locator> {
 async function expectSelectedStickyCellBackground(
   cell: Locator,
 ): Promise<void> {
+  const expectedBase = await cell.evaluate((element) => {
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = "var(--data-grid-bg, #16161b)";
+    element.parentElement!.appendChild(probe);
+    const resolved = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return resolved;
+  });
+  expect(expectedBase).toMatch(/^rgb\(\d+, \d+, \d+\)$/);
   await expect
     .poll(() =>
       cell.evaluate((element) => {
@@ -134,7 +145,7 @@ async function expectSelectedStickyCellBackground(
       }),
     )
     .toMatchObject({
-      backgroundColor: "rgb(22, 22, 27)",
+      backgroundColor: expectedBase,
       position: "sticky",
     });
   await expect

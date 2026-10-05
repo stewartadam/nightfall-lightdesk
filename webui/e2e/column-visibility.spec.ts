@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 test.setTimeout(60_000);
 
@@ -144,10 +144,11 @@ async function locatorCenter(locator: Locator) {
 }
 
 /**
- * Opens the fixtures panel and waits until its grid is ready.
+ * Docks the fixtures panel in the main grid (the default layout keeps it in a
+ * collapsed bottom edge group) and waits until its grid is ready.
  */
 async function activateFixturesPanel(page: Page) {
-  await page.getByText("Fixtures", { exact: true }).first().click();
+  await dockFixturesInMainGrid(page);
   await expect(
     page.locator('[data-panel-kind="fixtures"]:visible'),
   ).toBeVisible();

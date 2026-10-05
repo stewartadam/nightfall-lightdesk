@@ -1126,10 +1126,30 @@ test("generic wash beam low-quality setting uses geometry beams", async ({
   const fixtureUid = await installRotatingWashBeamFixture(page);
   await waitForFixtureStoreHydration(page);
   await holdRotatingWashBeamImmediateOutput(page, fixtureUid);
+  // Low draws every lit beam as one batched geometry instance and installs no
+  // optical surface lights, so no atmospheric volume can be linked to them.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { getOpticalRenderContext } = await import(
+          "/features/visualizer/rendering/effects/optical-render-context.ts"
+        );
+        const context = getOpticalRenderContext(
+          (window as any).visualizerApi.getScene(),
+        );
+        return {
+          quality: context?.profile.preset,
+          geometryBeamCount: (
+            context?.scene.getObjectByName("EmitterBeams") as any
+          )?.count,
+        };
+      }),
+    )
+    .toEqual({ quality: "low", geometryBeamCount: 12 });
   await expect
     .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
     .toEqual({
-      opticalBeamCount: 12,
+      opticalBeamCount: 0,
       atmosphericBeamCount: 0,
       atmosphericDraws: 0,
     });
@@ -1891,7 +1911,8 @@ async function rgbStrobeBarSceneStats(
 }
 
 /**
- * Holds immediate output for the RGB strobe bar fixture long enough for renderer frames.
+ * Holds immediate output for the RGB strobe bar fixture long enough for renderer frames,
+ * replacing any earlier hold still running for the fixture.
  */
 async function holdRgbStrobeBarImmediateOutput(
   page: Page,
@@ -1900,8 +1921,16 @@ async function holdRgbStrobeBarImmediateOutput(
 ): Promise<void> {
   await page.evaluate(
     async ({ fixtureUid, elementOutputs }) => {
+      // A newer hold for this fixture supersedes this one, so slow frames
+      // cannot let a stale output overwrite the next scenario step.
+      const pageState = window as any;
+      pageState.__e2eImmediateOutputHolds ??= new Map<string, number>();
+      const holds: Map<string, number> = pageState.__e2eImmediateOutputHolds;
+      const token = (holds.get(fixtureUid) ?? 0) + 1;
+      holds.set(fixtureUid, token);
       let framesRemaining = 120;
       const writeOutput = () => {
+        if (holds.get(fixtureUid) !== token) return;
         const stores = (window as any).appStores;
         stores.setParametersImmediate(
           new Map(stores.getParametersImmediate()).set(
@@ -2009,6 +2038,14 @@ async function installRotatingWashBeamFixture(page: Page): Promise<string> {
             ],
           })),
         ],
+        // Beams draw only from profile photometry; the flux is shared by the 12 beams.
+        physical: {
+          beamType: "Wash",
+          beamAngle: 6,
+          fieldAngle: 34,
+          lumens: 12000,
+          colorTemperature: 6500,
+        },
         placement: {
           position: { x: 0, y: 0.5, z: 0 },
           rotation: { x: 0, y: 0, z: 0 },
@@ -2020,7 +2057,7 @@ async function installRotatingWashBeamFixture(page: Page): Promise<string> {
   });
 }
 
-/** Holds immediate output for the Generic wash beam control and beam elements. */
+/** Holds immediate output for the Generic wash beam control and beam elements, replacing any earlier hold for the fixture. */
 async function holdRotatingWashBeamImmediateOutput(
   page: Page,
   fixtureUid: string,
@@ -2056,8 +2093,16 @@ async function holdRotatingWashBeamImmediateOutput(
         ),
         ...Array.from({ length: 24 }, () => strip),
       ];
+      // A newer hold for this fixture supersedes this one, so slow frames
+      // cannot let a stale output overwrite the next scenario step.
+      const pageState = window as any;
+      pageState.__e2eImmediateOutputHolds ??= new Map<string, number>();
+      const holds: Map<string, number> = pageState.__e2eImmediateOutputHolds;
+      const token = (holds.get(uid) ?? 0) + 1;
+      holds.set(uid, token);
       let framesRemaining = 120;
       const writeOutput = () => {
+        if (holds.get(uid) !== token) return;
         const stores = (window as any).appStores;
         stores.setParametersImmediate(
           new Map(stores.getParametersImmediate()).set(uid, output),
@@ -2297,6 +2342,14 @@ async function installMovingSpotFixture(page: Page): Promise<string> {
           nodes: [],
           roots: [],
         },
+        // Beams draw only from profile photometry.
+        physical: {
+          beamType: "Spot",
+          beamAngle: 15,
+          fieldAngle: 30,
+          lumens: 10000,
+          colorTemperature: 6500,
+        },
         placement: {
           position: { x: 0, y: 1, z: 0 },
           rotation: { x: 0, y: 0, z: 0 },
@@ -2325,7 +2378,7 @@ async function setFixtureImmediateOutput(
   );
 }
 
-/** Holds immediate fixture output long enough for renderer frame updates to consume it. */
+/** Holds immediate fixture output long enough for renderer frame updates to consume it, replacing any earlier hold for the fixture. */
 async function holdFixtureImmediateOutput(
   page: Page,
   fixtureUid: string,
@@ -2333,8 +2386,16 @@ async function holdFixtureImmediateOutput(
 ): Promise<void> {
   await page.evaluate(
     async ({ fixtureUid, output }) => {
+      // A newer hold for this fixture supersedes this one, so slow frames
+      // cannot let a stale output overwrite the next scenario step.
+      const pageState = window as any;
+      pageState.__e2eImmediateOutputHolds ??= new Map<string, number>();
+      const holds: Map<string, number> = pageState.__e2eImmediateOutputHolds;
+      const token = (holds.get(fixtureUid) ?? 0) + 1;
+      holds.set(fixtureUid, token);
       let framesRemaining = 120;
       const writeOutput = () => {
+        if (holds.get(fixtureUid) !== token) return;
         const stores = (window as any).appStores;
         stores.setParametersImmediate(
           new Map(stores.getParametersImmediate()).set(fixtureUid, [output]),
