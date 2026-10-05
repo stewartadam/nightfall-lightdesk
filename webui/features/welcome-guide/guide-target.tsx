@@ -56,6 +56,7 @@ function revealInScroller(element: HTMLElement): boolean {
 /** Highlights a visible control and optionally focuses it once when its lesson step begins. */
 export function GuideTarget(props: GuideTargetProps) {
   const [bounds, setBounds] = createSignal<DOMRect | null>(null);
+  const [targetFocused, setTargetFocused] = createSignal(false);
 
   /** Re-resolves lazy panels and tracks scrolling, resizing, and dock rearrangement. */
   createEffect(() => {
@@ -135,16 +136,26 @@ export function GuideTarget(props: GuideTargetProps) {
         }
       }
       const rect = target?.getBoundingClientRect() ?? null;
+      // A focused text field already shows its own focus ring, so the pulse would only add noise.
+      // Buttons keep the pulse, since programmatic focus doesn't always draw a ring on them.
+      setTargetFocused(
+        !!target &&
+          document.activeElement === target &&
+          target.matches('input, textarea, select, [contenteditable="true"]'),
+      );
       // Focuses each new target once, so a step that moves through form fields follows along.
       if (target && focusTarget && focused !== target) {
         focused = target;
+        // Waits a second frame so a dialog's own initial focus lands first and the guide's wins.
         focusFrame = requestAnimationFrame(() => {
-          // A dialog opened meanwhile owns focus; pulling it outside would dismiss it.
-          const dialog = document.querySelector(
-            '[role="dialog"][aria-modal="true"]',
-          );
-          if (target.isConnected && (!dialog || dialog.contains(target)))
-            target.focus({ preventScroll: true });
+          focusFrame = requestAnimationFrame(() => {
+            // A dialog opened meanwhile owns focus; pulling it outside would dismiss it.
+            const dialog = document.querySelector(
+              '[role="dialog"][aria-modal="true"]',
+            );
+            if (target.isConnected && (!dialog || dialog.contains(target)))
+              target.focus({ preventScroll: true });
+          });
         });
       }
       const key = rect
@@ -158,18 +169,22 @@ export function GuideTarget(props: GuideTargetProps) {
     };
     update();
     let scrollFrame: number | undefined;
-    /** Follows nested scrollers on the next frame rather than waiting for geometry polling. */
-    const onScroll = () => {
+    /** Follows nested scrollers and focus moves on the next frame rather than waiting for geometry polling. */
+    const scheduleUpdate = () => {
       if (scrollFrame !== undefined) return;
       scrollFrame = requestAnimationFrame(() => {
         scrollFrame = undefined;
         update();
       });
     };
-    document.addEventListener("scroll", onScroll, true);
+    document.addEventListener("scroll", scheduleUpdate, true);
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", scheduleUpdate);
     const timer = window.setInterval(update, 250);
     onCleanup(() => {
-      document.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("scroll", scheduleUpdate, true);
+      document.removeEventListener("focusin", update);
+      document.removeEventListener("focusout", scheduleUpdate);
       if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
       window.clearInterval(timer);
       if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
@@ -187,6 +202,7 @@ export function GuideTarget(props: GuideTargetProps) {
           >
             <div
               class="nf-guide-highlight"
+              data-target-focused={targetFocused() ? "" : undefined}
               style={{
                 left: `${rect().left - 4}px`,
                 top: `${rect().top - 4}px`,
