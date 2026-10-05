@@ -27,6 +27,7 @@ import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import type { DockviewPanelApi } from "dockview-core";
 import {
   batch,
+  createComputed,
   createEffect,
   createMemo,
   createSignal,
@@ -36,6 +37,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
 import {
   DropdownMenu,
@@ -69,6 +71,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelTabStatus } from "../../../lib/panel-tab-status";
+import { createShowObjectUid } from "../../../lib/sequence-factory";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { resolveSpatialSelection } from "../../../lib/wasm-bridge";
 import {
@@ -377,6 +380,19 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     const lane = activeLane();
     return lane ? stepFxTrack(lane, trackKind()) : undefined;
   });
+
+  const [stepRows, setStepRows] = createStore<types.FxStep[]>([]);
+  /**
+   * Mirrors the active track's steps into a uid-keyed store. Every edit clones
+   * the draft, so rendering the cloned objects directly would remount each
+   * sheet row and drop keyboard focus from its controls after every change.
+   */
+  createComputed(() =>
+    setStepRows(
+      // Cloned so reconcile never mutates step objects owned by earlier drafts.
+      reconcile(structuredClone(activeTrack()?.steps ?? []), { key: "uid" }),
+    ),
+  );
 
   /** Formats the active track's effective cycle after optional fixed scaling. */
   const activeCycleBeatText = createMemo(() => {
@@ -743,7 +759,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     if (incoming.length === 0) return;
     const fresh = incoming.map((step) => ({
       ...structuredClone(step),
-      uid: crypto.randomUUID(),
+      uid: createShowObjectUid(),
       target: setStepFxTargetValue(
         step.target,
         stepFxNumericTarget(step.target),
@@ -1599,7 +1615,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          <For each={track().steps}>
+                                          <For each={stepRows}>
                                             {(step, index) => {
                                               /** Returns the validation prefix for this authored row. */
                                               const path = () =>
@@ -1715,7 +1731,14 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                                                 .value,
                                                               trackKind(),
                                                             );
-                                                          if (!parsed) return;
+                                                          if (!parsed) {
+                                                            // Rows stay mounted across edits, so restore the authored text.
+                                                            event.currentTarget.value =
+                                                              formatStepFxTarget(
+                                                                step.target,
+                                                              );
+                                                            return;
+                                                          }
                                                           const selection =
                                                             editSelectionFor(
                                                               step.uid,
@@ -1739,6 +1762,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                                               }),
                                                             ),
                                                           );
+                                                          // Normalized input can leave the target unchanged, which skips Solid's DOM update.
+                                                          event.currentTarget.value =
+                                                            formatStepFxTarget(
+                                                              step.target,
+                                                            );
                                                         }}
                                                       />
                                                       <span class="inline-flex items-center border-l border-neutral-700 px-2 text-xs text-neutral-500">
@@ -1774,10 +1802,21 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                                         step.width_beats,
                                                       )}
                                                       onChange={(event) => {
-                                                        const value = Number(
+                                                        const value =
                                                           event.currentTarget
-                                                            .value,
-                                                        );
+                                                            .valueAsNumber;
+                                                        if (
+                                                          !Number.isFinite(
+                                                            value,
+                                                          )
+                                                        ) {
+                                                          // An emptied field is not an authored width; restore the current one.
+                                                          event.currentTarget.value =
+                                                            formatStepFxWidthBeats(
+                                                              step.width_beats,
+                                                            );
+                                                          return;
+                                                        }
                                                         replaceTrack(
                                                           editStepFxSteps(
                                                             track(),
@@ -1793,6 +1832,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                                             }),
                                                           ),
                                                         );
+                                                        // Rounding can leave the width unchanged, which skips Solid's DOM update.
+                                                        event.currentTarget.value =
+                                                          formatStepFxWidthBeats(
+                                                            step.width_beats,
+                                                          );
                                                       }}
                                                     />
                                                   </td>
