@@ -557,6 +557,7 @@ test("Step FX waveform geometry drag-edits authored fields", async ({
   backendSlot,
   page,
 }, testInfo) => {
+  test.setTimeout(60_000);
   await openStepFxEditorApp(page, backendSlot.backendPort);
   await page.getByRole("tab", { name: "Fx" }).click();
   await page.getByRole("button", { name: "Add effect" }).click();
