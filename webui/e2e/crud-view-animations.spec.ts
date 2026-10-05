@@ -49,29 +49,32 @@ for (const component of [
       ["list", "-100%"],
       ["grid", "100%"],
     ]) {
-      await panel
-        .getByRole("button", { name: `Switch to ${mode} view` })
-        .evaluate(async (button) => {
-          (button as HTMLButtonElement).click();
-          await new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-          );
-        });
+      // Pause the entrance in the same task as the click; a separate round
+      // trip lets the short slide finish first on a loaded machine.
+      expect(
+        await panel
+          .getByRole("button", { name: `Switch to ${mode} view` })
+          .evaluate(async (button) => {
+            const root = button.closest("[data-panel-id]")!;
+            (button as HTMLButtonElement).click();
+            let element = root.querySelector(".animate-in");
+            while (!element?.getAnimations().length) {
+              await new Promise(requestAnimationFrame);
+              element = root.querySelector(".animate-in");
+            }
+            const animation = element.getAnimations()[0];
+            animation.pause();
+            animation.currentTime = 60;
+            return [
+              animation instanceof CSSAnimation,
+              getComputedStyle(element).getPropertyValue(
+                "--tw-enter-translate-x",
+              ),
+            ];
+          }),
+      ).toEqual([true, offset]);
       const content = panel.locator(".animate-in");
       await expect(content).toHaveCount(1);
-      expect(
-        await content.evaluate((element) => {
-          const animation = element.getAnimations()[0];
-          animation.pause();
-          animation.currentTime = 60;
-          return [
-            animation instanceof CSSAnimation,
-            getComputedStyle(element).getPropertyValue(
-              "--tw-enter-translate-x",
-            ),
-          ];
-        }),
-      ).toEqual([true, offset]);
       if (mode === "list")
         await panel.screenshot({
           path: testInfo.outputPath("list-slide.png"),
