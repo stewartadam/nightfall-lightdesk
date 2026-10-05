@@ -5387,6 +5387,7 @@ dependencies = [
  "bevy_ecs",
  "bevy_reflect",
  "nightfall-engine",
+ "nightfall-service-host",
  "nightfall-workspace-hack",
  "spin_sleep",
  "tracing",
@@ -5642,7 +5643,6 @@ dependencies = [
  "nightfall-io",
  "nightfall-service-host",
  "nightfall-workspace-hack",
- "tokio",
  "tracing",
 ]
 
@@ -5660,7 +5660,6 @@ dependencies = [
  "nightfall-service-host",
  "nightfall-workspace-hack",
  "sacn",
- "tokio",
  "tracing",
 ]
 

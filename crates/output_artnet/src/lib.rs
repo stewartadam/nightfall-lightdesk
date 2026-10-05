@@ -13,7 +13,6 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::ArtNetRecentFramesByUniverse;
 use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
 
 pub mod output_artnet;
@@ -65,10 +64,9 @@ impl Plugin for OutputArtnetPlugin {
         app.init_resource::<TransportRuntimePolicy>();
         let artnet_service = service::process_artnet_output_service();
         let _ = artnet_service.configure_network_output_enabled(self.network_output_enabled);
-        let artnet_recent_frames = ArtNetRecentFramesByUniverse::new();
 
         app.insert_resource(artnet_service.client());
-        app.insert_resource(artnet_recent_frames);
+        app.insert_resource(artnet_service.recent_frames());
         app.add_systems(
             Update,
             output_artnet::output

@@ -46,6 +46,11 @@
 //!  \----- event loop -----/    \---------------- event loop ----------------/
 //!           60 fps                           limited to 10 fps
 //! ```
+//!
+//! Regular frames start on the shared tick grid from [`nightfall_service_host::tick_grid`], which
+//! the DMX output workers also transmit on. A [`FrameWaker`] wake (sent when a command arrives)
+//! ends the sleep early so the command is handled without waiting for the next tick. Early frames
+//! leave the grid unchanged, and DMX output keeps its own fixed rate, so they only cost CPU time.
 
 #![warn(missing_docs)]
 
@@ -61,6 +66,8 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_reflect::prelude::*;
 use nightfall_engine::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use nightfall_service_host::prelude::next_grid_tick;
 
 /// Prelude for ergonomic imports
 pub mod prelude {
@@ -169,19 +176,50 @@ impl std::fmt::Display for Limiter {
 #[derive(Debug, Default, Clone, Resource)]
 pub struct FrametimeLimit(pub Arc<Mutex<Duration>>);
 
-/// Tracks the end of the previous frame and how late it finished.
+/// Earliest an early (command-woken) frame may start after the previous frame started.
+///
+/// Bounds what a burst of commands can cost to a few extra frames per tick.
+#[cfg(not(target_arch = "wasm32"))]
+const EARLY_FRAME_MIN_INTERVAL: Duration = Duration::from_millis(5);
+
+/// Final stretch before a tick that is slept with `spin_sleep`, so regular frames start
+/// precisely on the tick. A wake arriving inside it waits for the tick.
+#[cfg(not(target_arch = "wasm32"))]
+const SPIN_TAIL: Duration = Duration::from_millis(2);
+
+/// Final stretch before a tick that is not left to the condition variable wait.
+///
+/// On Windows that wait is only as precise as the system timer (about 15.6 ms by default), so
+/// the stretch between this and [`SPIN_TAIL`] is slept in short high-resolution native sleeps
+/// that check for wakes in between.
+#[cfg(windows)]
+const PRECISE_TAIL: Duration = Duration::from_millis(16);
+#[cfg(not(any(windows, target_arch = "wasm32")))]
+const PRECISE_TAIL: Duration = SPIN_TAIL;
+
+/// Native sleep slice used to poll for wakes between [`PRECISE_TAIL`] and [`SPIN_TAIL`].
+#[cfg(not(target_arch = "wasm32"))]
+const WAKE_POLL_INTERVAL: Duration = Duration::from_millis(1);
+
+/// Tracks when the current frame started and which tick the next regular frame starts on.
 #[derive(Debug, Clone, Resource)]
 pub struct FrameTimer {
-    sleep_end: Instant,
-    /// How far the previous frame (work plus sleep) ran past the frame target. The next sleep is
-    /// shortened by this amount so a late frame is caught up on the following one.
-    lateness: Duration,
+    /// When the current frame started, after the previous limiter sleep.
+    frame_start: Instant,
+    /// The grid tick the next regular frame starts on, with the period it was computed for.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    next_tick: Option<(Instant, Duration)>,
+    /// [`FrameWaker`] generation observed when the current frame started. A newer generation
+    /// means a command arrived since, so the next frame starts early. `None` until the first
+    /// frame, so wakes from before this world existed do not start an early frame.
+    seen_wake: Option<u64>,
 }
 impl Default for FrameTimer {
     fn default() -> Self {
         FrameTimer {
-            sleep_end: Instant::now(),
-            lateness: Duration::ZERO,
+            frame_start: Instant::now(),
+            next_tick: None,
+            seen_wake: None,
         }
     }
 }
@@ -231,7 +269,7 @@ impl FramePaceStats {
     }
 }
 
-/// Accurately sleeps until it's time to start the next frame.
+/// Accurately sleeps until the next tick, or until a command wakes the engine.
 ///
 /// The `spin_sleep` dependency makes it possible to get extremely accurate sleep times across
 /// platforms. Using `std::thread::sleep()` will not be precise enough, especially windows. Using a
@@ -240,22 +278,31 @@ impl FramePaceStats {
 /// `spin_sleep` sleeps as long as possible given the platform's sleep accuracy, and spins for the
 /// remainder. The dependency is however not WASM compatible, which is fine, because frame limiting
 /// should not be used in a browser; this would compete with the browser's frame limiter.
+///
+/// Regular frames start on the tick grid shared with DMX output (see
+/// [`nightfall_service_host::tick_grid`]). A [`FrameWaker`] wake newer than the one observed at the
+/// start of this frame starts the next frame early, no sooner than [`EARLY_FRAME_MIN_INTERVAL`]
+/// after this one started, and leaves the pending tick in place.
 #[allow(unused_variables, unused_mut)]
 fn framerate_limiter(
     mut timer: ResMut<FrameTimer>,
     stats: Res<FramePaceStats>,
     settings: Res<FramepaceSettings>,
+    waker: Option<Res<FrameWaker>>,
 ) {
     let frame_target = match settings.limiter {
         Limiter::Manual(target) => target,
         Limiter::Off => Duration::ZERO,
     };
 
-    let frame_time = timer.sleep_end.elapsed();
+    let frame_time = timer.frame_start.elapsed();
     let mut oversleep = Duration::ZERO;
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        let lateness = timer.lateness;
+    if settings.limiter.is_enabled() {
+        let tick = match timer.next_tick {
+            Some((tick, period)) if period == frame_target => tick,
+            _ => next_grid_tick(frame_target, timer.frame_start),
+        };
 
         // Read EMA of previous sleep error (ns). We'll treat negative avg as zero compensation.
         let avg_err_ns = stats.avg_sleep_error_ns.load(Ordering::Relaxed);
@@ -265,38 +312,51 @@ fn framerate_limiter(
             Duration::ZERO
         };
 
-        // Compensate requested sleep by EMA of previous sleep error.
-        let sleep_time = frame_target.saturating_sub(frame_time + lateness + compensation);
-        if settings.limiter.is_enabled() {
-            let before_sleep = Instant::now();
-            spin_sleep::sleep(sleep_time);
-            let after_sleep = Instant::now();
-            let actual_sleep = after_sleep.duration_since(before_sleep);
-            oversleep = actual_sleep.saturating_sub(sleep_time);
+        // Compensate the wake-up time by the EMA of previous sleep error.
+        let wake_at = tick.checked_sub(compensation).unwrap_or(tick);
+        let before_sleep = Instant::now();
+        let woke_early = sleep_until_tick_or_wake(
+            wake_at,
+            timer.frame_start + EARLY_FRAME_MIN_INTERVAL,
+            waker.as_deref(),
+            timer
+                .seen_wake
+                .or_else(|| waker.as_deref().map(FrameWaker::generation))
+                .unwrap_or_default(),
+        );
+        let after_sleep = Instant::now();
 
-            tracing::trace!(
-                ?frame_target,
-                ?frame_time,
-                prev_lateness = ?lateness,
-                compensation_ns = avg_err_ns,
-                requested_sleep = ?sleep_time,
-                ?actual_sleep,
-                "Frame limiter sleep completed"
-            );
+        if woke_early {
+            timer.next_tick = Some((tick, frame_target));
+        } else {
+            timer.next_tick = Some((
+                next_grid_tick(frame_target, tick.max(after_sleep)),
+                frame_target,
+            ));
+            if before_sleep < wake_at {
+                oversleep = after_sleep.saturating_duration_since(wake_at);
 
-            // Update EMA of sleep error (actual - requested) in ns using integer alpha=1/5.
-            let requested_ns = sleep_time.as_nanos() as i64;
-            let actual_ns = actual_sleep.as_nanos() as i64;
-            let error = actual_ns - requested_ns;
-            let old = stats.avg_sleep_error_ns.load(Ordering::Relaxed);
-            let new = old + ((error - old) / 5); // alpha ~= 0.2
-            stats.avg_sleep_error_ns.store(new, Ordering::Relaxed);
+                // Update EMA of sleep error (actual - requested) in ns using integer alpha=1/5.
+                let error = after_sleep.duration_since(before_sleep).as_nanos() as i64
+                    - wake_at.duration_since(before_sleep).as_nanos() as i64;
+                let old = stats.avg_sleep_error_ns.load(Ordering::Relaxed);
+                let new = old + ((error - old) / 5); // alpha ~= 0.2
+                stats.avg_sleep_error_ns.store(new, Ordering::Relaxed);
+            }
         }
+
+        tracing::trace!(
+            ?frame_target,
+            ?frame_time,
+            compensation_ns = avg_err_ns,
+            woke_early,
+            slept = ?after_sleep.duration_since(before_sleep),
+            "Frame limiter sleep completed"
+        );
     }
 
-    let frame_time_total = timer.sleep_end.elapsed();
-    timer.sleep_end = Instant::now();
-    timer.lateness = frame_time_total.saturating_sub(frame_target);
+    timer.frame_start = Instant::now();
+    timer.seen_wake = waker.as_deref().map(FrameWaker::generation);
     if let Ok(mut frametime) = stats.frametime.try_lock() {
         *frametime = frame_time;
     }
@@ -312,8 +372,52 @@ fn framerate_limiter(
     }
 }
 
+/// Sleeps until `wake_at`, returning `true` instead once a wake newer than `seen` has arrived and
+/// `earliest_early` has passed.
+///
+/// Most of the sleep blocks on the waker's condition variable so a wake ends it at once. The last
+/// [`SPIN_TAIL`] is left to `spin_sleep` so regular frames start precisely on the tick; on
+/// platforms where the condition variable is coarse, the stretch up to [`PRECISE_TAIL`] is slept
+/// in [`WAKE_POLL_INTERVAL`] native sleeps.
+#[cfg(not(target_arch = "wasm32"))]
+fn sleep_until_tick_or_wake(
+    wake_at: Instant,
+    earliest_early: Instant,
+    waker: Option<&FrameWaker>,
+    seen: u64,
+) -> bool {
+    loop {
+        let now = Instant::now();
+        if now >= wake_at {
+            return false;
+        }
+        let woken = waker.is_some_and(|waker| waker.generation() != seen);
+        if woken && now >= earliest_early {
+            return true;
+        }
+
+        let until = if woken {
+            earliest_early.min(wake_at)
+        } else {
+            wake_at
+        };
+        let remaining = until - now;
+        match waker {
+            Some(waker) if !woken && remaining > PRECISE_TAIL => {
+                waker.wait_timeout(seen, remaining - PRECISE_TAIL);
+            }
+            Some(_) if !woken && remaining > SPIN_TAIL => {
+                spin_sleep::native_sleep(WAKE_POLL_INTERVAL.min(remaining - SPIN_TAIL));
+            }
+            _ => spin_sleep::sleep(remaining),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use nightfall_service_host::prelude::grid_epoch;
+
     use super::*;
 
     /// Verifies that setting frame pace mutates state before completing the command.
@@ -408,6 +512,77 @@ mod tests {
         assert!(
             average >= Duration::from_millis(18) && average <= Duration::from_millis(25),
             "frames should average about 20 ms, got {average:?}"
+        );
+    }
+
+    /// Builds a limited app with no per-frame work whose limiter listens to a [`FrameWaker`].
+    fn wakeable_app(fps: f64) -> (App, FrameWaker) {
+        let mut app = limited_app(fps, Duration::ZERO);
+        let waker = FrameWaker::default();
+        app.insert_resource(waker.clone());
+        (app, waker)
+    }
+
+    /// Verifies that a wake ends the limiter sleep early and that the pending tick is kept, so the
+    /// following regular frame still starts on the original grid.
+    #[test]
+    fn wake_starts_frame_early_without_moving_the_tick() {
+        let (mut app, waker) = wakeable_app(10.0);
+        app.update();
+
+        let start = Instant::now();
+        let remote = waker.clone();
+        let handle = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            remote.wake();
+        });
+        app.update();
+        let early = start.elapsed();
+        handle.join().expect("waking thread should finish");
+        assert!(
+            early < Duration::from_millis(60),
+            "a wake 20 ms into a 100 ms sleep should end it early, took {early:?}"
+        );
+
+        app.update();
+        let through_tick = start.elapsed();
+        assert!(
+            through_tick <= Duration::from_millis(110),
+            "the frame after an early frame should start on the original tick, took {through_tick:?}"
+        );
+    }
+
+    /// Verifies that a wake already pending when the limiter runs still waits out the minimum
+    /// interval after the previous frame started.
+    #[test]
+    fn early_frames_respect_minimum_interval() {
+        let (mut app, waker) = wakeable_app(10.0);
+        app.update();
+
+        let start = Instant::now();
+        waker.wake();
+        app.update();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= EARLY_FRAME_MIN_INTERVAL.saturating_sub(Duration::from_millis(1))
+                && elapsed < Duration::from_millis(50),
+            "a pending wake should start the next frame after about {EARLY_FRAME_MIN_INTERVAL:?}, took {elapsed:?}"
+        );
+    }
+
+    /// Verifies that regular frames start on the shared grid so they stay in phase with DMX output.
+    #[test]
+    fn regular_frames_start_on_grid_ticks() {
+        let mut app = limited_app(50.0, Duration::ZERO);
+        app.update();
+        app.update();
+
+        let period = Duration::from_millis(20);
+        let since_epoch = Instant::now().saturating_duration_since(grid_epoch());
+        let phase = Duration::from_nanos((since_epoch.as_nanos() % period.as_nanos()) as u64);
+        assert!(
+            phase < Duration::from_millis(3),
+            "a frame should start just after a grid tick, got phase {phase:?}"
         );
     }
 }

@@ -23,6 +23,7 @@ pub mod command_traits;
 pub mod data_provider;
 pub mod diagnostic_paths;
 pub mod eval_action;
+pub mod frame_waker;
 pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod process_shutdown;
@@ -75,7 +76,7 @@ pub mod prelude {
     };
     pub use crate::client_bridge::{
         ClientBridgeHost, ClientBridgePlugin, ClientEventSink, CommandDeserializerRegistry,
-        CommandJsonEnvelope, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
+        CommandJsonEnvelope, CommandSender, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
         EncodedClientMessage, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
@@ -86,6 +87,7 @@ pub mod prelude {
     pub use crate::command_traits::CliCommand;
     pub use crate::data_provider::{DataProvider, DataStoreError};
     pub use crate::eval_action::EvalAction;
+    pub use crate::frame_waker::FrameWaker;
     pub use crate::parse_command_string;
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::process_shutdown::{

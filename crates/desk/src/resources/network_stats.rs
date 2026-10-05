@@ -37,26 +37,26 @@ pub struct NetworkOutputSendFailure {
 /// Tracks timing statistics for network output operations
 #[derive(Resource, Default, Debug, Clone)]
 pub struct NetworkStats {
-    /// Time spent sending Art-Net universes in the last frame
+    /// Time spent sending Art-Net universes on the last output tick
     artnet_send_time: Option<Duration>,
-    /// Number of Art-Net universes sent in the last frame
+    /// Number of Art-Net universes sent on the last output tick
     artnet_universe_count: u32,
-    /// Time spent sending sACN universes in the last frame
+    /// Time spent sending sACN universes on the last output tick
     sacn_send_time: Option<Duration>,
-    /// Number of sACN universes sent in the last frame
+    /// Number of sACN universes sent on the last output tick
     sacn_universe_count: u32,
     /// Recent network output send failures.
     recent_send_failures: Vec<NetworkOutputSendFailure>,
 }
 
 impl NetworkStats {
-    /// Records Art-Net send timing for the current frame
+    /// Records Art-Net send timing for the latest output tick
     pub fn set_artnet_timing(&mut self, duration: Duration, universe_count: u32) {
         self.artnet_send_time = Some(duration);
         self.artnet_universe_count = universe_count;
     }
 
-    /// Records sACN send timing for the current frame
+    /// Records sACN send timing for the latest output tick
     pub fn set_sacn_timing(&mut self, duration: Duration, universe_count: u32) {
         self.sacn_send_time = Some(duration);
         self.sacn_universe_count = universe_count;

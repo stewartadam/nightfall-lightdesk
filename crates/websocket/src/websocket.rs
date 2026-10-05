@@ -81,7 +81,7 @@ pub struct ConnectedClient {
 /// State shared for the axum app
 pub struct AxumAppState {
     /// Channel for sending JSON command envelopes from Axum
-    pub command_json_tx: ClientSender<CommandJsonEnvelope>,
+    pub command_json_tx: CommandSender,
     /// Channel for sending untracked JSON update envelopes from Axum.
     pub update_json_tx: ClientSender<UpdateJsonEnvelope>,
     /// Maintains references the message channels of connected client
@@ -316,7 +316,7 @@ pub(crate) fn create_axum_task(
     config: crate::external_control::ListenerTaskConfig,
     mut shutdown_rx: BroadcastReceiver<()>,
     ws_broadcast_rx: ClientReceiver<Vec<u8>>,
-    command_json_tx: ClientSender<CommandJsonEnvelope>,
+    command_json_tx: CommandSender,
     update_json_tx: ClientSender<UpdateJsonEnvelope>,
     plugin_routes: Router,
     stateful_plugin_routes: Router<AxumAppState>,
@@ -568,7 +568,7 @@ mod tests {
             },
             shutdown_rx,
             broadcast_rx,
-            command_tx,
+            CommandSender::new(command_tx, FrameWaker::default()),
             update_tx,
             Router::new(),
             Router::new(),

@@ -563,7 +563,7 @@ mod tests {
             77,
         );
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             frame.universe_id,
             frame.sequence,
@@ -619,7 +619,7 @@ mod tests {
             77,
         );
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             frame.universe_id,
             frame.sequence,
@@ -674,7 +674,7 @@ mod tests {
             make_frame_with_source_addr_and_sequence(2, &[(1, 99), (2, 77)], source_addr, 77);
         delayed_loopback_frame.received_at = sent_at + Duration::from_millis(900);
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             delayed_loopback_frame.universe_id,
             delayed_loopback_frame.sequence,
@@ -739,7 +739,7 @@ mod tests {
         let source_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 40123);
         let sent_at = Instant::now();
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         let original =
             make_frame_with_source_addr_and_sequence(2, &[(1, 10), (2, 20)], source_addr, 10);
         identity.record_recent_frame(
@@ -807,7 +807,7 @@ mod tests {
         );
         frame.received_at = sent_at + Duration::from_millis(100);
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             frame.universe_id,
             frame.sequence,
@@ -869,7 +869,7 @@ mod tests {
         );
         frame.received_at = sent_at + Duration::from_millis(100);
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             frame.universe_id,
             frame.sequence,

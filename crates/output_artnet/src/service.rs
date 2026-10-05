@@ -6,34 +6,27 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::net::{SocketAddrV4, UdpSocket};
-use std::sync::OnceLock;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::ops::ControlFlow;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use bevy_ecs::prelude::Resource;
-use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
-use nightfall_service_host::prelude::{ModeWorkerSlot, process_singleton};
+use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
+use nightfall_io::ArtNetRecentFramesByUniverse;
+use nightfall_io::prelude::{
+    DMX_REFRESH_INTERVAL, IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy,
+};
+use nightfall_service_host::prelude::{FixedRateWorker, ModeWorkerSlot, process_singleton};
 
-/// Default frame interval (~44 FPS) matching DMX512 timing for 512 channels.
-pub const DEFAULT_ARTNET_FRAME_INTERVAL: Duration = Duration::from_millis(23);
 const ARTNET_PORT: u16 = 6454;
-
-/// Metadata returned when an Art-Net frame is sent.
-#[derive(Debug, Clone, Copy)]
-pub struct ArtNetSendMeta {
-    /// Art-Net sequence number for the sent frame.
-    pub sequence: u8,
-    /// Local source socket address used for the frame.
-    pub local_source_addr: Option<SocketAddr>,
-}
 
 /// Error returned when Art-Net output cannot send a frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArtNetSendError {
-    /// Output service is not configured or unavailable.
-    Unavailable,
     /// Socket address became unavailable and output was disabled.
     AddrNotAvailable,
     /// Frame send failed for another I/O reason.
@@ -45,151 +38,198 @@ pub enum ArtNetSendError {
     },
 }
 
+/// One Art-Net universe the worker transmits on every tick.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtNetFrame {
+    /// On-the-wire universe (port address).
+    pub universe: u16,
+    /// Unicast destination, or `None` to broadcast.
+    pub unicast_ip: Option<Ipv4Addr>,
+    /// Channel values.
+    pub data: [u8; MAX_CHANNELS_PER_UNIVERSE],
+}
+
+/// Identifies one Art-Net delivery: a universe and its unicast target, if any.
+pub type ArtNetOutputKey = (u16, Option<Ipv4Addr>);
+
+/// Send outcomes the worker accumulated since the ECS last drained them.
+#[derive(Debug, Default)]
+pub struct ArtNetOutputReport {
+    /// Latest send outcome for each delivery.
+    pub outcomes: BTreeMap<ArtNetOutputKey, Result<(), ArtNetSendError>>,
+    /// Time spent sending and number of universes sent on the most recent tick.
+    pub last_tick: Option<(Duration, u32)>,
+}
+
+/// State shared between ECS clients and the worker thread.
+#[derive(Debug, Default)]
+struct ArtNetShared {
+    /// Frames transmitted on every tick, replaced by each engine frame.
+    frames: Mutex<Arc<Vec<ArtNetFrame>>>,
+    /// Outcomes not yet drained by the ECS.
+    report: Mutex<ArtNetOutputReport>,
+    /// Whether a worker is currently running. Set by the worker when it starts and cleared when
+    /// it disables itself, so a self-disabled worker is never reported as available.
+    running: AtomicBool,
+}
+
 /// Art-Net output client used inside ECS worlds.
+///
+/// Engine frames publish the latest composed universes here; the output worker transmits
+/// whatever was published last on its own fixed 44 Hz clock.
 #[derive(Clone, Default, Resource)]
 pub struct ArtNetOutputClient {
-    command_tx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<ArtNetWorkerCommand>>>>,
+    shared: Arc<ArtNetShared>,
 }
 
 impl ArtNetOutputClient {
-    /// Send one Art-Net DMX frame.
-    pub fn send_frame(
-        &self,
-        universe: u16,
-        data: &[u8],
-        unicast_ip: Option<Ipv4Addr>,
-    ) -> Result<ArtNetSendMeta, ArtNetSendError> {
-        {
-            let maybe_sender = self
-                .command_tx
-                .lock()
-                .ok()
-                .and_then(|sender| sender.clone());
-            let Some(command_tx) = maybe_sender else {
-                return Err(ArtNetSendError::Unavailable);
-            };
-
-            let (response_tx, response_rx) = std::sync::mpsc::channel();
-            if command_tx
-                .send(ArtNetWorkerCommand::SendFrame {
-                    universe,
-                    data: data.to_vec(),
-                    unicast_ip,
-                    response_tx,
-                })
-                .is_err()
-            {
-                return Err(ArtNetSendError::Unavailable);
-            }
-
-            response_rx
-                .recv_timeout(Duration::from_millis(250))
-                .unwrap_or(Err(ArtNetSendError::Unavailable))
+    /// Replaces the frames the worker transmits from its next tick onwards.
+    pub fn publish(&self, frames: Vec<ArtNetFrame>) {
+        if let Ok(mut published) = self.shared.frames.lock() {
+            *published = Arc::new(frames);
         }
     }
 
-    /// Return whether the Art-Net service currently has a sender connected.
+    /// Takes the send outcomes accumulated since the previous call.
+    pub fn take_report(&self) -> ArtNetOutputReport {
+        self.shared
+            .report
+            .lock()
+            .map(|mut report| std::mem::take(&mut *report))
+            .unwrap_or_default()
+    }
+
+    /// Returns whether an Art-Net worker is running.
     pub fn is_available(&self) -> bool {
-        {
-            self.command_tx
-                .lock()
-                .ok()
-                .is_some_and(|sender| sender.is_some())
-        }
+        self.shared.running.load(Ordering::Acquire)
     }
 
-    pub(crate) fn set_sender(
+    /// Returns the frames the worker transmits on its next tick.
+    #[cfg(test)]
+    pub(crate) fn published(&self) -> Arc<Vec<ArtNetFrame>> {
+        self.shared
+            .frames
+            .lock()
+            .map(|frames| Arc::clone(&frames))
+            .unwrap_or_default()
+    }
+
+    /// Marks the worker as running or stopped.
+    pub(crate) fn set_running(&self, running: bool) {
+        self.shared.running.store(running, Ordering::Release);
+    }
+
+    /// Records the outcomes of one tick for the ECS to drain.
+    pub(crate) fn record_tick(
         &self,
-        sender: Option<tokio::sync::mpsc::UnboundedSender<ArtNetWorkerCommand>>,
+        outcomes: impl IntoIterator<Item = (ArtNetOutputKey, Result<(), ArtNetSendError>)>,
+        elapsed: Duration,
+        sent_count: u32,
     ) {
-        if let Ok(mut command_tx) = self.command_tx.lock() {
-            *command_tx = sender;
+        if let Ok(mut report) = self.shared.report.lock() {
+            report.outcomes.extend(outcomes);
+            report.last_tick = Some((elapsed, sent_count));
         }
     }
 }
 
-/// Commands handled by the Art-Net output worker thread.
-pub(crate) enum ArtNetWorkerCommand {
-    SendFrame {
-        universe: u16,
-        data: Vec<u8>,
-        unicast_ip: Option<Ipv4Addr>,
-        response_tx: std::sync::mpsc::Sender<Result<ArtNetSendMeta, ArtNetSendError>>,
-    },
-    Shutdown,
-}
-
-/// Background worker state for batching and sending Art-Net frames.
+/// Background worker that transmits the latest published frames on the shared 44 Hz grid.
 pub(crate) struct ArtNetWorker {
-    /// Command sender used to submit frame-send requests to the worker thread.
-    pub(crate) command_tx: tokio::sync::mpsc::UnboundedSender<ArtNetWorkerCommand>,
-    join_handle: Option<std::thread::JoinHandle<()>>,
+    worker: FixedRateWorker,
 }
 
 impl ArtNetWorker {
-    pub(crate) fn spawn(binding: ArtNetOutputBinding) -> Option<Self> {
+    /// Binds the socket and starts ticking, or returns `None` when output is disabled or the
+    /// socket cannot be opened.
+    pub(crate) fn spawn(
+        binding: ArtNetOutputBinding,
+        client: ArtNetOutputClient,
+        recent_frames: ArtNetRecentFramesByUniverse,
+    ) -> Option<Self> {
         let mut socket = init_socket(binding)?;
-        let (command_tx, mut command_rx) = tokio::sync::mpsc::unbounded_channel();
-        let join_handle = std::thread::Builder::new()
-            .name("artnet-output-service".to_string())
-            .spawn(move || {
-                while let Some(command) = command_rx.blocking_recv() {
-                    match command {
-                        ArtNetWorkerCommand::SendFrame {
-                            universe,
-                            data,
-                            unicast_ip,
-                            response_tx,
-                        } => match socket.send_frame(universe, &data, unicast_ip) {
-                            Ok(sequence) => {
-                                let _ = response_tx.send(Ok(ArtNetSendMeta {
-                                    sequence,
-                                    local_source_addr: socket.local_addr(),
-                                }));
-                            }
-                            Err(error)
-                                if error.kind() == std::io::ErrorKind::AddrNotAvailable =>
-                            {
-                                let _ = response_tx.send(Err(ArtNetSendError::AddrNotAvailable));
-                                tracing::warn!(
-                                    ?error,
-                                    "Address not available for Art-Net socket; disabling Art-Net output"
-                                );
-                                break;
-                            }
-                            Err(error) => {
-                                tracing::trace!(?error, "Sending Art-Net universe data failed");
-                                let _ = response_tx.send(Err(ArtNetSendError::Failed {
-                                    kind: error.kind(),
-                                    message: error.to_string(),
-                                }));
-                            }
-                        },
-                        ArtNetWorkerCommand::Shutdown => break,
-                    }
+        // Never replay frames published before output stopped; wait for the next engine frame.
+        client.publish(Vec::new());
+        client.set_running(true);
+        let tick_client = client.clone();
+        let spawned =
+            FixedRateWorker::spawn("artnet-output-service", DMX_REFRESH_INTERVAL, move || {
+                let flow = transmit_tick(&mut socket, &tick_client, &recent_frames);
+                if flow.is_break() {
+                    tick_client.set_running(false);
                 }
-                tracing::debug!("Art-Net output service worker exiting");
-            })
-            .expect("failed to spawn Art-Net output service worker");
-
-        Some(Self {
-            command_tx,
-            join_handle: Some(join_handle),
-        })
-    }
-
-    pub(crate) fn shutdown(&mut self) {
-        let _ = self.command_tx.send(ArtNetWorkerCommand::Shutdown);
-        if let Some(join_handle) = self.join_handle.take() {
-            let _ = join_handle.join();
+                flow
+            });
+        match spawned {
+            Ok(worker) => Some(Self { worker }),
+            Err(error) => {
+                client.set_running(false);
+                tracing::warn!(?error, "Could not start Art-Net output worker");
+                None
+            }
         }
     }
 
-    pub(crate) fn is_alive(&self) -> bool {
-        self.join_handle
-            .as_ref()
-            .is_some_and(|join_handle| !join_handle.is_finished())
+    pub(crate) fn shutdown(&mut self) {
+        self.worker.shutdown();
+        tracing::debug!("Art-Net output service worker exited");
     }
+
+    pub(crate) fn is_alive(&self) -> bool {
+        self.worker.is_alive()
+    }
+}
+
+/// Sends every published frame once and records the outcomes.
+///
+/// Breaks when the bound address disappears, which disables Art-Net output until the binding is
+/// reconfigured.
+fn transmit_tick(
+    socket: &mut ArtNetSocket,
+    client: &ArtNetOutputClient,
+    recent_frames: &ArtNetRecentFramesByUniverse,
+) -> ControlFlow<()> {
+    let frames = client
+        .shared
+        .frames
+        .lock()
+        .map(|frames| Arc::clone(&frames))
+        .unwrap_or_default();
+    let start = Instant::now();
+    let mut sent_count = 0u32;
+    let mut outcomes = Vec::with_capacity(frames.len());
+    let mut flow = ControlFlow::Continue(());
+
+    for frame in frames.iter() {
+        let key = (frame.universe, frame.unicast_ip);
+        match socket.send_frame(frame.universe, &frame.data, frame.unicast_ip, recent_frames) {
+            Ok(()) => {
+                sent_count += 1;
+                outcomes.push((key, Ok(())));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AddrNotAvailable => {
+                tracing::warn!(
+                    ?error,
+                    "Address not available for Art-Net socket; disabling Art-Net output"
+                );
+                outcomes.push((key, Err(ArtNetSendError::AddrNotAvailable)));
+                flow = ControlFlow::Break(());
+                break;
+            }
+            Err(error) => {
+                tracing::trace!(?error, "Sending Art-Net universe data failed");
+                outcomes.push((
+                    key,
+                    Err(ArtNetSendError::Failed {
+                        kind: error.kind(),
+                        message: error.to_string(),
+                    }),
+                ));
+            }
+        }
+    }
+
+    client.record_tick(outcomes, start.elapsed(), sent_count);
+    flow
 }
 
 /// UDP socket and broadcast target used by the Art-Net output worker.
@@ -208,12 +248,15 @@ impl ArtNetSocket {
         }
     }
 
+    /// Sends one universe, recording its fingerprint in `recent_frames` before it reaches the
+    /// wire so loopback input can never arrive ahead of the record.
     fn send_frame(
         &mut self,
         universe: u16,
-        data: &[u8],
+        data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
         unicast_ip: Option<Ipv4Addr>,
-    ) -> Result<u8, std::io::Error> {
+        recent_frames: &ArtNetRecentFramesByUniverse,
+    ) -> Result<(), std::io::Error> {
         let port_address = artnet_protocol::PortAddress::try_from(universe)
             .unwrap_or_else(|_| artnet_protocol::PortAddress::try_from(0u16).unwrap());
 
@@ -235,12 +278,15 @@ impl ArtNetSocket {
             None => self.broadcast_dest,
         };
 
+        recent_frames.record_recent_frame(
+            universe,
+            self.sequence,
+            data,
+            self.socket.local_addr().ok(),
+            Instant::now(),
+        );
         self.socket.send_to(&bytes, destination)?;
-        Ok(self.sequence)
-    }
-
-    fn local_addr(&self) -> Option<SocketAddr> {
-        self.socket.local_addr().ok()
+        Ok(())
     }
 }
 
@@ -356,6 +402,7 @@ fn init_socket(binding: ArtNetOutputBinding) -> Option<ArtNetSocket> {
 pub struct ArtNetOutputService {
     slot: ModeWorkerSlot<ArtNetOutputBinding, ArtNetWorker>,
     client: ArtNetOutputClient,
+    recent_frames: ArtNetRecentFramesByUniverse,
 }
 
 impl ArtNetOutputService {
@@ -363,6 +410,7 @@ impl ArtNetOutputService {
         Self {
             slot: ModeWorkerSlot::new(),
             client: ArtNetOutputClient::default(),
+            recent_frames: ArtNetRecentFramesByUniverse::new(),
         }
     }
 
@@ -388,14 +436,13 @@ impl ArtNetOutputService {
     fn configure_binding(&self, binding: ArtNetOutputBinding) -> bool {
         let has_worker = self.slot.rebind(
             binding,
-            ArtNetWorker::spawn,
+            |binding| ArtNetWorker::spawn(binding, self.client.clone(), self.recent_frames.clone()),
             |worker| worker.shutdown(),
             |worker| worker.is_alive(),
         );
-        let sender = self
-            .slot
-            .with_worker(|worker| worker.map(|worker| worker.command_tx.clone()));
-        self.client.set_sender(sender);
+        if !has_worker {
+            self.client.set_running(false);
+        }
         has_worker
     }
 
@@ -404,10 +451,15 @@ impl ArtNetOutputService {
         self.client.clone()
     }
 
+    /// Shared tracker of frames this process transmitted, for Art-Net input loopback filtering.
+    pub fn recent_frames(&self) -> ArtNetRecentFramesByUniverse {
+        self.recent_frames.clone()
+    }
+
     /// Shutdown process-lifetime worker.
     pub fn shutdown(&self) {
         self.slot.shutdown(|worker| worker.shutdown());
-        self.client.set_sender(None);
+        self.client.set_running(false);
     }
 }
 
