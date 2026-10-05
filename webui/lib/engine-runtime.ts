@@ -138,12 +138,17 @@ import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 import { applyFlowDeltaToDefinition } from "./flow-delta";
 import {
   carriesParameterState,
+  ParameterStateDecoder,
   queuedWorkerMessageData,
   type WorkerQueuedMessage,
 } from "./parameter-state-transfer";
 import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
-import type { AnyWsMessage } from "./ws/types";
+import type {
+  AnyWsMessage,
+  ElementParameterState,
+  FixtureParameterState,
+} from "./ws/types";
 
 /** Worker stats per message type */
 interface WorkerTypeStats {
@@ -417,13 +422,16 @@ function scheduleWebsocketPull(): void {
   }
 }
 
+/** Resolves slot-indexed parameter values frames against the backend's latest layout. */
+const parameterStateDecoder = new ParameterStateDecoder();
+
 /** Applies one pulled websocket payload from the worker. */
 function applyWorkerQueuedMessage(message: WorkerQueuedMessage): void {
   recordWorkerDeliveryLag(message.postedAtMs);
   if (typeof message.deliveryMessageId === "number") {
     lastSeenDeliveryMessageId = message.deliveryMessageId;
   }
-  const data = queuedWorkerMessageData(message);
+  const data = queuedWorkerMessageData(message, parameterStateDecoder);
   if (data) queueWorkerMessage(data);
 }
 
@@ -455,7 +463,7 @@ function applyWorkerMessageBatch(messages: unknown): void {
  * Extract and update the immediate parameter output map synchronously.
  * Called when ParameterState arrives so visualizer has fresh DMX data.
  */
-function updateImmediateParams(rawData: types.OutboundParameterState[]) {
+function updateImmediateParams(rawData: FixtureParameterState[]) {
   const outputMap: ParameterOutputMap = new Map();
   for (const item of rawData) {
     // Preserve per-element output arrays for multi-element fixtures
@@ -475,7 +483,7 @@ function updateImmediateParams(rawData: types.OutboundParameterState[]) {
  * load pose, so only forward pan/tilt when absolute or relative state asserts it.
  */
 function visualizerOutputForElement(
-  state: types.ParameterState,
+  state: ElementParameterState,
 ): Record<string, number> {
   if (!("Pan" in state.output) && !("Tilt" in state.output)) {
     return state.output;
@@ -503,8 +511,8 @@ function queueWorkerMessage(raw: AnyWsMessage) {
   if (raw.type === "ParameterState") {
     measurePerformanceScope(
       "websocket-main.parameter-state.immediate-params",
-      () => updateImmediateParams(raw.data as types.OutboundParameterState[]),
-      { fixtureCount: (raw.data as types.OutboundParameterState[]).length },
+      () => updateImmediateParams(raw.data as FixtureParameterState[]),
+      { fixtureCount: (raw.data as FixtureParameterState[]).length },
     );
   }
 
@@ -1108,7 +1116,7 @@ function dispatchMessage(raw: AnyWsMessage) {
     }
 
     case "ParameterState": {
-      const rawData = raw.data as types.OutboundParameterState[];
+      const rawData = raw.data as FixtureParameterState[];
       // Note: immediate output map already updated in queueMessage().
       // The reactive panel store is throttled to keep Solid subscribers responsive.
       queueReactiveParameterState(rawData);
@@ -2205,7 +2213,7 @@ const [resyncGeneration, setResyncGeneration] = hmrSignals?.resyncGeneration
 const [backendAppState, setBackendAppState] = hmrSignals?.backendAppState
   ? [hmrSignals.backendAppState, hmrSignals.setBackendAppState]
   : createSignal<types.AppState | null>(null);
-let pendingReactiveParameterState: types.OutboundParameterState[] | null = null;
+let pendingReactiveParameterState: FixtureParameterState[] | null = null;
 let reactiveParameterStateTimer: ReturnType<typeof setTimeout> | null = null;
 let lastReactiveParameterStateFlushMs = 0;
 let previousParameterRows = new Map<string, ParameterRow>();
@@ -2273,9 +2281,7 @@ function scheduleReactiveParameterStateFlush(delayMs: number): void {
 }
 
 /** Queues the newest parameter state and throttles reactive store notification. */
-function queueReactiveParameterState(
-  rawData: types.OutboundParameterState[],
-): void {
+function queueReactiveParameterState(rawData: FixtureParameterState[]): void {
   pendingReactiveParameterState = rawData;
   const nowMs = performance.now();
   const elapsedMs = nowMs - lastReactiveParameterStateFlushMs;
@@ -2389,7 +2395,7 @@ function parameterRowsEqual(left: ParameterRow, right: ParameterRow): boolean {
  * Aggregates per-element data and detects conflicts.
  */
 function processParameterState(
-  rawData: types.OutboundParameterState[],
+  rawData: FixtureParameterState[],
 ): Map<string, ParameterRow> {
   const paramMap = new Map<string, ParameterRow>();
   for (const item of rawData) {

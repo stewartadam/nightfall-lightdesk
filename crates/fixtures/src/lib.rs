@@ -24,6 +24,7 @@ pub mod library;
 pub mod output_frames;
 pub mod parameter;
 pub mod parameter_index;
+pub mod parameter_state;
 pub mod physical;
 pub mod placement;
 pub mod selection;
@@ -108,6 +109,7 @@ pub mod prelude {
     };
     pub use crate::parameter::{Parameter, ParameterValues};
     pub use crate::parameter_index::{ParameterIndex, ParameterLocation};
+    pub use crate::parameter_state::ParameterStateProjection;
     pub use crate::physical::{BeamOptics, BeamType, DEFAULT_LUMENS, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
@@ -144,6 +146,7 @@ impl Plugin for FixturePlugin {
         app.init_resource::<bindings::ResolvedInputBindings>();
         app.init_resource::<bindings::ConsoleDmxAddresses>();
         app.init_resource::<binding_validation::BindingValidationSettings>();
+        app.init_resource::<parameter_state::ParameterStateProjection>();
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();
         app.init_resource::<universe::InputUniverseStaleTimeout>();

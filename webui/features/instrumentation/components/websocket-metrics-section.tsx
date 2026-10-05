@@ -237,7 +237,8 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             replace older ones before delivery, increasing Drop (cum.). This is
             expected when updates arrive faster than the main thread consumes
             them. Structural messages are queued separately and are not
-            coalesced. Queue overflow or resynchronization can also cause drops;
+            coalesced. Queue overflow, resynchronization, or ParameterState
+            frames indexed by an outdated ParameterLayout can also cause drops;
             the counter is not exclusively snapshot replacement. Delivery IDs
             show main-thread received / worker staged.
           </p>

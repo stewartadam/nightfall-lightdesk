@@ -16,7 +16,9 @@ use nightfall::prelude::{ObjectRef, ObjectType};
 use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
 use nightfall_dmx::prelude::ParameterValue;
 use nightfall_engine::prelude::ClientEventSink;
-use nightfall_fixtures::prelude::{ConsoleDmxUniverses, FixtureDataProviderExt};
+use nightfall_fixtures::prelude::{
+    ConsoleDmxUniverses, FixtureDataProviderExt, ParameterStateProjection,
+};
 use nightfall_fixtures::testing::{
     BENCH_FIXTURE_PARAMETERS, BenchParameter, bench_universe_count, patch_bench_fixtures,
 };
@@ -98,7 +100,13 @@ fn bench_parameter_state(c: &mut Criterion) {
             let receiver = install_client_sink(&mut app);
             app.add_plugins(DiagnosticsPlugin);
             register_fixture_websocket_diagnostics(&mut app);
+            app.init_resource::<ParameterStateProjection>();
             app.add_systems(Update, send_parameter_state);
+            app.update();
+            assert!(
+                drain_bytes(&receiver) > 0,
+                "the first frame should publish the layout and values"
+            );
             app.update();
             let message_bytes = drain_bytes(&receiver);
             assert!(message_bytes > 0, "parameter state should be published");

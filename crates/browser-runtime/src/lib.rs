@@ -365,7 +365,7 @@ mod tests {
         let command_id_text = command_id.simple().to_string();
 
         assert!(types.contains(&"FixtureDefinitions"));
-        assert!(types.contains(&"ParameterState"));
+        assert!(types.contains(&"ParameterLayout"));
         assert!(types.contains(&"ResyncComplete"));
         assert!(types.contains(&"CommandResult"));
         let capability_index = types

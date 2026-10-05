@@ -6,14 +6,27 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { OutboundParameterState, ParameterValue } from "../types";
-import type { AnyWsMessage } from "./ws/types";
+import type {
+  ParameterLayout,
+  ParameterStateFrame,
+  ParameterValue,
+} from "../types";
+import { getLogger } from "./logger";
+import type { AnyWsMessage, FixtureParameterState } from "./ws/types";
 
-/** Numeric parameter snapshots cross the worker boundary without cloning thousands of nested objects. */
+const log = getLogger(import.meta.url);
+
+/**
+ * A `ParameterState` values frame whose buffers the worker copied into typed arrays it can
+ * transfer to the main thread without cloning.
+ */
 export interface PackedParameterState {
-  fixtureUids: string[];
-  attributes: string[];
-  values: Float64Array;
+  layoutId: number;
+  output: Float32Array;
+  absoluteCount: number;
+  assertionSlots: Uint32Array;
+  assertionKinds: Uint8Array;
+  assertionValues: Float32Array;
 }
 
 type ParameterValueType = ParameterValue["type"];
@@ -28,10 +41,10 @@ const PARAMETER_VALUE_FIELDS: Record<ParameterValueType, "value" | "offset"> = {
   Relative: "offset",
   RelativePercent: "offset",
 };
-/** Wire code of each variant is its index in this list. */
-const PARAMETER_VALUE_TYPES = Object.keys(
-  PARAMETER_VALUE_FIELDS,
-) as ParameterValueType[];
+/** Variant lookup for backend-provided names, immune to inherited object keys. */
+const PARAMETER_VALUE_FIELD_BY_VARIANT = new Map<string, "value" | "offset">(
+  Object.entries(PARAMETER_VALUE_FIELDS),
+);
 
 /** Preserves normal object shapes while treating imported prototype-like names as data. */
 function setAttribute<T>(
@@ -51,118 +64,159 @@ function setAttribute<T>(
   }
 }
 
-/** Counts a plain map's own enumerable keys without allocating an entries array. */
-function keyCount(map: object): number {
-  let count = 0;
-  for (const _ in map) count++;
-  return count;
+/** Copies a decoded byte string into its own aligned buffer so it can back a typed array. */
+function ownedBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.slice().buffer as ArrayBuffer;
 }
 
-/** Returns how many numbers a snapshot encodes to, so packing fills one exact-size buffer. */
-function packedLength(states: OutboundParameterState[]): number {
-  let length = 0;
-  for (const fixture of states) {
-    length += 1;
-    for (const element of fixture.parameters) {
-      length +=
-        3 +
-        2 * keyCount(element.output) +
-        3 * keyCount(element.absolute) +
-        3 * keyCount(element.relative);
-    }
-  }
-  return length;
-}
-
-/** Encodes a complete snapshot, preserving double precision and all asserted parameter variants. */
-export function packParameterState(
-  states: OutboundParameterState[],
+/** Views a values frame's byte strings as typed arrays the worker can transfer. */
+export function packParameterStateFrame(
+  values: ParameterStateFrame,
 ): PackedParameterState {
-  const attributes: string[] = [];
-  const indices = new Map<string, number>();
-  const values = new Float64Array(packedLength(states));
-  let cursor = 0;
-  /** Interns repeated attribute names across every fixture and element in this snapshot. */
-  function attributeIndex(name: string): number {
-    let index = indices.get(name);
-    if (index === undefined) {
-      index = attributes.length;
-      attributes.push(name);
-      indices.set(name, index);
-    }
-    return index;
-  }
-  /** Appends a counted set of asserted values in their original property order. */
-  function appendAssertions(assertions: Record<string, ParameterValue>): void {
-    values[cursor++] = keyCount(assertions);
-    for (const name in assertions) {
-      const assertion = assertions[name];
-      const field = PARAMETER_VALUE_FIELDS[assertion.type];
-      values[cursor++] = attributeIndex(name);
-      values[cursor++] = PARAMETER_VALUE_TYPES.indexOf(assertion.type);
-      values[cursor++] = (assertion.data as Record<typeof field, number>)[
-        field
-      ];
-    }
-  }
-  for (const fixture of states) {
-    values[cursor++] = fixture.parameters.length;
-    for (const element of fixture.parameters) {
-      values[cursor++] = keyCount(element.output);
-      for (const name in element.output) {
-        values[cursor++] = attributeIndex(name);
-        values[cursor++] = element.output[name];
-      }
-      appendAssertions(element.absolute);
-      appendAssertions(element.relative);
-    }
-  }
   return {
-    fixtureUids: states.map((fixture) => fixture.fixture_uid),
-    attributes,
-    values,
+    layoutId: values.layout_id,
+    output: new Float32Array(ownedBuffer(values.output)),
+    absoluteCount: values.absolute_count,
+    assertionSlots: new Uint32Array(ownedBuffer(values.assertion_slots)),
+    assertionKinds: new Uint8Array(ownedBuffer(values.assertion_kinds)),
+    assertionValues: new Float32Array(ownedBuffer(values.assertion_values)),
   };
 }
 
-/** Restores the existing public parameter shape after the numeric buffer transfers ownership. */
-export function unpackParameterState(
+/** Returns the buffers that move to the main thread with a packed values frame. */
+export function parameterStateTransfers(
   packed: PackedParameterState,
-): OutboundParameterState[] {
-  const { values, attributes } = packed;
-  let cursor = 0;
-  /** Reads a counted assertion map, restoring each variant's value or offset field. */
-  function readAssertions(): Record<string, ParameterValue> {
-    const result: Record<string, ParameterValue> = {};
-    const count = values[cursor++];
-    for (let i = 0; i < count; i++) {
-      const name = attributes[values[cursor++]];
-      const type = PARAMETER_VALUE_TYPES[values[cursor++]];
-      const value = values[cursor++];
-      setAttribute(result, name, {
-        type,
-        data: { [PARAMETER_VALUE_FIELDS[type]]: value },
-      } as ParameterValue);
-    }
-    return result;
-  }
-  return packed.fixtureUids.map((fixture_uid) => {
-    const count = values[cursor++];
-    const parameters: OutboundParameterState["parameters"] = [];
-    for (let i = 0; i < count; i++) {
-      const output: Record<string, number> = {};
-      const outputCount = values[cursor++];
-      for (let j = 0; j < outputCount; j++) {
-        const name = attributes[values[cursor++]];
-        setAttribute(output, name, values[cursor++]);
+): ArrayBuffer[] {
+  return [
+    packed.output.buffer as ArrayBuffer,
+    packed.assertionSlots.buffer as ArrayBuffer,
+    packed.assertionKinds.buffer as ArrayBuffer,
+    packed.assertionValues.buffer as ArrayBuffer,
+  ];
+}
+
+/** Slot lookups derived once per layout so each frame only walks numeric arrays. */
+interface DecodedLayout {
+  layoutId: number;
+  slotCount: number;
+  /** Fixture UID and element count of each fixture, in slot order. */
+  fixtures: { fixtureUid: string; elementCount: number }[];
+  /** Attribute key of each slot. */
+  slotKeys: string[];
+  /** Index of each slot's element across all fixtures' elements. */
+  slotElements: Uint32Array;
+  /** Variant and payload field of each assertion kind code; unknown variants are absent. */
+  assertionKinds: (
+    | { type: ParameterValueType; field: "value" | "offset" }
+    | undefined
+  )[];
+}
+
+/** Derives slot lookups from a layout, leaving out assertion variants this client does not know. */
+function decodeLayout(layout: ParameterLayout): DecodedLayout {
+  const slotKeys: string[] = [];
+  const slotElementList: number[] = [];
+  let elementIndex = 0;
+  const fixtures = layout.fixtures.map((fixture) => {
+    for (const attributes of fixture.elements) {
+      for (const key of attributes) {
+        slotKeys.push(key);
+        slotElementList.push(elementIndex);
       }
-      parameters.push({
-        output,
-        absolute: readAssertions(),
-        relative: readAssertions(),
-      });
+      elementIndex++;
     }
-    return { fixture_uid, parameters };
+    return {
+      fixtureUid: fixture.fixture_uid,
+      elementCount: fixture.elements.length,
+    };
   });
+  const assertionKinds = layout.assertion_variants.map((variant) => {
+    const field = PARAMETER_VALUE_FIELD_BY_VARIANT.get(variant);
+    if (!field) {
+      log.error("Ignoring unknown parameter assertion variant", { variant });
+      return undefined;
+    }
+    return { type: variant as ParameterValueType, field };
+  });
+  return {
+    layoutId: layout.layout_id,
+    slotCount: slotKeys.length,
+    fixtures,
+    slotKeys,
+    slotElements: Uint32Array.from(slotElementList),
+    assertionKinds,
+  };
+}
+
+/**
+ * Restores per-fixture parameter state from values frames, using the most recent layout the
+ * backend published on the same stream.
+ */
+export class ParameterStateDecoder {
+  private layout: DecodedLayout | null = null;
+
+  /** Adopts the slot order that subsequent values frames are indexed by. */
+  setLayout(layout: ParameterLayout): void {
+    this.layout = decodeLayout(layout);
+  }
+
+  /**
+   * Rebuilds the per-fixture state of one values frame, or returns `undefined` when the frame
+   * belongs to a layout other than the current one.
+   */
+  unpack(packed: PackedParameterState): FixtureParameterState[] | undefined {
+    const layout = this.layout;
+    if (
+      !layout ||
+      packed.layoutId !== layout.layoutId ||
+      packed.output.length !== layout.slotCount
+    ) {
+      log.debug("Dropping parameter values for an unknown layout", {
+        layoutId: packed.layoutId,
+        currentLayoutId: layout?.layoutId,
+      });
+      return undefined;
+    }
+
+    const elements: FixtureParameterState["parameters"] = [];
+    const states = layout.fixtures.map(({ fixtureUid, elementCount }) => {
+      const parameters: FixtureParameterState["parameters"] = [];
+      for (let i = 0; i < elementCount; i++) {
+        const element = { output: {}, absolute: {}, relative: {} };
+        parameters.push(element);
+        elements.push(element);
+      }
+      return { fixture_uid: fixtureUid, parameters };
+    });
+
+    const { output } = packed;
+    for (let slot = 0; slot < output.length; slot++) {
+      const value = output[slot];
+      if (Number.isNaN(value)) continue;
+      setAttribute(
+        elements[layout.slotElements[slot]].output,
+        layout.slotKeys[slot],
+        value,
+      );
+    }
+
+    const { assertionSlots, assertionKinds, assertionValues } = packed;
+    for (let i = 0; i < assertionSlots.length; i++) {
+      const slot = assertionSlots[i];
+      const kind = layout.assertionKinds[assertionKinds[i]];
+      if (slot >= layout.slotCount || !kind) continue;
+      const element = elements[layout.slotElements[slot]];
+      setAttribute(
+        i < packed.absoluteCount ? element.absolute : element.relative,
+        layout.slotKeys[slot],
+        {
+          type: kind.type,
+          data: { [kind.field]: assertionValues[i] },
+        } as ParameterValue,
+      );
+    }
+    return states;
+  }
 }
 
 /** One websocket payload the runtime worker queued for the main thread. */
@@ -173,22 +227,28 @@ export interface WorkerQueuedMessage {
   deliveryMessageId?: unknown;
 }
 
-/** Returns whether a queued worker message carries a parameter snapshot, packed or not. */
+/** Returns whether a queued worker message carries a packed parameter values frame. */
 export function carriesParameterState(message: unknown): boolean {
-  const queued = message as WorkerQueuedMessage | undefined;
   return (
-    queued?.data?.type === "ParameterState" ||
-    queued?.packedParameters !== undefined
+    (message as WorkerQueuedMessage | undefined)?.packedParameters !== undefined
   );
 }
 
-/** Returns the websocket message a queued worker message delivers, unpacking transferred snapshots. */
+/**
+ * Returns the websocket message a queued worker message delivers. Layout messages update
+ * `decoder` and deliver nothing; packed values frames are unpacked against that layout.
+ */
 export function queuedWorkerMessageData(
   message: WorkerQueuedMessage,
+  decoder: ParameterStateDecoder,
 ): AnyWsMessage | undefined {
-  if (!message.packedParameters) return message.data;
-  return {
-    type: "ParameterState",
-    data: unpackParameterState(message.packedParameters),
-  } as AnyWsMessage;
+  if (message.packedParameters) {
+    const data = decoder.unpack(message.packedParameters);
+    return data && { type: "ParameterState", data };
+  }
+  if (message.data?.type === "ParameterLayout") {
+    decoder.setLayout(message.data.data);
+    return undefined;
+  }
+  return message.data;
 }
