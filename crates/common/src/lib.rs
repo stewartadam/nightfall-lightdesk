@@ -180,6 +180,42 @@ pub mod serde_uuid_simple {
     }
 }
 
+/// Serde module for optional UUIDs using the same simple string format as
+/// [`serde_uuid_simple`].
+///
+/// Without it, an `Option<Uuid>` falls back to uuid's default serde, which
+/// emits raw bytes on binary formats such as the MessagePack websocket while
+/// clients expect a string.
+pub mod serde_option_uuid_simple {
+    use std::str::FromStr;
+
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+    use uuid::Uuid;
+
+    /// Writes a present UUID as a simple-format string and an absent one as none.
+    pub fn serialize<S>(uuid: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match uuid {
+            Some(uuid) => serializer.serialize_some(&uuid.simple().to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    /// Reads an optional UUID string, accepting simple or hyphenated formats.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Uuid>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<String>::deserialize(deserializer)?
+            .map(|s| {
+                Uuid::from_str(&s).map_err(|e| D::Error::custom(format!("Invalid UUID: {}", e)))
+            })
+            .transpose()
+    }
+}
+
 /// A UUID wrapper that serializes/deserializes using simple format (no hyphens).
 ///
 /// Use this type when you need `Vec<Uuid>` or `HashMap<Uuid, _>` with simple format
