@@ -25,12 +25,12 @@ test("validation jobs wait only for their preparation prerequisites", () => {
     "wasm-bridge",
     "browser-runtime",
   ]);
-  assert.deepEqual(jobs["browser-smoke"].needs, [
+  assert.deepEqual(jobs["browser-flows"].needs, [
     "scope",
     "native",
     "wasm-bridge",
   ]);
-  for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
+  for (const id of ["source-checks", "native", "webui", "browser-flows"]) {
     assert.equal(jobs[id].if, `\${{ !startsWith(github.ref, 'refs/tags/') }}`);
     assert.ok(
       jobs.gate.needs.includes(id),

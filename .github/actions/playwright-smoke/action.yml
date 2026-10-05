@@ -1,10 +1,13 @@
-name: Playwright product smoke tests
+name: Playwright product flows
 description: Run isolated Chromium product flows using the calling job's prepared application assets and Cargo target directory.
 
 inputs:
   workers:
     description: Number of isolated Playwright workers.
     default: "2"
+  shard:
+    description: Full-suite shard to run, as "index/total". Empty runs only the smoke specs.
+    default: ""
   artifact-name:
     description: Unique report artifact name for this invocation.
     default: playwright-product-smoke-${{ github.job }}-${{ github.run_attempt }}
@@ -28,12 +31,18 @@ runs:
         cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/sample.nightfall-show/showfile.json"
         echo "data-dir=$seed_dir" >> "$GITHUB_OUTPUT"
 
-    - name: Test startup, showfiles, navigation, patching, and playback
+    - name: Test product flows
       shell: bash
       env:
         NIGHTFALL_PLAYWRIGHT_WORKERS: ${{ inputs.workers }}
         NIGHTFALL_DATA_DIR: ${{ steps.seed.outputs.data-dir }}
-      run: pnpm run test:webui-smoke --max-failures=3
+        PLAYWRIGHT_SHARD: ${{ inputs.shard }}
+      run: |
+        if [ -n "$PLAYWRIGHT_SHARD" ]; then
+          pnpm run test:webui-playwright --shard="$PLAYWRIGHT_SHARD" --max-failures=20
+        else
+          pnpm run test:webui-smoke --max-failures=3
+        fi
 
     - name: Upload Playwright report and failure artifacts
       if: always()

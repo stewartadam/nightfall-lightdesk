@@ -1,6 +1,6 @@
-# Playwright product smoke action
+# Playwright product flows action
 
-Run the Chromium product smoke suite in an existing Linux build-and-test job:
+Run Chromium product flows in an existing Linux build-and-test job:
 
 ```yaml
 - name: Run Chromium product flows
@@ -18,13 +18,14 @@ preparation succeeded and the job has not been cancelled.
 The action installs Chromium (without the headless shell) and its system
 dependencies, which include ALSA, the headless backend's only native runtime
 library. It then seeds
-disposable showfiles in the runner's temporary directory, runs
-`pnpm run test:webui-smoke --max-failures=3`, and uploads reports even when tests
-fail. The three-failure cap stops repeated setup failures before they exhaust the
-job timeout. It uses two
-workers by default; set the `workers` input to override this. `ci.yml` runs three
-on its four-vCPU runner. Set a unique
-`artifact-name` when invoking the action more than once in the same job.
+disposable showfiles in the runner's temporary directory and uploads reports even
+when tests fail. With a `shard` input such as `2/6` it runs that shard of the full
+suite (`pnpm run test:webui-playwright --shard=2/6 --max-failures=20`); without one
+it runs only `pnpm run test:webui-smoke --max-failures=3`. The failure caps stop
+repeated setup failures before they exhaust the job timeout. It uses two
+workers by default; set the `workers` input to override this. `ci.yml` runs six
+shards with three workers each on four-vCPU runners. Set a unique
+`artifact-name` for each invocation in the same workflow run.
 
 The wrapper builds the backend using the shared native Cargo graph unless
 `NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE` identifies an already-tested executable.
