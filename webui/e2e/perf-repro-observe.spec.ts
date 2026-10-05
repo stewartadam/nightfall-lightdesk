@@ -326,11 +326,19 @@ async function openPerfReproSurface(page: Page): Promise<ReproSurface> {
       api.getPanel(panelId)?.api.close();
     }
 
+    // The default layout keeps Clips, Fixtures and Layers in edge groups, so an
+    // unpositioned panel can land in a collapsed edge strip. Anchor the surface
+    // to a main-grid panel so the side-by-side splits stay in the grid.
+    const gridReference = api.panels.find(
+      (panel: any) => panel.api.location.type === "grid",
+    );
+    if (!gridReference) throw new Error("No main-grid panel to dock beside");
     api.addPanel({
       id: fixturePanelId,
       component: "FixtureGrid",
       title: "Fixtures",
       params: { initialPanelId: fixturePanelId },
+      position: { referencePanel: gridReference.id, direction: "within" },
     });
     api.addPanel({
       id: layerPanelId,

@@ -532,7 +532,18 @@ async function holdPointerDragBy(
   deltaX: number,
   deltaY: number,
 ): Promise<void> {
-  const bounds = await target.boundingBox();
+  // Committing a previous drag rebuilds the waveform handles from fresh
+  // segment objects, so a single read can land on a detached handle.
+  const measured: { box: Awaited<ReturnType<Locator["boundingBox"]>> } = {
+    box: null,
+  };
+  await expect
+    .poll(async () => {
+      measured.box = await target.boundingBox();
+      return measured.box !== null;
+    }, "Waveform drag target is not visible")
+    .toBe(true);
+  const bounds = measured.box;
   if (!bounds) throw new Error("Waveform drag target is not visible");
   const startX = bounds.x + bounds.width / 2;
   const startY = bounds.y + bounds.height / 2;
