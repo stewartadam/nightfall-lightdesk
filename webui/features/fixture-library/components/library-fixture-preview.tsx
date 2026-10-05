@@ -34,6 +34,12 @@ type LibraryFixturePreviewProps = {
   mode?: string;
   /** Library revision to preview; the default revision when omitted. */
   assetEtag?: string;
+  /**
+   * Fills a sized container instead of using the fixed 300px height, so the
+   * canvas never extends past a shorter container (where it would still catch
+   * clicks meant for controls drawn over it).
+   */
+  fill?: boolean;
 };
 
 const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
@@ -111,7 +117,7 @@ const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
   return (
     <div
       class="w-full bg-neutral-900 relative overflow-hidden"
-      style="height: 300px;"
+      style={{ height: props.fill ? "100%" : "300px" }}
     >
       <FixturePreview
         class="w-full h-full"
