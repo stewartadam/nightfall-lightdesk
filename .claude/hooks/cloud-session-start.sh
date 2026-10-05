@@ -1,4 +1,10 @@
 #!/bin/bash
+# SPDX-License-Identifier: MPL-2.0
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 # Provisions Claude Code cloud containers with the toolchain this repository
 # pins. The cloud image ships a stable-only rustup and a Playwright browser
 # build that predates our @playwright/test version, so without this the first
@@ -18,7 +24,6 @@ cd "$CLAUDE_PROJECT_DIR"
 exec >&2
 
 # The clone carries LFS pointers only; lint and the demo show need the files.
-git lfs install --local
 git lfs pull
 
 # Install the rust-toolchain.toml toolchain (with cargo, components and
@@ -32,6 +37,10 @@ if ! dpkg -s libasound2-dev >/dev/null 2>&1; then
 fi
 
 pnpm install --frozen-lockfile
+
+# Run the same quality gates on commit and push as local checkouts. prek keeps
+# the clone's Git LFS hooks as chained legacy hooks.
+pnpm exec prek install -t pre-commit -t pre-push -t post-merge -t post-rewrite
 
 # pnpm switches to the packageManager version without running that wrapper's
 # install script, leaving a shebang-less placeholder at its `pnpm` bin. Shells
