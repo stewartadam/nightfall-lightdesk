@@ -190,6 +190,13 @@ stops the worktree's services and removes it. Dirty worktrees are kept, and
 branches with unmerged commits survive the worktree. Keep personal Claude Code
 settings in `.claude/settings.local.json`.
 
+Claude Code cloud sessions run `.claude/hooks/cloud-session-start.sh` at
+startup; it does nothing on local machines. It pulls Git LFS files and
+installs the pinned Rust toolchain before parallel `cargo` calls can race
+rustup's auto-install, the Playwright browser revisions our `@playwright/test`
+expects, `libasound2-dev`, pnpm dependencies, pnpm's native binary (needed by
+nested `pnpm run`), typeshare, and the generated `.env`.
+
 Sample MP3s are tracked with Git LFS and packaged as external resources. Run
 `git lfs pull` before packaging or creating a sample show in development. Rust
 compilation does not read or embed these files. Debug backends read the source
