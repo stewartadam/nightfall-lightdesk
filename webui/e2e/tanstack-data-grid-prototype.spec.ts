@@ -1135,7 +1135,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
   );
 
   await grid.locator("#tanstack-cell-0-0").click();
-  await grid.locator("#tanstack-cell-0-0").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-0-0")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "false",
@@ -1155,7 +1157,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "data-selected",
     "true",
   );
-  await grid.locator("#tanstack-cell-1-1").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-1-1")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "true",
@@ -1174,7 +1178,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "data-selected",
     "true",
   );
-  await grid.locator("#tanstack-cell-2-2").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-2-2")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "true",
@@ -1183,7 +1189,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "data-selected",
     "false",
   );
-  await grid.locator("#tanstack-cell-2-2").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-2-2")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-2-2")).toHaveAttribute(
     "data-selected",
     "true",
@@ -1192,7 +1200,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "data-selected",
     "false",
   );
-  await grid.locator("#tanstack-cell-0-0").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-0-0")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "false",
@@ -1203,8 +1213,12 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
   );
 
   await grid.locator("#tanstack-cell-0-0").click();
-  await grid.locator("#tanstack-cell-2-2").click({ modifiers: ["Meta"] });
-  await grid.locator("#tanstack-cell-2-2").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-2-2")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await grid
+    .locator("#tanstack-cell-2-2")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "true",
@@ -1235,7 +1249,7 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     page,
     grid.locator("#tanstack-cell-0-0"),
     grid.locator("#tanstack-cell-1-1"),
-    ["Meta"],
+    ["ControlOrMeta"],
   );
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
@@ -1255,7 +1269,7 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     page,
     grid.locator("#tanstack-cell-2-2"),
     grid.locator("#tanstack-cell-3-3"),
-    ["Meta"],
+    ["ControlOrMeta"],
   );
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",

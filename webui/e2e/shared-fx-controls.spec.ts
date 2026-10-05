@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 /** Edits the production FX rate and relative switch, saves them, and checks compact field geometry. */
 test("FX waveform uses shared fields and persists rate and relative edits", async ({
@@ -23,6 +23,7 @@ test("FX waveform uses shared fields and persists rate and relative edits", asyn
   });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   const uid = "99669966996699669966996699669966";
   await page.evaluate(async (uid) => {
     const stores = (window as any).appStores;

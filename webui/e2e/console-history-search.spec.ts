@@ -95,7 +95,7 @@ test("console panel mod+f searches command history", async ({
   await panelInput.locator("../..").screenshot({
     path: testInfo.outputPath("panel-command-focused.png"),
   });
-  await page.keyboard.press("Meta+F");
+  await page.keyboard.press("ControlOrMeta+F");
 
   const searchInput = consolePanel.getByLabel("Command history search");
   await expect(searchInput).toBeFocused();

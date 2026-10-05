@@ -45,7 +45,7 @@ function patchFixtureGrid(page: Page): Locator {
  * Opens a panel and waits for its data grid to render.
  */
 async function openPanel(page: Page, panelName: string) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();

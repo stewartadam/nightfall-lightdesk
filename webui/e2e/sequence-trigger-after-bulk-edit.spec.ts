@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const SEQUENCE_EDITOR_PANEL_ID = "panel-SequenceEditor-bulk-trigger-after";
 
@@ -36,6 +36,7 @@ async function openOwnedBulkTriggerApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       Boolean((window as any).appStores?.dockApi?.get?.()) &&

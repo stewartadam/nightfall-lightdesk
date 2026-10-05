@@ -13,7 +13,7 @@ import {
   gridHeaderByColumnKey,
 } from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 type OwnedFullAttributeContext = {
   cueId: number;
@@ -45,6 +45,7 @@ async function openOwnedFullAttributeApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       Boolean((window as any).appStores?.dockApi?.get?.()) &&

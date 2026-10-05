@@ -8,6 +8,7 @@
 
 import { expect, type Page, test } from "./playwright-fixtures";
 import {
+  dockFixturesInMainGrid,
   seedStartupShowfileName,
   waitForDockviewApp,
 } from "./showfile-startup";
@@ -277,6 +278,7 @@ test("default showfile sequence store command avoids multi-second main-thread st
     "/?e2e=1&scenario=sequence-store-latency&startup:draftRecovery=false",
   );
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await waitForAppStores(page);
   await waitForWebsocketSettled(page);
   const sequenceId = await findLatencyTargetSequenceId(page);

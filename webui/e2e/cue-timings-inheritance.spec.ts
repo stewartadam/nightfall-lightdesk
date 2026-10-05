@@ -15,6 +15,7 @@ import {
 } from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import {
+  dockFixturesInMainGrid,
   prepareStoreSeededTestApp,
   waitForDockviewApp,
 } from "./showfile-startup";
@@ -32,6 +33,7 @@ test.afterEach(async ({ backendSlot, page }) => {
   if (page.isClosed() || page.url() === "about:blank") return;
   await page.reload();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await expect
     .poll(() => ownedCueTimingStoreCounts(page))
     .toEqual({ activeInstances: 0, cues: 0, fixtures: 0, sequences: 0 });
@@ -135,6 +137,7 @@ async function openOwnedCueTimingApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
@@ -198,6 +201,7 @@ async function cueEditorStoresReady(page: Page): Promise<boolean> {
  */
 async function waitForCueEditorStores(page: Page): Promise<void> {
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await expect
     .poll(() => cueEditorStoresReady(page), { timeout: 45_000 })
     .toBe(true);
@@ -217,6 +221,7 @@ async function afterStartupResync<T>(
         error.message.includes("Execution context was destroyed");
       if (!contextWasReplaced || attempt === 2) throw error;
       await waitForDockviewApp(page);
+      await dockFixturesInMainGrid(page);
     }
   }
   throw new Error("startup resync retry exhausted");

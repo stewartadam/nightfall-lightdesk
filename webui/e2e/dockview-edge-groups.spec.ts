@@ -151,7 +151,7 @@ async function waitForDockview(page: Page) {
 
 /** Runs one command through the command palette. */
 async function runCommand(page: Page, commandName: string) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();
