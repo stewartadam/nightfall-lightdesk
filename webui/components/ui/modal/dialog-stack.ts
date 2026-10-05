@@ -6,8 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { inertOutside } from "./focus-scope";
-
 /** One visible dialog's keyboard contract, ordered by when it became visible. */
 export interface DialogStackEntry {
   /** Root element containing everything the dialog renders. */
@@ -50,25 +48,36 @@ const ENTER_OWNING_CONTROL_SELECTOR = [
 
 const openDialogs: DialogStackEntry[] = [];
 
-/**
- * Adds a visible dialog to the top of the stack and returns its removal
- * function. Everything behind the frontmost dialog, including the dialogs
- * below it, stays inert until it is removed.
- */
+/** Adds a visible dialog to the top of the stack and returns its removal function. */
 export function registerDialog(entry: DialogStackEntry): () => void {
   openDialogs.push(entry);
-  inertOutside(entry.element());
   return () => {
     const index = openDialogs.indexOf(entry);
-    if (index === -1) return;
-    openDialogs.splice(index, 1);
-    inertOutside(frontmostDialog()?.element());
+    if (index !== -1) openDialogs.splice(index, 1);
   };
 }
 
 /** Returns the dialog that currently owns the keyboard, if any dialog is open. */
 export function frontmostDialog(): DialogStackEntry | undefined {
   return openDialogs[openDialogs.length - 1];
+}
+
+/**
+ * Returns where a floating overlay (menu, tooltip, list) should mount so it
+ * stays visible and interactive. An open modal `<dialog>` sits in the
+ * browser's top layer and makes everything outside it inert, so overlays
+ * mount inside the dialog that contains their anchor (even one still about
+ * to open, since content mounts just before `showModal()`), else inside the
+ * frontmost modal dialog, else on `<body>`.
+ */
+export function overlayHost(anchor?: Element | null): HTMLElement {
+  const anchorDialog = anchor?.closest("dialog");
+  if (anchorDialog) return anchorDialog;
+  for (let index = openDialogs.length - 1; index >= 0; index -= 1) {
+    const element = openDialogs[index].element();
+    if (element instanceof HTMLDialogElement && element.open) return element;
+  }
+  return document.body;
 }
 
 /** Reports whether any dialog is visible, so user-initiated workspace changes can wait. */
@@ -131,6 +140,9 @@ function routeDialogKey(event: KeyboardEvent): void {
       dismiss();
     } else if (!targetInside) {
       claimKey(event);
+    } else {
+      // Keeps the browser from turning Escape into a close request on a native modal dialog.
+      event.preventDefault();
     }
     return;
   }

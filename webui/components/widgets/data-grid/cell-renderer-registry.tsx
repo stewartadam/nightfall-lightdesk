@@ -26,6 +26,7 @@ import {
   isDropdownCell,
   makeDropdownEditedCellByValue,
 } from "../../../lib/tanstack-dropdown-cell";
+import { overlayHost } from "../../ui/modal/dialog-stack";
 import { DropdownCellAffordance } from "./cells/dropdown-cell-affordance";
 import { DropdownCellSelect } from "./cells/dropdown-cell-select";
 import {
@@ -357,7 +358,7 @@ function renderTextInputEditor(context: CellContentContext) {
         {(content) => (
           <Show when={tooltipStyle()}>
             {(style) => (
-              <Portal>
+              <Portal mount={overlayHost()}>
                 <div
                   class="pointer-events-none whitespace-nowrap rounded border border-neutral-600 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 shadow-lg"
                   data-grid-inline-tooltip="true"

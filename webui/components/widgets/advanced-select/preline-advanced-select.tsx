@@ -16,6 +16,7 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { overlayHost } from "../../ui/modal/dialog-stack";
 import { ScrollIndicators } from "../../ui/scroll-area";
 
 export interface PrelineAdvancedSelectOption {
@@ -340,9 +341,11 @@ export function PrelineAdvancedSelect(props: {
       props.ariaLabel ?? "Choose value",
     );
     initialized = true;
-    setDropdownViewport(
-      prelineSelectInstance(selectElement)?.element?.dropdown,
-    );
+    const dropdown = prelineSelectInstance(selectElement)?.element?.dropdown;
+    // Preline appends its list to <body>, which is inert behind an open modal dialog.
+    const host = overlayHost(selectElement);
+    if (dropdown && host !== document.body) host.append(dropdown);
+    setDropdownViewport(dropdown);
     installCloseFlush();
     selectElement.addEventListener("change", handleSelectChange);
     window.addEventListener("pointerdown", handleDocumentPointerDown, true);
@@ -393,7 +396,7 @@ export function PrelineAdvancedSelect(props: {
     <div class={props.containerClass ?? "h-full w-full"}>
       <Show when={dropdownViewport()}>
         {(viewport) => (
-          <Portal>
+          <Portal mount={overlayHost(selectElement)}>
             <ScrollIndicators
               viewport={viewport()}
               stickyHeader={viewport().querySelector<HTMLElement>(

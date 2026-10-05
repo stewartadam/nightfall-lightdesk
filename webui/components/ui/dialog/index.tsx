@@ -34,6 +34,13 @@ interface DialogContextValue {
 
 const DialogContext = createContext<DialogContextValue>();
 
+/**
+ * Lays out the native `<dialog>` as the full-viewport backdrop that centers
+ * the surface, with the dim and blur drawn by its `::backdrop`.
+ */
+const DIALOG_BACKDROP_CLASS =
+  "nf-dialog-backdrop items-center justify-center overflow-x-hidden overflow-y-auto bg-transparent p-4 open:flex backdrop:bg-black/60 backdrop:backdrop-blur-[4px]";
+
 export interface DialogProps {
   kind: DialogKind;
   isOpen: boolean;
@@ -59,8 +66,8 @@ export interface DialogProps {
   class?: string;
   style?: JSX.CSSProperties;
   surfaceRef?: HTMLDivElement | ((element: HTMLDivElement) => void);
-  /** Extra attributes for the backdrop, which carries the dialog role. */
-  backdropProps?: JSX.HTMLAttributes<HTMLDivElement>;
+  /** Extra attributes for the `<dialog>` element, which is the backdrop and carries the dialog role. */
+  backdropProps?: JSX.DialogHtmlAttributes<HTMLDialogElement>;
   /** Body and footer content; wrap them in a form when fields submit. */
   children: JSX.Element;
 }
@@ -91,52 +98,51 @@ export function Dialog(props: DialogProps) {
             }
           : undefined
       }
+      dialogProps={{
+        ...props.backdropProps,
+        class: DIALOG_BACKDROP_CLASS,
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-label": props.label,
+        "aria-labelledby": props.label ? undefined : titleId,
+        "aria-busy": props.busy || undefined,
+        onMouseDown: (event) => {
+          if (props.kind === "info" && event.target === event.currentTarget)
+            dismiss();
+        },
+      }}
     >
       <DialogContext.Provider value={{ dismiss, busy: () => !!props.busy }}>
-        <DialogBackdrop
-          {...props.backdropProps}
-          role="dialog"
-          aria-modal="true"
-          tabIndex={-1}
-          aria-label={props.label}
-          aria-labelledby={props.label ? undefined : titleId}
-          aria-busy={props.busy || undefined}
-          onMouseDown={(event) => {
-            if (props.kind === "info" && event.target === event.currentTarget)
-              dismiss();
-          }}
+        <DialogSurface
+          ref={props.surfaceRef}
+          role="document"
+          class={props.class ?? "max-w-lg"}
+          style={props.style}
         >
-          <DialogSurface
-            ref={props.surfaceRef}
-            role="document"
-            class={props.class ?? "max-w-lg"}
-            style={props.style}
-          >
-            <DialogHeader>
-              <Show
-                when={props.subtitle}
-                fallback={<DialogTitle id={titleId}>{props.title}</DialogTitle>}
-              >
-                <div class="min-w-0">
-                  <DialogTitle id={titleId}>{props.title}</DialogTitle>
-                  <p class="m-0 text-sm text-neutral-400">{props.subtitle}</p>
-                </div>
-              </Show>
-              <div class="flex shrink-0 items-center gap-2 empty:hidden">
-                {props.headerActions}
-                <Show when={props.kind !== "required"}>
-                  <DialogCloseButton
-                    type="button"
-                    aria-label={props.closeLabel ?? "Close"}
-                    disabled={props.busy}
-                    onClick={dismiss}
-                  />
-                </Show>
+          <DialogHeader>
+            <Show
+              when={props.subtitle}
+              fallback={<DialogTitle id={titleId}>{props.title}</DialogTitle>}
+            >
+              <div class="min-w-0">
+                <DialogTitle id={titleId}>{props.title}</DialogTitle>
+                <p class="m-0 text-sm text-neutral-400">{props.subtitle}</p>
               </div>
-            </DialogHeader>
-            {props.children}
-          </DialogSurface>
-        </DialogBackdrop>
+            </Show>
+            <div class="flex shrink-0 items-center gap-2 empty:hidden">
+              {props.headerActions}
+              <Show when={props.kind !== "required"}>
+                <DialogCloseButton
+                  type="button"
+                  aria-label={props.closeLabel ?? "Close"}
+                  disabled={props.busy}
+                  onClick={dismiss}
+                />
+              </Show>
+            </div>
+          </DialogHeader>
+          {props.children}
+        </DialogSurface>
       </DialogContext.Provider>
     </Modal>
   );
@@ -165,7 +171,7 @@ export function DialogBackdrop(props: JSX.HTMLAttributes<HTMLDivElement>) {
   const [local, rest] = splitProps(props, ["class"]);
   return (
     <div
-      class={`nf-dialog-backdrop fixed inset-0 flex items-center justify-center overflow-x-hidden overflow-y-auto p-4 bg-black/60 backdrop-blur-[4px] outline-none nightfall-top-layer ${local.class ?? ""}`}
+      class={`nf-dialog-backdrop fixed inset-0 flex items-center justify-center overflow-x-hidden overflow-y-auto p-4 bg-black/60 backdrop-blur-[4px] nightfall-top-layer ${local.class ?? ""}`}
       {...rest}
     />
   );

@@ -52,9 +52,18 @@ async function walkFocus(
   return stops;
 }
 
-/** Reports whether an element sits inside an inert subtree. */
+/**
+ * Reports whether a focusable control is inert, as the page behind a modal
+ * dialog is: it refuses focus. Focus is restored afterwards.
+ */
 async function isInert(locator: Locator): Promise<boolean> {
-  return locator.evaluate((element) => element.closest("[inert]") !== null);
+  return locator.evaluate((element) => {
+    const previous = document.activeElement as HTMLElement | null;
+    (element as HTMLElement).focus();
+    const focused = document.activeElement === element;
+    previous?.focus();
+    return !focused;
+  });
 }
 
 /** Opens the design lab task dialog from its trigger button. */
@@ -79,7 +88,9 @@ test("tab moves only through the open dialog's controls", async ({
 }, testInfo) => {
   const { panel, opener, dialog } = await openTaskDialog(page);
   await expect(dialog).toBeFocused();
-  expect(await isInert(panel)).toBe(true);
+  expect(
+    await isInert(panel.getByRole("button", { name: "Info dialog" })),
+  ).toBe(true);
 
   const forward = await walkFocus(page, dialog, "Tab", 12);
   for (const control of ["Close", "Cancel", "Save"]) {
@@ -102,7 +113,9 @@ test("tab moves only through the open dialog's controls", async ({
 
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
-  expect(await isInert(panel)).toBe(false);
+  expect(
+    await isInert(panel.getByRole("button", { name: "Info dialog" })),
+  ).toBe(false);
   await expect(opener).toBeFocused();
 });
 

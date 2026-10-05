@@ -15,6 +15,7 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { overlayHost } from "./modal/dialog-stack";
 
 export interface TooltipProps {
   /** Content shown in the tooltip. Can be reactive. */
@@ -324,7 +325,7 @@ export default function Tooltip(props: TooltipProps) {
     >
       {props.children}
       <Show when={mounted()}>
-        <Portal>
+        <Portal mount={overlayHost(triggerRef)}>
           <span
             ref={tooltipRef}
             style={tooltipStyle()}

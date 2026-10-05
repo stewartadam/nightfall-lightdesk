@@ -19,6 +19,7 @@ import {
 import { Portal } from "solid-js/web";
 import type { AppIcon } from "../icon";
 import { MenuItem, MenuSeparator, MenuSurface } from "../menu";
+import { overlayHost } from "../modal/dialog-stack";
 
 const FOCUSABLE_MENU_CONTROL_SELECTOR = [
   "button:not([disabled])",
@@ -152,7 +153,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
           {props.trigger}
         </button>
         <Show when={isOpen()}>
-          <Portal mount={document.body}>
+          <Portal mount={overlayHost(triggerRef)}>
             <MenuSurface
               ref={menuRef}
               data-component="DropdownMenuContent"

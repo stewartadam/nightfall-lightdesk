@@ -12,6 +12,7 @@ import {
   closeContextMenu,
   contextMenuState,
 } from "../../providers/context-menu";
+import { overlayHost } from "../../ui/modal/dialog-stack";
 import {
   type ContextMenuEntry,
   ContextMenuList,
@@ -196,7 +197,7 @@ export default function GlobalContextMenuHost() {
   return (
     <Show when={contextMenuState()}>
       {(state) => (
-        <Portal>
+        <Portal mount={overlayHost()}>
           <div
             class="fixed inset-0 nightfall-top-layer"
             onPointerDown={closeContextMenu}

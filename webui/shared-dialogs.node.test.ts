@@ -69,7 +69,7 @@ test("dialog chrome is composed only by the shared Dialog", () => {
   assert.deepEqual(uses, [
     {
       file: "webui/components/overlays/connection/index.tsx",
-      elements: ["DialogBackdrop"],
+      elements: ["DialogBackdrop", "Modal"],
     },
     {
       file: "webui/components/shell/command-palette/command-palette.tsx",
@@ -81,7 +81,7 @@ test("dialog chrome is composed only by the shared Dialog", () => {
     },
     {
       file: "webui/components/ui/dialog/index.tsx",
-      elements: ["DialogBackdrop", "DialogCloseButton", "Modal"],
+      elements: ["DialogCloseButton", "Modal"],
     },
     {
       file: "webui/features/showfile/object-palette/showfile-object-palette.tsx",
