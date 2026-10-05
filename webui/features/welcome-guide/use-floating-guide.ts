@@ -29,22 +29,33 @@ const POPOVER_SELECTOR =
   '[role="menu"], [role="listbox"], [data-hs-select-dropdown]';
 
 /** Finds open menus and dropdown lists outside the guide card. */
-function popoverBounds(): DOMRect[] {
-  return [...document.querySelectorAll<HTMLElement>(POPOVER_SELECTOR)]
-    .filter(
-      (surface) =>
-        !surface.closest(".nf-welcome-guide") &&
-        surface.checkVisibility({
+function popoverSurfaces(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(POPOVER_SELECTOR)].filter(
+    (surface) => {
+      if (surface.closest(".nf-welcome-guide")) return false;
+      if (
+        !surface.checkVisibility({
           opacityProperty: true,
           visibilityProperty: true,
-        }),
-    )
-    .map((surface) => surface.getBoundingClientRect())
-    .filter((rect) => rect.width > 0 && rect.height > 0);
+        })
+      )
+        return false;
+      const rect = surface.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    },
+  );
 }
 
-/** Measures a grid row by joining all cells that share the target cell's row key, or the nearest row element. */
-function rowBounds(element: Element): DOMRect | undefined {
+/** Measures open menus and dropdown lists outside the guide card. */
+function popoverBounds(): DOMRect[] {
+  return popoverSurfaces().map((surface) => surface.getBoundingClientRect());
+}
+
+/**
+ * Measures a grid row by joining all cells that share the target cell's row key, or the nearest
+ * row element. With `leadingOnly`, joins just the row's cells that end before the target starts.
+ */
+function rowBounds(element: Element, leadingOnly = false): DOMRect | undefined {
   const key = element.closest<HTMLElement>("[data-grid-row-key]")?.dataset
     .gridRowKey;
   const cells = key
@@ -56,9 +67,17 @@ function rowBounds(element: Element): DOMRect | undefined {
     : [element.closest('[role="row"], tr')].filter(
         (row): row is Element => row !== null,
       );
-  const rects = cells
+  const start = element.getBoundingClientRect().left;
+  const rects = (
+    leadingOnly && key ? cells.filter((cell) => !cell.contains(element)) : cells
+  )
     .map((cell) => cell.getBoundingClientRect())
-    .filter((rect) => rect.width > 0 && rect.height > 0);
+    .filter(
+      (rect) =>
+        rect.width > 0 &&
+        rect.height > 0 &&
+        (!leadingOnly || rect.right <= start + 1),
+    );
   if (rects.length === 0) return undefined;
   const left = Math.min(...rects.map((rect) => rect.left));
   const top = Math.min(...rects.map((rect) => rect.top));
@@ -222,6 +241,8 @@ export function useFloatingGuide(
   });
   let manual = false;
   let placedGeometry = "";
+  /** Menus already open at the last placement; only menus opened since then nudge the card. */
+  let placedPopovers = new Set<HTMLElement>();
   /** Finds an open dialog's content so the card avoids its controls as well as the step target. */
   const dialogBounds = () => {
     const surfaces = [
@@ -295,9 +316,11 @@ export function useFloatingGuide(
       ?.getBoundingClientRect();
     const focus = keepVisible();
     const row =
-      focus?.includes("row") && targetElement
+      targetElement && focus?.includes("row")
         ? rowBounds(targetElement)
-        : undefined;
+        : targetElement && focus?.includes("row-start")
+          ? rowBounds(targetElement, true)
+          : undefined;
     const panelId = targetElement
       ?.closest<HTMLElement>("[data-panel-id]")
       ?.getAttribute("data-panel-id");
@@ -315,7 +338,10 @@ export function useFloatingGuide(
       ...(row ? [row] : []),
       ...(focus?.includes("visualizer") && visualizer ? [visualizer] : []),
     ];
-    const popovers = popoverBounds();
+    const popoverElements = popoverSurfaces();
+    const popovers = popoverElements.map((surface) =>
+      surface.getBoundingClientRect(),
+    );
     // The card never covers the action, an open dialog or menu, or an area the step asks the user to watch.
     const protect = [target, ...(dialog ? [dialog] : []), ...popovers, ...kept];
     // Without explicit focus areas, panel actions also prefer to leave their teaching panel and the Visualizer clear.
@@ -345,6 +371,49 @@ export function useFloatingGuide(
       (!dialog || gap({ ...current, width, height }, dialog) <= 64)
     )
       return;
+    // When a menu opens over a card already placed for this step, such as a cell's Trigger menu,
+    // slide the card just clear of it rather than re-anchoring it somewhere else entirely.
+    if (placedGeometry) {
+      const box = { ...current, width, height };
+      const blocking = popoverElements
+        .filter((surface) => !placedPopovers.has(surface))
+        .map((surface) => surface.getBoundingClientRect())
+        .filter((rect) => covered(box, [rect]) > 0);
+      if (blocking.length > 0) {
+        const nudges = [
+          {
+            x: Math.max(...blocking.map((rect) => rect.right)) + GAP,
+            y: current.y,
+          },
+          {
+            x: Math.min(...blocking.map((rect) => rect.left)) - GAP - width,
+            y: current.y,
+          },
+          {
+            x: current.x,
+            y: Math.max(...blocking.map((rect) => rect.bottom)) + GAP,
+          },
+          {
+            x: current.x,
+            y: Math.min(...blocking.map((rect) => rect.top)) - GAP - height,
+          },
+        ]
+          .map(clamp)
+          .filter((point) => cost(point) === 0)
+          .sort(
+            (a, b) =>
+              Math.hypot(a.x - current.x, a.y - current.y) -
+              Math.hypot(b.x - current.x, b.y - current.y),
+          );
+        if (nudges.length > 0) {
+          placing += 1;
+          placedGeometry = geometry;
+          placedPopovers = new Set(popoverElements);
+          setPosition(nudges[0]);
+          return;
+        }
+      }
+    }
     const cluster = union([
       target,
       ...kept,
@@ -396,6 +465,7 @@ export function useFloatingGuide(
         if (score < best.cost) best = { point, cost: score };
       }
       placedGeometry = geometry;
+      placedPopovers = new Set(popoverElements);
       setPosition(best.point);
     })();
   };

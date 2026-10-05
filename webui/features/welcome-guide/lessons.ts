@@ -41,9 +41,15 @@ export type GuideAdvanceAction = {
 
 /**
  * An area the card must leave uncovered in addition to the target: the target's whole panel
- * including its tab, just the panel's tab, its grid row, or the 3D Visualizer viewport.
+ * including its tab, just the panel's tab, its grid row, the cells of its row before the target
+ * (such as a row's ID and label), or the 3D Visualizer viewport.
  */
-export type GuideFocusArea = "panel" | "tab" | "row" | "visualizer";
+export type GuideFocusArea =
+  | "panel"
+  | "tab"
+  | "row"
+  | "row-start"
+  | "visualizer";
 
 export interface GuideStep {
   persistenceUnavailable?: Pick<
@@ -673,7 +679,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       {
         id: "manual-blue",
         title: "Let Go advance to Blue",
-        keepVisible: ["row"],
+        // Sits just right of the Trigger cell, clear of the panel title and the cue's ID and label.
+        keepVisible: ["tab", "row-start"],
         placement: "side",
         targetSequence: { id: 50, cueId: 2 },
         observe: { type: "cue-manual", sequenceId: 50, id: 2 },
