@@ -543,7 +543,8 @@ test("remembers slot arrangements, supports keyboard recall, and saves its own s
   await page.screenshot({
     path: testInfo.outputPath("layout-switcher-narrow.png"),
   });
-  await page.setViewportSize({ width: 390, height: 844 });
+  // The narrowest docked width; below it the compact shell replaces layouts.
+  await page.setViewportSize({ width: 640, height: 844 });
   await expect(
     page.getByRole("button", { name: "Manage layouts" }),
   ).toBeInViewport();
@@ -1511,7 +1512,8 @@ test("creates visible blank layouts through management without replacing the act
   await expect(
     page.getByRole("button", { name: "Layout 1: Empty desk", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await page.setViewportSize({ width: 390, height: 844 });
+  // The narrowest docked width; below it the compact shell replaces layouts.
+  await page.setViewportSize({ width: 640, height: 844 });
   await page
     .getByRole("button", { name: "Manage layouts", exact: true })
     .click();

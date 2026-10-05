@@ -6,25 +6,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import { BookmarkIcon } from "@squidlab/phosphor-solid/bookmark";
 import { LayoutIcon } from "@squidlab/phosphor-solid/layout";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
+import { Show } from "solid-js";
+import { compactViewport } from "../../../state/viewport";
 import { useAppShell } from "../../providers/app-shell";
 import { useCommand } from "../command-palette";
 
-/** Registers commands owned by Dockview layout management and shortcut discovery. */
-export default function LayoutCommands() {
-  const { showLayoutManager, showShortcutsPopup } = useAppShell();
+/** Registers commands that store or manage named arrangements of the docked workspace. */
+function LayoutManagementCommands() {
+  const { showLayoutManager } = useAppShell();
 
-  useCommand({
-    id: "show-keyboard-shortcuts",
-    name: "Show Keyboard Shortcuts",
-    description: "Show all available keyboard shortcuts",
-    shortcut: "Shift+?",
-    shortcutOptions: { capture: true },
-    icon: QuestionIcon,
-    execute: showShortcutsPopup,
-  });
   useCommand({
     id: "manage-layouts",
     name: "Manage Layouts",
@@ -44,4 +38,30 @@ export default function LayoutCommands() {
   });
 
   return null;
+}
+
+/**
+ * Registers commands owned by Dockview layout management and shortcut discovery.
+ * Layout management is withheld from the compact shell, whose one-panel view
+ * must never be stored over a docked arrangement.
+ */
+export default function LayoutCommands() {
+  const { showShortcutsPopup } = useAppShell();
+  const compact = useStore(compactViewport);
+
+  useCommand({
+    id: "show-keyboard-shortcuts",
+    name: "Show Keyboard Shortcuts",
+    description: "Show all available keyboard shortcuts",
+    shortcut: "Shift+?",
+    shortcutOptions: { capture: true },
+    icon: QuestionIcon,
+    execute: showShortcutsPopup,
+  });
+
+  return (
+    <Show when={!compact()}>
+      <LayoutManagementCommands />
+    </Show>
+  );
 }

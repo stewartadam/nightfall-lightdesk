@@ -1,0 +1,118 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-compact-nav {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  border-top: 1px solid var(--line);
+  background: var(--color-neutral-950);
+}
+
+.nf-compact-nav-strip {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.nf-compact-nav-strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* 56px tall and at least 72px wide keeps each tab well above the 44px touch target. */
+.nf-compact-nav-tab {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 80px;
+  min-height: 56px;
+  padding: 6px 4px;
+  color: var(--muted);
+  scroll-snap-align: start;
+  border-top: 2px solid transparent;
+}
+.nf-compact-nav-tab[aria-selected="true"] {
+  color: #ebeeed;
+  border-top-color: var(--accent);
+}
+.nf-compact-nav-more {
+  border-left: 1px solid var(--line);
+}
+
+.nf-compact-nav-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nf-compact-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nf-compact-sheet-heading {
+  margin: 8px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.nf-compact-sheet-heading:first-child {
+  margin-top: 0;
+}
+
+.nf-compact-sheet-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nf-compact-sheet-row {
+  display: flex;
+  align-items: center;
+}
+
+.nf-compact-sheet-item {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+  border-radius: var(--nf-corner-radius);
+  color: #ebeeed;
+  font-size: 15px;
+  text-align: left;
+}
+.nf-compact-sheet-item[aria-current="page"] {
+  background: var(--accent-soft);
+}
+
+.nf-compact-sheet-close {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}

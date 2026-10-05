@@ -52,7 +52,9 @@ interface ModalProps {
    * Attributes for the `<dialog>` element. Its `class` replaces the default
    * transparent full-viewport layer.
    */
-  dialogProps?: JSX.DialogHtmlAttributes<HTMLDialogElement>;
+  dialogProps?: JSX.DialogHtmlAttributes<HTMLDialogElement> & {
+    [attribute: `data-${string}`]: string | undefined;
+  };
   usePortal?: boolean;
 }
 

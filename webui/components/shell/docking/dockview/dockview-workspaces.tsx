@@ -75,8 +75,17 @@ function workspace(
   return { initialLayout, layoutId, ready: promise, resolve, reject };
 }
 
+interface DockWorkspacesProps {
+  /**
+   * Shows the active arrangement one panel at a time for small screens. The
+   * compact view never persists or switches named layouts, so it cannot
+   * overwrite an arrangement made on a larger screen.
+   */
+  compact?: boolean;
+}
+
 /** Retains visited layout workspaces and publishes only the active API to the application shell. */
-export default function DockWorkspaces() {
+export default function DockWorkspaces(props: DockWorkspacesProps) {
   const shell = useAppShell();
   const initial = workspace();
   initial.restoreSession = true;
@@ -194,7 +203,8 @@ export default function DockWorkspaces() {
 
   onCleanup(
     registerLayoutActivator(async (api, layoutId, options) => {
-      if (switching() || current.handle?.api !== api) return false;
+      if (props.compact || switching() || current.handle?.api !== api)
+        return false;
       const saved = getStoredLayout(layoutId);
       if (!saved) return false;
       if (options.adoptCurrent) {
@@ -274,6 +284,7 @@ export default function DockWorkspaces() {
   createEffect(() => {
     const revision = restoredRevision();
     if (
+      props.compact ||
       lifecycle().phase !== "interactive" ||
       editingLayouts() ||
       !restoredSettings() ||
@@ -344,6 +355,7 @@ export default function DockWorkspaces() {
                   <DockWorkspace
                     initialLayout={entry.initialLayout}
                     restoreSession={entry.restoreSession}
+                    compact={props.compact}
                     onReady={(handle) => {
                       entry.handle = handle;
                       setReady(true);
@@ -361,6 +373,7 @@ export default function DockWorkspaces() {
       </For>
       <DockviewEventListener
         isActivating={switching}
+        persist={!props.compact}
         hasSessionLayout={() => current.handle?.hasSessionLayout() ?? false}
         onResetLayout={() => current.handle?.reset()}
       />

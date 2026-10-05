@@ -7,6 +7,7 @@
  */
 
 import { runtimeCapabilities } from "../state/appStores";
+import type * as types from "../types";
 
 /** Returns the active backend policy; disconnected and public demo sessions default off. */
 export function areExperimentalFlowsEnabled(): boolean {
@@ -16,4 +17,18 @@ export function areExperimentalFlowsEnabled(): boolean {
 /** Identifies panel implementations that require the experimental flow runtime. */
 export function isExperimentalFlowPanel(componentName: string): boolean {
   return componentName === "FlowList" || componentName === "FlowEditor";
+}
+
+/**
+ * Returns whether people may open a panel under the given backend
+ * capabilities, so every panel picker hides the same gated panels.
+ */
+export function isPanelOpenable(
+  componentName: string,
+  capabilities: types.RuntimeCapabilities | null | undefined,
+): boolean {
+  return (
+    !isExperimentalFlowPanel(componentName) ||
+    capabilities?.experimental_flows === true
+  );
 }

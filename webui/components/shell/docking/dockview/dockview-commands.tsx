@@ -13,7 +13,7 @@ import { ArrowRightIcon } from "@squidlab/phosphor-solid/arrow-right";
 import { BrowsersIcon } from "@squidlab/phosphor-solid/browsers";
 import { XSquareIcon } from "@squidlab/phosphor-solid/x-square";
 import { createEffect } from "solid-js";
-import { isExperimentalFlowPanel } from "../../../../lib/experimental-features";
+import { isPanelOpenable } from "../../../../lib/experimental-features";
 import { panelDefinitionsForPalette } from "../../../../lib/panel-definitions";
 import {
   openOrFocusPanelDefinition,
@@ -35,11 +35,7 @@ export function DockviewCommands(props: DockviewCommandsProps) {
   /** Registers palette commands for every dockable panel component. */
   createEffect(() => {
     for (const definition of panelDefinitionsForPalette()) {
-      if (
-        isExperimentalFlowPanel(definition.componentName) &&
-        !capabilities()?.experimental_flows
-      )
-        continue;
+      if (!isPanelOpenable(definition.componentName, capabilities())) continue;
       useCommand({
         id: definition.panelId,
         name: `Open ${definition.title}`,
