@@ -372,6 +372,9 @@ test("sequence editor deletes all selected cue part rows", async ({
       });
 
     await expect(
+      grid.locator('[role="gridcell"][aria-selected="true"]'),
+    ).toHaveCount(1);
+    await expect(
       sequenceEditorPanel(page, seeded.panelId).getByRole("button", {
         name: "Delete Cue",
       }),

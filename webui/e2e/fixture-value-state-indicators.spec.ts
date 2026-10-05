@@ -560,7 +560,7 @@ test("fixture value cells render source and transition color hints", async ({
   );
 
   await expect(manualCell).toHaveCSS("color", "rgb(183, 28, 28)");
-  await expect(shadowedManualCell).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(shadowedManualCell).toHaveCSS("color", "rgb(235, 238, 237)");
   await expect(transitioningCell).toHaveCSS("color", "rgb(183, 28, 28)");
   await expect(transitioningCell).toHaveCSS(
     "background-color",

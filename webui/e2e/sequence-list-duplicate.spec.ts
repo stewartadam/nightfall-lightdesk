@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 interface DuplicateSequenceSeed {
   sourceCueId: number;
@@ -46,6 +46,7 @@ async function openOwnedSequenceDuplicateApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       Boolean((window as any).appStores?.dockApi?.get?.()) &&
@@ -369,6 +370,12 @@ test("sequence list duplicates a selected sequence", async ({
   await expect(
     sequencePanel
       .locator("button[data-crud-select-id]")
+      .filter({ hasText: `${seed.sourceSequenceLabel} Copy` }),
+  ).toHaveCount(1);
+  // Duplicating opens the copy's editor in front of the list.
+  await expect(
+    page
+      .locator(".dv-tab.dv-active-tab")
       .filter({ hasText: `${seed.sourceSequenceLabel} Copy` }),
   ).toBeVisible();
   await expect
