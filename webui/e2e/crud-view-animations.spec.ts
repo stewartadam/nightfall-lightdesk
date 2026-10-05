@@ -28,8 +28,8 @@ for (const component of [
   }, testInfo) => {
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
-    await dockFixturesInMainGrid(page);
     await resetToDefaultLayout(page);
+    await dockFixturesInMainGrid(page);
     await page.evaluate((component) => {
       const api = (window as any).appStores.dockApi.get();
       api.addPanel({

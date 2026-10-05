@@ -450,6 +450,12 @@ backend, but not the demo engine or the UI checks. The required `CI gate` check 
 and fails if any required job fails or is unexpectedly skipped. Local hook
 commands are unchanged.
 
+CI runs only the smoke specs. To run the whole Playwright suite on GitHub, start
+the **Full Playwright suite** workflow (`playwright-full.yml`) from the Actions
+tab or with `gh workflow run playwright-full.yml --ref <branch>`. It builds the
+backend and WASM bridge once, then runs six shards in parallel; its `runner`
+input accepts a larger runner label where one is available.
+
 Install test browsers once per shared browser cache:
 
 ```sh
