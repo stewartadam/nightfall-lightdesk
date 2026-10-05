@@ -133,6 +133,9 @@
     0 0 16px color-mix(in srgb, var(--accent) 45%, transparent);
   animation: nf-guide-target-pulse 1.6s ease-in-out infinite;
 }
+.nf-guide-highlight[data-target-focused]::after {
+  display: none;
+}
 @keyframes nf-guide-target-pulse {
   50% {
     inset: -5px;

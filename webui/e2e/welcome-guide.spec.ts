@@ -1446,6 +1446,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
 test("first lights builds its own Red and Blue sequence", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(90_000);
   await openSample(page);
   const original = await page.evaluate(() =>
     JSON.stringify(
@@ -1543,11 +1544,34 @@ test("first lights builds its own Red and Blue sequence", async ({
     (uid) => (window as any).appStores.sequences.get()[uid].steps[1],
     sequenceUid,
   );
-  await activeLayout(page)
-    .locator(
-      `[data-grid-column-key="trigger"][data-grid-row-key="${cueUid}:cue"]`,
-    )
-    .dblclick();
+  const trigger = activeLayout(page).locator(
+    `[data-grid-column-key="trigger"][data-grid-row-key="${cueUid}:cue"]`,
+  );
+  // The card sits just right of the Trigger cell, inside the editor and below its tab.
+  await expect
+    .poll(async () => {
+      const card = (await guide.boundingBox())!;
+      const cell = (await trigger.boundingBox())!;
+      const tab = (await activeLayout(page)
+        .locator('.dv-tab:has-text("Sequence 50")')
+        .boundingBox())!;
+      return (
+        card.x >= cell.x + cell.width &&
+        card.x - (cell.x + cell.width) <= 32 &&
+        card.y >= tab.y + tab.height
+      );
+    })
+    .toBe(true);
+  const beside = (await guide.boundingBox())!;
+  await trigger.dblclick();
+  // Opening the Trigger menu slides the card sideways at most; it keeps its height.
+  await expect(page.locator("[data-hs-select-dropdown].opened")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const card = (await guide.boundingBox())!;
+      return Math.abs(card.y - beside.y) < 2 && card.x >= beside.x;
+    })
+    .toBe(true);
   await page
     .locator("[data-hs-select-dropdown].opened")
     .getByText("Manual", { exact: true })
@@ -2425,4 +2449,9 @@ test("command steps focus the command input", async ({ page }) => {
     guide.getByRole("heading", { name: "Make a red look" }),
   ).toBeVisible();
   await expect(page.locator("#header-cmdline")).toBeFocused();
+  // The focused input shows its own focus ring, so the guide drops its pulse.
+  await expect(page.locator(".nf-guide-highlight")).toHaveAttribute(
+    "data-target-focused",
+    "",
+  );
 });
