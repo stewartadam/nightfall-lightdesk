@@ -103,13 +103,13 @@ test("command palette modifiers position newly opened panels", async ({
   await page.keyboard.press("Control+Enter");
 
   await filterCommand(page, "Open Fixture Library");
-  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.keyboard.press("Meta+Enter");
 
   await filterCommand(page, "Open Sequences");
-  await page.keyboard.press("ControlOrMeta+Alt+Enter");
+  await page.keyboard.press("Meta+Alt+Enter");
 
   await filterCommand(page, "Open Object Library");
-  await page.keyboard.press("ControlOrMeta+Alt+Shift+Enter");
+  await page.keyboard.press("Meta+Alt+Shift+Enter");
 
   const activeGroup = await page.evaluate(
     () => (window as any).__activeDockGroup,
@@ -215,14 +215,14 @@ test("command palette vertical splits stay inside the active group branch", asyn
   }
 
   await filterCommand(page, "Open Sequences");
-  await page.keyboard.press("ControlOrMeta+Alt+Enter");
+  await page.keyboard.press("Meta+Alt+Enter");
 
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     api.getPanel("panel-CueList")?.focus();
   });
   await filterCommand(page, "Open Object Library");
-  await page.keyboard.press("ControlOrMeta+Alt+Shift+Enter");
+  await page.keyboard.press("Meta+Alt+Shift+Enter");
 
   await expect.poll(readLayout).toEqual({
     cues: expect.objectContaining({ width: expect.any(Number) }),
@@ -302,7 +302,7 @@ test("command palette row placements stay outside the active group branch", asyn
   }
 
   await filterCommand(page, "Open Patch");
-  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.keyboard.press("Meta+Enter");
 
   await expect.poll(readLayout).toEqual({
     cues: expect.objectContaining({ width: expect.any(Number) }),
