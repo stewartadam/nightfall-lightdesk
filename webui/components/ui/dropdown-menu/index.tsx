@@ -251,7 +251,7 @@ export function DropdownMenuSubmenu(props: DropdownMenuSubmenuProps) {
         ref={menuRef}
         role="menu"
         aria-label={props.label}
-        aria-hidden={!isOpen()}
+        inert={!isOpen()}
         data-menu-kind="dropdown-submenu"
         class="fixed min-w-[220px]"
         classList={{ invisible: !isOpen(), visible: isOpen() }}

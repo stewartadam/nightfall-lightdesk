@@ -166,14 +166,29 @@ A clean clone does not include a personal fixture or object library. Put compati
 
 Worktrunk is optional. `wt switch --create <branch>` runs the repository hooks to create the environment, install packages, generate types/assets, and seed build and application data from the main worktree. These hooks assume the general prerequisites above are installed. Check their output before starting services; a background build may still be running.
 
-After merging a GitHub PR, run `wt done` in its worktree, or `wt done <branch>`
-from another worktree. The alias requires an authenticated `gh` CLI and a merged
-PR in the `origin` repository. It fetches the PR's actual target (`main`, `develop`,
-or another branch) and uses it for Worktrunk's normal merge-safety checks without
-changing the repository's default branch or pulling another worktree. Local
-commits that are not integrated into the target keep their branch, and dirty
-worktrees are refused. For branches without merged PRs or manual cleanup, use
-`wt remove` directly. Run `wt done -- --help` for supported options.
+When a branch's work has landed, run `wt done` in its worktree, or
+`wt done <branch ...>` from another worktree. A branch whose commits are already
+in origin's default branch is removed without consulting GitHub; offline, the
+last fetched copy of that branch is used. Otherwise the alias asks the
+authenticated `gh` CLI for a merged PR in the `origin` repository (for example a
+squash merge), fetches the PR's actual target (`main`, `develop`, or another
+branch), and uses it for Worktrunk's normal merge-safety checks without changing
+the repository's default branch or pulling another worktree. Branches with
+neither are kept, their unmerged commits are listed, and the command exits with
+an error after cleaning up the rest. Local commits that are not integrated into
+the target keep their branch, and dirty worktrees are refused. For forced
+cleanup, use `wt remove` directly. Run `wt done -- --help` for supported options.
+
+Claude Code creates its own worktrees for `claude --worktree`, desktop app and
+Remote Control sessions, and isolated subagents. The `WorktreeCreate` and
+`WorktreeRemove` hooks in `.claude/settings.json` route them through
+`scripts/claude-worktree-hook.mjs`, so they get the same Worktrunk setup as
+`wt switch --create`. New branches start from `origin/HEAD` at Worktrunk's
+configured path, with the blocking pre-start hooks (`.env`, `pnpm install`,
+typeshare) finished before the session starts. At session end, `wt remove`
+stops the worktree's services and removes it. Dirty worktrees are kept, and
+branches with unmerged commits survive the worktree. Keep personal Claude Code
+settings in `.claude/settings.local.json`.
 
 Sample MP3s are tracked with Git LFS and packaged as external resources. Run
 `git lfs pull` before packaging or creating a sample show in development. Rust
@@ -335,6 +350,27 @@ input/output settings for secondary worktrees. These generated values override
 the inherited settings. If the primary `.env` is missing, setup uses only the
 generated settings. Later edits to the primary `.env` do not update existing
 worktrees.
+
+To manage services from a terminal while the dashboard API runs, use the
+Worktrunk `service` alias:
+
+```sh
+wt service list                         # every worktree with its port and status
+wt service status                       # services of the worktree you are in
+wt service restart                      # restart this worktree's backend and wait for it
+wt -C ../other service restart -s backend,ui
+```
+
+`start`, `stop`, and `restart` target the backend unless `--service` (`-s`)
+names others (`backend`, `ui`, `wasm`, `artnet-sender`, `sacn-sender`, `all`).
+They act on the current worktree; use `wt -C <path>` for another one. Start and
+restart wait until each service is reachable (up to `--timeout` seconds, 600 by
+default), print the log tail of any service that fails, and exit non-zero on
+failure; `--no-wait` returns once the dashboard accepts the request. `--json`
+prints the raw result. Removing a worktree first runs
+`wt service stop -s all --best-effort`, which gives up after 5 seconds and never
+blocks removal. The alias reads the same dashboard address variables as the MCP
+server described below.
 
 Agents can also manage their own worktree lifecycle through MCP (for example, from Codex/Claude) by running:
 

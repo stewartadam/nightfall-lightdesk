@@ -454,6 +454,9 @@ test("tap pattern panel clusters repeated hook taps", async ({ page }) => {
   });
   await expect(captureToolbar).toBeVisible();
   await expect(captureToolbar.getByRole("button")).toHaveCount(4);
+  await expect(captureToolbar.locator('[tabindex="0"]')).toHaveAccessibleName(
+    "Arm",
+  );
   await expect(
     captureToolbar.getByRole("button", { name: "Arm", exact: true }),
   ).toBeVisible();
