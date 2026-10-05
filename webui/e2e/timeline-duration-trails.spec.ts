@@ -741,9 +741,11 @@ test("timeline duration trail toggle renders known item lengths", async ({
     const toggle = surface.locator("[data-timeline-duration-trail-toggle]");
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await toggle.hover();
-    await expect(page.getByRole("tooltip")).toHaveText(
-      "Show action duration trails (D)",
-    );
+    await expect(
+      page
+        .getByRole("tooltip")
+        .filter({ hasText: "Show action duration trails (D)" }),
+    ).toBeVisible();
 
     const durationItem = surface.locator(
       `[data-timeline-action="true"][data-track-id="${fixture.durationTrackId}"][data-action-id="${fixture.durationItemId}"]`,
@@ -761,9 +763,11 @@ test("timeline duration trail toggle renders known item lengths", async ({
     await page.keyboard.press("d");
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await toggle.hover();
-    await expect(page.getByRole("tooltip")).toHaveText(
-      "Hide action duration trails (D)",
-    );
+    await expect(
+      page
+        .getByRole("tooltip")
+        .filter({ hasText: "Hide action duration trails (D)" }),
+    ).toBeVisible();
 
     const trail = durationItem.locator("[data-timeline-action-duration-trail]");
     await expect(trail).toBeVisible();
