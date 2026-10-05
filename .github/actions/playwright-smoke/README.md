@@ -23,8 +23,9 @@ when tests fail. With a `shard` input such as `2/6` it runs that shard of the fu
 suite (`pnpm run test:webui-playwright --shard=2/6 --max-failures=20`); without one
 it runs only `pnpm run test:webui-smoke --max-failures=3`. The failure caps stop
 repeated setup failures before they exhaust the job timeout. It uses two
-workers by default; set the `workers` input to override this. `ci.yml` runs six
-shards with three workers each on four-vCPU runners. Set a unique
+workers by default; set the `workers` input to override this. `ci.yml` runs the
+smoke specs with three workers on its four-vCPU runner, and the manually
+triggered `playwright-full.yml` runs six shards of the full suite. Set a unique
 `artifact-name` for each invocation in the same workflow run.
 
 The wrapper builds the backend using the shared native Cargo graph unless

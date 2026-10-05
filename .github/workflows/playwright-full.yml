@@ -1,0 +1,121 @@
+name: Full Playwright suite
+
+# Runs every Playwright spec on demand. Pull request CI runs only the smoke specs.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner label for the test shards (a larger runner needs an organization on GitHub Team or Enterprise Cloud)
+        type: string
+        default: ubuntu-latest
+      workers:
+        description: Playwright workers per shard; each owns a backend and Vite server, so leave one vCPU of headroom
+        type: string
+        default: "3"
+
+permissions: {}
+
+concurrency:
+  group: playwright-full-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Build backend and WASM bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          lfs: true
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: playwright-full
+          cache-on-failure: true
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/wasm-assets
+        with:
+          profile: release
+          package: wasm-bridge
+      - name: Build the native backend
+        run: |
+          cargo build --tests --bin nightfall-headless
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          mkdir -p ci-artifacts
+          cp "$target_dir/debug/nightfall-headless" ci-artifacts/nightfall-headless
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-full-backend-${{ github.run_id }}
+          path: ci-artifacts/nightfall-headless
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-full-wasm-bridge-${{ github.run_id }}
+          path: webui/assets/wasm/
+          if-no-files-found: error
+          retention-days: 1
+
+  flows:
+    name: Chromium product flows (${{ matrix.shard }}/6)
+    needs: prepare
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      # Report every shard so one run lists all failing specs.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          lfs: true
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: webui-tools
+          cache-targets: false
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          cargo install --locked typeshare-cli --version 1.13.3
+          pnpm run typeshare
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: playwright-full-wasm-bridge-${{ github.run_id }}
+          path: webui/assets/wasm
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: playwright-full-backend-${{ github.run_id }}
+          path: ci-artifacts
+      - name: Run Chromium product flows
+        env:
+          NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-headless
+        uses: ./.github/actions/playwright-smoke
+        with:
+          workers: ${{ inputs.workers }}
+          shard: ${{ matrix.shard }}/6
+          artifact-name: playwright-full-${{ matrix.shard }}-${{ github.run_attempt }}
