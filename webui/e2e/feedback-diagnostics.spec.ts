@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { LogLevel } from "loglayer";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { installDiagnosticNativeMock } from "./diagnostics-native";
 import { expect, test } from "./playwright-fixtures";
@@ -25,6 +26,8 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   context,
   backendSlot,
 }, testInfo) => {
+  // Walks the bug report, both log modes, paging and three exports.
+  test.setTimeout(60_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const logPath = testInfo.outputPath("nightfall.log");
   await installDiagnosticNativeMock(page, logPath, backendSlot.backendPort);
@@ -38,7 +41,10 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   await page.goto("/?e2e=1");
   await waitForDockviewApp(page);
   await page.evaluate(async () => {
-    const { getLogger } = await import("/lib/logger.ts");
+    const { getLogger, setModuleLogLevel } = await import("/lib/logger.ts");
+    // Slow runners log a warning per long animation frame, which can push the
+    // seeded problems out of the twenty-entry "Recent warnings/errors" window.
+    setModuleLogLevel("long-animation-frame-monitor", "error" as LogLevel);
     const log = getLogger("/e2e/diagnostics");
     log.warn("diagnostic browser warning", { detail: "warning context" });
     log.errorWithCause(
@@ -128,7 +134,18 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
     if (index === 0)
       await expect(preview).toContainText("stored backend entry 198");
   }
-  await expect(preview).toContainText("diagnostic browser info");
+  // Keep paging until the browser entries load; how many pages that takes
+  // depends on how much the app itself logged during startup.
+  await expect
+    .poll(
+      () =>
+        preview.evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+          return element.textContent?.includes("diagnostic browser info");
+        }),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
   await page.screenshot({ path: testInfo.outputPath("diagnostics-all.png") });
   await showfile
     .getByRole("radio", { name: "Local references", exact: true })

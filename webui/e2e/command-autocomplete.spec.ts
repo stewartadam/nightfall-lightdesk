@@ -986,8 +986,8 @@ test("tab inserts the selected @ token from the sole attribute intent", async ({
   await openAutocomplete(page, "fix 311 red ");
 
   await expect(
-    page.locator('[data-command-autocomplete="intent-sublist-label"]'),
-  ).toHaveText("Set Attribute");
+    page.locator('[data-command-autocomplete="breadcrumb"]'),
+  ).toHaveText("Programmer > Attributes > Set Attribute");
   await expect(
     page.locator(`${suggestionRowsSelector}[data-insert-text="@"]`),
   ).toHaveAttribute("aria-selected", "true");
@@ -1154,6 +1154,14 @@ test("keeps panel command input focused after storing a cue", async ({
 
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
+    // The performance workspace has no Cues panel; add one to receive focus.
+    api.addPanel({
+      id: "panel-CueList",
+      component: "CueList",
+      title: "Cues",
+      inactive: true,
+      position: { referencePanel: "panel-Groups", direction: "within" },
+    });
     api.getPanel("panel-CommandLine")?.focus();
   });
   await expect(input).toBeVisible();
