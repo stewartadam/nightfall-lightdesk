@@ -10,6 +10,7 @@ import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { For, type JSX, Show } from "solid-js";
 import { Button } from "../ui/visual-language/button";
+import "./object-tile.css";
 
 export interface ObjectTileProps {
   identity: string;

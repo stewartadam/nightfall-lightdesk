@@ -19,7 +19,13 @@
 }
 .lab-monitor-scroll {
   flex: 1;
-  margin: 0 var(--panel-padding);
+  margin: 12px var(--panel-padding) 0;
+  border: 1px solid var(--line);
+  border-radius: var(--nf-corner-radius, 4px);
+}
+/* Wider than a narrow panel so the snapshot also scrolls horizontally. */
+.lab-monitor-table {
+  min-width: 720px;
 }
 .monitor-timecode {
   font-variant-numeric: tabular-nums;

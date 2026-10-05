@@ -31,15 +31,19 @@
   border-bottom: 0;
   border-top: 1px solid var(--line, #34383b);
 }
-.nf-toolbar-button {
+/* Non-interactive indicators beside toolbar buttons share their slot geometry. */
+.nf-toolbar-button,
+.nf-toolbar-slot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   width: 30px;
   height: 30px;
-  border: 1px solid transparent;
   border-radius: var(--nf-corner-radius, 5px);
+}
+.nf-toolbar-button {
+  border: 1px solid transparent;
   color: #c7cdca;
   background: transparent;
   cursor: pointer;
