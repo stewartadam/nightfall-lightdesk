@@ -571,6 +571,9 @@ mod tests {
     }
 
     /// Verifies that regular frames start on the shared grid so they stay in phase with DMX output.
+    ///
+    /// The limiter wakes up to its sleep-error compensation before the tick, so the frame may
+    /// start just before or just after a grid tick.
     #[test]
     fn regular_frames_start_on_grid_ticks() {
         let mut app = limited_app(50.0, Duration::ZERO);
@@ -580,9 +583,10 @@ mod tests {
         let period = Duration::from_millis(20);
         let since_epoch = Instant::now().saturating_duration_since(grid_epoch());
         let phase = Duration::from_nanos((since_epoch.as_nanos() % period.as_nanos()) as u64);
+        let distance = phase.min(period - phase);
         assert!(
-            phase < Duration::from_millis(3),
-            "a frame should start just after a grid tick, got phase {phase:?}"
+            distance < Duration::from_millis(3),
+            "a frame should start next to a grid tick, got phase {phase:?}"
         );
     }
 }
