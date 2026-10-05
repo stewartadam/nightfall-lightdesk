@@ -9,7 +9,11 @@
 import type { Page } from "@playwright/test";
 import type { Sequence, Timeline } from "../types";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 /** Activates a dedicated list panel in the main dock group for visual checks. */
 async function openCardPanel(page: Page, component: string) {
@@ -34,6 +38,7 @@ test("timeline cards stay aligned and sequence loop tags match clip gears", asyn
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await resetToDefaultLayout(page);
+  await dockFixturesInMainGrid(page);
   await page.evaluate(() => {
     const stores = (window as any).appStores;
     const timeline = Object.values(stores.timelines.get())[0] as Timeline;
@@ -69,7 +74,9 @@ test("timeline cards stay aligned and sequence loop tags match clip gears", asyn
   });
 
   await openCardPanel(page, "TimelinesPanel");
-  const panel = page.locator('[data-panel-kind="timeline-list"]');
+  const panel = page.locator(
+    '[data-panel-kind="timeline-list"][data-panel-id="panel-TimelinesPanel-card-layout"]',
+  );
   const cards = panel.locator(".nf-crud-card");
   await expect(cards).toHaveCount(4);
   const longTitle = cards.nth(2).locator(".nf-timeline-card-title");
@@ -112,7 +119,10 @@ test("timeline cards stay aligned and sequence loop tags match clip gears", asyn
   await editor.press("Escape");
 
   await openCardPanel(page, "ClipList");
-  const gear = page.getByRole("button", { name: /^Inspect clip / }).first();
+  const gear = page
+    .locator('[data-panel-id="panel-ClipList-card-layout"]')
+    .getByRole("button", { name: /^Inspect clip / })
+    .first();
   await expect(gear).toBeVisible();
   const gearBounds = (await gear.boundingBox())!;
   const gearIconBounds = (await gear.locator("svg").boundingBox())!;

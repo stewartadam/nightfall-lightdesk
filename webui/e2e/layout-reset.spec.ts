@@ -49,7 +49,8 @@ test("resetting the layout keeps panel toolbars pinned to the top at large viewp
     )
     .toEqual({
       bottomCollapsed: true,
-      leftCollapsed: true,
+      // The default workspace opens Clips whenever its three columns fit.
+      leftCollapsed: false,
       rightCollapsed: true,
     });
 

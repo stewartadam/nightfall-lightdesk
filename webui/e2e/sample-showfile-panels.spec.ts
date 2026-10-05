@@ -33,22 +33,26 @@ test("lazy panels render after layout replacement and sample show creation", asy
   });
   await waitForDockviewApp(page);
   await expect.poll(() => requestedPanel).toBe(true);
-  await page.evaluate(async () => {
-    const { activeLayoutId } = await import(
-      /* @vite-ignore */ "/state/layout-switcher.ts"
-    );
-    const { activateStoredLayout } = await import(
-      /* @vite-ignore */ "/lib/layout-activation.ts"
-    );
-    const api = (window as any).appStores.dockApi.get();
-    const layoutId = activeLayoutId.get();
-    if (
-      !layoutId ||
-      !(await activateStoredLayout(api, layoutId, { reset: true }))
-    ) {
-      throw new Error("Could not reset the active workspace");
-    }
-  });
+  // The workspace owner ignores activation while it is still establishing the
+  // startup layout, so retry until it accepts the reset.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { activeLayoutId } = await import(
+          /* @vite-ignore */ "/state/layout-switcher.ts"
+        );
+        const { activateStoredLayout } = await import(
+          /* @vite-ignore */ "/lib/layout-activation.ts"
+        );
+        const api = (window as any).appStores.dockApi.get();
+        const layoutId = activeLayoutId.get();
+        return (
+          !!layoutId &&
+          (await activateStoredLayout(api, layoutId, { reset: true }))
+        );
+      }),
+    )
+    .toBe(true);
   await expect(page.locator("[data-layout-workspace]")).toHaveCount(1);
   releasePanel();
   await expect(
