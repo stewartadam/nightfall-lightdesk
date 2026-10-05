@@ -67,6 +67,30 @@ Keep policy tests in sync with added packaging inputs. Validate them with
 `pnpm exec prek run actionlint --all-files`. Hosted runs are still needed to measure
 wall-time improvements and confirm Windows/Linux toolchain behavior.
 
+## Browser previews
+
+Once a preview target is configured, every same-repository PR also builds the
+browser demo and deploys it to Cloudflare Pages, independent of the table above.
+A preview-only build skips the browser product flows, which still run whenever the
+browser distribution is selected. The `Browser preview` job starts as soon as that
+build finishes, publishes it at `https://<branch>.<project>.pages.dev/demo/app/`,
+and keeps one comment on the PR pointing at the latest preview. It is not part of
+the CI gate. Fork and Dependabot PRs never build or deploy a preview, since they
+cannot read the deployment secret.
+
+One-time setup:
+
+1. In Cloudflare, create a Pages project with **Direct Upload** and set its
+   production branch to a name no PR uses (for example `production`), so PR
+   deploys always land as preview deployments.
+2. Under the project's **Settings → General → Access policy**, enable Cloudflare
+   Access for preview deployments and allow only the maintainers' emails.
+3. Create an API token with only **Account → Cloudflare Pages → Edit**.
+4. In this repository's Actions settings, add the secret `CLOUDFLARE_PAGES_TOKEN`
+   and the variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT`.
+
+Previews stay off while `CLOUDFLARE_PAGES_PROJECT` is unset.
+
 ## Native execution and caching
 
 `ci.yml` runs all native Rust validation in one Linux job so the

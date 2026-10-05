@@ -3,6 +3,11 @@ name: Browser demo artifact
 # Called after the distribution workflow uploads release WASM for this commit.
 on:
   workflow_call:
+    inputs:
+      product-flows:
+        description: Test the packaged demo; preview-only builds skip this.
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -44,12 +49,15 @@ jobs:
           key: browser-demo-tools
           cache-targets: false
 
-      - name: Install JavaScript dependencies and browsers
+      - name: Install JavaScript dependencies
         run: |
           pnpm install --frozen-lockfile
           cargo install --locked typeshare-cli --version 1.13.3
           cargo install --locked cargo-about --version 0.8.4
-          pnpm exec playwright install --with-deps chromium firefox
+
+      - name: Install browsers
+        if: inputs.product-flows
+        run: pnpm exec playwright install --with-deps chromium firefox
 
       - name: Generate TypeScript shared types
         run: pnpm run typeshare
@@ -70,15 +78,18 @@ jobs:
         run: pnpm run check:browser-demo-dependencies
 
       - name: Test UI and release scripts
+        if: inputs.product-flows
         run: pnpm test
 
       - name: Build and package the release artifact
         run: pnpm run build:browser-demo:prepared
 
       - name: Run the Chromium product flow
+        if: inputs.product-flows
         run: pnpm run test:browser-demo-artifact --browser chromium
 
       - name: Run the Firefox product flow
+        if: inputs.product-flows
         run: pnpm run test:browser-demo-artifact --browser firefox
 
       - name: Upload the immutable demo artifact

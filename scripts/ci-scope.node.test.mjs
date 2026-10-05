@@ -14,6 +14,7 @@ const none = {
   desktop_check: false,
   desktop_package: false,
   browser_package: false,
+  browser_preview: false,
 };
 const desktop = { ...none, desktop_package: true };
 const browser = { ...none, browser_package: true };
@@ -126,6 +127,60 @@ test("event policy retains main and release packaging with explicit manual choic
     selectScope({ event: "workflow_dispatch", distribution: "invalid" }),
   );
   assert.throws(() => selectScope({ event: "unknown", ref: "" }));
+});
+
+/** Previews build only for configured same-repository PRs, independently of packaging. */
+test("browser previews require a configured target and a same-repository PR", () => {
+  /** Select a UI-only PR with the given preview conditions. */
+  const select = (options) =>
+    selectScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths: ["webui/components/example.tsx"],
+      headRef: "claude/mobile-compact-shell",
+      ...options,
+    });
+  assert.deepEqual(select({ previewTarget: true, sameRepository: true }), {
+    ...none,
+    browser_preview: true,
+  });
+  for (const headRef of ["fix/foo+bar", "user@fix", "a;b", ""]) {
+    assert.deepEqual(
+      select({ previewTarget: true, sameRepository: true, headRef }),
+      none,
+      headRef,
+    );
+  }
+  assert.deepEqual(
+    select({ previewTarget: true, sameRepository: false }),
+    none,
+  );
+  assert.deepEqual(
+    select({ previewTarget: false, sameRepository: true }),
+    none,
+  );
+  assert.deepEqual(
+    selectScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths: ["crates/browser-runtime/src/lib.rs"],
+      previewTarget: true,
+      sameRepository: true,
+      headRef: "feature/runtime",
+    }),
+    { ...browser, browser_preview: true },
+  );
+  for (const [event, ref] of [
+    ["push", "refs/heads/main"],
+    ["workflow_dispatch", "refs/heads/develop"],
+  ]) {
+    assert.equal(
+      selectScope({ event, ref, previewTarget: true, sameRepository: true })
+        .browser_preview,
+      false,
+      event,
+    );
+  }
 });
 
 /** NUL-delimited paths preserve unusual names without interpreting them as script or shell input. */
