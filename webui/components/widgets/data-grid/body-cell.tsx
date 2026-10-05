@@ -300,7 +300,9 @@ export function BodyCell(props: BodyCellProps) {
   /** Keeps coordinate axis accents visible in every selection and edit state. */
   const cellRings = () => {
     const axis = coordinateAxis();
-    return axis ? `inset -3px 0 0 0 ${COORDINATE_AXIS_COLORS[axis]}` : undefined;
+    return axis
+      ? `inset -3px 0 0 0 ${COORDINATE_AXIS_COLORS[axis]}`
+      : undefined;
   };
 
   /** Renders the optional decoration overlay for the current cell. */
