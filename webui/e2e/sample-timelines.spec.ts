@@ -180,14 +180,23 @@ test("Rap opens section B with a sparkle", async ({ page }, testInfo) => {
     await surface
       .getByRole("button", { name: "Play timeline", exact: true })
       .click();
+    // Each sparkle lasts under 1.5s and repeats a few seconds later, so poll
+    // densely enough not to step over either window. The start timeout allows
+    // for a busy host delaying the Play click and the first timecode snapshot.
     await expect
-      .poll(() => isActive(page, CLIP.sparklesFx), { timeout: 5_000 })
+      .poll(() => isActive(page, CLIP.sparklesFx), {
+        intervals: [50],
+        timeout: 15_000,
+      })
       .toBe(true);
     await expect.poll(() => isActive(page, CLIP.washHatRun)).toBe(true);
     await page.waitForTimeout(500);
     await captureVisualizer(page, testInfo.outputPath("rap-sparkle.png"));
     await expect
-      .poll(() => isActive(page, CLIP.sparklesFx), { timeout: 10_000 })
+      .poll(() => isActive(page, CLIP.sparklesFx), {
+        intervals: [50],
+        timeout: 10_000,
+      })
       .toBe(false);
   } finally {
     await surface

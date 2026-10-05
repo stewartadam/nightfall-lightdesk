@@ -9,7 +9,7 @@
 import { createSilentWavBuffer } from "./audio-fixture";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Locator, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const CUE_ID = 96_400;
 const TIMECODE_ID = 96_400;
@@ -721,6 +721,7 @@ async function openOwnedOperatorTimeline(
 ): Promise<string> {
   return afterOperatorStartupResync(page, async () => {
     await closeStaleOperatorTimelinePanels(page);
+    await dockFixturesInMainGrid(page);
     return page.evaluate(
       ({ panelPrefix: prefix, timelineId, timelineUid }) => {
         const stores = (window as any).appStores;
@@ -918,7 +919,7 @@ async function seedDenseTimelineItems(
             muted: false,
             solo: false,
             expanded: false,
-            items,
+            actions: items,
             automation_lanes: [],
           },
         ],
@@ -1666,13 +1667,12 @@ test("beatgrid controls preserve fractional BPM edits", async ({
       ),
     )
     .toBe(true);
-  if ((await beatgridToggle.textContent())?.includes("Time")) {
-    await beatgridToggle.click();
-  }
-
   const beatgridSwitch = beatgridToggle.getByRole("switch", {
     name: "Use beatgrid",
   });
+  if (!(await beatgridSwitch.isChecked())) {
+    await beatgridSwitch.click();
+  }
   await expect(beatgridSwitch).toBeChecked();
   await beatgridSwitch.focus();
   await expect(beatgridSwitch).toBeFocused();
@@ -1867,7 +1867,7 @@ test("timeline keeps chrome fixed while track rows scroll", async ({
         label: `Scroll Track ${index + 1}`,
         muted: false,
         solo: false,
-        items,
+        actions: items,
         expanded: false,
         automation_lanes: [],
       };
@@ -2687,7 +2687,7 @@ test("shift-click multi-selects timeline action flags", async ({ page }) => {
             muted: false,
             solo: false,
             expanded: false,
-            items,
+            actions: items,
             automation_lanes: [],
           },
         ],
@@ -2979,8 +2979,8 @@ test("timeline actions can be dragged between tracks", async ({
             (track: any) => track.id === targetTrackId,
           );
           return {
-            sourceCount: sourceTrack?.items.length,
-            targetCount: targetTrack?.items.length,
+            sourceCount: sourceTrack?.actions.length,
+            targetCount: targetTrack?.actions.length,
           };
         },
         {
@@ -2999,7 +2999,7 @@ test("timeline actions can be dragged between tracks", async ({
           const targetTrack = timeline?.tracks.find(
             (track: any) => track.id === targetTrackId,
           );
-          const moved = targetTrack?.items.find(
+          const moved = targetTrack?.actions.find(
             (item: any) => item.id === actionId,
           );
           return moved
@@ -3043,8 +3043,8 @@ test("timeline actions can be dragged between tracks", async ({
             (track: any) => track.id === targetTrackId,
           );
           return {
-            sourceCount: sourceTrack?.items.length,
-            targetCount: targetTrack?.items.length,
+            sourceCount: sourceTrack?.actions.length,
+            targetCount: targetTrack?.actions.length,
           };
         },
         {
