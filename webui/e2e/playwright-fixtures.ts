@@ -24,7 +24,6 @@ type WorkerSlot = {
   baseURL: string;
   claimPaths: string[];
   runRoot: string;
-  viteService: unknown;
   workerIndex: number;
 };
 
@@ -63,18 +62,19 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   experimentalFlows: [false, { option: true }],
   sampleDataOnly: [false, { option: true }],
   emptyStartupWorld: [false, { option: true }],
-  /** Keeps one Vite proxy and fixed port pair alive for a Playwright worker. */
+  /** Claims a fixed backend port for a Playwright worker on the run's shared Vite server. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
     async ({}, use, workerInfo) => {
       const workerSlot = await startPlaywrightWorkerSlot({
+        baseURL: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_VITE_URL"),
         runRoot: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_RUN_ROOT"),
         workerIndex: workerInfo.parallelIndex,
       });
       try {
         await use(workerSlot);
       } finally {
-        await stopPlaywrightWorkerSlot(workerSlot);
+        stopPlaywrightWorkerSlot(workerSlot);
       }
     },
     { scope: "worker", timeout: 120_000 },
@@ -118,15 +118,30 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
     { timeout: 180_000 },
   ],
 
-  /** Routes relative page URLs through the current worker's Vite proxy. */
+  /** Routes relative page URLs through the run's shared Vite server. */
   baseURL: async ({ backendSlot }, use) => {
     await use(backendSlot.baseURL);
   },
 
-  /** Seeds startup storage for the current test's dynamically assigned origin. */
+  /**
+   * Seeds startup storage for the shared dev server's origin, plus the cookie
+   * its `/api` and `/ws` proxies use to reach this test's backend.
+   */
   storageState: async ({ backendSlot }, use) => {
+    const { hostname } = new URL(backendSlot.baseURL);
     await use({
-      cookies: [],
+      cookies: [
+        {
+          name: "nightfall-playwright-backend",
+          value: String(backendSlot.backendPort),
+          domain: hostname,
+          path: "/",
+          expires: -1,
+          httpOnly: false,
+          secure: false,
+          sameSite: "Lax",
+        },
+      ],
       origins: [
         {
           origin: backendSlot.baseURL,
@@ -142,29 +157,30 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   },
 });
 
-/** Playwright fixture that starts only Vite, leaving the backend port deliberately empty. */
+/** Playwright fixture that uses only the shared Vite server, leaving the backend port deliberately empty. */
 export const frontendOnlyTest = playwrightTest.extend<
   Record<never, never>,
   WorkerFixtures
 >({
-  /** Own one Vite service and port pair for a backend-free browser test worker. */
+  /** Claims a port pair for a backend-free browser test worker on the shared Vite server. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
     async ({}, use, workerInfo) => {
       const workerSlot = await startPlaywrightWorkerSlot({
+        baseURL: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_VITE_URL"),
         runRoot: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_RUN_ROOT"),
         workerIndex: workerInfo.parallelIndex,
       });
       try {
         await use(workerSlot);
       } finally {
-        await stopPlaywrightWorkerSlot(workerSlot);
+        stopPlaywrightWorkerSlot(workerSlot);
       }
     },
     { scope: "worker", timeout: 120_000 },
   ],
 
-  /** Route relative page URLs through the frontend-only Vite process. */
+  /** Route relative page URLs through the run's shared Vite server. */
   baseURL: async ({ workerSlot }, use) => {
     await use(workerSlot.baseURL);
   },

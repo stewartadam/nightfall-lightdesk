@@ -21,7 +21,10 @@ import {
   preparePlaywrightDataDir,
 } from "./nightfall-test-data-dir.mjs";
 import { exitWithOutcome, runOwnedCommand } from "./owned-process.mjs";
-import { terminatePlaywrightBackendPool } from "./playwright-backend-pool.mjs";
+import {
+  startPlaywrightSharedVite,
+  terminatePlaywrightBackendPool,
+} from "./playwright-backend-pool.mjs";
 import { extractPlaywrightCliOptions } from "./playwright-cli-options.mjs";
 import { sharedBrowsersPath } from "./playwright-path.mjs";
 import { resolvePlaywrightRunMode } from "./playwright-run-mode.mjs";
@@ -121,6 +124,10 @@ try {
     }
   }
 
+  // One warm dev server serves every worker, so only the first page load compiles the app.
+  const sharedViteURL =
+    !outcome && runRoot ? await startPlaywrightSharedVite(runRoot) : undefined;
+
   if (!outcome) {
     outcome = await runOwnedCommand(
       process.execPath,
@@ -144,6 +151,7 @@ try {
               ? {
                   NIGHTFALL_PLAYWRIGHT_BACKEND_POOL: "1",
                   NIGHTFALL_PLAYWRIGHT_RUN_ROOT: runRoot,
+                  NIGHTFALL_PLAYWRIGHT_VITE_URL: sharedViteURL,
                   ...(needsBackend
                     ? {
                         NIGHTFALL_DATA_DIR: seedDataDir,

@@ -8,9 +8,10 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import type { IncomingMessage } from "node:http";
 import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig, loadEnv, type ProxyOptions } from "vite";
+import { defineConfig, type HttpProxy, loadEnv, type ProxyOptions } from "vite";
 import solidPlugin from "vite-plugin-solid";
 import {
   distributionNoticesPlugin,
@@ -82,6 +83,32 @@ function formatAppTitle(appName: string, appBuildName: string): string {
   return appBuildName === "unknown" ? appName : `${appName} (${appBuildName})`;
 }
 
+/** Matches the cookie a Playwright browser context sets to name its test backend port. */
+const playwrightBackendCookie = /(?:^|;\s*)nightfall-playwright-backend=(\d+)/;
+
+/**
+ * Sends each proxied request to the backend port its Playwright browser context
+ * names in a cookie, so one shared dev server serves every test's backend.
+ * Requests without the cookie keep the proxy's configured target.
+ */
+function routeToPlaywrightBackend(
+  proxy: HttpProxy.ProxyServer,
+  type: "web" | "ws",
+): void {
+  proxy.before(
+    type,
+    "stream",
+    (req: IncomingMessage, _res: unknown, options: { target?: unknown }) => {
+      const port = req.headers.cookie?.match(playwrightBackendCookie)?.[1];
+      if (port) {
+        options.target = new URL(
+          `${type === "ws" ? "ws" : "http"}://127.0.0.1:${port}`,
+        );
+      }
+    },
+  );
+}
+
 /**
  * Returns a record of URLs to proxy based on the current mode and whether the worktree is enabled. */
 function proxiedUrls(
@@ -94,18 +121,26 @@ function proxiedUrls(
     process.env.NIGHTFALL_PORT || env.NIGHTFALL_PORT || "3030";
   const dashboardHost = env.NIGHTFALL_WORKTREE_DASHBOARD_HOST || "127.0.0.1";
   const dashboardPort = env.NIGHTFALL_WORKTREE_DASHBOARD_PORT || "4780";
+  const sharedPlaywrightServer =
+    process.env.NIGHTFALL_PLAYWRIGHT_SHARED_VITE === "1";
 
   const proxy: Record<string, string | ProxyOptions> = {
     // Proxy API requests to the backend server
     "/api": {
       target: `http://localhost:${backendPort}`,
       changeOrigin: true,
+      configure: sharedPlaywrightServer
+        ? (server) => routeToPlaywrightBackend(server, "web")
+        : undefined,
     },
     // Proxy websocket traffic to the backend server
     "/ws": {
       target: `ws://localhost:${backendPort}`,
       ws: true,
       changeOrigin: true,
+      configure: sharedPlaywrightServer
+        ? (server) => routeToPlaywrightBackend(server, "ws")
+        : undefined,
     },
   };
 
@@ -204,12 +239,12 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     root: "./webui",
-    // Playwright runs one dev server per worker; separate dependency caches
-    // keep them from re-optimizing into one directory underneath each other.
+    // A Playwright run keeps its own dependency cache so re-optimizing never
+    // reloads pages served by a developer's dev server in the same worktree.
     cacheDir:
-      process.env.NIGHTFALL_VITE_CACHE_DIR ||
-      env.NIGHTFALL_VITE_CACHE_DIR ||
-      undefined,
+      process.env.NIGHTFALL_PLAYWRIGHT_SHARED_VITE === "1"
+        ? resolve(projectRoot, "node_modules/.vite-playwright")
+        : undefined,
     resolve: {
       alias: {
         "#engine-runtime-worker?worker": `${resolve(
@@ -274,8 +309,7 @@ export default defineConfig(({ mode, command }) => {
       watch: {
         ignored: viteWatchIgnored,
       },
-      // Playwright starts one dev server per worker and opens panels right
-      // after startup; transforming the app and every lazily loaded panel up
+      // Playwright tests open panels right after startup; transforming the app and every lazily loaded panel up
       // front keeps those first opens from queueing behind cold transforms.
       warmup: {
         clientFiles: warmupPanels ? ["./main.tsx", ...panelModules] : [],
