@@ -224,7 +224,7 @@ export default function ShortcutsPopup() {
       backdropProps={
         {
           "data-dialog-kind": "shortcuts",
-        } as JSX.HTMLAttributes<HTMLDivElement>
+        } as JSX.DialogHtmlAttributes<HTMLDialogElement>
       }
     >
       <DialogBody role="region" aria-label="Keyboard shortcuts">

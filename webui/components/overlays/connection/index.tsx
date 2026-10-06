@@ -26,6 +26,7 @@ import { allShortcuts } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { appLifecycle } from "../../../state/app-lifecycle";
 import { DialogBackdrop, DialogSurface } from "../../ui/dialog";
+import Modal from "../../ui/modal";
 import Tooltip from "../../ui/tooltip";
 import { shouldBlockDisconnectedOverlayKey } from "./key-filter";
 
@@ -186,9 +187,9 @@ const ConnectionOverlay = () => {
     clearTimeout(hideOverlayTimeoutId);
   });
 
+  // A modal dialog of its own, so it covers the app and any dialog already open.
   return (
-    <Show when={isOverlayPresented()}>
-      {/* overlay with background blur */}
+    <Modal isOpen={isOverlayPresented()} closeOnEscape={false}>
       <DialogBackdrop
         class={`pointer-events-auto ${
           hasStateChanged()
@@ -274,7 +275,7 @@ const ConnectionOverlay = () => {
           </div>
         </DialogSurface>
       </DialogBackdrop>
-    </Show>
+    </Modal>
   );
 };
 
