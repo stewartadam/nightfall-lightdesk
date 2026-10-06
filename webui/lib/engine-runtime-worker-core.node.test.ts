@@ -14,7 +14,10 @@ import {
   type EmbeddedRuntimeFactory,
   startEngineRuntimeWorker,
 } from "./engine-runtime-worker-core";
-import { unpackParameterState } from "./parameter-state-transfer";
+import {
+  ParameterStateDecoder,
+  queuedWorkerMessageData,
+} from "./parameter-state-transfer";
 
 /** Capture worker publications and suppress background timers for deterministic protocol checks. */
 function workerHarness(t: TestContext) {
@@ -116,25 +119,65 @@ test("demo adapter shares worker delivery and honors cancellation", (t) => {
   callbacks?.processEncodedPublication(new Uint8Array([0, ...encode(payload)]));
   worker.send({ type: "pullFrame" });
   assert.deepEqual(worker.publications.at(-1).messages[0].data, payload);
-  const snapshot = [
-    {
-      fixture_uid: "fixture",
-      parameters: [{ output: { Red: 255 }, absolute: {}, relative: {} }],
-    },
-  ];
-  callbacks?.processEncodedPublication(
-    new Uint8Array([1, ...encode({ type: "ParameterState", data: [] })]),
-  );
-  callbacks?.processEncodedPublication(
-    new Uint8Array([1, ...encode({ type: "ParameterState", data: snapshot })]),
-  );
+  /** Encodes one values frame with a single output slot. */
+  const values = (layoutId: number, red: number) =>
+    new Uint8Array([
+      1,
+      ...encode({
+        type: "ParameterState",
+        data: {
+          layout_id: layoutId,
+          output: new Uint8Array(Float32Array.of(red).buffer),
+          absolute_count: 0,
+          assertion_slots: new Uint8Array(),
+          assertion_kinds: new Uint8Array(),
+          assertion_values: new Uint8Array(),
+        },
+      }),
+    ]);
+  /** Encodes a layout with one fixture whose only slot is `attribute`. */
+  const layout = (layoutId: number, attribute: string) =>
+    new Uint8Array([
+      0,
+      ...encode({
+        type: "ParameterLayout",
+        data: {
+          layout_id: layoutId,
+          fixtures: [{ fixture_uid: "fixture", elements: [[attribute]] }],
+          assertion_variants: ["Absolute"],
+        },
+      }),
+    ]);
+  callbacks?.processEncodedPublication(values(1, 1));
+  callbacks?.processEncodedPublication(layout(1, "Red"));
+  callbacks?.processEncodedPublication(values(1, 2));
+  callbacks?.processEncodedPublication(values(1, 255));
   worker.send({ type: "pullFrame" });
   const messages = worker.publications.at(-1).messages;
-  assert.equal(messages.length, 1);
-  assert.equal(messages[0].data, undefined);
+  assert.equal(messages.length, 2, "the layout and the newest values frame");
+  assert.equal(messages[0].data.type, "ParameterLayout");
+  assert.equal(messages[1].data, undefined);
+  const decoder = new ParameterStateDecoder();
+  assert.equal(queuedWorkerMessageData(messages[0], decoder), undefined);
+  assert.deepEqual(queuedWorkerMessageData(messages[1], decoder), {
+    type: "ParameterState",
+    data: [
+      {
+        fixture_uid: "fixture",
+        parameters: [{ output: { Red: 255 }, absolute: {}, relative: {} }],
+      },
+    ],
+  });
+
+  callbacks?.processEncodedPublication(values(1, 3));
+  callbacks?.processEncodedPublication(layout(2, "Blue"));
+  callbacks?.processEncodedPublication(values(1, 4));
+  worker.send({ type: "pullFrame" });
+  const relayout = worker.publications.at(-1).messages;
   assert.deepEqual(
-    structuredClone(unpackParameterState(messages[0].packedParameters)),
-    snapshot,
+    relayout.map((message: { data?: { type: string } }) => message.data?.type),
+    ["ParameterLayout"],
+    "values staged or received for an earlier layout are dropped",
   );
   worker.send({ type: "submit", data: { update: "test" } });
   assert.deepEqual(submitted, { update: "test" });
@@ -178,19 +221,28 @@ test("pulls deliver command results with the newest staged snapshot", (t) => {
     type: "start",
     config: { mode: "embedded-demo", sampleId: "test", showfileUrl: "/s" },
   });
-  /** Builds a one-fixture parameter snapshot with the given red output. */
-  const snapshotWithRed = (red: number) => [
-    {
-      fixture_uid: "fixture",
-      parameters: [{ output: { Red: red }, absolute: {}, relative: {} }],
-    },
-  ];
+  /** Builds a one-slot values frame for `layoutId` with the given red output. */
+  const frameWithRed = (layoutId: number, red: number) => ({
+    layout_id: layoutId,
+    output: new Uint8Array(Float32Array.of(red).buffer),
+    absolute_count: 0,
+    assertion_slots: new Uint8Array(),
+    assertion_kinds: new Uint8Array(),
+    assertion_values: new Uint8Array(),
+  });
   const result = { command_id: "c1", outcome: { type: "Succeeded" } };
   callbacks?.processEncodedPublication(
-    engineEncoded(1, "ParameterState", snapshotWithRed(0)),
+    engineEncoded(0, "ParameterLayout", {
+      layout_id: 1,
+      fixtures: [{ fixture_uid: "fixture", elements: [["Red"]] }],
+      assertion_variants: ["Absolute"],
+    }),
   );
   callbacks?.processEncodedPublication(
-    engineEncoded(1, "ParameterState", snapshotWithRed(255)),
+    engineEncoded(1, "ParameterState", frameWithRed(1, 0)),
+  );
+  callbacks?.processEncodedPublication(
+    engineEncoded(1, "ParameterState", frameWithRed(1, 255)),
   );
   callbacks?.processEncodedPublication(
     engineEncoded(0, "CommandResult", result),
@@ -201,11 +253,28 @@ test("pulls deliver command results with the newest staged snapshot", (t) => {
   const batch = worker.publications.at(-1).messages;
   assert.deepEqual(
     batch.map((message: { messageType: string }) => message.messageType),
-    ["CommandResult", "ParameterState"],
+    ["ParameterLayout", "CommandResult", "ParameterState"],
   );
-  assert.deepEqual(batch[0].data, { type: "CommandResult", data: result });
+  assert.deepEqual(batch[1].data, { type: "CommandResult", data: result });
+  const decoder = new ParameterStateDecoder();
+  assert.equal(queuedWorkerMessageData(batch[0], decoder), undefined);
+  assert.deepEqual(queuedWorkerMessageData(batch[2], decoder), {
+    type: "ParameterState",
+    data: [
+      {
+        fixture_uid: "fixture",
+        parameters: [{ output: { Red: 255 }, absolute: {}, relative: {} }],
+      },
+    ],
+  });
+
+  callbacks?.processEncodedPublication(
+    engineEncoded(1, "ParameterState", frameWithRed(2, 128)),
+  );
+  worker.send({ type: "pullFrame" });
   assert.deepEqual(
-    structuredClone(unpackParameterState(batch[1].packedParameters)),
-    snapshotWithRed(255),
+    worker.publications.at(-1).messages,
+    [],
+    "a snapshot staged encoded is dropped on pull when its layout is not the latest",
   );
 });

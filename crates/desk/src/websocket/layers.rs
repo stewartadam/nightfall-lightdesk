@@ -28,7 +28,7 @@ fn parameter_instance(parameter: ParameterRef) -> moonshine_kind::Instance<Param
     unsafe { moonshine_kind::Instance::from_entity_unchecked(parameter.entity()) }
 }
 
-/// Transform a `Layer` into the same fixture-centric representation that `ParameterState` uses.
+/// Transform a `Layer` into per-fixture element values keyed by attribute.
 fn layer_absolute_fixture_state(
     layer: &Layer,
     param_index: &ParameterIndex,
@@ -70,7 +70,7 @@ fn layer_absolute_fixture_state(
         .collect()
 }
 
-/// Transform a `Layer` into the same fixture-centric representation that `ParameterState` uses.
+/// Transform a `Layer` into per-fixture element values keyed by attribute.
 fn layer_relative_fixture_state(
     layer: &Layer,
     param_index: &ParameterIndex,
@@ -153,7 +153,7 @@ fn lookahead_assertions_fixture_state(
         .collect()
 }
 
-/// Transform a `ComputedLayer` into the same fixture-centric representation that `ParameterState` uses.
+/// Transform a `ComputedLayer` into per-fixture element values keyed by attribute.
 fn computed_layer_fixture_state(
     output: &ComputedLayer,
     param_index: &ParameterIndex,

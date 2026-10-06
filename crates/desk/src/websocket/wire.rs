@@ -341,13 +341,13 @@ pub(super) struct OutboundLayerState {
     pub is_releasing: bool,
     /// Current source-specific playback position for playback-backed layers.
     pub runtime_position: Option<InstancePosition>,
-    /// Asserted absolute parameter values for this layer, in the same shape as `ParameterState`
+    /// Asserted absolute parameter values for this layer, grouped by fixture element
     pub asserted_absolute_values: Vec<OutboundElementParameterValues>,
-    /// Asserted relative parameter values for this layer, in the same shape as `ParameterState`
+    /// Asserted relative parameter values for this layer, grouped by fixture element
     pub asserted_relative_values: Vec<OutboundElementParameterValues>,
     /// Backend-owned lookahead assertions, such as lookahead values.
     pub lookahead_asserted_values: Vec<OutboundElementParameterValues>,
-    /// Computed parameter values for this layer, in the same shape as `ParameterState`
+    /// Computed parameter values for this layer, grouped by fixture element
     pub computed_values: Vec<OutboundElementComputedState>,
     /// Transition-active flags for computed parameter values in this layer
     pub computed_transitioning: Vec<OutboundElementTransitionState>,

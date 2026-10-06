@@ -18,7 +18,7 @@ use bevy_diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnosti
 use bevy_ecs::prelude::*;
 use nightfall::prelude::{ColorPathDefault, SimpleUuid};
 use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
-use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_dmx::prelude::Attribute;
 use nightfall_dmx::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::BindingTransport;
@@ -37,6 +37,7 @@ use crate::bindings::{
 use crate::fixture::Fixture;
 use crate::geometry::FixtureGeometry;
 use crate::output_frames::{OutputDmxFrames, output_transport_label};
+use crate::parameter_state::{ParameterLayout, ParameterStateFrame, ParameterStateProjection};
 use crate::prelude::{BeamType, FixtureDataProviderExt, FixturePhysical};
 use crate::universe::InputUniverseStaleTimeout;
 use crate::universe::{ConsoleDmxUniverses, InputDmxUniverses};
@@ -66,8 +67,10 @@ enum FixtureWsMessage<'a> {
     /// Fixture command (for forwarding CRUD operations to UI)
     #[allow(dead_code)]
     FixtureCommand(&'a crate::FixtureCommand),
-    /// Current absolute, relative, and output parameter values.
-    ParameterState(&'a [OutboundParameterState]),
+    /// Slot order for subsequent `ParameterState` frames.
+    ParameterLayout(&'a ParameterLayout),
+    /// Current absolute, relative, and output parameter values, indexed by layout slot.
+    ParameterState(&'a ParameterStateFrame<'a>),
 }
 
 /// Time spent projecting the current parameter state for clients.
@@ -76,73 +79,6 @@ pub const PARAMETER_STATE_BUILD_MS: DiagnosticPath =
 /// Time spent encoding and publishing the current parameter state.
 pub const PARAMETER_STATE_BROADCAST_MS: DiagnosticPath =
     DiagnosticPath::const_new("desk/parameter_state/broadcast_ms");
-
-/// Parameter values for one fixture in the client wire format.
-#[typeshare::typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OutboundParameterState {
-    /// Unique ID of the fixture this state applies to.
-    #[serde(with = "nightfall::serde_uuid_simple")]
-    pub fixture_uid: Uuid,
-    /// Absolute, relative, and output values for each fixture element.
-    pub parameters: Vec<ParameterState>,
-}
-
-/// Parameter values for one fixture element in the client wire format.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct ParameterState {
-    /// Absolute parameter values asserted by objects in the layer stack.
-    #[typeshare(serialized_as = "Record<String, ParameterValue>")]
-    #[serde(with = "attribute_keyed_map")]
-    pub absolute: HashMap<Attribute, ParameterValue>,
-    /// Relative parameter values asserted by objects in the layer stack.
-    #[typeshare(serialized_as = "Record<String, ParameterValue>")]
-    #[serde(with = "attribute_keyed_map")]
-    pub relative: HashMap<Attribute, ParameterValue>,
-    /// Final computed output values after compositing and fixture processing.
-    #[typeshare(serialized_as = "Record<String, ParameterDmxValue>")]
-    #[serde(with = "attribute_keyed_map")]
-    pub output: HashMap<Attribute, ParameterDmxValue>,
-}
-
-mod attribute_keyed_map {
-    use std::collections::HashMap;
-    use std::str::FromStr;
-
-    use nightfall_dmx::prelude::Attribute;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    /// Serialize attribute maps with the canonical string keys consumed by the web UI.
-    pub fn serialize<S, V>(map: &HashMap<Attribute, V>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-        V: Serialize,
-    {
-        let keyed: HashMap<String, &V> = map
-            .iter()
-            .map(|(attribute, value)| (attribute.key(), value))
-            .collect();
-        keyed.serialize(serializer)
-    }
-
-    /// Deserialize canonical attribute keys while retaining unknown custom labels.
-    pub fn deserialize<'de, D, V>(deserializer: D) -> Result<HashMap<Attribute, V>, D::Error>
-    where
-        D: Deserializer<'de>,
-        V: Deserialize<'de>,
-    {
-        let keyed = HashMap::<String, V>::deserialize(deserializer)?;
-        Ok(keyed
-            .into_iter()
-            .map(|(key, value)| {
-                let attribute =
-                    Attribute::from_str(&key).unwrap_or(Attribute::Custom { label: key });
-                (attribute, value)
-            })
-            .collect())
-    }
-}
 
 /// Beam properties for visualization, derived from FixturePhysical.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,79 +129,32 @@ pub fn send_parameter_state(
     fixture_data_provider: Res<FixtureDataProviderExt>,
     parameters_query: Query<&crate::parameter::Parameter>,
     final_layer_attributed_assertions: Res<FinalLayerAttributedAssertions>,
+    mut projection: ResMut<ParameterStateProjection>,
     mut diagnostics: Diagnostics,
     broadcaster: Res<ClientEventSink>,
 ) {
     let _span = tracing::debug_span!("send_parameter_state").entered();
     let build_start = Instant::now();
-    let param_index = fixture_data_provider.parameter_index();
-
-    let mut fixture_state = Vec::new();
-    for fixture in fixture_data_provider.inner.iter() {
-        let fixture_id = fixture.identifiers.uid;
-        let mut elements = Vec::with_capacity(fixture.elements.len());
-
-        for (index, element) in fixture.elements.iter().enumerate() {
-            let fixture_ref = nightfall::prelude::FixtureRef {
-                fixture_uid: fixture_id,
-                index: Some(index as u32 + 1),
-            };
-            let parameter_count = element.parameters.len();
-            let mut absolute_values = HashMap::new();
-            let mut relative_values = HashMap::new();
-            let mut output_values = HashMap::with_capacity(parameter_count);
-
-            for parameter_metadata in &element.parameters {
-                let attribute = &parameter_metadata.attribute;
-                let Some(parameter_instance) = param_index.parameter(&fixture_ref, attribute)
-                else {
-                    continue;
-                };
-
-                let Ok(parameter) = parameters_query.get(parameter_instance.entity()) else {
-                    tracing::warn!(
-                        fixture_uid = %fixture_id,
-                        element_index = index + 1,
-                        attribute = %attribute,
-                        "Fixture parameter index referenced a missing entity"
-                    );
-                    continue;
-                };
-                output_values.insert(attribute.clone(), parameter.get_logical_value());
-
-                let attributed_assertions = &final_layer_attributed_assertions.0;
-                if let Some((_, (param_value, _))) =
-                    attributed_assertions.absolute.get(parameter_instance)
-                {
-                    absolute_values.insert(attribute.clone(), *param_value);
-                }
-                if let Some((_, (param_value, _))) =
-                    attributed_assertions.relative.get(parameter_instance)
-                {
-                    relative_values.insert(attribute.clone(), *param_value);
-                }
-            }
-
-            elements.push(ParameterState {
-                absolute: absolute_values,
-                relative: relative_values,
-                output: output_values,
-            });
-        }
-
-        fixture_state.push(OutboundParameterState {
-            fixture_uid: fixture_id,
-            parameters: elements,
-        });
-    }
+    projection.refresh_layout(
+        &fixture_data_provider,
+        &fixture_data_provider.parameter_index(),
+        fixture_data_provider.is_changed(),
+    );
+    projection.fill_values(&parameters_query, &final_layer_attributed_assertions.0);
 
     let build_elapsed = build_start.elapsed();
     record_elapsed_ms(&mut diagnostics, &PARAMETER_STATE_BUILD_MS, build_elapsed);
 
     let broadcast_start = Instant::now();
+    if let Some(layout) = projection.take_pending_layout() {
+        broadcaster.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FixtureWsMessage::ParameterLayout(layout),
+        );
+    }
     broadcaster.publish(
         DISCRIMINATOR_DROPPABLE,
-        &FixtureWsMessage::ParameterState(&fixture_state),
+        &FixtureWsMessage::ParameterState(&projection.values()),
     );
     let broadcast_elapsed = broadcast_start.elapsed();
     record_elapsed_ms(
@@ -274,7 +163,7 @@ pub fn send_parameter_state(
         broadcast_elapsed,
     );
     tracing::trace!(
-        fixture_count = fixture_state.len(),
+        slot_count = projection.slot_count(),
         build_ms = build_elapsed.as_secs_f64() * 1000.0,
         broadcast_ms = broadcast_elapsed.as_secs_f64() * 1000.0,
         "ParameterState client projection baseline"
@@ -797,6 +686,7 @@ pub fn handle_resync_state(
     output_bindings: Res<OutputBindings>,
     disabled_bindings: Res<DisabledBindings>,
     binding_validation_settings: Res<BindingValidationSettings>,
+    mut parameter_state: ResMut<ParameterStateProjection>,
     broadcaster: Res<ClientEventSink>,
 ) {
     let should_resync = events.read().next().is_some();
@@ -805,6 +695,7 @@ pub fn handle_resync_state(
         return;
     }
 
+    parameter_state.request_layout();
     // Send fixtures with geometry if provider is available
     send_fixtures(&fixture_data_provider, &broadcaster, |fixture| {
         geometry_provider
