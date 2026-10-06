@@ -60,7 +60,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
   await page.getByRole("tab", { name: "3D Visualizer", exact: true }).click();
   await expect(camera).toHaveCSS("color", "rgb(251, 146, 60)");
   const activeBackground = await renderedColor(camera, "background-color");
-  await page.getByRole("tab", { name: "Cues", exact: true }).click();
+  await page.getByRole("tab", { name: "Groups", exact: true }).click();
   await expectGreyAccent(camera);
   expect(await renderedColor(camera, "background-color")).not.toEqual(
     activeBackground,
@@ -90,7 +90,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
   dialog = await openAppearance(page);
   await dialog.getByRole("button", { name: "Violet accent" }).click();
   await page.keyboard.press("Escape");
-  await page.getByRole("tab", { name: "Cues", exact: true }).click();
+  await page.getByRole("tab", { name: "Groups", exact: true }).click();
   await expectGreyAccent(camera);
   await page.reload();
   await waitForDockviewApp(page);
@@ -100,7 +100,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
   ).toBeChecked();
   await dialog.getByLabel("Mute accents in unfocused panels").uncheck();
   await page.keyboard.press("Escape");
-  await page.getByRole("tab", { name: "Cues", exact: true }).click();
+  await page.getByRole("tab", { name: "Groups", exact: true }).click();
   await expect(camera).toHaveCSS("color", "rgb(176, 128, 255)");
 });
 

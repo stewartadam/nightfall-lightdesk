@@ -8,7 +8,10 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
+
+const CONTROLS_COLLAPSED_STORAGE_KEY =
+  "nightfall-clip-panel:controls-collapsed";
 
 type TargetChangeContext = {
   clipId: number;
@@ -23,13 +26,17 @@ async function openOwnedClipTargetChangeApp(
   backendPort: number,
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
-  await page.addInitScript(() => {
+  await page.addInitScript((controlsCollapsedKey) => {
     window.localStorage.clear();
     window.localStorage.setItem("nightfall.currentShowfileName", "default");
-  });
+    // Collapsed controls leave the clip grid tall enough that its cards are
+    // not covered by the scroll-edge indicators, which reject pointer input.
+    window.localStorage.setItem(controlsCollapsedKey, "true");
+  }, CONTROLS_COLLAPSED_STORAGE_KEY);
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
@@ -237,19 +244,19 @@ test("running clip can stop after changing its target", async ({
   await openOwnedClipTargetChangeApp(page, backendSlot.backendPort);
   const context = await storeOwnedClipTargetChangeData(page);
   await page.evaluate(() => {
-    (window as any).appStores.dockApi
-      .get()
-      .getPanel("panel-ClipList")
-      ?.api.setActive();
-  });
-
-  await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
+    // The default Clips panel lives in a collapsed edge group, so the
+    // scenario docks its own clip list beside Fixtures in the main grid.
+    api.getPanel("panel-ClipList")?.api.close();
     if (!api.getPanel("panel-ClipList-e2e")) {
       api.addPanel({
         id: "panel-ClipList-e2e",
         component: "ClipList",
         title: "Clips",
+        position: {
+          referencePanel: "panel-FixtureGrid",
+          direction: "within",
+        },
         params: { initialPanelId: "panel-ClipList-e2e" },
       });
     }

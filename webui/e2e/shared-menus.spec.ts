@@ -11,7 +11,11 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 /** Captures the visible surface, row and icon treatment independently of menu behavior. */
 async function menuAppearance(menu: Locator) {
@@ -43,6 +47,7 @@ test("settings, tile and timeline menus share their visual treatment", async ({
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await resetToDefaultLayout(page);
+  await dockFixturesInMainGrid(page);
   await page.locator('[title="Menu"]').click();
   const dropdown = page.locator('[data-menu-kind="dropdown"]');
   await expect(dropdown).toBeVisible();
@@ -70,7 +75,11 @@ test("settings, tile and timeline menus share their visual treatment", async ({
   await page.keyboard.press("Escape");
 
   await page.getByRole("tab", { name: "Groups", exact: true }).click();
-  const tile = page.locator(".nf-crud-card:visible").first();
+  // Scope to Groups: collapsed edge panels such as Clips also render CRUD cards.
+  const tile = page
+    .getByRole("region", { name: "Groups scroll area" })
+    .locator(".nf-crud-card:visible")
+    .first();
   await expect(tile).toBeVisible();
   await tile.click({ button: "right" });
   const context = page.locator('[data-menu-kind="context"]');

@@ -122,6 +122,14 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
       sliderApi?.set(next, false);
       syncing = false;
     });
+    /** Keeps handle names current when a mounted slider's labels change, such as after its row moves. */
+    createEffect(() => {
+      containerRef
+        .querySelectorAll<HTMLElement>(".noUi-handle")
+        .forEach((handle, index) => {
+          handle.setAttribute("aria-label", label(index));
+        });
+    });
     /** Applies disabled state after the library instance exists. */
     createEffect(() => {
       if (props.disabled) sliderApi?.disable();

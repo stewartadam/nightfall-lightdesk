@@ -7,6 +7,7 @@
  */
 
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
+import { waitForDockviewApp } from "./showfile-startup";
 
 /**
  * Opens the named panel through the command palette.
@@ -26,7 +27,7 @@ async function expectToolbarColumnVisibilityRightAligned(anchor: Locator) {
   await expect(anchor).toBeVisible();
 
   const metrics = await anchor.evaluate((element) => {
-    const toolbar = element.closest('[class*="border-b"]');
+    const toolbar = element.closest('[data-component="PanelToolbar"]');
     if (!toolbar) {
       throw new Error("Panel toolbar not found");
     }
@@ -54,9 +55,11 @@ async function expectToolbarColumnVisibilityRightAligned(anchor: Locator) {
   expect(metrics.toolbarRight - metrics.columnRight).toBeLessThanOrEqual(12);
 }
 
+test.setTimeout(60_000);
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/?e2e=1");
-  await expect(page.locator("main#app")).toBeVisible();
+  await waitForDockviewApp(page);
 });
 
 test("scene objects column visibility control is right aligned", async ({

@@ -15,11 +15,13 @@ export const PERFORMANCE_MODULE_UID = "94000000000000000000000000000003";
 export const PERFORMANCE_TIMECODE_ID = 9400;
 export const PERFORMANCE_TIMECODE_UID = "94000000000000000000000000000001";
 export const PERFORMANCE_TIMELINE_UID = "94000000000000000000000000000002";
+// Sample data owns clips in the 400s, so the seeded layers and the historical
+// clip 412 trigger are stored in a clip ID range the sample show leaves free.
 export const PERFORMANCE_CLIP_IDS = Array.from(
   { length: 12 },
-  (_, index) => 400 + index,
+  (_, index) => 9400 + index,
 );
-export const PERFORMANCE_TRIGGER_CLIP_ID = 412;
+export const PERFORMANCE_TRIGGER_CLIP_ID = 9412;
 let componentPath: string | undefined;
 
 /** Builds a repository-owned WASM effect using the artifact path reported by Cargo. */
@@ -100,7 +102,14 @@ export async function seedPerformanceTimeline(page: Page): Promise<{
       0,
   );
   const load = await page.evaluate(
-    async ({ timecodeId, timecodeUid, timelineUid, clipIds, moduleUid }) => {
+    async ({
+      timecodeId,
+      timecodeUid,
+      timelineUid,
+      clipIds,
+      moduleUid,
+      triggerClipId,
+    }) => {
       const stores = (window as any).appStores;
       /** Rejects failed seed commands before collecting any performance measurements. */
       const send = async (module: string, type: string, data: unknown) => {
@@ -161,7 +170,11 @@ export async function seedPerformanceTimeline(page: Page): Promise<{
         merge: false,
       });
       await send("ClipCommand", "StoreClip", {
-        identifiers: { id: 412, uid: triggerUid, label: "Owned WASM pulse" },
+        identifiers: {
+          id: triggerClipId,
+          uid: triggerUid,
+          label: "Owned WASM pulse",
+        },
         source: { type: "FxModule", data: moduleUid },
         priority: 0,
         options: { auto_release: false, deactivate_on_sequence_end: false },
@@ -237,11 +250,17 @@ export async function seedPerformanceTimeline(page: Page): Promise<{
       timecodeUid: PERFORMANCE_TIMECODE_UID,
       timelineUid: PERFORMANCE_TIMELINE_UID,
       clipIds: PERFORMANCE_CLIP_IDS,
+      triggerClipId: PERFORMANCE_TRIGGER_CLIP_ID,
     },
   );
-  expect(load.fixtures).toBeGreaterThanOrEqual(100);
+  // The sample rig patches 56 fixtures; its density comes from the pixel tapes'
+  // parameters, so the parameter floor below carries the workload bound.
+  expect(load.fixtures).toBeGreaterThanOrEqual(56);
   expect(load.parameters).toBeGreaterThanOrEqual(10_000);
-  expect(load.moduleTargets).toBeGreaterThanOrEqual(24);
+  // Only the six moving-head spots and six rotating washes carry a physical
+  // Intensity element; the tapes, matrix strobes and strobe bars dim through
+  // VirtualIntensity, which the WASM pulse module does not target.
+  expect(load.moduleTargets).toBeGreaterThanOrEqual(12);
   expect(load.clips).toBe(13);
   return load;
 }

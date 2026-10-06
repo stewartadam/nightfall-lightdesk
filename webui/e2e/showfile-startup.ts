@@ -178,6 +178,14 @@ export async function resetToDefaultLayout(page: Page): Promise<void> {
       ),
     )
     .toBe(true);
+  // The default layout re-collapses its edge groups on the next frame; let that
+  // settle so callers can expand edges or move panels without being undone.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 }
 
 /** Waits for the app shell stores, resolving startup showfile prompts first. */

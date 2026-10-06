@@ -15,6 +15,7 @@ import {
   PERFORMANCE_TIMECODE_ID,
   PERFORMANCE_TIMECODE_UID,
   PERFORMANCE_TIMELINE_UID,
+  PERFORMANCE_TRIGGER_CLIP_ID,
   seedPerformanceTimeline,
 } from "./performance-fixture";
 import { expect, type Page, test } from "./playwright-fixtures";
@@ -329,7 +330,12 @@ async function measureWindow(
       () => page.evaluate(() => window.__ownedPerformance?.activeIds ?? []),
       { timeout: 10_000 },
     )
-    .toEqual(expect.arrayContaining([...PERFORMANCE_CLIP_IDS, 412]));
+    .toEqual(
+      expect.arrayContaining([
+        ...PERFORMANCE_CLIP_IDS,
+        PERFORMANCE_TRIGGER_CLIP_ID,
+      ]),
+    );
   const assertedParameters = await page.evaluate(() =>
     (window as any).appStores.layerStack
       .get()
@@ -537,17 +543,17 @@ async function measureWindow(
 
 for (const scenario of [
   {
-    name: "clip 412 at 169.210s with hidden consumers",
+    name: "trigger clip at 169.210s with hidden consumers",
     triggerMs: 169210,
     visible: "hidden",
   },
   {
-    name: "clip 412 at 169.210s with Layers visible",
+    name: "trigger clip at 169.210s with Layers visible",
     triggerMs: 169210,
     visible: "layers",
   },
   {
-    name: "clip 412 at 169.210s with Fixtures visible",
+    name: "trigger clip at 169.210s with Fixtures visible",
     triggerMs: 169210,
     visible: "fixtures",
   },

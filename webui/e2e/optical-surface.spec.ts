@@ -258,6 +258,7 @@ for (const forceWebGL of [false, true]) {
                     physical_from: 0,
                     physical_to: 0,
                     physical_unit: "Angle",
+                    optical: { kind: "GoboIndex", wheel: 1 },
                   },
                   {
                     name: "Rotate",
@@ -267,6 +268,7 @@ for (const forceWebGL of [false, true]) {
                     physical_from: 180,
                     physical_to: 180,
                     physical_unit: "AngularSpeed",
+                    optical: { kind: "GoboRotate", wheel: 1 },
                   },
                 ],
               },

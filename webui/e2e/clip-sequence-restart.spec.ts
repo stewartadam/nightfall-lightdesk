@@ -191,10 +191,15 @@ test("clicking a sequence clip card toggles playback", async ({
   await openOwnedSequenceClipApp(page, backendSlot.backendPort);
   const clip = await storeOwnedSequenceClip(page);
   await page.evaluate(() => {
-    (window as any).appStores.dockApi
-      .get()
-      .getPanel("panel-ClipList")
-      ?.api.setActive();
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.getPanel("panel-ClipList");
+    panel?.api.setActive();
+    // The default layout keeps Clips in a left edge group that starts
+    // collapsed when the three main columns do not fit the viewport.
+    const location = panel?.api.location;
+    if (location?.type === "edge") {
+      api.getEdgeGroup(location.position)?.expand();
+    }
   });
 
   const card = page.locator(`[data-crud-select-id="${clip.uid}"]`);

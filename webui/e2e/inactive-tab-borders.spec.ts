@@ -29,6 +29,17 @@ test("inactive Dockview tabs share a grey content-edge divider", async ({
       });
       group.expand();
     }
+    // Single-panel grid groups such as Timelines get an inactive tab to inspect too.
+    for (const group of [...api.groups]) {
+      if (group.panels.length > 1) continue;
+      api.addPanel({
+        id: `border-check-${group.id}`,
+        component: "GroupsPanel",
+        title: `Extra ${group.id}`,
+        position: { referenceGroup: group.id, direction: "within" },
+        inactive: true,
+      });
+    }
   });
 
   for (const position of ["top", "bottom"]) {
