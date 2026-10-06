@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 test.use({ experimentalFlows: true });
 
@@ -207,6 +207,7 @@ async function sendUncorrelatedCommand(
 
 /** Opens the exact owned timeline panel after its backend snapshot hydrates. */
 async function openOwnedTimeline(page: Page): Promise<void> {
+  await dockFixturesInMainGrid(page);
   await page.evaluate((timelineUid) => {
     const stores = (window as any).appStores;
     const timeline = stores.timelines.get()[timelineUid];
@@ -717,6 +718,14 @@ test("timeline recording can arm and target a track", async ({
   page,
 }, testInfo) => {
   await openOwnedRecordingApp(page, backendSlot.backendPort);
+  // The sticky ruler, waveform, and operator chrome take 136px, so the track
+  // rows this case clicks need more room than a shared dock group leaves.
+  await page.evaluate((timelineUid) => {
+    (window as any).appStores.dockApi
+      .get()
+      .getPanel(`e2e-recording-timeline-${timelineUid}`)
+      .api.maximize();
+  }, TIMELINE_UID);
 
   const timelineUid = TIMELINE_UID;
 

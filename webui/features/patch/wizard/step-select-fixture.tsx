@@ -183,6 +183,7 @@ export function StepSelectFixture() {
           >
             {(fixture) => (
               <LibraryFixturePreview
+                fill
                 make={fixture().make}
                 model={fixture().model}
                 mode={state().fixtureMode ?? undefined}

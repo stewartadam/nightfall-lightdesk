@@ -9,7 +9,7 @@
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { gridCellByIdentifier, gridCellByKey } from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 test.setTimeout(120_000);
 
@@ -43,6 +43,7 @@ async function openOwnedTimingApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
@@ -113,6 +114,7 @@ async function resetOwnedTimingApp(
   await prepareFreshBackendShowfile(backendPort);
   await page.reload();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await expect
     .poll(() => ownedTimingStoreCounts(page))
     .toEqual({

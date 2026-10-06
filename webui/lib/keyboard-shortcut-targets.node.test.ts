@@ -12,6 +12,7 @@ import {
   type EditableShortcutHandler,
   isInputField,
   shortcutHandlersForTarget,
+  targetOwnsActivationKey,
 } from "./keyboard-shortcut-targets";
 
 class FakeHTMLElement {
@@ -138,4 +139,31 @@ test("data-grid Enter keeps handlers even from editable inputs", () => {
   } finally {
     dom.restore();
   }
+});
+
+class FakeButtonElement extends FakeHTMLElement {
+  /** Matches the native-activation selector the way a real button would. */
+  override closest(selector: string): FakeHTMLElement | null {
+    return selector.split(", ").includes("button") ? this : null;
+  }
+}
+
+/** Enter and Space on a button belong to its native activation, other keys and targets do not. */
+test("targetOwnsActivationKey detects natively activated controls", () => {
+  const button = new FakeButtonElement("BUTTON") as never;
+  const div = new FakeHTMLElement("DIV") as never;
+
+  const press = (key: string, ctrlKey = false) => ({
+    key,
+    altKey: false,
+    ctrlKey,
+    metaKey: false,
+  });
+
+  assert.equal(targetOwnsActivationKey(button, press("Enter")), true);
+  assert.equal(targetOwnsActivationKey(button, press(" ")), true);
+  assert.equal(targetOwnsActivationKey(button, press("Enter", true)), false);
+  assert.equal(targetOwnsActivationKey(button, press("n")), false);
+  assert.equal(targetOwnsActivationKey(div, press("Enter")), false);
+  assert.equal(targetOwnsActivationKey(null, press("Enter")), false);
 });

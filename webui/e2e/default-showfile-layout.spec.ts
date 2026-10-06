@@ -144,7 +144,7 @@ test("new showfiles use the performance workspace", async ({
     .toEqual([false, true, true]);
 
   await page.setViewportSize({ width: 1366, height: 900 });
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
   await page
     .getByPlaceholder("Type a command or search...")
     .fill("Reset Layout");

@@ -75,10 +75,12 @@ test("console panel mod+f searches command history", async ({
     name: "Command input",
     exact: true,
   });
+  // The header input sits in an input group, which draws the shared focus ring.
+  const headerGroup = headerInput.locator("../..");
   await headerInput.focus();
   await expect(headerInput).toHaveCSS("outline-style", "none");
-  await expect(headerInput).not.toHaveCSS("box-shadow", "none");
-  await headerInput.locator("../..").screenshot({
+  await expect(headerGroup).not.toHaveCSS("box-shadow", "none");
+  await headerGroup.screenshot({
     path: testInfo.outputPath("header-command-focused.png"),
   });
   await seedConsoleHistory(page);
@@ -95,7 +97,7 @@ test("console panel mod+f searches command history", async ({
   await panelInput.locator("../..").screenshot({
     path: testInfo.outputPath("panel-command-focused.png"),
   });
-  await page.keyboard.press("Meta+F");
+  await page.keyboard.press("ControlOrMeta+F");
 
   const searchInput = consolePanel.getByLabel("Command history search");
   await expect(searchInput).toBeFocused();

@@ -16,9 +16,9 @@ import {
   gridHeaderByColumnKey,
 } from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
-const CUE_EDITOR_EMPTY_VALUE_BACKGROUND = "rgb(22, 22, 27)";
+const CUE_EDITOR_EMPTY_VALUE_BACKGROUND = "rgb(25, 27, 29)";
 const CUE_EDITOR_ASSERTED_VALUE_BACKGROUND = "rgb(26, 26, 31)";
 const PRIMARY_FIXTURE_ID = 96_100;
 const PRIMARY_FIXTURE_UID = "c7200000000000000000000000000001";
@@ -224,6 +224,7 @@ async function openOwnedCueEditorApp(
   await expect
     .poll(() => ownedCueEditorStoreCounts(page))
     .toEqual({ activeInstances: 0, cues: 0, fixtures: 0, sequences: 0 });
+  await dockFixturesInMainGrid(page);
 
   for (const fixture of [ownedPrimaryFixture(), ownedSecondaryFixture()]) {
     await sendCommandAndAwait(page, {
@@ -3051,9 +3052,14 @@ test("cue editor toolbar toggles tracked values", async ({
       identifierText: String(context.trackedOnlyFixtureId),
     });
     await expect(trackedOnlyClearedCell).toHaveText("");
-    await expect(trackedOnlyClearedCell).toHaveCSS(
+    // The cleared cell keeps the selection tint, so only rule out the asserted fill.
+    await expect(trackedOnlyClearedCell).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+    await expect(trackedOnlyClearedCell).not.toHaveCSS(
       "background-color",
-      CUE_EDITOR_EMPTY_VALUE_BACKGROUND,
+      CUE_EDITOR_ASSERTED_VALUE_BACKGROUND,
     );
     await page.evaluate(
       ({ cueUid, trackedOnlyEditAttr, trackedOnlyFixtureUid }) => {

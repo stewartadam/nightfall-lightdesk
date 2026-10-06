@@ -218,6 +218,20 @@ export function updateFocusedComponent(
 }
 
 /**
+ * Reports whether a node sits inside one of the elements registered for a
+ * component, so callers can tell a panel's own controls from controls that
+ * only inherit the panel's focus through dock fallback.
+ */
+export function componentContainsNode(
+  componentId: string,
+  node: Node,
+): boolean {
+  const elements = registeredComponents.get(componentId);
+  if (!elements) return false;
+  return [...elements].some((element) => element.contains(node));
+}
+
+/**
  * Get the currently focused component ID
  */
 export function getFocusedComponentId(): string | null {

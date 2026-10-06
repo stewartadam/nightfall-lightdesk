@@ -107,7 +107,7 @@ export function StepSelectMode() {
       {/* Preview panel */}
       <div class="patch-wizard-preview">
         <div class="text-sm text-gray-400 mb-2">Preview</div>
-        <div class="flex-1 border border-gray-700 rounded bg-neutral-900 overflow-hidden">
+        <div class="flex-1 min-h-0 border border-gray-700 rounded bg-neutral-900 overflow-hidden">
           <Show
             when={selectedFixture() && state().fixtureMode}
             fallback={
@@ -117,6 +117,7 @@ export function StepSelectMode() {
             }
           >
             <LibraryFixturePreview
+              fill
               make={selectedFixture()!.make}
               model={selectedFixture()!.model}
               mode={state().fixtureMode ?? undefined}

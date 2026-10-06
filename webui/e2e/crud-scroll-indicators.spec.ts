@@ -7,14 +7,29 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
-const panels = [
+/** Card panels under test; `alsoListed` stores feed the same list and start empty. */
+const panels: {
+  component: string;
+  label: string;
+  store: string;
+  alsoListed?: string[];
+}[] = [
   { component: "SequenceList", label: "Sequences", store: "sequences" },
   { component: "TimelinesPanel", label: "Timelines", store: "timelines" },
   { component: "GroupsPanel", label: "Groups", store: "groups" },
   { component: "CueList", label: "Cues", store: "cues" },
-  { component: "FxList", label: "FX", store: "fx" },
+  {
+    component: "FxList",
+    label: "FX",
+    store: "fx",
+    alsoListed: ["stepFx", "fxModules"],
+  },
   { component: "ClipList", label: "Clips", store: "clips" },
 ];
 
@@ -23,12 +38,16 @@ for (const panel of panels) {
   test(`${panel.label} card viewport indicates overflow`, async ({
     page,
   }, testInfo) => {
-    await page.setViewportSize({ width: 1366, height: 900 });
+    // The test panel shares the Groups group, which the default layout splits
+    // with Timelines; leave Clips room for a full card row beside its controls.
+    await page.setViewportSize({ width: 1366, height: 1500 });
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
     await resetToDefaultLayout(page);
-    await page.evaluate(({ component, store }) => {
+    await dockFixturesInMainGrid(page);
+    await page.evaluate(({ component, store, alsoListed = [] }) => {
       const stores = (window as any).appStores;
+      for (const listed of alsoListed) stores[listed].set({});
       const sample = Object.values(stores[store].get())[0] as any;
       if (!sample) throw new Error(`Missing demo sample for ${store}`);
       const record = Array.isArray(sample) ? sample[0] : sample;

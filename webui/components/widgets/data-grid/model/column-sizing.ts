@@ -174,7 +174,15 @@ function measureGridCellWidth(
 
   const adornmentWidth = measureCellAdornments(context, cache, cell);
   if (cell.kind === GridCellKind.Boolean) {
-    return CELL_HORIZONTAL_PADDING + BOOLEAN_CONTROL_WIDTH + adornmentWidth;
+    // Floating indicators pin to the end while the checkbox stays centered, so
+    // reserve their width on both sides to keep them clear of the checkbox.
+    const reservedAdornmentWidth =
+      cell.stateIndicatorPlacement === "floating-end"
+        ? adornmentWidth * 2
+        : adornmentWidth;
+    return (
+      CELL_HORIZONTAL_PADDING + BOOLEAN_CONTROL_WIDTH + reservedAdornmentWidth
+    );
   }
 
   const text = isDropdownCell(cell)

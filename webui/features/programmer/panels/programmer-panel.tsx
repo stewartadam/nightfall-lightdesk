@@ -98,7 +98,7 @@ export interface ProgrammerPanelProps extends BasePanelComponentProps {
 // Row types for rendering (using shared utilities)
 export default function ProgrammerPanel(props: ProgrammerPanelProps) {
   log.trace("mounting");
-  const $programmerState = useStore(programmerState);
+  const $programmerState = useShallowStore(programmerState);
   const $blueprints = useStore(blueprints);
   const $fixtures = useSharedStore(fixtures);
   const $programmerSelection = useStore(programmerSelection);

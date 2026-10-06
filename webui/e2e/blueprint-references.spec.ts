@@ -12,7 +12,7 @@ import {
   gridCellByIdentifier,
 } from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const commandInputSelector = "#header-cmdline";
 const blueprintReferenceTextColor = "rgb(110, 231, 183)";
@@ -32,6 +32,7 @@ async function openOwnedBlueprintApp(
   await page.setViewportSize({ width: 2200, height: 1200 });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
 
   await page.evaluate(async () => {
     const stores = (window as any).appStores;
@@ -882,17 +883,23 @@ test("Step FX targets support Blueprint references and absolute copies", async (
           (window as any).appStores.stepFx.get(),
         ).find((candidate: any) => candidate.identifiers.id === 91) as any;
         if (!stepFx) return null;
-        return stepFx.sequences[0].steps.map((step: any) => step.target_value);
+        return stepFx.lanes[0].absolute.steps.map((step: any) => ({
+          blueprint_uid: step.blueprint_uid ?? null,
+          target: step.target,
+        }));
       }),
     )
     .toEqual([
       {
-        type: "Blueprint",
-        data: { blueprint_uid: expect.any(String) },
+        blueprint_uid: expect.any(String),
+        target: {
+          type: "AbsolutePercent",
+          data: { value: expect.closeTo(0.2, 5) },
+        },
       },
       {
-        type: "Direct",
-        data: {
+        blueprint_uid: null,
+        target: {
           type: "AbsolutePercent",
           data: { value: expect.closeTo(0.2, 5) },
         },

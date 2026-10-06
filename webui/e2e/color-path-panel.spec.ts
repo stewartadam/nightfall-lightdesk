@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const BUILTIN_COLOR_PATHS = [
   { id: 1, label: "RGB", space: "Rgb" },
@@ -27,6 +27,7 @@ test.afterEach(async ({ backendSlot, page }) => {
   if (page.isClosed() || page.url() === "about:blank") return;
   await page.reload();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await expect
     .poll(() => ownedColorPathStoreState(page))
     .toEqual({
@@ -74,6 +75,7 @@ async function openOwnedColorPathApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&

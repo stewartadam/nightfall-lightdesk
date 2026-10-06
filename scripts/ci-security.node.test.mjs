@@ -107,6 +107,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "ci.yml/scope": { contents: "read" },
     "ci.yml/desktop": { contents: "read", "pull-requests": "read" },
     "ci.yml/release": { contents: "write" },
+    "playwright-full.yml/source": { contents: "read" },
     "desktop-artifacts.yml/release-note-metadata": {
       contents: "read",
       "pull-requests": "read",

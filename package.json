@@ -68,6 +68,7 @@
     "@nanostores/solid": "^1.1.1",
     "@neodrag/solid": "^2.3.1",
     "@solid-primitives/context": "^0.3.2",
+    "@solid-primitives/keyed": "^1.5.3",
     "@solid-primitives/scheduled": "^1.5.3",
     "@squidlab/phosphor-solid": "^1.1.2",
     "@tailwindcss/vite": "^4.3.3",
