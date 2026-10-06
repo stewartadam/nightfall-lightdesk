@@ -162,18 +162,36 @@ function renderPlainFatalError(failure: FatalErrorPresentation): void {
   document.body.append(notice);
 }
 
+/** Shows a blocking failure, resolving once it is on screen. */
+export type FatalErrorPresenter = (
+  failure: FatalErrorPresentation,
+) => Promise<void>;
+
+let fatalErrorPresenter: FatalErrorPresenter | undefined;
+
+/**
+ * Registers the blocking error dialog. The page entry registers it so this
+ * module stays free of UI components, since worker bundles reach it through
+ * shared state modules.
+ */
+export function setFatalErrorPresenter(presenter: FatalErrorPresenter): void {
+  fatalErrorPresenter = presenter;
+}
+
 /** Shows a failure in the blocking error dialog, falling back to a plain notice. */
 function presentFatalError(
   report: UncaughtErrorReport,
   recoverable: boolean,
 ): void {
   const failure = { report, recoverable, afterStartup: workspaceShown };
-  void import("../components/shell/app/fatal-error-dialog")
-    .then(({ showFatalError }) => showFatalError(failure))
-    .catch((error: unknown) => {
-      log.error("Could not show the fatal error dialog", { error });
-      renderPlainFatalError(failure);
-    });
+  if (!fatalErrorPresenter) {
+    renderPlainFatalError(failure);
+    return;
+  }
+  void fatalErrorPresenter(failure).catch((error: unknown) => {
+    log.error("Could not show the fatal error dialog", { error });
+    renderPlainFatalError(failure);
+  });
 }
 
 /** Reports a failure from the page or one of its workers to the user. */

@@ -11,7 +11,17 @@
  * module so failures while later modules evaluate are reported too.
  */
 
-import { reportWindowUncaughtErrors } from "./uncaught-error-reporter";
+import {
+  reportWindowUncaughtErrors,
+  setFatalErrorPresenter,
+} from "./uncaught-error-reporter";
 
+/** Loads the error dialog on first use, keeping it out of the initial bundle. */
+setFatalErrorPresenter(async (failure) => {
+  const { showFatalError } = await import(
+    "../components/shell/app/fatal-error-dialog"
+  );
+  showFatalError(failure);
+});
 const stopReporting = reportWindowUncaughtErrors(window);
 import.meta.hot?.dispose(stopReporting);
