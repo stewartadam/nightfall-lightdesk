@@ -83,6 +83,7 @@ jobs:
       desktop_check: ${{ steps.select.outputs.desktop_check }}
       desktop_package: ${{ steps.select.outputs.desktop_package }}
       browser_package: ${{ steps.select.outputs.browser_package }}
+      browser_preview: ${{ steps.select.outputs.browser_preview }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -98,6 +99,9 @@ jobs:
         id: select
         env:
           DISTRIBUTION: ${{ inputs.distribution }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          # Dependabot PRs cannot read Actions secrets, so they never deploy a preview.
+          PREVIEW_WORKER: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && vars.CLOUDFLARE_PREVIEW_WORKER || '' }}
         run: |
           node --test scripts/ci-scope.node.test.mjs
           node scripts/ci-scope.mjs
@@ -153,8 +157,70 @@ jobs:
   browser-demo:
     name: Browser demo
     needs: [scope, selection, wasm-bridge, browser-runtime]
-    if: needs.selection.outputs.browser_package == 'true'
+    if: needs.selection.outputs.browser_package == 'true' || needs.selection.outputs.browser_preview == 'true'
     uses: ./.github/workflows/browser-demo.yml
+    with:
+      # A preview-only build skips the product flows that release packaging requires.
+      product-flows: ${{ needs.selection.outputs.browser_package == 'true' }}
+
+  preview:
+    name: Browser preview
+    needs: [selection, browser-demo]
+    if: needs.selection.outputs.browser_preview == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Deploys only this run's demo artifact as data; see docs/ci-security.md.
+    permissions:
+      pull-requests: write
+    concurrency:
+      group: preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Download the demo artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: nightfall-browser-demo-${{ github.sha }}
+          path: site/demo/app
+      - name: Describe the preview Worker
+        env:
+          WORKER: ${{ vars.CLOUDFLARE_PREVIEW_WORKER }}
+        run: |
+          printf '/ /demo/app/ 302\n/demo /demo/app/ 302\n' > site/_redirects
+          jq -n --arg name "$WORKER" \
+            '{name: $name, compatibility_date: "2026-10-01", assets: {directory: "./site"}, previews: {}}' \
+            > wrangler.json
+      - name: Deploy a Cloudflare Workers preview
+        id: deploy
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_PREVIEW_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: 4.147.0
+          command: preview --name=pr-${{ github.event.pull_request.number }}
+      - name: Link the preview on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview-url }}
+        run: |
+          url="$PREVIEW_URL"
+          if [[ ! "$url" =~ ^https://[A-Za-z0-9.-]+\.workers\.dev/?$ ]]; then
+            echo "::error::Cloudflare returned an unexpected preview URL"
+            exit 1
+          fi
+          body="<!-- nightfall-browser-preview -->
+          **Browser preview:** ${url%/}/demo/app/
+
+          Built from ${HEAD_SHA}. Sign in with Cloudflare Access to open it."
+          comment_id="$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- nightfall-browser-preview -->"))) | .id' | head -n 1)"
+          if [[ -n "$comment_id" ]]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment_id" -f body="$body" > /dev/null
+          else
+            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -f body="$body" > /dev/null
+          fi
 
   source-checks:
     name: Prek hooks and script tests

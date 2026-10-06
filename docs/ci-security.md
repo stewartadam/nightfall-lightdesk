@@ -69,6 +69,14 @@ Publication (fresh runner; contents: write; no Apple credentials)
   release, which a maintainer reviews and publishes. It runs no downloaded code or project scripts. Only this
   job uses a write-capable GitHub token; the reusable-workflow caller supplies
   that permission ceiling, while the signer retains `permissions: {}`.
+- **Preview:** for same-repository PRs, a fresh runner downloads this run's
+  browser-demo artifact as data and uploads it as a private Cloudflare Workers
+  Preview, then comments the link on the PR. It is the one credentialed job that
+  runs installed tooling: the pinned `cloudflare/wrangler-action` installs an exact
+  Wrangler version from npm. That is acceptable because the job holds no release
+  authority, only a token limited to Workers Scripts edits and a
+  `pull-requests: write` GitHub token, and never acquires source or build caches.
+  Fork PRs never select a preview, so they never reach this credential.
 
 Only version-tag **pushes** enter signing/publication. PRs (including same-repo
 PRs), branch pushes, and manual runs never do. The build validates that the tag

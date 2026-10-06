@@ -107,6 +107,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "ci.yml/scope": { contents: "read" },
     "ci.yml/desktop": { contents: "read", "pull-requests": "read" },
     "ci.yml/release": { contents: "write" },
+    "ci.yml/preview": { "pull-requests": "write" },
     "playwright-full.yml/source": { contents: "read" },
     "desktop-artifacts.yml/release-note-metadata": {
       contents: "read",
@@ -124,7 +125,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       const key = `${file}/${id}`;
       assert.deepEqual(job.permissions ?? {}, exceptions[key] ?? {}, key);
       assert.notEqual(job.secrets, "inherit", key);
-      if (file !== "release.yml" && id !== "release") {
+      if (file !== "release.yml" && id !== "release" && id !== "preview") {
         assert.doesNotMatch(JSON.stringify(job), /secrets\./);
         if (!exceptions[key]) {
           assert.doesNotMatch(JSON.stringify(job), /github\.token/);
@@ -173,6 +174,34 @@ test("signing and publishing only use pinned artifact actions and reviewed inlin
   }
   assert.deepEqual(release.jobs.publish.needs, "sign");
   assert.deepEqual(workflows["ci.yml"].jobs.release.needs, "desktop");
+});
+
+/** The preview deployer holds only the Workers preview token and treats the demo artifact as data. */
+test("browser previews deploy same-run artifacts without source or build tools", () => {
+  const preview = workflows["ci.yml"].jobs.preview;
+  assert.deepEqual(preview.needs, ["selection", "browser-demo"]);
+  assert.equal(preview.if, "needs.selection.outputs.browser_preview == 'true'");
+  assert.deepEqual(
+    preview.steps.filter((step) => step.uses).map((step) => step.uses),
+    [
+      "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+      "cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0",
+    ],
+  );
+  const secrets = JSON.stringify(preview).match(/secrets\.[A-Z_]+/g);
+  assert.deepEqual(secrets, ["secrets.CLOUDFLARE_PREVIEW_TOKEN"]);
+  assert.match(
+    preview.steps.find((step) => step.id === "deploy").with.command,
+    /^preview --name=pr-\$\{\{ github\.event\.pull_request\.number \}\}$/,
+  );
+  for (const step of preview.steps) {
+    assert.equal(step.with?.["run-id"], undefined);
+    assert.equal(step.with?.["github-token"], undefined);
+    assert.equal(step.with?.gitHubToken, undefined);
+    assert.equal(step.with?.preCommands, undefined);
+    assert.equal(step.with?.postCommands, undefined);
+    assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
+  }
 });
 
 /** Source transfer retains tracked files and history while rejecting persisted authentication. */
