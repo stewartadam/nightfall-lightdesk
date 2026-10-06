@@ -195,7 +195,8 @@ startup; it does nothing on local machines. It pulls Git LFS files and
 installs the pinned Rust toolchain before parallel `cargo` calls can race
 rustup's auto-install, the Playwright browser revisions our `@playwright/test`
 expects, `libasound2-dev`, pnpm dependencies, pnpm's native binary (needed by
-nested `pnpm run`), prek hooks, typeshare, and the generated `.env`.
+nested `pnpm run`), prek hooks, cargo-nextest, typeshare, and the generated
+`.env`.
 
 Sample MP3s are tracked with Git LFS and packaged as external resources. Run
 `git lfs pull` before packaging or creating a sample show in development. Rust

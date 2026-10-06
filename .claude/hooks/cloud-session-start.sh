@@ -55,6 +55,11 @@ fi
 # our pinned Playwright expects into that same directory.
 env -u PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD pnpm run playwright:install
 
+# The pre-push hook runs Rust tests through nextest; match CI's pinned version.
+if ! cargo nextest --version 2>/dev/null | grep -q '^cargo-nextest 0\.9\.146 '; then
+  curl -fsSL https://get.nexte.st/0.9.146/linux | tar zxf - -C "$HOME/.cargo/bin"
+fi
+
 if ! command -v typeshare >/dev/null 2>&1; then
   cargo install --locked typeshare-cli --version 1.13.3
 fi
