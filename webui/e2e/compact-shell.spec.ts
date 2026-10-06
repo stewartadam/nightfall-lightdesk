@@ -89,8 +89,15 @@ test("compact shell navigates one panel at a time on a phone", async ({
   await expect.poll(async () => (await readDockStructure(page)).groups).toBe(1);
   const structure = await readDockStructure(page);
   expect(structure.edges).toEqual([]);
+  // Only the first four panels are pinned as tabs; the bar never scrolls.
   const tabs = nav.getByRole("tab");
-  await expect(tabs).toHaveCount(structure.panels);
+  await expect(tabs).toHaveCount(Math.min(4, structure.panels));
+  const tabStrip = nav.getByRole("tablist");
+  expect(
+    await tabStrip.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth + 1,
+    ),
+  ).toBe(true);
 
   // The shown panel spans the screen instead of its docked minimum width.
   const content = page.locator(".dv-content-container").first();
@@ -99,13 +106,11 @@ test("compact shell navigates one panel at a time on a phone", async ({
   expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
   await page.screenshot({ path: testInfo.outputPath("01-compact-start.png") });
 
-  await nav.getByRole("tab", { name: "Clips" }).click();
-  await expect(nav.getByRole("tab", { name: "Clips" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  const secondTab = tabs.nth(1);
+  await secondTab.click();
+  await expect(secondTab).toHaveAttribute("aria-selected", "true");
   await page.waitForTimeout(500);
-  await page.screenshot({ path: testInfo.outputPath("02-clips.png") });
+  await page.screenshot({ path: testInfo.outputPath("02-second-tab.png") });
 
   const before = (await readDockStructure(page)).active;
   const surface = page.locator(".dv-content-container").first();
@@ -126,10 +131,11 @@ test("compact shell navigates one panel at a time on a phone", async ({
   await page.screenshot({ path: testInfo.outputPath("04-panel-sheet.png") });
   await sheet.getByRole("button", { name: "Cues", exact: true }).click();
   await expect(sheet).toBeHidden();
-  await expect(nav.getByRole("tab", { name: "Cues" })).toHaveAttribute(
-    "aria-selected",
-    "true",
+  // An unpinned panel is named on the Panels button so the operator knows where they are.
+  await expect(nav.getByRole("button", { name: "Panels" })).toContainText(
+    "Cues",
   );
+  await expect(nav.getByRole("tab", { selected: true })).toHaveCount(0);
   // Panels opened by features fold into the single group as well.
   expect((await readDockStructure(page)).groups).toBe(1);
   await page.waitForTimeout(500);
@@ -172,8 +178,8 @@ test("compact shell keeps the docked arrangement for when the window widens", as
   await expect(nav).toBeVisible();
   await expect.poll(async () => (await readDockStructure(page)).groups).toBe(1);
   await expect(nav.getByRole("tab", { name: "3D Visualizer" })).toHaveCount(0);
-  await nav.getByRole("tab", { name: "Clips" }).click();
-  await nav.getByRole("tab", { name: "Programmer" }).click();
+  await nav.getByRole("tab").nth(1).click();
+  await nav.getByRole("tab").nth(2).click();
   expect(await readSavedSession(page)).toEqual(docked);
 
   await page.setViewportSize({ width: 1366, height: 900 });
@@ -189,4 +195,75 @@ test("compact shell keeps the docked arrangement for when the window widens", as
       ),
     ),
   ).toBe(false);
+});
+
+/** Verifies the Panels sheet pins, unpins and reorders tabs, and that the order survives a reload. */
+test("compact shell pins and reorders tabs from the Panels sheet", async ({
+  page,
+}, testInfo) => {
+  await page.goto(DEMO_PATH);
+  await waitForDockviewApp(page);
+  const nav = page.getByRole("navigation", { name: "Panels" });
+  const tabs = nav.getByRole("tab");
+  await expect(tabs).toHaveCount(4);
+  const lastPinned = (await tabs.nth(3).innerText()).trim();
+
+  await nav.getByRole("button", { name: "Panels" }).click();
+  const sheet = page.getByRole("dialog", { name: "Panels" });
+  const pinClips = sheet.getByRole("button", { name: "Pin Clips" });
+  await pinClips.click();
+  // Pinning a fifth panel takes the last tab slot and unpins its previous owner.
+  await expect(tabs.nth(3)).toContainText("Clips");
+  await expect(pinClips).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    sheet.getByRole("button", { name: `Pin ${lastPinned}` }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  // Dragging a row's handle to the top makes it the first tab.
+  const handle = sheet.getByRole("button", { name: "Reorder Clips" });
+  const firstRow = sheet.locator("[data-compact-row-id]").first();
+  const from = await handle.boundingBox();
+  const to = await firstRow.boundingBox();
+  if (!from || !to) throw new Error("sheet rows are not laid out");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2, to.y + 4, { steps: 8 });
+  await page.screenshot({ path: testInfo.outputPath("06-dragging.png") });
+  await page.mouse.up();
+  await expect(tabs.first()).toContainText("Clips");
+  await page.screenshot({ path: testInfo.outputPath("07-reordered.png") });
+
+  // The arrow keys reorder too, and focus stays on the handle between presses.
+  await handle.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(tabs.nth(2)).toContainText("Clips");
+  await expect(handle).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(tabs.first()).toContainText("Clips");
+
+  await pinClips.click();
+  await expect(tabs.first()).not.toContainText("Clips");
+  await expect(pinClips).toHaveAttribute("aria-pressed", "false");
+  await pinClips.click();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+
+  await page.reload();
+  await waitForDockviewApp(page);
+  await expect(tabs.nth(3)).toContainText("Clips");
+});
+
+/** Verifies a tap does not leave a hover tooltip open, since touch has no hover to end it. */
+test("compact shell taps do not open hover tooltips", async ({ page }) => {
+  await page.goto(DEMO_PATH);
+  await waitForDockviewApp(page);
+  // The status bar's connection dot wraps a focusable trigger in a hover tooltip.
+  await page
+    .locator('[data-component="Tooltip"] [role="status"]')
+    .first()
+    .tap();
+  await page.waitForTimeout(900);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
 });

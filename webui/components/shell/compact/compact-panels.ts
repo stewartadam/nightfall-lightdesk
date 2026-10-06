@@ -10,6 +10,7 @@ import type { DockviewApi } from "dockview";
 import {
   type Accessor,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   untrack,
@@ -17,6 +18,13 @@ import {
 import { getComponentRegistration } from "../../../lib/panel-registry";
 import type { AppIcon } from "../../ui/icon";
 import { compactPanelOrder } from "../docking/dockview/compact-presentation";
+import {
+  COMPACT_PINNED_TAB_COUNT,
+  compactPanelOrderPreference,
+  moveCompactPanel,
+  orderCompactPanelIds,
+  savedCompactPanelOrder,
+} from "./compact-panel-order";
 
 /** One open panel as the compact navigation presents it. */
 export interface CompactPanelEntry {
@@ -27,8 +35,13 @@ export interface CompactPanelEntry {
 
 /** Open panels in navigation order and the panel currently shown. */
 export interface CompactPanels {
+  /** Open panels in the operator's order; the first ones are the pinned tabs. */
   readonly panels: Accessor<readonly CompactPanelEntry[]>;
+  /** The leading panels shown as tabs in the tab bar. */
+  readonly pinned: Accessor<readonly CompactPanelEntry[]>;
   readonly activeId: Accessor<string | undefined>;
+  /** Moves a panel to a position in the order, pinning or unpinning it. */
+  move: (id: string, toIndex: number) => void;
   /** Shows a panel by ID. */
   show: (id: string) => void;
   /** Shows the panel `offset` places away from the current one, if there is one. */
@@ -64,8 +77,16 @@ export function createCompactPanels(
       const previous = new Map(
         untrack(panels).map((entry) => [entry.id, entry]),
       );
+      const dockPanels = compactPanelOrder(dock);
+      const byId = new Map(dockPanels.map((panel) => [panel.id, panel]));
+      const orderedIds = orderCompactPanelIds(
+        dockPanels.map((panel) => panel.id),
+        savedCompactPanelOrder(),
+      );
       setPanels(
-        compactPanelOrder(dock).map((panel) => {
+        orderedIds.flatMap((id) => {
+          const panel = byId.get(id);
+          if (!panel) return [];
           const title = panel.title ?? panel.id;
           const icon = getComponentRegistration(
             panel.view.contentComponent,
@@ -106,8 +127,10 @@ export function createCompactPanels(
       dock.onDidLayoutFromJSON(onStructureChange),
       dock.onDidActivePanelChange(refresh),
     ];
+    const stopOrderListener = compactPanelOrderPreference.listen(refresh);
     onStructureChange();
     onCleanup(() => {
+      stopOrderListener();
       for (const subscription of subscriptions) subscription.dispose();
       for (const listener of titleListeners.values()) listener.dispose();
     });
@@ -118,10 +141,24 @@ export function createCompactPanels(
     api()?.getPanel(id)?.api.setActive();
   };
 
+  /** The leading entries that fit in the tab bar. */
+  const pinned = createMemo(() => panels().slice(0, COMPACT_PINNED_TAB_COUNT));
+
   return {
     panels,
+    pinned,
     activeId,
     show,
+    move: (id, toIndex) => {
+      compactPanelOrderPreference.set(
+        moveCompactPanel(
+          panels().map((panel) => panel.id),
+          savedCompactPanelOrder(),
+          id,
+          toIndex,
+        ),
+      );
+    },
     step: (offset) => {
       const list = panels();
       const index = list.findIndex((panel) => panel.id === activeId());
