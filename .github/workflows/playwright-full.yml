@@ -9,9 +9,9 @@ on:
         type: string
         default: ubuntu-latest
       workers:
-        description: Playwright workers per shard; each owns a backend and Vite server, so leave one vCPU of headroom
+        description: Playwright workers per shard; empty uses one per vCPU minus one, capped at six
         type: string
-        default: "3"
+        default: ""
 
 permissions: {}
 

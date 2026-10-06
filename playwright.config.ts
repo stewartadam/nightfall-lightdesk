@@ -28,26 +28,40 @@ const backendPort = readBackendPort();
 const webPort = backendPort + 1;
 const baseURL = `http://127.0.0.1:${webPort}`;
 const usesBackendPool = process.env.NIGHTFALL_PLAYWRIGHT_BACKEND_POOL === "1";
+const workerCount = usesBackendPool ? readWorkerCount() : 1;
 const browserName =
   process.env.NIGHTFALL_PLAYWRIGHT_BROWSER === "firefox"
     ? ("firefox" as const)
     : ("chromium" as const);
 
-/** Returns the configured pool size or a bounded host-aware default. */
+/**
+ * Returns the configured pool size, or one worker per core minus one, capped
+ * at six. Each worker runs its own Vite server, backend and browser, so a pool
+ * that fills every core slows every test toward its timeout.
+ */
 function readWorkerCount(): number {
   const configuredWorkers = process.env.NIGHTFALL_PLAYWRIGHT_WORKERS?.trim();
-  if (!configuredWorkers) return Math.min(6, availableParallelism());
-  const workerCount = Number.parseInt(configuredWorkers, 10);
-  if (!Number.isInteger(workerCount) || workerCount < 1) {
+  if (!configuredWorkers) {
+    return Math.max(1, Math.min(6, availableParallelism() - 1));
+  }
+  const parsedWorkers = Number.parseInt(configuredWorkers, 10);
+  if (!Number.isInteger(parsedWorkers) || parsedWorkers < 1) {
     throw new Error("NIGHTFALL_PLAYWRIGHT_WORKERS must be a positive integer");
   }
-  return workerCount;
+  return parsedWorkers;
+}
+
+// Playwright re-evaluates this config in every worker; log once from the runner.
+if (usesBackendPool && process.env.TEST_WORKER_INDEX === undefined) {
+  console.log(
+    `Playwright: ${workerCount} worker(s) on ${availableParallelism()} available core(s)`,
+  );
 }
 
 export default defineConfig({
   testDir: "./webui/e2e",
-  timeout: 30_000,
-  workers: usesBackendPool ? readWorkerCount() : 1,
+  timeout: 45_000,
+  workers: workerCount,
   expect: {
     timeout: 8_000,
   },
