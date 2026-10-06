@@ -87,11 +87,13 @@ pub fn send_clips_on_change(
     exec_query: Query<&Clip>,
     materialized_clips: Query<&MaterializedClip>,
     added_materialized: Query<&MaterializedClip, Added<MaterializedClip>>,
-    removed_materialized: RemovedComponents<MaterializedClip>,
+    mut removed_materialized: MessageReader<ComponentRemoved<MaterializedClip>>,
     broadcaster: Res<ClientEventSink>,
 ) {
+    let materialized_removed = !removed_materialized.is_empty();
+    removed_materialized.clear();
     // Trigger when any MaterializedClip is added or removed
-    if added_materialized.is_empty() && removed_materialized.is_empty() {
+    if added_materialized.is_empty() && !materialized_removed {
         return;
     }
     tracing::trace!("Sending clips due to MaterializedClip change");

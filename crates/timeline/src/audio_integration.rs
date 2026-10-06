@@ -138,7 +138,8 @@ pub fn add_event_handling_systems(app: &mut App) {
         Update,
         crate::systems::sync_timeline_paused_instance_controls_system
             .after(ClockUpdate)
-            .before(LayerGeneration),
+            .before(LayerGeneration)
+            .run_if(render_due),
     );
 }
 
@@ -261,6 +262,7 @@ pub fn add_event_handling_systems(app: &mut App) {
         Update,
         crate::systems::sync_timeline_paused_instance_controls_system
             .after(ClockUpdate)
-            .before(LayerGeneration),
+            .before(LayerGeneration)
+            .run_if(render_due),
     );
 }

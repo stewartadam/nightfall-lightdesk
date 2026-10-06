@@ -5241,6 +5241,7 @@ dependencies = [
  "bevy_diagnostic",
  "bevy_ecs",
  "bevy_state",
+ "bevy_time",
  "bimap",
  "dashmap",
  "minicbor-serde",

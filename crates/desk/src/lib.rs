@@ -119,7 +119,9 @@ impl Plugin for DeskPlugin {
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
         app.add_systems(
             Update,
-            event_handlers::forward_io_runtime_notifications.in_set(ClientOutput),
+            event_handlers::forward_io_runtime_notifications
+                .in_set(ClientFeedback)
+                .before(websocket::forward_ui_notifications),
         );
         register_ingress_command::<SettingsCommand>(app);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
@@ -323,12 +325,14 @@ impl Plugin for DeskPlugin {
                 .before(Compositing),
         );
 
-        // Apply per-playback intensity scaling before compositing
+        // Apply per-playback intensity scaling before compositing. It scales the layers generated
+        // in this render, so it must not run again in input-only updates.
         app.add_systems(
             Update,
             systems::instance_controls::apply_playback_intensity
                 .after(LayerGeneration)
-                .before(Compositing),
+                .before(Compositing)
+                .run_if(render_due),
         );
 
         // apply virtual dimmer scaling and virtual relation masters after compositing
@@ -356,6 +360,8 @@ impl Plugin for DeskPlugin {
         // WebSocket forwarding systems owned by the desk plugin
         app.add_systems(Update, controls::sync_control_state.after(EventHandling));
 
+        add_removal_messages::<nightfall_instances::InstanceId>(app);
+        add_removal_messages::<nightfall_clips::MaterializedClip>(app);
         app.add_systems(
             Update,
             (
@@ -364,6 +370,12 @@ impl Plugin for DeskPlugin {
                 websocket::forward_blueprint_commands,
                 websocket::forward_desk_commands,
                 websocket::forward_ui_notifications,
+            )
+                .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Update,
+            (
                 websocket::send_groups_on_change,
                 websocket::send_masters_on_change,
                 websocket::send_blueprints_on_change,

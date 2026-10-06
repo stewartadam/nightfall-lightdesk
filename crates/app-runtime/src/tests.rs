@@ -35,7 +35,8 @@ use nightfall_engine::prelude::{
     AppState, ClientEventSink, ClientOutput, ClockUpdate, CommandEnvelope, CommandNotice,
     CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
     DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
-    EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, ReplyTarget,
+    EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, RenderPass,
+    ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
@@ -973,6 +974,71 @@ async fn sample_data_fixture_601_white_output_follows_virtual_dimmer() {
     assert_eq!(
         first_white_value, 0.0,
         "fixture 601 first white channel should be scaled by virtual dimmer"
+    );
+}
+
+/// Verifies a command handled in input-only updates reaches fixture output at the next render,
+/// and that input-only updates leave output untouched.
+#[tokio::test]
+async fn input_only_updates_handle_commands_and_the_next_render_applies_them() {
+    let factory = WorldFactory::new(test_log_config(), false, false, true);
+    let mut app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("world factory build");
+    for _ in 0..10 {
+        app.update();
+    }
+    let white_parameter = {
+        let fixture_provider = app.world().resource::<FixtureDataProviderExt>();
+        let fixture_uid = fixture_provider
+            .inner
+            .iter()
+            .find(|fixture| fixture.identifiers.id == 601)
+            .expect("sample data should include fixture 601")
+            .identifiers
+            .uid;
+        fixture_provider
+            .try_parameter_for_element_attribute(
+                &FixtureRef {
+                    fixture_uid,
+                    index: Some(4),
+                },
+                &Attribute::White,
+            )
+            .expect("fixture 601 first strobe dimmer should expose white")
+    };
+    let white_value = |app: &App| {
+        app.world()
+            .get::<Parameter>(white_parameter.entity())
+            .expect("white parameter entity should exist")
+            .values
+            .current_value
+    };
+    let before = white_value(&app);
+
+    app.world_mut()
+        .resource_mut::<RenderPass>()
+        .set_renders(false);
+    queue_startup_command(&mut app, "test", "fix 601 white @ 100 int @ 100".to_owned());
+    for _ in 0..10 {
+        app.update();
+    }
+    assert_eq!(
+        white_value(&app),
+        before,
+        "input-only updates should not render fixture output"
+    );
+
+    app.world_mut()
+        .resource_mut::<RenderPass>()
+        .set_renders(true);
+    app.update();
+    assert_eq!(
+        white_value(&app),
+        255.0,
+        "the first render after the command should apply it"
     );
 }
 

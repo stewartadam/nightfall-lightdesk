@@ -69,7 +69,7 @@ impl Plugin for ProgrammerPlugin {
         app.add_systems(
             Update,
             websocket::forward_programmer_commands
-                .in_set(ClientOutput)
+                .in_set(ClientFeedback)
                 .after(events::handle_programmer_events)
                 .after(nightfall_desk::systems::event_handlers::blueprint_events::crud_events)
                 .after(nightfall_desk::systems::event_handlers::blueprint_events::action_events)

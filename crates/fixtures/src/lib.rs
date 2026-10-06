@@ -220,8 +220,11 @@ impl Plugin for FixturePlugin {
         // WebSocket forwarding and sends owned by fixtures plugin
         app.add_systems(
             Update,
+            websocket::forward_fixture_commands.in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Update,
             (
-                websocket::forward_fixture_commands,
                 websocket::send_fixtures_on_change,
                 websocket::send_dmx_universes.after(DmxOutput),
                 websocket::send_bindings_on_change,

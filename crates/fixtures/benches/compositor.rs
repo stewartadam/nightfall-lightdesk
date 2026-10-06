@@ -275,6 +275,7 @@ fn changing_compositor_app(case: BenchmarkCase) -> App {
 /// Builds the shared parameter and layer world used by compositor benchmarks.
 fn compositor_world(case: BenchmarkCase) -> App {
     let mut app = App::new();
+    add_compositor_removal_messages::<Parameter>(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
 
@@ -532,6 +533,7 @@ fn mixed_compositor_app(
     position: FadingPosition,
 ) -> App {
     let mut app = App::new();
+    add_compositor_removal_messages::<Parameter>(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
 

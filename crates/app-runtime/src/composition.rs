@@ -201,6 +201,7 @@ pub(super) fn init_bevy_with_transport_policy(
                 .after(EventHandling)
                 .before(ClockUpdate),
             ClientOutput.run_if(in_state(RuntimeOutputState::Running)),
+            ClientFeedback.run_if(in_state(RuntimeOutputState::Running)),
             DmxOutput.run_if(in_state(RuntimeOutputState::Running)),
         ),
     );

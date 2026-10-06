@@ -54,7 +54,8 @@ impl Plugin for InputMidiPlugin {
         let midi_service = service::process_midi_input_service();
         let _ = midi_service.ensure_started();
         let midi_client = midi_service.client();
-        let midi_rx = midi_client.subscribe().unwrap_or_else(|| {
+        let waker = app.world().get_resource::<FrameWaker>().cloned();
+        let midi_rx = midi_client.subscribe(waker).unwrap_or_else(|| {
             let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawMidiEvent>();
             rx
         });

@@ -134,6 +134,12 @@ impl Plugin for CuePlugin {
                 websocket::forward_commands,
                 websocket::send_cue_definition_changes,
                 websocket::send_sequence_definition_changes,
+            )
+                .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Update,
+            (
                 websocket::send_cues_on_change,
                 websocket::send_color_paths_on_change,
                 websocket::send_stale_sequence_lookahead_states,

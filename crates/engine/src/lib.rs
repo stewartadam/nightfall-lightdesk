@@ -28,6 +28,7 @@ pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod process_shutdown;
 pub mod protocol;
+pub mod render_pass;
 pub mod runtime_capabilities;
 pub mod variables;
 
@@ -114,14 +115,17 @@ pub mod prelude {
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
     pub use crate::register_update_deserializer;
+    pub use crate::render_pass::{
+        ComponentRemoved, RenderPass, add_removal_messages, gate_message_updates, render_due,
+    };
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, PersistenceCapability, RuntimeCapabilities,
         RuntimeMode, TimelineAudioCapability,
     };
     pub use crate::variables::GlobalVariables;
     pub use crate::{
-        AppState, ClientOutput, ClockUpdate, CommandFeedbackEgress, Compositing, DeskEventSet,
-        DmxOutput, EventHandling, InputHandling, LayerGeneration, ResyncHandling,
+        AppState, ClientFeedback, ClientOutput, ClockUpdate, CommandFeedbackEgress, Compositing,
+        DeskEventSet, DmxOutput, EventHandling, InputHandling, LayerGeneration, ResyncHandling,
         StartupFrameCounter, VdimProcessing,
     };
     pub use crate::{EngineCommand, ResyncRequested, register_engine_action};
@@ -139,20 +143,25 @@ impl Plugin for EnginePlugin {
         app.init_state::<AppState>();
         app.init_resource::<StartupFrameCounter>();
         app.init_resource::<RuntimeCapabilities>();
+        app.init_resource::<RenderPass>();
         app.configure_sets(
             Update,
             (
                 InputHandling,
                 EventHandling.after(InputHandling),
                 ResyncHandling.after(EventHandling).before(ClockUpdate),
-                ClockUpdate.after(EventHandling),
-                LayerGeneration.after(ClockUpdate),
-                Compositing.after(LayerGeneration),
-                VdimProcessing.after(Compositing),
-                ClientOutput.after(VdimProcessing),
-                DmxOutput.after(VdimProcessing),
+                ClockUpdate.after(EventHandling).run_if(render_due),
+                LayerGeneration.after(ClockUpdate).run_if(render_due),
+                Compositing.after(LayerGeneration).run_if(render_due),
+                VdimProcessing.after(Compositing).run_if(render_due),
+                ClientOutput.after(VdimProcessing).run_if(render_due),
+                DmxOutput.after(VdimProcessing).run_if(render_due),
+                // Ordered after the render sets so it follows every input-side system; in
+                // input-only updates those sets are skipped and it runs right after them.
+                ClientFeedback.after(VdimProcessing),
             ),
         );
+        app.add_systems(PostUpdate, render_pass::gate_message_updates);
         app.init_resource::<CommandDeserializerRegistry>();
         app.init_resource::<UpdateDeserializerRegistry>();
         app.init_resource::<CommandTracker>();
@@ -219,9 +228,16 @@ pub struct Compositing;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VdimProcessing;
 
-/// System set for publishing engine state changes to attached clients.
+/// System set for publishing render-derived engine state to attached clients.
+///
+/// Runs only in render updates (see [`render_pass`]).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientOutput;
+
+/// System set for forwarding input-derived client messages, such as command echoes and
+/// notifications, in every update so they do not wait for the next render.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClientFeedback;
 
 /// `PostUpdate` system set that publishes command feedback produced during the frame.
 ///

@@ -41,6 +41,7 @@ fn create_test_app() -> App {
 /// Helper function to create a test app that runs programmer painting through compositing.
 fn create_compositor_test_app() -> App {
     let mut app = App::new();
+    add_compositor_removal_messages::<Parameter>(&mut app);
 
     app.init_resource::<Programmer>();
     app.init_resource::<FixtureDataProviderExt>();

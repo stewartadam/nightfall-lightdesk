@@ -1612,6 +1612,7 @@ mod tests {
     #[test]
     fn cleanup_released_flow_instances_runs_after_release_is_composited() {
         let mut app = App::new();
+        add_compositor_removal_messages::<Parameter>(&mut app);
         app.insert_resource(FixtureDataProviderExt::default());
         app.init_resource::<FinalLayerAttributedAssertions>();
         app.configure_sets(

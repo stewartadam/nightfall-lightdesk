@@ -13,12 +13,17 @@ use std::marker::PhantomData;
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall_engine::prelude::add_removal_messages;
 use nightfall_engine::Compositing;
 
-use crate::types::{CompositorParameter, FinalLayerAttributedAssertions, FinalLayerOutput};
+use crate::types::{
+    CompositorParameter, FinalLayerAttributedAssertions, FinalLayerOutput, LayerCompositingContext,
+    ReleaseMarker,
+};
 
 /// Prelude for ergonomic imports
 pub mod prelude {
+    pub use crate::add_compositor_removal_messages;
     pub use crate::pipeline::CompositorPipeline;
     pub use crate::system::compositor;
     pub use crate::types::*;
@@ -28,6 +33,17 @@ pub mod pipeline;
 pub mod stages;
 pub mod system;
 pub mod types;
+
+/// Registers the removal messages the [`compositor`](system::compositor) system reads.
+///
+/// The compositor only runs in render updates, so it reads removals as
+/// [`ComponentRemoved`](nightfall_engine::prelude::ComponentRemoved) messages, which survive the
+/// input-only updates in between. Apps that add the system without [`CompositorPlugin`] call this.
+pub fn add_compositor_removal_messages<P: CompositorParameter>(app: &mut App) {
+    add_removal_messages::<P>(app);
+    add_removal_messages::<ReleaseMarker>(app);
+    add_removal_messages::<LayerCompositingContext>(app);
+}
 
 /// Compositor plugin that adds the layer compositing system to a Bevy app.
 ///
@@ -51,6 +67,7 @@ impl<P: CompositorParameter> Plugin for CompositorPlugin<P> {
         // Initialize the final layer resources.
         app.init_resource::<FinalLayerAttributedAssertions>();
         app.init_resource::<FinalLayerOutput>();
+        add_compositor_removal_messages::<P>(app);
 
         // Add system to compose the layers from materialized outputs
         app.add_systems(

@@ -310,11 +310,11 @@ impl Plugin for FxModulePlugin {
         );
         app.add_systems(
             Update,
-            (
-                websocket::forward_fx_module_commands,
-                websocket::send_fx_module_on_change,
-            )
-                .in_set(ClientOutput),
+            websocket::forward_fx_module_commands.in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Update,
+            websocket::send_fx_module_on_change.in_set(ClientOutput),
         );
         app.add_systems(
             Update,

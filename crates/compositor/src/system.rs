@@ -11,6 +11,7 @@ use std::{ops::Range, time::Duration};
 
 use bevy_ecs::{change_detection::Tick, entity::EntityHashMap, prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
+use nightfall_engine::prelude::ComponentRemoved;
 
 use crate::{
     pipeline::{CompositeStep, CompositedPrefix, CompositorPipeline, SettledRunTable},
@@ -37,7 +38,7 @@ type ParameterQueries<'w, 's, P> = (
 #[derive(SystemParam)]
 pub struct CompositorParameters<'w, 's, P: CompositorParameter> {
     queries: ParamSet<'w, 's, ParameterQueries<'w, 's, P>>,
-    removed: RemovedComponents<'w, 's, P>,
+    removed: MessageReader<'w, 's, ComponentRemoved<P>>,
 }
 
 /// Cached compositor input sizes used to skip stable frames.
@@ -127,8 +128,8 @@ pub fn compositor<P: CompositorParameter>(
     mut commands: Commands,
     layer_query: Query<CompositorLayerData>,
     mut parameters: CompositorParameters<P>,
-    mut removed_release_markers: RemovedComponents<ReleaseMarker>,
-    mut removed_compositing_contexts: RemovedComponents<LayerCompositingContext>,
+    mut removed_release_markers: MessageReader<ComponentRemoved<ReleaseMarker>>,
+    mut removed_compositing_contexts: MessageReader<ComponentRemoved<LayerCompositingContext>>,
     mut final_layer_attributed_assertions: ResMut<FinalLayerAttributedAssertions>,
     mut final_layer_output: Option<ResMut<FinalLayerOutput>>,
     mut run_state: Local<CompositorRunState>,
@@ -143,7 +144,7 @@ pub fn compositor<P: CompositorParameter>(
     // catches pure removals; equal-count replacements have change ticks on their new query member.
     let layer_query_membership_changed = run_state.layer_count != layer_count;
 
-    // Removed optional components appear as `None` in the query, so their removal events must be
+    // Removed optional components appear as `None` in the query, so their removal messages must be
     // inspected separately from the change ticks of components which are still present.
     let release_marker_removed = removed_release_markers.read().count() > 0;
     let compositing_context_removed = removed_compositing_contexts.read().count() > 0;
@@ -386,6 +387,13 @@ mod tests {
     use super::*;
     use crate::types::test_support::*;
 
+    /// Adds the removal message buffers the compositor reads to a bare test world.
+    fn init_removal_messages(world: &mut World) {
+        world.init_resource::<Messages<ComponentRemoved<TestParameter>>>();
+        world.init_resource::<Messages<ComponentRemoved<ReleaseMarker>>>();
+        world.init_resource::<Messages<ComponentRemoved<LayerCompositingContext>>>();
+    }
+
     /// Returns a one-second linear fade starting at the beginning of source-local playback.
     fn one_second_fade() -> MaterializedTransition {
         MaterializedTransition {
@@ -476,6 +484,7 @@ mod tests {
         let mut world = World::new();
         world.init_resource::<FinalLayerAttributedAssertions>();
         world.init_resource::<FinalLayerOutput>();
+        init_removal_messages(&mut world);
         let parameters: Vec<_> = (0..3)
             .map(|_| {
                 let entity = world
@@ -537,6 +546,7 @@ mod tests {
         let mut world = World::new();
         world.init_resource::<FinalLayerAttributedAssertions>();
         world.init_resource::<FinalLayerOutput>();
+        init_removal_messages(&mut world);
         let parameters: Vec<_> = [
             TestMergeMode::Ltp,
             TestMergeMode::Ltp,

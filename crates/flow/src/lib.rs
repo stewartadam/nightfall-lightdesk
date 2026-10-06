@@ -106,10 +106,13 @@ impl Plugin for FlowPlugin {
             Update,
             (
                 runtime::publish_runtime_deltas,
-                websocket::forward_flow_commands,
                 websocket::send_flows_on_change,
             )
                 .in_set(ClientOutput),
+        );
+        app.add_systems(
+            Update,
+            websocket::forward_flow_commands.in_set(ClientFeedback),
         );
         app.add_systems(
             Update,

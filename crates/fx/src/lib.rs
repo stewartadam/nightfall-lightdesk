@@ -133,10 +133,14 @@ impl Plugin for FxPlugin {
         );
 
         // WebSocket forwarding and sends owned by fx plugin
+        add_removal_messages::<step_fx::StepFx>(app);
+        app.add_systems(
+            Update,
+            websocket::forward_fx_commands.in_set(ClientFeedback),
+        );
         app.add_systems(
             Update,
             (
-                websocket::forward_fx_commands,
                 websocket::send_fx_on_change,
                 websocket::send_step_fx_on_change,
             )
