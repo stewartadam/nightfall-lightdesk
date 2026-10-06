@@ -26,6 +26,7 @@ import {
   subscribeToConfigChanges,
 } from "../../../../lib/logger";
 import type { SelectionTarget } from "../../../../lib/selection-targets";
+import { forwardWorkerUncaughtErrors } from "../../../../lib/uncaught-error";
 import {
   fixtures as fixturesStore,
   getParametersImmediate,
@@ -1014,6 +1015,8 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     this.controls.enablePan = allowCameraDrag;
   }
 }
+
+forwardWorkerUncaughtErrors();
 
 // Proxy event handling stays outside Comlink for high-frequency pointer traffic.
 const proxyManager = new ProxyManager();

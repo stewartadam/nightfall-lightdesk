@@ -18,6 +18,7 @@ import {
   isVisualizerFramePacingEnabled,
   isVisualizerInspectorEnabled,
 } from "../../../lib/feature-flags";
+import { watchWorkerUncaughtErrors } from "../../../lib/uncaught-error-reporter";
 import { visualizerEffectiveQuality } from "../state/settings";
 import { MainThreadRenderer } from "./renderers/main-thread-renderer";
 import type {
@@ -99,6 +100,7 @@ export async function createVisualizerRenderer(
         new URL("./renderers/worker-renderer.ts", import.meta.url),
         { type: "module" },
       );
+      watchWorkerUncaughtErrors(worker, "visualizer");
       const workerApi = Comlink.wrap<VisualizerWorkerApi>(worker);
       return new WorkerRendererProxy(worker, workerApi);
     } else {

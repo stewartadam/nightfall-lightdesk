@@ -143,6 +143,7 @@ import {
   queuedWorkerMessageData,
   type WorkerQueuedMessage,
 } from "./parameter-state-transfer";
+import { watchWorkerUncaughtErrors } from "./uncaught-error-reporter";
 import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
 import type {
@@ -2865,20 +2866,24 @@ export const engineRuntime = {
         }
 
         case "error":
-          lastWorkerError ??= msg.error;
+          lastWorkerError = msg.error;
           log.error("Worker error:", msg.error);
           break;
       }
     };
 
-    this.worker.onerror = (event) => {
-      log.error("Worker error:", event);
+    watchWorkerUncaughtErrors(activeWorker, "engine runtime", (failure) => {
+      // A rejection leaves the worker running; a thrown exception may have lost the command.
+      if (failure.kind !== "error" || this.worker !== activeWorker) return;
+      const reported = lastWorkerError
+        ? ` (last reported worker error: ${lastWorkerError})`
+        : "";
       rejectPendingCommandWaiters(
         new Error(
-          `WebSocket worker failed before the command completed: ${lastWorkerError ?? event.message ?? "unknown worker error"}`,
+          `WebSocket worker failed before the command completed: ${failure.name}: ${failure.message}${reported}`,
         ),
       );
-    };
+    });
 
     // Tell worker to connect
     this.worker.postMessage({ type: "start", config });
