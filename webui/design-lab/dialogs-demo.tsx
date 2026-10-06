@@ -27,21 +27,18 @@ export function DialogsDemo() {
   const [notice, setNotice] = createSignal(
     "Sample dialogs only change this panel.",
   );
-  let trigger: HTMLButtonElement | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(saveTimer));
 
-  /** Opens one example and remembers its launcher for focus restoration. */
-  const launch = (kind: DialogKind, event: MouseEvent) => {
-    trigger = event.currentTarget as HTMLButtonElement;
+  /** Opens one example with a fresh draft of the sample name. */
+  const launch = (kind: DialogKind) => {
     setDraft(name());
     setOpen(kind);
   };
-  /** Closes the open example, reports how it ended, and refocuses its launcher. */
+  /** Closes the open example and reports how it ended; the shared Modal returns focus to the launcher. */
   const close = (outcome: string) => {
     setOpen(null);
     setNotice(outcome);
-    trigger?.focus();
   };
   /** Simulates a save that cannot be interrupted, locking dismissal until it finishes. */
   const save = () => {
@@ -61,15 +58,9 @@ export function DialogsDemo() {
       <div class="property-section">
         <div class="section-label">Close pattern</div>
         <div class="button-samples">
-          <Button onClick={(event) => launch("task", event)}>
-            Task dialog
-          </Button>
-          <Button onClick={(event) => launch("info", event)}>
-            Info dialog
-          </Button>
-          <Button onClick={(event) => launch("required", event)}>
-            Required choice
-          </Button>
+          <Button onClick={() => launch("task")}>Task dialog</Button>
+          <Button onClick={() => launch("info")}>Info dialog</Button>
+          <Button onClick={() => launch("required")}>Required choice</Button>
         </div>
         <ul class="field-help dialog-rules">
           <li>
@@ -87,6 +78,11 @@ export function DialogsDemo() {
           </li>
           <li>
             While work cannot be cancelled, every way out is disabled together.
+          </li>
+          <li>
+            Every kind is a native modal dialog: Tab only reaches its controls,
+            the page behind is inert, and closing returns focus to the button
+            that opened it.
           </li>
         </ul>
       </div>
