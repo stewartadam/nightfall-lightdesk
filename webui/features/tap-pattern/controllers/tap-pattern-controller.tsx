@@ -9,6 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
+import { writeClipboardText } from "../../../lib/clipboard";
 import { sendCueUpdate, sendSequenceUpdate } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
@@ -325,16 +326,11 @@ export function TapPatternController(props: TapPatternPanelProps) {
 
   /** Copies captured tap timings, or full persisted state when requested. */
   const copyTapTimings = async (includeStoredState = false) => {
-    if (!navigator?.clipboard?.writeText) {
-      pushToast("error", "Clipboard access unavailable");
-      return;
-    }
-
     try {
       const payload = includeStoredState
         ? { taps: taps(), detectionOptions: detectionOptions() }
         : analysis().relativeTapsMs;
-      await navigator.clipboard.writeText(JSON.stringify(payload));
+      await writeClipboardText(JSON.stringify(payload));
       pushToast(
         "success",
         includeStoredState

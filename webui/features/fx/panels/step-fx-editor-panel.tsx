@@ -64,6 +64,11 @@ import VerticalLayoutSplitter from "../../../components/ui/vertical-layout-split
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { getAttributeMetadata } from "../../../lib/attribute-metadata";
+import {
+  ClipboardUnavailableError,
+  readClipboardText,
+  writeClipboardText,
+} from "../../../lib/clipboard";
 import { durationToSeconds } from "../../../lib/duration";
 import {
   registerComponentFocus,
@@ -78,6 +83,7 @@ import { resolveSpatialSelection } from "../../../lib/wasm-bridge";
 import {
   fixtures as fixturesStore,
   groups as groupsStore,
+  pushToast,
 } from "../../../state/appStores";
 import { reducedMotion } from "../../../state/reduced-motion";
 import type * as types from "../../../types";
@@ -745,14 +751,31 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
       activeTrack()?.steps.filter((step) => selectedStepUids().has(step.uid)) ??
       [];
     if (selected.length === 0) return;
-    await navigator.clipboard.writeText(JSON.stringify(selected, null, 2));
+    try {
+      await writeClipboardText(JSON.stringify(selected, null, 2));
+    } catch (error) {
+      log.warn("failed to copy step FX steps", { error });
+      pushToast("error", "Could not copy steps to the clipboard");
+    }
   };
 
   /** Pastes serialized steps or line-separated numeric targets after the selection. */
   const pasteSteps = async (): Promise<void> => {
     const track = activeTrack();
     if (!track) return;
-    const text = await navigator.clipboard.readText();
+    let text: string;
+    try {
+      text = await readClipboardText();
+    } catch (error) {
+      log.warn("failed to read step FX steps from the clipboard", { error });
+      pushToast(
+        "error",
+        error instanceof ClipboardUnavailableError
+          ? error.message
+          : "Could not read the clipboard",
+      );
+      return;
+    }
     const incoming = stepFxStepsFromClipboard(
       text,
       trackKind(),

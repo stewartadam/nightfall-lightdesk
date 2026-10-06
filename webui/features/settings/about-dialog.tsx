@@ -24,6 +24,7 @@ import {
   APP_NAME,
   APP_VERSION,
 } from "../../lib/app-metadata";
+import { writeClipboardText } from "../../lib/clipboard";
 import { getLogger } from "../../lib/logger";
 import {
   getNightfallDataDirectoryPath,
@@ -101,13 +102,8 @@ export function AboutDialog() {
 
   /** Copies the data directory path and reports clipboard failures. */
   const handleCopyDataDirectoryPath = async () => {
-    if (!navigator?.clipboard?.writeText) {
-      pushToast("error", "Clipboard access unavailable");
-      return;
-    }
-
     try {
-      await navigator.clipboard.writeText(getNightfallDataDirectoryPath());
+      await writeClipboardText(getNightfallDataDirectoryPath());
       pushToast("success", "Copied nightfall data directory path");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
