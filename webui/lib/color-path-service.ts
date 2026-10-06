@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import type * as types from "../types";
 import { FadeCurve } from "../types";
 import { commandEnvelope } from "./command-envelope";
@@ -42,7 +43,7 @@ export function createDefaultColorPath(
   return {
     identifiers: {
       id,
-      uid: crypto.randomUUID().replace(/-/g, ""),
+      uid: uuidv4().replace(/-/g, ""),
       label,
     },
     interpolation_space: "Hsv" as types.ColorInterpolationSpace,

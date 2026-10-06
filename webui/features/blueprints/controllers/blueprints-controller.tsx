@@ -13,6 +13,7 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import {
   usePanelCapabilityRegistry,
@@ -312,7 +313,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       ...blueprint,
       identifiers: {
         id,
-        uid: crypto.randomUUID(),
+        uid: uuidv4(),
         label: `${blueprint.identifiers.label} Copy`,
       },
     });
@@ -402,7 +403,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
     const blueprint: types.Blueprint = {
       identifiers: {
         id: payload.id,
-        uid: crypto.randomUUID(),
+        uid: uuidv4(),
         label: payload.label,
       },
       values: {},

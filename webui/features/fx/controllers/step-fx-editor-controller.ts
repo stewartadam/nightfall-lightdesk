@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import {
   connectionStatus,
   EngineRuntimeStatus,
@@ -53,7 +54,7 @@ export function createStepFxEditorController(
   const initialDraft = options.initialDraft
     ? cloneStepFx(options.initialDraft)
     : undefined;
-  const previewSessionId = crypto.randomUUID();
+  const previewSessionId = uuidv4();
   let previewStarted = false;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let autoSaveTimer: ReturnType<typeof setTimeout> | undefined;

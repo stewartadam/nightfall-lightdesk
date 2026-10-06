@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, Show } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
@@ -654,7 +655,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
         : [];
     });
     const commands = buildProgrammerValueEditCommands(targets);
-    const undoId = commands.length > 1 ? crypto.randomUUID() : undefined;
+    const undoId = commands.length > 1 ? uuidv4() : undefined;
     for (const command of commands) {
       engineRuntime.sendCommand(
         commandEnvelope("ProgrammerCommand", command, undoId),

@@ -10,6 +10,7 @@ import { CubeIcon } from "@squidlab/phosphor-solid/cube";
 import { EraserIcon } from "@squidlab/phosphor-solid/eraser";
 import { LightbulbIcon } from "@squidlab/phosphor-solid/lightbulb";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
+import { v4 as uuidv4 } from "uuid";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 /**
  * Visualizer canvas component.
@@ -313,7 +314,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     onCommitMove: (positions) => {
       const fixtureMap = $fixturesStore();
       const sceneObjectMap = $sceneObjectsStore();
-      const batchId = crypto.randomUUID().replace(/-/g, "");
+      const batchId = uuidv4().replace(/-/g, "");
       const fixtureUpdates: types.FixturePlacementUpdateEntry[] = [];
       for (const { uid, kind, position } of positions) {
         if (kind === "fixture") {
@@ -401,7 +402,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     onCommitRotate: (rotations) => {
       const fixtureMap = $fixturesStore();
       const sceneObjectMap = $sceneObjectsStore();
-      const batchId = crypto.randomUUID().replace(/-/g, "");
+      const batchId = uuidv4().replace(/-/g, "");
       const fixtureUpdates: types.FixturePlacementUpdateEntry[] = [];
       for (const { uid, kind, rotation } of rotations) {
         if (kind === "fixture") {
@@ -891,7 +892,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   const confirmDeleteSelection = () => {
     const fixtureIds = selectedFixtureIds();
     const sceneObjectIds = selectedSceneObjectIds();
-    const batchId = crypto.randomUUID();
+    const batchId = uuidv4();
 
     context.sendProgrammerCommand(
       { type: "ClearProgrammerSelection" },

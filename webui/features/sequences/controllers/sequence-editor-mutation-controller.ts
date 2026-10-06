@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import { sendCueUpdate, sendSequenceUpdate } from "../../../lib/cue-service";
 import type * as types from "../../../types";
 import { SequenceReorderRenumberPolicy } from "../../../types";
@@ -126,7 +127,7 @@ export function createSequenceEditorMutationController(
     );
     const nextCueId = maxCueId + 1;
     const copiedCue: types.Cue = JSON.parse(JSON.stringify(cue));
-    const copiedCueUid = crypto.randomUUID().replace(/-/g, "");
+    const copiedCueUid = uuidv4().replace(/-/g, "");
     copiedCue.identifiers = {
       ...copiedCue.identifiers,
       id: nextCueId,

@@ -12,6 +12,7 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createEffect, createMemo, createSignal } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import type { CrudListDataGridEditRequest } from "../../../components/widgets/crud/crud-list-data-grid";
@@ -259,9 +260,9 @@ export function createSequenceListController(
       sourceSequence,
       existingSequences: Object.values($sequences()),
       cuesByUid: $cues(),
-      createUid: () => crypto.randomUUID().replace(/-/g, ""),
+      createUid: () => uuidv4().replace(/-/g, ""),
     });
-    const batchId = crypto.randomUUID().replace(/-/g, "");
+    const batchId = uuidv4().replace(/-/g, "");
 
     sendSequenceUpdate(duplicated.sequence, batchId);
     for (const cue of duplicated.cues) {

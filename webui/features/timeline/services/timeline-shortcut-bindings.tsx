@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createSignal, onCleanup, onMount } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import {
   getFocusedComponentId,
   useKeyboardShortcut,
@@ -138,7 +139,7 @@ export const TimelineShortcutBindings = (props: { componentId: string }) => {
       placementMs,
       createTimelineObjectId,
     );
-    const batchId = crypto.randomUUID().replace(/-/g, "");
+    const batchId = uuidv4().replace(/-/g, "");
 
     if (pasted.markers.length > 0) {
       ctx.markersActions.storeMarkers(pasted.markers, { batchId });

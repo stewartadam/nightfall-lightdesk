@@ -10,6 +10,7 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
@@ -392,7 +393,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
 
   /** Stores a newly submitted group and closes the create dialog. */
   const handleCreateSubmit = (payload: { id: number; label: string }) => {
-    const group = createEmptyGroup(payload, crypto.randomUUID());
+    const group = createEmptyGroup(payload, uuidv4());
     sendStoreGroup(group);
     setIsCreateModalOpen(false);
   };

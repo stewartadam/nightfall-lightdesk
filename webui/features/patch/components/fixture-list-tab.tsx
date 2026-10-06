@@ -15,6 +15,7 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
@@ -565,7 +566,7 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
   ) => {
     const startMs = performance.now();
     const rowData = displayRows();
-    const batchId = crypto.randomUUID().replace(/-/g, "");
+    const batchId = uuidv4().replace(/-/g, "");
     const fixtureMap = fixtures.get();
     let nextFixtureMap: typeof fixtureMap | null = null;
     const updates: types.FixturePlacementUpdateEntry[] = [];

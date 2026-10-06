@@ -39,6 +39,7 @@ import {
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
+import { v4 as uuidv4 } from "uuid";
 import {
   DropdownMenu,
   DropdownMenuItem,
@@ -2776,7 +2777,7 @@ function StepFxPhaseDial(props: {
   selectionCount: number;
 }) {
   const directionRadius = 54;
-  const directionMarkerId = `step-fx-phase-direction-${crypto.randomUUID()}`;
+  const directionMarkerId = `step-fx-phase-direction-${uuidv4()}`;
   /** Selects representative indexes without overcrowding the compact dial. */
   const indexes = createMemo(() => {
     const count = Math.max(1, props.selectionCount);
@@ -2901,7 +2902,7 @@ function StepFxTimingControls(props: {
   onTimingChange: (timing: types.StepFxTiming) => void;
   onCycleScaleChange: (scale: types.StepFxCycleScale) => void;
 }) {
-  const cycleScaleName = crypto.randomUUID();
+  const cycleScaleName = uuidv4();
   const [fixedScaleValue, setFixedScaleValue] = createSignal(
     props.stepFx.cycle_scale.type === "Fixed"
       ? props.stepFx.cycle_scale.data

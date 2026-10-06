@@ -11,6 +11,7 @@ import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
@@ -180,7 +181,7 @@ export default function ColorPathPanel(props: BasePanelComponentProps) {
       ...cloneColorPath(current),
       identifiers: {
         id: nextId,
-        uid: crypto.randomUUID().replace(/-/g, ""),
+        uid: uuidv4().replace(/-/g, ""),
         label: `${current.identifiers.label} Copy`,
       },
       interpolation_space: resolvedInterpolationSpace(current),

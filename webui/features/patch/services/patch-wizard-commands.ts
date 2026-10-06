@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import { findFixtureVersionConflictIds } from "../../../lib/asset-version";
 import { commandSucceeded } from "../../../lib/command-result";
 import {
@@ -115,7 +116,7 @@ export async function executePatchWizardCommands(
       return { status: "failed" };
     }
 
-    const batchId = crypto.randomUUID().replace(/-/g, "");
+    const batchId = uuidv4().replace(/-/g, "");
     const { universeId, startAddress } = state;
     if (
       state.assignConsoleDmx &&
