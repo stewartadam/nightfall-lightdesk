@@ -101,6 +101,8 @@ export function createStepFxWaveformPreview(
     on(
       () => props.centerSelectedFixture,
       (centerFixture, previousCenterFixture) => {
+        // Draft replacements re-notify the prop without changing the mode.
+        if (centerFixture === previousCenterFixture) return;
         if (centerModeFrame !== undefined)
           cancelAnimationFrame(centerModeFrame);
         centerModeFrame = undefined;
@@ -143,6 +145,8 @@ export function createStepFxWaveformPreview(
     on(
       () => props.direction,
       (direction, previousDirection) => {
+        // Draft replacements (such as autosave acknowledgements) re-notify an unchanged direction.
+        if (direction === previousDirection) return;
         if (directionFrame !== undefined) cancelAnimationFrame(directionFrame);
         directionFrame = undefined;
         if (previousDirection === undefined || reducedMotion.get()) {

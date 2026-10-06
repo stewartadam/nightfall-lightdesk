@@ -10,6 +10,111 @@ import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+/**
+ * Gives the FX list group, where Step FX editors open, the full height of its
+ * column. The default layout stacks Timelines beneath it, which leaves the
+ * editor too short to show the waveform plot's control points.
+ */
+async function growFxListGroup(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const dockApi = (window as any).appStores.dockApi.get();
+    const fxListPanel = dockApi.getPanel("panel-FxList");
+    if (!fxListPanel) throw new Error("FX list panel is not in the layout");
+    fxListPanel.api.group.api.setSize({ height: dockApi.height });
+  });
+}
+
+/** One observed value of a transient attribute and the probed descendants at that moment. */
+interface TransientAttributeSample {
+  value: string | null;
+  count: number;
+  rect?: { x: number; y: number };
+}
+
+/** Optional descendant probes captured alongside each transient attribute sample. */
+interface TransientAttributeProbes {
+  /** Descendants to count; child-list changes under the element also produce samples. */
+  countSelector?: string;
+  /** Descendant whose viewport position is captured with each sample. */
+  rectSelector?: string;
+}
+
+let transientAttributeRecordingCount = 0;
+
+/**
+ * Starts recording every value one element's short-lived attribute takes, so
+ * 140–240ms animation phases can be asserted after the fact instead of racing
+ * the window in which they are visible. Probes optionally capture descendant
+ * counts and positions with each sample. Install it before the triggering
+ * action; the returned reader yields the deduplicated sample sequence.
+ */
+async function recordTransientAttribute(
+  target: Locator,
+  attribute: string,
+  probes: TransientAttributeProbes = {},
+): Promise<() => Promise<TransientAttributeSample[]>> {
+  const key = `__stepFxTransientRecording${++transientAttributeRecordingCount}`;
+  await target.evaluate(
+    (element, options) => {
+      const samples: {
+        value: string | null;
+        count: number;
+        rect?: { x: number; y: number };
+      }[] = [];
+      /** Appends the current attribute value and probes when the value or count changed. */
+      const sample = (): void => {
+        const value = element.getAttribute(options.attribute);
+        const count = options.countSelector
+          ? element.querySelectorAll(options.countSelector).length
+          : 0;
+        const last = samples.at(-1);
+        if (last && last.value === value && last.count === count) return;
+        const probed = options.rectSelector
+          ? element.querySelector(options.rectSelector)?.getBoundingClientRect()
+          : undefined;
+        samples.push({
+          value,
+          count,
+          ...(probed ? { rect: { x: probed.x, y: probed.y } } : {}),
+        });
+      };
+      sample();
+      new MutationObserver(sample).observe(element, {
+        attributes: true,
+        attributeFilter: [options.attribute],
+        childList: Boolean(options.countSelector),
+        subtree: Boolean(options.countSelector),
+      });
+      (window as any)[options.key] = samples;
+    },
+    {
+      attribute,
+      countSelector: probes.countSelector,
+      rectSelector: probes.rectSelector,
+      key,
+    },
+  );
+  return () =>
+    target
+      .page()
+      .evaluate(
+        (recordingKey) =>
+          [...(window as any)[recordingKey]] as TransientAttributeSample[],
+        key,
+      );
+}
+
+/** Collapses recorded samples into the ordered sequence of distinct attribute values. */
+function transientValues(
+  samples: TransientAttributeSample[],
+): (string | null)[] {
+  return samples
+    .map((sample) => sample.value)
+    .filter(
+      (value, index, values) => index === 0 || values[index - 1] !== value,
+    );
+}
+
 /** Opens an isolated app session with one fixture for selection and preview projection. */
 async function openStepFxEditorApp(
   page: Page,
@@ -27,6 +132,7 @@ async function openStepFxEditorApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await growFxListGroup(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
@@ -426,7 +532,18 @@ async function holdPointerDragBy(
   deltaX: number,
   deltaY: number,
 ): Promise<void> {
-  const bounds = await target.boundingBox();
+  // Committing a previous drag rebuilds the waveform handles from fresh
+  // segment objects, so a single read can land on a detached handle.
+  const measured: { box: Awaited<ReturnType<Locator["boundingBox"]>> } = {
+    box: null,
+  };
+  await expect
+    .poll(async () => {
+      measured.box = await target.boundingBox();
+      return measured.box !== null;
+    }, "Waveform drag target is not visible")
+    .toBe(true);
+  const bounds = measured.box;
   if (!bounds) throw new Error("Waveform drag target is not visible");
   const startX = bounds.x + bounds.width / 2;
   const startY = bounds.y + bounds.height / 2;
@@ -440,6 +557,7 @@ test("Step FX waveform geometry drag-edits authored fields", async ({
   backendSlot,
   page,
 }, testInfo) => {
+  test.setTimeout(60_000);
   await openStepFxEditorApp(page, backendSlot.backendPort);
   await page.getByRole("tab", { name: "Fx" }).click();
   await page.getByRole("button", { name: "Add effect" }).click();
@@ -733,12 +851,14 @@ test("Step FX repeated waveform cycles drag-edit while paused", async ({
   const editor = page.locator("[data-step-fx-editor]");
   const waveformPlot = editor.locator("[data-step-fx-waveform-plot]");
   await expect.poll(() => stepFxPreviewStatus(page)).toBeTruthy();
-  await editor.getByRole("radio", { name: "Waveform" }).click();
-  await expect(waveformPlot).toHaveAttribute("data-mode-transitioning", "true");
-  await expect(waveformPlot).toHaveAttribute(
+  const modeTransition = await recordTransientAttribute(
+    waveformPlot,
     "data-mode-transitioning",
-    "false",
   );
+  await editor.getByRole("radio", { name: "Waveform" }).click();
+  await expect
+    .poll(async () => transientValues(await modeTransition()))
+    .toEqual(["false", "true", "false"]);
 
   const previousCycle = waveformPlot.locator(
     '[data-step-fx-waveform-cycle="-1"]',
@@ -820,6 +940,7 @@ test("Step FX animates contribution tracks, waveform modes, direction, and live 
   backendSlot,
   page,
 }, testInfo) => {
+  test.setTimeout(60_000);
   await openStepFxEditorApp(page, backendSlot.backendPort);
   await page.getByRole("tab", { name: "Fx" }).click();
   await page.getByRole("button", { name: "Add effect" }).click();
@@ -938,29 +1059,27 @@ test("Step FX animates contribution tracks, waveform modes, direction, and live 
   if (!toolbarBeforeSlide)
     throw new Error("Step FX action toolbar is not visible");
 
+  const relativeSlide = await recordTransientAttribute(
+    contributionStage,
+    "data-contribution-slide-phase",
+    { rectSelector: ":scope > [data-step-fx-step-actions-toolbar]" },
+  );
   await relativeTab.click();
   await expect(relativeTab).toHaveAttribute("aria-selected", "true");
   await expect(contributionStage).toHaveAttribute(
     "data-contribution-slide-direction",
     "right",
   );
-  await expect(contributionStage).toHaveAttribute(
-    "data-contribution-slide-phase",
-    "outgoing",
-  );
-  const toolbarDuringSlide = await stepActionToolbar.boundingBox();
+  await expect
+    .poll(async () => transientValues(await relativeSlide()))
+    .toEqual(["idle", "outgoing", "incoming", "idle"]);
+  const toolbarDuringSlide = (await relativeSlide()).find(
+    (sample) => sample.value === "outgoing",
+  )?.rect;
   if (!toolbarDuringSlide)
     throw new Error("Step FX action toolbar disappeared during track switch");
   expect(Math.abs(toolbarDuringSlide.x - toolbarBeforeSlide.x)).toBeLessThan(1);
   expect(Math.abs(toolbarDuringSlide.y - toolbarBeforeSlide.y)).toBeLessThan(1);
-  await expect(contributionStage).toHaveAttribute(
-    "data-contribution-slide-phase",
-    "incoming",
-  );
-  await expect(contributionStage).toHaveAttribute(
-    "data-contribution-slide-phase",
-    "idle",
-  );
   await expect(contributionPanel).toHaveAttribute(
     "data-track-kind",
     "relative",
@@ -976,20 +1095,19 @@ test("Step FX animates contribution tracks, waveform modes, direction, and live 
     .click();
   await expect(editor.locator("[data-step-fx-sheet] tbody tr")).toHaveCount(3);
 
+  const absoluteSlide = await recordTransientAttribute(
+    contributionStage,
+    "data-contribution-slide-phase",
+  );
   await absoluteTab.click();
   await expect(absoluteTab).toHaveAttribute("aria-selected", "true");
   await expect(contributionStage).toHaveAttribute(
     "data-contribution-slide-direction",
     "left",
   );
-  await expect(contributionStage).toHaveAttribute(
-    "data-contribution-slide-phase",
-    "outgoing",
-  );
-  await expect(contributionStage).toHaveAttribute(
-    "data-contribution-slide-phase",
-    "idle",
-  );
+  await expect
+    .poll(async () => transientValues(await absoluteSlide()))
+    .toEqual(["idle", "outgoing", "incoming", "idle"]);
   await expect(contributionPanel).toHaveAttribute(
     "data-track-kind",
     "absolute",
@@ -1038,17 +1156,19 @@ test("Step FX animates contribution tracks, waveform modes, direction, and live 
   await expect(waveformCycles).toHaveCount(1);
   await expect(cycleDelimiters).toHaveCount(0);
 
+  const waveformModeTransition = await recordTransientAttribute(
+    waveformPlot,
+    "data-mode-transitioning",
+  );
   await waveformScrollMode.click();
   await expect(waveformScrollMode).toHaveAttribute("aria-checked", "true");
   await expect(waveformPlot).toHaveAttribute("data-scroll-mode", "waveform");
-  await expect(waveformPlot).toHaveAttribute("data-mode-transitioning", "true");
+  await expect
+    .poll(async () => transientValues(await waveformModeTransition()))
+    .toEqual(["false", "true", "false"]);
   await expect(waveformCycles).toHaveCount(3);
   await expect(cycleDelimiters).toHaveCount(3);
   await expect(cycleDelimiters.first()).toHaveClass(/text-red-500/);
-  await expect(waveformPlot).toHaveAttribute(
-    "data-mode-transitioning",
-    "false",
-  );
 
   const primaryWaveformCycle = waveformPlot.locator(
     '[data-step-fx-waveform-cycle="0"]',
@@ -1068,16 +1188,23 @@ test("Step FX animates contribution tracks, waveform modes, direction, and live 
     fullPage: true,
   });
 
+  const fixtureModeTransition = await recordTransientAttribute(
+    waveformPlot,
+    "data-mode-transitioning",
+    { countSelector: "[data-step-fx-waveform-cycle]" },
+  );
   await fixtureScrollMode.click();
   await expect(fixtureScrollMode).toHaveAttribute("aria-checked", "true");
   await expect(waveformPlot).toHaveAttribute("data-scroll-mode", "fixtures");
-  await expect(waveformPlot).toHaveAttribute("data-mode-transitioning", "true");
-  await expect(waveformCycles).toHaveCount(3);
   await expect(cycleDelimiters).toHaveCount(0);
-  await expect(waveformPlot).toHaveAttribute(
-    "data-mode-transitioning",
-    "false",
-  );
+  await expect
+    .poll(async () => transientValues(await fixtureModeTransition()))
+    .toEqual(["false", "true", "false"]);
+  expect(
+    (await fixtureModeTransition()).some(
+      (sample) => sample.value === "true" && sample.count === 3,
+    ),
+  ).toBe(true);
 
   const startPositionMenu = await openStepFxStartPositionControls(page, editor);
   await startPositionMenu
@@ -1095,18 +1222,17 @@ test("Step FX animates contribution tracks, waveform modes, direction, and live 
   const reverseDirection = directionGroup.getByRole("radio", {
     name: "Reverse direction",
   });
+  const reverseTransition = await recordTransientAttribute(
+    waveformPlot,
+    "data-direction-transitioning",
+  );
   await reverseDirection.click();
   await expect(reverseDirection).toHaveAttribute("aria-checked", "true");
-  await expect(waveformPlot).toHaveAttribute(
-    "data-direction-transitioning",
-    "true",
-  );
   await expect(selectedPlayhead).toHaveCount(1);
   await expect(liveTableRow).toHaveCount(1);
-  await expect(waveformPlot).toHaveAttribute(
-    "data-direction-transitioning",
-    "false",
-  );
+  await expect
+    .poll(async () => transientValues(await reverseTransition()))
+    .toEqual(["false", "true", "false"]);
   await expect
     .poll(() => stepFxPlayheadError(page, 0.25, { direction: "Reverse" }))
     .toBeLessThan(60);
@@ -1142,16 +1268,15 @@ test("Step FX animates contribution tracks, waveform modes, direction, and live 
   const bounceDirection = directionGroup.getByRole("radio", {
     name: "Bounce direction",
   });
+  const bounceTransition = await recordTransientAttribute(
+    waveformPlot,
+    "data-direction-transitioning",
+  );
   await bounceDirection.click();
   await expect(bounceDirection).toHaveAttribute("aria-checked", "true");
-  await expect(waveformPlot).toHaveAttribute(
-    "data-direction-transitioning",
-    "true",
-  );
-  await expect(waveformPlot).toHaveAttribute(
-    "data-direction-transitioning",
-    "false",
-  );
+  await expect
+    .poll(async () => transientValues(await bounceTransition()))
+    .toEqual(["false", "true", "false"]);
   await expect
     .poll(() =>
       stepFxPlayheadError(page, 0.25, {
@@ -2249,17 +2374,19 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await expect(playhead).toHaveCount(1);
   await expect(previewIndexes.nth(1)).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => stepFxPlayheadError(page, 0.25)).toBeLessThan(60);
+  const sheetWaveformTransition = await recordTransientAttribute(
+    waveformPlot,
+    "data-mode-transitioning",
+  );
   await waveformScrollMode.click();
   await expect(waveformScrollMode).toHaveAttribute("aria-checked", "true");
   await expect(waveformPlot).toHaveAttribute("data-scroll-mode", "waveform");
-  await expect(waveformPlot).toHaveAttribute("data-mode-transitioning", "true");
+  await expect
+    .poll(async () => transientValues(await sheetWaveformTransition()))
+    .toEqual(["false", "true", "false"]);
   await expect(
     waveformPlot.locator("[data-step-fx-waveform-cycle]"),
   ).toHaveCount(3);
-  await expect(waveformPlot).toHaveAttribute(
-    "data-mode-transitioning",
-    "false",
-  );
   const primaryWaveformCycle = waveformPlot.locator(
     '[data-step-fx-waveform-cycle="0"]',
   );
@@ -2277,17 +2404,19 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     path: testInfo.outputPath("step-fx-waveform-scroll-mode.png"),
     fullPage: true,
   });
+  const sheetFixtureTransition = await recordTransientAttribute(
+    waveformPlot,
+    "data-mode-transitioning",
+  );
   await fixtureScrollMode.click();
   await expect(fixtureScrollMode).toHaveAttribute("aria-checked", "true");
   await expect(waveformPlot).toHaveAttribute("data-scroll-mode", "fixtures");
-  await expect(waveformPlot).toHaveAttribute("data-mode-transitioning", "true");
+  await expect
+    .poll(async () => transientValues(await sheetFixtureTransition()))
+    .toEqual(["false", "true", "false"]);
   await expect(
     waveformPlot.locator("[data-step-fx-waveform-cycle]"),
   ).toHaveCount(1);
-  await expect(waveformPlot).toHaveAttribute(
-    "data-mode-transitioning",
-    "false",
-  );
   await previewIndexes.nth(0).click();
 
   await setEditorSelection(page, editor, "Fixture 4>1");
@@ -2659,9 +2788,14 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
 
   await closeStepFxEditor(page);
   await fxTab.click();
-  await page.getByRole("button", { name: "Toggle selection mode" }).click();
+  const fxListPanel = page.locator('[data-panel-id="panel-FxList"]');
+  await fxListPanel
+    .getByRole("button", { name: "Toggle selection mode" })
+    .click();
   await card.click();
-  await page.getByRole("button", { name: "Delete selected effects" }).click();
+  await fxListPanel
+    .getByRole("button", { name: "Delete selected effects" })
+    .click();
   const deleteDialog = page.getByRole("dialog", {
     name: "Delete selected effects",
   });

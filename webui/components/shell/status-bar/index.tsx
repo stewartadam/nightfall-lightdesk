@@ -78,8 +78,7 @@ import { UndoTimelineButton, UndoTimelineCaret } from "./undo-timeline";
 
 const log = getLogger(import.meta.url);
 const STATUS_METRIC_DISPLAY_INTERVAL_MS = 1000;
-const STATUS_ICON_SLOT_CLASS =
-  "inline-flex size-6 shrink-0 items-center justify-center rounded p-1";
+const STATUS_ICON_SLOT_CLASS = "nf-toolbar-slot";
 const STATUS_ICON_GROUP_CLASS = "flex items-center gap-1";
 
 /** Renders connection health, optional metrics, and showfile controls. */

@@ -59,9 +59,12 @@ export function SpatialSelectionField(props: SpatialSelectionFieldProps) {
   let inputRef: HTMLInputElement | undefined;
   let skipNextBlur = false;
 
-  /** Reports whether external selection updates should replace the visible editor text. */
-  const shouldSynchronizeInput = (): boolean =>
-    (props.variant ?? "compact") === "expanded" || !isDirty();
+  /**
+   * Reports whether external selection updates should replace the visible
+   * editor text. Uncommitted edits win in both variants, so a fixture or group
+   * update that re-formats the selection cannot overwrite what the user typed.
+   */
+  const shouldSynchronizeInput = (): boolean => !isDirty();
 
   /** Formats stable references through current fixture/group IDs without mutating stored data. */
   const formatCurrentSelection = async (): Promise<string> => {

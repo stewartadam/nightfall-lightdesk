@@ -16,11 +16,17 @@ import { RollingTimingSamples } from "./rolling-timing-samples";
 const NIGHTFALL_MEASURE_PREFIX = "nightfall:";
 
 const PUBLISH_INTERVAL_MS = 1000;
+const MAX_MEASURE_SCOPES = 256;
 
 const samplesByName = new Map<string, RollingTimingSamples>();
 let observer: PerformanceObserver | null = null;
 
-/** Records one valid timing sample, bounding both scope count and sample storage. */
+/**
+ * Records one valid timing sample, bounding both scope count and sample storage.
+ * Scopes are kept in least-recently-recorded order so that, once the scope
+ * limit is reached, the stalest scope is evicted instead of silently dropping
+ * every newly appearing scope.
+ */
 function recordSample(
   name: string,
   value: number,
@@ -29,8 +35,12 @@ function recordSample(
 ): void {
   if (!name.startsWith(NIGHTFALL_MEASURE_PREFIX)) return;
   if (!Number.isFinite(value) || value < 0) return;
-  if (!samplesByName.has(name) && samplesByName.size >= 256) return;
   const samples = samplesByName.get(name) ?? new RollingTimingSamples();
+  samplesByName.delete(name);
+  if (samplesByName.size >= MAX_MEASURE_SCOPES) {
+    const stalestName = samplesByName.keys().next().value;
+    if (stalestName !== undefined) samplesByName.delete(stalestName);
+  }
   samples.record(value, recordedAtMs, unit);
   samplesByName.set(name, samples);
 }

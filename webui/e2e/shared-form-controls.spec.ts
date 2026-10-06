@@ -41,16 +41,17 @@ test("lab, settings and entity editors share form controls", async ({
     .click();
   const lab = page.getByRole("region", { name: "Input form examples" });
   const name = lab.getByRole("textbox", { name: "Cue name *", exact: true });
-  const appearance = await controlAppearance(name);
   const completion = lab.getByRole("combobox", { name: "On completion" });
   await completion.selectOption("release");
   await lab.getByRole("tab", { name: "Properties", exact: true }).click();
   await expect(completion).toHaveValue("release");
   await expect(completion).toHaveCSS("height", "28px");
+  // Dialogs use the compact control density that the Properties layout shows.
+  const appearance = await controlAppearance(name);
+  const selectAppearance = await controlAppearance(completion);
   await lab.getByRole("tab", { name: "Standard", exact: true }).click();
   await lab.getByRole("button", { name: "Reset form" }).click();
   await expect(completion).toHaveValue("hold");
-  const selectAppearance = await controlAppearance(completion);
 
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);

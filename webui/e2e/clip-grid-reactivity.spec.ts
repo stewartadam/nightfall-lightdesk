@@ -71,7 +71,7 @@ async function clipCommands(page: Page) {
       ((window as any).__workerMessages as WorkerMessage[] | undefined)
         ?.flatMap((message) => {
           if (
-            message?.type !== "send" ||
+            message?.type !== "submit" ||
             message.data?.module !== "ClipCommand" ||
             message.data.command?.data?.type !== "Single"
           ) {

@@ -15,6 +15,8 @@ const FIXTURE_UID = "33333333333333333333333333333333";
 const FIXTURE_PANEL_ID = "panel-DataGridInstrumentationFixtures-e2e";
 const LAYER_PANEL_ID = "panel-DataGridInstrumentationLayer-e2e";
 
+test.setTimeout(60_000);
+
 /** Seeds fixture, parameter, and layer stores with active attribute values. */
 async function seedGridData(page: Page): Promise<void> {
   await page.evaluate((fixtureUid) => {

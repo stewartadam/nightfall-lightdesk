@@ -237,7 +237,9 @@ test("inactive flow editor tab hides graph overlay content", async ({
 
   await expect(page.locator(".solid-flow__node:visible")).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Active Instances" }),
+    page
+      .locator('[data-panel-id="flow-editor-overlay-target"]')
+      .getByRole("heading", { name: "Active Instances" }),
   ).toBeVisible();
 });
 

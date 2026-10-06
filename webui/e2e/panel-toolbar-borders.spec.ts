@@ -11,7 +11,11 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 /** Checks that a toolbar draws a single bottom divider without a border around its action groups. */
 async function expectBottomDivider(toolbar: Locator) {
@@ -36,6 +40,7 @@ test("CRUD and visualizer toolbars share a bottom-only divider", async ({
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await resetToDefaultLayout(page);
+  await dockFixturesInMainGrid(page);
   await page.getByRole("tab", { name: "Fixtures", exact: true }).click();
   const fixtures = page.locator('[data-component="PanelToolbar"]').filter({
     has: page.getByRole("switch", { name: "Hide default values" }),
@@ -98,6 +103,13 @@ test("CRUD and visualizer toolbars share a bottom-only divider", async ({
     path: testInfo.outputPath("visualizer-bottom-divider.png"),
   });
 
+  // The default layout's minimum column widths exceed a 700px window, so give
+  // the visualizer the workspace before narrowing it to exercise toolbar wrapping.
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    api.getEdgeGroup("left")?.collapse();
+    api.getPanel("panel-Visualizer").api.maximize();
+  });
   await page.setViewportSize({ width: 700, height: 800 });
   await expectBottomDivider(visualizer);
   await expect(camera).toBeInViewport();
