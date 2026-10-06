@@ -77,8 +77,7 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
         await stopPlaywrightWorkerSlot(workerSlot);
       }
     },
-    // Covers waiting for earlier workers to start and warm their Vite servers.
-    { scope: "worker", timeout: 300_000 },
+    { scope: "worker", timeout: 120_000 },
   ],
 
   /** Gives each test a freshly seeded backend and destroys it afterward. */
@@ -162,8 +161,7 @@ export const frontendOnlyTest = playwrightTest.extend<
         await stopPlaywrightWorkerSlot(workerSlot);
       }
     },
-    // Covers waiting for earlier workers to start and warm their Vite servers.
-    { scope: "worker", timeout: 300_000 },
+    { scope: "worker", timeout: 120_000 },
   ],
 
   /** Route relative page URLs through the frontend-only Vite process. */

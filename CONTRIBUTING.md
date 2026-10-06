@@ -277,12 +277,13 @@ session or inheriting backend world and undo state from another test. Owned
 services and disposable data are removed after each test and swept again when
 Playwright exits.
 
-Workers start their Vite servers one at a time, and each server is warmed before
-its tests run. The pool sets `NIGHTFALL_VITE_WARMUP_PANELS=1` so Vite pre-transforms
-the app and every lazily loaded panel at startup. It also crawls the served module
-graph, so the first page load does not wait on cold transforms. Set the variable
-yourself when running `pnpm run dev` to trade a slower dev-server start for faster
-first panel opens.
+Each worker's Vite server keeps its own dependency cache under
+`node_modules/.vite-playwright/`, selected with `NIGHTFALL_VITE_CACHE_DIR`, so
+parallel servers never re-optimize dependencies underneath each other. The pool
+also sets `NIGHTFALL_VITE_WARMUP_PANELS=1`, which makes Vite scan every lazily
+loaded panel for dependencies and pre-transform the app at startup. Set it yourself
+when running `pnpm run dev` to trade a slower dev-server start for faster first
+panel opens.
 
 Pass `--target embedded-demo` to run browser-demo tests without building or
 starting the native backend. The default target is `native`, which can also be
