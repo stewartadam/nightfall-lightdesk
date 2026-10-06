@@ -32,6 +32,7 @@ function makeSettings(
     input_signal_loss_timeout: { secs: 2, nanos: 0 },
     input_universe_visibility_mode:
       types.InputUniverseVisibilityMode.ExternalOnly,
+    dmx_output_rate_hz: 44,
     network_output_enabled: true,
     network_input_enabled: true,
     usb_output_enabled: true,

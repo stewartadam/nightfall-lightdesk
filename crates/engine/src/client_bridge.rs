@@ -44,6 +44,7 @@ use crate::{
         CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver, process_json_envelopes,
         process_update_json_envelopes,
     },
+    frame_waker::FrameWaker,
     prelude::{
         CommandNotice, CommandReply, EngineClientMessage, PendingCommandBuffer, ReplyTarget,
     },
@@ -140,17 +141,54 @@ impl ClientEventSink {
     }
 }
 
+/// Submits lifecycle-tracked commands to the engine.
+///
+/// Every accepted command also wakes the frame limiter, so the engine starts processing it right
+/// away instead of sleeping until the next frame tick.
+#[derive(Clone)]
+pub struct CommandSender {
+    tx: Sender<CommandJsonEnvelope>,
+    waker: FrameWaker,
+}
+
+impl CommandSender {
+    /// Wraps a command channel so every submitted command also wakes `waker`.
+    pub fn new(tx: Sender<CommandJsonEnvelope>, waker: FrameWaker) -> Self {
+        Self { tx, waker }
+    }
+
+    /// Queues a command, waiting for capacity, then wakes the engine frame loop.
+    pub async fn send(
+        &self,
+        envelope: CommandJsonEnvelope,
+    ) -> Result<(), Box<async_channel::SendError<CommandJsonEnvelope>>> {
+        self.tx.send(envelope).await.map_err(Box::new)?;
+        self.waker.wake();
+        Ok(())
+    }
+
+    /// Queues a command without waiting, then wakes the engine frame loop.
+    pub fn try_send(
+        &self,
+        envelope: CommandJsonEnvelope,
+    ) -> Result<(), Box<async_channel::TrySendError<CommandJsonEnvelope>>> {
+        self.tx.try_send(envelope).map_err(Box::new)?;
+        self.waker.wake();
+        Ok(())
+    }
+}
+
 /// Host-owned handles for submitting ingress and receiving encoded engine events.
 #[derive(Resource)]
 pub struct ClientBridgeHost {
-    command_tx: Sender<CommandJsonEnvelope>,
+    command_tx: CommandSender,
     update_tx: Sender<UpdateJsonEnvelope>,
     output_rx: Option<Receiver<Vec<u8>>>,
 }
 
 impl ClientBridgeHost {
     /// Clone the sender used to submit lifecycle-tracked commands.
-    pub fn command_sender(&self) -> Sender<CommandJsonEnvelope> {
+    pub fn command_sender(&self) -> CommandSender {
         self.command_tx.clone()
     }
 
@@ -170,7 +208,9 @@ impl ClientBridgeHost {
 /// Inserting this resource before [`ClientBridgePlugin`] builds makes the new
 /// world publish to and receive from the same channels as earlier worlds, so a
 /// host transport attached once keeps its clients across world replacement.
-/// Without it the plugin creates channels private to one world.
+/// Without it the plugin creates channels private to one world. The frame
+/// waker is shared the same way, so commands keep waking whichever world is
+/// active.
 #[derive(Resource, Clone)]
 pub struct SharedClientBridge {
     command_tx: Sender<CommandJsonEnvelope>,
@@ -179,10 +219,11 @@ pub struct SharedClientBridge {
     update_rx: Receiver<UpdateJsonEnvelope>,
     output_tx: Sender<Vec<u8>>,
     output_rx: Receiver<Vec<u8>>,
+    frame_waker: FrameWaker,
 }
 
 impl SharedClientBridge {
-    /// Create unbounded command, update, and output channels.
+    /// Create unbounded command, update, and output channels and a fresh frame waker.
     pub fn new() -> Self {
         let (command_tx, command_rx) = async_channel::unbounded();
         let (update_tx, update_rx) = async_channel::unbounded();
@@ -194,6 +235,7 @@ impl SharedClientBridge {
             update_rx,
             output_tx,
             output_rx,
+            frame_waker: FrameWaker::default(),
         }
     }
 }
@@ -226,6 +268,7 @@ impl Plugin for ClientBridgePlugin {
             update_rx,
             output_tx,
             output_rx,
+            frame_waker,
         } = app
             .world()
             .get_resource::<SharedClientBridge>()
@@ -235,8 +278,9 @@ impl Plugin for ClientBridgePlugin {
         app.insert_resource(ClientEventSink::new(output_tx));
         app.insert_resource(CommandJsonEnvelopeReceiver(command_rx));
         app.insert_resource(UpdateJsonEnvelopeReceiver(update_rx));
+        app.insert_resource(frame_waker.clone());
         app.insert_resource(ClientBridgeHost {
-            command_tx,
+            command_tx: CommandSender::new(command_tx, frame_waker),
             update_tx,
             output_rx: Some(output_rx),
         });

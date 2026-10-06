@@ -13,6 +13,7 @@ import {
   createSignal,
   createUniqueId,
   For,
+  onCleanup,
   Show,
 } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
@@ -68,6 +69,8 @@ import { AppearanceSettings } from "./appearance-settings";
 
 const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS = 2000;
 const DEFAULT_SHOWFILE_BACKUP_RETENTION = 20;
+/** Largest value a Rust `u32` command field accepts. */
+const U32_MAX = 4_294_967_295;
 const QUALITY_OPTIONS: { value: QualityPreset; label: string }[] = [
   { value: "low", label: "Low (faster)" },
   { value: "medium", label: "Medium" },
@@ -172,6 +175,17 @@ export function SettingsOverlay() {
       command: { type: "GetAvailableAudioDevices" },
     });
   });
+
+  let dmxOutputRateInput: HTMLInputElement | undefined;
+  // Rewrites the rate field from every IO settings snapshot, even an unchanged one, so a value the
+  // backend clamped back to the rate it already had still replaces what the user typed.
+  onCleanup(
+    $ioSettings.listen((settings) => {
+      if (dmxOutputRateInput) {
+        dmxOutputRateInput.value = String(settings.dmx_output_rate_hz);
+      }
+    }),
+  );
 
   /** Refresh cached model information on entry and stop polling when settings closes. */
   createEffect(() => {
@@ -309,6 +323,23 @@ export function SettingsOverlay() {
       return;
     }
     setInputSignalLossPolicy({ type: "ClearAfterTimeout", data: {} });
+  };
+
+  /** Sends the requested network DMX output rate; the backend clamps it to its supported range. */
+  const setDmxOutputRate = (value: number) => {
+    if (!Number.isFinite(value)) {
+      if (dmxOutputRateInput) {
+        dmxOutputRateInput.value = String(ioSettings().dmx_output_rate_hz);
+      }
+      return;
+    }
+    engineRuntime.sendCommand({
+      module: "SettingsCommand",
+      command: {
+        type: "SetDmxOutputRate",
+        data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
+      },
+    });
   };
 
   const setInputSignalLossTimeout = (value: number) => {
@@ -605,6 +636,28 @@ export function SettingsOverlay() {
                   )}
                 </p>
               </div>
+            </section>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">Output</h3>
+              <label class="block">
+                <span class="text-sm text-gray-400">DMX output rate (Hz)</span>
+                <Input
+                  ref={dmxOutputRateInput}
+                  type="number"
+                  min="1"
+                  max="60"
+                  step="1"
+                  value={ioSettings().dmx_output_rate_hz}
+                  onChange={(e) =>
+                    setDmxOutputRate(e.currentTarget.valueAsNumber)
+                  }
+                  class="mt-1"
+                />
+              </label>
+              <p class="mt-1 text-xs text-gray-500">
+                Art-Net and sACN packets sent per universe each second. Wired
+                DMX512 refreshes at most 44 times per second.
+              </p>
             </section>
             <section>
               <h3 class="text-sm font-medium text-gray-300 mb-3">Input</h3>

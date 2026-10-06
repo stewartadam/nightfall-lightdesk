@@ -11,6 +11,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     net::SocketAddr,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -39,11 +40,14 @@ pub struct SacnOutputIdentity {
     pub cid: Option<[u8; 16]>,
 }
 
-/// Metadata about the local Art-Net output source identity.
+/// Fingerprints of recently transmitted local Art-Net frames, used to filter loopback input.
+///
+/// Clones share one tracker, so the output worker thread records each frame before it reaches
+/// the wire and input filtering always sees it.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct ArtNetRecentFramesByUniverse {
-    recent_frames: HashMap<u16, VecDeque<ArtNetRecentFrame>>,
+    recent_frames: Arc<Mutex<HashMap<u16, VecDeque<ArtNetRecentFrame>>>>,
 }
 
 /// Most recent Art-Net frame seen for a universe and its source endpoint.
@@ -60,21 +64,22 @@ impl ArtNetRecentFramesByUniverse {
 
     /// Creates a new Art-Net recent frames tracker.
     pub fn new() -> Self {
-        Self {
-            recent_frames: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Records a recently transmitted Art-Net frame fingerprint for local loopback filtering.
     pub fn record_recent_frame(
-        &mut self,
+        &self,
         universe_id: u16,
         sequence: u8,
         _data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
         source_addr: Option<SocketAddr>,
         sent_at: Instant,
     ) {
-        let recent = self.recent_frames.entry(universe_id).or_default();
+        let Ok(mut recent_frames) = self.recent_frames.lock() else {
+            return;
+        };
+        let recent = recent_frames.entry(universe_id).or_default();
         recent.push_front(ArtNetRecentFrame {
             sequence,
             source_addr,
@@ -99,7 +104,10 @@ impl ArtNetRecentFramesByUniverse {
         received_at: Instant,
         match_window: Duration,
     ) -> bool {
-        self.recent_frames
+        let Ok(recent_frames) = self.recent_frames.lock() else {
+            return false;
+        };
+        recent_frames
             .get(&universe_id)
             .into_iter()
             .flatten()

@@ -12,7 +12,6 @@ use bevy_state::{
     prelude::{State, States},
 };
 use nightfall_engine::prelude::AppState;
-use nightfall_framepace::prelude::FramepaceSettings;
 use uuid::Uuid;
 
 use crate::{WorldBootstrap, WorldFactory};
@@ -186,7 +185,6 @@ impl SwapOrchestrator {
 
     /// Atomically swap the active app with a staged app.
     pub fn swap(&mut self, mut staged_app: App) -> App {
-        preserve_runtime_session_resources(&self.active_app, &mut staged_app);
         ensure_runtime_resources(&mut staged_app);
         set_runtime_paused(&mut staged_app, false);
         std::mem::replace(&mut self.active_app, staged_app)
@@ -282,13 +280,6 @@ fn app_state(app: &mut App) -> AppState {
     *app.world().resource::<State<AppState>>().get()
 }
 
-/// Copy runtime session resources that should survive showfile world swaps.
-fn preserve_runtime_session_resources(active_app: &App, staged_app: &mut App) {
-    if let Some(framepace_settings) = active_app.world().get_resource::<FramepaceSettings>() {
-        staged_app.insert_resource(framepace_settings.clone());
-    }
-}
-
 /// Ensure runtime state/resources required by swap orchestration exist in the app world.
 fn ensure_runtime_resources(app: &mut App) {
     if !app.is_plugin_added::<StatesPlugin>() {
@@ -339,7 +330,7 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
-    use nightfall_framepace::prelude::Limiter;
+    use nightfall_framepace::prelude::{FramepaceSettings, Limiter};
 
     use super::*;
 
@@ -401,9 +392,10 @@ mod tests {
         );
     }
 
-    /// Verifies FPS limiter settings survive while committing a staged world swap.
+    /// Verifies the staged world keeps its own frame limiter, which follows the incoming
+    /// showfile's DMX output rate, instead of inheriting the outgoing world's.
     #[test]
-    fn stage_and_swap_preserves_framepace_settings() {
+    fn stage_and_swap_keeps_staged_frame_rate() {
         let mut active = App::new();
         active.insert_resource(Marker("active"));
         active.insert_resource(
@@ -423,9 +415,9 @@ mod tests {
             .expect("stage and swap");
 
         let Some(frame_rate) = manual_framerate(orchestrator.active_app()) else {
-            panic!("expected preserved manual frame limiter");
+            panic!("expected the staged manual frame limiter");
         };
-        assert!((frame_rate - 5.0).abs() < f64::EPSILON);
+        assert!((frame_rate - 44.0).abs() < 1e-6);
     }
 
     #[test]

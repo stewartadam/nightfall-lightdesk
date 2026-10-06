@@ -37,7 +37,7 @@ pub(super) use timecodes_timelines::{
 
 /// Domain-owned showfile slice used as owned save output or borrowed load input.
 pub(super) enum ShowfileContribution<'a> {
-    DeskState(desk_state::DeskStateSnapshot<'a>),
+    DeskState(Box<desk_state::DeskStateSnapshot<'a>>),
     FixturesPatch(fixtures_patch::FixturesPatchSnapshot<'a>),
     SceneObjects(scene_objects::SceneObjectsSnapshot<'a>),
     CueStructure(cue_structure::CueStructureSnapshot<'a>),
@@ -172,12 +172,12 @@ fn load_contribution_for_domain(
 ) -> ShowfileContribution<'_> {
     match domain {
         ShowfileLoadDomain::DeskState => {
-            ShowfileContribution::DeskState(desk_state::DeskStateSnapshot {
+            ShowfileContribution::DeskState(Box::new(desk_state::DeskStateSnapshot {
                 control_assignments: Cow::Borrowed(&snapshot.control_assignments),
                 variables: Cow::Borrowed(&snapshot.variables),
                 settings: Cow::Borrowed(&snapshot.settings),
                 io_settings: Cow::Borrowed(&snapshot.io_settings),
-            })
+            }))
         }
         ShowfileLoadDomain::FixturesPatch => {
             ShowfileContribution::FixturesPatch(fixtures_patch::FixturesPatchSnapshot {

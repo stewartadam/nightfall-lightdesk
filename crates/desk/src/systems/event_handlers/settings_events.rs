@@ -21,7 +21,7 @@ use nightfall_io::prelude::{
     AvailableUsbDmxDevices, InputUniverseVisibilityMode, IoRuntimeSettings,
     NetworkDmxOutputTargets, NetworkInterfaceInfo, NetworkInterfaceState, NetworkInterfaceStatus,
     UsbDmxDeviceInfo, UsbDmxOutputTargets, resolve_network_interface_status,
-    sanitize_input_signal_loss_timeout,
+    sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout,
 };
 
 use crate::prelude::DeskSettings;
@@ -162,6 +162,14 @@ pub fn handle_events(
                 tracing::debug!(
                     value = ?params.io_settings.input_signal_loss_timeout,
                     "Input signal loss timeout set"
+                );
+                SettingsCommandSuccess::Applied
+            }
+            SettingsCommand::SetDmxOutputRate(value) => {
+                params.io_settings.dmx_output_rate_hz = sanitize_dmx_output_rate_hz(*value);
+                tracing::debug!(
+                    value = params.io_settings.dmx_output_rate_hz,
+                    "DMX output rate set"
                 );
                 SettingsCommandSuccess::Applied
             }

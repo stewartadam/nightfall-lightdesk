@@ -45,6 +45,7 @@ export const $ioSettings = atom<IoRuntimeSettings>({
   input_signal_loss_policy: { type: "Hold" },
   input_signal_loss_timeout: { secs: 2, nanos: 0 },
   input_universe_visibility_mode: InputUniverseVisibilityMode.ExternalOnly,
+  dmx_output_rate_hz: 44,
 });
 
 /** Increments whenever a backend settings snapshot is applied. */
