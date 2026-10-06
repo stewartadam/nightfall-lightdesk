@@ -25,8 +25,8 @@ use nightfall_cues::prelude::CuePlugin;
 use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::EnginePlugin;
 use nightfall_engine::prelude::{
-    AppState, ClientBridgeHost, ClientBridgePlugin, CommandJsonEnvelope, DataProvider,
-    RuntimeCapabilities, UpdateJsonEnvelope,
+    AppState, ClientBridgeHost, ClientBridgePlugin, CommandJsonEnvelope, CommandSender,
+    DataProvider, RuntimeCapabilities, UpdateJsonEnvelope,
 };
 use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
@@ -70,7 +70,7 @@ pub struct RuntimeInfo {
 #[wasm_bindgen]
 pub struct BrowserEngine {
     app: App,
-    command_tx: Sender<CommandJsonEnvelope>,
+    command_tx: CommandSender,
     update_tx: Sender<UpdateJsonEnvelope>,
     output_rx: Receiver<Vec<u8>>,
     runtime_info: RuntimeInfo,

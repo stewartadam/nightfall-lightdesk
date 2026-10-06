@@ -7,6 +7,7 @@
  */
 
 import { createSignal } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import type {
   ElementParameterRow,
   ElementProgrammerRow,
@@ -2943,7 +2944,7 @@ export const engineRuntime = {
     let payload: string | object = data;
     let commandId: string | null = null;
     if (typeof data === "object") {
-      commandId = crypto.randomUUID();
+      commandId = uuidv4();
       (data as Record<string, unknown>).command_id = commandId;
       (data as Record<string, unknown>).undo_id ??= commandId;
       registerPendingCurrentShowfileName(commandId, data);
@@ -3044,7 +3045,7 @@ export const engineRuntime = {
           return;
         }
 
-        const commandId = crypto.randomUUID();
+        const commandId = uuidv4();
         const commandKey = normalizeCorrelationId(commandId);
         originalCommandKey = commandKey;
         (data as Record<string, unknown>).command_id = commandId;

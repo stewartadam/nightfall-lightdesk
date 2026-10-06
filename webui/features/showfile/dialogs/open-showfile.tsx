@@ -30,6 +30,7 @@ import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { getBackendUrl } from "../../../lib/api";
+import { writeClipboardText } from "../../../lib/clipboard";
 import { getLogger } from "../../../lib/logger";
 import {
   deleteShowfileAndAwait,
@@ -74,13 +75,8 @@ const ShowfileLoadErrorBadge: Component<{ error: string }> = (props) => {
   const copyError = async (event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    if (!navigator?.clipboard?.writeText) {
-      pushToast("error", "Clipboard access unavailable");
-      return;
-    }
-
     try {
-      await navigator.clipboard.writeText(props.error);
+      await writeClipboardText(props.error);
       pushToast("success", "Copied showfile error");
     } catch (caught) {
       log.error("failed to copy showfile load error", caught);

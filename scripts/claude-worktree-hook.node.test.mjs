@@ -41,10 +41,15 @@ function fixture(t) {
     projectConfig,
     '[[pre-start]]\nsetup-env = "echo NIGHTFALL_PORT=4000 > .env"\n',
   );
-  // Git hooks export repository selectors; inheriting them would redirect test Git commands.
+  // Git hooks export repository selectors, and a Claude Code session exports
+  // CLAUDE_PROJECT_DIR, which the script prefers over `cwd`; inheriting either would
+  // point the test at the invoking checkout instead of the fixture.
   const inherited = Object.fromEntries(
     Object.entries(process.env).filter(
-      ([key]) => !key.startsWith("GIT_") && !key.startsWith("WORKTRUNK_"),
+      ([key]) =>
+        !key.startsWith("GIT_") &&
+        !key.startsWith("WORKTRUNK_") &&
+        key !== "CLAUDE_PROJECT_DIR",
     ),
   );
   const env = {
@@ -85,7 +90,7 @@ function fixture(t) {
       cwd: repo,
       env,
       encoding: "utf8",
-      input: JSON.stringify({ ...payload, base_path: repo }),
+      input: JSON.stringify({ ...payload, cwd: repo }),
     });
   }
   return { repo, git, hook };
@@ -98,7 +103,6 @@ test("WorktreeCreate creates the branch through wt and prints the initialized pa
   const result = f.hook({
     hook_event_name: "WorktreeCreate",
     name: "feature",
-    branch_name: "claude/feature",
     worktree_path: join(f.repo, ".claude/worktrees/feature"),
   });
   assert.equal(result.status, 0, result.stderr);
@@ -123,7 +127,6 @@ test("WorktreeCreate reuses an existing branch instead of failing", {
   const result = f.hook({
     hook_event_name: "WorktreeCreate",
     name: "resume",
-    branch_name: "claude/resume",
     worktree_path: join(f.repo, ".claude/worktrees/resume"),
   });
   assert.equal(result.status, 0, result.stderr);
@@ -137,19 +140,22 @@ test("WorktreeRemove deletes merged worktrees but keeps unmerged commits and dir
   skip: !hasWorktrunk && "wt is not installed",
 }, (t) => {
   const f = fixture(t);
-  /** Creates a Claude Code worktree for a branch and returns its path. */
-  const create = (branch) =>
-    f
-      .hook({
-        hook_event_name: "WorktreeCreate",
-        name: branch,
-        branch_name: branch,
-        worktree_path: "/unused",
-      })
-      .stdout.trim();
-  const merged = create("claude/merged");
-  const unmerged = create("claude/unmerged");
-  const dirty = create("claude/dirty");
+  /**
+   * Creates a Claude Code worktree for a slug and returns its path, failing the test
+   * first so an empty path can never resolve files against the invoking checkout.
+   */
+  const create = (name) => {
+    const result = f.hook({
+      hook_event_name: "WorktreeCreate",
+      name,
+      worktree_path: "/unused",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const merged = create("merged");
+  const unmerged = create("unmerged");
+  const dirty = create("dirty");
   writeFileSync(join(unmerged, "work.txt"), "work\n");
   f.git(unmerged, "add", "work.txt");
   f.git(unmerged, "commit", "--quiet", "-m", "work");

@@ -184,6 +184,12 @@ export async function startPlaywrightWorkerSlot({ runRoot, workerIndex }) {
     const viteService = await startService({
       environment: {
         NIGHTFALL_PORT: String(backendPort),
+        NIGHTFALL_VITE_CACHE_DIR: join(
+          process.cwd(),
+          "node_modules",
+          ".vite-playwright",
+          `worker-${workerIndex}`,
+        ),
         NIGHTFALL_VITE_WARMUP_PANELS: "1",
       },
       registryPath,

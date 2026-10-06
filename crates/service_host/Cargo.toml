@@ -7,6 +7,7 @@ edition.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+spin_sleep = "1.3.3"
 
 [lints]
 workspace = true

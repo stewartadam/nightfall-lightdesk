@@ -11,6 +11,7 @@ import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import PanelToolbar from "../../../../components/ui/panel-toolbar";
 import { ToolbarButton } from "../../../../components/ui/toolbar-button";
 import CrudPanelSearch, {
@@ -415,7 +416,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     cell: Item,
     newValue: GridCell,
     useSelection: boolean,
-    batchId = crypto.randomUUID().replace(/-/g, ""),
+    batchId = uuidv4().replace(/-/g, ""),
   ) => {
     const [col, row] = cell;
     const columnId = gridColumns()[col]?.id;
@@ -528,7 +529,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
   };
 
   const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {
-    const batchId = crypto.randomUUID().replace(/-/g, "");
+    const batchId = uuidv4().replace(/-/g, "");
     for (const edit of edits) {
       applySceneObjectEdit(edit.cell, edit.newValue, false, batchId);
     }

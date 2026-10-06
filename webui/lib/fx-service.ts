@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import type { FlowWaveform } from "../types";
 import * as types from "../types";
 import { WaveformKind } from "../types";
@@ -101,7 +102,7 @@ export function createDefaultFx(id: number, label?: string): types.Fx {
   return {
     identifiers: {
       id,
-      uid: crypto.randomUUID(),
+      uid: uuidv4(),
       label: label ?? `FX ${id}`,
     },
     selection: {
@@ -130,7 +131,7 @@ export function createDefaultStepFx(id: number, label?: string): types.StepFx {
   return {
     identifiers: {
       id,
-      uid: crypto.randomUUID(),
+      uid: uuidv4(),
       label: label ?? `Step FX ${id}`,
     },
     selection: {

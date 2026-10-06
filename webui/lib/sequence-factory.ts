@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import {
   type Cue,
   FadeCurve,
@@ -18,7 +19,7 @@ import {
 
 /** Creates the compact persisted UID form used by UI-created show objects. */
 export function createShowObjectUid(): string {
-  return crypto.randomUUID().replace(/-/g, "");
+  return uuidv4().replace(/-/g, "");
 }
 
 /** Returns the lowest positive integer not used by the provided objects. */

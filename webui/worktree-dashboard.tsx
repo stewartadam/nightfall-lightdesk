@@ -31,6 +31,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { Dynamic, Portal, render } from "solid-js/web";
 import type { AppIcon } from "./components/ui/icon";
 import { Table, TableScroll } from "./components/ui/table";
+import { writeClipboardText } from "./lib/clipboard";
 import { getLogger } from "./lib/logger";
 import { pushToast } from "./state/appStores";
 
@@ -707,7 +708,7 @@ function WorktreeDashboardApp() {
 
   async function copyWorktreePath(worktree: WorktreeSummary): Promise<void> {
     try {
-      await navigator.clipboard.writeText(worktree.path);
+      await writeClipboardText(worktree.path);
       setCopiedPathFor(worktree.id);
       window.setTimeout(() => {
         setCopiedPathFor((current) =>

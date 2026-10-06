@@ -10,6 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
@@ -363,8 +364,8 @@ export function createTimelineListController(
 
   /** Creates linked timeline and internal-timecode records from dialog values. */
   const handleCreateSubmit = (payload: { id: number; label: string }) => {
-    const timelineUid = normalizeTimelineUid(crypto.randomUUID());
-    const timecodeUid = normalizeTimelineUid(crypto.randomUUID());
+    const timelineUid = normalizeTimelineUid(uuidv4());
+    const timecodeUid = normalizeTimelineUid(uuidv4());
     const timecode = {
       identifiers: {
         id: payload.id,

@@ -9,6 +9,14 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+/**
+ * The checkout Claude Code started from. Hook input carries it as `cwd`; Claude Code
+ * also exports CLAUDE_PROJECT_DIR, which wins when a session runs from a subdirectory.
+ */
+function repoDir(input) {
+  return process.env.CLAUDE_PROJECT_DIR || input.cwd;
+}
+
 /** Runs Git in the main checkout and returns trimmed stdout, or null when Git fails. */
 function git(cwd, args) {
   const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
@@ -38,8 +46,11 @@ function wt(args) {
  * manually created worktree. Worktrunk picks the path from its own template, so the
  * path Claude Code proposed is ignored and the real one is printed for Claude Code.
  * New branches start from origin's default branch, matching Claude Code's own default.
+ * Claude Code only supplies a worktree slug (`name`), so the branch is `claude/<name>`.
  */
-function create({ base_path: basePath, branch_name: branch }) {
+function create(input) {
+  const basePath = repoDir(input);
+  const branch = `claude/${input.name}`;
   const exists =
     git(basePath, [
       "show-ref",
@@ -75,15 +86,18 @@ function create({ base_path: basePath, branch_name: branch }) {
  * services. Worktrunk refuses dirty worktrees and keeps unmerged branches, so session
  * cleanup never discards work; Claude Code then reports the worktree as kept.
  */
-function remove({ base_path: basePath, worktree_path: worktreePath }) {
-  wt(["-C", basePath, "remove", "--yes", "--foreground", worktreePath]);
+function remove(input) {
+  const worktreePath = input.worktree_path;
+  wt(["-C", repoDir(input), "remove", "--yes", "--foreground", worktreePath]);
 }
 
 /** Dispatches a Claude Code WorktreeCreate or WorktreeRemove hook payload from stdin. */
 function main() {
   const input = JSON.parse(readFileSync(0, "utf8"));
+  if (!repoDir(input)) throw new Error("hook input has no cwd");
   switch (input.hook_event_name) {
     case "WorktreeCreate":
+      if (!input.name) throw new Error("WorktreeCreate input has no name");
       create(input);
       break;
     case "WorktreeRemove":

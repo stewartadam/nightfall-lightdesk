@@ -181,6 +181,36 @@ fn broadcasts_input_signal_loss_policy_and_timeout() {
     );
 }
 
+/// Verifies DMX output rate updates are clamped to the supported range and broadcast to clients.
+#[test]
+fn broadcasts_clamped_dmx_output_rate() {
+    let (mut app, rx) = settings_command_app();
+    app.add_systems(
+        Update,
+        send_io_settings_on_change.after(settings_events::handle_events),
+    );
+    app.update();
+    drain_channel(&rx);
+
+    submit_settings_command(&mut app, SettingsCommand::SetDmxOutputRate(30));
+    app.update();
+    let message = decode_ws_message(
+        &rx.try_recv()
+            .expect("expected websocket settings broadcast after rate change"),
+    );
+    assert_eq!(message["type"], "IoSettings");
+    assert_eq!(message["data"]["dmx_output_rate_hz"], 30);
+
+    submit_settings_command(&mut app, SettingsCommand::SetDmxOutputRate(500));
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<IoRuntimeSettings>()
+            .dmx_output_rate_hz,
+        60
+    );
+}
+
 #[test]
 fn updates_binding_validation_mode_from_settings_command() {
     let (mut app, _rx) = settings_command_app();
