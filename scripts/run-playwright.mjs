@@ -119,6 +119,9 @@ const runRoot = isTestRun
 let seedDataDir = sourceDataDir;
 let outcome;
 try {
+  // Each run builds into its own directory, so concurrent runs in one
+  // worktree never replace the bundle another run's preview server serves.
+  if (runRoot) process.env.NIGHTFALL_E2E_OUT_DIR = join(runRoot, "e2e-build");
   // The e2e bundle builds while Cargo checks the backend.
   const frontendBuild =
     isTestRun && process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "e2e"

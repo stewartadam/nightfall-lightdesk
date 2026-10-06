@@ -29,6 +29,7 @@
     "report:browser-demo-size": "node scripts/report-browser-demo-size.mjs",
     "package:browser-demo": "node scripts/package-browser-demo-artifact.mjs",
     "test:webui-playwright": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 node scripts/run-playwright.mjs test",
+    "test:webui-hmr": "pnpm run test:webui-playwright --vite-mode dev webui/e2e/design-lab-hmr.spec.ts webui/e2e/connection-overlay-layering.spec.ts",
     "test:webui-smoke": "pnpm run test:webui-playwright webui/e2e/startup-recovery-real-backend.spec.ts webui/e2e/showfile-menu.spec.ts webui/e2e/command-palette.spec.ts webui/e2e/tanstack-patch-fixture-list.spec.ts webui/e2e/clip-go-button.spec.ts",
     "test:browser-demo-artifact": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 NIGHTFALL_PLAYWRIGHT_VITE_MODE=preview node scripts/run-playwright.mjs test --target embedded-demo webui/e2e/browser-demo.spec.ts webui/e2e/distribution-notices.spec.ts",
     "test:browser-demo-artifact-soak": "NIGHTFALL_TIMELINE_AUDIO_ENABLED=0 NIGHTFALL_PLAYWRIGHT_VITE_MODE=preview NIGHTFALL_BROWSER_DEMO_SOAK=1 node scripts/run-playwright.mjs test --target embedded-demo webui/e2e/browser-demo-soak.spec.ts",

@@ -155,7 +155,7 @@ async function installStartupProbe(page: Page): Promise<void> {
         if (!modulesRequested) {
           modulesRequested = true;
           void window.__nightfallHarness
-            .load("app")
+            .load("startup-probe")
             .then((harness) => harness.appLifecycle)
             .then((module) => {
               lifecycle = module.appLifecycle.get();
@@ -164,7 +164,7 @@ async function installStartupProbe(page: Page): Promise<void> {
               });
             });
           void window.__nightfallHarness
-            .load("app")
+            .load("startup-probe")
             .then((harness) => harness.panelComponentLoads)
             .then((module) => {
               panelLoads = module.pendingPanelComponentLoads;

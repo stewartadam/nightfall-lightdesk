@@ -16,12 +16,14 @@ export const isE2eBuild = import.meta.env?.MODE === "e2e";
 
 /**
  * Returns whether the page exposes `window.__nightfallTest` and
- * `window.appStores`: always in dev servers and e2e builds, and in any other
- * build only when the URL carries `e2e=1` (browser-demo artifact tests).
+ * `window.appStores`: always in dev servers and e2e builds, and in
+ * browser-demo builds only when the URL carries `e2e=1` (browser-demo artifact
+ * tests). Shipped native and desktop builds never expose them.
  */
 export function testHooksEnabled(): boolean {
   if (import.meta.env?.DEV || isE2eBuild) return true;
   return (
+    import.meta.env?.MODE === "browser-demo" &&
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("e2e") === "1"
   );

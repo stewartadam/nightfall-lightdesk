@@ -9,12 +9,13 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
-import { dirname, relative, resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import {
   defineConfig,
   type HttpProxy,
   loadEnv,
+  normalizePath,
   type Plugin,
   type ProxyOptions,
 } from "vite";
@@ -228,7 +229,10 @@ const embeddedRuntimeModule = resolve(
  * pages, exposes test hooks and reaches the backend through its own origin.
  */
 const E2E_MODE = "e2e";
-const e2eOutDir = resolve(projectRoot, "node_modules/.nightfall-e2e-build");
+/** Where e2e builds land; the Playwright wrapper picks a directory per run. */
+const e2eOutDir =
+  process.env.NIGHTFALL_E2E_OUT_DIR ??
+  resolve(projectRoot, "node_modules/.nightfall-e2e-build");
 
 /** Returns every HTML page an e2e build emits, keyed by Rollup input name. */
 function e2eBuildInputs(): Record<string, string> {
@@ -247,17 +251,27 @@ function e2eBuildInputs(): Record<string, string> {
   );
 }
 
+const webuiRoot = normalizePath(resolve(projectRoot, "webui"));
+
+/**
+ * Returns a module id's path relative to `webui/` with forward slashes, or
+ * `null` for modules outside the app sources (dependencies, virtual modules).
+ */
+function webuiSourcePath(id: string | null | undefined): string | null {
+  const source = id ? normalizePath(id.split("?")[0]) : "";
+  if (!source.startsWith(`${webuiRoot}/`) || source.includes("/node_modules/"))
+    return null;
+  return posix.relative(webuiRoot, source);
+}
+
 /**
  * Names e2e chunks after their source directory (`assets/features/groups/panel-<hash>.js`)
  * so a spec can intercept one lazy module by the same path it has on the dev
  * server. Chunks without an app source facade keep Vite's flat naming.
  */
 function e2eChunkFileName(chunk: { facadeModuleId: string | null }): string {
-  const webuiRoot = resolve(projectRoot, "webui");
-  const source = chunk.facadeModuleId?.split("?")[0];
-  if (!source?.startsWith(`${webuiRoot}/`) || source.includes("/node_modules/"))
-    return "assets/[name]-[hash].js";
-  const directory = dirname(relative(webuiRoot, source));
+  const source = webuiSourcePath(chunk.facadeModuleId);
+  const directory = source ? posix.dirname(source) : ".";
   return directory === "."
     ? "assets/[name]-[hash].js"
     : `assets/${directory}/[name]-[hash].js`;
@@ -269,23 +283,17 @@ function e2eChunkFileName(chunk: { facadeModuleId: string | null }): string {
  * per-module log levels would otherwise name chunks instead of sources.
  */
 function loggerModuleNamesPlugin(): Plugin {
-  const webuiRoot = resolve(projectRoot, "webui");
   return {
     name: "nightfall:logger-module-names",
     apply: "build",
     /** Replaces `getLogger(import.meta.url)` with the module's dev server path. */
     transform(code, id) {
-      const source = id.split("?")[0];
-      if (
-        !code.includes("getLogger(import.meta.url)") ||
-        !source.startsWith(`${webuiRoot}/`)
-      )
-        return null;
-      const devPath = `/${relative(webuiRoot, source)}`;
+      const source = webuiSourcePath(id);
+      if (!source || !code.includes("getLogger(import.meta.url)")) return null;
       return {
         code: code.replaceAll(
           "getLogger(import.meta.url)",
-          `getLogger(${JSON.stringify(devPath)})`,
+          `getLogger(${JSON.stringify(`/${source}`)})`,
         ),
         map: null,
       };

@@ -27,6 +27,12 @@ async function installFakeWebsocketWorker(
       class FakeWebsocketWorker {
         onmessage: ((event: MessageEvent) => void) | null = null;
         onerror: ((event: Event) => void) | null = null;
+
+        /** Accepts the uncaught-error reporter's listeners; the fake never fails. */
+        addEventListener(): void {}
+
+        /** Pairs with `addEventListener` so reporter cleanup succeeds. */
+        removeEventListener(): void {}
         private queue: QueuedWorkerMessage[] = [];
         private nextDeliveryMessageId = 1;
 

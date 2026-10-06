@@ -14,6 +14,7 @@
  */
 const harnessLoaders = {
   app: () => import("./app"),
+  "startup-probe": () => import("./startup-probe"),
   visualizer: () => import("./visualizer"),
   three: () => import("../fixtures/three-api"),
   optics: () => import("../fixtures/optics-harness"),

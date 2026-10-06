@@ -231,6 +231,11 @@ export async function waitForDockviewApp(
       });
     }
     if (outcome === "interactive") break;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Dockview startup stayed at its ${outcome} for ${timeoutMs} ms`,
+      );
+    }
 
     if (outcome === "draft-prompt") {
       await resolveStartupDraftRecoveryIfVisible(page);

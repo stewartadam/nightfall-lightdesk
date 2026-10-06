@@ -307,7 +307,8 @@ without the cookie reach an unused port and fail.
 A build does not pick up source edits until the next run. For quick
 edit-and-rerun loops, pass `--vite-mode dev` to serve the Vite dev server
 instead; only the first page load of the run compiles the app. Specs that
-exercise hot module replacement skip themselves outside dev mode.
+exercise hot module replacement skip themselves outside dev mode;
+`pnpm run test:webui-hmr` runs them on the dev server.
 Embedded-demo runs default to the dev server.
 
 ```sh
