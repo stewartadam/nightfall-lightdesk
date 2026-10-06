@@ -58,7 +58,7 @@ function instrumentationPanel(page: Page) {
 /** Seeds websocket instrumentation stats through the app store debug surface. */
 async function seedWebsocketStats(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
     (window as any).appStores.wsStats.set({
       worker: {
@@ -152,9 +152,10 @@ test("websocket delivery lag is exposed as Performance measures", async ({
   await page.goto("/?e2e=1");
   await waitForApp(page);
   await page.evaluate(async () => {
-    const { recordExternalPerformanceMeasure, clearPerformanceMeasures } =
-      await import("/lib/performance-measure-collector.ts");
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { recordExternalPerformanceMeasure, clearPerformanceMeasures } = (
+      await window.__nightfallHarness.load("app")
+    ).performanceMeasures;
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
     clearPerformanceMeasures();
     for (let value = 1; value <= 100; value++) {

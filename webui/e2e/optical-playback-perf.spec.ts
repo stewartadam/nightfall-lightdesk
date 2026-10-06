@@ -56,36 +56,33 @@ test("300 active optical sources sustain frame pacing", async ({
     evaluateOnBackend(
       page,
       async ({ warmupFrames, measuredMs }) => {
-        const THREE = await import("/e2e/fixtures/three-api.ts");
-        const { createRenderer } = await import(
-          "/features/visualizer/rendering/renderer.ts"
-        );
+        const THREE = await window.__nightfallHarness.load("three");
+        const { createRenderer } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).renderer;
         const {
           createPostProcessing,
           preparePostProcessing,
           renderWithPostProcessing,
           disposePostProcessing,
-        } = await import(
-          "/features/visualizer/rendering/effects/post-processing.ts"
-        );
-        const { EmitterVolumeBatch } = await import(
-          "/features/visualizer/rendering/effects/emitter-volume-batch.ts"
-        );
-        const { GpuFrameTimer } = await import(
-          "/features/visualizer/rendering/gpu-frame-timer.ts"
-        );
-        const { FramePacing } = await import(
-          "/features/visualizer/services/frame-pacing.ts"
-        );
+        } = (await window.__nightfallHarness.load("visualizer")).postProcessing;
+        const { EmitterVolumeBatch } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).emitterVolumeBatch;
+        const { GpuFrameTimer } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).gpuFrameTimer;
+        const { FramePacing } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).framePacing;
         const renderer = createRenderer({
           canvas: document.querySelector("canvas")!,
           devicePixelRatio: 1,
         });
         renderer.setSize(800, 700);
         await renderer.init();
-        const { verifyBackend } = await import(
-          "/e2e/fixtures/optics-harness.ts"
-        );
+        const { verifyBackend } =
+          await window.__nightfallHarness.load("optics");
         const backend = await verifyBackend(renderer, false);
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0);

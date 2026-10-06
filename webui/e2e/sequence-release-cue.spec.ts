@@ -458,7 +458,7 @@ async function seedReleaseCueEditor(page: Page) {
   await page.evaluate(
     async ({ cueUid, fixtureUid, setupCueUid, releaseCueUid, sequenceUid }) => {
       const stores = (window as any).appStores;
-      const { engineRuntime } = await import("/lib/engine-runtime.ts");
+      const { engineRuntime } = window.__nightfallTest.runtime;
 
       /** Builds a fixed transition mode for seeded sequence timing. */
       const fixed = (secs: number) => ({

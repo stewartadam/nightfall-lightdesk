@@ -19,12 +19,14 @@ test("developer inspector supplies frame-specific elapsed GPU timing", async ({
 }, testInfo) => {
   const errors = await openOpticsFixture(page, "?visualizer:inspector=true");
   const result = await page.evaluate(async () => {
-    const { initFeatureFlags } = await import("/lib/feature-flags.ts");
-    const { initRenderer, startRenderLoop, stopRenderLoop, disposeRenderer } =
-      await import("/features/visualizer/rendering/renderer.ts");
-    const { rendererBackend, retainCanvas } = await import(
-      "/e2e/fixtures/optics-harness.ts"
-    );
+    const { initFeatureFlags } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).featureFlags;
+    const { initRenderer, startRenderLoop, stopRenderLoop, disposeRenderer } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).renderer;
+    const { rendererBackend, retainCanvas } =
+      await window.__nightfallHarness.load("optics");
     initFeatureFlags();
     const canvas = document.querySelector("canvas")!;
     canvas.style.width = "400px";

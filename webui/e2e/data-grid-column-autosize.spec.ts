@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { harnessPageUrl } from "./app-hooks";
 import {
   expect,
   type Locator,
@@ -21,13 +22,7 @@ async function width(locator: Locator): Promise<number> {
 test("column edge double-click fits current content without changing selection or neighbors", async ({
   page,
 }, testInfo) => {
-  await page.route("**/grid-column-autosize", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: '<html><body><div id="root"></div><script type="module" src="/e2e/fixtures/data-grid-column-autosize.tsx"></script></body></html>',
-    }),
-  );
-  await page.goto("/grid-column-autosize");
+  await page.goto(harnessPageUrl("data-grid-column-autosize"));
   const grid = page.getByRole("grid");
   const fixed = grid.locator('[data-grid-header-id="tanstack-header-fixed"]');
   const content = grid.locator(

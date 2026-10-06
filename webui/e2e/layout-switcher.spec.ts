@@ -114,9 +114,12 @@ test("preserves the working layout when revert cannot persist", async ({
   await setupSlots(page, backendSlot.backendPort);
   await page.emulateMedia({ reducedMotion: "reduce" });
   const result = await page.evaluate(async () => {
-    const { revertNamedLayout } = await import("/lib/layout-management.ts");
-    const { layoutStorageStore } = await import("/lib/layoutStorage.ts");
-    const { activeLayoutId } = await import("/state/layout-switcher.ts");
+    const { revertNamedLayout } = (await window.__nightfallHarness.load("app"))
+      .layoutManagement;
+    const { layoutStorageStore } = (await window.__nightfallHarness.load("app"))
+      .layoutStorage;
+    const { activeLayoutId } = (await window.__nightfallHarness.load("app"))
+      .layoutSwitcher;
     const api = (window as any).appStores.dockApi.get();
     const element = document.querySelector('[data-workspace-active="true"]');
     const set = layoutStorageStore.set;
@@ -151,9 +154,14 @@ test("reverted snapshots stay clean after settling", async ({
     page.getByRole("button", { name: "Layout 1: Your Layout", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   const ids = await page.evaluate(async () => {
-    const { editLayouts } = await import("/lib/layout-management.ts");
-    const { createBlankStoredLayout } = await import("/lib/layoutStorage.ts");
-    const { createSerializedLayout } = await import("/lib/dockview-layout.ts");
+    const { editLayouts } = (await window.__nightfallHarness.load("app"))
+      .layoutManagement;
+    const { createBlankStoredLayout } = (
+      await window.__nightfallHarness.load("app")
+    ).layoutStorage;
+    const { createSerializedLayout } = (
+      await window.__nightfallHarness.load("app")
+    ).dockviewLayout;
     const api = (window as any).appStores.dockApi.get();
     const blank = createBlankStoredLayout(api);
     const populated = {
@@ -170,10 +178,12 @@ test("reverted snapshots stay clean after settling", async ({
   });
   for (const id of ids) {
     await page.evaluate(async (id) => {
-      const { activateStoredLayout } = await import(
-        "/lib/layout-activation.ts"
-      );
-      const { revertNamedLayout } = await import("/lib/layout-management.ts");
+      const { activateStoredLayout } = (
+        await window.__nightfallHarness.load("app")
+      ).layoutActivation;
+      const { revertNamedLayout } = (
+        await window.__nightfallHarness.load("app")
+      ).layoutManagement;
       await activateStoredLayout((window as any).appStores.dockApi.get(), id);
       if (
         !(await revertNamedLayout((window as any).appStores.dockApi.get(), id))
@@ -181,7 +191,9 @@ test("reverted snapshots stay clean after settling", async ({
         throw new Error("Revert failed");
     }, id);
     const states = await page.evaluate(async (id) => {
-      const { modifiedLayoutIds } = await import("/state/layout-switcher.ts");
+      const { modifiedLayoutIds } = (
+        await window.__nightfallHarness.load("app")
+      ).layoutSwitcher;
       const values = [modifiedLayoutIds.get().includes(id)];
       const unsubscribe = modifiedLayoutIds.subscribe((ids) =>
         values.push(ids.includes(id)),
@@ -270,7 +282,9 @@ test("restores saved layouts without visibility metadata", async ({
   ).toHaveAttribute("aria-pressed", "true");
   const result = await page.evaluate(async () => {
     const stores = (window as any).appStores;
-    const { getShowfilePanelLayouts } = await import("/lib/layoutStorage.ts");
+    const { getShowfilePanelLayouts } = (
+      await window.__nightfallHarness.load("app")
+    ).layoutStorage;
     return stores.sendAndAwait({
       module: "SettingsCommand",
       command: {
@@ -638,8 +652,11 @@ test("retains live timeline views and measures parked workspace overhead", async
     .toBe(true);
   await saveLayout(page, "Measurement");
   await page.evaluate(async () => {
-    const { getShowfilePanelLayouts } = await import("/lib/layoutStorage.ts");
-    const { editLayouts } = await import("/lib/layout-management.ts");
+    const { getShowfilePanelLayouts } = (
+      await window.__nightfallHarness.load("app")
+    ).layoutStorage;
+    const { editLayouts } = (await window.__nightfallHarness.load("app"))
+      .layoutManagement;
     const layout = getShowfilePanelLayouts().find(
       (entry: any) => entry.name === "Measurement",
     );
@@ -657,9 +674,9 @@ test("retains live timeline views and measures parked workspace overhead", async
   /** Recalls a slot and times activation through the next rendered frame. */
   const recall = (index: number) =>
     page.evaluate(async (slot) => {
-      const { activateStoredLayout } = await import(
-        "/lib/layout-activation.ts"
-      );
+      const { activateStoredLayout } = (
+        await window.__nightfallHarness.load("app")
+      ).layoutActivation;
       const start = performance.now();
       const ok = await activateStoredLayout(
         (window as any).appStores.dockApi.get(),
@@ -967,11 +984,14 @@ test("animates drag previews and layout changes with a reduced-motion fallback",
   /** Recalls a slot and reads browser animations after their first scheduled frame. */
   const switchWithMotion = () =>
     page.evaluate(async () => {
-      const { activateStoredLayout } = await import(
-        "/lib/layout-activation.ts"
-      );
-      const { activeLayoutId } = await import("/state/layout-switcher.ts");
-      const { getShowfilePanelLayouts } = await import("/lib/layoutStorage.ts");
+      const { activateStoredLayout } = (
+        await window.__nightfallHarness.load("app")
+      ).layoutActivation;
+      const { activeLayoutId } = (await window.__nightfallHarness.load("app"))
+        .layoutSwitcher;
+      const { getShowfilePanelLayouts } = (
+        await window.__nightfallHarness.load("app")
+      ).layoutStorage;
       const slot = getShowfilePanelLayouts().find(
         (entry: any) =>
           entry.shownInSwitcher && entry.id !== activeLayoutId.get(),
@@ -1207,8 +1227,11 @@ test("suspends workspace dialogs while another layout is selected", async ({
   await expect(dialog).toBeVisible();
 
   await page.evaluate(async () => {
-    const { activateStoredLayout } = await import("/lib/layout-activation.ts");
-    const { layoutStorageStore } = await import("/lib/layoutStorage.ts");
+    const { activateStoredLayout } = (
+      await window.__nightfallHarness.load("app")
+    ).layoutActivation;
+    const { layoutStorageStore } = (await window.__nightfallHarness.load("app"))
+      .layoutStorage;
     const target = layoutStorageStore
       .get()
       .layouts.find((layout) => layout.name === "Playback");
@@ -1271,22 +1294,11 @@ test("isolates Properties registrations for retained duplicate panel IDs", async
 }) => {
   await openFreshWorkspace(page, backendSlot.backendPort);
   const result = await page.evaluate(async () => {
-    const solidUrl = performance
-      .getEntriesByType("resource")
-      .map((entry) => entry.name)
-      .find((url) => new URL(url).pathname.endsWith("/solid-js.js"));
-    if (!solidUrl) throw new Error("Expected the application's Solid runtime");
-    const {
-      createRoot,
-      createComponent,
-      createSignal,
-    }: typeof import("solid-js") = await import(solidUrl);
-    const { WorkspaceActivityContext } = await import(
-      "/lib/workspace-activity.ts"
-    );
-    const { PropertiesContext, usePropertiesInspector } = await import(
-      "/features/property-inspector/context/context-core.ts"
-    );
+    const harness = await window.__nightfallHarness.load("app");
+    const { createRoot, createComponent, createSignal } = harness.solid;
+    const { WorkspaceActivityContext } = harness.workspaceActivity;
+    const { PropertiesContext, usePropertiesInspector } =
+      harness.propertyInspectorContext;
     const providers = new Map<string, any>();
     const [active, setActive] = createSignal("first");
     const [label, setLabel] = createSignal("Second");
@@ -1570,7 +1582,7 @@ test("manager saves preserve rows and keep unrelated actions enabled", async ({
     .click();
   const manager = page.getByRole("dialog", { name: "Manage layouts" });
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     const original = engineRuntime.sendCommandAndAwait.bind(engineRuntime);
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

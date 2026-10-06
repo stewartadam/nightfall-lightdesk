@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { atom } from "nanostores";
 import {
   backendAppState,
   connectionStatus,
@@ -34,6 +35,9 @@ type StartupDraftLoadOperation = {
 };
 
 let startupDraftLoadOperation: StartupDraftLoadOperation | null = null;
+
+/** Becomes true once the e2e startup showfile request has finished, so test hooks can observe it. */
+export const e2eAutoOpenStartupShowfileSettled = atom(false);
 
 /** Waits for the websocket connection required by startup recovery commands. */
 export function waitForBackendConnection(timeoutMs: number): Promise<void> {
@@ -215,6 +219,7 @@ export function e2eAutoOpenStartupShowfileWasRequested(): boolean {
 /** Marks the e2e startup showfile request complete for the current document. */
 export function clearE2eAutoOpenStartupShowfileRequest(): void {
   localStorage.setItem(E2E_AUTO_OPEN_STARTUP_SHOWFILE_KEY, "0");
+  e2eAutoOpenStartupShowfileSettled.set(true);
 }
 
 /** Returns the backend state that should drive startup lifecycle decisions. */

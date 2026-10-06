@@ -236,9 +236,8 @@ async function seedFixtureLibrary(page: Page) {
  */
 async function seedFixtureProfile(page: Page) {
   await page.evaluate(async (profile) => {
-    const { fixtureProfile } = await import(
-      /* @vite-ignore */ "/state/appStores.ts"
-    );
+    const { fixtureProfile } = (await window.__nightfallHarness.load("app"))
+      .appStores;
     fixtureProfile.set(profile);
   }, OWNED_FIXTURE_PROFILE);
 }
@@ -248,9 +247,8 @@ async function seedFixtureProfile(page: Page) {
  */
 async function seedNullFixtureProfile(page: Page) {
   await page.evaluate(async () => {
-    const { fixtureProfile } = await import(
-      /* @vite-ignore */ "/state/appStores.ts"
-    );
+    const { fixtureProfile } = (await window.__nightfallHarness.load("app"))
+      .appStores;
     fixtureProfile.set({
       info: {
         make: "E2E Lighting",

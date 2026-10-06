@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { blockAppScripts } from "./app-hooks";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { routeShowfileDiscovery } from "./showfile-startup";
 
@@ -200,12 +201,7 @@ async function disconnectStartupWorldSwapCommands(page: Page) {
 test("bootstrap html presents startup splash before app shell mounts", async ({
   page,
 }, testInfo) => {
-  await page.route("**/main.tsx", async (route) => {
-    await route.fulfill({
-      contentType: "application/javascript",
-      body: "",
-    });
-  });
+  await blockAppScripts(page);
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
@@ -338,9 +334,7 @@ test("startup splash presents beat-synced logo faders and bottom build metadata"
     .toContain("0.22s");
 
   const bootstrapPage = await page.context().newPage();
-  await bootstrapPage.route("**/main.tsx", (route) =>
-    route.fulfill({ contentType: "application/javascript", body: "" }),
-  );
+  await blockAppScripts(bootstrapPage);
   await bootstrapPage.goto("/", { waitUntil: "domcontentloaded" });
   const bootstrap = bootstrapPage.locator("#bootstrap-splash");
   /** Captures typography and layout properties that must survive the handoff. */
@@ -454,17 +448,15 @@ for (const succeedWorldSwap of [false, true]) {
     /** Reads the backend-confirmed showfile generation from the running app. */
     const readRevision = () =>
       page.evaluate(async () => {
-        const showfile = await import(
-          /* @vite-ignore */ "/lib/showfile-loading.ts"
-        );
+        const showfile = (await window.__nightfallHarness.load("app"))
+          .showfileLoading;
         return showfile.currentShowfileRevision.get();
       });
     const initialRevision = await readRevision();
     await page.evaluate(async () => {
-      const settings = await import(/* @vite-ignore */ "/state/settings.ts");
-      const snapshots = await import(
-        /* @vite-ignore */ "/state/io-snapshots.ts"
-      );
+      const settings = (await window.__nightfallHarness.load("app")).settings;
+      const snapshots = (await window.__nightfallHarness.load("app"))
+        .ioSnapshots;
       snapshots.applySettingsSnapshot(settings.$settings.get());
     });
     await picker
@@ -510,7 +502,7 @@ for (const succeedWorldSwap of [false, true]) {
     const panel = await page.locator("[data-panel-id]").first().elementHandle();
     expect(panel).not.toBeNull();
     const replayGeneration = await page.evaluate(async () => {
-      const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
+      const runtime = window.__nightfallTest.runtime;
       const generation = runtime.resyncGeneration();
       (
         window as Window & {
@@ -522,9 +514,7 @@ for (const succeedWorldSwap of [false, true]) {
     await expect
       .poll(() =>
         page.evaluate(async () => {
-          const runtime = await import(
-            /* @vite-ignore */ "/lib/engine-runtime.ts"
-          );
+          const runtime = window.__nightfallTest.runtime;
           return runtime.resyncGeneration();
         }),
       )

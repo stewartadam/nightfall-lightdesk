@@ -20,35 +20,34 @@ for (const geometryDriven of [false, true]) {
   }, testInfo) => {
     const errors = await openOpticsFixture(page);
     const result = await page.evaluate(async (geometryDriven) => {
-      const T = await import("/e2e/fixtures/three-api.ts");
+      const T = await window.__nightfallHarness.load("three");
       const { readPixels, renderFrames, retainCanvas, verifyBackend } =
-        await import("/e2e/fixtures/optics-harness.ts");
-      const { BeamType, FixtureLayout, GeometryType } = await import(
-        "/types/index.ts"
-      );
-      const { disposeFixtureInstance } = await import(
-        "/features/visualizer/rendering/geometry-builder.ts"
-      );
-      const { buildFixtureWithoutGeometry, buildFixtureWithRenderer } =
-        await import(
-          "/features/visualizer/rendering/fixture-renderers/renderer-registry.ts"
-        );
-      const { resolveQualityProfile } = await import(
-        "/features/visualizer/rendering/quality-profile.ts"
-      );
+        await window.__nightfallHarness.load("optics");
+      const { BeamType, FixtureLayout, GeometryType } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).types;
+      const { disposeFixtureInstance } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).geometryBuilder;
+      const { buildFixtureWithoutGeometry, buildFixtureWithRenderer } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).rendererRegistry;
+      const { resolveQualityProfile } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).qualityProfile;
       const high = resolveQualityProfile("high");
-      const { disposeLedBar } = await import(
-        "/features/visualizer/rendering/fixture-renderers/led-bar-renderer.ts"
-      );
-      const { BeamManager } = await import(
-        "/features/visualizer/rendering/effects/beam-manager.ts"
-      );
-      const { BeamUpdater } = await import(
-        "/features/visualizer/rendering/effects/beam-updater.ts"
-      );
-      const { createRenderer } = await import(
-        "/features/visualizer/rendering/renderer.ts"
-      );
+      const { disposeLedBar } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).ledBarRenderer;
+      const { BeamManager } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).beamManager;
+      const { BeamUpdater } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).beamUpdater;
+      const { createRenderer } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).renderer;
       const renderer = createRenderer({
         canvas: document.querySelector("canvas")!,
         devicePixelRatio: 1,

@@ -23,9 +23,30 @@ const viteEntrypoint = join(
   "vite.js",
 );
 const processRegistry = process.env.NIGHTFALL_PLAYWRIGHT_PROCESS_REGISTRY;
-const usesVitePreview =
-  process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview";
+const viteMode = process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE ?? "dev";
 registerOwnedProcess(processRegistry, process.pid, false);
+
+/** Returns the Vite command line for the run's frontend mode. */
+function viteArguments() {
+  const listen = ["--host", "127.0.0.1", "--port", `${backendPort + 1}`];
+  switch (viteMode) {
+    case "dev":
+      return ["dev", ...listen];
+    // The e2e build the wrapper produced, served from its own output directory.
+    case "e2e":
+      return ["preview", "--mode", "e2e", ...listen];
+    // A prebuilt distribution, such as the browser demo artifact.
+    case "preview":
+      return [
+        "preview",
+        ...listen,
+        "--base",
+        process.env.NIGHTFALL_PLAYWRIGHT_VITE_BASE ?? "/demo/app/",
+      ];
+    default:
+      throw new Error(`Unknown NIGHTFALL_PLAYWRIGHT_VITE_MODE: ${viteMode}`);
+  }
+}
 
 /** Registers the Vite child group and forwards its output through the wrapper. */
 function configureViteChild(child) {
@@ -40,17 +61,7 @@ function configureViteChild(child) {
 
 const outcome = await runOwnedCommand(
   process.execPath,
-  [
-    viteEntrypoint,
-    usesVitePreview ? "preview" : "dev",
-    "--host",
-    "127.0.0.1",
-    "--port",
-    `${backendPort + 1}`,
-    ...(usesVitePreview
-      ? ["--base", process.env.NIGHTFALL_PLAYWRIGHT_VITE_BASE ?? "/demo/app/"]
-      : []),
-  ],
+  [viteEntrypoint, ...viteArguments()],
   {
     onSpawn: configureViteChild,
     spawnOptions: {

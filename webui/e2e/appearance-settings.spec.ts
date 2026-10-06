@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { blockAppScripts } from "./app-hooks";
 import {
   expect,
   type Page,
@@ -239,7 +240,7 @@ for (const preference of ["on", "off"] as const) {
         JSON.stringify({ reducedMotion }),
       );
     }, preference);
-    await page.route("**/main.tsx", (route) => route.abort());
+    await blockAppScripts(page);
     await page.route("**/*", async (route) => {
       if (route.request().resourceType() !== "document") {
         await route.fallback();

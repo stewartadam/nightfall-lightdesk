@@ -25,10 +25,12 @@ async function waitForSettledStartup(page: Page): Promise<void> {
   const readRevisions = () =>
     page.evaluate(async () => {
       const [{ currentShowfileRevision }, layoutReadiness] = await Promise.all([
-        import(/* @vite-ignore */ "/lib/showfile-loading.ts"),
-        import(
-          /* @vite-ignore */ "/components/shell/docking/layout-readiness.ts"
-        ),
+        window.__nightfallHarness
+          .load("app")
+          .then((harness) => harness.showfileLoading),
+        window.__nightfallHarness
+          .load("app")
+          .then((harness) => harness.layoutReadiness),
       ]);
       return {
         showfile: currentShowfileRevision.get(),
@@ -587,7 +589,8 @@ for (const offscreenCanvas of [true, false]) {
     ).toBe(offscreenCanvas);
     expect(
       await page.evaluate(async () => {
-        const settings = await import("/features/visualizer/state/settings.ts");
+        const settings = (await window.__nightfallHarness.load("app"))
+          .visualizerSettings;
         return settings.visualizerEffectiveQuality.get();
       }),
     ).toBe("low");
@@ -616,9 +619,9 @@ for (const offscreenCanvas of [true, false]) {
 
     // Choose the preset the way Settings does, which also drops the URL override.
     await page.evaluate(async () => {
-      const { setVisualizerQuality } = await import(
-        "/features/visualizer/context/visualizer-context.tsx"
-      );
+      const { setVisualizerQuality } = (
+        await window.__nightfallHarness.load("app")
+      ).visualizerContext;
       setVisualizerQuality("high");
     });
 

@@ -172,9 +172,9 @@ async function visibleBeamCount(page: Page): Promise<number> {
   return page.evaluate(async (fixtureIdsToCount) => {
     const scene = (window as any).visualizerApi?.getScene?.();
     if (!scene) return 0;
-    const { getOpticalRenderContext } = await import(
-      "/features/visualizer/rendering/effects/optical-render-context.ts"
-    );
+    const { getOpticalRenderContext } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).opticalRenderContext;
     const volumes = getOpticalRenderContext(scene)?.scene.getObjectByName(
       "EmitterVolumes",
     ) as { visible?: boolean; count?: number } | undefined;
@@ -204,9 +204,9 @@ async function renderedQualityPreset(page: Page): Promise<string | undefined> {
   return page.evaluate(async () => {
     const scene = (window as any).visualizerApi?.getScene?.();
     if (!scene) return undefined;
-    const { getOpticalRenderContext } = await import(
-      "/features/visualizer/rendering/effects/optical-render-context.ts"
-    );
+    const { getOpticalRenderContext } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).opticalRenderContext;
     return getOpticalRenderContext(scene)?.profile.preset;
   });
 }

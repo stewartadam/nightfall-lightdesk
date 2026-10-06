@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { harnessPageUrl } from "./app-hooks";
 import {
   ALWAYS_ATTACH_ARTIFACTS,
   backendLabel,
@@ -25,13 +26,12 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const THREE = await import("/e2e/fixtures/three-api.ts");
-        const { OpticalSurfaceLighting, OpticalSurfaceLight } = await import(
-          "/features/visualizer/rendering/effects/optical-surface-lighting.ts"
-        );
-        const { createTestRenderer, renderAndSum, retainCanvas } = await import(
-          "/e2e/fixtures/optics-harness.ts"
-        );
+        const THREE = await window.__nightfallHarness.load("three");
+        const { OpticalSurfaceLighting, OpticalSurfaceLight } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalSurfaceLighting;
+        const { createTestRenderer, renderAndSum, retainCanvas } =
+          await window.__nightfallHarness.load("optics");
         const { renderer } = await createTestRenderer({
           forceWebGL,
           width: 400,
@@ -122,13 +122,7 @@ for (const forceWebGL of [false, true]) {
 test("surface budget notice follows live instrumentation", async ({
   page,
 }, testInfo) => {
-  await page.route("**/surface-budget-metrics", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: '<html><body><div id="root"></div><script type="module" src="/e2e/fixtures/surface-budget-metrics.tsx"></script></body></html>',
-    }),
-  );
-  await page.goto("/surface-budget-metrics");
+  await page.goto(harnessPageUrl("surface-budget-metrics"));
   /** Captures the visible notice for review when artifacts are requested. */
   const screenshot = async (name: string) => {
     if (ALWAYS_ATTACH_ARTIFACTS)

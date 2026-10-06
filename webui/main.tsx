@@ -21,6 +21,7 @@ import {
   isStartupDraftRecoveryEnabled,
 } from "./lib/feature-flags";
 import { isEmbeddedDemoRuntime } from "./lib/runtime-config";
+import { installTestHooks } from "./lib/test-hooks";
 import {
   reportFatalError,
   setWorkspaceVisible,
@@ -59,6 +60,7 @@ function ignoreReportedLoadFailure(): void {}
 
 // Initialize URL-backed runtime settings before app components read them.
 initFeatureFlags();
+installTestHooks();
 document.title = isEmbeddedDemoRuntime() ? APP_NAME : APP_TITLE;
 
 type InteractiveShellMountProps = {

@@ -9,7 +9,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
-import { resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type HttpProxy, loadEnv, type ProxyOptions } from "vite";
 import solidPlugin from "vite-plugin-solid";
@@ -217,6 +217,47 @@ const embeddedRuntimeModule = resolve(
 );
 
 /**
+ * Build mode for the bundle native Playwright runs serve with `vite preview`:
+ * a production build that also emits the secondary pages and e2e harness
+ * pages, exposes test hooks and reaches the backend through its own origin.
+ */
+const E2E_MODE = "e2e";
+const e2eOutDir = resolve(projectRoot, "node_modules/.nightfall-e2e-build");
+
+/** Returns every HTML page an e2e build emits, keyed by Rollup input name. */
+function e2eBuildInputs(): Record<string, string> {
+  return Object.fromEntries(
+    [
+      "index.html",
+      "design-lab.html",
+      "design-lab-popout.html",
+      "worktree-dashboard.html",
+      "e2e/fixtures/harness.html",
+      "e2e/fixtures/optics.html",
+    ].map((page) => [
+      page.replace(/\.html$/, "").replaceAll("/", "-"),
+      resolve(projectRoot, "webui", page),
+    ]),
+  );
+}
+
+/**
+ * Names e2e chunks after their source directory (`assets/features/groups/panel-<hash>.js`)
+ * so a spec can intercept one lazy module by the same path it has on the dev
+ * server. Chunks without an app source facade keep Vite's flat naming.
+ */
+function e2eChunkFileName(chunk: { facadeModuleId: string | null }): string {
+  const webuiRoot = resolve(projectRoot, "webui");
+  const source = chunk.facadeModuleId?.split("?")[0];
+  if (!source?.startsWith(`${webuiRoot}/`) || source.includes("/node_modules/"))
+    return "assets/[name]-[hash].js";
+  const directory = dirname(relative(webuiRoot, source));
+  return directory === "."
+    ? "assets/[name]-[hash].js"
+    : `assets/${directory}/[name]-[hash].js`;
+}
+
+/**
  * Decides whether the engine worker bundles the embedded demo runtime.
  *
  * Demo builds always include it. The dev server includes it only when
@@ -226,7 +267,7 @@ const embeddedRuntimeModule = resolve(
  */
 function includesEmbeddedRuntime(command: string, mode: string): boolean {
   if (mode === "browser-demo") return true;
-  if (command !== "serve") return false;
+  if (command !== "serve" && mode !== E2E_MODE) return false;
   if (existsSync(embeddedRuntimeModule)) return true;
   console.warn(
     "Embedded demo engine not found; the dev server serves the native-only worker. Run `pnpm run wasm-build:browser-demo` to enable demo mode.",
@@ -265,14 +306,30 @@ export default defineConfig(({ mode, command }) => {
         ? resolve(projectRoot, "node_modules/.vite-playwright")
         : undefined,
     resolve: {
-      alias: {
-        "#engine-runtime-worker?worker": `${resolve(
-          projectRoot,
-          includesEmbeddedRuntime(command, mode)
-            ? "webui/lib/engine-runtime-demo-worker.ts"
-            : "webui/lib/engine-runtime-worker.ts",
-        )}?worker`,
-      },
+      alias: [
+        {
+          find: "#engine-runtime-worker?worker",
+          replacement: `${resolve(
+            projectRoot,
+            includesEmbeddedRuntime(command, mode)
+              ? "webui/lib/engine-runtime-demo-worker.ts"
+              : "webui/lib/engine-runtime-worker.ts",
+          )}?worker`,
+        },
+        // Shipped builds swap the test hooks' harness registry for a stub, so
+        // they emit no e2e harness chunks.
+        ...(command === "build" && mode !== E2E_MODE
+          ? [
+              {
+                find: /^\.\.\/e2e\/harness\/registry$/,
+                replacement: resolve(
+                  projectRoot,
+                  "webui/lib/test-harness-unavailable.ts",
+                ),
+              },
+            ]
+          : []),
+      ],
     },
     // Desktop connection settings come from native runtime configuration.
     envDir: tauri ? false : resolve(projectRoot),
@@ -281,6 +338,16 @@ export default defineConfig(({ mode, command }) => {
       reportCompressedSize: false,
       sourcemap: true,
       license: { fileName: "notices/frontend.json" },
+      ...(mode === E2E_MODE
+        ? {
+            outDir: e2eOutDir,
+            emptyOutDir: true,
+            rolldownOptions: {
+              input: e2eBuildInputs(),
+              output: { chunkFileNames: e2eChunkFileName },
+            },
+          }
+        : {}),
     },
     worker: {
       format: "es",

@@ -53,9 +53,7 @@ async function waitForDockApi(page: Page) {
  */
 async function disconnectBackend(page: Page) {
   await page.evaluate(async () => {
-    const { engineRuntime } = await import(
-      /* @vite-ignore */ "/lib/engine-runtime.ts"
-    );
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
 }

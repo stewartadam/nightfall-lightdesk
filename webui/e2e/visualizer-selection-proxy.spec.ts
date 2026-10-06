@@ -19,19 +19,16 @@ test("selection proxies skip beauty submission and retain outlines", async ({
 }, testInfo) => {
   const errors = await openOpticsFixture(page);
   const result = await page.evaluate(async () => {
-    const THREE = await import("/e2e/fixtures/three-api.ts");
+    const THREE = await window.__nightfallHarness.load("three");
     const {
       createPostProcessing,
       disposePostProcessing,
       renderWithPostProcessing,
       setOutlineSelectedObjects,
       setEditSelectionOutlineSelectedObjects,
-    } = await import(
-      "/features/visualizer/rendering/effects/post-processing.ts"
-    );
-    const { createTestRenderer, renderAndSum, retainCanvas } = await import(
-      "/e2e/fixtures/optics-harness.ts"
-    );
+    } = (await window.__nightfallHarness.load("visualizer")).postProcessing;
+    const { createTestRenderer, renderAndSum, retainCanvas } =
+      await window.__nightfallHarness.load("optics");
     const { renderer, backend } = await createTestRenderer({
       forceWebGL: undefined,
       width: 320,

@@ -554,7 +554,8 @@ test("suspends timeline popouts across layouts with duplicate panel IDs", async 
   test.setTimeout(90_000);
   const timelineUid = await openOwnedTimelineApp(page);
   await page.evaluate(async () => {
-    const { createNamedLayout } = await import("/lib/layout-management.ts");
+    const { createNamedLayout } = (await window.__nightfallHarness.load("app"))
+      .layoutManagement;
     const layout = await createNamedLayout(
       (window as any).appStores.dockApi.get(),
       "Duplicate timeline",

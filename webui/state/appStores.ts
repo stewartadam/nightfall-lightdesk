@@ -25,6 +25,7 @@ import type { BrowserDemoRuntimeInfo } from "../lib/engine-runtime-protocol";
 import { setStoreAction } from "../lib/nanostore-action";
 import { registerPanelTabStatus } from "../lib/panel-tab-status";
 import type { SelectionTarget } from "../lib/selection-targets";
+import { testHooksEnabled } from "../lib/test-mode";
 import type * as types from "../types";
 import type * as flowTypes from "../types/index";
 import {
@@ -988,14 +989,8 @@ export {
   pushToast,
 } from "./notifications";
 
-const exposesDebugStores =
-  import.meta.env?.DEV ||
-  (import.meta.env?.MODE === "browser-demo" &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("e2e") === "1");
-
-// 🔍 Expose for debugging in development and explicit browser-demo test sessions.
-if (typeof window !== "undefined" && exposesDebugStores) {
+// 🔍 Expose for debugging in development and as the stores handle for e2e tests.
+if (typeof window !== "undefined" && testHooksEnabled()) {
   // @ts-expect-error we are defining the appStores global on window
   window.appStores = {
     dockApi,

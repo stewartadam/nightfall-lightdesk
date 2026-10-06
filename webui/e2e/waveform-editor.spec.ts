@@ -6,26 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  expect,
-  type Route,
-  frontendOnlyTest as test,
-} from "./playwright-fixtures";
-
-/** Serves a minimal page that mounts the real editor without backend dependencies. */
-async function serveWaveformEditor(route: Route): Promise<void> {
-  await route.fulfill({
-    contentType: "text/html",
-    body: '<html><body><div id="root"></div><script type="module" src="/e2e/fixtures/waveform-editor.tsx"></script></body></html>',
-  });
-}
+import { harnessPageUrl } from "./app-hooks";
+import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
 /** Checks square defaults, subsequent edits, other presets, and wired values. */
 test("square selection resets editable duty cycle to 50%", async ({
   page,
 }, testInfo) => {
-  await page.route("**/waveform-editor-fixture", serveWaveformEditor);
-  await page.goto("/waveform-editor-fixture");
+  await page.goto(harnessPageUrl("waveform-editor"));
   const editor = page.locator(".waveform-editor");
   const dutyCycle = editor.getByRole("spinbutton").nth(2);
   const square = editor.getByRole("button", { name: "Square" });

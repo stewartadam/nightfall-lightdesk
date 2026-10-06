@@ -9,7 +9,50 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolvePlaywrightRunMode } from "./playwright-run-mode.mjs";
+import {
+  resolvePlaywrightRunMode,
+  resolvePlaywrightViteMode,
+} from "./playwright-run-mode.mjs";
+
+/** Verify native runs serve an e2e build and embedded-demo runs the dev server by default. */
+test("defaults the Vite mode by target", () => {
+  assert.equal(
+    resolvePlaywrightViteMode({ targetsEmbeddedDemo: false }),
+    "e2e",
+  );
+  assert.equal(resolvePlaywrightViteMode({ targetsEmbeddedDemo: true }), "dev");
+});
+
+/** Verify the command-line option outranks the environment, which outranks the default. */
+test("prefers the requested Vite mode over the environment", () => {
+  assert.equal(
+    resolvePlaywrightViteMode({
+      requested: "dev",
+      environment: "preview",
+      targetsEmbeddedDemo: false,
+    }),
+    "dev",
+  );
+  assert.equal(
+    resolvePlaywrightViteMode({
+      environment: "preview",
+      targetsEmbeddedDemo: true,
+    }),
+    "preview",
+  );
+});
+
+/** Verify a mistyped environment mode fails instead of silently falling back. */
+test("rejects an unknown Vite mode from the environment", () => {
+  assert.throws(
+    () =>
+      resolvePlaywrightViteMode({
+        environment: "build",
+        targetsEmbeddedDemo: false,
+      }),
+    /Unknown Playwright Vite mode build/,
+  );
+});
 
 /** Verify ordinary Playwright tests retain native backend preparation. */
 test("ordinary test runs prepare the native backend", () => {

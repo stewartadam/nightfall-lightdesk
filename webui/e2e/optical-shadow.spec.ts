@@ -25,20 +25,19 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const T = await import("/e2e/fixtures/three-api.ts");
-        const { OpticalSurfaceLight, OpticalSurfaceLighting } = await import(
-          "/features/visualizer/rendering/effects/optical-surface-lighting.ts"
-        );
-        const { createUniformEmitterVolume } = await import(
-          "/e2e/fixtures/emitter-volume-uniforms.ts"
-        );
+        const T = await window.__nightfallHarness.load("three");
+        const { OpticalSurfaceLight, OpticalSurfaceLighting } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalSurfaceLighting;
+        const { createUniformEmitterVolume } =
+          await window.__nightfallHarness.load("emitter-volume-uniforms");
         const {
           channelSums,
           createTestRenderer,
           readPixels,
           renderFrames,
           retainCanvas,
-        } = await import("/e2e/fixtures/optics-harness.ts");
+        } = await window.__nightfallHarness.load("optics");
         const { renderer } = await createTestRenderer({
           forceWebGL,
           width: 320,
@@ -207,17 +206,17 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const T = await import("/e2e/fixtures/three-api.ts");
-        const { OpticalSurfaceLight, OpticalSurfaceLighting } = await import(
-          "/features/visualizer/rendering/effects/optical-surface-lighting.ts"
-        );
+        const T = await window.__nightfallHarness.load("three");
+        const { OpticalSurfaceLight, OpticalSurfaceLighting } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalSurfaceLighting;
         const {
           channelSums,
           createTestRenderer,
           readPixels,
           renderFrames,
           retainCanvas,
-        } = await import("/e2e/fixtures/optics-harness.ts");
+        } = await window.__nightfallHarness.load("optics");
         const { renderer } = await createTestRenderer({
           forceWebGL,
           width: 320,
@@ -318,15 +317,15 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const T = await import("/e2e/fixtures/three-api.ts");
-        const { OpticalSurfaceLight, OpticalSurfaceLighting } = await import(
-          "/features/visualizer/rendering/effects/optical-surface-lighting.ts"
-        );
-        const { GpuBudget } = await import(
-          "/features/visualizer/rendering/effects/gpu-budget.ts"
-        );
+        const T = await window.__nightfallHarness.load("three");
+        const { OpticalSurfaceLight, OpticalSurfaceLighting } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalSurfaceLighting;
+        const { GpuBudget } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).gpuBudget;
         const { channelSums, createTestRenderer, readPixels, retainCanvas } =
-          await import("/e2e/fixtures/optics-harness.ts");
+          await window.__nightfallHarness.load("optics");
         const { renderer } = await createTestRenderer({
           forceWebGL,
           width: 320,

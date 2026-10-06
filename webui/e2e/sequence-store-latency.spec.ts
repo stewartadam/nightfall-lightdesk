@@ -161,7 +161,8 @@ async function openSequenceEditor(
 /** Clears app performance measures and the repro's long-frame buffer. */
 async function clearLatencyMetrics(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    const module = await import("/lib/performance-measure-collector.ts");
+    const module = (await window.__nightfallHarness.load("app"))
+      .performanceMeasures;
     module.clearPerformanceMeasures();
     window.__clearSequenceStoreLatencyFrames?.();
   });

@@ -51,7 +51,8 @@ test("flows are disabled by default", async ({ page }, testInfo) => {
   );
   await page.keyboard.press("Escape");
   const completions = await page.evaluate(async () => {
-    const { completeCommand } = await import("/lib/wasm-bridge.ts");
+    const { completeCommand } = (await window.__nightfallHarness.load("app"))
+      .wasmBridge;
     return await completeCommand("store ", 6);
   });
   expect(

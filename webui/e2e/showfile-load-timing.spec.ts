@@ -60,8 +60,9 @@ test("showfile load timing", async ({ page }, testInfo) => {
       title: "Layers",
       position: { referencePanel: "timing-fixtures", direction: "below" },
     });
-    const actions = await import(/* @vite-ignore */ "/lib/showfile-actions.ts");
-    const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
+    const actions = (await window.__nightfallHarness.load("app"))
+      .showfileActions;
+    const runtime = window.__nightfallTest.runtime;
     await runtime.engineRuntime.sendCommandAndAwait({
       module: "DeskCommand",
       command: actions.saveNamedShowfileCommand("load-timing"),
@@ -78,13 +79,11 @@ test("showfile load timing", async ({ page }, testInfo) => {
     const profiled = i === RUNS - 1;
     if (profiled) await cdp.send("Profiler.start");
     const result: LoadTiming = await page.evaluate(async (settleWindowMs) => {
-      const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
-      const actions = await import(
-        /* @vite-ignore */ "/lib/showfile-actions.ts"
-      );
-      const layout = await import(
-        /* @vite-ignore */ "/components/shell/docking/layout-readiness.ts"
-      );
+      const runtime = window.__nightfallTest.runtime;
+      const actions = (await window.__nightfallHarness.load("app"))
+        .showfileActions;
+      const layout = (await window.__nightfallHarness.load("app"))
+        .layoutReadiness;
       const marks: Record<string, number> = {};
       const longTasks: { start: number; duration: number }[] = [];
       const t0 = performance.now();

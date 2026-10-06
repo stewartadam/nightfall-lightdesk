@@ -48,8 +48,9 @@ test("reveals the dock after reopening a showfile on a restarted backend", async
   await expect(splash).toBeHidden({ timeout: 20_000 });
 
   await page.evaluate(async (name) => {
-    const actions = await import(/* @vite-ignore */ "/lib/showfile-actions.ts");
-    const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
+    const actions = (await window.__nightfallHarness.load("app"))
+      .showfileActions;
+    const runtime = window.__nightfallTest.runtime;
     await runtime.engineRuntime.sendCommandAndAwait({
       module: "DeskCommand",
       command: actions.saveNamedShowfileCommand(name),

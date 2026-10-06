@@ -41,7 +41,9 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   await page.goto("/?e2e=1");
   await waitForDockviewApp(page);
   await page.evaluate(async () => {
-    const { getLogger, setModuleLogLevel } = await import("/lib/logger.ts");
+    const { getLogger, setModuleLogLevel } = (
+      await window.__nightfallHarness.load("app")
+    ).logger;
     // Slow runners log a warning per long animation frame, which can push the
     // seeded problems out of the twenty-entry "Recent warnings/errors" window.
     setModuleLogLevel("long-animation-frame-monitor", "error" as LogLevel);
