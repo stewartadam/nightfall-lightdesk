@@ -40,15 +40,23 @@ type WebSocketUrlOptions = BackendUrlOptions & {
   viteProxyEnabled: boolean;
 };
 
-/** Returns the backend port expected by the UI runtime. */
+/**
+ * Returns the backend port expected by the UI runtime.
+ *
+ * The desktop shell injects the port of the backend it launched. A production
+ * bundle opened in a browser was served by the backend itself, so the page's
+ * own port is the backend port. Vite dev reads `NIGHTFALL_PORT`.
+ */
 export function resolveBackendPort(
   isDev: boolean,
   envPort?: string,
   desktopPort?: number,
+  pagePort?: string,
 ): number {
   if (desktopPort !== undefined) return desktopPort;
   if (!isDev) {
-    return DEFAULT_BACKEND_PORT;
+    const served = pagePort ? Number.parseInt(pagePort, 10) : Number.NaN;
+    return Number.isFinite(served) ? served : DEFAULT_BACKEND_PORT;
   }
 
   if (!envPort) {
@@ -66,6 +74,7 @@ export function getBackendPort(): number {
     Boolean(env.DEV),
     env.NIGHTFALL_PORT,
     isTauriRuntime() ? window.__NIGHTFALL_BACKEND_PORT__ : undefined,
+    globalThis.location?.port,
   );
 }
 

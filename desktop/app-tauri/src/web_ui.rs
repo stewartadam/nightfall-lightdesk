@@ -11,7 +11,7 @@
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use nightfall_websocket::prelude::{SharedWebUiAssets, WebUiAssets};
-use tauri::{AssetResolver, Manager, Wry};
+use tauri::{AssetResolver, Wry};
 
 /// Web UI files embedded by Tauri at build time, looked up by exact path.
 ///
@@ -25,12 +25,15 @@ struct EmbeddedWebUi {
 
 impl WebUiAssets for EmbeddedWebUi {
     /// Returns the decompressed contents of an embedded file.
+    ///
+    /// The resolver percent-decodes its argument, while `path` is already decoded, so a
+    /// literal `%` is escaped again to keep both lookups on the same key.
     fn get(&self, path: &str) -> Option<Cow<'static, [u8]>> {
         if !self.paths.contains(path) {
             return None;
         }
         self.resolver
-            .get(path.to_string())
+            .get(path.replace('%', "%25"))
             .map(|asset| Cow::Owned(asset.bytes))
     }
 }

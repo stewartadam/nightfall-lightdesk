@@ -121,10 +121,15 @@ fn asset_path(request_path: &str) -> Option<String> {
 /// Reports whether a path names a client-side route rather than a build file.
 ///
 /// Build files always carry an extension in their last segment; application routes do not.
+/// Backend namespaces are never client routes, so an unknown API path stays a 404 instead of
+/// answering a `fetch` with HTML and a success status.
 fn is_client_route(path: &str) -> bool {
-    path.rsplit('/')
-        .next()
-        .is_none_or(|name| !name.contains('.'))
+    let backend_namespace = path == "api" || path.starts_with("api/") || path == "ws";
+    !backend_namespace
+        && path
+            .rsplit('/')
+            .next()
+            .is_none_or(|name| !name.contains('.'))
 }
 
 #[cfg(test)]
@@ -207,11 +212,19 @@ mod tests {
         assert_eq!(body, b"<!doctype html>");
     }
 
-    /// A missing file with an extension is a 404, never the entry document.
+    /// A missing file with an extension, or an unknown backend path, is a 404, never the
+    /// entry document.
     #[tokio::test]
     async fn missing_files_are_not_found() {
         let (status, _, _, _) = fetch(Method::GET, "/assets/stale-123.js").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+        for path in ["/api/unknown", "/api", "/ws"] {
+            assert_eq!(
+                fetch(Method::GET, path).await.0,
+                StatusCode::NOT_FOUND,
+                "{path}"
+            );
+        }
     }
 
     /// Encoded names resolve, while traversal and non-read methods are refused.
