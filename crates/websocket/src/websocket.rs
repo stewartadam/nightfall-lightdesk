@@ -36,7 +36,7 @@ use tokio::{
     net::TcpListener,
     sync::{broadcast::Receiver as BroadcastReceiver, mpsc::UnboundedSender},
 };
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 const TRANSPORT_HEARTBEAT_RESPONSE_TYPE: &str = "WebSocketHeartbeatResponse";
 
@@ -519,6 +519,9 @@ impl SwappableRoutes {
 }
 
 /// Combine core and plugin routes under one cross-origin policy for desktop and browser clients.
+///
+/// Foreign origins are turned away before CORS runs, so the CORS layer only ever echoes an
+/// origin that already passed [`crate::origin::reject_foreign_origins`].
 fn websocket_router(state: AxumAppState, routes: SwappableRoutes) -> Router {
     // Core routes own the socket; plugin routes resolve against the active world.
     let core_routes = Router::new()
@@ -526,19 +529,23 @@ fn websocket_router(state: AxumAppState, routes: SwappableRoutes) -> Router {
         .with_state(state)
         .fallback(move |request: Request| routes.clone().call(request));
 
-    core_routes.layer(
-        CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods([Method::GET, Method::HEAD, Method::POST, Method::OPTIONS])
-            .allow_headers([header::CONTENT_TYPE, header::RANGE])
-            .expose_headers([
-                header::ACCEPT_RANGES,
-                header::CONTENT_LENGTH,
-                header::CONTENT_RANGE,
-                axum::http::HeaderName::from_static("x-showfile-export-warnings"),
-                axum::http::HeaderName::from_static("x-diagnostic-export-warnings"),
-            ]),
-    )
+    core_routes
+        .layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::mirror_request())
+                .allow_methods([Method::GET, Method::HEAD, Method::POST, Method::OPTIONS])
+                .allow_headers([header::CONTENT_TYPE, header::RANGE])
+                .expose_headers([
+                    header::ACCEPT_RANGES,
+                    header::CONTENT_LENGTH,
+                    header::CONTENT_RANGE,
+                    axum::http::HeaderName::from_static("x-showfile-export-warnings"),
+                    axum::http::HeaderName::from_static("x-diagnostic-export-warnings"),
+                ]),
+        )
+        .layer(axum::middleware::from_fn(
+            crate::origin::reject_foreign_origins,
+        ))
 }
 
 #[cfg(test)]
@@ -799,5 +806,102 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    /// Serves the real router and checks that websocket upgrades and CORS preflights from a
+    /// foreign site are refused while the UI's own origin and non-browser clients connect.
+    #[tokio::test]
+    async fn router_refuses_foreign_browser_origins() {
+        use tokio_tungstenite::tungstenite::{
+            Error as WsError, client::IntoClientRequest, http::StatusCode as WsStatus,
+        };
+
+        let (command_tx, _command_rx) = async_channel::unbounded();
+        let (update_json_tx, _update_rx) = async_channel::unbounded();
+        let state = AxumAppState {
+            command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
+            update_json_tx,
+            clients: Default::default(),
+            remote_generation: Default::default(),
+        };
+        let routes = SwappableRoutes::new(state.clone(), Router::new(), Router::new());
+        let app = websocket_router(state, routes).layer(Extension(0_u64));
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+        });
+
+        let upgrade = |origin: Option<&'static str>| async move {
+            let mut request = format!("ws://localhost:{port}/ws")
+                .into_client_request()
+                .unwrap();
+            if let Some(origin) = origin {
+                request
+                    .headers_mut()
+                    .insert(header::ORIGIN, origin.parse().unwrap());
+            }
+            tokio_tungstenite::connect_async(request).await
+        };
+        for origin in [
+            None,
+            Some("http://localhost:3031"),
+            Some("tauri://localhost"),
+        ] {
+            let (mut client, _) = upgrade(origin).await.unwrap();
+            assert!(
+                client.next().await.unwrap().unwrap().is_binary(),
+                "{origin:?}"
+            );
+        }
+        match upgrade(Some("https://evil.example")).await {
+            Err(WsError::Http(response)) => assert_eq!(response.status(), WsStatus::FORBIDDEN),
+            other => panic!("foreign origin upgraded: {:?}", other.map(|_| ())),
+        }
+
+        let preflight = |origin: &str| {
+            format!(
+                "OPTIONS /api/showfile HTTP/1.1\r\nHost: localhost:{port}\r\nOrigin: {origin}\r\n\
+                 Access-Control-Request-Method: POST\r\nConnection: close\r\n\r\n"
+            )
+        };
+        let requests = [
+            (
+                preflight("http://localhost:3031"),
+                "HTTP/1.1 200",
+                Some("access-control-allow-origin: http://localhost:3031"),
+            ),
+            (preflight("https://evil.example"), "HTTP/1.1 403", None),
+            // A same-origin GET from a rebound public domain carries no Origin at all.
+            (
+                format!(
+                    "GET /api/showfiles HTTP/1.1\r\nHost: rebind.evil.example:{port}\r\n\
+                     Connection: close\r\n\r\n"
+                ),
+                "HTTP/1.1 403",
+                None,
+            ),
+        ];
+        for (request, status, header_line) in requests {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut stream = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .unwrap();
+            stream.write_all(request.as_bytes()).await.unwrap();
+            let mut response = String::new();
+            stream.read_to_string(&mut response).await.unwrap();
+            assert!(response.starts_with(status), "{request}: {response}");
+            if let Some(header_line) = header_line {
+                assert!(
+                    response.to_ascii_lowercase().contains(header_line),
+                    "{request}: {response}"
+                );
+            }
+        }
+        server.abort();
     }
 }
