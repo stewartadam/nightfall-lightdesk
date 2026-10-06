@@ -101,7 +101,7 @@ jobs:
           DISTRIBUTION: ${{ inputs.distribution }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
           # Dependabot PRs cannot read Actions secrets, so they never deploy a preview.
-          PREVIEW_PROJECT: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && vars.CLOUDFLARE_PAGES_PROJECT || '' }}
+          PREVIEW_WORKER: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && vars.CLOUDFLARE_PREVIEW_WORKER || '' }}
         run: |
           node --test scripts/ci-scope.node.test.mjs
           node scripts/ci-scope.mjs
@@ -181,41 +181,32 @@ jobs:
         with:
           name: nightfall-browser-demo-${{ github.sha }}
           path: site/demo/app
-      - name: Prepare the preview site
-        id: site
+      - name: Describe the preview Worker
         env:
-          HEAD_REF: ${{ github.head_ref }}
+          WORKER: ${{ vars.CLOUDFLARE_PREVIEW_WORKER }}
         run: |
-          if [[ ! "$HEAD_REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
-            echo "::error::Refusing to deploy a preview for an unexpected branch name"
-            exit 1
-          fi
           printf '/ /demo/app/ 302\n/demo /demo/app/ 302\n' > site/_redirects
-          echo "branch=$HEAD_REF" >> "$GITHUB_OUTPUT"
-      - name: Deploy to Cloudflare Pages
+          jq -n --arg name "$WORKER" \
+            '{name: $name, compatibility_date: "2026-10-01", assets: {directory: "./site"}}' \
+            > wrangler.json
+      - name: Deploy a Cloudflare Workers preview
         id: deploy
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
+          apiToken: ${{ secrets.CLOUDFLARE_PREVIEW_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: 4.147.0
-          command: >-
-            pages deploy site
-            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}
-            --branch=${{ steps.site.outputs.branch }}
-            --commit-hash=${{ github.event.pull_request.head.sha }}
-            --commit-dirty=true
+          command: preview --name=pr-${{ github.event.pull_request.number }}
       - name: Link the preview on the PR
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          ALIAS_URL: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
-          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview-url }}
         run: |
-          url="${ALIAS_URL:-$DEPLOYMENT_URL}"
-          if [[ ! "$url" =~ ^https://[A-Za-z0-9.-]+\.pages\.dev/?$ ]]; then
+          url="$PREVIEW_URL"
+          if [[ ! "$url" =~ ^https://[A-Za-z0-9.-]+\.workers\.dev/?$ ]]; then
             echo "::error::Cloudflare returned an unexpected preview URL"
             exit 1
           fi

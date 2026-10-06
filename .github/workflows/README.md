@@ -69,34 +69,32 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 
 ## Browser previews
 
-Once a preview target is configured, every same-repository PR also builds the
-browser demo and deploys it to Cloudflare Pages, independent of the table above.
-A preview-only build skips the browser product flows, which still run whenever the
-browser distribution is selected. The `Browser preview` job starts as soon as that
-build finishes, publishes it at `https://<branch>.<project>.pages.dev/demo/app/`,
-and keeps one comment on the PR pointing at the latest preview. It is not part of
-the CI gate. Fork and Dependabot PRs never build or deploy a preview, since they
-cannot read the deployment secret.
+Once a preview Worker is configured, every same-repository PR also builds the
+browser demo and deploys it as a Cloudflare Workers Preview named `pr-<number>`,
+independent of the table above. A preview-only build skips the browser product
+flows, which still run whenever the browser distribution is selected. The
+`Browser preview` job starts as soon as that build finishes, publishes it at
+`https://pr-<number>-<worker>.<subdomain>.workers.dev/demo/app/`, and keeps one
+comment on the PR pointing at the latest preview. It is not part of the CI gate.
+Fork and Dependabot PRs never build or deploy a preview, since they cannot read
+the deployment secret. The job writes a static-assets-only Wrangler config at
+deploy time, so the repository carries no Wrangler project.
 
 One-time setup:
 
-1. In Cloudflare, create a Pages project with **Direct Upload** and set its
-   production branch to a name no PR uses (for example `production`), so PR
-   deploys always land as preview deployments.
-2. Under the project's **Settings → General → Access policy**, enable Cloudflare
-   Access for **All Traffic** and allow only the maintainers' emails. Deploys use
-   the API token, so Access never blocks CI.
-3. Create an API token with only **Account → Cloudflare Pages → Edit**.
-4. In this repository's Actions settings, add the secret `CLOUDFLARE_PAGES_TOKEN`
-   and the variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT`.
+1. In Cloudflare, create a Worker to hold the previews. CI never changes its
+   production deployment.
+2. In the Worker's **Settings → Domains & Routes**, enable Cloudflare Access on
+   both **workers.dev** and **Preview URLs**, and allow only the maintainers'
+   emails. Deploys use the API token, so Access never blocks CI.
+3. Create an API token with only **Account → Workers Scripts → Edit**.
+4. In this repository's Actions settings, add the secret
+   `CLOUDFLARE_PREVIEW_TOKEN` and the variables `CLOUDFLARE_ACCOUNT_ID` and
+   `CLOUDFLARE_PREVIEW_WORKER` (the Worker's name).
 
-Previews stay off while `CLOUDFLARE_PAGES_PROJECT` is unset.
-
-`preview-cleanup.yml` runs daily (and on demand) with the same token. It deletes
-every preview of a branch with no open same-repository PR, and any deployment
-older than 14 days except each open PR's newest one, so the current preview link
-always keeps working. It uses only `curl`, `jq` and `gh` against the Cloudflare
-and GitHub APIs.
+Previews stay off while `CLOUDFLARE_PREVIEW_WORKER` is unset. Cloudflare keeps at
+most 100 Previews per Worker on the Free plan and 100 deployments per Preview,
+deleting the oldest automatically, so no cleanup job is needed.
 
 ## Native execution and caching
 

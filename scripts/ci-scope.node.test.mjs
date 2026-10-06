@@ -137,20 +137,12 @@ test("browser previews require a configured target and a same-repository PR", ()
       event: "pull_request",
       ref: "refs/pull/1/merge",
       paths: ["webui/components/example.tsx"],
-      headRef: "claude/mobile-compact-shell",
       ...options,
     });
   assert.deepEqual(select({ previewTarget: true, sameRepository: true }), {
     ...none,
     browser_preview: true,
   });
-  for (const headRef of ["fix/foo+bar", "user@fix", "a;b", ""]) {
-    assert.deepEqual(
-      select({ previewTarget: true, sameRepository: true, headRef }),
-      none,
-      headRef,
-    );
-  }
   assert.deepEqual(
     select({ previewTarget: true, sameRepository: false }),
     none,
@@ -166,7 +158,6 @@ test("browser previews require a configured target and a same-repository PR", ()
       paths: ["crates/browser-runtime/src/lib.rs"],
       previewTarget: true,
       sameRepository: true,
-      headRef: "feature/runtime",
     }),
     { ...browser, browser_preview: true },
   );

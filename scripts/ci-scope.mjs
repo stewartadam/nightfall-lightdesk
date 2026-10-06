@@ -53,8 +53,7 @@ const browserPackaging = [
  * packaging also runs; shared inputs such as the lockfile rely on packaging alone.
  *
  * Browser previews build the demo for every same-repository PR once a preview target is
- * configured. Fork PRs never receive the deployment credential, so they never select one, and
- * branches the deploy job would refuse as a Pages branch argument are skipped up front.
+ * configured. Fork PRs never receive the deployment credential, so they never select one.
  */
 export function selectScope({
   event,
@@ -63,7 +62,6 @@ export function selectScope({
   distribution = "all",
   previewTarget = false,
   sameRepository = false,
-  headRef = "",
 }) {
   let desktopPackage = false;
   let browserPackage = false;
@@ -79,8 +77,7 @@ export function selectScope({
     desktopPackage = ref === "refs/heads/main" || ref.startsWith("refs/tags/v");
     browserPackage = ref === "refs/heads/main";
   } else if (event === "pull_request") {
-    browserPreview =
-      previewTarget && sameRepository && /^[A-Za-z0-9._/-]+$/.test(headRef);
+    browserPreview = previewTarget && sameRepository;
     for (const path of paths) {
       if (sharedPackaging.some((pattern) => pattern.test(path))) {
         desktopPackage = true;
@@ -118,11 +115,10 @@ if (
     ref: process.env.GITHUB_REF,
     distribution: process.env.DISTRIBUTION || "all",
     paths: readChangedPaths(readFileSync(".ci-changed-files", "utf8")),
-    previewTarget: Boolean(process.env.PREVIEW_PROJECT),
+    previewTarget: Boolean(process.env.PREVIEW_WORKER),
     sameRepository:
       Boolean(process.env.HEAD_REPOSITORY) &&
       process.env.HEAD_REPOSITORY === process.env.GITHUB_REPOSITORY,
-    headRef: process.env.GITHUB_HEAD_REF,
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,

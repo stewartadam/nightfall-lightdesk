@@ -109,7 +109,6 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "ci.yml/release": { contents: "write" },
     "ci.yml/preview": { "pull-requests": "write" },
     "playwright-full.yml/source": { contents: "read" },
-    "preview-cleanup.yml/cleanup": { "pull-requests": "read" },
     "desktop-artifacts.yml/release-note-metadata": {
       contents: "read",
       "pull-requests": "read",
@@ -120,18 +119,13 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     },
     "release.yml/publish": { contents: "write" },
   };
-  const previewJobs = ["ci.yml/preview", "preview-cleanup.yml/cleanup"];
   for (const [file, workflow] of Object.entries(workflows)) {
     assert.deepEqual(workflow.permissions, {}, file);
     for (const [id, job] of Object.entries(workflow.jobs)) {
       const key = `${file}/${id}`;
       assert.deepEqual(job.permissions ?? {}, exceptions[key] ?? {}, key);
       assert.notEqual(job.secrets, "inherit", key);
-      if (
-        file !== "release.yml" &&
-        id !== "release" &&
-        !previewJobs.includes(key)
-      ) {
+      if (file !== "release.yml" && id !== "release" && id !== "preview") {
         assert.doesNotMatch(JSON.stringify(job), /secrets\./);
         if (!exceptions[key]) {
           assert.doesNotMatch(JSON.stringify(job), /github\.token/);
@@ -182,7 +176,7 @@ test("signing and publishing only use pinned artifact actions and reviewed inlin
   assert.deepEqual(workflows["ci.yml"].jobs.release.needs, "desktop");
 });
 
-/** The preview deployer holds only the Pages token and treats the demo artifact as data. */
+/** The preview deployer holds only the Workers preview token and treats the demo artifact as data. */
 test("browser previews deploy same-run artifacts without source or build tools", () => {
   const preview = workflows["ci.yml"].jobs.preview;
   assert.deepEqual(preview.needs, ["selection", "browser-demo"]);
@@ -195,7 +189,11 @@ test("browser previews deploy same-run artifacts without source or build tools",
     ],
   );
   const secrets = JSON.stringify(preview).match(/secrets\.[A-Z_]+/g);
-  assert.deepEqual(secrets, ["secrets.CLOUDFLARE_PAGES_TOKEN"]);
+  assert.deepEqual(secrets, ["secrets.CLOUDFLARE_PREVIEW_TOKEN"]);
+  assert.match(
+    preview.steps.find((step) => step.id === "deploy").with.command,
+    /^preview --name=pr-\$\{\{ github\.event\.pull_request\.number \}\}$/,
+  );
   for (const step of preview.steps) {
     assert.equal(step.with?.["run-id"], undefined);
     assert.equal(step.with?.["github-token"], undefined);
@@ -204,74 +202,6 @@ test("browser previews deploy same-run artifacts without source or build tools",
     assert.equal(step.with?.postCommands, undefined);
     assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
   }
-});
-
-/** Preview cleanup holds only the Pages token and runs no checkout, action, or installed tool. */
-test("preview cleanup uses only inline system tools", () => {
-  const cleanup = workflows["preview-cleanup.yml"].jobs.cleanup;
-  assert.equal(cleanup.steps.length, 1);
-  assert.equal(cleanup.steps[0].uses, undefined);
-  assert.doesNotMatch(
-    cleanup.steps[0].run,
-    /\b(?:node|npm|npx|pnpm|cargo|rustup|wrangler)\b/,
-  );
-  assert.deepEqual(JSON.stringify(cleanup).match(/secrets\.[A-Z_]+/g), [
-    "secrets.CLOUDFLARE_PAGES_TOKEN",
-  ]);
-});
-
-/** Cleanup keeps each open PR's newest preview and recent history, and removes closed PRs. */
-test("preview cleanup selects only stale deployments", (t) => {
-  const directory = fixtureDirectory(t);
-  const run = workflows["preview-cleanup.yml"].jobs.cleanup.steps[0].run;
-  const filter = run.match(
-    /jq -s -r --slurpfile open open-branches\.json --arg days "\$RETENTION_DAYS" '([\s\S]*?)' deployments\.jsonl/,
-  )[1];
-  const day = 86_400_000;
-  /** Describe one preview deployment created the given number of days ago. */
-  const deployment = (id, branch, daysAgo) =>
-    JSON.stringify({
-      id,
-      environment: "preview",
-      created_on: new Date(Date.now() - daysAgo * day).toISOString(),
-      deployment_trigger: { metadata: { branch } },
-    });
-  writeFileSync(
-    join(directory, "deployments.jsonl"),
-    [
-      deployment("open-newest", "open", 1),
-      deployment("open-recent", "open", 2),
-      deployment("open-stale", "open", 30),
-      deployment("idle-newest", "idle", 60),
-      deployment("closed-newest", "closed", 1),
-      deployment("closed-older", "closed", 2),
-    ].join("\n"),
-  );
-  writeFileSync(
-    join(directory, "open-branches.json"),
-    JSON.stringify(["open", "idle"]),
-  );
-  const stale = execFileSync(
-    "jq",
-    [
-      "-s",
-      "-r",
-      "--slurpfile",
-      "open",
-      "open-branches.json",
-      "--arg",
-      "days",
-      "14",
-      filter,
-      "deployments.jsonl",
-    ],
-    { cwd: directory, encoding: "utf8" },
-  );
-  assert.deepEqual(stale.trim().split("\n").sort(), [
-    "closed-newest",
-    "closed-older",
-    "open-stale",
-  ]);
 });
 
 /** Source transfer retains tracked files and history while rejecting persisted authentication. */
