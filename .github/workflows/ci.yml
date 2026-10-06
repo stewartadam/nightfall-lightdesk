@@ -282,10 +282,6 @@ jobs:
         env:
           NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-headless
         uses: ./.github/actions/playwright-smoke
-        with:
-          # Each worker owns a backend and Vite server; four contended for the
-          # runner's four vCPUs (tests ~45% slower each), so leave headroom.
-          workers: "3"
 
   gate:
     # Single required check that aggregates every validation job.

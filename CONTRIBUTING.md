@@ -265,8 +265,9 @@ The backend engine can be started with `cargo run`, and the web UI with `pnpm ru
 keeps third-party dependency features identical across `cargo run`, `cargo test -p <crate>`, and the commit hooks,
 so switching between them reuses build artifacts.
 
-Playwright test commands use a pool of up to six parallel workers by default;
-set `NIGHTFALL_PLAYWRIGHT_WORKERS` to choose another pool size. Each worker keeps a
+Playwright test commands use one parallel worker per available core minus one,
+capped at six, and print the chosen count at startup; set
+`NIGHTFALL_PLAYWRIGHT_WORKERS` to choose another pool size. Each worker keeps a
 Vite proxy on a temporary loopback port pair, while every test starts a freshly
 seeded backend on that worker's backend port. The run sanitizes one seed copy,
 then uses copy-on-write filesystem clones for each test when supported. The seed
