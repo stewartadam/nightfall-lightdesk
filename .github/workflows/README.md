@@ -91,6 +91,12 @@ One-time setup:
 
 Previews stay off while `CLOUDFLARE_PAGES_PROJECT` is unset.
 
+`preview-cleanup.yml` runs daily (and on demand) with the same token. It deletes
+every preview of a branch with no open same-repository PR, and any deployment
+older than 14 days except each open PR's newest one, so the current preview link
+always keeps working. It uses only `curl`, `jq` and `gh` against the Cloudflare
+and GitHub APIs.
+
 ## Native execution and caching
 
 `ci.yml` runs all native Rust validation in one Linux job so the

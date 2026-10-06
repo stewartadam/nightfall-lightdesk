@@ -1,0 +1,73 @@
+name: Browser preview cleanup
+
+# Removes Cloudflare Pages preview deployments that no open PR needs.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: preview-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete stale previews
+    if: vars.CLOUDFLARE_PAGES_PROJECT != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Reads open PR branches; uses only curl, jq and gh, never repository code.
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Delete previews for closed PRs and superseded deployments
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
+          ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          RETENTION_DAYS: "14"
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/pages/projects/$PROJECT/deployments"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+
+          gh api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" \
+            --jq '.[] | select(.head.repo.full_name == env.GH_REPO) | .head.ref' \
+            | jq -R . | jq -s . > open-branches.json
+
+          page=1
+          : > deployments.jsonl
+          while :; do
+            response="$(curl -fsS "${auth[@]}" "$api?env=preview&per_page=25&page=$page")"
+            jq -c '.result[]' <<< "$response" >> deployments.jsonl
+            total_pages="$(jq -r '.result_info.total_pages // 1' <<< "$response")"
+            (( page >= total_pages )) && break
+            page=$((page + 1))
+          done
+
+          # Keep the newest deployment of each open PR's branch, and older ones within the
+          # retention window; delete everything else, including the newest of closed PRs.
+          jq -s -r --slurpfile open open-branches.json --arg days "$RETENTION_DAYS" '
+            (now - ($days | tonumber) * 86400) as $cutoff
+            | map(select(.environment == "preview")
+                | . + {branch: .deployment_trigger.metadata.branch,
+                       created: (.created_on | sub("\\.[0-9]+"; "") | fromdateiso8601)})
+            | group_by(.branch)
+            | map(sort_by(.created) | reverse
+                | (.[0].branch as $branch | ($open[0] | index($branch)) != null) as $isOpen
+                | to_entries
+                | map(select((($isOpen | not) or (.key > 0 and .value.created < $cutoff))))
+                | map(.value.id))
+            | flatten[]' deployments.jsonl > stale.txt
+
+          deleted=0
+          while read -r id; do
+            [[ "$id" =~ ^[0-9a-f-]+$ ]] || { echo "::error::Unexpected deployment id"; exit 1; }
+            curl -fsS -X DELETE "${auth[@]}" "$api/$id?force=true" > /dev/null
+            deleted=$((deleted + 1))
+          done < stale.txt
+          echo "Deleted $deleted preview deployments from $(wc -l < deployments.jsonl) listed."

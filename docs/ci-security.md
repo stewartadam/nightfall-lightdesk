@@ -76,7 +76,9 @@ Publication (fresh runner; contents: write; no Apple credentials)
   Wrangler version from npm. That is acceptable because the job holds no release
   authority, only a token limited to Cloudflare Pages edits and a
   `pull-requests: write` GitHub token, and never acquires source or build caches.
-  Fork PRs never select a preview, so they never reach this credential.
+  Fork PRs never select a preview, so they never reach this credential. The daily
+  preview cleanup reuses that token with `pull-requests: read`, and runs only inline
+  `curl`, `jq` and `gh` commands.
 
 Only version-tag **pushes** enter signing/publication. PRs (including same-repo
 PRs), branch pushes, and manual runs never do. The build validates that the tag
