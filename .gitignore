@@ -39,6 +39,7 @@ webui/assets/models/beat-this/*.onnx
 .copilot-tracking/
 .claude/*
 !.claude/settings.json
+!.claude/hooks/
 .codex/
 .serena/
 .beads/

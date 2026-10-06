@@ -27,6 +27,31 @@ export type TimelineAudioDirectiveWsMessage = {
   data: types.TimelineAudioDirective;
 };
 
+/** Decoded output and asserted values of one fixture element, keyed by attribute. */
+export interface ElementParameterState {
+  /** Absolute parameter values asserted by objects in the layer stack. */
+  absolute: Record<string, types.ParameterValue>;
+  /** Relative parameter values asserted by objects in the layer stack. */
+  relative: Record<string, types.ParameterValue>;
+  /** Final computed output values after compositing and fixture processing. */
+  output: Record<string, number>;
+}
+
+/** Decoded parameter state of one fixture, one entry per fixture element. */
+export interface FixtureParameterState {
+  fixture_uid: string;
+  parameters: ElementParameterState[];
+}
+
+/**
+ * Parameter state as the main thread receives it, after the worker and
+ * `ParameterStateDecoder` resolved the backend's slot-indexed values frame.
+ */
+export type ParameterStateWsMessage = {
+  type: "ParameterState";
+  data: FixtureParameterState[];
+};
+
 /** Commands that can share the websocket message queue type at call sites. */
 export type AnyCommand =
   | types.BlueprintCommand
@@ -51,7 +76,8 @@ export type AnyCommand =
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
   | types.CueWsMessage
-  | types.FixtureWsMessage
+  | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
+  | ParameterStateWsMessage
   | types.FixtureLibraryWsMessage
   | types.ObjectLibraryWsMessage
   | flowTypes.FlowWsMessage

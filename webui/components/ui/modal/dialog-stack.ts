@@ -62,6 +62,24 @@ export function frontmostDialog(): DialogStackEntry | undefined {
   return openDialogs[openDialogs.length - 1];
 }
 
+/**
+ * Returns where a floating overlay (menu, tooltip, list) should mount so it
+ * stays visible and interactive. An open modal `<dialog>` sits in the
+ * browser's top layer and makes everything outside it inert, so overlays
+ * mount inside the dialog that contains their anchor (even one still about
+ * to open, since content mounts just before `showModal()`), else inside the
+ * frontmost modal dialog, else on `<body>`.
+ */
+export function overlayHost(anchor?: Element | null): HTMLElement {
+  const anchorDialog = anchor?.closest("dialog");
+  if (anchorDialog) return anchorDialog;
+  for (let index = openDialogs.length - 1; index >= 0; index -= 1) {
+    const element = openDialogs[index].element();
+    if (element instanceof HTMLDialogElement && element.open) return element;
+  }
+  return document.body;
+}
+
 /** Reports whether any dialog is visible, so user-initiated workspace changes can wait. */
 export function hasOpenDialog(): boolean {
   return openDialogs.length > 0;
@@ -122,6 +140,9 @@ function routeDialogKey(event: KeyboardEvent): void {
       dismiss();
     } else if (!targetInside) {
       claimKey(event);
+    } else {
+      // Keeps the browser from turning Escape into a close request on a native modal dialog.
+      event.preventDefault();
     }
     return;
   }

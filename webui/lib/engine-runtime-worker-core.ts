@@ -22,13 +22,16 @@
  */
 
 import { decode } from "cborg";
-import type { OutboundParameterState } from "../types";
+import type { ParameterLayout, ParameterStateFrame } from "../types";
 import { peekCborMessageType } from "./cbor-message-type";
 import type {
   EngineRuntimeConfig,
   EngineRuntimeWorkerRequest,
 } from "./engine-runtime-protocol";
-import { packParameterState } from "./parameter-state-transfer";
+import {
+  packParameterStateFrame,
+  parameterStateTransfers,
+} from "./parameter-state-transfer";
 import { RollingTimingSamples } from "./rolling-timing-samples";
 
 /** Optional demo adapter; native workers do not import its WASM implementation. */
@@ -71,6 +74,8 @@ export function startEngineRuntimeWorker(
 
   const DISCRIMINATOR_DROPPABLE = 1;
   const STRUCTURAL_QUEUE_LIMIT = 10_000;
+  const PARAMETER_STATE_TYPE = "ParameterState";
+  const PARAMETER_LAYOUT_TYPE = "ParameterLayout";
 
   interface QueuedDecodedMessage {
     data: unknown;
@@ -190,6 +195,9 @@ export function startEngineRuntimeWorker(
   const latestDroppableByType = new Map<string, StagedSnapshot>();
   let structuralOverflowNotified = false;
   let stagingSuspendedForResync = false;
+  // Values frames are indexed by the most recent ParameterLayout; frames for any other
+  // layout cannot be resolved and are dropped when pulled.
+  let parameterLayoutId: number | null = null;
 
   // Heartbeat tracking for transport-level latency measurement
   const pendingHeartbeats: Map<number, number> = new Map();
@@ -216,6 +224,21 @@ export function startEngineRuntimeWorker(
     latestDroppableByType.clear();
     structuralOverflowNotified = false;
     stagingSuspendedForResync = false;
+    parameterLayoutId = null;
+  }
+
+  /**
+   * Tracks the parameter layout the backend published last. A staged values frame indexed by an
+   * earlier layout is discarded, since the main thread could no longer resolve its slots.
+   */
+  function acceptParameterLayout(layoutId: number): void {
+    if (
+      parameterLayoutId !== layoutId &&
+      latestDroppableByType.delete(PARAMETER_STATE_TYPE)
+    ) {
+      droppedCount++;
+    }
+    parameterLayoutId = layoutId;
   }
 
   /** Returns a cross-context high-resolution timestamp in milliseconds. */
@@ -266,7 +289,10 @@ export function startEngineRuntimeWorker(
     return replacedExisting;
   }
 
-  /** Decodes staged snapshots into pullable messages, skipping any that fail to decode. */
+  /**
+   * Decodes staged snapshots into pullable messages, skipping any that fail to decode and
+   * parameter values frames indexed by a layout other than the latest one.
+   */
   function decodeStagedSnapshots(): QueuedDecodedMessage[] {
     const messages: QueuedDecodedMessage[] = [];
     for (const snapshot of latestDroppableByType.values()) {
@@ -284,6 +310,15 @@ export function startEngineRuntimeWorker(
         const decodeElapsed = performance.now() - decodeStart;
         decodeTimeMs += decodeElapsed;
         recordSnapshotDecode(snapshot.messageType, decodeElapsed);
+      }
+      if (
+        snapshot.messageType === PARAMETER_STATE_TYPE &&
+        (decoded as { data: ParameterStateFrame }).data.layout_id !==
+          parameterLayoutId
+      ) {
+        droppedCount++;
+        typeMetricsFor(snapshot.messageType, 0, 0).droppedCount++;
+        continue;
       }
       messages.push({
         data: decoded,
@@ -338,10 +373,10 @@ export function startEngineRuntimeWorker(
 
     const transfers: ArrayBuffer[] = [];
     const wireMessages = messages.map((message) => {
-      if (message.messageType !== "ParameterState") return message;
-      const snapshot = message.data as { data: OutboundParameterState[] };
-      const packedParameters = packParameterState(snapshot.data);
-      transfers.push(packedParameters.values.buffer as ArrayBuffer);
+      if (message.messageType !== PARAMETER_STATE_TYPE) return message;
+      const snapshot = message.data as { data: ParameterStateFrame };
+      const packedParameters = packParameterStateFrame(snapshot.data);
+      transfers.push(...parameterStateTransfers(packedParameters));
       return { ...message, data: undefined, packedParameters };
     });
     self.postMessage(
@@ -447,6 +482,11 @@ export function startEngineRuntimeWorker(
     } else if (discriminator === DISCRIMINATOR_DROPPABLE) {
       wasDropped = stageSnapshot({ decoded }, msgType);
     } else {
+      if (msgType === PARAMETER_LAYOUT_TYPE) {
+        acceptParameterLayout(
+          (decoded as { data: ParameterLayout }).data.layout_id,
+        );
+      }
       wasDropped = stageDecodedMessage(decoded, msgType);
     }
 
@@ -464,6 +504,8 @@ export function startEngineRuntimeWorker(
     }
 
     postStatus(Status.Connecting);
+    // A new connection may reach a different backend world, whose layouts restart.
+    parameterLayoutId = null;
 
     socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";

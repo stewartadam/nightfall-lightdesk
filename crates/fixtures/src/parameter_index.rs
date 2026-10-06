@@ -34,6 +34,7 @@ pub struct ParameterLocation {
 pub struct ParameterIndex {
     by_element: FxHashMap<FixtureRef, Vec<(Attribute, Instance<Parameter>)>>,
     by_parameter: FxHashMap<Instance<Parameter>, ParameterLocation>,
+    revision: u64,
 }
 
 impl ParameterIndex {
@@ -75,6 +76,14 @@ impl ParameterIndex {
         self.by_parameter.is_empty()
     }
 
+    /// Returns a counter that advances on every mutation.
+    ///
+    /// The index is mutated through a lock rather than through Bevy change detection, so
+    /// projections that cache derived layouts compare revisions to know when to rebuild.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
     /// Indexes `parameter` as the control for `attribute` on `element`.
     ///
     /// Like a bijection, this replaces any parameter already indexed for the same element attribute
@@ -85,6 +94,7 @@ impl ParameterIndex {
         attribute: Attribute,
         parameter: Instance<Parameter>,
     ) {
+        self.revision += 1;
         if let Some(previous) = self.by_parameter.remove(&parameter) {
             self.remove_from_element(&previous.element, &previous.attribute);
         }
@@ -102,6 +112,7 @@ impl ParameterIndex {
 
     /// Removes every parameter of the fixture identified by `fixture_uid`.
     pub fn remove_fixture(&mut self, fixture_uid: Uuid) {
+        self.revision += 1;
         self.by_element
             .retain(|element, _| element.fixture_uid != fixture_uid);
         self.by_parameter

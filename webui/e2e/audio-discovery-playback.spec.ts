@@ -108,19 +108,58 @@ test("captures live color output cadence during audio discovery", async ({
   observerDelay.enable();
   const started = performance.now();
   const parameterStateTag = Buffer.from("ParameterState");
+  const parameterLayoutTag = Buffer.from("ParameterLayout");
   const metricsTag = Buffer.from("Metrics");
+  // Values frames index outputs by layout slot, so track the slot of the
+  // sampled fixture's first Red output from the most recent layout.
+  let layoutId: number | null = null;
+  let redSlot: number | null = null;
+  /**
+   * Requests a resync so the backend publishes the layout to this observer too.
+   * The resync is broadcast to the page as well, but it lands in the first
+   * 3s after the observer connects, which the cadence samples skip.
+   */
+  socket.addEventListener("open", () => {
+    socket.send(
+      JSON.stringify({
+        command_id: crypto.randomUUID(),
+        module: "EngineCommand",
+        command: { type: "ResyncState" },
+      }),
+    );
+  });
   /** Measures backend publication independently of browser rendering and store throttling. */
   socket.addEventListener("message", (event) => {
     const time = performance.now();
     const bytes = Buffer.from(event.data as ArrayBuffer);
     if (bytes.length < 2) return;
-    // The leading CBOR enum tag precedes its data. Decode only sampled colors
-    // and small metrics frames so the observer does not add large allocations.
+    // The leading CBOR enum tag precedes its data. Decode only sampled colors,
+    // layouts and small metrics frames so the observer does not add large allocations.
     const header = bytes.subarray(1, 32);
     if (header.includes(metricsTag)) {
       const message = decode(bytes.subarray(1)) as any;
       if (message.type === "Metrics")
         metrics.push({ time, data: message.data });
+    }
+    if (header.includes(parameterLayoutTag)) {
+      const message = decode(bytes.subarray(1)) as any;
+      layoutId = message.data.layout_id;
+      redSlot = null;
+      let slot = 0;
+      for (const fixture of message.data.fixtures) {
+        for (const attributes of fixture.elements) {
+          for (const attribute of attributes) {
+            if (
+              redSlot === null &&
+              fixture.fixture_uid === fixtureUid &&
+              attribute === "Red"
+            )
+              redSlot = slot;
+            slot++;
+          }
+        }
+      }
+      return;
     }
     if (!header.includes(parameterStateTag) || time - started < 3_000) return;
     let red: number | null = null;
@@ -128,13 +167,14 @@ test("captures live color output cadence during audio discovery", async ({
       const message = decode(bytes.subarray(1)) as any;
       if (message.type !== "ParameterState")
         throw new Error("Unexpected parameter frame header");
-      const row = message.data.find(
-        (item: any) => item.fixture_uid === fixtureUid,
-      );
-      red =
-        row?.parameters.find(
-          (parameter: any) => parameter.output.Red !== undefined,
-        )?.output.Red ?? null;
+      const output: Uint8Array = message.data.output;
+      if (message.data.layout_id === layoutId && redSlot !== null) {
+        red = new DataView(
+          output.buffer,
+          output.byteOffset,
+          output.byteLength,
+        ).getFloat32(redSlot * 4, true);
+      }
     }
     samples.push({ time, red });
   });
