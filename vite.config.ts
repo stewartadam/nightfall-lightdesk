@@ -186,7 +186,9 @@ export default defineConfig(({ mode, command }) => {
 
   const tauri = isTauri();
 
-  const warmupPanels = process.env.NIGHTFALL_VITE_WARMUP_PANELS === "1";
+  const warmupPanels =
+    (process.env.NIGHTFALL_VITE_WARMUP_PANELS ??
+      env.NIGHTFALL_VITE_WARMUP_PANELS) === "1";
   const panelModules = [
     "./features/**/panels/*.tsx",
     "./features/**/panel.tsx",
@@ -204,7 +206,10 @@ export default defineConfig(({ mode, command }) => {
     root: "./webui",
     // Playwright runs one dev server per worker; separate dependency caches
     // keep them from re-optimizing into one directory underneath each other.
-    cacheDir: process.env.NIGHTFALL_VITE_CACHE_DIR || undefined,
+    cacheDir:
+      process.env.NIGHTFALL_VITE_CACHE_DIR ||
+      env.NIGHTFALL_VITE_CACHE_DIR ||
+      undefined,
     resolve: {
       alias: {
         "#engine-runtime-worker?worker": `${resolve(
@@ -257,7 +262,7 @@ export default defineConfig(({ mode, command }) => {
     // Scanning lazily loaded panels at startup finds their dependencies before
     // a test opens one, instead of re-optimizing and reloading mid-test.
     optimizeDeps: {
-      entries: warmupPanels ? ["index.html", ...panelModules] : undefined,
+      entries: warmupPanels ? ["*.html", ...panelModules] : undefined,
     },
     server: {
       port: vitePort,
