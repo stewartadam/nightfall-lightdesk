@@ -110,6 +110,23 @@ function routeToPlaywrightBackend(
 }
 
 /**
+ * Passes the host the browser addressed to the backend as `X-Forwarded-Host`.
+ * `changeOrigin` rewrites `Host` to the loopback target, and the backend only
+ * admits a page whose origin matches the host it was reached through, so pages
+ * opened through the dev server from another LAN device would otherwise be refused.
+ */
+function forwardBrowserHost(proxy: HttpProxy.ProxyServer): void {
+  proxy.on("proxyReq", (proxyReq, req) => {
+    if (req.headers.host)
+      proxyReq.setHeader("x-forwarded-host", req.headers.host);
+  });
+  proxy.on("proxyReqWs", (proxyReq, req) => {
+    if (req.headers.host)
+      proxyReq.setHeader("x-forwarded-host", req.headers.host);
+  });
+}
+
+/**
  * Returns a record of URLs to proxy based on the current mode and whether the worktree is enabled. */
 function proxiedUrls(
   mode: string,
@@ -129,18 +146,20 @@ function proxiedUrls(
     "/api": {
       target: `http://localhost:${backendPort}`,
       changeOrigin: true,
-      configure: sharedPlaywrightServer
-        ? (server) => routeToPlaywrightBackend(server, "web")
-        : undefined,
+      configure: (server) => {
+        forwardBrowserHost(server);
+        if (sharedPlaywrightServer) routeToPlaywrightBackend(server, "web");
+      },
     },
     // Proxy websocket traffic to the backend server
     "/ws": {
       target: `ws://localhost:${backendPort}`,
       ws: true,
       changeOrigin: true,
-      configure: sharedPlaywrightServer
-        ? (server) => routeToPlaywrightBackend(server, "ws")
-        : undefined,
+      configure: (server) => {
+        forwardBrowserHost(server);
+        if (sharedPlaywrightServer) routeToPlaywrightBackend(server, "ws");
+      },
     },
   };
 

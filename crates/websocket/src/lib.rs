@@ -24,6 +24,7 @@ use tokio::sync::broadcast::Sender as BroadcastSender;
 use crate::websocket::create_axum_task;
 
 mod external_control;
+mod origin;
 pub mod routes;
 pub mod websocket;
 
