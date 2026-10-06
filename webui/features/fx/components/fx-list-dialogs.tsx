@@ -7,6 +7,7 @@
  */
 
 import { createEffect, createSignal, For, Show } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import {
   Dialog,
   DialogBody,
@@ -116,7 +117,7 @@ export function ModuleFxDialog(props: ModuleFxDialogProps) {
     props.onCreate({
       identifiers: {
         id,
-        uid: crypto.randomUUID().replace(/-/g, ""),
+        uid: uuidv4().replace(/-/g, ""),
         label: label().trim() || defaultModuleLabel(moduleName),
       },
       module_name: moduleName,

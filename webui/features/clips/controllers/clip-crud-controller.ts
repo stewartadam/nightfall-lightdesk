@@ -7,6 +7,7 @@
  */
 
 import { type Accessor, createSignal, type Setter } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import type {
   CrudListDataGridEditRequest,
   CrudListDataGridSelectionRequest,
@@ -72,7 +73,7 @@ export function createClipCrudController(options: ClipCrudControllerOptions) {
   /** Stores a fresh clip configuration, preserving identity when overwriting. */
   const createClip = (
     payload: { id: number; label: string },
-    uid: string = crypto.randomUUID(),
+    uid: string = uuidv4(),
   ) => {
     storeClip({
       identifiers: {

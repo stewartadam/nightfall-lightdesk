@@ -6,12 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import type * as types from "../../../types";
 
 /** Generates a backend-compatible UUID string for a new showfile object. */
 export function newMasterUid(): string {
-  return crypto.randomUUID().replace(/-/g, "");
+  return uuidv4().replace(/-/g, "");
 }
 
 /** Sends one master command through the websocket command bus. */

@@ -81,6 +81,51 @@ test("resolveWebSocketUrl uses same-origin proxy in browser Vite dev when enable
   );
 });
 
+/** A phone loading Vite dev over the LAN must reach the dev machine's backend, not its own loopback. */
+test("resolveWebSocketUrl targets the page's host in browser Vite dev without the proxy", () => {
+  assert.equal(
+    resolveWebSocketUrl({
+      backendPort: 3030,
+      isDev: true,
+      runtimeLocation: {
+        protocol: "http:",
+        host: "192.168.1.20:3031",
+        hostname: "192.168.1.20",
+      },
+      tauriRuntime: false,
+      viteProxyEnabled: false,
+    }),
+    "ws://192.168.1.20:3030/ws",
+  );
+});
+
+/** Built browser bundles served to another device reach the backend on the serving machine. */
+test("resolveWebSocketUrl targets the page's host for built browser bundles", () => {
+  assert.equal(
+    resolveWebSocketUrl({
+      backendPort: 3030,
+      isDev: false,
+      runtimeLocation: { host: "192.168.1.20:3031", hostname: "192.168.1.20" },
+      tauriRuntime: false,
+      viteProxyEnabled: false,
+    }),
+    "ws://192.168.1.20:3030/ws",
+  );
+});
+
+/** The desktop shell always talks to the backend it launched on loopback. */
+test("resolveBackendUrl keeps loopback in built Tauri bundles", () => {
+  assert.equal(
+    resolveBackendUrl({
+      backendPort: 3891,
+      isDev: false,
+      runtimeLocation: { origin: "tauri://localhost", hostname: "tauri.local" },
+      tauriRuntime: true,
+    }),
+    "http://localhost:3891",
+  );
+});
+
 test("resolveWebSocketUrl bypasses same-origin proxy in Tauri dev", () => {
   assert.equal(
     resolveWebSocketUrl({

@@ -273,6 +273,14 @@ The backend engine can be started with `cargo run`, and the web UI with `pnpm ru
 keeps third-party dependency features identical across `cargo run`, `cargo test -p <crate>`, and the commit hooks,
 so switching between them reuses build artifacts.
 
+To try the web UI from another device on your network, such as a phone, start
+Vite with `pnpm run dev -- --host` and open the printed network URL on the device.
+The UI connects to the backend on the same host it was loaded from, so turn on
+**External control** in the I/O Transports panel (see the
+[user guide](docs/src/user-guide/panels/io-transports.md#external-control)) to
+let the backend accept connections from the network. Only enable it on a
+trusted network.
+
 Playwright test commands use a pool of up to six parallel workers by default;
 set `NIGHTFALL_PLAYWRIGHT_WORKERS` to choose another pool size. Each worker keeps a
 Vite proxy on a temporary loopback port pair, while every test starts a freshly

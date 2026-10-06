@@ -20,6 +20,7 @@ import { SunIcon } from "@squidlab/phosphor-solid/sun";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { VideoCameraIcon } from "@squidlab/phosphor-solid/video-camera";
 import { Dynamic } from "solid-js/web";
+import { v4 as uuidv4 } from "uuid";
 /**
  * Toolbar for Visualizer interaction modes and view/debug toggles.
  *
@@ -185,7 +186,7 @@ export const VisualizerToolToolbar: Component = () => {
 
     const fixtureIds = selectedFixtureIds();
     const sceneObjectIds = selectedSceneObjectIds();
-    const batchId = crypto.randomUUID();
+    const batchId = uuidv4();
 
     context.sendProgrammerCommand(
       { type: "ClearProgrammerSelection" },
