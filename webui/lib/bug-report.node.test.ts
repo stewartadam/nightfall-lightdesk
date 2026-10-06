@@ -73,3 +73,59 @@ test("bounds encoded URLs and truncates long warning messages", () => {
     report.summary,
   );
 });
+
+/** Unexpected errors prefill the title and description with the headline and stack. */
+test("prefills an unexpected error's headline and stack", () => {
+  const report = createBugReport(baseUrl, context, "none", {
+    source: "engine runtime",
+    name: "TypeError",
+    message: "crypto.randomUUID is not a function",
+    stack:
+      "TypeError: crypto.randomUUID is not a function\n    at sendCommand (/lib/engine-runtime.ts:2941:30)",
+  });
+  const url = new URL(report.url);
+  assert.equal(
+    url.searchParams.get("title"),
+    "[Bug] TypeError: crypto.randomUUID is not a function",
+  );
+  const problem = url.searchParams.get("problem") ?? "";
+  assert.match(problem, /\(engine runtime\)/);
+  assert.match(
+    problem,
+    /```\nTypeError: crypto\.randomUUID is not a function\n {4}at sendCommand \(\/lib\/engine-runtime\.ts:2941:30\)\n```/,
+  );
+});
+
+/** Huge stacks are trimmed from the bottom so the link stays within its budget. */
+test("trims long error stacks to fit the link budget", () => {
+  const frames = Array.from(
+    { length: 400 },
+    (_, index) => `    at frame${index} (/assets/${"💡".repeat(20)}.js:1:1)`,
+  ).join("\n");
+  const report = createBugReport(baseUrl, context, "all", {
+    source: "app",
+    name: "Error",
+    message: "boom",
+    stack: `Error: boom\n${frames}`,
+  });
+  assert.ok(report.url.length <= 6000);
+  const problem = new URL(report.url).searchParams.get("problem") ?? "";
+  assert.match(problem, /at frame0 /);
+  assert.ok(!problem.includes("frame399"));
+});
+
+/** Firefox and WebKit stacks hold frames only, so every line is kept beneath the headline. */
+test("keeps frame-only stacks intact", () => {
+  const report = createBugReport(baseUrl, context, "none", {
+    source: "app",
+    name: "TypeError",
+    message: "Failed to resolve '@tauri-apps/api'",
+    stack: "sendCommand@/lib/engine-runtime.ts:2941:30\n@/main.tsx:1:1",
+  });
+  const problem = new URL(report.url).searchParams.get("problem") ?? "";
+  assert.ok(
+    problem.includes(
+      "```\nTypeError: Failed to resolve '@tauri-apps/api'\nsendCommand@/lib/engine-runtime.ts:2941:30\n@/main.tsx:1:1\n```",
+    ),
+  );
+});

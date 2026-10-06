@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import "./lib/report-uncaught-errors";
 import "./lib/idle-callback";
 import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";

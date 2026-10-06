@@ -41,6 +41,7 @@ import {
 } from "../../../../lib/dockview-layout";
 import { areExperimentalFlowsEnabled } from "../../../../lib/experimental-features";
 import { isVisualizerDefaultPanelEnabled } from "../../../../lib/feature-flags";
+import { openErrorBugReport } from "../../../../lib/feedback";
 import { clearLayout, loadLayout } from "../../../../lib/layoutStorage";
 import { getLogger } from "../../../../lib/logger";
 import {
@@ -60,6 +61,7 @@ import {
   type PanelTabStatus,
   subscribePanelTabStatus,
 } from "../../../../lib/panel-tab-status";
+import { describeUncaughtError } from "../../../../lib/uncaught-error";
 import { appearanceSettings } from "../../../../state/appearance";
 import { openContextMenu } from "../../../providers/context-menu";
 import { type AppIcon, renderIconComponent } from "../../../ui/icon";
@@ -1580,6 +1582,19 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
                             />
                           </svg>
                           Retry
+                        </Button>
+                        <Button
+                          size="compact"
+                          type="button"
+                          onClick={() =>
+                            openErrorBugReport({
+                              ...describeUncaughtError(err, "error"),
+                              source: `panel ${entry.id}`,
+                            })
+                          }
+                          class="ms-2"
+                        >
+                          Report Bug
                         </Button>
                       </div>
 

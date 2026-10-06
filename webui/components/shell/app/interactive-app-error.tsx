@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { openFeedbackPage } from "../../../lib/feedback";
+import { openErrorBugReport } from "../../../lib/feedback";
+import { describeUncaughtError } from "../../../lib/uncaught-error";
 
 /** Renders a terminal startup failure after the interactive chunk loads. */
 export default function InteractiveAppError(props: { error: unknown }) {
@@ -36,7 +37,12 @@ export default function InteractiveAppError(props: { error: unknown }) {
         <button
           type="button"
           class="mt-4 rounded bg-blue-700 px-3 py-2 text-sm text-white hover:bg-blue-600"
-          onClick={() => openFeedbackPage("bug")}
+          onClick={() =>
+            openErrorBugReport({
+              ...describeUncaughtError(props.error, "error"),
+              source: "app startup",
+            })
+          }
         >
           Report a Bug
         </button>

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createBugReport } from "./bug-report";
+import { type BugReportError, createBugReport } from "./bug-report";
 import { getLogger } from "./logger";
 import { collectSystemInfo } from "./system-info";
 import { isTauriRuntime } from "./tauri";
@@ -33,6 +33,36 @@ export function openFeedbackPage(kind: "feedback" | "bug"): void {
     return;
   }
   window.open(FEEDBACK_URL, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * Opens the bug report form prefilled with an unexpected error's headline and
+ * stack. The page origin is removed from the message and stack, which keeps the
+ * link short and leaves local network addresses out of the public issue.
+ */
+export function openErrorBugReport(error: BugReportError): void {
+  try {
+    const origin = window.location.origin;
+    /** Removes this page's origin, leaving site-relative URLs. */
+    const scrub = (text: string) =>
+      origin === "null" ? text : text.split(origin).join("");
+    const report = createBugReport(
+      BUG_REPORT_URL,
+      collectSystemInfo(),
+      "none",
+      {
+        ...error,
+        message: scrub(error.message),
+        stack: error.stack === undefined ? undefined : scrub(error.stack),
+      },
+    );
+    void openBugReport(report.url).catch((cause: unknown) => {
+      log.error("Could not open the bug report", { error: cause });
+    });
+  } catch (cause) {
+    log.error("Could not prepare the bug report", { error: cause });
+    openFeedbackPage("bug");
+  }
 }
 
 /** Opens the reviewed summary in the configured issue form without submitting an issue. */
