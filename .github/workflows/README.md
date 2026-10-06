@@ -84,9 +84,10 @@ One-time setup:
 
 1. In Cloudflare, create a Worker to hold the previews. CI never changes its
    production deployment.
-2. In the Worker's **Settings → Domains & Routes**, enable Cloudflare Access on
-   both **workers.dev** and **Preview URLs**, and allow only the maintainers'
-   emails. Deploys use the API token, so Access never blocks CI.
+2. On the Worker's **Domains** tab, enable the **Preview** URL
+   (`*-<worker>.<subdomain>.workers.dev`). On its **Access** tab, require login
+   for **All traffic** and allow only the maintainers. Deploys use the API token,
+   so Access never blocks CI.
 3. Create an API token with only **Account → Workers Scripts → Edit**.
 4. In this repository's Actions settings, add the secret
    `CLOUDFLARE_PREVIEW_TOKEN` and the variables `CLOUDFLARE_ACCOUNT_ID` and
