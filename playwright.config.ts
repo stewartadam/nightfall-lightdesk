@@ -36,7 +36,7 @@ const browserName =
 
 /**
  * Returns the configured pool size, or one worker per core minus one, capped
- * at six. Each worker runs its own Vite server, backend and browser, so a pool
+ * at six. Each worker runs its own backend and browser, so a pool
  * that fills every core slows every test toward its timeout.
  */
 function readWorkerCount(): number {

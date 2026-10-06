@@ -70,7 +70,10 @@ function claimPortPair(runRoot, backendPort) {
   }
 }
 
-/** Finds and claims two consecutive ports for one worker's backend and Vite. */
+/**
+ * Finds and claims two consecutive ports, matching the backend and frontend
+ * port pairing that `NIGHTFALL_PORT` implies for every service in the run.
+ */
 export async function claimAvailablePortPair(runRoot) {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const backend = await openEphemeralPort();
@@ -175,52 +178,48 @@ async function stopService(service) {
   }
 }
 
-/** Starts one worker-scoped Vite proxy on a claimed service port pair. */
-export async function startPlaywrightWorkerSlot({ runRoot, workerIndex }) {
-  const { backendPort, claimPaths } = await claimAvailablePortPair(runRoot);
-  const baseURL = `http://127.0.0.1:${backendPort + 1}`;
-  const registryPath = join(runRoot, `worker-${workerIndex}-vite.jsonl`);
-  try {
-    const viteService = await startService({
-      environment: {
-        NIGHTFALL_PORT: String(backendPort),
-        NIGHTFALL_VITE_CACHE_DIR: join(
-          process.cwd(),
-          "node_modules",
-          ".vite-playwright",
-          `worker-${workerIndex}`,
-        ),
-        NIGHTFALL_VITE_WARMUP_PANELS: "1",
-      },
-      registryPath,
-      scriptName: "run-playwright-vite.mjs",
-      timeoutMs: 120_000,
-      url: baseURL,
-    });
-    return {
-      backendPort,
-      baseURL,
-      claimPaths,
-      runRoot,
-      viteService,
-      workerIndex,
-    };
-  } catch (error) {
-    for (const claimPath of claimPaths) {
-      rmSync(claimPath, { force: true });
-    }
-    throw error;
-  }
+/**
+ * Starts the one Vite dev server a Playwright run shares across workers. Its
+ * `/api` and `/ws` proxies follow each browser context's backend cookie, and
+ * the app routes WebSocket traffic through the proxy so the cookie reaches it.
+ * The default target is a claimed port that nothing listens on, so a request
+ * without the cookie fails instead of reaching another test's backend. Its
+ * process registry lives in the run root, so the pool sweep stops it when
+ * Playwright exits.
+ */
+export async function startPlaywrightSharedVite(runRoot) {
+  const { backendPort: unusedBackendPort } =
+    await claimAvailablePortPair(runRoot);
+  const baseURL = `http://127.0.0.1:${unusedBackendPort + 1}`;
+  await startService({
+    environment: {
+      NIGHTFALL_PLAYWRIGHT_SHARED_VITE: "1",
+      NIGHTFALL_PORT: String(unusedBackendPort),
+      NIGHTFALL_VITE_PROXY: "1",
+      NIGHTFALL_VITE_WARMUP_PANELS: "1",
+    },
+    registryPath: join(runRoot, "shared-vite.jsonl"),
+    scriptName: "run-playwright-vite.mjs",
+    timeoutMs: 120_000,
+    url: baseURL,
+  });
+  return baseURL;
 }
 
-/** Stops one worker's Vite proxy and releases its claimed port pair. */
-export async function stopPlaywrightWorkerSlot(workerSlot) {
-  try {
-    await stopService(workerSlot.viteService);
-  } finally {
-    for (const claimPath of workerSlot.claimPaths) {
-      rmSync(claimPath, { force: true });
-    }
+/** Claims a backend port for one Playwright worker and points it at the shared Vite server. */
+export async function startPlaywrightWorkerSlot({
+  baseURL,
+  runRoot,
+  workerIndex,
+}) {
+  const { backendPort, claimPaths } = await claimAvailablePortPair(runRoot);
+  return { backendPort, baseURL, claimPaths, runRoot, workerIndex };
+}
+
+/** Releases one worker's claimed port pair. */
+export function stopPlaywrightWorkerSlot(workerSlot) {
+  for (const claimPath of workerSlot.claimPaths) {
+    rmSync(claimPath, { force: true });
   }
 }
 

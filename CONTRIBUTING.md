@@ -283,9 +283,9 @@ trusted network.
 
 Playwright test commands use one parallel worker per available core minus one,
 capped at six, and print the chosen count at startup; set
-`NIGHTFALL_PLAYWRIGHT_WORKERS` to choose another pool size. Each worker keeps a
-Vite proxy on a temporary loopback port pair, while every test starts a freshly
-seeded backend on that worker's backend port. The run sanitizes one seed copy,
+`NIGHTFALL_PLAYWRIGHT_WORKERS` to choose another pool size. Each worker claims a
+temporary loopback port pair, and every test starts a freshly seeded backend on
+its backend port. The run sanitizes one seed copy,
 then uses copy-on-write filesystem clones for each test when supported. The seed
 includes only the stable `default`, `sample`, fixture-library, FX-module, and
 object-library data from the worktree's `NIGHTFALL_DATA_DIR`, with physical
@@ -294,13 +294,17 @@ session or inheriting backend world and undo state from another test. Owned
 services and disposable data are removed after each test and swept again when
 Playwright exits.
 
-Each worker's Vite server keeps its own dependency cache under
-`node_modules/.vite-playwright/`, selected with `NIGHTFALL_VITE_CACHE_DIR`, so
-parallel servers never re-optimize dependencies underneath each other. The pool
-also sets `NIGHTFALL_VITE_WARMUP_PANELS=1`, which makes Vite scan every lazily
-loaded panel for dependencies and pre-transform the app at startup. Set it yourself
-when running `pnpm run dev` to trade a slower dev-server start for faster first
-panel opens.
+All workers share one Vite dev server per run, so only the first page load
+compiles the app. A fixture sets a `nightfall-playwright-backend` cookie with the
+test's backend port, and the server's `/api` and `/ws` proxies route each request
+by it; `NIGHTFALL_VITE_PROXY=1` keeps the app's WebSocket on the proxy too.
+Requests without the cookie reach an unused port and fail.
+[ADR 1](docs/adr/0001-playwright-page-loads.md) describes where this is heading.
+
+The shared server runs with `NIGHTFALL_VITE_WARMUP_PANELS=1`, which makes Vite
+scan every lazily loaded panel for dependencies and pre-transform the app at
+startup. Set it yourself when running `pnpm run dev` to trade a slower dev-server
+start for faster first panel opens.
 
 Pass `--target embedded-demo` to run browser-demo tests without building or
 starting the native backend. The default target is `native`, which can also be
