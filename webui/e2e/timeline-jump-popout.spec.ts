@@ -236,7 +236,7 @@ async function openJumpPopout(page: Page, fixture: JumpTimelineFixture) {
 
 /** Opens the global command palette and returns its search input. */
 async function openCommandPalette(page: Page) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
   const commandInput = page.getByPlaceholder("Type a command or search...");
   await expect(commandInput).toBeVisible();
   return commandInput;

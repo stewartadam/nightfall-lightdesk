@@ -190,6 +190,14 @@ stops the worktree's services and removes it. Dirty worktrees are kept, and
 branches with unmerged commits survive the worktree. Keep personal Claude Code
 settings in `.claude/settings.local.json`.
 
+Claude Code cloud sessions run `.claude/hooks/cloud-session-start.sh` at
+startup; it does nothing on local machines. It pulls Git LFS files and
+installs the pinned Rust toolchain before parallel `cargo` calls can race
+rustup's auto-install, the Playwright browser revisions our `@playwright/test`
+expects, `libasound2-dev`, pnpm dependencies, pnpm's native binary (needed by
+nested `pnpm run`), prek hooks, cargo-nextest, typeshare, and the generated
+`.env`.
+
 Sample MP3s are tracked with Git LFS and packaged as external resources. Run
 `git lfs pull` before packaging or creating a sample show in development. Rust
 compilation does not read or embed these files. Debug backends read the source
@@ -449,6 +457,12 @@ smoke tests wait for the WASM bridge and the native job, which builds the tested
 backend, but not the demo engine or the UI checks. The required `CI gate` check aggregates all these results
 and fails if any required job fails or is unexpectedly skipped. Local hook
 commands are unchanged.
+
+CI runs only the smoke specs. To run the whole Playwright suite on GitHub, start
+the **Full Playwright suite** workflow (`playwright-full.yml`) from the Actions
+tab or with `gh workflow run playwright-full.yml --ref <branch>`. It builds the
+backend and WASM bridge once, then runs six shards in parallel; its `runner`
+input accepts a larger runner label where one is available.
 
 Install test browsers once per shared browser cache:
 

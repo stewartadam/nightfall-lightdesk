@@ -253,7 +253,7 @@ test("tracking dropdown renders above dockview sashes", async ({ page }) => {
     '[data-panel-id="panel-PropertiesInspector"]:visible',
   );
   const trackingToggle = propertiesPanel
-    .getByRole("button", { name: "Intensity" })
+    .getByRole("button", { name: "Choose tracking flags" })
     .first();
   await expect(trackingToggle).toBeVisible();
   await trackingToggle.click();

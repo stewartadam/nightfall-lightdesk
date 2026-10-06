@@ -33,7 +33,7 @@ async function becomesVisible(locator: ReturnType<Page["locator"]>) {
  * Opens a panel through the command palette.
  */
 async function openPanel(page: Page, panelName: string) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   if (!(await becomesVisible(commandInput))) {

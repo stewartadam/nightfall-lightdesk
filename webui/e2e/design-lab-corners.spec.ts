@@ -20,7 +20,7 @@ test("Properties toggles rounded corners across the design lab", async ({
   const panel = page.locator(".dv-groupview").first();
   const button = properties.getByRole("button", { name: "Blue accent" });
   await expect(toggle).toBeChecked();
-  await expect(panel).toHaveCSS("border-radius", "7px");
+  await expect(panel).toHaveCSS("border-radius", "6px");
   await expect(tile).toHaveCSS("border-radius", "6px");
   await page.screenshot({ path: testInfo.outputPath("rounded.png") });
 
@@ -61,11 +61,11 @@ test("Properties toggles rounded corners across the design lab", async ({
   await toggle.focus();
   await page.keyboard.press("Space");
   await expect(toggle).toBeChecked();
-  await expect(panel).toHaveCSS("border-radius", "7px");
+  await expect(panel).toHaveCSS("border-radius", "6px");
   await expect(tile).toHaveCSS("border-radius", "6px");
   await tile.click({ button: "right" });
   await expect(page.getByRole("menu").first()).toHaveCSS(
     "border-radius",
-    "7px",
+    "6px",
   );
 });

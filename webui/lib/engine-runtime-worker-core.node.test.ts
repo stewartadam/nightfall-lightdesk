@@ -185,3 +185,96 @@ test("demo adapter shares worker delivery and honors cancellation", (t) => {
   assert.equal(stopped, true);
   assert.equal(callbacks?.isCurrent(generation), false);
 });
+
+/** Encodes a message map in the engine's `type`-first field order, which cborg would sort. */
+function engineEncoded(discriminator: number, type: string, data: unknown) {
+  const entries = [encode("type"), encode(type), encode("data"), encode(data)];
+  return new Uint8Array([
+    discriminator,
+    0xa2,
+    ...entries.flatMap((entry) => [...entry]),
+  ]);
+}
+
+/**
+ * A command result is pulled in the same batch as the newest snapshot published before it,
+ * so the main thread applies that state before settling the command, and a superseded
+ * snapshot is never delivered.
+ */
+test("pulls deliver command results with the newest staged snapshot", (t) => {
+  const worker = workerHarness(t);
+  let callbacks: Parameters<EmbeddedRuntimeFactory>[0] | undefined;
+  startEngineRuntimeWorker((hooks) => {
+    callbacks = hooks;
+    return {
+      /** Skip demo loading; the test publishes engine output directly. */
+      async start() {},
+      /** No adapter resources to release. */
+      stop() {},
+      /** Commands are not exercised here. */
+      submit() {},
+      /** Leave periodic metrics inactive in this protocol test. */
+      postInfo() {},
+    };
+  });
+  worker.send({
+    type: "start",
+    config: { mode: "embedded-demo", sampleId: "test", showfileUrl: "/s" },
+  });
+  /** Builds a one-slot values frame for `layoutId` with the given red output. */
+  const frameWithRed = (layoutId: number, red: number) => ({
+    layout_id: layoutId,
+    output: new Uint8Array(Float32Array.of(red).buffer),
+    absolute_count: 0,
+    assertion_slots: new Uint8Array(),
+    assertion_kinds: new Uint8Array(),
+    assertion_values: new Uint8Array(),
+  });
+  const result = { command_id: "c1", outcome: { type: "Succeeded" } };
+  callbacks?.processEncodedPublication(
+    engineEncoded(0, "ParameterLayout", {
+      layout_id: 1,
+      fixtures: [{ fixture_uid: "fixture", elements: [["Red"]] }],
+      assertion_variants: ["Absolute"],
+    }),
+  );
+  callbacks?.processEncodedPublication(
+    engineEncoded(1, "ParameterState", frameWithRed(1, 0)),
+  );
+  callbacks?.processEncodedPublication(
+    engineEncoded(1, "ParameterState", frameWithRed(1, 255)),
+  );
+  callbacks?.processEncodedPublication(
+    engineEncoded(0, "CommandResult", result),
+  );
+  assert.deepEqual(worker.publications.at(-1), { type: "commandResultReady" });
+
+  worker.send({ type: "pullFrame" });
+  const batch = worker.publications.at(-1).messages;
+  assert.deepEqual(
+    batch.map((message: { messageType: string }) => message.messageType),
+    ["ParameterLayout", "CommandResult", "ParameterState"],
+  );
+  assert.deepEqual(batch[1].data, { type: "CommandResult", data: result });
+  const decoder = new ParameterStateDecoder();
+  assert.equal(queuedWorkerMessageData(batch[0], decoder), undefined);
+  assert.deepEqual(queuedWorkerMessageData(batch[2], decoder), {
+    type: "ParameterState",
+    data: [
+      {
+        fixture_uid: "fixture",
+        parameters: [{ output: { Red: 255 }, absolute: {}, relative: {} }],
+      },
+    ],
+  });
+
+  callbacks?.processEncodedPublication(
+    engineEncoded(1, "ParameterState", frameWithRed(2, 128)),
+  );
+  worker.send({ type: "pullFrame" });
+  assert.deepEqual(
+    worker.publications.at(-1).messages,
+    [],
+    "a snapshot staged encoded is dropped on pull when its layout is not the latest",
+  );
+});

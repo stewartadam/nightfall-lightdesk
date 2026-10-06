@@ -43,7 +43,7 @@ test("flows are disabled by default", async ({ page }, testInfo) => {
   await expect(
     page.getByRole("tab", { name: "Flows", exact: true }),
   ).toHaveCount(0);
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
   await page.getByPlaceholder("Type a command or search...").fill("flow");
   await expect(page.getByText("Open Flows", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Open Flow Editor", { exact: true })).toHaveCount(
@@ -105,7 +105,7 @@ test.describe("experimental opt-in", () => {
         ),
       )
       .toBe(true);
-    await page.keyboard.press("Meta+Shift+P");
+    await page.keyboard.press("ControlOrMeta+Shift+P");
     await page
       .getByPlaceholder("Type a command or search...")
       .fill("Open Flows");

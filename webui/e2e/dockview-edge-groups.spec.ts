@@ -151,7 +151,7 @@ async function waitForDockview(page: Page) {
 
 /** Runs one command through the command palette. */
 async function runCommand(page: Page, commandName: string) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();
@@ -456,6 +456,11 @@ test("default layout seeds collapsible edge panels", async ({ page }) => {
   await expect(
     page
       .getByTestId("dv-edge-group-edge-Console")
+      .getByRole("tab", { name: "Status Display", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByTestId("dv-edge-group-edge-Properties")
       .getByRole("tab", { name: "Console", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("tab", { name: /Properties/ })).toBeVisible();
@@ -467,8 +472,9 @@ test("default layout seeds collapsible edge panels", async ({ page }) => {
 
         return {
           bottomPosition: api.getEdgeGroup("bottom")?.location?.position,
-          consoleCollapsed: api.getEdgeGroup("bottom")?.isCollapsed(),
+          bottomCollapsed: api.getEdgeGroup("bottom")?.isCollapsed(),
           consoleLocation: api.getPanel("panel-CommandLine")?.api.location,
+          statusLocation: api.getPanel("panel-StatusDisplay")?.api.location,
           leftCollapsed: api.getEdgeGroup("left")?.isCollapsed(),
           leftPosition: api.getEdgeGroup("left")?.location?.position,
           clipsLocation: api.getPanel("panel-ClipList")?.api.location,
@@ -481,8 +487,9 @@ test("default layout seeds collapsible edge panels", async ({ page }) => {
     )
     .toEqual({
       bottomPosition: "bottom",
-      consoleCollapsed: true,
-      consoleLocation: { position: "bottom", type: "edge" },
+      bottomCollapsed: true,
+      consoleLocation: { position: "right", type: "edge" },
+      statusLocation: { position: "bottom", type: "edge" },
       leftCollapsed: true,
       leftPosition: "left",
       clipsLocation: { position: "left", type: "edge" },

@@ -200,11 +200,12 @@ test("read-only table fits narrow panel with horizontal scrolling", async ({
   const scroller = panel
     .getByRole("grid", { name: "Timecode source status" })
     .locator("[data-grid-kind]");
-  expect(
-    await panel.evaluate(
-      (element) => element.scrollWidth <= element.clientWidth,
-    ),
-  ).toBe(true);
+  // The tab's content slides in from the side, so wait for it to settle.
+  await expect
+    .poll(() =>
+      panel.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    )
+    .toBe(true);
   expect(
     await scroller.evaluate(
       (element) => element.scrollWidth > element.clientWidth,

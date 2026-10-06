@@ -14,7 +14,7 @@ import {
   gridHeaderByColumnKey,
 } from "./data-grid-selectors";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const TARGET_FIXTURE_ID = 601;
 const PROJECTION_FIXTURE_ID = 501;
@@ -47,6 +47,7 @@ async function openLookaheadTestApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.send === "function" &&

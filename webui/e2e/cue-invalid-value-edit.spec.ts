@@ -13,13 +13,14 @@ import {
   gridHeaderByColumnKey,
 } from "./data-grid-selectors";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 /**
  * Waits for the app shell stores needed by cue editor tests.
  */
 async function waitForCueEditorStores(page: Page): Promise<void> {
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&

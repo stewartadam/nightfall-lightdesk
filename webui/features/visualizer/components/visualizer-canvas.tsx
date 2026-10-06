@@ -53,6 +53,7 @@ import {
   deleteSceneObject,
   updateSceneObjectPlacement,
 } from "../../../lib/scene-object-service";
+import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   applyVisualizerSelectionModifiers,
@@ -127,7 +128,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   const fixtures = useFixtures();
   const sceneObjects = useSceneObjects();
   const $programmerSelection = useStore(programmerSelection);
-  const $programmerState = useStore(programmerState);
+  const $programmerState = useShallowStore(programmerState);
   const $visualizerSceneObjectSelection = useStore(
     visualizerSceneObjectSelection,
   );
@@ -195,8 +196,11 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   );
 
   /** Fixture UIDs with values currently present in the programmer. */
-  const programmerValueUids = createMemo(() =>
-    Array.from(new Set($programmerState().map((row) => row.fixtureUid))),
+  const programmerValueUids = createMemo(
+    () => Array.from(new Set($programmerState().map((row) => row.fixtureUid))),
+    undefined,
+    // Value-only programmer changes keep the same fixtures.
+    { equals: (previous, next) => previous.join() === next.join() },
   );
 
   /** Selection shared by visualizer affordances and object transform workflows. */

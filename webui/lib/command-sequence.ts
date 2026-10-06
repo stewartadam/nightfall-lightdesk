@@ -33,7 +33,7 @@ export async function splitCommandSequence(input: string): Promise<string[]> {
 
 /** Observers notified as a sequence advances through its statements. */
 export interface CommandSequenceProgress {
-  /** Called just before a statement is submitted. */
+  /** Called once a statement has been submitted, before its result arrives. */
   onStatementStarted?: (index: number) => void;
   /** Called once a statement's terminal result has arrived. */
   onStatementSettled?: (index: number, result: types.CommandResult) => void;
@@ -68,10 +68,11 @@ export class CommandSequenceRunner {
         type: "Eval",
         data: statement,
       };
-      progress.onStatementStarted?.(index);
-      const result = await this.client.submitCommand("DeskCommand", command, {
+      const pendingResult = this.client.submitCommand("DeskCommand", command, {
         consoleCommandText: statement,
       });
+      progress.onStatementStarted?.(index);
+      const result = await pendingResult;
       progress.onStatementSettled?.(index, result);
       steps.push({ statement, result });
       if (result.outcome.type === "Failed") {

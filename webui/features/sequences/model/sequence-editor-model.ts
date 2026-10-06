@@ -106,6 +106,18 @@ export const SUMMARY_ROW_BACKGROUND = "#27272a";
 export const SEQUENCE_DURATION_SUMMARY_ROW_KEY = "sequence-duration-summary";
 export const DEFAULT_SEQUENCE_TRACKING_FLAGS = trackingFlagsFromMask(7);
 
+/**
+ * Returns the stable grid row identity for a sequence editor row, which the
+ * data grid uses to follow selection through reorders, inserts and deletes.
+ */
+export function sequenceGridRowKey(row: SequenceGridRow): string {
+  if (row.rowKind === "summary") return SEQUENCE_DURATION_SUMMARY_ROW_KEY;
+  if (row.rowKind === "part") {
+    return `${row.cueUid}:part:${row.partId ?? row.partIndex ?? ""}`;
+  }
+  return `${row.cueUid}:cue`;
+}
+
 export function isTimingColumnId(
   columnId: string | undefined,
 ): columnId is TimingColumnId {

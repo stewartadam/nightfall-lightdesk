@@ -11,7 +11,12 @@ import test from "node:test";
 import { createTable } from "@tanstack/solid-table";
 import { createRoot } from "solid-js";
 import type { GridColumn } from "../../../../lib/data-grid-types";
-import { columnWidth, groupColumns, sourceGridColumn } from "./column-model";
+import {
+  columnWidth,
+  groupColumns,
+  reuseEquivalentColumns,
+  sourceGridColumn,
+} from "./column-model";
 import { dataGridTableFeatures } from "./table-features";
 import type { TableRow } from "./types";
 
@@ -24,6 +29,32 @@ type NestedGridColumn = GridColumn & {
 /** Verifies transiently missing virtualized columns fall back to the default width. */
 test("columnWidth handles missing column metadata", () => {
   assert.equal(columnWidth(undefined), 120);
+});
+
+/**
+ * Verifies rebuilt columns with the same data keep the previous array, even when owner
+ * filter accessors are recreated, while any data change yields the new array.
+ */
+test("reuseEquivalentColumns keeps identity only for unchanged column data", () => {
+  /** Builds the columns an owner recreates on every data refresh. */
+  const build = (redWidth: number) => [
+    {
+      id: "id",
+      title: "ID",
+      width: 85,
+      filter: { kind: "number", value: (row: { id: number }) => row.id },
+    },
+    { id: "Red_Value", title: "", width: redWidth, group: "Red" },
+  ];
+  const previous = build(120);
+
+  assert.equal(reuseEquivalentColumns(previous, build(120)), previous);
+  const resized = build(200);
+  assert.equal(reuseEquivalentColumns(previous, resized), resized);
+  const fewer = build(120).slice(0, 1);
+  assert.equal(reuseEquivalentColumns(previous, fewer), fewer);
+  const next = build(120);
+  assert.equal(reuseEquivalentColumns(undefined, next), next);
 });
 
 /** Verifies singleton nested attributes collapse in the authoritative definition tree. */

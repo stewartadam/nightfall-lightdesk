@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy_app::prelude::*;
-use bevy_ecs::prelude::Messages;
+use bevy_ecs::prelude::{MessageReader, MessageWriter, Messages};
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
 use nightfall_cues::CueLifecycleAction;
@@ -25,8 +25,9 @@ use nightfall_engine::prelude::{
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_instances::{PlaybackAction, PlaybackScope};
 use nightfall_programmer::events::{
-    PendingUserCommandPlans, ProgrammerCommand, SelectionFlattenApprovals,
-    handle_programmer_events, plan_pending_user_commands,
+    PendingProgrammerActionWorkflows, PendingUserCommandPlans, ProgrammerCommand,
+    SelectionFlattenApprovals, finish_programmer_action_workflows, handle_programmer_events,
+    plan_pending_user_commands,
 };
 use nightfall_programmer::prelude::{
     AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerAction, Scope, UserCommand,
@@ -97,6 +98,7 @@ fn setup_app() -> App {
     app.init_resource::<CommandTracker>();
     app.init_resource::<SelectionFlattenApprovals>();
     app.init_resource::<PendingUserCommandPlans>();
+    app.init_resource::<PendingProgrammerActionWorkflows>();
     app.init_resource::<PendingCommandBuffer>();
     app.init_resource::<PendingEngineActionBuffer>();
     app.insert_resource(Programmer::default());
@@ -105,9 +107,25 @@ fn setup_app() -> App {
     app.insert_resource(DataProvider::<Group>::default());
     app.add_systems(
         Update,
-        (plan_pending_user_commands, handle_programmer_events).chain(),
+        (
+            plan_pending_user_commands,
+            handle_programmer_events,
+            complete_cue_lifecycle_actions,
+            finish_programmer_action_workflows,
+        )
+            .chain(),
     );
     app
+}
+
+/// Completes delegated cue releases immediately, as the cue lifecycle handler does.
+fn complete_cue_lifecycle_actions(
+    mut actions: MessageReader<EngineActionEnvelope<CueLifecycleAction>>,
+    mut results: MessageWriter<OperationResult<(), CommandError>>,
+) {
+    for action in actions.read() {
+        results.write(OperationResult::succeeded(action.operation_id, ()));
+    }
 }
 
 fn fixture_attribute_map(programmer: &Programmer) -> HashMap<FixtureRef, HashSet<Attribute>> {
@@ -275,6 +293,52 @@ fn tracked_clear_selection_finishes_after_mutation() {
             .resource::<Programmer>()
             .active_selection()
             .is_empty()
+    );
+    let results: Vec<_> = app
+        .world_mut()
+        .resource_mut::<Messages<CommandResult>>()
+        .drain()
+        .collect();
+    assert!(matches!(
+        results.as_slice(),
+        [CommandResult {
+            command_id: result_command_id,
+            outcome: CommandOutcome::Succeeded { output: None },
+        }] if *result_command_id == command_id
+    ));
+}
+
+/// Verifies a tracked clear whose values are released through delegated cue cleanup reports
+/// success in the same update once that cleanup completes, rather than one update later.
+#[test]
+fn tracked_clear_values_finishes_in_the_update_its_cue_release_completes() {
+    let mut app = setup_app();
+    let fixture = test_fixture_ref(991);
+    app.world_mut()
+        .resource_mut::<Programmer>()
+        .add_instruction(BoundCueInstruction {
+            selection: SelectionExpr::Resolved(vec![fixture]).into(),
+            cue_instruction: instruction_with_red_blue(),
+        });
+    let envelope = CommandEnvelope::new(
+        ProgrammerCommand::ClearProgrammer,
+        CommandOrigin::WebUi,
+        ReplyTarget::Detached,
+    );
+    let command_id = envelope.command_id;
+    app.world_mut()
+        .resource_mut::<CommandTracker>()
+        .register(&envelope)
+        .expect("clear command should register");
+    app.world_mut().write_message(envelope);
+
+    app.update();
+
+    assert!(
+        !app.world()
+            .resource::<Messages<EngineActionEnvelope<CueLifecycleAction>>>()
+            .is_empty(),
+        "clearing values should delegate cue cleanup"
     );
     let results: Vec<_> = app
         .world_mut()

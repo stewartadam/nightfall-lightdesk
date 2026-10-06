@@ -16,9 +16,29 @@ async function waitForDockview(page: Page) {
   await waitForDockviewApp(page);
 }
 
+/**
+ * Polls a layout reader until two consecutive reads match, so measurements
+ * taken right after `api.clear()` include the hidden edge group insets.
+ */
+async function readSettledLayout<T>(read: () => Promise<T>): Promise<T> {
+  let previous: string | undefined;
+  await expect
+    .poll(
+      async () => {
+        const next = JSON.stringify(await read());
+        const settled = next === previous;
+        previous = next;
+        return settled;
+      },
+      { intervals: [100] },
+    )
+    .toBe(true);
+  return JSON.parse(previous as string) as T;
+}
+
 /** Opens the command palette and filters to the requested command. */
 async function filterCommand(page: Page, commandName: string) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();
@@ -160,6 +180,9 @@ test("command palette modifiers position newly opened panels", async ({
 test("command palette vertical splits stay inside the active group branch", async ({
   page,
 }) => {
+  // Each split halves the focused group, so the Cues branch must stay wide
+  // enough for the Object Library and Cues minimum widths after two splits.
+  await page.setViewportSize({ width: 4400, height: 900 });
   await page.goto("/?e2e=1");
   await waitForDockview(page);
 
@@ -209,7 +232,7 @@ test("command palette vertical splits stay inside the active group branch", asyn
       };
     });
 
-  const initialLayout = await readLayout();
+  const initialLayout = await readSettledLayout(readLayout);
   if (!initialLayout.cues || !initialLayout.visualizer) {
     throw new Error("Expected initial Cues and 3D Visualizer groups");
   }
@@ -296,7 +319,7 @@ test("command palette row placements stay outside the active group branch", asyn
       };
     });
 
-  const initialLayout = await readLayout();
+  const initialLayout = await readSettledLayout(readLayout);
   if (!initialLayout.cues || !initialLayout.visualizer) {
     throw new Error("Expected initial Cues and 3D Visualizer groups");
   }
@@ -312,6 +335,6 @@ test("command palette row placements stay outside the active group branch", asyn
   const layout = await readLayout();
 
   expect(layout.patch!.top).toBeGreaterThanOrEqual(layout.cues!.bottom - 4);
-  expect(layout.patch!.left).toBeLessThanOrEqual(initialLayout.cues.left + 4);
+  expect(layout.patch!.left).toBeLessThanOrEqual(layout.cues!.left + 4);
   expect(Math.abs(layout.cues!.top - layout.visualizer!.top)).toBeLessThan(3);
 });

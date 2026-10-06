@@ -2954,6 +2954,12 @@ export const engineRuntime = {
       }
     }
 
+    if (shouldLog) {
+      log.debug("Sending:", payload);
+    }
+    this.worker.postMessage({ type: "submit", data: payload });
+
+    // Results arrive in a later task, so console rendering can follow the send.
     if (consoleCommandText && commandId) {
       addPendingConsoleCommand(consoleCommandText, commandId, "UI");
     } else if (
@@ -2971,11 +2977,6 @@ export const engineRuntime = {
         "UI",
       );
     }
-
-    if (shouldLog) {
-      log.debug("Sending:", payload);
-    }
-    this.worker.postMessage({ type: "submit", data: payload });
     return commandId;
   },
 
@@ -3044,9 +3045,6 @@ export const engineRuntime = {
         (data as Record<string, unknown>).command_id = commandId;
         (data as Record<string, unknown>).undo_id ??= commandId;
         registerPendingCurrentShowfileName(commandId, data);
-        if (consoleCommandText) {
-          addPendingConsoleCommand(consoleCommandText, commandId, "UI");
-        }
 
         commandWaiters.set(commandKey, {
           resolve: (result) => {
@@ -3062,6 +3060,10 @@ export const engineRuntime = {
           const payload = sanitizeWebsocketPayload(data);
           log.debug("Sending (awaited):", payload);
           this.worker.postMessage({ type: "submit", data: payload });
+          // Results arrive in a later task, so console rendering can follow the send.
+          if (consoleCommandText) {
+            addPendingConsoleCommand(consoleCommandText, commandId, "UI");
+          }
         } catch (error) {
           abandonPendingCommand(pendingCommandLifecycle, commandKey);
           reject(error);

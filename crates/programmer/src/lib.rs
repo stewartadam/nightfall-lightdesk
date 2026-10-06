@@ -87,6 +87,7 @@ impl Plugin for ProgrammerPlugin {
         app.init_resource::<events::StoreObjectWorkflows>();
         app.init_resource::<events::SelectionFlattenApprovals>();
         app.init_resource::<events::PendingUserCommandPlans>();
+        app.init_resource::<events::PendingProgrammerActionWorkflows>();
 
         // Register undoable commands
         app.world_mut()
@@ -134,6 +135,9 @@ impl Plugin for ProgrammerPlugin {
                     events::handle_remove_instruction_events,
                 )
                     .in_set(EventHandling),
+                events::finish_programmer_action_workflows
+                    .after(EventHandling)
+                    .before(ClockUpdate),
                 painter::materialize_and_paint_programmer.in_set(LayerGeneration),
             ),
         );

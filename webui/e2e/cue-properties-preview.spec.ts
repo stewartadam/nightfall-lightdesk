@@ -12,7 +12,7 @@ import {
   gridCellByRowIndex,
 } from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const COMMAND_INPUT_PLACEHOLDER = "Type a command or search...";
 const FIXTURE_ID = 94_401;
@@ -39,6 +39,7 @@ test("cue transition slider scrubs output backward and steps through time", asyn
     command: { type: "LoadNamedShowfile", data: "scrub-output" },
   });
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   const panelId = "panel-CueEditor-scrub-e2e";
   await openCuePreviewPanel(page, { panelId });
   const panel = page.locator(`[data-panel-id="${panelId}"]`);
@@ -191,6 +192,7 @@ test("cue transition backgrounds respect fixture element overrides", async ({
     command: { type: "LoadNamedShowfile", data: "override-progress" },
   });
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   const panelId = "panel-CueEditor-override-progress";
   await openCuePreviewPanel(page, { panelId });
   const panel = page.locator(`[data-panel-id="${panelId}"]`);
@@ -254,6 +256,7 @@ test.afterEach(async ({ backendSlot, page }) => {
   if (page.isClosed() || page.url() === "about:blank") return;
   await page.reload();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await expect
     .poll(() => ownedCuePropertiesStoreCounts(page))
     .toEqual({ activeInstances: 0, cues: 0, fixtures: 0 });
@@ -424,6 +427,7 @@ async function openOwnedCuePropertiesApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
@@ -453,7 +457,7 @@ async function openOwnedCuePropertiesApp(
  * Opens a panel from the command palette for cue preview assertions.
  */
 async function openPanel(page: Page, panelName: string) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();

@@ -33,12 +33,13 @@
 //! ```
 
 use async_channel::{Receiver, Sender};
-use bevy_app::{App, Plugin, Update};
+use bevy_app::{App, Plugin, PostUpdate, Update};
+use bevy_ecs::message::MessageCursor;
 use bevy_ecs::prelude::*;
 use serde::Serialize;
 
 use crate::{
-    EnginePlugin, InputHandling,
+    CommandFeedbackEgress, EnginePlugin, InputHandling,
     client_ingress::{
         CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver, process_json_envelopes,
         process_update_json_envelopes,
@@ -239,26 +240,57 @@ impl Plugin for ClientBridgePlugin {
             update_tx,
             output_rx: Some(output_rx),
         });
+        app.init_resource::<CommandFeedbackCursors>();
         app.add_systems(
             Update,
             (
                 process_json_envelopes,
                 process_update_json_envelopes,
-                forward_command_notices,
-                forward_command_results,
+                forward_command_feedback,
             )
                 .chain()
                 .in_set(InputHandling),
         );
+        app.add_systems(
+            PostUpdate,
+            forward_command_feedback.in_set(CommandFeedbackEgress),
+        );
     }
 }
 
-/// Forward admitted terminal results without owning command lifecycle state.
-fn forward_command_results(
-    mut events: MessageReader<CommandReply>,
+/// Read positions shared by every command feedback forwarding point.
+///
+/// Feedback is forwarded both while ingesting commands and at the end of each frame. A shared
+/// cursor lets both points drain the same messages without publishing any of them twice.
+#[derive(Resource, Default)]
+struct CommandFeedbackCursors {
+    notices: MessageCursor<CommandNotice>,
+    replies: MessageCursor<CommandReply>,
+}
+
+/// Forwards pending notices, then admitted terminal results, without owning lifecycle state.
+///
+/// Runs after ingress, so results finished outside `Update` are not held for a frame, and again
+/// in [`CommandFeedbackEgress`] so results finished by this frame's handlers are published
+/// before frame pacing sleeps. Notices precede results so a command's feedback arrives before
+/// its terminal outcome.
+fn forward_command_feedback(
+    mut cursors: ResMut<CommandFeedbackCursors>,
+    notices: Res<Messages<CommandNotice>>,
+    replies: Res<Messages<CommandReply>>,
     client_events: Res<ClientEventSink>,
 ) {
-    for reply in events.read() {
+    let CommandFeedbackCursors {
+        notices: notice_cursor,
+        replies: reply_cursor,
+    } = &mut *cursors;
+    for notice in notice_cursor.read(&notices) {
+        client_events.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &EngineClientMessage::CommandNotice(notice),
+        );
+    }
+    for reply in reply_cursor.read(&replies) {
         if reply.reply_target != ReplyTarget::ClientBroadcast {
             continue;
         }
@@ -271,19 +303,6 @@ fn forward_command_results(
         client_events.publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &EngineClientMessage::CommandResult(result),
-        );
-    }
-}
-
-/// Forward non-terminal command feedback without changing lifecycle state.
-fn forward_command_notices(
-    mut events: MessageReader<CommandNotice>,
-    client_events: Res<ClientEventSink>,
-) {
-    for event in events.read() {
-        client_events.publish(
-            DISCRIMINATOR_NON_DROPPABLE,
-            &EngineClientMessage::CommandNotice(event),
         );
     }
 }
@@ -481,6 +500,7 @@ mod client_bridge_tests {
     use bevy_app::App;
 
     use super::*;
+    use crate::EventHandling;
     use crate::prelude::{
         CommandId, CommandOutcome, CommandResult, CommandTracker, FinishedCommand, NoticeLevel,
     };
@@ -553,6 +573,55 @@ mod client_bridge_tests {
             decode_message(&output.try_recv().unwrap())["type"],
             "CommandResult"
         );
+    }
+
+    /// Verifies a result finished by a frame's event handlers is published in that same frame,
+    /// exactly once, rather than waiting for the next frame's ingress.
+    #[test]
+    fn result_finished_during_update_is_published_before_frame_ends() {
+        let (mut app, output) = bridge_app();
+        let command_id = CommandId::new();
+        app.insert_resource(PendingReply(Some(command_id)));
+        app.add_systems(Update, finish_pending_reply.in_set(EventHandling));
+
+        app.update();
+
+        let results = drain_command_results(&output);
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0]["data"]["command_id"],
+            command_id.to_string().replace('-', "")
+        );
+        app.update();
+        assert!(drain_command_results(&output).is_empty());
+    }
+
+    /// Drains every published client message and keeps only the command results.
+    fn drain_command_results(output: &Receiver<Vec<u8>>) -> Vec<serde_json::Value> {
+        std::iter::from_fn(|| output.try_recv().ok())
+            .map(|bytes| decode_message(&bytes))
+            .filter(|message| message["type"] == "CommandResult")
+            .collect()
+    }
+
+    /// Command whose terminal result a test handler publishes on the next update.
+    #[derive(Resource)]
+    struct PendingReply(Option<CommandId>);
+
+    /// Publishes the pending test result as an event handler would after domain work.
+    fn finish_pending_reply(
+        mut pending: ResMut<PendingReply>,
+        mut replies: MessageWriter<CommandReply>,
+    ) {
+        if let Some(command_id) = pending.0.take() {
+            replies.write(CommandReply {
+                result: CommandResult {
+                    command_id,
+                    outcome: CommandOutcome::succeeded(),
+                },
+                reply_target: ReplyTarget::ClientBroadcast,
+            });
+        }
     }
 
     /// Verifies the bridge ignores command results addressed to a local interface.
