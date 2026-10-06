@@ -281,8 +281,9 @@ The UI connects to the backend on the same host it was loaded from, so turn on
 let the backend accept connections from the network. Only enable it on a
 trusted network.
 
-Playwright test commands use a pool of up to six parallel workers by default;
-set `NIGHTFALL_PLAYWRIGHT_WORKERS` to choose another pool size. Each worker keeps a
+Playwright test commands use one parallel worker per available core minus one,
+capped at six, and print the chosen count at startup; set
+`NIGHTFALL_PLAYWRIGHT_WORKERS` to choose another pool size. Each worker keeps a
 Vite proxy on a temporary loopback port pair, while every test starts a freshly
 seeded backend on that worker's backend port. The run sanitizes one seed copy,
 then uses copy-on-write filesystem clones for each test when supported. The seed
@@ -292,6 +293,14 @@ transports initially disabled. This keeps tests from mutating a developer
 session or inheriting backend world and undo state from another test. Owned
 services and disposable data are removed after each test and swept again when
 Playwright exits.
+
+Each worker's Vite server keeps its own dependency cache under
+`node_modules/.vite-playwright/`, selected with `NIGHTFALL_VITE_CACHE_DIR`, so
+parallel servers never re-optimize dependencies underneath each other. The pool
+also sets `NIGHTFALL_VITE_WARMUP_PANELS=1`, which makes Vite scan every lazily
+loaded panel for dependencies and pre-transform the app at startup. Set it yourself
+when running `pnpm run dev` to trade a slower dev-server start for faster first
+panel opens.
 
 Pass `--target embedded-demo` to run browser-demo tests without building or
 starting the native backend. The default target is `native`, which can also be

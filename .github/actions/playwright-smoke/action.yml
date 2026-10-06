@@ -3,8 +3,8 @@ description: Run isolated Chromium product flows using the calling job's prepare
 
 inputs:
   workers:
-    description: Number of isolated Playwright workers.
-    default: "2"
+    description: Number of isolated Playwright workers. Empty sizes the pool from the runner's cores.
+    default: ""
   shard:
     description: Full-suite shard to run, as "index/total". Empty runs only the smoke specs.
     default: ""
