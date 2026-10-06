@@ -193,7 +193,7 @@ async function storeOwnedDirectInstanceData(
  * Opens a panel used by direct instance tests.
  */
 async function openPanel(page: Page, panelName: string): Promise<void> {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();

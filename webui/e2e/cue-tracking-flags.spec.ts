@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 test.setTimeout(120_000);
 
@@ -21,7 +21,11 @@ type TrackingFlagsSeed = {
   sequenceUid: string;
 };
 
-/** Verifies an affordance fills its grid cell without inherited wrapper padding. */
+/**
+ * Verifies a dropdown affordance renders as the inset select pill that spans its
+ * grid cell: horizontally centered within the cell's small side margins and
+ * vertically centered without overflowing the row.
+ */
 async function expectAffordanceFillsCell(cell: Locator): Promise<void> {
   const affordance = cell.locator('[data-grid-dropdown-affordance="true"]');
   await expect(affordance).toHaveCount(1);
@@ -30,11 +34,21 @@ async function expectAffordanceFillsCell(cell: Locator): Promise<void> {
       const cellBox = await cell.boundingBox();
       const affordanceBox = await affordance.boundingBox();
       if (!cellBox || !affordanceBox) return false;
+      const leftInset = affordanceBox.x - cellBox.x;
+      const rightInset =
+        cellBox.x + cellBox.width - (affordanceBox.x + affordanceBox.width);
+      const topInset = affordanceBox.y - cellBox.y;
+      const bottomInset =
+        cellBox.y + cellBox.height - (affordanceBox.y + affordanceBox.height);
       return (
-        Math.abs(cellBox.x - affordanceBox.x) < 2 &&
-        Math.abs(cellBox.y - affordanceBox.y) < 2 &&
-        Math.abs(cellBox.width - affordanceBox.width) < 2 &&
-        Math.abs(cellBox.height - affordanceBox.height) < 2
+        leftInset >= 0 &&
+        leftInset <= 8 &&
+        rightInset >= 0 &&
+        rightInset <= 8 &&
+        Math.abs(leftInset - rightInset) < 2 &&
+        topInset >= 0 &&
+        bottomInset >= 0 &&
+        Math.abs(topInset - bottomInset) < 2
       );
     })
     .toBe(true);
@@ -110,6 +124,7 @@ async function openOwnedTrackingFlagsApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       Boolean((window as any).appStores?.dockApi?.get?.()) &&
@@ -545,7 +560,7 @@ test("cue tracking flags render in properties and sequence editor", async ({
   );
   await expect(propertiesTrackingSelect).toHaveAttribute("multiple", "");
   const propertiesTrackingToggle = propertiesInspector
-    .getByRole("button", { name: "Intensity" })
+    .getByRole("button", { name: "Choose tracking flags" })
     .first();
   await expect(propertiesTrackingToggle).toBeVisible();
   await propertiesTrackingToggle.click();
@@ -564,15 +579,12 @@ test("cue tracking flags render in properties and sequence editor", async ({
     })
     .toBe(true);
 
-  await expect
-    .poll(() =>
-      openedDropdown
-        .locator('[data-value="HTP"]')
-        .evaluate((element) => getComputedStyle(element).backgroundColor),
-    )
-    .toBe("rgba(0, 0, 0, 0)");
+  await expect(openedDropdown.locator('[data-value="HTP"]')).toHaveClass(
+    /\bselected\b/,
+  );
 
   const attributesOption = openedDropdown.locator('[data-value="LTP"]');
+  await expect(attributesOption).not.toHaveClass(/\bselected\b/);
   const attributesBackground = await attributesOption.evaluate(
     (element) => getComputedStyle(element).backgroundColor,
   );
@@ -602,9 +614,7 @@ test("cue tracking flags render in properties and sequence editor", async ({
   if (!openDropdownBox) throw new Error("expected tracking dropdown bounds");
   await page.mouse.click(openDropdownBox.x + 16, openDropdownBox.y - 12);
   await expect(openedDropdown).toBeHidden();
-  await expect(
-    page.getByRole("button", { name: "Intensity and Attributes" }),
-  ).toBeVisible();
+  await expect(propertiesTrackingToggle).toHaveText("Intensity and Attributes");
 
   await focusDockPanel(page, "panel-CueEditor-setup-tracking-flags-e2e");
   await expandPropertiesPanel(page, "panel-CueEditor-setup-tracking-flags-e2e");
@@ -740,9 +750,10 @@ test("cue tracking flags render in properties and sequence editor", async ({
     trackingCell.locator('select[aria-label="Choose tracking mode"]'),
   ).toHaveValue("Flags");
   const sequenceTrackingToggle = trackingCell
-    .getByRole("button", { name: /Intensity/ })
+    .getByRole("button", { name: "Choose tracking flags" })
     .first();
   await expect(sequenceTrackingToggle).toBeVisible();
+  await expect(sequenceTrackingToggle).toContainText("Intensity");
   await expect(trackingCell).toContainText("Intensity");
   await expect(trackingCell).toContainText("Attributes");
   await expect

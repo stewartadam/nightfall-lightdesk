@@ -16,7 +16,7 @@ test("opens and closes the shortcuts popup from the command palette", async ({
 
   await expect(page.locator("button[title='Menu']")).toBeVisible();
 
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandPaletteInput = page.getByPlaceholder(
     "Type a command or search...",
@@ -100,7 +100,7 @@ test("command palette input receives question mark instead of shell help", async
 
   await expect(page.locator("button[title='Menu']")).toBeVisible();
 
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandPaletteInput = page.getByPlaceholder(
     "Type a command or search...",

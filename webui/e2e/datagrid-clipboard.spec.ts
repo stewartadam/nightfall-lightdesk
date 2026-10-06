@@ -289,7 +289,7 @@ test("patch fixture grid pastes tabular clipboard values into concrete cells", a
     navigator.clipboard.writeText("101\t102\n201\t202"),
   );
   await grid.locator("#tanstack-cell-6-0").click();
-  await page.keyboard.press("Meta+V");
+  await page.keyboard.press("ControlOrMeta+V");
 
   await expect(grid.locator("#tanstack-cell-6-0")).toHaveText(/^101/);
   await expect(grid.locator("#tanstack-cell-7-0")).toHaveText(/^102/);

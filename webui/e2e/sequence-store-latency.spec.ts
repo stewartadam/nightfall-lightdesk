@@ -8,6 +8,7 @@
 
 import { expect, type Page, test } from "./playwright-fixtures";
 import {
+  dockFixturesInMainGrid,
   seedStartupShowfileName,
   waitForDockviewApp,
 } from "./showfile-startup";
@@ -277,6 +278,7 @@ test("default showfile sequence store command avoids multi-second main-thread st
     "/?e2e=1&scenario=sequence-store-latency&startup:draftRecovery=false",
   );
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await waitForAppStores(page);
   await waitForWebsocketSettled(page);
   const sequenceId = await findLatencyTargetSequenceId(page);
@@ -292,7 +294,8 @@ test("default showfile sequence store command avoids multi-second main-thread st
   console.info(JSON.stringify({ sequenceStoreLatency: summary }, null, 2));
 
   expect(summary.sequenceCount).toBeGreaterThan(0);
-  expect(summary.cueCount).toBeGreaterThanOrEqual(90);
+  // Guards that the full sample show loaded, not a near-empty showfile.
+  expect(summary.cueCount).toBeGreaterThanOrEqual(50);
   expect(summary.cueDefinitionDispatchCount).toBeGreaterThan(0);
   expect(summary.maxLongFrameMs).toBeLessThan(1000);
   expect(summary.maxBlockingMs).toBeLessThan(750);

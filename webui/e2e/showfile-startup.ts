@@ -467,6 +467,45 @@ const EMPTY_NULL_STORE_NAMES = [
 ] as const;
 
 /**
+ * Moves the Fixtures panel out of the default layout's collapsed bottom edge
+ * group into the main grid and activates it. Specs that dock their own panels
+ * "within" Fixtures then get a visible, full-size group instead of a collapsed
+ * edge strip.
+ */
+export async function dockFixturesInMainGrid(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const dockApi = (window as any).appStores.dockApi.get();
+    const existingFixturePanel = dockApi.getPanel("panel-FixtureGrid");
+    const gridReference = dockApi.panels.find(
+      (panel: any) =>
+        panel.id !== "panel-FixtureGrid" && panel.api.location.type === "grid",
+    );
+    if (
+      existingFixturePanel &&
+      existingFixturePanel.api.location.type !== "grid"
+    ) {
+      existingFixturePanel.api.close();
+    }
+    const fixturePanel =
+      dockApi.getPanel("panel-FixtureGrid") ??
+      dockApi.addPanel({
+        id: "panel-FixtureGrid",
+        component: "FixtureGrid",
+        title: "Fixtures",
+        params: { initialPanelId: "panel-FixtureGrid" },
+        position: gridReference
+          ? {
+              referencePanel: gridReference.id,
+              direction: "within",
+            }
+          : undefined,
+      });
+    fixturePanel.api.setActive();
+    fixturePanel.focus();
+  });
+}
+
+/**
  * Freezes the hydrated frontend, clears mutable showfile stores, and verifies a
  * store-driven spec starts with no inherited application data.
  */
@@ -491,38 +530,11 @@ export async function prepareStoreSeededTestApp(
     )
     .toBe(true);
 
+  await dockFixturesInMainGrid(page);
+
   await page.evaluate(
     ({ arrayStoreNames, nullStoreNames, objectStoreNames }) => {
       const stores = (window as any).appStores;
-      const dockApi = stores.dockApi.get();
-      const existingFixturePanel = dockApi.getPanel("panel-FixtureGrid");
-      const gridReference = dockApi.panels.find(
-        (panel: any) =>
-          panel.id !== "panel-FixtureGrid" &&
-          panel.api.location.type === "grid",
-      );
-      if (
-        existingFixturePanel &&
-        existingFixturePanel.api.location.type !== "grid"
-      ) {
-        existingFixturePanel.api.close();
-      }
-      const fixturePanel =
-        dockApi.getPanel("panel-FixtureGrid") ??
-        dockApi.addPanel({
-          id: "panel-FixtureGrid",
-          component: "FixtureGrid",
-          title: "Fixtures",
-          params: { initialPanelId: "panel-FixtureGrid" },
-          position: gridReference
-            ? {
-                referencePanel: gridReference.id,
-                direction: "within",
-              }
-            : undefined,
-        });
-      fixturePanel.api.setActive();
-      fixturePanel.focus();
 
       for (const name of objectStoreNames) {
         stores[name].set({});

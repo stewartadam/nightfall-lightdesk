@@ -182,7 +182,11 @@ pub struct FxStep {
     ///
     /// `target` remains the last resolved scalar value so referenced steps stay
     /// editable and have a deterministic fallback if the Blueprint disappears.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "nightfall::serde_option_uuid_simple"
+    )]
     #[typeshare(serialized_as = "Option<String>")]
     pub blueprint_uid: Option<Uuid>,
     /// Time from this step's start to the following step's start, in beats.
@@ -1617,6 +1621,51 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<CurveType>(serialized).unwrap(),
             CurveType::Snap(Snap {})
+        );
+    }
+
+    /// Keeps Blueprint step references in the simple string format clients key Blueprints by,
+    /// while still loading hyphenated UUIDs written by older showfiles.
+    #[test]
+    fn step_blueprint_uid_serializes_as_simple_string() {
+        let blueprint_uid = Uuid::from_u128(0xb1e);
+        let mut step = FxStep::new(
+            ParameterValue::AbsolutePercent { value: 0.2.into() },
+            1.0,
+            StepFxTransition::default(),
+            CurveType::Snap(Snap {}),
+        );
+        step.blueprint_uid = Some(blueprint_uid);
+
+        let serialized = serde_json::to_value(&step).unwrap();
+        assert_eq!(
+            serialized["blueprint_uid"],
+            serde_json::json!(blueprint_uid.simple().to_string())
+        );
+        assert_eq!(
+            serde_json::from_value::<FxStep>(serialized)
+                .unwrap()
+                .blueprint_uid,
+            Some(blueprint_uid)
+        );
+
+        let mut hyphenated = serde_json::to_value(&step).unwrap();
+        hyphenated["blueprint_uid"] = serde_json::json!(blueprint_uid.to_string());
+        assert_eq!(
+            serde_json::from_value::<FxStep>(hyphenated)
+                .unwrap()
+                .blueprint_uid,
+            Some(blueprint_uid)
+        );
+
+        step.blueprint_uid = None;
+        let serialized = serde_json::to_value(&step).unwrap();
+        assert!(serialized.get("blueprint_uid").is_none());
+        assert_eq!(
+            serde_json::from_value::<FxStep>(serialized)
+                .unwrap()
+                .blueprint_uid,
+            None
         );
     }
 

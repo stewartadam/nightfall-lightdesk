@@ -30,6 +30,34 @@ export function isDataGridElement(element: HTMLElement | null): boolean {
   return element.closest('[data-grid-kind="tanstack"]') !== null;
 }
 
+/** Controls the browser activates natively when they receive Enter or Space. */
+const NATIVE_ACTIVATION_SELECTOR = [
+  "button",
+  "a[href]",
+  "summary",
+  '[role="button"]',
+  '[role="link"]',
+  '[role="menuitem"]',
+  '[role="tab"]',
+  '[role="checkbox"]',
+  '[role="switch"]',
+  '[role="radio"]',
+  '[role="option"]',
+].join(", ");
+
+/**
+ * Returns whether Enter or Space aimed at the target activates a control
+ * natively, so a shortcut bound to those keys would swallow the activation.
+ */
+export function targetOwnsActivationKey(
+  target: HTMLElement | null,
+  event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey">,
+): boolean {
+  if (!target || (event.key !== "Enter" && event.key !== " ")) return false;
+  if (event.altKey || event.ctrlKey || event.metaKey) return false;
+  return target.closest(NATIVE_ACTIVATION_SELECTOR) !== null;
+}
+
 /**
  * Filters shortcut handlers so editable controls keep native editing behavior
  * unless a matching shortcut explicitly opts into editable targets.

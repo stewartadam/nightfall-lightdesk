@@ -14,7 +14,7 @@ import {
   gridCellByRowIndex,
 } from "./data-grid-selectors";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const CUE_UID = "dddddddddddddddddddddddddddddddd";
 const SECOND_CUE_UID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -65,6 +65,7 @@ test.afterEach(async ({ backendSlot, page }) => {
   if (page.isClosed() || page.url() === "about:blank") return;
   await page.reload();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await expect
     .poll(() => ownedReleaseCueStoreCounts(page))
     .toEqual({ activeInstances: 0, cues: 0, fixtures: 0, sequences: 0 });
@@ -244,6 +245,7 @@ async function openOwnedReleaseCueApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
