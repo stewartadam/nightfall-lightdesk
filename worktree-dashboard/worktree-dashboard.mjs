@@ -663,17 +663,22 @@ async function getServicePort(worktreePath, service) {
  * Resolves the PIDs listening on a TCP port (IPv4 and IPv6) by trying each
  * platform lookup method in order until one finds a listener. On macOS, lsof
  * leads because `netstat -anv` (pid-port's source) returns no rows on macOS 27.
+ * On Linux, lsof backs up pid-port: without `ss`, pid-port's own lsof fallback
+ * queries TCP and UDP together and fails whenever no UDP socket is open.
  * @param {number} port
  * @returns {Promise<ListenerLookup>}
  */
 export async function findListeningPids(port) {
-  const methods =
-    process.platform === "darwin"
-      ? [
-          ["lsof", lsofListeningPids],
-          ["pid-port", pidPortListeningPids],
-        ]
-      : [["pid-port", pidPortListeningPids]];
+  const methods = {
+    darwin: [
+      ["lsof", lsofListeningPids],
+      ["pid-port", pidPortListeningPids],
+    ],
+    win32: [["pid-port", pidPortListeningPids]],
+  }[process.platform] ?? [
+    ["pid-port", pidPortListeningPids],
+    ["lsof", lsofListeningPids],
+  ];
   const attempts = [];
   for (const [name, lookup] of methods) {
     let found;
