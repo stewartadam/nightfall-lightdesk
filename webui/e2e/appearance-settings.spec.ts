@@ -240,20 +240,8 @@ for (const preference of ["on", "off"] as const) {
         JSON.stringify({ reducedMotion }),
       );
     }, preference);
-    await blockAppScripts(page);
-    await page.route("**/*", async (route) => {
-      if (route.request().resourceType() !== "document") {
-        await route.fallback();
-        return;
-      }
-      const response = await route.fetch();
-      await route.fulfill({
-        response,
-        headers: {
-          ...response.headers(),
-          "content-security-policy": "script-src 'self' 'wasm-unsafe-eval'",
-        },
-      });
+    await blockAppScripts(page, {
+      "content-security-policy": "script-src 'self' 'wasm-unsafe-eval'",
     });
     await page.goto("/");
     await expect(page.locator("#bootstrap-splash")).toBeVisible();

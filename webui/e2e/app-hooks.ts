@@ -54,14 +54,30 @@ export async function disconnectEngine(page: Page): Promise<void> {
 }
 
 /**
- * Serves every script as an empty module so the page shows only its static
- * bootstrap document. Matches the dev server's `main.tsx` and the build's
- * hashed entry chunk alike.
+ * Serves documents without their module scripts and module preloads, so the
+ * page shows only its static bootstrap markup and classic scripts. Covers the
+ * dev server's `main.tsx` and the build's hashed entry chunk alike. `headers`
+ * are added to every served document.
  */
-export async function blockAppScripts(page: Page): Promise<void> {
-  await page.route("**/*", (route) =>
-    route.request().resourceType() === "script"
-      ? route.fulfill({ contentType: "application/javascript", body: "" })
-      : route.fallback(),
-  );
+export async function blockAppScripts(
+  page: Page,
+  headers: Record<string, string> = {},
+): Promise<void> {
+  await page.route("**/*", async (route) => {
+    if (route.request().resourceType() !== "document") {
+      await route.fallback();
+      return;
+    }
+    const response = await route.fetch();
+    const body = (await response.text())
+      .replace(/<script\b[^>]*type="module"[^>]*>[\s\S]*?<\/script>/g, "")
+      .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/g, "");
+    const { "content-length": _length, ...responseHeaders } =
+      response.headers();
+    await route.fulfill({
+      response,
+      body,
+      headers: { ...responseHeaders, ...headers },
+    });
+  });
 }

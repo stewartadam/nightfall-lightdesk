@@ -11,7 +11,13 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import { dirname, relative, resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig, type HttpProxy, loadEnv, type ProxyOptions } from "vite";
+import {
+  defineConfig,
+  type HttpProxy,
+  loadEnv,
+  type Plugin,
+  type ProxyOptions,
+} from "vite";
 import solidPlugin from "vite-plugin-solid";
 import {
   distributionNoticesPlugin,
@@ -258,6 +264,36 @@ function e2eChunkFileName(chunk: { facadeModuleId: string | null }): string {
 }
 
 /**
+ * Gives bundled modules the logger names they have on the dev server. A built
+ * module's `import.meta.url` is its hashed output chunk, so log lines and
+ * per-module log levels would otherwise name chunks instead of sources.
+ */
+function loggerModuleNamesPlugin(): Plugin {
+  const webuiRoot = resolve(projectRoot, "webui");
+  return {
+    name: "nightfall:logger-module-names",
+    apply: "build",
+    /** Replaces `getLogger(import.meta.url)` with the module's dev server path. */
+    transform(code, id) {
+      const source = id.split("?")[0];
+      if (
+        !code.includes("getLogger(import.meta.url)") ||
+        !source.startsWith(`${webuiRoot}/`)
+      )
+        return null;
+      const devPath = `/${relative(webuiRoot, source)}`;
+      return {
+        code: code.replaceAll(
+          "getLogger(import.meta.url)",
+          `getLogger(${JSON.stringify(devPath)})`,
+        ),
+        map: null,
+      };
+    },
+  };
+}
+
+/**
  * Decides whether the engine worker bundles the embedded demo runtime.
  *
  * Demo builds always include it. The dev server includes it only when
@@ -351,7 +387,7 @@ export default defineConfig(({ mode, command }) => {
     },
     worker: {
       format: "es",
-      plugins: () => [workerNoticesPlugin()],
+      plugins: () => [loggerModuleNamesPlugin(), workerNoticesPlugin()],
     },
     define: {
       __NIGHTFALL_PROJECT_LINKS__: JSON.stringify(projectLinks),
@@ -367,6 +403,7 @@ export default defineConfig(({ mode, command }) => {
       tailwindcss(),
       solidPlugin(),
       distributionNoticesPlugin(),
+      loggerModuleNamesPlugin(),
       {
         name: "startup-build-metadata",
         /** Inserts escaped build metadata into the pre-JavaScript splash. */

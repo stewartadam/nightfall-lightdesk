@@ -44,9 +44,11 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
     const { getLogger, setModuleLogLevel } = (
       await window.__nightfallHarness.load("app")
     ).logger;
-    // Slow runners log a warning per long animation frame, which can push the
-    // seeded problems out of the twenty-entry "Recent warnings/errors" window.
+    // Slow runners log a warning per long animation frame and per delivery
+    // lag spike, which can push the seeded problems out of the twenty-entry
+    // "Recent warnings/errors" window.
     setModuleLogLevel("long-animation-frame-monitor", "error" as LogLevel);
+    setModuleLogLevel("engine-runtime", "error" as LogLevel);
     const log = getLogger("/e2e/diagnostics");
     log.warn("diagnostic browser warning", { detail: "warning context" });
     log.errorWithCause(
