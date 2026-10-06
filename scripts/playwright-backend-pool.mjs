@@ -13,10 +13,15 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { clonePlaywrightDataDir } from "./nightfall-test-data-dir.mjs";
 import { terminateRegisteredProcesses } from "./owned-process.mjs";
+import {
+  warmViteModuleGraph,
+  withWorkerLock,
+} from "./playwright-vite-warmup.mjs";
 
 const SERVICE_POLL_INTERVAL_MS = 50;
 const SERVICE_REQUEST_TIMEOUT_MS = 1_000;
 const SERVICE_SHUTDOWN_TIMEOUT_MS = 2_000;
+const VITE_WARMUP_TIMEOUT_MS = 75_000;
 
 /** Waits for the requested number of milliseconds. */
 function delay(milliseconds) {
@@ -175,22 +180,39 @@ async function stopService(service) {
   }
 }
 
-/** Starts one worker-scoped Vite proxy on a claimed service port pair. */
+/**
+ * Starts one worker-scoped Vite proxy on a claimed service port pair and
+ * transforms its module graph before any test loads a page. Every new worker,
+ * including the replacement Playwright starts after a failure, begins with a
+ * cold server; without the warmup a slow runner spends a test's whole timeout
+ * on module transforms and the failure cascades into each retry. Workers
+ * start their servers one at a time so they never re-optimize the shared
+ * dependency cache underneath each other.
+ */
 export async function startPlaywrightWorkerSlot({ runRoot, workerIndex }) {
   const { backendPort, claimPaths } = await claimAvailablePortPair(runRoot);
   const baseURL = `http://127.0.0.1:${backendPort + 1}`;
   const registryPath = join(runRoot, `worker-${workerIndex}-vite.jsonl`);
   try {
-    const viteService = await startService({
-      environment: {
-        NIGHTFALL_PORT: String(backendPort),
-        NIGHTFALL_VITE_WARMUP_PANELS: "1",
+    const viteService = await withWorkerLock(
+      join(runRoot, "vite-startup.lock"),
+      async () => {
+        const service = await startService({
+          environment: {
+            NIGHTFALL_PORT: String(backendPort),
+            NIGHTFALL_VITE_WARMUP_PANELS: "1",
+          },
+          registryPath,
+          scriptName: "run-playwright-vite.mjs",
+          timeoutMs: 120_000,
+          url: baseURL,
+        });
+        await warmViteModuleGraph(baseURL, {
+          timeoutMs: VITE_WARMUP_TIMEOUT_MS,
+        });
+        return service;
       },
-      registryPath,
-      scriptName: "run-playwright-vite.mjs",
-      timeoutMs: 120_000,
-      url: baseURL,
-    });
+    );
     return {
       backendPort,
       baseURL,
