@@ -11,6 +11,11 @@
  * Handles clipboard operations, node duplication, and edge management.
  */
 
+import {
+  ClipboardUnavailableError,
+  readClipboardText,
+  writeClipboardText,
+} from "../../../../lib/clipboard";
 import { pushToast } from "../../../../state/appStores";
 import type {
   FlowDefinition,
@@ -139,18 +144,13 @@ export function duplicateNodeDefinition(
 export async function copyNodeToClipboard(
   node: FlowNodeDefinition,
 ): Promise<boolean> {
-  if (!navigator?.clipboard?.writeText) {
-    pushToast("error", "Clipboard access unavailable");
-    return false;
-  }
-
   const payload: FlowNodeClipboardPayload = {
     type: "flow-node",
     node,
   };
 
   try {
-    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    await writeClipboardText(JSON.stringify(payload, null, 2));
     pushToast("success", "Node copied to clipboard");
     return true;
   } catch {
@@ -164,13 +164,17 @@ export async function copyNodeToClipboard(
  * Returns null if clipboard is empty or contains invalid data.
  */
 export async function readNodeFromClipboard(): Promise<FlowNodeClipboardPayload | null> {
-  if (!navigator?.clipboard?.readText) {
-    pushToast("error", "Clipboard access unavailable");
+  let text: string;
+  try {
+    text = await readClipboardText();
+  } catch (error) {
+    if (error instanceof ClipboardUnavailableError) {
+      pushToast("error", error.message);
+    }
     return null;
   }
 
   try {
-    const text = await navigator.clipboard.readText();
     const payload = JSON.parse(text) as unknown;
 
     // Validate payload structure

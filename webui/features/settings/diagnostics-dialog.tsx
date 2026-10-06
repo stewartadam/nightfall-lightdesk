@@ -24,6 +24,7 @@ import {
 import { ScrollArea } from "../../components/ui/scroll-area";
 import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
+import { writeClipboardText } from "../../lib/clipboard";
 import {
   type DiagnosticLogEntry,
   type DiagnosticLogMode,
@@ -164,7 +165,7 @@ export function DiagnosticsDialog() {
   /** Copies only compact platform and connection details, independently of the archive selections. */
   const copySystemInfo = async () => {
     try {
-      await navigator.clipboard.writeText(systemInfo());
+      await writeClipboardText(systemInfo());
       if (disposed) return;
       setCopied(true);
       clearTimeout(copyTimer);
