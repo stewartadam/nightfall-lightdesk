@@ -187,7 +187,7 @@ jobs:
         run: |
           printf '/ /demo/app/ 302\n/demo /demo/app/ 302\n' > site/_redirects
           jq -n --arg name "$WORKER" \
-            '{name: $name, compatibility_date: "2026-10-01", assets: {directory: "./site"}}' \
+            '{name: $name, compatibility_date: "2026-10-01", assets: {directory: "./site"}, previews: {}}' \
             > wrangler.json
       - name: Deploy a Cloudflare Workers preview
         id: deploy
