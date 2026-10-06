@@ -2742,6 +2742,7 @@ export const engineRuntime = {
 
     this.worker = new EngineRuntimeWorker();
     const activeWorker = this.worker;
+    let lastWorkerError: string | null = null;
     this.worker.onmessage = (event: MessageEvent) => {
       if (this.worker !== activeWorker) return;
       const msg = event.data;
@@ -2864,6 +2865,7 @@ export const engineRuntime = {
         }
 
         case "error":
+          lastWorkerError = msg.error;
           log.error("Worker error:", msg.error);
           break;
       }
@@ -2871,10 +2873,13 @@ export const engineRuntime = {
 
     watchWorkerUncaughtErrors(activeWorker, "engine runtime", (failure) => {
       // A rejection leaves the worker running; a thrown exception may have lost the command.
-      if (failure.kind !== "error") return;
+      if (failure.kind !== "error" || this.worker !== activeWorker) return;
+      const reported = lastWorkerError
+        ? ` (last reported worker error: ${lastWorkerError})`
+        : "";
       rejectPendingCommandWaiters(
         new Error(
-          `WebSocket worker failed before the command completed: ${failure.name}: ${failure.message}`,
+          `WebSocket worker failed before the command completed: ${failure.name}: ${failure.message}${reported}`,
         ),
       );
     });

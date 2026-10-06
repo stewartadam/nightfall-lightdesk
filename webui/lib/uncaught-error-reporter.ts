@@ -104,10 +104,95 @@ function presentUncaughtError(report: UncaughtErrorReport): void {
     });
 }
 
+let workspaceVisible = false;
+let workspaceShown = false;
+let plainFatalErrorShown = false;
+
+/**
+ * How an error that blocks the application is presented: `recoverable` errors
+ * may leave a working application behind the dialog, while others leave
+ * nothing usable, so the dialog offers no way to continue.
+ */
+export interface FatalErrorPresentation {
+  report: UncaughtErrorReport;
+  recoverable: boolean;
+  afterStartup: boolean;
+}
+
+/** Titles a blocking error dialog by whether startup finished and whether the app survived. */
+export function fatalErrorTitle(failure: FatalErrorPresentation): string {
+  if (failure.recoverable) return "Something went wrong";
+  return failure.afterStartup
+    ? "Nightfall stopped working"
+    : "Nightfall couldn't start";
+}
+
+/**
+ * Records whether the workspace is on screen. While it is not (startup,
+ * startup prompts, or a showfile load behind the splash), notifications would
+ * be hidden behind the splash or a modal prompt, so uncaught failures open the
+ * blocking error dialog instead.
+ */
+export function setWorkspaceVisible(visible: boolean): void {
+  workspaceVisible = visible;
+  if (visible) workspaceShown = true;
+}
+
+/**
+ * Writes a bare-bones failure notice into the page when the error dialog
+ * itself cannot load, for example because the failure was a missing chunk.
+ */
+function renderPlainFatalError(failure: FatalErrorPresentation): void {
+  if (plainFatalErrorShown) return;
+  plainFatalErrorShown = true;
+  const { report } = failure;
+  const notice = document.createElement("div");
+  notice.setAttribute("role", "alert");
+  notice.style.cssText =
+    "position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;background:#0a0a0a;color:#e5e5e5;font:14px system-ui,sans-serif;text-align:center";
+  const title = document.createElement("strong");
+  title.textContent = fatalErrorTitle(failure);
+  const detail = document.createElement("code");
+  detail.textContent = formatErrorHeadline(report);
+  const reload = document.createElement("button");
+  reload.type = "button";
+  reload.textContent = "Reload";
+  reload.addEventListener("click", () => window.location.reload());
+  notice.append(title, detail, reload);
+  document.body.append(notice);
+}
+
+/** Shows a failure in the blocking error dialog, falling back to a plain notice. */
+function presentFatalError(
+  report: UncaughtErrorReport,
+  recoverable: boolean,
+): void {
+  const failure = { report, recoverable, afterStartup: workspaceShown };
+  void import("../components/shell/app/fatal-error-dialog")
+    .then(({ showFatalError }) => showFatalError(failure))
+    .catch((error: unknown) => {
+      log.error("Could not show the fatal error dialog", { error });
+      renderPlainFatalError(failure);
+    });
+}
+
 /** Reports a failure from the page or one of its workers to the user. */
 export const reportUncaughtError = createUncaughtErrorReporter({
-  present: presentUncaughtError,
+  present: (report) =>
+    workspaceVisible
+      ? presentUncaughtError(report)
+      : presentFatalError(report, true),
 });
+
+/**
+ * Reports a failure that leaves the application unusable whenever it happens,
+ * such as the workspace failing to load, initialize or render.
+ */
+export function reportFatalError(source: string, error: unknown): void {
+  const details = describeUncaughtError(error, "error");
+  log.error(`Fatal error in ${source}`, { error: details });
+  presentFatalError({ ...details, source }, false);
+}
 
 /** Shows uncaught exceptions and unhandled rejections from the page itself. */
 export function reportWindowUncaughtErrors(target: Window): () => void {

@@ -14,9 +14,9 @@ import {
   Show,
 } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import { reportFatalError } from "../../../lib/uncaught-error-reporter";
 import AppProviders from "./app-providers";
 import { initializeApplicationRuntime, initializePreline } from "./app-runtime";
-import InteractiveAppError from "./interactive-app-error";
 import AppShell from "./shell-layout";
 
 const log = getLogger(import.meta.url);
@@ -26,10 +26,15 @@ type InteractiveAppProps = {
   onReady: () => void;
 };
 
+/** Reports a shell render failure once, leaving the fatal error dialog to explain it. */
+function ReportShellFailure(props: { error: unknown }) {
+  onMount(() => reportFatalError("workspace", props.error));
+  return null;
+}
+
 /** Owns full-shell runtime setup after the minimal startup app has completed. */
 export default function InteractiveApp(props: InteractiveAppProps) {
   const [runtimeReady, setRuntimeReady] = createSignal(false);
-  const [runtimeError, setRuntimeError] = createSignal<unknown>(null);
   let cleanupApplicationRuntime: (() => void) | undefined;
   let readyAnimationFrame: number | undefined;
 
@@ -39,8 +44,7 @@ export default function InteractiveApp(props: InteractiveAppProps) {
     try {
       cleanupApplicationRuntime = initializeApplicationRuntime();
     } catch (error) {
-      log.error("Initialization error:", error);
-      setRuntimeError(error);
+      reportFatalError("workspace startup", error);
       readyAnimationFrame = window.requestAnimationFrame(props.onReady);
       return;
     }
@@ -61,17 +65,8 @@ export default function InteractiveApp(props: InteractiveAppProps) {
   });
 
   return (
-    <Show
-      when={runtimeReady()}
-      fallback={
-        <Show when={runtimeError()}>
-          {(error) => <InteractiveAppError error={error()} />}
-        </Show>
-      }
-    >
-      <ErrorBoundary
-        fallback={(error) => <InteractiveAppError error={error} />}
-      >
+    <Show when={runtimeReady()}>
+      <ErrorBoundary fallback={(error) => <ReportShellFailure error={error} />}>
         <AppProviders>
           <AppShell />
         </AppProviders>

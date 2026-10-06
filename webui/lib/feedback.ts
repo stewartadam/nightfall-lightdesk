@@ -61,7 +61,8 @@ export function openErrorBugReport(error: BugReportError): void {
     });
   } catch (cause) {
     log.error("Could not prepare the bug report", { error: cause });
-    openFeedbackPage("bug");
+    // The prefilled form failed, so fall back to the blank one.
+    void openBugReport(BUG_REPORT_URL).catch(() => {});
   }
 }
 

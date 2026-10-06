@@ -17,6 +17,9 @@ declare global {
 
 const HEADLINE = "TypeError: crypto.randomUUID is not a function";
 
+// Each test loads the full demo app, which is slow on a cold dev server.
+test.describe.configure({ timeout: 60_000 });
+
 /** Uncaught failures appear as one error notification each, with a Report Bug action that prefills the issue form. */
 test("shows uncaught errors with a prefilled bug report", async ({
   page,
@@ -111,4 +114,86 @@ test("shows uncaught errors forwarded from a worker", async ({ page }) => {
   await expect(
     errorToasts.filter({ hasText: "Error: worker rejection nobody handled" }),
   ).toBeVisible();
+});
+
+const DEMO_URL = "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1";
+
+/** A failure before the workspace loads replaces the endless splash with a blocking explanation. */
+test("shows a fatal error when the workspace cannot load", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/components/shell/app/interactive-app.tsx*", (route) =>
+    route.abort(),
+  );
+  await page.goto(DEMO_URL);
+
+  const dialog = page.getByRole("dialog", { name: "Nightfall couldn't start" });
+  // Startup compiles the demo engine first, which is slow on a cold dev server.
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Failed to fetch dynamically imported module",
+  );
+  await expect(dialog.getByRole("button", { name: "Reload" })).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath("startup-failure.png") });
+
+  // Nothing usable is behind the dialog, so it cannot be dismissed.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Continue Anyway" }),
+  ).toHaveCount(0);
+});
+
+/** An error during startup is shown over the splash, and the user can continue once it loads. */
+test("shows startup errors over the splash and allows continuing", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    /** Fails once the startup splash is on screen, as a startup bug would. */
+    const failDuringSplash = () => {
+      if (!document.querySelector('[data-testid="startup-splash"]')) {
+        requestAnimationFrame(failDuringSplash);
+        return;
+      }
+      void Promise.reject(new Error("Startup check failed"));
+    };
+    requestAnimationFrame(failDuringSplash);
+  });
+  await page.goto(DEMO_URL);
+
+  const dialog = page.getByRole("dialog", { name: "Something went wrong" });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Error: Startup check failed",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("startup-recoverable-error.png"),
+  });
+  await dialog.getByRole("button", { name: "Continue Anyway" }).click();
+  await expect(dialog).toBeHidden();
+  await waitForDockviewApp(page);
+});
+
+/** A failure while the workspace shell renders is shown instead of leaving the splash up. */
+test("shows a fatal error when the workspace shell fails to render", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/components/shell/app/shell-layout.tsx*", (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: 'export default function AppShell() { throw new Error("Dockview failed to initialize"); }',
+    }),
+  );
+  await page.goto(DEMO_URL);
+
+  const dialog = page.getByRole("dialog", { name: "Nightfall couldn't start" });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Error: Dockview failed to initialize",
+  );
+  await dialog.getByText("Technical details").click();
+  await expect(dialog.locator("pre")).toContainText("AppShell");
+  await page.screenshot({
+    path: testInfo.outputPath("shell-init-failure.png"),
+  });
 });
