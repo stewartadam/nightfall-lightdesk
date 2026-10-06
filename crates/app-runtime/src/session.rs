@@ -18,6 +18,7 @@ use nightfall_engine::prelude::{
     ClientEventSink, CommandError, CommandId, CommandOutcome, CommandResult,
     DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, finish_command_in_world,
 };
+use nightfall_websocket::prelude::SharedWebUiAssets;
 
 use crate::{
     process_policy::{apply_backend_thread_priority, pin_backend_thread_to_performance_core},
@@ -32,17 +33,24 @@ use crate::{
 };
 
 /// Run one Bevy session and replace its world atomically when showfiles change.
+///
+/// When `web_ui` is supplied, the backend port also serves those built UI files so other
+/// devices can load the interface from this machine.
 pub fn run_bevy_session(
     thread_role: &'static str,
     log_config: LogConfig,
     runtime_config: RuntimeConfig,
     stdin_commands: Option<String>,
+    web_ui: Option<SharedWebUiAssets>,
 ) {
     apply_backend_thread_priority(thread_role);
 
     let bootstrap = initial_world_bootstrap(runtime_config.startup.sample_data);
     let startup_commands = runtime_config.startup.commands.clone();
-    let factory = WorldFactory::for_config(log_config, runtime_config);
+    let mut factory = WorldFactory::for_config(log_config, runtime_config);
+    if let Some(web_ui) = web_ui {
+        factory = factory.with_web_ui(web_ui);
+    }
     let (mut bevy_app, startup_ui_notifications) = match bootstrap_world_with_fallback(
         |selected_bootstrap| factory.build(selected_bootstrap),
         bootstrap,
@@ -208,7 +216,13 @@ pub async fn run_headless(log_config: LogConfig, runtime_config: RuntimeConfig) 
     let stdin_commands = get_stdin();
 
     let bevy_task = tokio::task::spawn_blocking(move || {
-        run_bevy_session("bevy-session", log_config, runtime_config, stdin_commands)
+        run_bevy_session(
+            "bevy-session",
+            log_config,
+            runtime_config,
+            stdin_commands,
+            None,
+        )
     });
     let exit_code = monitor_bevy_session(bevy_task).await;
     if exit_code != 0 {

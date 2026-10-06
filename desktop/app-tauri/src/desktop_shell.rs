@@ -830,6 +830,9 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
                     ))
                 })?)
             };
+            let web_ui = (!tauri::is_dev())
+                .then(|| crate::web_ui::embedded_web_ui(app))
+                .flatten();
             let app_handle = app.handle().clone();
             // Start the rest of the system (Bevy, Axum, terminal) in background tasks
             std::thread::spawn(move || {
@@ -848,6 +851,7 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
                             cycle_log_config,
                             cycle_runtime_config,
                             None,
+                            web_ui,
                         )
                     });
                     monitor_bevy_session(bevy_task).await

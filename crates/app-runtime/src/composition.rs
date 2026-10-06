@@ -84,6 +84,20 @@ pub(super) struct ClientTransport {
     websocket: nightfall_websocket::prelude::WebsocketHost,
 }
 
+impl ClientTransport {
+    /// Serves the built web UI from the shared backend server once it starts.
+    #[must_use]
+    pub(super) fn with_web_ui(
+        self,
+        assets: nightfall_websocket::prelude::SharedWebUiAssets,
+    ) -> Self {
+        Self {
+            websocket: self.websocket.with_web_ui(assets),
+            ..self
+        }
+    }
+}
+
 /// Builds and configures a Bevy app with process-scoped runtime settings.
 pub(super) fn init_bevy_with_transport_policy(
     log_config: LogConfig,
