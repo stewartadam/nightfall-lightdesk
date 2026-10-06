@@ -29,6 +29,24 @@ function updateCompactViewport(event: MediaQueryListEvent): void {
 }
 media?.addEventListener("change", updateCompactViewport);
 
+/**
+ * Stops iOS Safari from zooming the page whenever a text field smaller than
+ * 16px gains focus, which left panels zoomed past the screen edge after typing.
+ * iOS still allows pinch zoom with `maximum-scale`, so only iOS gets it; other
+ * browsers would lose pinch zoom.
+ */
+function preventIosFocusZoom(): void {
+  if (typeof document === "undefined") return;
+  const ios =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (!ios) return;
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+  if (!meta || meta.content.includes("maximum-scale")) return;
+  meta.content = `${meta.content}, maximum-scale=1`;
+}
+preventIosFocusZoom();
+
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     media?.removeEventListener("change", updateCompactViewport);
