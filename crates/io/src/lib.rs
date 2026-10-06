@@ -28,39 +28,43 @@ pub use input::{
 use serde::{Deserialize, Serialize};
 
 pub use crate::constants::{
-    DMX_REFRESH_INTERVAL, RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS,
-    UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
+    RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS, UDMX_PRODUCT_ID,
+    UDMX_VENDOR_ID,
 };
 
 /// Prelude for ergonomic IO transport imports.
 pub mod prelude {
     pub use crate::{
         AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse, AvailableUsbDmxDevices,
-        BindingTransport, CurrentNetworkInterfaceMode, DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS,
-        DEFAULT_USB_DMX_DEVICE_SELECTOR, DMX_REFRESH_INTERVAL, DmxInputSet,
+        BindingTransport, CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
+        DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet,
         ExternalControlSettings, ExternalControlState, InputSignalLossPolicy,
-        InputUniverseVisibilityMode, IoRuntimeNotification, IoRuntimeSettings, NetworkDmxDelivery,
-        NetworkDmxOutputTarget, NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo,
-        NetworkInterfaceState, NetworkInterfaceStatus, OutputTransport,
-        RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS, SacnDelivery,
-        SacnOutputIdentity, TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
-        UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets, get_available_interfaces,
-        get_default_interface, is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
+        InputUniverseVisibilityMode, IoRuntimeNotification, IoRuntimeSettings,
+        MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ, NetworkDmxDelivery, NetworkDmxOutputTarget,
+        NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo, NetworkInterfaceState,
+        NetworkInterfaceStatus, OutputTransport, RESERVED_NETWORK_DMX_TARGET_KEYWORDS,
+        RESERVED_USB_DMX_TARGET_KEYWORDS, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy,
+        UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets,
+        dmx_output_interval, get_available_interfaces, get_default_interface,
+        is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
         is_valid_network_dmx_target_id, output_transport_to_target_id,
         resolve_configured_network_interface, resolve_network_interface_status,
-        sanitize_input_signal_loss_timeout, usb_dmx_device_label, usb_dmx_device_selector,
-        usb_dmx_device_selector_matches, usb_dmx_device_selector_with_tiebreaker,
+        sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
+        usb_dmx_device_selector, usb_dmx_device_selector_matches,
+        usb_dmx_device_selector_with_tiebreaker,
     };
 }
 
 pub use settings::{
-    AvailableUsbDmxDevices, CurrentNetworkInterfaceMode, DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS,
-    ExternalControlSettings, ExternalControlState, InputSignalLossPolicy, IoRuntimeSettings,
+    AvailableUsbDmxDevices, CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
+    DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, ExternalControlSettings, ExternalControlState,
+    InputSignalLossPolicy, IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ,
     NetworkInterfaceInfo, NetworkInterfaceState, NetworkInterfaceStatus, TransportRuntimePolicy,
-    UsbDmxDeviceInfo, default_input_signal_loss_timeout, default_network_input_enabled,
-    default_network_output_enabled, default_usb_output_enabled, get_available_interfaces,
-    get_default_interface, resolve_configured_network_interface, resolve_network_interface_status,
-    sanitize_input_signal_loss_timeout, usb_dmx_device_label,
+    UsbDmxDeviceInfo, default_dmx_output_rate_hz, default_input_signal_loss_timeout,
+    default_network_input_enabled, default_network_output_enabled, default_usb_output_enabled,
+    dmx_output_interval, get_available_interfaces, get_default_interface,
+    resolve_configured_network_interface, resolve_network_interface_status,
+    sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
 };
 
 /// Art-Net delivery mode for a universe.
@@ -560,16 +564,6 @@ pub enum InputUniverseVisibilityMode {
 mod tests {
     use super::*;
     use crate::constants::{UDMX_PRODUCT_ID, UDMX_VENDOR_ID};
-
-    /// Verifies the DMX refresh interval equals the 44 fps engine frame period, so output ticks
-    /// and regular engine frames land on the same grid ticks.
-    #[test]
-    fn dmx_refresh_interval_matches_44_fps_frame_period() {
-        assert_eq!(
-            DMX_REFRESH_INTERVAL,
-            std::time::Duration::from_secs_f64(1.0 / 44.0)
-        );
-    }
 
     /// Verifies default Network DMX targets include the built-in protocols.
     #[test]

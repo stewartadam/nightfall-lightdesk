@@ -16,10 +16,10 @@ use std::time::{Duration, Instant};
 
 use bevy_ecs::prelude::Resource;
 use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
-use nightfall_io::prelude::{
-    DMX_REFRESH_INTERVAL, IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy,
+use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
+use nightfall_service_host::prelude::{
+    FixedRatePeriod, FixedRateWorker, ModeWorkerSlot, process_singleton,
 };
-use nightfall_service_host::prelude::{FixedRateWorker, ModeWorkerSlot, process_singleton};
 use sacn::error::errors::SacnError;
 use sacn::source::SacnSource;
 
@@ -80,7 +80,7 @@ struct SacnShared {
 /// sACN output client used inside ECS worlds.
 ///
 /// Engine frames publish the latest composed universes here; the output worker transmits
-/// whatever was published last on its own fixed 44 Hz clock.
+/// whatever was published last on its own clock at the configured output rate.
 #[derive(Clone, Default, Resource)]
 pub struct SacnOutputClient {
     shared: Arc<SacnShared>,
@@ -149,7 +149,7 @@ impl SacnOutputClient {
     }
 }
 
-/// Background worker that transmits the latest published frames on the shared 44 Hz grid.
+/// Background worker that transmits the latest published frames at the configured output rate.
 pub(crate) struct SacnWorker {
     /// Source CID exposed by this worker for loopback filtering and metadata.
     pub(crate) source_cid: Option<[u8; 16]>,
@@ -157,9 +157,13 @@ pub(crate) struct SacnWorker {
 }
 
 impl SacnWorker {
-    /// Opens the sACN source and starts ticking, or returns `None` when output is disabled or
-    /// the source cannot be opened.
-    pub(crate) fn spawn(binding: SacnOutputBinding, client: SacnOutputClient) -> Option<Self> {
+    /// Opens the sACN source and starts ticking every `period`, or returns `None` when output is
+    /// disabled or the source cannot be opened.
+    pub(crate) fn spawn(
+        binding: SacnOutputBinding,
+        client: SacnOutputClient,
+        period: FixedRatePeriod,
+    ) -> Option<Self> {
         let mut source = init_source(binding)?;
         let source_cid = source.cid().ok().map(|cid| *cid.as_bytes());
         let mut registered_universes = HashSet::<u16>::new();
@@ -167,14 +171,13 @@ impl SacnWorker {
         client.publish(Vec::new());
         client.set_running(true);
         let tick_client = client.clone();
-        let spawned =
-            FixedRateWorker::spawn("sacn-output-service", DMX_REFRESH_INTERVAL, move || {
-                let flow = transmit_tick(&mut source, &mut registered_universes, &tick_client);
-                if flow.is_break() {
-                    tick_client.set_running(false);
-                }
-                flow
-            });
+        let spawned = FixedRateWorker::spawn("sacn-output-service", period, move || {
+            let flow = transmit_tick(&mut source, &mut registered_universes, &tick_client);
+            if flow.is_break() {
+                tick_client.set_running(false);
+            }
+            flow
+        });
         match spawned {
             Ok(worker) => Some(Self { source_cid, worker }),
             Err(error) => {
@@ -409,6 +412,7 @@ fn init_source(binding: SacnOutputBinding) -> Option<SacnSource> {
 pub struct SacnOutputService {
     slot: ModeWorkerSlot<SacnOutputBinding, SacnWorker>,
     client: SacnOutputClient,
+    period: FixedRatePeriod,
 }
 
 impl SacnOutputService {
@@ -416,6 +420,7 @@ impl SacnOutputService {
         Self {
             slot: ModeWorkerSlot::new(),
             client: SacnOutputClient::default(),
+            period: FixedRatePeriod::new(IoRuntimeSettings::default().dmx_output_interval()),
         }
     }
 
@@ -424,13 +429,15 @@ impl SacnOutputService {
         self.configure_binding(SacnOutputBinding::from_enabled(enabled))
     }
 
-    /// Configures sACN output binding from IO settings and the current interface snapshot.
+    /// Configures sACN output binding and rate from IO settings and the current interface
+    /// snapshot; a rate change retimes the running worker without rebinding it.
     pub fn sync_with_settings(
         &self,
         settings: &IoRuntimeSettings,
         interface_state: &NetworkInterfaceState,
         transport_policy: &TransportRuntimePolicy,
     ) -> bool {
+        self.period.set(settings.dmx_output_interval());
         self.configure_binding(SacnOutputBinding::from_settings(
             settings,
             interface_state,
@@ -441,7 +448,7 @@ impl SacnOutputService {
     fn configure_binding(&self, binding: SacnOutputBinding) -> bool {
         let has_worker = self.slot.rebind(
             binding,
-            |binding| SacnWorker::spawn(binding, self.client.clone()),
+            |binding| SacnWorker::spawn(binding, self.client.clone(), self.period.clone()),
             |worker| worker.shutdown(),
             |worker| worker.is_alive(),
         );

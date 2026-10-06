@@ -19,8 +19,9 @@ use crate::service::{ArtNetFrame, ArtNetOutputClient, ArtNetOutputReport, ArtNet
 ///
 /// Frames come from [`OutputDmxFrames`], which already combines routed console windows,
 /// direct fixture output, and input passthrough for each concrete Art-Net delivery. The worker
-/// transmits whatever was published last on its own fixed 44 Hz clock, so this system never
-/// waits on the network and extra engine frames change neither the output rate nor its timing.
+/// transmits whatever was published last on its own clock at the configured output rate, so
+/// this system never waits on the network and extra engine frames change neither the output
+/// rate nor its timing.
 pub fn output(
     artnet_client: Option<Res<ArtNetOutputClient>>,
     frames: Res<OutputDmxFrames>,

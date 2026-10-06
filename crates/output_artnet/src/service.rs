@@ -17,10 +17,10 @@ use std::time::{Duration, Instant};
 use bevy_ecs::prelude::Resource;
 use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
 use nightfall_io::ArtNetRecentFramesByUniverse;
-use nightfall_io::prelude::{
-    DMX_REFRESH_INTERVAL, IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy,
+use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
+use nightfall_service_host::prelude::{
+    FixedRatePeriod, FixedRateWorker, ModeWorkerSlot, process_singleton,
 };
-use nightfall_service_host::prelude::{FixedRateWorker, ModeWorkerSlot, process_singleton};
 
 const ARTNET_PORT: u16 = 6454;
 
@@ -76,7 +76,7 @@ struct ArtNetShared {
 /// Art-Net output client used inside ECS worlds.
 ///
 /// Engine frames publish the latest composed universes here; the output worker transmits
-/// whatever was published last on its own fixed 44 Hz clock.
+/// whatever was published last on its own clock at the configured output rate.
 #[derive(Clone, Default, Resource)]
 pub struct ArtNetOutputClient {
     shared: Arc<ArtNetShared>,
@@ -133,32 +133,32 @@ impl ArtNetOutputClient {
     }
 }
 
-/// Background worker that transmits the latest published frames on the shared 44 Hz grid.
+/// Background worker that transmits the latest published frames at the configured output rate.
 pub(crate) struct ArtNetWorker {
     worker: FixedRateWorker,
 }
 
 impl ArtNetWorker {
-    /// Binds the socket and starts ticking, or returns `None` when output is disabled or the
-    /// socket cannot be opened.
+    /// Binds the socket and starts ticking every `period`, or returns `None` when output is
+    /// disabled or the socket cannot be opened.
     pub(crate) fn spawn(
         binding: ArtNetOutputBinding,
         client: ArtNetOutputClient,
         recent_frames: ArtNetRecentFramesByUniverse,
+        period: FixedRatePeriod,
     ) -> Option<Self> {
         let mut socket = init_socket(binding)?;
         // Never replay frames published before output stopped; wait for the next engine frame.
         client.publish(Vec::new());
         client.set_running(true);
         let tick_client = client.clone();
-        let spawned =
-            FixedRateWorker::spawn("artnet-output-service", DMX_REFRESH_INTERVAL, move || {
-                let flow = transmit_tick(&mut socket, &tick_client, &recent_frames);
-                if flow.is_break() {
-                    tick_client.set_running(false);
-                }
-                flow
-            });
+        let spawned = FixedRateWorker::spawn("artnet-output-service", period, move || {
+            let flow = transmit_tick(&mut socket, &tick_client, &recent_frames);
+            if flow.is_break() {
+                tick_client.set_running(false);
+            }
+            flow
+        });
         match spawned {
             Ok(worker) => Some(Self { worker }),
             Err(error) => {
@@ -403,6 +403,7 @@ pub struct ArtNetOutputService {
     slot: ModeWorkerSlot<ArtNetOutputBinding, ArtNetWorker>,
     client: ArtNetOutputClient,
     recent_frames: ArtNetRecentFramesByUniverse,
+    period: FixedRatePeriod,
 }
 
 impl ArtNetOutputService {
@@ -411,6 +412,7 @@ impl ArtNetOutputService {
             slot: ModeWorkerSlot::new(),
             client: ArtNetOutputClient::default(),
             recent_frames: ArtNetRecentFramesByUniverse::new(),
+            period: FixedRatePeriod::new(IoRuntimeSettings::default().dmx_output_interval()),
         }
     }
 
@@ -419,13 +421,15 @@ impl ArtNetOutputService {
         self.configure_binding(ArtNetOutputBinding::from_enabled(enabled))
     }
 
-    /// Configures Art-Net output binding from IO settings and the current interface snapshot.
+    /// Configures Art-Net output binding and rate from IO settings and the current interface
+    /// snapshot; a rate change retimes the running worker without rebinding it.
     pub fn sync_with_settings(
         &self,
         settings: &IoRuntimeSettings,
         interface_state: &NetworkInterfaceState,
         transport_policy: &TransportRuntimePolicy,
     ) -> bool {
+        self.period.set(settings.dmx_output_interval());
         self.configure_binding(ArtNetOutputBinding::from_settings(
             settings,
             interface_state,
@@ -436,7 +440,14 @@ impl ArtNetOutputService {
     fn configure_binding(&self, binding: ArtNetOutputBinding) -> bool {
         let has_worker = self.slot.rebind(
             binding,
-            |binding| ArtNetWorker::spawn(binding, self.client.clone(), self.recent_frames.clone()),
+            |binding| {
+                ArtNetWorker::spawn(
+                    binding,
+                    self.client.clone(),
+                    self.recent_frames.clone(),
+                    self.period.clone(),
+                )
+            },
             |worker| worker.shutdown(),
             |worker| worker.is_alive(),
         );

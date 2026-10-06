@@ -14,13 +14,12 @@ use bevy::{
     prelude::*,
 };
 use bevy_state::{app::AppExtStates, condition::in_state};
-use nightfall::constants::FRAMES_PER_SECOND;
 use nightfall_actions::ActionInvocationHandling;
 use nightfall_config::RuntimeConfig;
 use nightfall_desk::resources::log_config::LogConfig;
 use nightfall_engine::prelude::*;
 use nightfall_framepace::prelude::*;
-use nightfall_io::{IoRuntimeSettings, TransportRuntimePolicy};
+use nightfall_io::{IoRuntimeSettings, TransportRuntimePolicy, sanitize_dmx_output_rate_hz};
 
 use crate::{
     engine_log_time::EngineLogTimePlugin,
@@ -36,6 +35,10 @@ use crate::{
 pub(super) struct ShowfileHandling;
 
 const PERIODIC_DRAFT_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Lowest rate regular engine frames run at, however low the DMX output rate is set, so client
+/// state and timeline playback stay responsive.
+const MIN_ENGINE_FRAME_RATE_HZ: u32 = 30;
 
 /// Repeating timer that controls best-effort background showfile draft autosaves.
 #[derive(Resource, Debug)]
@@ -131,7 +134,7 @@ pub(super) fn init_bevy_with_transport_policy(
     app.add_plugins(FrameTimeDiagnosticsPlugin::default());
     app.add_plugins(FramepacePlugin);
     app.world_mut().resource_mut::<FramepaceSettings>().limiter =
-        Limiter::from_framerate(FRAMES_PER_SECOND.into());
+        Limiter::Manual(engine_frame_interval(&IoRuntimeSettings::default()));
 
     app.add_plugins(plugin_groups::CorePlugins {
         websocket_port: runtime_config.server_port,
@@ -210,8 +213,42 @@ pub(super) fn init_bevy_with_transport_policy(
             .chain()
             .in_set(ShowfileHandling),
     );
+    app.add_systems(
+        Update,
+        sync_frame_rate_with_dmx_output
+            .after(ShowfileHandling)
+            .run_if(resource_changed::<IoRuntimeSettings>),
+    );
 
     app
+}
+
+/// Paces regular engine frames from the showfile's DMX output rate.
+///
+/// Runs whenever IO settings change, which includes a showfile load replacing them.
+fn sync_frame_rate_with_dmx_output(
+    settings: Res<IoRuntimeSettings>,
+    mut framepace: ResMut<FramepaceSettings>,
+) {
+    let limiter = Limiter::Manual(engine_frame_interval(&settings));
+    if framepace.limiter != limiter {
+        tracing::debug!(
+            output_rate_hz = settings.dmx_output_rate_hz,
+            ?limiter,
+            "Engine frame rate follows DMX output rate"
+        );
+        framepace.limiter = limiter;
+    }
+}
+
+/// Returns the regular engine frame period for the configured DMX output rate.
+///
+/// This is the output interval itself, or an equal division of it when the output rate is below
+/// [`MIN_ENGINE_FRAME_RATE_HZ`], so every output tick still coincides with an engine frame on
+/// the shared tick grid.
+fn engine_frame_interval(settings: &IoRuntimeSettings) -> Duration {
+    let output_rate_hz = sanitize_dmx_output_rate_hz(settings.dmx_output_rate_hz);
+    settings.dmx_output_interval() / MIN_ENGINE_FRAME_RATE_HZ.div_ceil(output_rate_hz)
 }
 
 /// Derive the client-visible native capability snapshot from build features and host policy.
@@ -279,5 +316,43 @@ pub(super) fn handle_periodic_draft_autosave(
         Err(error) => {
             tracing::warn!("Periodic showfile draft autosave failed: {}", error);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Returns the engine frame period for a DMX output rate.
+    fn frame_interval(rate_hz: u32) -> Duration {
+        engine_frame_interval(&IoRuntimeSettings {
+            dmx_output_rate_hz: rate_hz,
+            ..Default::default()
+        })
+    }
+
+    /// Engine frames match the output interval at 30 Hz and above, so the two share grid ticks.
+    #[test]
+    fn engine_frames_match_output_rate_at_or_above_floor() {
+        for rate_hz in [30, 44, 60] {
+            assert_eq!(
+                frame_interval(rate_hz),
+                nightfall_io::dmx_output_interval(rate_hz)
+            );
+        }
+    }
+
+    /// Below 30 Hz the engine runs an equal division of the output interval, at least 30 fps.
+    #[test]
+    fn engine_frames_divide_low_output_rates() {
+        assert_eq!(
+            frame_interval(10),
+            nightfall_io::dmx_output_interval(10) / 3
+        );
+        assert_eq!(frame_interval(1), nightfall_io::dmx_output_interval(1) / 30);
+        assert_eq!(
+            frame_interval(25),
+            nightfall_io::dmx_output_interval(25) / 2
+        );
     }
 }

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-pub const FRAMES_PER_SECOND: u32 = 44;
 pub const APP_LOG_FILE_NAME: &str = "nightfall.log";
 
 pub static SHOW_DATA_DIR: &str = "default.nightfall-show";

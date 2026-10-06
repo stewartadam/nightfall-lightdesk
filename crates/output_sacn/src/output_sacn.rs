@@ -19,8 +19,9 @@ use crate::service::{SacnFrame, SacnOutputClient, SacnOutputReport, SacnSendErro
 ///
 /// Frames come from [`OutputDmxFrames`], which already combines routed console windows,
 /// direct fixture output, and input passthrough for each concrete sACN delivery. The worker
-/// transmits whatever was published last on its own fixed 44 Hz clock, so this system never
-/// waits on the network and extra engine frames change neither the output rate nor its timing.
+/// transmits whatever was published last on its own clock at the configured output rate, so
+/// this system never waits on the network and extra engine frames change neither the output
+/// rate nor its timing.
 pub fn output(
     sacn_client: Option<Res<SacnOutputClient>>,
     frames: Res<OutputDmxFrames>,

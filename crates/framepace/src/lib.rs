@@ -141,7 +141,7 @@ impl Default for FramepaceSettings {
 }
 
 /// Configures the framelimiting technique for the app.
-#[derive(Debug, Default, Clone, Reflect)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Reflect)]
 pub enum Limiter {
     /// Set a fixed manual frametime limit. This should be greater than the monitors frametime
     /// (`1.0 / monitor frequency`).
