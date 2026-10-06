@@ -84,7 +84,8 @@ One-time setup:
    production branch to a name no PR uses (for example `production`), so PR
    deploys always land as preview deployments.
 2. Under the project's **Settings → General → Access policy**, enable Cloudflare
-   Access for preview deployments and allow only the maintainers' emails.
+   Access for **All Traffic** and allow only the maintainers' emails. Deploys use
+   the API token, so Access never blocks CI.
 3. Create an API token with only **Account → Cloudflare Pages → Edit**.
 4. In this repository's Actions settings, add the secret `CLOUDFLARE_PAGES_TOKEN`
    and the variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT`.
