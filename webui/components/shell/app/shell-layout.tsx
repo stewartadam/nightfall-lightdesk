@@ -10,6 +10,8 @@ import { useStore } from "@nanostores/solid";
 import { onCleanup, onMount, Show } from "solid-js";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
+import { SelectionFlattenConfirmModal } from "../../../features/selection";
+import { AboutDialog, SettingsOverlay } from "../../../features/settings";
 import { ShowfileDialogs } from "../../../features/showfile";
 import { compactViewport } from "../../../state/viewport";
 import ConnectionOverlay from "../../overlays/connection";
@@ -42,6 +44,9 @@ function ShellRuntime() {
       <PatchWizard />
       <ObjectPatchWizardModal />
       <ShowfileDialogs />
+      <AboutDialog />
+      <SettingsOverlay />
+      <SelectionFlattenConfirmModal />
     </>
   );
 }
@@ -62,7 +67,8 @@ function DockedContent() {
 
 /**
  * Renders one panel at a time for small screens, with swipe and a bottom tab
- * bar to move between panels.
+ * bar to move between panels. There is no status bar: the compact header
+ * carries its controls.
  */
 function CompactContent() {
   const shell = useAppShell();
@@ -82,7 +88,6 @@ function CompactContent() {
           <DockviewApp compact />
         </ShowfileTransitionVeil>
       </div>
-      <StatusBar />
       <CompactNavigation panels={panels} />
     </div>
   );

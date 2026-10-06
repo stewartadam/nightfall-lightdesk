@@ -104,6 +104,12 @@ test("compact shell navigates one panel at a time on a phone", async ({
   const box = await content.boundingBox();
   expect(box?.width ?? 0).toBeLessThanOrEqual(PHONE.width);
   expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+  // One slim header replaces the two-row header and the status bar.
+  await expect(
+    page.getByRole("region", { name: "Application status bar" }),
+  ).toHaveCount(0);
+  const headerBox = await page.locator(".nf-app-header").boundingBox();
+  expect(headerBox?.height ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(48);
   await page.screenshot({ path: testInfo.outputPath("01-compact-start.png") });
 
   const secondTab = tabs.nth(1);
@@ -253,6 +259,53 @@ test("compact shell pins and reorders tabs from the Panels sheet", async ({
   await page.reload();
   await waitForDockviewApp(page);
   await expect(tabs.nth(3)).toContainText("Clips");
+});
+
+/** Verifies the slim header keeps the status bar's controls one tap away. */
+test("compact header carries the status bar controls", async ({
+  page,
+}, testInfo) => {
+  await page.goto(DEMO_PATH);
+  await waitForDockviewApp(page);
+  const header = page.getByRole("navigation", { name: "Global" });
+  await expect(header.getByTestId("compact-showfile-name")).toHaveText(
+    "nightfall-demo",
+  );
+  await expect(header.getByRole("status")).toHaveAccessibleName("Connected");
+  await expect(
+    header.getByRole("button", { name: /^(Undo:|Nothing to undo)/ }),
+  ).toBeVisible();
+  await expect(
+    header.getByRole("button", { name: "Open command palette" }),
+  ).toBeVisible();
+
+  await header.getByRole("button", { name: "More" }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByText("Engine: Connected")).toBeVisible();
+  for (const item of ["Object Palette", "Reset Demo", "Settings"]) {
+    await expect(
+      menu.getByRole("button", { name: new RegExp(`^${item}`) }),
+    ).toBeVisible();
+  }
+  // The menu opens downward and stays on screen.
+  const menuBox = await menu.boundingBox();
+  expect(menuBox?.y ?? -1).toBeGreaterThan(0);
+  expect((menuBox?.x ?? -1) + (menuBox?.width ?? 0)).toBeLessThanOrEqual(
+    PHONE.width,
+  );
+  await page.screenshot({ path: testInfo.outputPath("08-more-menu.png") });
+
+  // On a phone in landscape the long menu scrolls instead of running off the bottom.
+  await page.setViewportSize({ width: PHONE.height, height: PHONE.width });
+  await expect
+    .poll(async () => {
+      const box = await menu.boundingBox();
+      return (box?.y ?? 0) + (box?.height ?? Number.POSITIVE_INFINITY);
+    })
+    .toBeLessThanOrEqual(PHONE.width);
+  await page.setViewportSize(PHONE);
+  await menu.getByRole("button", { name: /^Settings/ }).click();
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
 });
 
 /** Verifies a tap does not leave a hover tooltip open, since touch has no hover to end it. */
