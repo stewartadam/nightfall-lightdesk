@@ -24,6 +24,13 @@ const WINDOW_SIZE = 60;
 const PUBLISH_INTERVAL = 10;
 
 /**
+ * Longest a renderer goes between stats publishes, so slow renderers (a few
+ * frames per second) show and refresh their readout instead of waiting
+ * `PUBLISH_INTERVAL` frames.
+ */
+const MAX_PUBLISH_INTERVAL_MS = 500;
+
+/**
  * Metrics collected each frame.
  */
 export interface FrameMetrics {
@@ -77,7 +84,8 @@ export class Instrumentation {
   private reducedGoboEmitters: number | undefined;
   /** Present only when diagnostics are enabled. */
   private readonly pacing: FramePacing | undefined;
-  private frameCount = 0;
+  private framesSincePublish = 0;
+  private lastPublishTime: number | undefined;
   private lastFrameTime = 0;
   private frameTimesMs: number[] = [];
   private updateTimesMs: number[] = [];
@@ -149,10 +157,18 @@ export class Instrumentation {
       this.pushToWindow(this.gpuTimesMs, metrics.gpu.milliseconds);
     }
 
-    this.frameCount++;
+    this.framesSincePublish++;
+    this.lastPublishTime ??= currentTime;
 
-    // Publish stats periodically
-    if (this.frameCount % PUBLISH_INTERVAL === 0) {
+    // Publish every few frames, or sooner when frames are slow, once a frame
+    // interval has been measured.
+    if (
+      this.frameTimesMs.length > 0 &&
+      (this.framesSincePublish >= PUBLISH_INTERVAL ||
+        currentTime - this.lastPublishTime >= MAX_PUBLISH_INTERVAL_MS)
+    ) {
+      this.framesSincePublish = 0;
+      this.lastPublishTime = currentTime;
       this.publishStats();
     }
   }
@@ -190,6 +206,8 @@ export class Instrumentation {
   resume(): void {
     this.pacing?.suspend();
     this.lastFrameTime = 0;
+    this.framesSincePublish = 0;
+    this.lastPublishTime = undefined;
     this.clearGpuSamples();
   }
 
@@ -204,7 +222,8 @@ export class Instrumentation {
    */
   clear(): void {
     this.pacing?.suspend();
-    this.frameCount = 0;
+    this.framesSincePublish = 0;
+    this.lastPublishTime = undefined;
     this.lastFrameTime = 0;
     this.frameTimesMs = [];
     this.updateTimesMs = [];
