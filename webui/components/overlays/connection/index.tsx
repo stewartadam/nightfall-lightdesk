@@ -24,6 +24,7 @@ import {
 } from "../../../lib/engine-runtime";
 import { allShortcuts } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
+import { $pairingPromptOpen } from "../../../lib/pairing";
 import { appLifecycle } from "../../../state/app-lifecycle";
 import { DialogBackdrop, DialogSurface } from "../../ui/dialog";
 import Modal from "../../ui/modal";
@@ -61,6 +62,7 @@ const ConnectionOverlay = () => {
     log.trace("mounting");
   });
   const lifecycle = useStore(appLifecycle);
+  const pairingPromptOpen = useStore($pairingPromptOpen);
   const initialConnected = connectionStatus() === EngineRuntimeStatus.Connected;
   const initiallyBlocked =
     lifecycle().phase === "interactive" && !initialConnected;
@@ -85,7 +87,9 @@ const ConnectionOverlay = () => {
    * keyboard) while the session is interactive.
    */
   const isOverlayPresented = () =>
-    isPopupVisible() && lifecycle().phase === "interactive";
+    isPopupVisible() &&
+    lifecycle().phase === "interactive" &&
+    !pairingPromptOpen();
 
   /** Cancels a pending show so a stale timer cannot re-present the overlay later. */
   const cancelPendingShow = () => {

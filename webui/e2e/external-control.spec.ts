@@ -80,6 +80,14 @@ test("external control binds All and a selected interface, then returns to local
       )
       .toEqual({ enabled: true, interface: null });
 
+    // The operator sees the pairing PIN and can replace it.
+    const pin = section.getByTestId("remote-pairing-pin");
+    await expect(pin).toHaveText(/^\d{3} \d{3}$/);
+    const firstPin = await pin.textContent();
+    await section.getByRole("button", { name: "New PIN" }).click();
+    await expect(pin).not.toHaveText(firstPin ?? "");
+    await expect(pin).toHaveText(/^\d{3} \d{3}$/);
+
     const choices = await selector
       .locator("option")
       .evaluateAll((options) =>

@@ -22,7 +22,7 @@ use axum::{
     Extension, Router,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     extract::{ConnectInfo, Request, State},
-    http::{Method, header},
+    http::{HeaderMap, Method, Uri, header},
     response::{IntoResponse, Response},
     routing::get,
     serve::ListenerExt,
@@ -89,6 +89,8 @@ pub struct AxumAppState {
     pub clients: Arc<Mutex<Vec<ConnectedClient>>>,
     /// Admission generation used to reject remote upgrades from retired listeners.
     pub remote_generation: Arc<AtomicU64>,
+    /// Session PIN and tokens that devices on the network need to connect.
+    pub pairing: Arc<crate::pairing::RemotePairing>,
 }
 
 /// Handle an incoming HTTP websocket request
@@ -97,8 +99,12 @@ async fn handle_socket(
     State(state): State<AxumAppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Extension(generation): Extension<u64>,
+    uri: Uri,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| client_ws(socket, state, peer.ip().is_loopback(), generation))
+    let local = crate::origin::is_local_client(Some(peer), &headers, &uri);
+    let token = state.pairing.token_from(&headers);
+    ws.on_upgrade(move |socket| client_ws(socket, state, local, generation, token))
 }
 
 /// Encodes a non-droppable CBOR payload using the websocket binary wire format.
@@ -120,7 +126,17 @@ fn encode_transport_heartbeat_response(data: &TransportHeartbeatData) -> Option<
 }
 
 /// Handle a new client connection (post upgrade)
-async fn client_ws(mut socket: WebSocket, state: AxumAppState, local: bool, generation: u64) {
+///
+/// A remote session registers only while its listener generation is current and its pairing
+/// token is still valid. Both are checked under the client registry lock, so a session can
+/// never slip in after a PIN regeneration has closed the remote clients.
+async fn client_ws(
+    mut socket: WebSocket,
+    state: AxumAppState,
+    local: bool,
+    generation: u64,
+    pairing_token: Option<String>,
+) {
     tracing::debug!("WebSocket client connected");
 
     // Get the current crate version to send to the client
@@ -146,7 +162,10 @@ async fn client_ws(mut socket: WebSocket, state: AxumAppState, local: bool, gene
     // Required to that this async fn is Send-compatible
     {
         let mut guard = clients.lock().unwrap();
-        if !local && state.remote_generation.load(Ordering::Acquire) != generation {
+        if !local
+            && (state.remote_generation.load(Ordering::Acquire) != generation
+                || !state.pairing.token_valid(pairing_token.as_deref()))
+        {
             return;
         }
         guard.push(ConnectedClient {
@@ -261,6 +280,20 @@ fn close_connected_clients(clients: &Arc<Mutex<Vec<ConnectedClient>>>) {
 fn close_remote_clients(clients: &Arc<Mutex<Vec<ConnectedClient>>>, generation: &AtomicU64) -> u64 {
     let mut clients = clients.lock().unwrap();
     let next_generation = generation.fetch_add(1, Ordering::AcqRel) + 1;
+    close_remote_entries(&mut clients);
+    next_generation
+}
+
+/// Closes every remote session on the current listeners, leaving local ones connected.
+///
+/// Unlike [`close_remote_clients`], the listeners stay current, so devices that still hold
+/// valid credentials may connect again straight away.
+pub(crate) fn disconnect_remote_clients(clients: &Arc<Mutex<Vec<ConnectedClient>>>) {
+    close_remote_entries(&mut clients.lock().unwrap());
+}
+
+/// Cancels and removes the remote entries of a locked client registry.
+fn close_remote_entries(clients: &mut Vec<ConnectedClient>) {
     clients.retain(|client| {
         if !client.local {
             client.cancellation.send_replace(true);
@@ -268,7 +301,6 @@ fn close_remote_clients(clients: &Arc<Mutex<Vec<ConnectedClient>>>, generation: 
         }
         client.local
     });
-    next_generation
 }
 
 /// Retries transient address conflicts while a previous listener is being released.
@@ -336,6 +368,7 @@ pub(crate) fn create_axum_task(
         update_json_tx,
         clients: clients.clone(),
         remote_generation: remote_generation.clone(),
+        pairing: Arc::new(crate::pairing::RemotePairing::new(port)),
     };
     let routes = SwappableRoutes::new(state.clone(), web_ui, plugin_routes, stateful_plugin_routes);
     let axum_app = websocket_router(state, routes.clone());
@@ -548,15 +581,27 @@ impl SwappableRoutes {
 /// Combine core and plugin routes under one cross-origin policy for desktop and browser clients.
 ///
 /// Foreign origins are turned away before CORS runs, so the CORS layer only ever echoes an
-/// origin that already passed [`crate::origin::reject_foreign_origins`].
+/// origin that already passed [`crate::origin::reject_foreign_origins`]. Remote devices
+/// that have not paired are turned away inside CORS, so the browser can read the refusal.
 fn websocket_router(state: AxumAppState, routes: SwappableRoutes) -> Router {
-    // Core routes own the socket; plugin routes resolve against the active world.
+    use crate::pairing::{
+        PAIRING_PATH, PAIRING_PIN_PATH, pairing_status, regenerate_pairing_pin, require_pairing,
+        show_pairing_pin, submit_pairing_pin,
+    };
+
+    // Core routes own the socket and pairing; plugin routes resolve against the active world.
     let core_routes = Router::new()
         .route("/ws", get(handle_socket))
-        .with_state(state)
+        .route(PAIRING_PATH, get(pairing_status).post(submit_pairing_pin))
+        .route(
+            PAIRING_PIN_PATH,
+            get(show_pairing_pin).post(regenerate_pairing_pin),
+        )
+        .with_state(state.clone())
         .fallback(move |request: Request| routes.clone().call(request));
 
     core_routes
+        .layer(axum::middleware::from_fn_with_state(state, require_pairing))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::mirror_request())
@@ -851,6 +896,7 @@ mod tests {
             update_json_tx,
             clients: Default::default(),
             remote_generation: Default::default(),
+            pairing: Arc::new(crate::pairing::RemotePairing::new(0)),
         };
         let routes = SwappableRoutes::new(state.clone(), None, Router::new(), Router::new());
         let app = websocket_router(state, routes).layer(Extension(0_u64));
@@ -933,6 +979,255 @@ mod tests {
         server.abort();
     }
 
+    /// A device on the network loads the UI and the pairing endpoint freely, needs the PIN's
+    /// cookie for backend routes, and cannot read or regenerate the PIN itself.
+    #[tokio::test]
+    async fn remote_devices_pair_before_reaching_backend_routes() {
+        use axum::{
+            body::{Body, to_bytes},
+            http::StatusCode,
+        };
+        use tower_service::Service;
+
+        let (command_tx, _command_rx) = async_channel::unbounded();
+        let (update_json_tx, _update_rx) = async_channel::unbounded();
+        let state = AxumAppState {
+            command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
+            update_json_tx,
+            clients: Default::default(),
+            remote_generation: Default::default(),
+            pairing: Arc::new(crate::pairing::RemotePairing::new(3030)),
+        };
+        let pin = state.pairing.pin();
+        let routes = SwappableRoutes::new(
+            state.clone(),
+            None,
+            Router::new().route("/api/marker", get(|| async { "marker" })),
+            Router::new(),
+        );
+        let mut app = websocket_router(state, routes);
+        let mut send = |peer: [u8; 4],
+                        method: Method,
+                        path: &'static str,
+                        cookie: Option<String>,
+                        body: Option<String>| {
+            let mut request = Request::builder().method(method).uri(path).header(
+                header::HOST,
+                if peer == [127, 0, 0, 1] {
+                    "localhost:3030"
+                } else {
+                    "192.168.1.20:3030"
+                },
+            );
+            if let Some(cookie) = cookie {
+                request = request.header(header::COOKIE, cookie);
+            }
+            if body.is_some() {
+                request = request.header(header::CONTENT_TYPE, "application/json");
+            }
+            let mut request = request
+                .body(body.map_or_else(Body::empty, Body::from))
+                .unwrap();
+            request
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from((peer, 50000))));
+            let call = app.call(request);
+            async move {
+                let response = call.await.unwrap();
+                let status = response.status();
+                let set_cookie = response
+                    .headers()
+                    .get(header::SET_COOKIE)
+                    .map(|value| value.to_str().unwrap().to_string());
+                let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+                (
+                    status,
+                    set_cookie,
+                    String::from_utf8(body.to_vec()).unwrap(),
+                )
+            }
+        };
+        let phone = [192, 168, 1, 50];
+        let local = [127, 0, 0, 1];
+
+        assert_eq!(
+            send(phone, Method::GET, "/api/marker", None, None).await.0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            send(local, Method::GET, "/api/marker", None, None).await.0,
+            StatusCode::OK
+        );
+        let (_, _, body) = send(phone, Method::GET, "/api/pairing", None, None).await;
+        assert_eq!(body, r#"{"required":true,"paired":false}"#);
+        for method in [Method::GET, Method::POST] {
+            assert_eq!(
+                send(phone, method, "/api/pairing/pin", None, None).await.0,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+
+        let attempt = |pin: &str| Some(format!(r#"{{"pin":"{pin}"}}"#));
+        let (status, set_cookie, _) =
+            send(phone, Method::POST, "/api/pairing", None, attempt(&pin)).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let cookie = set_cookie.unwrap().split(';').next().unwrap().to_string();
+        assert_eq!(
+            send(
+                phone,
+                Method::GET,
+                "/api/marker",
+                Some(cookie.clone()),
+                None
+            )
+            .await
+            .2,
+            "marker"
+        );
+        let (_, _, body) = send(
+            phone,
+            Method::GET,
+            "/api/pairing",
+            Some(cookie.clone()),
+            None,
+        )
+        .await;
+        assert_eq!(body, r#"{"required":true,"paired":true}"#);
+        assert_eq!(
+            send(
+                phone,
+                Method::POST,
+                "/api/pairing/pin",
+                Some(cookie.clone()),
+                None
+            )
+            .await
+            .0,
+            StatusCode::FORBIDDEN
+        );
+
+        let (status, _, body) = send(local, Method::POST, "/api/pairing/pin", None, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.starts_with(r#"{"pin":""#), "{body}");
+        assert_eq!(
+            send(phone, Method::GET, "/api/marker", Some(cookie), None)
+                .await
+                .0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    /// A phone relayed by the dev proxy counts as remote: its socket needs the pairing
+    /// cookie, and regenerating the PIN closes it while the local operator stays connected.
+    #[tokio::test]
+    async fn regenerating_the_pin_closes_proxied_remote_sockets() {
+        use tokio_tungstenite::tungstenite::{
+            Error as WsError, Message as WsMessage, client::IntoClientRequest,
+            http::StatusCode as WsStatus,
+        };
+
+        let (command_tx, _command_rx) = async_channel::unbounded();
+        let (update_json_tx, _update_rx) = async_channel::unbounded();
+        let state = AxumAppState {
+            command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
+            update_json_tx,
+            clients: Default::default(),
+            remote_generation: Default::default(),
+            pairing: Arc::new(crate::pairing::RemotePairing::new(3030)),
+        };
+        let pairing = state.pairing.clone();
+        let routes = SwappableRoutes::new(state.clone(), None, Router::new(), Router::new());
+        let app = websocket_router(state, routes).layer(Extension(0_u64));
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+        });
+        let connect = |cookie: Option<String>| async move {
+            let mut request = format!("ws://localhost:{port}/ws")
+                .into_client_request()
+                .unwrap();
+            let headers = request.headers_mut();
+            headers.insert("x-forwarded-host", "192.168.1.20:3031".parse().unwrap());
+            headers.insert(header::ORIGIN, "http://192.168.1.20:3031".parse().unwrap());
+            if let Some(cookie) = cookie {
+                headers.insert(header::COOKIE, cookie.parse().unwrap());
+            }
+            tokio_tungstenite::connect_async(request).await
+        };
+
+        match connect(None).await {
+            Err(WsError::Http(response)) => {
+                assert_eq!(response.status(), WsStatus::UNAUTHORIZED)
+            }
+            other => panic!("unpaired phone upgraded: {:?}", other.map(|_| ())),
+        }
+        let crate::pairing::PairingOutcome::Paired(token) = pairing.attempt(
+            Ipv4Addr::LOCALHOST.into(),
+            &pairing.pin(),
+            std::time::Instant::now(),
+        ) else {
+            panic!("correct PIN refused");
+        };
+        let (mut phone, _) = connect(Some(format!("nightfall_pairing_3030={token}")))
+            .await
+            .unwrap();
+        assert!(phone.next().await.unwrap().unwrap().is_binary());
+        let (mut local, _) = tokio_tungstenite::connect_async(format!("ws://localhost:{port}/ws"))
+            .await
+            .unwrap();
+        assert!(local.next().await.unwrap().unwrap().is_binary());
+
+        let response = raw_loopback_post(port, "/api/pairing/pin").await;
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let closed = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match phone.next().await {
+                    Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => break,
+                    Some(Ok(_)) => {}
+                }
+            }
+        })
+        .await;
+        assert!(
+            closed.is_ok(),
+            "remote socket stayed open after regeneration"
+        );
+        local
+            .send(WsMessage::Text(
+                r#"{"type":"WebSocketHeartbeat","data":{"id":1}}"#.into(),
+            ))
+            .await
+            .unwrap();
+        assert!(local.next().await.unwrap().unwrap().is_binary());
+        server.abort();
+    }
+
+    /// Sends a bodiless `POST` over a raw socket from loopback and returns the raw response.
+    async fn raw_loopback_post(port: u16, path: &str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        stream
+            .write_all(
+                format!(
+                    "POST {path} HTTP/1.1\r\nHost: localhost:{port}\r\nContent-Length: 0\r\n\
+                     Connection: close\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await.unwrap();
+        response
+    }
+
     /// Plugin routes win over the web UI fallback, and the UI keeps serving after a world
     /// replaces the plugin routes.
     #[tokio::test]
@@ -958,6 +1253,7 @@ mod tests {
             update_json_tx,
             clients: Default::default(),
             remote_generation: Default::default(),
+            pairing: Arc::new(crate::pairing::RemotePairing::new(0)),
         };
         let plugin_route = |marker: &'static str| {
             Router::new().route("/api/marker", get(move || async move { marker }))
