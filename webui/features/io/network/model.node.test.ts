@@ -24,6 +24,7 @@ test("shareableHosts lists the addresses other devices can reach", () => {
     { name: "lo", addresses: ["127.0.0.1"] },
     { name: "eth0", addresses: ["192.168.1.20"] },
     { name: "wlan0", addresses: ["10.0.0.5", "192.168.1.20"] },
+    { name: "usb0", addresses: ["169.254.10.2"] },
   ];
   assert.deepEqual(shareableHosts(["0.0.0.0:3030"], interfaces), [
     "192.168.1.20",

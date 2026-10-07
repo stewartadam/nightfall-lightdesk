@@ -98,15 +98,18 @@ test("external control binds All and a selected interface, then returns to local
           .filter((address: string) => !address.startsWith("127.")).length,
     );
     if (lanAddresses > 0) {
-      await expect(qrButtons.first()).toBeVisible();
-      await qrButtons.first().click();
-      await expect(
-        page.getByRole("img", { name: /^QR code to open http:\/\// }),
-      ).toBeVisible();
+      const qrCode = page.getByRole("img", {
+        name: /^QR code to open http:\/\//,
+      });
+      await qrButtons.first().hover();
+      await expect(qrCode).toBeVisible();
+      // Let the pop-over finish fading in so the capture shows the scannable code.
+      await page.waitForTimeout(300);
       await page.screenshot({
         path: testInfo.outputPath("external-control-share-link.png"),
       });
-      await qrButtons.first().click();
+      await page.mouse.move(0, 0);
+      await expect(qrCode).toBeHidden();
     }
 
     const choices = await selector

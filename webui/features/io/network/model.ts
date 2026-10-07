@@ -118,9 +118,18 @@ export function networkInterfaceIsListening(
 }
 
 /**
+ * Returns whether another device could reach this IPv4 address: loopback and
+ * self-assigned link-local addresses are excluded.
+ */
+function isReachableIpv4(address: string): boolean {
+  return !address.startsWith("127.") && !address.startsWith("169.254.");
+}
+
+/**
  * Returns the IPv4 hosts another device can use to reach this computer, one
- * per listening address. Loopback listeners are skipped, and the All binding
- * (`0.0.0.0`) expands to every interface's non-loopback address.
+ * per listening address. Unreachable listeners are skipped, and the All
+ * binding (`0.0.0.0`) expands to every interface's reachable address. The
+ * backend listens on IPv4 only, so bracketed IPv6 listeners are ignored.
  */
 export function shareableHosts(
   listeningAddresses: string[],
@@ -132,10 +141,10 @@ export function shareableHosts(
     if (host === "0.0.0.0") {
       for (const iface of interfaces) {
         for (const address of iface.addresses) {
-          if (!address.startsWith("127.")) hosts.add(address);
+          if (isReachableIpv4(address)) hosts.add(address);
         }
       }
-    } else if (host && !host.startsWith("127.") && !host.startsWith("[")) {
+    } else if (host && !host.startsWith("[") && isReachableIpv4(host)) {
       hosts.add(host);
     }
   }

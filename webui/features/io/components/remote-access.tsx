@@ -15,6 +15,7 @@ import {
   createSignal,
   For,
   type JSX,
+  onCleanup,
   Show,
 } from "solid-js";
 import { encode } from "uqr";
@@ -36,8 +37,8 @@ import { shareableHosts, shareableUrl } from "../network/model";
 
 const log = getLogger(import.meta.url);
 
-/** Blank modules kept around the code so scanners can find its edges. */
-const QR_QUIET_ZONE = 2;
+/** Blank modules kept around the code so scanners can find its edges; the QR spec asks for four. */
+const QR_QUIET_ZONE = 4;
 
 /** Draws a QR code for `text` as crisp SVG modules on a white quiet zone. */
 function QrCode(props: { text: string; label: string }): JSX.Element {
@@ -79,19 +80,30 @@ function QrCode(props: { text: string; label: string }): JSX.Element {
 export function RemoteAccess() {
   const state = useStore($externalControlState);
   const interfaces = useStore($availableNetworkInterfaces);
-  /** Loads the PIN, resolving to null where the backend refuses to show it. */
-  const [pin, { mutate }] = createResource(async () => {
-    try {
-      return await fetchPairingPin();
-    } catch (error) {
-      log.debug("Pairing PIN is not readable from this device", error);
-      return null;
-    }
-  });
+  let lastPin: string | null = null;
+  /**
+   * Loads the PIN, resolving to null where the backend refuses to show it.
+   * Enabling external control rebinds the listeners and can drop a request in
+   * flight, so the PIN reloads whenever the listening addresses change and a
+   * failed load keeps the last known PIN.
+   */
+  const [pin, { mutate }] = createResource(
+    // Prefixed so an empty address list still counts as a source and loads.
+    () => `listening:${state().listening_addresses.join(",")}`,
+    async () => {
+      try {
+        lastPin = await fetchPairingPin();
+      } catch (error) {
+        log.debug("Could not load the pairing PIN", error);
+      }
+      return lastPin;
+    },
+  );
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [copied, setCopied] = createSignal<string | null>(null);
-  const [pinnedQr, setPinnedQr] = createSignal<string | null>(null);
+  let copiedTimer: number | undefined;
+  onCleanup(() => window.clearTimeout(copiedTimer));
   /** Lists one link per address other devices can reach, without the PIN. */
   const links = createMemo(() =>
     shareableHosts(state().listening_addresses, interfaces()).map((host) =>
@@ -104,7 +116,8 @@ export function RemoteAccess() {
     setBusy(true);
     setError(null);
     try {
-      mutate(await regeneratePairingPin());
+      lastPin = await regeneratePairingPin();
+      mutate(lastPin);
     } catch (failure) {
       log.warn("Failed to regenerate the pairing PIN", failure);
       setError("Could not create a new PIN.");
@@ -118,7 +131,8 @@ export function RemoteAccess() {
     try {
       await writeClipboardText(link);
       setCopied(link);
-      window.setTimeout(() => setCopied(null), 1500);
+      window.clearTimeout(copiedTimer);
+      copiedTimer = window.setTimeout(() => setCopied(null), 1500);
     } catch (failure) {
       log.warn("Failed to copy the link", failure);
     }
@@ -146,7 +160,6 @@ export function RemoteAccess() {
                       interactive
                       delay={150}
                       position="bottom"
-                      forceVisible={() => pinnedQr() === link}
                       content={() => (
                         <div class="flex flex-col items-center gap-2 p-1">
                           <QrCode
@@ -161,7 +174,7 @@ export function RemoteAccess() {
                             Scan to open and pair
                           </span>
                           <Show when={import.meta.env.DEV}>
-                            <span class="max-w-44 text-center text-[11px] text-amber-300">
+                            <span class="max-w-44 whitespace-normal text-center text-[11px] text-amber-300">
                               Development builds need Vite started with --host
                               for this link to work.
                             </span>
@@ -173,10 +186,6 @@ export function RemoteAccess() {
                         size="icon"
                         type="button"
                         aria-label={`Show QR code for ${link}`}
-                        aria-expanded={pinnedQr() === link}
-                        onClick={() =>
-                          setPinnedQr(pinnedQr() === link ? null : link)
-                        }
                       >
                         <QrCodeIcon class="size-4" aria-hidden />
                       </Button>
