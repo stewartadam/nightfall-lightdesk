@@ -14,14 +14,14 @@ import {
 } from "../../../lib/runtime-config";
 import { Button } from "../../ui/visual-language/button";
 
+/** Replaces the embedded demo world with a freshly seeded deterministic sample. */
+export function resetBrowserDemo(): void {
+  engineRuntime.stop();
+  engineRuntime.start(configuredEngineRuntime(getWebSocketUrl()));
+}
+
 /** Keeps the demo reset action available in the application toolbar. */
 export default function BrowserDemoBanner() {
-  /** Replaces the embedded world with a freshly seeded deterministic sample. */
-  const resetDemo = () => {
-    engineRuntime.stop();
-    engineRuntime.start(configuredEngineRuntime(getWebSocketUrl()));
-  };
-
   return (
     <Show when={isEmbeddedDemoRuntime()}>
       <aside
@@ -33,7 +33,7 @@ export default function BrowserDemoBanner() {
           variant="primary"
           type="button"
           data-testid="browser-demo-reset"
-          onClick={resetDemo}
+          onClick={resetBrowserDemo}
         >
           Reset demo
         </Button>

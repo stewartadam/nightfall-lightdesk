@@ -530,7 +530,8 @@ test("prompts to load a newer startup draft", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(dialog).toBeHidden();
   await expect.poll(draftLoadCount).toBe(1);
-  await expect(page.locator("button[title='Menu']")).toBeVisible();
+  // At phone width the app menu lives in the compact header's logo menu.
+  await expect(page.locator("button[title='Main menu']")).toBeVisible();
 });
 
 /** Verifies accepting a draft sends one load command and waits for it. */

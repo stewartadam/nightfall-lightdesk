@@ -36,6 +36,26 @@ export interface TooltipProps {
   interactive?: boolean;
 }
 
+/** Controls whose tap does something of its own, so a tap must not toggle their tooltip. */
+const ACTIONABLE_SELECTOR = [
+  "a[href]",
+  "button",
+  "input",
+  "label",
+  "select",
+  "summary",
+  "textarea",
+  "[contenteditable='true']",
+  "[role='button']",
+  "[role='checkbox']",
+  "[role='link']",
+  "[role='menuitem']",
+  "[role='option']",
+  "[role='slider']",
+  "[role='switch']",
+  "[role='tab']",
+].join(",");
+
 /**
  * Custom tooltip component that persists hover state even when content updates.
  * Unlike the native `title` attribute, this won't reset its hover timer when
@@ -51,6 +71,7 @@ export default function Tooltip(props: TooltipProps) {
   let closeTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let exitTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let lastAnimationKey: unknown;
+  let lastTouchPressAt = Number.NEGATIVE_INFINITY;
   let triggerRef: HTMLSpanElement | undefined;
   let tooltipRef: HTMLSpanElement | undefined;
 
@@ -67,6 +88,8 @@ export default function Tooltip(props: TooltipProps) {
   const TOOLTIP_Z_INDEX = "2147483647";
   const EXIT_ANIMATION_MS = 90;
   const INTERACTIVE_CLOSE_DELAY_MS = 120;
+  // Mobile browsers move focus when the tap's click lands, after any long press.
+  const TOUCH_FOCUS_WINDOW_MS = 1000;
 
   /** Clamps a numeric value within an inclusive range. */
   const clamp = (value: number, min: number, max: number) =>
@@ -195,8 +218,13 @@ export default function Tooltip(props: TooltipProps) {
     );
   };
 
-  /** Starts the delayed tooltip open interaction for pointer users. */
-  const handleMouseEnter = () => {
+  /**
+   * Starts the delayed tooltip open interaction for hovering pointers. Touch
+   * has no hover, and a tap would otherwise leave the tooltip open until the
+   * next tap elsewhere.
+   */
+  const handlePointerEnter = (event: PointerEvent) => {
+    if (event.pointerType === "touch") return;
     clearOpenTimer();
     clearCloseTimer();
     timeoutId = setTimeout(() => {
@@ -206,8 +234,13 @@ export default function Tooltip(props: TooltipProps) {
     }, delay());
   };
 
-  /** Closes after a short bridge delay when interactive content must remain reachable. */
-  const handleMouseLeave = () => {
+  /**
+   * Closes after a short bridge delay when interactive content must remain
+   * reachable. A finger leaves as it lifts, which must not close a tooltip
+   * the tap just opened, so touch is ignored here.
+   */
+  const handlePointerLeave = (event?: PointerEvent) => {
+    if (event?.pointerType === "touch") return;
     clearOpenTimer();
     clearCloseTimer();
     if (!props.interactive) {
@@ -221,20 +254,68 @@ export default function Tooltip(props: TooltipProps) {
   };
 
   /** Keeps an interactive tooltip visible while its surface is hovered. */
-  const handleTooltipMouseEnter = () => {
+  const handleTooltipPointerEnter = () => {
     if (!props.interactive) return;
     clearCloseTimer();
     setVisible(true);
   };
 
   /** Begins closing after the pointer leaves interactive tooltip content. */
-  const handleTooltipMouseLeave = () => {
+  const handleTooltipPointerLeave = () => {
     if (!props.interactive) return;
-    handleMouseLeave();
+    handlePointerLeave();
   };
 
-  /** Opens the tooltip immediately for keyboard focus. */
+  /** Remembers when a touch press began so the focus it causes does not open the tooltip. */
+  const handleTouchPress = (event: PointerEvent) => {
+    if (event.pointerType === "touch") lastTouchPressAt = performance.now();
+  };
+
+  /** Closes a tap-opened tooltip when the next tap lands anywhere else. */
+  const dismissOnOutsideTap = (event: PointerEvent) => {
+    const target = event.target;
+    if (
+      target instanceof Node &&
+      (triggerRef?.contains(target) || tooltipRef?.contains(target))
+    )
+      return;
+    stopTapDismissal();
+    setVisible(false);
+  };
+
+  /** Stops watching for the tap that closes a tap-opened tooltip. */
+  const stopTapDismissal = () =>
+    document.removeEventListener("pointerdown", dismissOnOutsideTap, true);
+
+  /**
+   * Toggles the tooltip when a tap ends on a trigger that does nothing else,
+   * such as a status indicator, since touch cannot hover to reveal it. Taps
+   * on buttons, links and fields, including a trigger nested inside one, keep
+   * their own action and show no tooltip, and taps inside an interactive
+   * tooltip leave it open. The release time is also recorded so the focus a
+   * long press causes does not open the tooltip.
+   */
+  const handleTouchRelease = (event: PointerEvent) => {
+    if (event.pointerType !== "touch") return;
+    lastTouchPressAt = performance.now();
+    const target = event.target;
+    if (!(target instanceof Element) || tooltipRef?.contains(target)) return;
+    if (target.closest(ACTIONABLE_SELECTOR)) return;
+    clearOpenTimer();
+    clearCloseTimer();
+    if (visible()) {
+      stopTapDismissal();
+      setVisible(false);
+      return;
+    }
+    resetTooltipPosition();
+    setVisible(true);
+    document.addEventListener("pointerdown", dismissOnOutsideTap, true);
+  };
+
+  /** Opens the tooltip immediately for keyboard focus, but not for focus a tap caused. */
   const handleFocus = () => {
+    if (performance.now() - lastTouchPressAt < TOUCH_FOCUS_WINDOW_MS) return;
     clearOpenTimer();
     clearCloseTimer();
     if (!wantsVisible()) resetTooltipPosition();
@@ -262,6 +343,7 @@ export default function Tooltip(props: TooltipProps) {
     clearOpenTimer();
     clearCloseTimer();
     clearExitTimer();
+    stopTapDismissal();
   });
 
   /** Keeps the tooltip mounted briefly after close so opacity can animate out. */
@@ -318,8 +400,10 @@ export default function Tooltip(props: TooltipProps) {
       ref={triggerRef}
       class="relative inline-block"
       data-component="Tooltip"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+      onPointerDown={handleTouchPress}
+      onPointerUp={handleTouchRelease}
       onFocusIn={handleFocus}
       onFocusOut={handleBlur}
     >
@@ -342,8 +426,8 @@ export default function Tooltip(props: TooltipProps) {
             }}
             data-slot="surface"
             role="tooltip"
-            onMouseEnter={handleTooltipMouseEnter}
-            onMouseLeave={handleTooltipMouseLeave}
+            onPointerEnter={handleTooltipPointerEnter}
+            onPointerLeave={handleTooltipPointerLeave}
             onFocusIn={handleFocus}
             onFocusOut={handleBlur}
           >

@@ -67,6 +67,7 @@ import { openContextMenu } from "../../../providers/context-menu";
 import { type AppIcon, renderIconComponent } from "../../../ui/icon";
 import { Button } from "../../../ui/visual-language/button";
 import { backgroundPanelMounts } from "./background-panel-mounts";
+import { bindCompactPresentation } from "./compact-presentation";
 import { visualLanguageDockTheme } from "./dockview-host";
 import { bindPanelAppearance } from "./panel-appearance";
 import { bindPanelClipping } from "./panel-clipping";
@@ -725,6 +726,8 @@ export interface DockWorkspaceHandle {
 interface DockWorkspaceProps {
   initialLayout?: SerializedLayout;
   restoreSession?: boolean;
+  /** Presents one full-width panel at a time for the compact shell; never persisted. */
+  compact?: boolean;
   onReady: (workspace: DockWorkspaceHandle) => void;
   onError: (error: unknown) => void;
 }
@@ -894,11 +897,14 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       },
     });
 
-    const panelConstraints = bindPanelConstraints(
-      dockApi,
-      visualLanguageDockTheme.gap ?? 0,
-    );
-    const panelClipping = bindPanelClipping(dockApi, dockviewHostRef);
+    // Docked minimums would make a compact panel wider than the screen; there
+    // the panel takes the full width and scrolls its own content instead.
+    const panelSizing = props.compact
+      ? [bindCompactPresentation(dockApi)]
+      : [
+          bindPanelConstraints(dockApi, visualLanguageDockTheme.gap ?? 0),
+          bindPanelClipping(dockApi, dockviewHostRef),
+        ];
 
     /** Moves workspace tab strips while preserving structural edge tabs and panel state. */
     const applyTabPosition = () => {
@@ -1191,8 +1197,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
         window.cancelAnimationFrame(publishApiFrame);
       }
       disposeTabPositionAfterRestore.dispose();
-      panelConstraints.dispose();
-      panelClipping.dispose();
+      for (const binding of panelSizing) binding.dispose();
       disposeEdgeDrop.dispose();
       disposeHideEmptyAfterRemove.dispose();
       disposeHideEmptyAfterMove.dispose();
@@ -1226,8 +1231,9 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       else api.getEdgeGroup("left")?.collapse();
     };
 
-    // Clear the saved layout and panel UI
-    clearLayout();
+    // Clear the saved layout and panel UI. A compact workspace never persists,
+    // so it leaves the docked session for when the window widens again.
+    if (!props.compact) clearLayout();
     removeDefaultEdgeGroups();
     api.clear();
 

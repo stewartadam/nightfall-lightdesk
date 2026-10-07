@@ -7,6 +7,7 @@
  */
 
 import { dockApi } from "../state/appStores";
+import { compactViewport } from "../state/viewport";
 import type * as types from "../types";
 import { requireCommandSuccess } from "./command-result";
 import { createActivePanelLayout } from "./dockview-active-layout";
@@ -42,9 +43,16 @@ async function sendDeskCommandAndAwait(
 }
 
 /** Captures the current Dockview active layout when one is available. */
+/**
+ * Captures the docked arrangement to store with the showfile. The compact
+ * shell's one-panel view is not an arrangement, so saves made from it omit
+ * the layout and the showfile keeps the one it already has.
+ */
 function activePanelLayoutForSave(): types.ActivePanelLayout | undefined {
   const api = dockApi.get();
-  return api ? createActivePanelLayout(api) : undefined;
+  return api && !compactViewport.get()
+    ? createActivePanelLayout(api)
+    : undefined;
 }
 
 /** Builds save options from the UI state available at the moment save is requested. */

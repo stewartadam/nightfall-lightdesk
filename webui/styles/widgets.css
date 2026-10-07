@@ -345,6 +345,18 @@ a:focus-visible {
 .nf-dialog-surface {
   box-shadow: var(--shadow-elevation-high);
 }
+.nf-dialog-backdrop[data-placement="sheet"] {
+  align-items: flex-end;
+  padding: 0;
+}
+.nf-dialog-backdrop[data-placement="sheet"] > .nf-dialog-surface {
+  max-width: none;
+  max-height: 85dvh;
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
 .nightfall-modal-surface:not(.nf-dialog-surface) {
   background: var(--panel);
   border-color: var(--line);

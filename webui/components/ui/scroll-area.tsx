@@ -28,6 +28,8 @@ interface ScrollIndicatorsProps {
   stickyHeader?: HTMLElement | null;
   /** Positions hints over a third-party viewport without changing its DOM or scroll owner. */
   fixed?: boolean;
+  /** Extra class for the overlay, such as one that matches the viewport's background. */
+  class?: string;
 }
 
 /** Observes an existing viewport and decorates only edges with content beyond it. */
@@ -186,7 +188,7 @@ export function ScrollIndicators(props: ScrollIndicatorsProps) {
 
   return (
     <div
-      class="nf-scroll-indicators"
+      class={`nf-scroll-indicators ${props.class ?? ""}`}
       aria-hidden="true"
       style={{
         ...placement(),

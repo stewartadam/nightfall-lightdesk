@@ -62,6 +62,8 @@ export interface DialogProps {
   /** Holds back every key aimed outside the dialog while it is visible, for blocking confirmations. */
   blockBackgroundKeys?: boolean;
   usePortal?: boolean;
+  /** `sheet` docks the surface to the bottom edge at full width, for compact screens. */
+  placement?: "center" | "sheet";
   /** Width and height constraints for the surface. */
   class?: string;
   style?: JSX.CSSProperties;
@@ -101,6 +103,7 @@ export function Dialog(props: DialogProps) {
       dialogProps={{
         ...props.backdropProps,
         class: DIALOG_BACKDROP_CLASS,
+        "data-placement": props.placement ?? "center",
         role: "dialog",
         "aria-modal": "true",
         "aria-label": props.label,
