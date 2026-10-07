@@ -59,8 +59,33 @@ test("findListeningPids resolves an IPv4 listener", async (t) => {
   assert.deepEqual(pids, [process.pid], attempts.join("; "));
 });
 
+/**
+ * Probes whether this host can bind the IPv6 loopback, returning a skip reason
+ * when the kernel lacks IPv6 (EAFNOSUPPORT) or has no `::1` address
+ * (EADDRNOTAVAIL), as in some containers; any other error is rethrown.
+ * @returns {Promise<string | false>}
+ */
+async function ipv6LoopbackSkipReason() {
+  const server = net.createServer();
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen({ host: "::1", port: 0, ipv6Only: true }, resolve);
+    });
+  } catch (error) {
+    if (error.code === "EAFNOSUPPORT" || error.code === "EADDRNOTAVAIL") {
+      return `IPv6 loopback unavailable on this host (${error.code})`;
+    }
+    throw error;
+  }
+  await new Promise((resolve) => server.close(resolve));
+  return false;
+}
+
 /** Verifies an IPv6-only loopback listener resolves to this process's PID. */
-test("findListeningPids resolves an IPv6-only listener", async (t) => {
+test("findListeningPids resolves an IPv6-only listener", {
+  skip: await ipv6LoopbackSkipReason(),
+}, async (t) => {
   const port = await listen(t, "::1");
   const { pids, attempts } = await findListeningPidsInDashboard(t, port);
   assert.deepEqual(pids, [process.pid], attempts.join("; "));
@@ -75,8 +100,10 @@ test("findListeningPids reports the methods tried for a free port", async (t) =>
 
   const { pids, attempts } = await findListeningPidsInDashboard(t, freePort);
   assert.deepEqual(pids, []);
-  const expected =
-    process.platform === "darwin" ? ["lsof", "pid-port"] : ["pid-port"];
+  const expected = {
+    darwin: ["lsof", "pid-port"],
+    win32: ["pid-port"],
+  }[process.platform] ?? ["pid-port", "lsof"];
   assert.deepEqual(
     attempts.map((line) => line.split(":")[0]),
     expected,
