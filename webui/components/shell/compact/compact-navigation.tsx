@@ -12,7 +12,14 @@ import { PushPinIcon } from "@squidlab/phosphor-solid/push-pin";
 import { PushPinSlashIcon } from "@squidlab/phosphor-solid/push-pin-slash";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { XIcon } from "@squidlab/phosphor-solid/x";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { isPanelOpenable } from "../../../lib/experimental-features";
 import { panelDefinitionsForPalette } from "../../../lib/panel-definitions";
@@ -22,6 +29,7 @@ import { useAppShell } from "../../providers/app-shell";
 import { Dialog, DialogBody } from "../../ui/dialog";
 import { COMPACT_PINNED_TAB_COUNT } from "./compact-panel-order";
 import type { CompactPanelEntry, CompactPanels } from "./compact-panels";
+import { bindCompactSwipe } from "./compact-swipe";
 import "./compact-shell.css";
 
 /** Renders a panel's registered icon, or nothing when it has none. */
@@ -326,9 +334,20 @@ export default function CompactNavigation(props: { panels: CompactPanels }) {
     if (!visiting) return pinned;
     return [...pinned.slice(0, COMPACT_PINNED_TAB_COUNT - 1), visiting];
   });
+  let nav: HTMLElement | undefined;
+
+  /**
+   * Lets a horizontal flick on the tab bar step to the neighboring panel. Only
+   * the tab bar takes the gesture, so taps and drags in a panel's content
+   * never switch panels by accident.
+   */
+  onMount(() => {
+    if (!nav) return;
+    onCleanup(bindCompactSwipe(nav, props.panels.step));
+  });
 
   return (
-    <nav class="nf-compact-nav" aria-label="Panels">
+    <nav ref={nav} class="nf-compact-nav" aria-label="Panels">
       <div class="nf-compact-nav-tabs" role="tablist">
         <For each={tabs()}>
           {(entry) => (

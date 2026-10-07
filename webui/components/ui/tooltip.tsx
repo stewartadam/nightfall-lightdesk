@@ -36,6 +36,26 @@ export interface TooltipProps {
   interactive?: boolean;
 }
 
+/** Controls whose tap does something of its own, so a tap must not toggle their tooltip. */
+const ACTIONABLE_SELECTOR = [
+  "a[href]",
+  "button",
+  "input",
+  "label",
+  "select",
+  "summary",
+  "textarea",
+  "[contenteditable='true']",
+  "[role='button']",
+  "[role='checkbox']",
+  "[role='link']",
+  "[role='menuitem']",
+  "[role='option']",
+  "[role='slider']",
+  "[role='switch']",
+  "[role='tab']",
+].join(",");
+
 /**
  * Custom tooltip component that persists hover state even when content updates.
  * Unlike the native `title` attribute, this won't reset its hover timer when
@@ -214,8 +234,13 @@ export default function Tooltip(props: TooltipProps) {
     }, delay());
   };
 
-  /** Closes after a short bridge delay when interactive content must remain reachable. */
-  const handlePointerLeave = () => {
+  /**
+   * Closes after a short bridge delay when interactive content must remain
+   * reachable. A finger leaves as it lifts, which must not close a tooltip
+   * the tap just opened, so touch is ignored here.
+   */
+  const handlePointerLeave = (event?: PointerEvent) => {
+    if (event?.pointerType === "touch") return;
     clearOpenTimer();
     clearCloseTimer();
     if (!props.interactive) {
@@ -241,9 +266,51 @@ export default function Tooltip(props: TooltipProps) {
     handlePointerLeave();
   };
 
-  /** Remembers when a touch press began or ended so the focus it causes, even after a long press, does not open the tooltip. */
+  /** Remembers when a touch press began so the focus it causes does not open the tooltip. */
   const handleTouchPress = (event: PointerEvent) => {
     if (event.pointerType === "touch") lastTouchPressAt = performance.now();
+  };
+
+  /** Closes a tap-opened tooltip when the next tap lands anywhere else. */
+  const dismissOnOutsideTap = (event: PointerEvent) => {
+    const target = event.target;
+    if (
+      target instanceof Node &&
+      (triggerRef?.contains(target) || tooltipRef?.contains(target))
+    )
+      return;
+    stopTapDismissal();
+    setVisible(false);
+  };
+
+  /** Stops watching for the tap that closes a tap-opened tooltip. */
+  const stopTapDismissal = () =>
+    document.removeEventListener("pointerdown", dismissOnOutsideTap, true);
+
+  /**
+   * Toggles the tooltip when a tap ends on a trigger that does nothing else,
+   * such as a status indicator, since touch cannot hover to reveal it. Taps
+   * on buttons, links and fields, including a trigger nested inside one, keep
+   * their own action and show no tooltip, and taps inside an interactive
+   * tooltip leave it open. The release time is also recorded so the focus a
+   * long press causes does not open the tooltip.
+   */
+  const handleTouchRelease = (event: PointerEvent) => {
+    if (event.pointerType !== "touch") return;
+    lastTouchPressAt = performance.now();
+    const target = event.target;
+    if (!(target instanceof Element) || tooltipRef?.contains(target)) return;
+    if (target.closest(ACTIONABLE_SELECTOR)) return;
+    clearOpenTimer();
+    clearCloseTimer();
+    if (visible()) {
+      stopTapDismissal();
+      setVisible(false);
+      return;
+    }
+    resetTooltipPosition();
+    setVisible(true);
+    document.addEventListener("pointerdown", dismissOnOutsideTap, true);
   };
 
   /** Opens the tooltip immediately for keyboard focus, but not for focus a tap caused. */
@@ -276,6 +343,7 @@ export default function Tooltip(props: TooltipProps) {
     clearOpenTimer();
     clearCloseTimer();
     clearExitTimer();
+    stopTapDismissal();
   });
 
   /** Keeps the tooltip mounted briefly after close so opacity can animate out. */
@@ -335,7 +403,7 @@ export default function Tooltip(props: TooltipProps) {
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
       onPointerDown={handleTouchPress}
-      onPointerUp={handleTouchPress}
+      onPointerUp={handleTouchRelease}
       onFocusIn={handleFocus}
       onFocusOut={handleBlur}
     >

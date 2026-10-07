@@ -18,7 +18,14 @@
   border: 0;
   border-bottom: 1px solid var(--line, #34383b);
   border-radius: 0;
-  background: #141718;
+  background: var(--nf-panel-toolbar-surface);
+}
+:root {
+  --nf-panel-toolbar-surface: #141718;
+}
+/* Scroll cues blend into the toolbar they cover. */
+.nf-scroll-indicators.nf-panel-toolbar-scroll {
+  --nf-scroll-surface: var(--nf-panel-toolbar-surface);
 }
 .nf-toolbar-group {
   display: flex;

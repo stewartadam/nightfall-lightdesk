@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { onCleanup, onMount, Show } from "solid-js";
+import { Show } from "solid-js";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
@@ -23,7 +23,6 @@ import FeedbackCommands from "../command-palette/commands/feedback-commands";
 import SettingsCommand from "../command-palette/commands/settings-command";
 import CompactNavigation from "../compact/compact-navigation";
 import { createCompactPanels } from "../compact/compact-panels";
-import { bindCompactSwipe } from "../compact/compact-swipe";
 import DockviewApp from "../docking/dockview/dockview-workspaces";
 import LayoutCommands from "../docking/layout-commands";
 import ShowfileTransitionVeil from "../docking/showfile-transition-veil";
@@ -66,26 +65,16 @@ function DockedContent() {
 }
 
 /**
- * Renders one panel at a time for small screens, with swipe and a bottom tab
- * bar to move between panels. There is no status bar: the compact header
- * carries its controls.
+ * Renders one panel at a time for small screens, with a bottom tab bar to
+ * move between panels. There is no status bar: the compact header carries its
+ * controls.
  */
 function CompactContent() {
   const shell = useAppShell();
   const panels = createCompactPanels(shell.dockviewApi);
-  let swipeArea: HTMLDivElement | undefined;
-
-  /** Lets a horizontal flick on the shown panel or the tab bar step to its neighbor. */
-  onMount(() => {
-    if (!swipeArea) return;
-    onCleanup(bindCompactSwipe(swipeArea, panels.step));
-  });
 
   return (
-    <div
-      ref={swipeArea}
-      class="flex h-full min-h-0 w-full flex-col overflow-hidden"
-    >
+    <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
       <div class="nf-compact-surface min-h-0 w-full flex-1 overflow-hidden">
         <ShowfileTransitionVeil>
           <DockviewApp compact />

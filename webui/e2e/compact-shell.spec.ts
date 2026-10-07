@@ -117,6 +117,30 @@ test("compact shell navigates one panel at a time on a phone", async ({
     if (!(await toolbar.isVisible())) continue;
     expect((await toolbar.boundingBox())?.height ?? 0).toBeLessThanOrEqual(50);
   }
+  // The 3D Visualizer toolbar overflows, so its right edge shows a scroll cue
+  // sitting over the toolbar it belongs to.
+  const rightCue = page
+    .locator(
+      '.nf-panel-toolbar-scroll [data-edge="right"][data-visible="true"]',
+    )
+    .first();
+  await expect(rightCue).toBeVisible();
+  const cueBox = await rightCue.boundingBox();
+  const toolbarBoxes = [];
+  for (const toolbar of await page.locator(".nf-panel-toolbar").all()) {
+    if (await toolbar.isVisible())
+      toolbarBoxes.push(await toolbar.boundingBox());
+  }
+  expect(
+    toolbarBoxes.some(
+      (bar) =>
+        bar &&
+        cueBox &&
+        cueBox.y >= bar.y - 1 &&
+        cueBox.y + cueBox.height <= bar.y + bar.height + 1 &&
+        Math.abs(cueBox.x + cueBox.width - (bar.x + bar.width)) <= 2,
+    ),
+  ).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("01-compact-start.png") });
 
   const secondTab = tabs.nth(1);
@@ -125,15 +149,18 @@ test("compact shell navigates one panel at a time on a phone", async ({
   await page.waitForTimeout(500);
   await page.screenshot({ path: testInfo.outputPath("02-second-tab.png") });
 
+  // Only the tab bar takes the panel-switching flick, never the panel content.
   const before = (await readDockStructure(page)).active;
   const surface = page.locator(".dv-content-container").first();
   await flick(surface, -160);
+  await page.waitForTimeout(300);
+  expect((await readDockStructure(page)).active).toBe(before);
+  await flick(nav, -160);
   await expect
     .poll(async () => (await readDockStructure(page)).active)
     .not.toBe(before);
   await page.waitForTimeout(300);
   await page.screenshot({ path: testInfo.outputPath("03-after-swipe.png") });
-  // Flicking the tab bar switches panels too.
   await flick(nav, 160);
   await expect
     .poll(async () => (await readDockStructure(page)).active)
@@ -331,12 +358,32 @@ test("compact header carries the status bar controls", async ({
 });
 
 /** Verifies a tap does not leave a hover tooltip open, since touch has no hover to end it. */
-test("compact shell taps do not open hover tooltips", async ({ page }) => {
+test("compact shell taps show tooltips only on triggers with no action", async ({
+  page,
+}, testInfo) => {
   await page.goto(DEMO_PATH);
   await waitForDockviewApp(page);
-  // The status bar's connection dot wraps a focusable trigger in a hover tooltip.
+  const header = page.getByRole("navigation", { name: "Global" });
+  const dot = header.getByRole("status");
+  const undo = header.getByRole("button", {
+    name: /^(Undo:|Nothing to undo)/,
+  });
+  // The connection dot sits beside the logo, left of the undo controls.
+  expect((await dot.boundingBox())?.x ?? Number.POSITIVE_INFINITY).toBeLessThan(
+    (await undo.boundingBox())?.x ?? 0,
+  );
+
+  // Tapping the dot shows its status; the next tap elsewhere hides it.
+  await dot.tap();
+  await expect(page.getByRole("tooltip")).toHaveText("Connected");
+  await page.screenshot({ path: testInfo.outputPath("09-status-tooltip.png") });
+  await page.getByRole("navigation", { name: "Panels" }).tap();
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+
+  // A button keeps its own action, and its hover tooltip stays closed.
   await page
-    .locator('[data-component="Tooltip"] [role="status"]')
+    .locator('.nf-panel-toolbar [data-component="Tooltip"] button:enabled')
+    .filter({ visible: true })
     .first()
     .tap();
   await page.waitForTimeout(900);
