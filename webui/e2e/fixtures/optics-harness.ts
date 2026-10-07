@@ -7,8 +7,8 @@
  */
 
 /**
- * Browser-side helpers for optics GPU specs. Import inside `page.evaluate` as
- * `await import("/e2e/fixtures/optics-harness.ts")` after loading
+ * Browser-side helpers for optics GPU specs. Load inside `page.evaluate` as
+ * `await window.__nightfallHarness.load("optics")` after opening
  * `/e2e/fixtures/optics.html`; the Node-side counterpart is `webui/e2e/optics-harness.ts`.
  */
 

@@ -37,7 +37,7 @@ test("collects native diagnostics before the backend connects", async ({
   await expect(splash).toContainText("Initializing");
   await expect(page.locator("button[title='Menu']")).toHaveCount(0);
   const urls = await page.evaluate(async () => {
-    const api = await import("/lib/api.ts");
+    const api = (await window.__nightfallHarness.load("app")).api;
     return [api.getBackendUrl(), api.getWebSocketUrl()];
   });
   expect(urls).toEqual([

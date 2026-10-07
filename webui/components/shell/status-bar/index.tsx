@@ -51,6 +51,7 @@ import {
 import { currentShowfileName } from "../../../lib/showfile-loading";
 import { isTauriRuntime } from "../../../lib/tauri";
 import { invokeTauriMenuAction } from "../../../lib/tauri-menu";
+import { isE2eBuild } from "../../../lib/test-mode";
 import {
   frameStats,
   smoothedEngineMetrics,
@@ -471,7 +472,9 @@ export default function StatusBar() {
             <span class="min-w-0 truncate">{showfileName()}</span>
           </div>
         </Tooltip>
-        <Show when={import.meta.env.DEV && !isEmbeddedDemoRuntime()}>
+        <Show
+          when={(import.meta.env.DEV || isE2eBuild) && !isEmbeddedDemoRuntime()}
+        >
           <Tooltip content={() => `${APP_BUILD_NAME} (${APP_BUILD_ID})`}>
             <div
               data-testid="status-build-name"

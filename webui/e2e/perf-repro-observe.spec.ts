@@ -378,7 +378,8 @@ async function openPerfReproSurface(page: Page): Promise<ReproSurface> {
 /** Clears collected performance samples after the repro surface has settled. */
 async function clearPerformanceMetrics(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    const module = await import("/lib/performance-measure-collector.ts");
+    const module = (await window.__nightfallHarness.load("app"))
+      .performanceMeasures;
     module.clearPerformanceMeasures();
   });
 }

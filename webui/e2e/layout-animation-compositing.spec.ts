@@ -65,9 +65,9 @@ test("keeps layout slides composited without the shared entrance filter", async 
       categories: "devtools.timeline,blink.animations",
     });
     const result = await page.evaluate(async (variant) => {
-      const { createLayoutEntrance } = await import(
-        "/components/shell/docking/dockview/layout-entrance.ts"
-      );
+      const { createLayoutEntrance } = (
+        await window.__nightfallHarness.load("app")
+      ).layoutEntrance;
       const element = document.querySelector<HTMLElement>(
         '[data-workspace-active="true"]',
       )!;

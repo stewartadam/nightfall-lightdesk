@@ -6,19 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { harnessPageUrl } from "./app-hooks";
 import { expect, test } from "./playwright-fixtures";
 
 /** Verifies inline edits preserve left, centered, right, and default cell alignment. */
 test("grid text editors preserve display alignment through commit and cancel", async ({
   page,
 }, testInfo) => {
-  await page.route("**/grid-editor-alignment", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: '<html><body><div id="root"></div><script type="module" src="/e2e/fixtures/data-grid-editor-alignment.tsx"></script></body></html>',
-    }),
-  );
-  await page.goto("/grid-editor-alignment");
+  await page.goto(harnessPageUrl("data-grid-editor-alignment"));
   const grid = page.getByRole("grid");
   await expect(grid).toBeVisible();
 

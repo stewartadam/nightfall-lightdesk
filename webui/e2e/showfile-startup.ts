@@ -7,6 +7,7 @@
  */
 
 import { expect, type Page, type Route } from "@playwright/test";
+import { disconnectEngine, waitForTestHooks } from "./app-hooks";
 
 export interface StartupShowfileOptions {
   createIfMissing?: boolean;
@@ -188,226 +189,127 @@ export async function resetToDefaultLayout(page: Page): Promise<void> {
   );
 }
 
-/** Waits for the app shell stores, resolving startup showfile prompts first. */
+/** Returns whether a Playwright error came from a navigation replacing the page mid-call. */
+function isNavigationInterruption(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.includes("Execution context was destroyed")
+  );
+}
+
+/**
+ * Waits for the app shell to become interactive on a resynced backend session,
+ * resolving startup draft and showfile prompts as they appear. Readiness comes
+ * from the app's test hooks, so the wait is event-driven in dev servers and
+ * e2e builds alike. With `showfileName`, it then loads that showfile unless it
+ * is already current.
+ */
 export async function waitForDockviewApp(
   page: Page,
   options: StartupShowfileOptions = {},
 ): Promise<void> {
-  const usesVitePreview =
-    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview";
-  /** Returns whether startup has finished revealing the interactive shell. */
-  const isInteractiveShellReady = () => {
-    const stores = (window as any).appStores;
-    if (!stores?.dockApi?.get?.() || !stores?.send) return false;
+  const timeoutMs = options.timeoutMs ?? 45_000;
+  const deadline = Date.now() + timeoutMs;
+  /** Returns the time left before the overall startup deadline. */
+  const remainingMs = () => Math.max(1_000, deadline - Date.now());
 
-    /** Returns whether an element participates visibly in the current layout. */
-    const isElementVisible = (element: Element | null) => {
-      if (!element) return false;
-      const style = window.getComputedStyle(element);
-      return (
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        Number(style.opacity) !== 0 &&
-        element.getClientRects().length > 0
+  for (;;) {
+    await waitForTestHooks(page, remainingMs());
+    let outcome: Awaited<
+      ReturnType<Window["__nightfallTest"]["whenStartupSettled"]>
+    >;
+    try {
+      outcome = await page.evaluate(
+        (waitMs) =>
+          window.__nightfallTest.whenStartupSettled({ timeoutMs: waitMs }),
+        remainingMs(),
       );
-    };
-
-    return (
-      !isElementVisible(
-        document.querySelector('[data-testid="startup-splash"]'),
-      ) &&
-      !isElementVisible(
-        document.querySelector('[role="dialog"][aria-label="Open Showfile"]'),
-      )
-    );
-  };
-
-  /** Returns whether the active runtime session has completed startup resync. */
-  const isRuntimeSessionReady = async () => {
-    const [
-      { appLifecycle },
-      websocket,
-      readiness,
-      layoutReadiness,
-      showfileLoading,
-      settings,
-      activeLayout,
-    ] = await Promise.all([
-      import(/* @vite-ignore */ "/state/app-lifecycle.ts"),
-      import(/* @vite-ignore */ "/lib/engine-runtime.ts"),
-      import(/* @vite-ignore */ "/components/shell/startup/readiness.ts"),
-      import(
-        /* @vite-ignore */ "/components/shell/docking/layout-readiness.ts"
-      ),
-      import(/* @vite-ignore */ "/lib/showfile-loading.ts"),
-      import(/* @vite-ignore */ "/state/settings.ts"),
-      import(/* @vite-ignore */ "/lib/dockview-active-layout.ts"),
-    ]);
-    const autoOpenName = readiness.e2eAutoOpenStartupShowfileName();
-    return (
-      appLifecycle.get().phase === "interactive" &&
-      websocket.connectionStatus() ===
-        websocket.EngineRuntimeStatus.Connected &&
-      websocket.resyncComplete() &&
-      autoOpenName === null &&
-      layoutReadiness.dockviewLayoutShowfileRevision.get() >=
-        showfileLoading.currentShowfileRevision.get() &&
-      layoutReadiness.dockviewLayoutSettingsSnapshotRevision.get() >=
-        settings.$settingsSnapshotRevision.get() &&
-      layoutReadiness.dockviewLayoutActiveLayoutKey.get() ===
-        activeLayout.activeLayoutKey(
-          settings.$settings.get().active_panel_layout,
-        )
-    );
-  };
-
-  /** Lets startup effects settle before accepting a transient ready state. */
-  const waitForRenderStability = () =>
-    new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
-
-  try {
-    await expect
-      .poll(
-        async () => {
-          const storesReady = await page.evaluate(isInteractiveShellReady);
-          if (storesReady) {
-            await page.evaluate(waitForRenderStability);
-            return (
-              (await page.evaluate(isInteractiveShellReady)) &&
-              (usesVitePreview
-                ? await page.evaluate(() => {
-                    const stores = (window as any).appStores;
-                    return Boolean(
-                      stores?.runtimeCapabilities?.get?.() &&
-                        Object.keys(stores?.fixtures?.get?.() ?? {}).length > 0,
-                    );
-                  })
-                : await page.evaluate(isRuntimeSessionReady))
-            );
-          }
-
-          await resolveStartupDraftRecoveryIfVisible(page);
-          await openStartupShowfileIfPrompted(page, options);
-
-          return (
-            (await page.evaluate(isInteractiveShellReady)) &&
-            (usesVitePreview
-              ? await page.evaluate(() => {
-                  const stores = (window as any).appStores;
-                  return Boolean(
-                    stores?.runtimeCapabilities?.get?.() &&
-                      Object.keys(stores?.fixtures?.get?.() ?? {}).length > 0,
-                  );
-                })
-              : await page.evaluate(isRuntimeSessionReady))
-          );
-        },
-        { timeout: options.timeoutMs ?? 45_000 },
-      )
-      .toBe(true);
-  } catch (error) {
-    if (usesVitePreview) throw error;
-    const diagnostics = await page.evaluate(async () => {
-      const [
-        lifecycle,
-        websocket,
-        readiness,
-        layout,
-        showfile,
-        settings,
-        active,
-      ] = await Promise.all([
-        import("/state/app-lifecycle.ts"),
-        import("/lib/engine-runtime.ts"),
-        import("/components/shell/startup/readiness.ts"),
-        import("/components/shell/docking/layout-readiness.ts"),
-        import("/lib/showfile-loading.ts"),
-        import("/state/settings.ts"),
-        import("/lib/dockview-active-layout.ts"),
-      ]);
-      const activeLayoutKey = active.activeLayoutKey(
-        settings.$settings.get().active_panel_layout,
+    } catch (error) {
+      if (isNavigationInterruption(error)) continue;
+      throw new Error(`Dockview startup readiness timed out`, {
+        cause: error,
+      });
+    }
+    if (outcome === "interactive") break;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Dockview startup stayed at its ${outcome} for ${timeoutMs} ms`,
       );
-      const layoutActiveLayoutKey = layout.dockviewLayoutActiveLayoutKey.get();
-      return {
-        lifecyclePhase: lifecycle.appLifecycle.get().phase,
-        connectionStatus: websocket.connectionStatus(),
-        resyncComplete: websocket.resyncComplete(),
-        autoOpenName: readiness.e2eAutoOpenStartupShowfileName(),
-        autoOpenRequested: readiness.e2eAutoOpenStartupShowfileWasRequested(),
-        showfileName: showfile.currentShowfileName.get(),
-        showfileRevision: showfile.currentShowfileRevision.get(),
-        layoutShowfileRevision: layout.dockviewLayoutShowfileRevision.get(),
-        settingsRevision: settings.$settingsSnapshotRevision.get(),
-        layoutSettingsRevision:
-          layout.dockviewLayoutSettingsSnapshotRevision.get(),
-        activeLayoutKeyMatches: activeLayoutKey === layoutActiveLayoutKey,
-        activeLayoutKeyLength: activeLayoutKey?.length ?? null,
-        layoutActiveLayoutKeyLength: layoutActiveLayoutKey?.length ?? null,
-      };
-    });
-    throw new Error(
-      `Dockview startup readiness timed out: ${JSON.stringify(diagnostics)}`,
-      { cause: error },
-    );
+    }
+
+    if (outcome === "draft-prompt") {
+      await resolveStartupDraftRecoveryIfVisible(page);
+    } else {
+      await openStartupShowfileIfPrompted(page, options);
+    }
+    // Give the prompt a moment to close before startup is sampled again.
+    await page
+      .waitForFunction(
+        (phase) => window.__nightfallTest?.readiness().lifecyclePhase !== phase,
+        outcome === "draft-prompt"
+          ? "startup-draft-prompt"
+          : "startup-showfile-prompt",
+        { timeout: 1_000 },
+      )
+      .catch(() => undefined);
   }
+
+  // The splash fades out after startup turns interactive; wait until it and
+  // the startup picker no longer cover the shell, then let effects settle.
+  await page.waitForFunction(
+    () => {
+      /** Returns whether an element participates visibly in the current layout. */
+      const isElementVisible = (element: Element | null) => {
+        if (!element) return false;
+        const style = window.getComputedStyle(element);
+        return (
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          Number(style.opacity) !== 0 &&
+          element.getClientRects().length > 0
+        );
+      };
+      return (
+        !isElementVisible(
+          document.querySelector('[data-testid="startup-splash"]'),
+        ) &&
+        !isElementVisible(
+          document.querySelector('[role="dialog"][aria-label="Open Showfile"]'),
+        )
+      );
+    },
+    undefined,
+    { timeout: remainingMs() },
+  );
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 
   if (!options.showfileName) return;
 
   const requestedName = options.showfileName;
-  const loadTimeoutMs = options.timeoutMs ?? 45_000;
-  const loadDeadline = Date.now() + loadTimeoutMs;
-
-  while (Date.now() < loadDeadline) {
-    const requestedShowfileNeedsLoad = await page.evaluate(async (name) => {
-      const { currentShowfileName, normalizedShowfileName } = await import(
-        "/lib/showfile-loading.ts"
-      );
-      return currentShowfileName.get() !== normalizedShowfileName(name);
-    }, requestedName);
-    if (!requestedShowfileNeedsLoad) return;
-
-    const remainingMs = Math.max(1_000, loadDeadline - Date.now());
-    try {
-      await page.evaluate(
-        async ({ requestedName: name, timeoutMs }) => {
-          const [{ loadShowfileNameAndAwait }, readiness, websocket] =
-            await Promise.all([
-              import("/lib/showfile-actions.ts"),
-              import("/components/shell/startup/readiness.ts"),
-              import("/lib/engine-runtime.ts"),
-            ]);
-          websocket.markResyncPending();
-          await readiness.waitForStartupWorldSwapCommand(
-            loadShowfileNameAndAwait(name),
-            timeoutMs,
-            name,
-          );
-        },
-        { requestedName, timeoutMs: remainingMs },
-      );
-    } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !error.message.includes("Execution context was destroyed")
-      ) {
-        throw error;
-      }
-    }
-
-    await expect
-      .poll(
-        async () =>
-          (await page.evaluate(isInteractiveShellReady)) &&
-          (await page.evaluate(isRuntimeSessionReady)),
-        { timeout: Math.max(1_000, loadDeadline - Date.now()) },
-      )
-      .toBe(true);
+  try {
+    await page.evaluate(
+      ({ name, waitMs }) =>
+        window.__nightfallTest.showfiles
+          .ensureLoaded(name, { timeoutMs: waitMs })
+          .then(() => undefined),
+      { name: requestedName, waitMs: remainingMs() },
+    );
+  } catch (error) {
+    if (!isNavigationInterruption(error)) throw error;
+    await waitForTestHooks(page, remainingMs());
+    await page.evaluate(
+      ({ name, waitMs }) =>
+        window.__nightfallTest.showfiles
+          .ensureLoaded(name, { timeoutMs: waitMs })
+          .then(() => undefined),
+      { name: requestedName, waitMs: remainingMs() },
+    );
   }
-
-  throw new Error(`Timed out loading requested showfile ${requestedName}`);
 }
 
 const EMPTY_OBJECT_STORE_NAMES = [
@@ -522,21 +424,7 @@ export async function prepareStoreSeededTestApp(
   options: StartupShowfileOptions = {},
 ): Promise<void> {
   await waitForDockviewApp(page, options);
-  await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
-    engineRuntime.stop();
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const websocket = await import("/lib/engine-runtime.ts");
-        return (
-          websocket.connectionStatus() ===
-          websocket.EngineRuntimeStatus.Disconnected
-        );
-      }),
-    )
-    .toBe(true);
+  await disconnectEngine(page);
 
   await dockFixturesInMainGrid(page);
 

@@ -27,7 +27,10 @@ import {
 } from "./playwright-backend-pool.mjs";
 import { extractPlaywrightCliOptions } from "./playwright-cli-options.mjs";
 import { sharedBrowsersPath } from "./playwright-path.mjs";
-import { resolvePlaywrightRunMode } from "./playwright-run-mode.mjs";
+import {
+  resolvePlaywrightRunMode,
+  resolvePlaywrightViteMode,
+} from "./playwright-run-mode.mjs";
 import { playwrightSandboxError } from "./playwright-sandbox.mjs";
 
 const cliEntrypoint = join(
@@ -36,6 +39,13 @@ const cliEntrypoint = join(
   "@playwright",
   "test",
   "cli.js",
+);
+const viteEntrypoint = join(
+  process.cwd(),
+  "node_modules",
+  "vite",
+  "bin",
+  "vite.js",
 );
 const osReleaseMajor = Number.parseInt(os.release().split(".")[0] ?? "0", 10);
 const playwrightHostPlatform =
@@ -71,17 +81,30 @@ function stagePlaywrightBackend(runRoot, sourcePath) {
   return stagedPath;
 }
 
-const { browser, dataDir, playwrightArgs, rustLog, target } =
+/** Builds the e2e bundle the run's shared `vite preview` server serves. */
+function buildE2eFrontend() {
+  return runOwnedCommand(
+    process.execPath,
+    [viteEntrypoint, "build", "--mode", "e2e", "--logLevel", "warn"],
+    { spawnOptions: { stdio: "inherit" } },
+  );
+}
+
+const { browser, dataDir, playwrightArgs, rustLog, target, viteMode } =
   extractPlaywrightCliOptions(process.argv.slice(2));
 const sandboxError = playwrightSandboxError(playwrightArgs);
 if (sandboxError) {
   process.stderr.write(`${sandboxError}\n`);
   process.exit(1);
 }
-const { isTestRun, needsBackend } = resolvePlaywrightRunMode(
-  playwrightArgs,
-  target,
-);
+const { isTestRun, needsBackend, targetsEmbeddedDemo } =
+  resolvePlaywrightRunMode(playwrightArgs, target);
+// The shared server, Playwright and every spec read the resolved mode.
+process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE = resolvePlaywrightViteMode({
+  requested: viteMode,
+  environment: process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE,
+  targetsEmbeddedDemo,
+});
 const sourceDataDir = needsBackend
   ? await nightfallDataDirForTestProcess(
       process.cwd(),
@@ -96,6 +119,14 @@ const runRoot = isTestRun
 let seedDataDir = sourceDataDir;
 let outcome;
 try {
+  // Each run builds into its own directory, so concurrent runs in one
+  // worktree never replace the bundle another run's preview server serves.
+  if (runRoot) process.env.NIGHTFALL_E2E_OUT_DIR = join(runRoot, "e2e-build");
+  // The e2e bundle builds while Cargo checks the backend.
+  const frontendBuild =
+    isTestRun && process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "e2e"
+      ? buildE2eFrontend()
+      : undefined;
   let backendExecutable;
   if (needsBackend) {
     const preparedBackend = process.env.NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE;
@@ -124,7 +155,17 @@ try {
     }
   }
 
-  // One warm dev server serves every worker, so only the first page load compiles the app.
+  const frontendOutcome = await frontendBuild;
+  if (
+    !outcome &&
+    frontendOutcome &&
+    (frontendOutcome.code !== 0 || frontendOutcome.signal)
+  ) {
+    outcome = frontendOutcome;
+  }
+
+  // One shared server serves every worker: a single e2e build, or one warm
+  // dev server where only the first page load compiles the app.
   const sharedViteURL =
     !outcome && runRoot ? await startPlaywrightSharedVite(runRoot) : undefined;
 

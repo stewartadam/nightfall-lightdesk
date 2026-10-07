@@ -7,12 +7,14 @@
  */
 
 import type { WebSocketRoute } from "@playwright/test";
+import { REQUIRES_DEV_SERVER, servesE2eBuild } from "./app-hooks";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 
 /** Exercises Vite's real update handler without editing shared worktree files. */
 test("design lab controls survive repeated hot updates", async ({
   page,
 }, testInfo) => {
+  test.skip(servesE2eBuild, REQUIRES_DEV_SERVER);
   let hmrSocket: WebSocketRoute | undefined;
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.stack ?? error.message));

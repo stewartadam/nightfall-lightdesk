@@ -20,17 +20,15 @@ for (const layout of ["matrix", "rgb-bar"] as const) {
   }, testInfo) => {
     const errors = await openOpticsFixture(page);
     const result = await page.evaluate(async (layout) => {
-      const THREE = await import("/e2e/fixtures/three-api.ts");
+      const THREE = await window.__nightfallHarness.load("three");
       const {
         buildStrobePanelFixture,
         buildRgbStrobeBarFixture,
         updateStrobePanelColors,
         disposeStrobePanel,
-      } = await import(
-        "/features/visualizer/rendering/fixture-renderers/strobe-renderer.ts"
-      );
+      } = (await window.__nightfallHarness.load("visualizer")).strobeRenderer;
       const { createTestRenderer, readPixels, renderFrames, retainCanvas } =
-        await import("/e2e/fixtures/optics-harness.ts");
+        await window.__nightfallHarness.load("optics");
       const { renderer, backend } = await createTestRenderer({
         forceWebGL: undefined,
         width: 400,

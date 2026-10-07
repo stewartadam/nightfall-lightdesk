@@ -1174,9 +1174,7 @@ test.describe("owned blank showfile", () => {
       name: /artnet output warning: HostUnreachable/,
     });
     await page.evaluate(async () => {
-      const { engineRuntime } = await import(
-        /* @vite-ignore */ "/lib/engine-runtime.ts"
-      );
+      const { engineRuntime } = window.__nightfallTest.runtime;
       engineRuntime.stop();
       const stores = (window as any).appStores;
       stores.engineMetrics.set({

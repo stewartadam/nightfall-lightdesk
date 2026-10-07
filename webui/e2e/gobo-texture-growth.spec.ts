@@ -23,10 +23,10 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const THREE = await import("/e2e/fixtures/three-api.ts");
-        const { GoboAtlas } = await import(
-          "/features/visualizer/rendering/effects/gobo-atlas.ts"
-        );
+        const THREE = await window.__nightfallHarness.load("three");
+        const { GoboAtlas } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).goboAtlas;
         const {
           createTestRenderer,
           maskUrl,
@@ -34,7 +34,7 @@ for (const forceWebGL of [false, true]) {
           renderFrames,
           retainCanvas,
           waitForGoboSlots,
-        } = await import("/e2e/fixtures/optics-harness.ts");
+        } = await window.__nightfallHarness.load("optics");
         const { renderer } = await createTestRenderer({
           forceWebGL,
           width: 64,

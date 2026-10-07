@@ -699,7 +699,7 @@ test("cue timings grid paints preview progress behind timing cells", async ({
   await expect.poll(async () => countBlueDominantPixels(delayCanvas)).toBe(0);
   await page.evaluate(async (cueUid) => {
     const stores = (window as any).appStores;
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
     const objectRef = {
       type: "ByUid",

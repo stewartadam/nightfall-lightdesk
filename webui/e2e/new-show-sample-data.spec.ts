@@ -123,10 +123,9 @@ test("new show optionally includes standalone sample data", async ({
     .toBe("Sample Tour");
 
   const identityBeforeResync = await page.evaluate(async () => {
-    const showfile = await import(
-      /* @vite-ignore */ "/lib/showfile-loading.ts"
-    );
-    const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
+    const showfile = (await window.__nightfallHarness.load("app"))
+      .showfileLoading;
+    const runtime = window.__nightfallTest.runtime;
     const revision = showfile.currentShowfileRevision.get();
     const generation = runtime.resyncGeneration();
     localStorage.removeItem("nightfall.currentShowfileName");
@@ -139,9 +138,7 @@ test("new show optionally includes standalone sample data", async ({
   await expect
     .poll(async () =>
       page.evaluate(async () => {
-        const runtime = await import(
-          /* @vite-ignore */ "/lib/engine-runtime.ts"
-        );
+        const runtime = window.__nightfallTest.runtime;
         return runtime.resyncGeneration();
       }),
     )
@@ -155,9 +152,8 @@ test("new show optionally includes standalone sample data", async ({
     .toBe("Sample Tour");
   expect(
     await page.evaluate(async () => {
-      const showfile = await import(
-        /* @vite-ignore */ "/lib/showfile-loading.ts"
-      );
+      const showfile = (await window.__nightfallHarness.load("app"))
+        .showfileLoading;
       return showfile.currentShowfileRevision.get();
     }),
   ).toBe(identityBeforeResync.revision);

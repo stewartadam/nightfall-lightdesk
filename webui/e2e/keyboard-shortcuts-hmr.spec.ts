@@ -20,7 +20,8 @@ test("keyboard shortcuts restart without duplicate global undo handlers", async 
   await page.goto("/?e2e=keyboard-shortcuts-hmr");
 
   await page.evaluate(async () => {
-    const shortcuts = await import("/lib/keyboardShortcuts.ts");
+    const shortcuts = (await window.__nightfallHarness.load("app"))
+      .keyboardShortcuts;
     const firstCleanup = shortcuts.initKeyboardShortcuts();
     const secondCleanup = shortcuts.initKeyboardShortcuts();
 
@@ -38,7 +39,8 @@ test("stale shortcut cleanup keeps current global undo handlers", async ({
   await page.goto("/?e2e=keyboard-shortcuts-hmr-stale-cleanup");
 
   const counts = await page.evaluate(async () => {
-    const shortcuts = await import("/lib/keyboardShortcuts.ts");
+    const shortcuts = (await window.__nightfallHarness.load("app"))
+      .keyboardShortcuts;
     const firstCleanup = shortcuts.initKeyboardShortcuts();
     const secondCleanup = shortcuts.initKeyboardShortcuts();
 

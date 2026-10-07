@@ -768,7 +768,8 @@ test("accepts signed and absolute Blueprint Step FX baselines", async ({
   ]) {
     await input.fill(command);
     const validation = await page.evaluate(async (command) => {
-      const { validateCommand } = await import("/lib/wasm-bridge.ts");
+      const { validateCommand } = (await window.__nightfallHarness.load("app"))
+        .wasmBridge;
       return await validateCommand(command);
     }, command);
     expect(validation?.status).toBe("ok");

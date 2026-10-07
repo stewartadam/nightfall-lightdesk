@@ -185,7 +185,7 @@ test("fractional control values remain passive until the operator edits", async 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     (window as any).__faderConsoleUpdates = [];
     const original = engineRuntime.sendUpdate.bind(engineRuntime);
     /** Captures edits at the transport boundary while store-seeded tests keep the worker stopped. */

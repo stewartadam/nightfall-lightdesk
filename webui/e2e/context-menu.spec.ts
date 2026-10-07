@@ -109,21 +109,15 @@ async function loadOwnedShowfile(
   showfileName: string,
 ): Promise<void> {
   try {
-    await page.evaluate(async (name) => {
-      const websocket = await import("/lib/engine-runtime.ts");
-      const { waitForStartupWorldSwapCommand } = await import(
-        "/components/shell/startup/readiness.ts"
-      );
-      websocket.markResyncPending();
-      await waitForStartupWorldSwapCommand(
-        (window as any).appStores.sendAndAwait({
-          module: "DeskCommand",
-          command: { type: "LoadNamedShowfile", data: name },
-        }),
-        15_000,
-        name,
-      );
-    }, showfileName);
+    await page.evaluate(
+      (name) =>
+        window.__nightfallTest.showfiles.swapWorld(
+          { type: "LoadNamedShowfile", data: name },
+          name,
+          { timeoutMs: 15_000 },
+        ),
+      showfileName,
+    );
   } catch (error) {
     if (
       !(error instanceof Error) ||

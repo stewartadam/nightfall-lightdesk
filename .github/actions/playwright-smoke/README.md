@@ -33,9 +33,10 @@ The wrapper builds the backend using the shared native Cargo graph unless
 It copies either executable into the isolated run directory and restores execute
 permissions, including after a GitHub artifact download. CI passes only the
 backend artifact from the same workflow run and commit. Local invocations keep
-the normal Cargo freshness check.
+the normal Cargo freshness check. The wrapper also builds the web UI once with
+`vite build --mode e2e` and serves it with `vite preview` for every worker.
 
-To test a production native frontend locally, build it first and set
+To test the shipping native frontend (`pnpm run build`) locally, build it first and set
 `NIGHTFALL_PLAYWRIGHT_VITE_MODE=preview` and
 `NIGHTFALL_PLAYWRIGHT_VITE_BASE=/` when invoking the repository wrapper. Browser
 demo previews retain their `/demo/app/` base.

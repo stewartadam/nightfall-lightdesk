@@ -30,7 +30,7 @@ async function authoringPage(page: Page) {
       title: "Model test",
       params: { initialTimelineUid: uid },
     });
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     const send = engineRuntime.sendCommand.bind(engineRuntime);
     (window as any).modelDetectionCommands = 0;
     engineRuntime.sendCommand = (command: any) => {

@@ -21,12 +21,10 @@ import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 test("gobo atlas decodes and grows without losing masks", async ({ page }) => {
   const errors = await openOpticsFixture(page);
   const result = await page.evaluate(async () => {
-    const { GoboAtlas } = await import(
-      "/features/visualizer/rendering/effects/gobo-atlas.ts"
-    );
-    const { maskUrl, waitForGoboSlots } = await import(
-      "/e2e/fixtures/optics-harness.ts"
-    );
+    const { GoboAtlas } = (await window.__nightfallHarness.load("visualizer"))
+      .goboAtlas;
+    const { maskUrl, waitForGoboSlots } =
+      await window.__nightfallHarness.load("optics");
     const url = maskUrl("black", (context) => {
       context.fillStyle = "white";
       context.fillRect(0, 0, 16, 32);
@@ -74,9 +72,8 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const { createBatchScene, BATCH_OPTICS, BATCH_RED } = await import(
-          "/e2e/fixtures/emitter-batch-scene.ts"
-        );
+        const { createBatchScene, BATCH_OPTICS, BATCH_RED } =
+          await window.__nightfallHarness.load("emitter-batch-scene");
         const s = await createBatchScene(forceWebGL);
         try {
           const blue = { red: 0, green: 0, blue: 1, intensity: 0.1 };
@@ -133,16 +130,15 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const { createBatchScene, BATCH_OPTICS, BATCH_RED } = await import(
-          "/e2e/fixtures/emitter-batch-scene.ts"
-        );
-        const { compilePrismFacet } = await import(
-          "/features/visualizer/rendering/effects/prism-optics.ts"
-        );
-        const { EmitterOpticalState } = await import(
-          "/features/visualizer/rendering/effects/emitter-optical-state.ts"
-        );
-        const THREE = await import("/e2e/fixtures/three-api.ts");
+        const { createBatchScene, BATCH_OPTICS, BATCH_RED } =
+          await window.__nightfallHarness.load("emitter-batch-scene");
+        const { compilePrismFacet } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).prismOptics;
+        const { EmitterOpticalState } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).emitterOpticalState;
+        const THREE = await window.__nightfallHarness.load("three");
         const s = await createBatchScene(forceWebGL);
         /** Returns the instance count of the batch's single instanced draw. */
         const instances = () =>
@@ -181,12 +177,12 @@ for (const forceWebGL of [false, true]) {
           });
           const prism = await s.capture("prism");
           const prismCount = instances();
-          const { bindElementOpticalParameters } = await import(
-            "/features/visualizer/model/optical-bindings.ts"
-          );
-          const { opticalReadoutKeys } = await import(
-            "/features/visualizer/rendering/optical-readouts.ts"
-          );
+          const { bindElementOpticalParameters } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).opticalBindings;
+          const { opticalReadoutKeys } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).opticalReadouts;
           // Two prism wheels, each with one split selected by its only channel set.
           const head = {
             label: "Head",
@@ -311,12 +307,10 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const { createBatchScene, BATCH_OPTICS, BATCH_RED } = await import(
-          "/e2e/fixtures/emitter-batch-scene.ts"
-        );
-        const { maskUrl, waitForGoboSlots } = await import(
-          "/e2e/fixtures/optics-harness.ts"
-        );
+        const { createBatchScene, BATCH_OPTICS, BATCH_RED } =
+          await window.__nightfallHarness.load("emitter-batch-scene");
+        const { maskUrl, waitForGoboSlots } =
+          await window.__nightfallHarness.load("optics");
         const s = await createBatchScene(forceWebGL);
         try {
           const atlas = s.batch.goboAtlas!;
@@ -387,12 +381,10 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const { createBatchScene, BATCH_OPTICS, BATCH_RED } = await import(
-          "/e2e/fixtures/emitter-batch-scene.ts"
-        );
-        const { maskUrl, waitForGoboSlots } = await import(
-          "/e2e/fixtures/optics-harness.ts"
-        );
+        const { createBatchScene, BATCH_OPTICS, BATCH_RED } =
+          await window.__nightfallHarness.load("emitter-batch-scene");
+        const { maskUrl, waitForGoboSlots } =
+          await window.__nightfallHarness.load("optics");
         const s = await createBatchScene(forceWebGL);
         try {
           const stripes = s.batch.goboAtlas!.load(
@@ -456,10 +448,9 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const { createBatchScene, BATCH_OPTICS, BATCH_RED } = await import(
-          "/e2e/fixtures/emitter-batch-scene.ts"
-        );
-        const THREE = await import("/e2e/fixtures/three-api.ts");
+        const { createBatchScene, BATCH_OPTICS, BATCH_RED } =
+          await window.__nightfallHarness.load("emitter-batch-scene");
+        const THREE = await window.__nightfallHarness.load("three");
         const s = await createBatchScene(forceWebGL);
         const wall = new THREE.Mesh(
           new THREE.PlaneGeometry(100, 100),
@@ -507,16 +498,17 @@ test("resolved rectangular emitter renders a volumetric distribution", async ({
 }, testInfo) => {
   const errors = await openOpticsFixture(page);
   const result = await page.evaluate(async () => {
-    const THREE = await import("/e2e/fixtures/three-api.ts");
-    const { BeamType } = await import("/types/index.ts");
-    const { createUniformEmitterVolume } = await import(
-      "/e2e/fixtures/emitter-volume-uniforms.ts"
+    const THREE = await window.__nightfallHarness.load("three");
+    const { BeamType } = (await window.__nightfallHarness.load("visualizer"))
+      .types;
+    const { createUniformEmitterVolume } = await window.__nightfallHarness.load(
+      "emitter-volume-uniforms",
     );
-    const { resolveEmitterOptics } = await import(
-      "/features/visualizer/rendering/effects/emitter-optics.ts"
-    );
+    const { resolveEmitterOptics } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).emitterOptics;
     const { createTestRenderer, readPixels, renderFrames, retainCanvas } =
-      await import("/e2e/fixtures/optics-harness.ts");
+      await window.__nightfallHarness.load("optics");
     const { renderer, backend } = await createTestRenderer({
       forceWebGL: undefined,
       width: 800,

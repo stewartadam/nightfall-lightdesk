@@ -294,17 +294,42 @@ session or inheriting backend world and undo state from another test. Owned
 services and disposable data are removed after each test and swept again when
 Playwright exits.
 
-All workers share one Vite dev server per run, so only the first page load
-compiles the app. A fixture sets a `nightfall-playwright-backend` cookie with the
-test's backend port, and the server's `/api` and `/ws` proxies route each request
-by it; `NIGHTFALL_VITE_PROXY=1` keeps the app's WebSocket on the proxy too.
-Requests without the cookie reach an unused port and fail.
-[ADR 1](docs/adr/0001-playwright-page-loads.md) describes where this is heading.
+All workers share one web server per run. Native runs build the web UI once
+with `vite build --mode e2e` (while Cargo checks the backend) and serve that
+bundle with `vite preview`, so tests exercise production bundles instead of
+Vite's per-module dev waterfall. A fixture sets a `nightfall-playwright-backend`
+cookie with the test's backend port, and the server's `/api` and `/ws` proxies
+route each request by it. e2e builds always send backend traffic to their own
+origin, and the dev server does the same with `NIGHTFALL_VITE_PROXY=1`. Requests
+without the cookie reach an unused port and fail.
+[ADR 1](docs/adr/0001-playwright-page-loads.md) records the design.
 
-The shared server runs with `NIGHTFALL_VITE_WARMUP_PANELS=1`, which makes Vite
+A build does not pick up source edits until the next run. For quick
+edit-and-rerun loops, pass `--vite-mode dev` to serve the Vite dev server
+instead; only the first page load of the run compiles the app. Specs that
+exercise hot module replacement skip themselves outside dev mode;
+`pnpm run test:webui-hmr` runs them on the dev server.
+Embedded-demo runs default to the dev server.
+
+```sh
+pnpm run test:webui-playwright --vite-mode dev webui/e2e/command-palette.spec.ts
+```
+
+The dev server runs with `NIGHTFALL_VITE_WARMUP_PANELS=1`, which makes Vite
 scan every lazily loaded panel for dependencies and pre-transform the app at
 startup. Set it yourself when running `pnpm run dev` to trade a slower dev-server
 start for faster first panel opens.
+
+Specs observe and drive the app through its test hooks rather than importing
+source modules, which only the dev server can serve.
+`window.__nightfallTest` offers lifecycle promises (`whenShellInteractive`,
+`whenResynced`, `whenLayoutApplied`, `whenShowfileLoaded`) and runtime
+handles, and `window.appStores` holds the stores. Browser-side harnesses and
+the app internals white-box specs need load with
+`await window.__nightfallHarness.load(name)`; `webui/e2e/harness/registry.ts`
+lists them, and e2e builds bundle them alongside the blank harness pages under
+`webui/e2e/fixtures/`. Dev servers and e2e builds always expose these hooks;
+other builds expose them only with `?e2e=1`.
 
 Pass `--target embedded-demo` to run browser-demo tests without building or
 starting the native backend. The default target is `native`, which can also be

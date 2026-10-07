@@ -28,31 +28,26 @@ for (const kind of ["bar", "panel", "strobe-bar"] as const) {
   }, testInfo) => {
     const errors = await openOpticsFixture(page);
     const result = await page.evaluate(async (kind) => {
-      const T = await import("/e2e/fixtures/three-api.ts");
+      const T = await window.__nightfallHarness.load("three");
       const { readPixels, renderFrames, retainCanvas, verifyBackend } =
-        await import("/e2e/fixtures/optics-harness.ts");
-      const { createRenderer } = await import(
-        "/features/visualizer/rendering/renderer.ts"
-      );
+        await window.__nightfallHarness.load("optics");
+      const { createRenderer } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).renderer;
       const {
         createPostProcessing,
         renderWithPostProcessing,
         disposePostProcessing,
-      } = await import(
-        "/features/visualizer/rendering/effects/post-processing.ts"
-      );
-      const { buildSimpleLedBar, updateLedBarColors, disposeLedBar } =
-        await import(
-          "/features/visualizer/rendering/fixture-renderers/led-bar-renderer.ts"
-        );
+      } = (await window.__nightfallHarness.load("visualizer")).postProcessing;
+      const { buildSimpleLedBar, updateLedBarColors, disposeLedBar } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).ledBarRenderer;
       const {
         buildStrobePanelFixture,
         buildRgbStrobeBarFixture,
         updateStrobePanelColors,
         disposeStrobePanel,
-      } = await import(
-        "/features/visualizer/rendering/fixture-renderers/strobe-renderer.ts"
-      );
+      } = (await window.__nightfallHarness.load("visualizer")).strobeRenderer;
       const renderer = createRenderer({
         canvas: document.querySelector("canvas")!,
         devicePixelRatio: 1,

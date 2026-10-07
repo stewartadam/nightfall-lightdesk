@@ -715,9 +715,9 @@ async function captureFloorLight(
 ): Promise<DecodedPng> {
   const maskCones = (masked: boolean) =>
     page.evaluate(async (masked) => {
-      const { getOpticalRenderContext } = await import(
-        "/features/visualizer/rendering/effects/optical-render-context.ts"
-      );
+      const { getOpticalRenderContext } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).opticalRenderContext;
       const scene = (window as any).visualizerApi.getScene();
       getOpticalRenderContext(scene)?.scene.traverse((object: any) => {
         if (

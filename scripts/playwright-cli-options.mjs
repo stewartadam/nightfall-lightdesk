@@ -7,6 +7,13 @@
  */
 
 /**
+ * How the run serves the web UI: `e2e` builds once and serves the bundle with
+ * `vite preview`, `dev` runs the Vite dev server for quick edit-and-rerun
+ * loops, and `preview` serves an already-built distribution.
+ */
+export const PLAYWRIGHT_VITE_MODES = ["dev", "e2e", "preview"];
+
+/**
  * Extracts nightfall-specific options while preserving Playwright's argument order.
  */
 export function extractPlaywrightCliOptions(args) {
@@ -15,9 +22,27 @@ export function extractPlaywrightCliOptions(args) {
   let dataDir;
   let rustLog;
   let target;
+  let viteMode;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
+    if (argument === "--vite-mode") {
+      if (viteMode !== undefined) {
+        throw new Error("--vite-mode may only be specified once");
+      }
+
+      const value = args[index + 1];
+      if (!PLAYWRIGHT_VITE_MODES.includes(value)) {
+        throw new Error(
+          `--vite-mode requires one of ${PLAYWRIGHT_VITE_MODES.join(", ")}`,
+        );
+      }
+
+      viteMode = value;
+      index += 1;
+      continue;
+    }
+
     if (argument === "--target") {
       if (target !== undefined) {
         throw new Error("--target may only be specified once");
@@ -85,5 +110,5 @@ export function extractPlaywrightCliOptions(args) {
     index += 1;
   }
 
-  return { browser, dataDir, playwrightArgs, rustLog, target };
+  return { browser, dataDir, playwrightArgs, rustLog, target, viteMode };
 }

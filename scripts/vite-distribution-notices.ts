@@ -99,6 +99,19 @@ export function distributionNoticesPlugin(): Plugin {
     closeBundle() {
       if (config.command !== "build") return;
       const outDir = resolve(config.root, config.build.outDir);
+      // e2e builds never ship; serve the dev server's preview without a Rust license scan.
+      if (config.mode === "e2e") {
+        const document = developmentNotices();
+        writeFileSync(
+          join(outDir, "notices", noticesJson),
+          JSON.stringify(document),
+        );
+        writeFileSync(
+          join(outDir, "notices", noticesText),
+          renderNotices(document),
+        );
+        return;
+      }
       const inventory = join(outDir, "notices/frontend.json");
       const entries = JSON.parse(readFileSync(inventory, "utf8"));
       writeFileSync(

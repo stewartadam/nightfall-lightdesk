@@ -48,7 +48,7 @@ test("resolveBackendUrl uses same-origin backend in browser Vite dev", () => {
   assert.equal(
     resolveBackendUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: { origin: "http://localhost:3031" },
       tauriRuntime: false,
     }),
@@ -60,7 +60,7 @@ test("resolveBackendUrl bypasses same-origin backend in Tauri dev", () => {
   assert.equal(
     resolveBackendUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: { origin: "http://localhost:3031" },
       tauriRuntime: true,
     }),
@@ -72,7 +72,7 @@ test("resolveWebSocketUrl uses same-origin proxy in browser Vite dev when enable
   assert.equal(
     resolveWebSocketUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: { protocol: "https:", host: "localhost:3031" },
       tauriRuntime: false,
       viteProxyEnabled: true,
@@ -86,7 +86,7 @@ test("resolveWebSocketUrl targets the page's host in browser Vite dev without th
   assert.equal(
     resolveWebSocketUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: {
         protocol: "http:",
         host: "192.168.1.20:3031",
@@ -104,7 +104,7 @@ test("resolveWebSocketUrl targets the page's host for built browser bundles", ()
   assert.equal(
     resolveWebSocketUrl({
       backendPort: 3030,
-      isDev: false,
+      sameOrigin: false,
       runtimeLocation: { host: "192.168.1.20:3031", hostname: "192.168.1.20" },
       tauriRuntime: false,
       viteProxyEnabled: false,
@@ -118,7 +118,7 @@ test("resolveBackendUrl keeps loopback in built Tauri bundles", () => {
   assert.equal(
     resolveBackendUrl({
       backendPort: 3891,
-      isDev: false,
+      sameOrigin: false,
       runtimeLocation: { origin: "tauri://localhost", hostname: "tauri.local" },
       tauriRuntime: true,
     }),
@@ -130,7 +130,7 @@ test("resolveWebSocketUrl bypasses same-origin proxy in Tauri dev", () => {
   assert.equal(
     resolveWebSocketUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: { protocol: "https:", host: "localhost:3031" },
       tauriRuntime: true,
       viteProxyEnabled: true,

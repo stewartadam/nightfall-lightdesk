@@ -7,6 +7,7 @@
  */
 
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
+import { isE2eBuild } from "./test-mode";
 
 /** Stable identifier for the release-owned browser demo sample. */
 export const BROWSER_DEMO_SAMPLE_ID = "nightfall-demo-v1";
@@ -28,7 +29,7 @@ export function isEmbeddedDemoRuntime(): boolean {
   if (typeof window === "undefined") return false;
   return (
     import.meta.env.MODE === "browser-demo" ||
-    (import.meta.env.DEV &&
+    ((import.meta.env.DEV || isE2eBuild) &&
       new URLSearchParams(window.location.search).get("engine") ===
         "embedded-demo")
   );

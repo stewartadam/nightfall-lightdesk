@@ -20,11 +20,15 @@ test("lazy panels render after layout replacement and sample show creation", asy
     releasePanel = resolve;
   });
   let requestedPanel = false;
-  await page.route("**/features/groups/panel.tsx*", async (route) => {
-    requestedPanel = true;
-    await panelReady;
-    await route.continue();
-  });
+  // Dev servers serve the source module; e2e builds name its chunk by source path.
+  await page.route(
+    /\/features\/groups\/panel(\.tsx|-[\w-]+\.js)(\?|$)/,
+    async (route) => {
+      requestedPanel = true;
+      await panelReady;
+      await route.continue();
+    },
+  );
   await page.addInitScript(() => {
     localStorage.setItem("nightfall.e2eAutoOpenStartupShowfile", "false");
   });
@@ -38,12 +42,11 @@ test("lazy panels render after layout replacement and sample show creation", asy
   await expect
     .poll(() =>
       page.evaluate(async () => {
-        const { activeLayoutId } = await import(
-          /* @vite-ignore */ "/state/layout-switcher.ts"
-        );
-        const { activateStoredLayout } = await import(
-          /* @vite-ignore */ "/lib/layout-activation.ts"
-        );
+        const { activeLayoutId } = (await window.__nightfallHarness.load("app"))
+          .layoutSwitcher;
+        const { activateStoredLayout } = (
+          await window.__nightfallHarness.load("app")
+        ).layoutActivation;
         const api = (window as any).appStores.dockApi.get();
         const layoutId = activeLayoutId.get();
         return (

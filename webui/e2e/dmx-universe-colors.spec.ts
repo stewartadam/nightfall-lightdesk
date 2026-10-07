@@ -22,7 +22,7 @@ async function waitForAppStores(page: Page) {
 /** Disconnects the backend websocket so seeded store values remain deterministic. */
 async function disconnectBackend(page: Page) {
   await page.evaluate(async () => {
-    const websocketModule = await import("/lib/engine-runtime.ts");
+    const websocketModule = window.__nightfallTest.runtime;
     websocketModule.engineRuntime.stop();
   });
 }
@@ -689,7 +689,7 @@ test("dmx shared controls switch direction and request external traffic visibili
   });
 
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     (window as any).__dmxSettingsCommands = [];
     engineRuntime.sendCommand = (command: unknown) => {
       (window as any).__dmxSettingsCommands.push(command);

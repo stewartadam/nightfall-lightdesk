@@ -455,9 +455,9 @@ async function renderedQualityPreset(page: Page) {
   return page.evaluate(async () => {
     const scene = (window as any).visualizerApi?.getScene?.();
     if (!scene) return undefined;
-    const { getOpticalRenderContext } = await import(
-      "/features/visualizer/rendering/effects/optical-render-context.ts"
-    );
+    const { getOpticalRenderContext } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).opticalRenderContext;
     return getOpticalRenderContext(scene)?.profile.preset;
   });
 }
@@ -554,9 +554,9 @@ for (const worker of [false, true]) {
           .poll(() =>
             page.evaluate(async () => {
               const scene = (window as any).visualizerApi.getScene();
-              const { getOpticalRenderContext } = await import(
-                "/features/visualizer/rendering/effects/optical-render-context.ts"
-              );
+              const { getOpticalRenderContext } = (
+                await window.__nightfallHarness.load("visualizer")
+              ).opticalRenderContext;
               const context = getOpticalRenderContext(scene);
               return {
                 quality: context?.profile.preset,
@@ -1040,9 +1040,9 @@ test("low quality spot and wash comparison", async ({ page }, testInfo) => {
     .poll(() =>
       page.evaluate(async () => {
         const scene = (window as any).visualizerApi.getScene();
-        const { getOpticalRenderContext } = await import(
-          "/features/visualizer/rendering/effects/optical-render-context.ts"
-        );
+        const { getOpticalRenderContext } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalRenderContext;
         const context = getOpticalRenderContext(scene)!;
         return {
           quality: context.profile.preset,
@@ -1062,9 +1062,9 @@ test("low quality spot and wash comparison", async ({ page }, testInfo) => {
   await expect
     .poll(() =>
       page.evaluate(async () => {
-        const { getOpticalRenderContext } = await import(
-          "/features/visualizer/rendering/effects/optical-render-context.ts"
-        );
+        const { getOpticalRenderContext } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalRenderContext;
         return (
           getOpticalRenderContext(
             (window as any).visualizerApi.getScene(),
@@ -1131,9 +1131,9 @@ test("generic wash beam low-quality setting uses geometry beams", async ({
   await expect
     .poll(() =>
       page.evaluate(async () => {
-        const { getOpticalRenderContext } = await import(
-          "/features/visualizer/rendering/effects/optical-render-context.ts"
-        );
+        const { getOpticalRenderContext } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalRenderContext;
         const context = getOpticalRenderContext(
           (window as any).visualizerApi.getScene(),
         );
@@ -2266,9 +2266,9 @@ async function rotatingWashBeamOpticalStats(
         lightIds.add(object.shadowKey);
       }
     });
-    const { getOpticalRenderContext } = await import(
-      "/features/visualizer/rendering/effects/optical-render-context.ts"
-    );
+    const { getOpticalRenderContext } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).opticalRenderContext;
     const atmosphere = getOpticalRenderContext(scene)?.scene;
     atmosphere?.traverse((object: any) => {
       if (object.name !== "EmitterVolumes" || !object.visible) return;

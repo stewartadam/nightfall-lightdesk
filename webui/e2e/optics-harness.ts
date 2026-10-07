@@ -135,9 +135,8 @@ async function attachRetainedCanvases(
   if (page.isClosed()) return;
   const images = await page
     .evaluate(async () => {
-      const { encodeRetainedCanvases } = await import(
-        "/e2e/fixtures/optics-harness.ts"
-      );
+      const { encodeRetainedCanvases } =
+        await window.__nightfallHarness.load("optics");
       return encodeRetainedCanvases();
     })
     .catch(() => ({}) as Record<string, string>);

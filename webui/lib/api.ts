@@ -11,6 +11,7 @@
  */
 
 import { isTauriRuntime } from "./tauri";
+import { isE2eBuild } from "./test-mode";
 
 const DEFAULT_BACKEND_PORT = 3030;
 
@@ -31,7 +32,11 @@ type RuntimeLocation = {
 
 type BackendUrlOptions = {
   backendPort: number;
-  isDev: boolean;
+  /**
+   * Whether the web server that served the page proxies `/api` and `/ws` to
+   * the backend: the Vite dev server, and the preview server of an e2e build.
+   */
+  sameOrigin: boolean;
   runtimeLocation?: RuntimeLocation;
   tauriRuntime: boolean;
 };
@@ -89,11 +94,11 @@ function directBackendHost({
 /** Resolves the base backend HTTP URL from runtime state. */
 export function resolveBackendUrl({
   backendPort,
-  isDev,
+  sameOrigin,
   runtimeLocation,
   tauriRuntime,
 }: BackendUrlOptions): string {
-  if (isDev && runtimeLocation?.origin && !tauriRuntime) {
+  if (sameOrigin && runtimeLocation?.origin && !tauriRuntime) {
     return runtimeLocation.origin;
   }
 
@@ -105,7 +110,7 @@ export function getBackendUrl(): string {
   const env = import.meta.env ?? {};
   return resolveBackendUrl({
     backendPort: getBackendPort(),
-    isDev: Boolean(env.DEV),
+    sameOrigin: Boolean(env.DEV) || isE2eBuild,
     runtimeLocation: globalThis.location,
     tauriRuntime: isTauriRuntime(),
   });
@@ -114,12 +119,17 @@ export function getBackendUrl(): string {
 /** Resolves the backend WebSocket URL from runtime state. */
 export function resolveWebSocketUrl({
   backendPort,
-  isDev,
+  sameOrigin,
   runtimeLocation,
   tauriRuntime,
   viteProxyEnabled,
 }: WebSocketUrlOptions): string {
-  if (isDev && runtimeLocation?.host && viteProxyEnabled && !tauriRuntime) {
+  if (
+    sameOrigin &&
+    runtimeLocation?.host &&
+    viteProxyEnabled &&
+    !tauriRuntime
+  ) {
     const wsProtocol = runtimeLocation.protocol === "https:" ? "wss" : "ws";
     return `${wsProtocol}://${runtimeLocation.host}/ws`;
   }
@@ -132,9 +142,10 @@ export function getWebSocketUrl(): string {
   const env = import.meta.env ?? {};
   return resolveWebSocketUrl({
     backendPort: getBackendPort(),
-    isDev: Boolean(env.DEV),
+    sameOrigin: Boolean(env.DEV) || isE2eBuild,
     runtimeLocation: globalThis.location,
     tauriRuntime: isTauriRuntime(),
-    viteProxyEnabled: env.NIGHTFALL_VITE_PROXY === "1",
+    // e2e builds always proxy the WebSocket so Playwright's cookie routes it.
+    viteProxyEnabled: env.NIGHTFALL_VITE_PROXY === "1" || isE2eBuild,
   });
 }

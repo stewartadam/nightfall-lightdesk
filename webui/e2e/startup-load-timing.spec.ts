@@ -92,10 +92,9 @@ test.describe("prepare", () => {
         title: "Layers",
         position: { referencePanel: "timing-fixtures", direction: "below" },
       });
-      const actions = await import(
-        /* @vite-ignore */ "/lib/showfile-actions.ts"
-      );
-      const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
+      const actions = (await window.__nightfallHarness.load("app"))
+        .showfileActions;
+      const runtime = window.__nightfallTest.runtime;
       await runtime.engineRuntime.sendCommandAndAwait({
         module: "DeskCommand",
         command: actions.saveNamedShowfileCommand(name),
@@ -155,20 +154,22 @@ async function installStartupProbe(page: Page): Promise<void> {
         };
         if (!modulesRequested) {
           modulesRequested = true;
-          void import(/* @vite-ignore */ "/state/app-lifecycle.ts").then(
-            (module) => {
+          void window.__nightfallHarness
+            .load("startup-probe")
+            .then((harness) => harness.appLifecycle)
+            .then((module) => {
               lifecycle = module.appLifecycle.get();
               module.appLifecycle.listen((value: { phase: string }) => {
                 lifecycle = value;
               });
-            },
-          );
-          void import(
-            /* @vite-ignore */ "/state/panel-component-loads.ts"
-          ).then((module) => {
-            panelLoads = module.pendingPanelComponentLoads;
-          });
-          void import(/* @vite-ignore */ "/lib/engine-runtime.ts").then(
+            });
+          void window.__nightfallHarness
+            .load("startup-probe")
+            .then((harness) => harness.panelComponentLoads)
+            .then((module) => {
+              panelLoads = module.pendingPanelComponentLoads;
+            });
+          void Promise.resolve(window.__nightfallTest.runtime).then(
             (module) => {
               const read = () => {
                 backendState = String(module.backendAppState());

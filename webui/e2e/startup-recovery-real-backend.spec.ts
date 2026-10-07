@@ -117,10 +117,10 @@ test("keeps world-swap phases owned while the old world is Ready", async ({
   await expect(page.locator("button[title='Menu']")).toBeVisible();
 
   const heldPhases = await page.evaluate(async () => {
-    const { appLifecycle, transitionAppLifecycle } = await import(
-      "/state/app-lifecycle.ts"
-    );
-    const { backendAppState } = await import("/lib/engine-runtime.ts");
+    const { appLifecycle, transitionAppLifecycle } = (
+      await window.__nightfallHarness.load("app")
+    ).appLifecycle;
+    const { backendAppState } = window.__nightfallTest.runtime;
     const phases: string[] = [backendAppState()];
     try {
       for (const type of [

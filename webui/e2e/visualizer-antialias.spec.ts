@@ -46,18 +46,18 @@ for (const { forceWebGL, pixelRatio, quality } of motionVariants) {
     const result = await evaluateOnBackend(
       page,
       async ({ forceWebGL, quality, pixelRatio }) => {
-        const T = await import("/e2e/fixtures/three-api.ts");
-        const { createPostProcessing, disposePostProcessing } = await import(
-          "/features/visualizer/rendering/effects/post-processing.ts"
-        );
-        const { FilteredEmitterRow } = await import(
-          "/features/visualizer/rendering/effects/filtered-emitter-row.ts"
-        );
-        const { resolveQualityProfile } = await import(
-          "/features/visualizer/rendering/quality-profile.ts"
-        );
+        const T = await window.__nightfallHarness.load("three");
+        const { createPostProcessing, disposePostProcessing } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).postProcessing;
+        const { FilteredEmitterRow } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).filteredEmitterRow;
+        const { resolveQualityProfile } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).qualityProfile;
         const { createTestRenderer, readPixels, renderFrames, retainCanvas } =
-          await import("/e2e/fixtures/optics-harness.ts");
+          await window.__nightfallHarness.load("optics");
         const { renderer } = await createTestRenderer({
           forceWebGL,
           width: 600,
@@ -244,15 +244,15 @@ for (const forceWebGL of [false, true]) {
       const captures = await evaluateOnBackend(
         page,
         async ({ forceWebGL, pixelRatio }) => {
-          const T = await import("/e2e/fixtures/three-api.ts");
-          const { createPostProcessing, disposePostProcessing } = await import(
-            "/features/visualizer/rendering/effects/post-processing.ts"
-          );
-          const { EmitterVolumeBatch } = await import(
-            "/features/visualizer/rendering/effects/emitter-volume-batch.ts"
-          );
+          const T = await window.__nightfallHarness.load("three");
+          const { createPostProcessing, disposePostProcessing } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).postProcessing;
+          const { EmitterVolumeBatch } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).emitterVolumeBatch;
           const { createTestRenderer, readPixels, renderFrames, retainCanvas } =
-            await import("/e2e/fixtures/optics-harness.ts");
+            await window.__nightfallHarness.load("optics");
           const { renderer } = await createTestRenderer({
             forceWebGL,
             width: 600,
@@ -452,18 +452,18 @@ for (const quality of ["low", "medium"] as const) {
       const result = await evaluateOnBackend(
         page,
         async ({ quality, forceWebGL }) => {
-          const T = await import("/e2e/fixtures/three-api.ts");
-          const { createPostProcessing, disposePostProcessing } = await import(
-            "/features/visualizer/rendering/effects/post-processing.ts"
-          );
-          const { EmitterVolumeBatch } = await import(
-            "/features/visualizer/rendering/effects/emitter-volume-batch.ts"
-          );
-          const { resolveQualityProfile } = await import(
-            "/features/visualizer/rendering/quality-profile.ts"
-          );
+          const T = await window.__nightfallHarness.load("three");
+          const { createPostProcessing, disposePostProcessing } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).postProcessing;
+          const { EmitterVolumeBatch } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).emitterVolumeBatch;
+          const { resolveQualityProfile } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).qualityProfile;
           const { createTestRenderer, renderAndSum, retainCanvas } =
-            await import("/e2e/fixtures/optics-harness.ts");
+            await window.__nightfallHarness.load("optics");
           const { renderer } = await createTestRenderer({
             forceWebGL,
             width: 400,
@@ -551,15 +551,15 @@ for (const forceWebGL of [false, true]) {
     const result = await evaluateOnBackend(
       page,
       async (forceWebGL) => {
-        const T = await import("/e2e/fixtures/three-api.ts");
-        const { createPostProcessing, disposePostProcessing } = await import(
-          "/features/visualizer/rendering/effects/post-processing.ts"
-        );
-        const { resolveQualityProfile } = await import(
-          "/features/visualizer/rendering/quality-profile.ts"
-        );
+        const T = await window.__nightfallHarness.load("three");
+        const { createPostProcessing, disposePostProcessing } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).postProcessing;
+        const { resolveQualityProfile } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).qualityProfile;
         const { createTestRenderer, readPixels, renderFrames, retainCanvas } =
-          await import("/e2e/fixtures/optics-harness.ts");
+          await window.__nightfallHarness.load("optics");
         const results = [];
         for (const sceneSamples of [0, 4]) {
           const { renderer } = await createTestRenderer({

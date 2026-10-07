@@ -209,9 +209,9 @@ async function openWorkload(page: Page): Promise<PlaybackTarget> {
   await page.waitForTimeout(STARTUP_LAYOUT_SETTLE_MS);
   await waitForDockviewApp(page, { showfileName: "default" });
   return page.evaluate(async () => {
-    const { resolveTimelineJumpTarget } = await import(
-      "/features/timeline/model/timeline-jump.ts"
-    );
+    const { resolveTimelineJumpTarget } = (
+      await window.__nightfallHarness.load("app")
+    ).timelineJump;
     const stores = (window as any).appStores;
     const timeline = Object.values(stores.timelines.get()).find(
       (t: any) => t.identifiers.id === 4,
@@ -714,7 +714,7 @@ test("default timeline 4 beat 47 visualizer playback benchmark", async ({
   } catch (error) {
     const diagnostics = await page
       .evaluate(async () => {
-        const runtime = await import("/lib/engine-runtime.ts");
+        const runtime = window.__nightfallTest.runtime;
         const stores = (window as any).appStores;
         return {
           connectionStatus: runtime.connectionStatus(),

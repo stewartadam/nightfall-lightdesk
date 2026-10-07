@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { blockAppScripts } from "./app-hooks";
 import {
   expect,
   type Page,
@@ -239,20 +240,8 @@ for (const preference of ["on", "off"] as const) {
         JSON.stringify({ reducedMotion }),
       );
     }, preference);
-    await page.route("**/main.tsx", (route) => route.abort());
-    await page.route("**/*", async (route) => {
-      if (route.request().resourceType() !== "document") {
-        await route.fallback();
-        return;
-      }
-      const response = await route.fetch();
-      await route.fulfill({
-        response,
-        headers: {
-          ...response.headers(),
-          "content-security-policy": "script-src 'self' 'wasm-unsafe-eval'",
-        },
-      });
+    await blockAppScripts(page, {
+      "content-security-policy": "script-src 'self' 'wasm-unsafe-eval'",
     });
     await page.goto("/");
     await expect(page.locator("#bootstrap-splash")).toBeVisible();
