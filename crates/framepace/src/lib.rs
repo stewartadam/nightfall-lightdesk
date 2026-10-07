@@ -626,15 +626,22 @@ mod tests {
 
     /// Verifies that a wake already pending when the limiter runs still waits out the minimum
     /// interval after the previous frame started.
+    ///
+    /// The interval is measured from the limiter's recorded frame start, so a scheduler stall
+    /// on the test thread between frames cannot shorten the measured wait.
     #[test]
     fn early_frames_respect_minimum_interval() {
         let (mut app, waker) = wakeable_app(10.0);
         app.update();
 
-        let start = Instant::now();
+        let start = app.world().resource::<FrameTimer>().frame_start;
         waker.wake();
         app.update();
-        let elapsed = start.elapsed();
+        let elapsed = app
+            .world()
+            .resource::<FrameTimer>()
+            .frame_start
+            .duration_since(start);
         assert!(
             elapsed >= EARLY_FRAME_MIN_INTERVAL.saturating_sub(Duration::from_millis(1))
                 && elapsed < Duration::from_millis(50),
