@@ -8,10 +8,10 @@
 
 import { useStore } from "@nanostores/solid";
 import { ArrowCounterClockwiseIcon } from "@squidlab/phosphor-solid/arrow-counter-clockwise";
-import { DotsThreeIcon } from "@squidlab/phosphor-solid/dots-three";
+import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { FileIcon } from "@squidlab/phosphor-solid/file";
+import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
-import { WifiHighIcon } from "@squidlab/phosphor-solid/wifi-high";
 import { Show } from "solid-js";
 import { useShowfileObjectPalette } from "../../../features/showfile";
 import { connectionStatus } from "../../../lib/engine-runtime";
@@ -28,14 +28,11 @@ import LayoutSwitcher from "../header/layout-switcher";
 import HeaderNotificationHistory from "../header/notification-history";
 import { resetBrowserDemo } from "../runtime/browser-demo-banner";
 import AppMenu from "../status-bar/app-menu";
-import {
-  ConnectionIndicator,
-  useConnectionHealth,
-} from "../status-bar/connection-indicator";
+import { ConnectionIndicator } from "../status-bar/connection-indicator";
 import UndoControls from "../status-bar/undo-controls";
 
-/** Renders the app logo and name, which compact screens shorten to the logo alone. */
-function HeaderBrand(props: { compact: boolean }) {
+/** Renders the app logo and name in the docked header. */
+function HeaderBrand() {
   return (
     <div class="flex items-center gap-2 text-sm font-semibold">
       <img
@@ -43,9 +40,7 @@ function HeaderBrand(props: { compact: boolean }) {
         alt="logo"
         class="h-8 w-8 rounded"
       />
-      <span classList={{ "sr-only": props.compact }}>
-        {isEmbeddedDemoRuntime() ? "nightfall demo" : "nightfall"}
-      </span>
+      <span>{isEmbeddedDemoRuntime() ? "nightfall demo" : "nightfall"}</span>
     </div>
   );
 }
@@ -84,47 +79,36 @@ function HeaderActions() {
 
 /**
  * The phone header: one slim row that also carries what the status bar holds
- * on wider screens. The showfile name, undo, connection, search and
- * notifications stay in the row; the object palette, demo reset and the
- * application menu move into its overflow menu.
+ * on wider screens. The logo opens the application menu, which also names the
+ * showfile and holds the object palette and demo reset; undo, connection,
+ * search and notifications stay in the row.
  */
 function CompactHeaderBar() {
   const { showPalette: openCommandPalette } = useCommandPalette();
   const { showPalette: openObjectPalette } = useShowfileObjectPalette();
   const showfileName = useStore(currentShowfileName);
-  const health = useConnectionHealth();
 
   return (
     <nav class="flex min-w-0 w-full items-center gap-1" aria-label="Global">
-      <HeaderBrand compact />
-      <span
-        class="min-w-0 flex-1 truncate px-1 font-mono text-xs text-gray-400"
-        data-testid="compact-showfile-name"
-      >
-        {showfileName()}
-      </span>
-      <Show when={connectionStatus() === "connected"}>
-        <UndoControls placement="below" />
-      </Show>
-      <ConnectionIndicator class="nf-toolbar-slot" />
-      <Button
-        size="icon"
-        type="button"
-        onClick={openCommandPalette}
-        aria-label="Open command palette"
-      >
-        <MagnifyingGlassIcon class="size-4" aria-hidden />
-      </Button>
-      <HeaderNotificationHistory />
       <AppMenu
-        triggerLabel="More"
-        trigger={<DotsThreeIcon class="size-5" aria-hidden />}
-        placement="below"
-        align="end"
-        leadingItems={
+        triggerLabel="Main menu"
+        triggerClass="nf-compact-logo-menu"
+        trigger={
           <>
-            <DropdownMenuItem icon={WifiHighIcon} disabled onClick={() => {}}>
-              {`Engine: ${health.label()}`}
+            <img
+              src={`${import.meta.env.BASE_URL}logo.svg`}
+              alt=""
+              class="size-7 rounded"
+            />
+            <CaretDownIcon class="size-3 text-gray-400" aria-hidden />
+          </>
+        }
+        placement="below"
+        align="start"
+        leadingItems={() => (
+          <>
+            <DropdownMenuItem icon={FileTextIcon} disabled onClick={() => {}}>
+              <span data-testid="compact-showfile-name">{showfileName()}</span>
             </DropdownMenuItem>
             <DropdownMenuItem icon={FileIcon} onClick={openObjectPalette}>
               Object Palette
@@ -138,8 +122,22 @@ function CompactHeaderBar() {
               </DropdownMenuItem>
             </Show>
           </>
-        }
+        )}
       />
+      <span class="flex-1" />
+      <Show when={connectionStatus() === "connected"}>
+        <UndoControls placement="below" />
+      </Show>
+      <ConnectionIndicator class="nf-toolbar-slot" />
+      <Button
+        size="icon"
+        type="button"
+        onClick={openCommandPalette}
+        aria-label="Open command palette"
+      >
+        <MagnifyingGlassIcon class="size-4" aria-hidden />
+      </Button>
+      <HeaderNotificationHistory />
     </nav>
   );
 }
@@ -170,7 +168,7 @@ export default function AppHeader() {
           <div class="min-w-0">
             <HeaderCommandLine />
           </div>
-          <HeaderBrand compact={false} />
+          <HeaderBrand />
           <div class="contents min-w-0 items-center justify-end gap-2 xl:flex">
             <div class="col-span-3 row-start-2 min-w-0 xl:contents">
               <LayoutSwitcher />

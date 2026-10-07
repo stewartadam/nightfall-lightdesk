@@ -35,8 +35,7 @@
   color: var(--muted);
   border-top: 2px solid transparent;
 }
-.nf-compact-nav-tab[aria-selected="true"],
-.nf-compact-nav-more[data-active] {
+.nf-compact-nav-tab[aria-selected="true"] {
   color: #ebeeed;
   border-top-color: var(--accent);
 }
@@ -135,4 +134,55 @@
   align-items: center;
   justify-content: center;
   color: var(--muted);
+}
+
+/* The logo doubles as the main menu button, styled like the header's icon buttons. */
+.nf-compact-logo-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 4px 0 3px;
+  border: 1px solid var(--line, #34383b);
+  border-radius: var(--nf-corner-radius, 6px);
+  background: var(--raised, #24282a);
+}
+.nf-compact-logo-menu:hover {
+  background: #2c3032;
+  border-color: #545b5e;
+}
+.nf-compact-logo-menu:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A shown panel that is not pinned borrows the last tab slot; its label is
+   italic so it reads as temporary. */
+.nf-compact-nav-tab[data-visiting] .nf-compact-nav-label {
+  font-style: italic;
+}
+
+/* The single panel fills the screen edge to edge, so it needs no frame. */
+.nf-compact-surface .dv-dockview .dv-groupview {
+  border: 0;
+  border-radius: 0;
+}
+
+/* Toolbars keep one row and scroll sideways instead of wrapping onto more rows. */
+.nf-compact-surface .nf-panel-toolbar,
+.nf-compact-surface .nf-toolbar-group {
+  flex-wrap: nowrap;
+}
+.nf-compact-surface .nf-panel-toolbar {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+/* Button groups keep their width so the row scrolls; text such as a title
+   still shrinks and truncates, keeping enough room to stay readable. */
+.nf-compact-surface .nf-panel-toolbar > :has(button) {
+  flex-shrink: 0;
+}
+.nf-compact-surface .nf-panel-toolbar > :not(:has(button)) {
+  min-width: 4rem;
 }

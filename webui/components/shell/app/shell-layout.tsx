@@ -73,17 +73,20 @@ function DockedContent() {
 function CompactContent() {
   const shell = useAppShell();
   const panels = createCompactPanels(shell.dockviewApi);
-  let surface: HTMLDivElement | undefined;
+  let swipeArea: HTMLDivElement | undefined;
 
-  /** Lets a horizontal flick on the shown panel step to its neighbor. */
+  /** Lets a horizontal flick on the shown panel or the tab bar step to its neighbor. */
   onMount(() => {
-    if (!surface) return;
-    onCleanup(bindCompactSwipe(surface, panels.step));
+    if (!swipeArea) return;
+    onCleanup(bindCompactSwipe(swipeArea, panels.step));
   });
 
   return (
-    <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <div ref={surface} class="min-h-0 w-full flex-1 overflow-hidden">
+    <div
+      ref={swipeArea}
+      class="flex h-full min-h-0 w-full flex-col overflow-hidden"
+    >
+      <div class="nf-compact-surface min-h-0 w-full flex-1 overflow-hidden">
         <ShowfileTransitionVeil>
           <DockviewApp compact />
         </ShowfileTransitionVeil>

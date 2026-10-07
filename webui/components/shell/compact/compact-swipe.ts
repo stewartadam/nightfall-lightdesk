@@ -29,6 +29,9 @@ const OWN_GESTURE_SELECTOR = [
   "[role='slider']",
   ".noUi-target",
   "[data-compact-swipe='off']",
+  // Sheets and dialogs open over the panel; flicks inside them stay theirs.
+  "dialog",
+  "[role='dialog']",
 ].join(",");
 
 /**

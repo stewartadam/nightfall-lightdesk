@@ -110,6 +110,13 @@ test("compact shell navigates one panel at a time on a phone", async ({
   ).toHaveCount(0);
   const headerBox = await page.locator(".nf-app-header").boundingBox();
   expect(headerBox?.height ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(48);
+  // The panel runs edge to edge without a frame, and its toolbars keep to one row.
+  const group = page.locator(".dv-groupview").first();
+  await expect(group).toHaveCSS("border-top-width", "0px");
+  for (const toolbar of await page.locator(".nf-panel-toolbar").all()) {
+    if (!(await toolbar.isVisible())) continue;
+    expect((await toolbar.boundingBox())?.height ?? 0).toBeLessThanOrEqual(50);
+  }
   await page.screenshot({ path: testInfo.outputPath("01-compact-start.png") });
 
   const secondTab = tabs.nth(1);
@@ -126,7 +133,8 @@ test("compact shell navigates one panel at a time on a phone", async ({
     .not.toBe(before);
   await page.waitForTimeout(300);
   await page.screenshot({ path: testInfo.outputPath("03-after-swipe.png") });
-  await flick(surface, 160);
+  // Flicking the tab bar switches panels too.
+  await flick(nav, 160);
   await expect
     .poll(async () => (await readDockStructure(page)).active)
     .toBe(before);
@@ -137,11 +145,13 @@ test("compact shell navigates one panel at a time on a phone", async ({
   await page.screenshot({ path: testInfo.outputPath("04-panel-sheet.png") });
   await sheet.getByRole("button", { name: "Cues", exact: true }).click();
   await expect(sheet).toBeHidden();
-  // An unpinned panel is named on the Panels button so the operator knows where they are.
-  await expect(nav.getByRole("button", { name: "Panels" })).toContainText(
-    "Cues",
+  // An unpinned panel borrows the last tab slot; the Panels button stays put.
+  await expect(tabs).toHaveCount(4);
+  await expect(tabs.nth(3)).toContainText("Cues");
+  await expect(tabs.nth(3)).toHaveAttribute("aria-selected", "true");
+  await expect(nav.getByRole("button", { name: "Panels" })).toHaveText(
+    "Panels",
   );
-  await expect(nav.getByRole("tab", { selected: true })).toHaveCount(0);
   // Panels opened by features fold into the single group as well.
   expect((await readDockStructure(page)).groups).toBe(1);
   await page.waitForTimeout(500);
@@ -212,6 +222,9 @@ test("compact shell pins and reorders tabs from the Panels sheet", async ({
   const nav = page.getByRole("navigation", { name: "Panels" });
   const tabs = nav.getByRole("tab");
   await expect(tabs).toHaveCount(4);
+  // Show a pinned panel so the last slot holds a pin, not a visiting panel.
+  await tabs.first().click();
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
   const lastPinned = (await tabs.nth(3).innerText()).trim();
 
   await nav.getByRole("button", { name: "Panels" }).click();
@@ -258,6 +271,7 @@ test("compact shell pins and reorders tabs from the Panels sheet", async ({
 
   await page.reload();
   await waitForDockviewApp(page);
+  await tabs.first().click();
   await expect(tabs.nth(3)).toContainText("Clips");
 });
 
@@ -268,9 +282,6 @@ test("compact header carries the status bar controls", async ({
   await page.goto(DEMO_PATH);
   await waitForDockviewApp(page);
   const header = page.getByRole("navigation", { name: "Global" });
-  await expect(header.getByTestId("compact-showfile-name")).toHaveText(
-    "nightfall-demo",
-  );
   await expect(header.getByRole("status")).toHaveAccessibleName("Connected");
   await expect(
     header.getByRole("button", { name: /^(Undo:|Nothing to undo)/ }),
@@ -279,9 +290,13 @@ test("compact header carries the status bar controls", async ({
     header.getByRole("button", { name: "Open command palette" }),
   ).toBeVisible();
 
-  await header.getByRole("button", { name: "More" }).click();
+  // The logo opens the main menu, which names the showfile.
+  const mainMenu = header.getByRole("button", { name: "Main menu" });
+  await mainMenu.click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByText("Engine: Connected")).toBeVisible();
+  await expect(menu.getByTestId("compact-showfile-name")).toHaveText(
+    "nightfall-demo",
+  );
   for (const item of ["Object Palette", "Reset Demo", "Settings"]) {
     await expect(
       menu.getByRole("button", { name: new RegExp(`^${item}`) }),
@@ -304,7 +319,14 @@ test("compact header carries the status bar controls", async ({
     })
     .toBeLessThanOrEqual(PHONE.width);
   await page.setViewportSize(PHONE);
+
+  // Picking an item added for the phone closes the menu like any other item.
+  await menu.getByRole("button", { name: "Object Palette" }).click();
+  await expect(menu).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await mainMenu.click();
   await menu.getByRole("button", { name: /^Settings/ }).click();
+  await expect(menu).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
 });
 

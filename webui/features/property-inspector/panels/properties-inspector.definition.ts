@@ -6,12 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { SlidersHorizontalIcon } from "@squidlab/phosphor-solid/sliders-horizontal";
 import { definePanel } from "../../../lib/panel-module";
 
 export default definePanel({
   panelId: "panel-PropertiesInspector",
   componentName: "PropertiesInspector",
   title: "Properties",
+  icon: SlidersHorizontalIcon,
   minWidth: 260,
   minHeight: 240,
   loadComponent: () => import("./properties-inspector-panel"),

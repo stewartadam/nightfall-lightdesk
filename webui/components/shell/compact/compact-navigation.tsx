@@ -307,8 +307,9 @@ function CompactPanelSheet(props: {
 
 /**
  * Bottom tab bar of the compact shell: the pinned panels as fixed tabs, plus a
- * Panels button for everything else. When the shown panel is not pinned, the
- * Panels button carries its name so the operator still sees where they are.
+ * Panels button for everything else. When the shown panel is not pinned, it
+ * borrows the last tab slot so the operator still sees where they are, and the
+ * Panels button stays in place.
  */
 export default function CompactNavigation(props: { panels: CompactPanels }) {
   const [sheetOpen, setSheetOpen] = createSignal(false);
@@ -318,17 +319,25 @@ export default function CompactNavigation(props: { panels: CompactPanels }) {
     if (props.panels.pinned().some((entry) => entry.id === id)) return;
     return props.panels.panels().find((entry) => entry.id === id);
   });
+  /** The tabs to show: the pinned panels, with an unpinned shown panel in the last slot. */
+  const tabs = createMemo(() => {
+    const visiting = activeUnpinned();
+    const pinned = props.panels.pinned();
+    if (!visiting) return pinned;
+    return [...pinned.slice(0, COMPACT_PINNED_TAB_COUNT - 1), visiting];
+  });
 
   return (
     <nav class="nf-compact-nav" aria-label="Panels">
       <div class="nf-compact-nav-tabs" role="tablist">
-        <For each={props.panels.pinned()}>
+        <For each={tabs()}>
           {(entry) => (
             <button
               type="button"
               role="tab"
               class="nf-compact-nav-tab"
               data-compact-panel-id={entry.id}
+              data-visiting={entry === activeUnpinned() ? "" : undefined}
               aria-selected={entry.id === props.panels.activeId()}
               onClick={() => props.panels.show(entry.id)}
             >
@@ -341,25 +350,12 @@ export default function CompactNavigation(props: { panels: CompactPanels }) {
       <button
         type="button"
         class="nf-compact-nav-tab nf-compact-nav-more"
-        aria-label={
-          activeUnpinned()
-            ? `Panels, showing ${activeUnpinned()?.title}`
-            : "Panels"
-        }
         aria-haspopup="dialog"
         aria-expanded={sheetOpen()}
-        data-active={activeUnpinned() ? "" : undefined}
         onClick={() => setSheetOpen(true)}
       >
-        <Show
-          when={activeUnpinned()}
-          fallback={<SquaresFourIcon class="size-5" aria-hidden />}
-        >
-          {(entry) => <PanelIcon entry={entry()} />}
-        </Show>
-        <span class="nf-compact-nav-label">
-          {activeUnpinned()?.title ?? "Panels"}
-        </span>
+        <SquaresFourIcon class="size-5" aria-hidden />
+        <span class="nf-compact-nav-label">Panels</span>
       </button>
       <CompactPanelSheet
         isOpen={sheetOpen()}

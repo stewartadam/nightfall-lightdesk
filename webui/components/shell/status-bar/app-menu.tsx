@@ -13,7 +13,7 @@ import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { GearIcon } from "@squidlab/phosphor-solid/gear";
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
-import { children, type JSX, Show } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import { openFeedbackPage } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -45,11 +45,12 @@ export default function AppMenu(props: {
   triggerClass?: string;
   placement?: "above" | "below";
   align?: "start" | "end";
-  /** Items shown before the shared ones, followed by a separator. */
-  leadingItems?: JSX.Element;
+  /**
+   * Builds items shown before the shared ones, followed by a separator. It is
+   * a function so the items are created inside the menu, where they can close it.
+   */
+  leadingItems?: () => JSX.Element;
 }) {
-  /** Leading items resolved once, so checking for them does not build them twice. */
-  const leading = children(() => props.leadingItems);
   const {
     openAbout,
     openDiagnostics,
@@ -78,8 +79,8 @@ export default function AppMenu(props: {
       align={props.align}
       trigger={props.trigger}
     >
-      <Show when={leading()}>
-        {leading()}
+      <Show when={props.leadingItems !== undefined}>
+        {props.leadingItems?.()}
         <DropdownMenuSeparator />
       </Show>
       <DropdownMenuItem
