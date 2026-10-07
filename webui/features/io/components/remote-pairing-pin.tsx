@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { createResource, createSignal, Show } from "solid-js";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -15,6 +16,7 @@ import {
   formatPairingPin,
   regeneratePairingPin,
 } from "../../../lib/pairing";
+import { $externalControlState } from "../../../state/settings";
 
 const log = getLogger(import.meta.url);
 
@@ -24,15 +26,26 @@ const log = getLogger(import.meta.url);
  * since only the computer running Nightfall may read the PIN.
  */
 export function RemotePairingPin() {
-  /** Loads the PIN, resolving to null where the backend refuses to show it. */
-  const [pin, { mutate }] = createResource(async () => {
-    try {
-      return await fetchPairingPin();
-    } catch (error) {
-      log.debug("Pairing PIN is not readable from this device", error);
-      return null;
-    }
-  });
+  const state = useStore($externalControlState);
+  let lastPin: string | null = null;
+  /**
+   * Loads the PIN, resolving to null where the backend refuses to show it.
+   * Enabling external control rebinds the listeners and can drop a request in
+   * flight, so the PIN reloads whenever the listening addresses change and a
+   * failed load keeps the last known PIN.
+   */
+  const [pin, { mutate }] = createResource(
+    // Prefixed so an empty address list still counts as a source and loads.
+    () => `listening:${state().listening_addresses.join(",")}`,
+    async () => {
+      try {
+        lastPin = await fetchPairingPin();
+      } catch (error) {
+        log.debug("Could not load the pairing PIN", error);
+      }
+      return lastPin;
+    },
+  );
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -41,7 +54,8 @@ export function RemotePairingPin() {
     setBusy(true);
     setError(null);
     try {
-      mutate(await regeneratePairingPin());
+      lastPin = await regeneratePairingPin();
+      mutate(lastPin);
     } catch (failure) {
       log.warn("Failed to regenerate the pairing PIN", failure);
       setError("Could not create a new PIN.");

@@ -71,9 +71,13 @@ export async function submitPairingPin(pin: string): Promise<PairingResult> {
   return { kind: "failed", message: await response.text() };
 }
 
-/** Fetches the PIN for display; only the computer running Nightfall may read it. */
-export async function fetchPairingPin(): Promise<string> {
+/**
+ * Fetches the PIN for display. Resolves to null on another device, which may
+ * not read it, and throws when the backend cannot be reached.
+ */
+export async function fetchPairingPin(): Promise<string | null> {
   const response = await fetch(`${getBackendUrl()}/api/pairing/pin`);
+  if (response.status === 401 || response.status === 403) return null;
   if (!response.ok) throw new Error(await response.text());
   return ((await response.json()) as RemotePairingPin).pin;
 }
