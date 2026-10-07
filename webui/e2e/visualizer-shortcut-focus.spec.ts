@@ -9,6 +9,9 @@
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 const HEADER_COMMAND_INPUT = "#header-cmdline";
 
 type OwnedPatchFixture = {
@@ -294,6 +297,8 @@ test("visualizer shortcut does not leak after editing a TanStack grid cell", asy
 
     const grid = await openPatchGrid(page);
     const editableCell = grid.locator("#tanstack-cell-6-0");
+    // Selecting the row must not reflow the narrow Patch toolbar, or the
+    // second click of this double-click lands on another row.
     await editableCell.dblclick();
     const editor = editableCell.locator("input");
     await expect(editor).toBeVisible();

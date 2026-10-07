@@ -1,0 +1,9 @@
+{
+  "known_violations": {},
+  "charts": {
+    "2-channel": [
+      "Flightcase · Custom { label: \"SnowVolume\" } · b1 · 1",
+      "Flightcase · Custom { label: \"Blower1\" } · b1 · 2"
+    ]
+  }
+}

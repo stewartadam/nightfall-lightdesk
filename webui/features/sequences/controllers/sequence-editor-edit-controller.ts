@@ -7,6 +7,7 @@
  */
 
 import type { Accessor } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import type { DataGridCellEdit } from "../../../components/widgets/data-grid";
 import type {
   GridCell,
@@ -271,7 +272,7 @@ export function createSequenceEditorEditController(
       }
     }
 
-    const batchId = pendingCues.size > 1 ? crypto.randomUUID() : undefined;
+    const batchId = pendingCues.size > 1 ? uuidv4() : undefined;
     for (const cue of pendingCues.values()) {
       ctx.updateCue(cue, batchId);
     }
@@ -387,7 +388,7 @@ export function createSequenceEditorEditController(
         row,
         ...getRowsToEdit(selection ?? gridSelection(), col, row, rows().length),
       ]);
-      const batchId = rowsToEdit.size > 1 ? crypto.randomUUID() : undefined;
+      const batchId = rowsToEdit.size > 1 ? uuidv4() : undefined;
       const editedCueUids = new Set<string>();
       for (const targetRowIndex of rowsToEdit) {
         const targetRow = rows()[targetRowIndex];
@@ -416,7 +417,7 @@ export function createSequenceEditorEditController(
         row,
         ...getRowsToEdit(selection ?? gridSelection(), col, row, rows().length),
       ]);
-      const batchId = rowsToEdit.size > 1 ? crypto.randomUUID() : undefined;
+      const batchId = rowsToEdit.size > 1 ? uuidv4() : undefined;
       const editedCueUids = new Set<string>();
       for (const targetRowIndex of rowsToEdit) {
         const targetRow = rows()[targetRowIndex];

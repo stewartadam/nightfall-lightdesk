@@ -14,8 +14,8 @@ use bevy_app::App;
 use bevy_diagnostic::{DiagnosticPath, Diagnostics};
 use bevy_ecs::prelude::*;
 #[cfg(feature = "audio")]
-use nightfall_desk::websocket::TIMELINE_AUDIO_MS;
-use nightfall_desk::websocket::{
+use nightfall_engine::diagnostic_paths::TIMELINE_AUDIO_MS;
+use nightfall_engine::diagnostic_paths::{
     TIMELINE_ACTIONS_MS, TIMELINE_LAYER_GENERATION_MS, TIMELINE_LOOKAHEAD_ASSERTIONS_MS,
     TIMELINE_LOOKAHEAD_LAYERS_MS, TIMELINE_LOOKAHEAD_SOURCES_MS, TIMELINE_PARAMETERS_MS,
     TIMELINE_SEEK_MS, TIMELINE_UPDATE_MS,

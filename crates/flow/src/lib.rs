@@ -103,16 +103,19 @@ impl Plugin for FlowPlugin {
                 .in_set(EventHandling),
         );
         app.add_systems(
-            Update,
+            Render,
             (
                 runtime::publish_runtime_deltas,
-                websocket::forward_flow_commands,
                 websocket::send_flows_on_change,
             )
                 .in_set(ClientOutput),
         );
         app.add_systems(
-            Update,
+            PostUpdate,
+            websocket::forward_flow_commands.in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
             (
                 runtime::evaluate_flow_instances,
                 runtime::sync_flow_playback_runtime_status,
@@ -121,7 +124,7 @@ impl Plugin for FlowPlugin {
                 .in_set(LayerGeneration),
         );
         app.add_systems(
-            Update,
+            Render,
             events::cleanup_released_flow_instances.in_set(VdimProcessing),
         );
         app.add_systems(

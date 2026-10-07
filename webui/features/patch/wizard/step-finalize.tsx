@@ -8,7 +8,11 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, Show } from "solid-js";
-import { computeFixtureChannelCount } from "../../../lib/fixture-service";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
+import {
+  computeFixtureChannelCount,
+  libraryDefinitionId,
+} from "../../../lib/fixture-service";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import { LibraryFixturePreview } from "../../fixture-library";
 import { usePatchWizard } from "./wizard-context";
@@ -23,19 +27,14 @@ export function StepFinalize() {
   const selectedFixture = createMemo(() => {
     const defId = state().fixtureDefinitionId;
     if (!defId) return null;
-    return $fixtureLibrary().find((f) => `${f.make}:${f.model}` === defId);
+    return $fixtureLibrary().find((f) => libraryDefinitionId(f) === defId);
   });
 
   const channelCount = createMemo(() => {
     const profile = $fixtureProfile();
     const fixture = selectedFixture();
     // Compute channel count from profile fixture metadata if it matches
-    if (
-      profile?.fixture &&
-      fixture &&
-      profile.info.make === fixture.make &&
-      profile.info.model === fixture.model
-    ) {
+    if (profileMatchesRevision(profile, fixture) && profile.fixture) {
       return computeFixtureChannelCount(profile.fixture);
     }
     return null;
@@ -172,6 +171,7 @@ export function StepFinalize() {
               make={selectedFixture()!.make}
               model={selectedFixture()!.model}
               mode={state().fixtureMode ?? undefined}
+              assetEtag={selectedFixture()!.asset_etag}
             />
           </Show>
         </div>

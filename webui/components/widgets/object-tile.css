@@ -1,0 +1,100 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/*
+ * Object tiles render through the shared Button, so these rules are imported
+ * after button.css and must keep at least its specificity to win the cascade.
+ */
+.object-tile {
+  box-sizing: border-box;
+  width: var(--nf-tile-width);
+  height: var(--nf-tile-height);
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  align-self: flex-start;
+  justify-content: flex-start;
+  padding: var(--nf-tile-padding);
+  text-align: left;
+  border: 1px solid #373e40;
+  border-radius: var(--nf-corner-radius, 6px);
+  background: #202325;
+  gap: 0;
+  min-width: 0;
+}
+.object-tile > * {
+  flex-shrink: 0;
+}
+.tile-tag {
+  border: 1px solid var(--line);
+  border-radius: var(--nf-corner-radius, 4px);
+  background: var(--accent-soft);
+}
+.object-tile:hover:enabled {
+  background: #292e30;
+  border-color: #65716e;
+}
+.object-tile.selected,
+.object-tile.selected:hover:enabled {
+  --button-selection-shadow: inset 3px 0 var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.object-tile:enabled:active {
+  transform: translateY(2px) scale(0.995);
+}
+.tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 10px;
+  margin-bottom: 1px;
+}
+.tile-id {
+  color: #a3adad;
+  font-size: 7px;
+  font-weight: 450;
+  line-height: 10px;
+  letter-spacing: 0.5px;
+}
+.tile-id b {
+  color: #d0d7d4;
+  font-weight: 500;
+  font-size: 12px;
+  margin-left: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.selection-mark,
+.selection-mark svg {
+  width: 10px;
+  height: 10px;
+  color: #919d9c;
+}
+.selected .selection-mark {
+  color: var(--accent);
+}
+.tile-name {
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 12px;
+}
+.tile-detail {
+  font-size: 8px;
+  font-weight: 400;
+  color: var(--muted);
+  line-height: 10px;
+  margin-top: 1px;
+}
+.tile-name,
+.tile-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -7,7 +7,8 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { Key } from "@solid-primitives/keyed";
+import { createMemo, createSignal, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { useCommand } from "../../../components/providers/command-registry";
 import { openContextMenu } from "../../../components/providers/context-menu";
@@ -19,6 +20,7 @@ import {
   timelinePlacementPreference,
 } from "../../../lib/timeline-placement";
 import { useShallowStore } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { msToDuration, msToPixels, pixelsToMs } from "../../../lib/utils";
 import {
   clips,
@@ -95,7 +97,7 @@ const TrackContents = (props: TrackListProps) => {
   const $cueDurationProfiles = useStore(cueDurationProfiles);
   const $clips = useStore(clips);
   const $flows = useStore(flows);
-  const $fx = useStore(fx);
+  const $fx = useSharedStore(fx);
   const $fxModules = useStore(fxModules);
   const $sequences = useShallowStore(sequences);
   const $stepFx = useStore(stepFx);
@@ -506,30 +508,30 @@ const TrackContents = (props: TrackListProps) => {
       }}
     >
       <div class="flex flex-col w-full overflow-hidden">
-        <For each={props.tracks}>
+        <Key each={props.tracks} by="id">
           {(track) => (
             <Track
-              id={track.id}
-              label={track.label}
-              muted={track.muted}
-              solo={track.solo}
-              actions={track.actions}
+              id={track().id}
+              label={track().label}
+              muted={track().muted}
+              solo={track().solo}
+              actions={track().actions}
               allActions={allActions()}
               actionTargetIndex={actionTargetIndex()}
-              automationLanes={track.automation_lanes}
-              expanded={track.expanded}
+              automationLanes={track().automation_lanes}
+              expanded={track().expanded}
               dragPreviewPositionPx={
-                dragPreview()?.trackId === track.id
+                dragPreview()?.trackId === track().id
                   ? dragPreview()?.positionPx
                   : undefined
               }
               actionDragPreviewEntries={actionDragPreview()?.actions.filter(
-                (action) => action.trackId === track.id,
+                (action) => action.trackId === track().id,
               )}
               dragSourceActionKeys={dragSourceActionKeys()}
               isActionDragTarget={
-                dragPreview()?.trackId === track.id ||
-                actionDragPreview()?.targetTrackId === track.id
+                dragPreview()?.trackId === track().id ||
+                actionDragPreview()?.targetTrackId === track().id
               }
               onLanePointerMove={(trackId, positionPx, x, y) => {
                 setLastPointerIntent(
@@ -608,7 +610,7 @@ const TrackContents = (props: TrackListProps) => {
               }}
             />
           )}
-        </For>
+        </Key>
 
         <Track
           id="add-track-placeholder"

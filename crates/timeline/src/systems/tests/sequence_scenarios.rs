@@ -15,7 +15,7 @@ use super::*;
 fn live_repeated_sequence_go_reaches_each_manual_cue() {
     for batched in [false, true] {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<DeskAction>>();
+        app.add_message::<EngineActionEnvelope<EvalAction>>();
         app.add_message::<EngineActionEnvelope<ClipAction>>();
         app.add_message::<TimecodeEvent>();
         app.init_resource::<DataProvider<Cue>>();
@@ -445,7 +445,6 @@ fn timeline_lookahead_preactivates_future_sequence_start() {
         intensity_parameter,
     );
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Tilt, tilt_parameter);
-    drop(fixtures);
 
     let cue_1_uid = Uuid::new_v4();
     let cue_2_uid = Uuid::new_v4();
@@ -706,7 +705,7 @@ fn timeline_lookahead_preactivates_future_sequence_start() {
         assertions.assertions[0].value,
         ParameterValue::Absolute { value: 90.0 }
     );
-    assert!(layer.absolute.contains_key(&tilt_parameter));
+    assert!(layer.absolute.contains_key(tilt_parameter));
 }
 
 /// Verifies timeline Lookahead scans setup and cue one before a sequence start.
@@ -862,7 +861,6 @@ fn timeline_lookahead_preactivates_setup_and_first_sequence_cues() {
         Attribute::Pan,
         setup_only_pan_parameter,
     );
-    drop(fixtures);
 
     let cue_1_uid = Uuid::new_v4();
     let cue_2_uid = Uuid::new_v4();
@@ -1115,7 +1113,6 @@ fn timeline_lookahead_reports_future_sequence_status_while_stopped() {
         })
         .expect("test fixture should be stored");
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Tilt, tilt_parameter);
-    drop(fixtures);
 
     let cue_1_uid = Uuid::new_v4();
     let cue_2_uid = Uuid::new_v4();
@@ -1299,7 +1296,6 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fixture_assertion(
         intensity_parameter,
     );
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Tilt, tilt_parameter);
-    drop(fixtures);
 
     let blocker_cue_uid = Uuid::new_v4();
     let future_dark_cue_uid = Uuid::new_v4();
@@ -1548,7 +1544,6 @@ fn timeline_lookahead_reports_bounded_blockers_for_dense_intervening_actions() {
         intensity_parameter,
     );
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Tilt, tilt_parameter);
-    drop(fixtures);
     let blocker_count = 8_u32;
 
     let mut blocker_clip_uids = Vec::new();
@@ -1814,7 +1809,6 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fx_selection() {
         intensity_parameter,
     );
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Tilt, tilt_parameter);
-    drop(fixtures);
 
     let future_dark_cue_uid = Uuid::new_v4();
     let future_tilt_cue_uid = Uuid::new_v4();
@@ -2031,7 +2025,6 @@ fn timeline_lookahead_rebuilds_when_intervening_fx_group_selection_changes() {
         intensity_parameter,
     );
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Tilt, tilt_parameter);
-    drop(fixtures);
 
     let group_uid = Uuid::new_v4();
     app.world_mut()
@@ -2286,7 +2279,6 @@ fn timeline_lookahead_blocks_future_source_behind_unknown_intervening_action() {
         intensity_parameter,
     );
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Tilt, tilt_parameter);
-    drop(fixtures);
 
     let future_dark_cue_uid = Uuid::new_v4();
     let future_tilt_cue_uid = Uuid::new_v4();
@@ -3493,7 +3485,6 @@ fn seek_timeline_sequence_release_delay_keeps_boundary_cue_and_tracked_values() 
         intensity_parameter,
     );
     fixtures.add_parameter(fixture_ref.clone(), Attribute::Tilt, tilt_parameter);
-    drop(fixtures);
 
     let cue_1_uid = Uuid::new_v4();
     let cue_2_uid = Uuid::new_v4();
@@ -3659,12 +3650,12 @@ fn seek_timeline_sequence_release_delay_keeps_boundary_cue_and_tracked_values() 
         Some(Duration::from_millis(400))
     );
     assert_eq!(
-        computed.absolute.get(&intensity_parameter),
+        computed.absolute.get(intensity_parameter),
         Some(&100.0),
         "release delay should preserve tracked intensity from cue 1"
     );
     assert_eq!(
-        computed.absolute.get(&tilt_parameter),
+        computed.absolute.get(tilt_parameter),
         Some(&90.0),
         "release delay should preserve cue 2 output due at the release boundary"
     );

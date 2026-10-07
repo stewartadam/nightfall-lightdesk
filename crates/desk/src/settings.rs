@@ -219,6 +219,8 @@ pub enum SettingsCommand {
     SetInputSignalLossPolicy(InputSignalLossPolicy),
     /// Set the stale input age threshold
     SetInputSignalLossTimeout(Duration),
+    /// Set network DMX packets sent per second; clamped to 1..=60 Hz
+    SetDmxOutputRate(u32),
     /// Set patch overlap validation mode
     SetBindingValidationMode(BindingValidationMode),
     /// Set the selected audio device (None = system default)

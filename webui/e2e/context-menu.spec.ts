@@ -103,24 +103,21 @@ async function sendOwnedCommand(page: Page, data: object): Promise<void> {
   expect(result.outcome.type, JSON.stringify(result)).toBe("Succeeded");
 }
 
-/** Loads the saved default showfile and waits for the replacement world to resync. */
-async function loadOwnedDefaultShowfile(page: Page): Promise<void> {
+/** Loads a saved showfile by name and waits for the replacement world to resync. */
+async function loadOwnedShowfile(
+  page: Page,
+  showfileName: string,
+): Promise<void> {
   try {
-    await page.evaluate(async () => {
-      const websocket = await import("/lib/engine-runtime.ts");
-      const { waitForStartupWorldSwapCommand } = await import(
-        "/components/shell/startup/readiness.ts"
-      );
-      websocket.markResyncPending();
-      await waitForStartupWorldSwapCommand(
-        (window as any).appStores.sendAndAwait({
-          module: "DeskCommand",
-          command: { type: "LoadNamedShowfile", data: "default" },
-        }),
-        15_000,
-        "default",
-      );
-    });
+    await page.evaluate(
+      (name) =>
+        window.__nightfallTest.showfiles.swapWorld(
+          { type: "LoadNamedShowfile", data: name },
+          name,
+          { timeoutMs: 15_000 },
+        ),
+      showfileName,
+    );
   } catch (error) {
     if (
       !(error instanceof Error) ||
@@ -365,12 +362,15 @@ function ownedTimeline(): object {
   };
 }
 
-/** Opens a blank backend and stores the exact context-menu graph. */
+/**
+ * Opens a blank backend, stores the exact context-menu graph, and returns the name
+ * of the fresh showfile that owns it.
+ */
 async function openOwnedContextMenuApp(
   page: Page,
   backendPort: number,
-): Promise<void> {
-  await prepareFreshBackendShowfile(backendPort);
+): Promise<string> {
+  const showfileName = await prepareFreshBackendShowfile(backendPort);
   await page.addInitScript(() => {
     window.localStorage.clear();
     window.localStorage.setItem("nightfall.currentShowfileName", "default");
@@ -467,17 +467,12 @@ async function openOwnedContextMenuApp(
       timecodes: 1,
       timelines: 1,
     });
+  return showfileName;
 }
 
 /**
- * Opens the exact owned timeline for context-menu workflow tests.
- */
-async function openFirstTimeline(page: Page) {
-  return (await openTimeline(page, TIMELINE_UID)) ? TIMELINE_UID : null;
-}
-
-/**
- * Opens a specific timeline panel for context-menu workflow tests.
+ * Opens a specific timeline panel in the main grid and maximizes it so every
+ * owned track row fits inside the compact test viewport.
  */
 async function openTimeline(page: Page, timelineUid: string) {
   return page.evaluate(async (uid) => {
@@ -494,9 +489,10 @@ async function openTimeline(page: Page, timelineUid: string) {
         const existingPanel = api.getPanel(panelId);
         if (existingPanel) {
           existingPanel.api.setActive();
+          if (!existingPanel.api.isMaximized()) existingPanel.api.maximize();
           existingPanel.focus();
         } else {
-          const referencePanel = api.getPanel("panel-FixtureGrid");
+          const referencePanel = api.getPanel("panel-Groups");
           const panel = api.addPanel({
             id: panelId,
             component: "Timeline",
@@ -512,6 +508,7 @@ async function openTimeline(page: Page, timelineUid: string) {
               : {}),
           });
           panel.api.setActive();
+          panel.api.maximize();
           panel.focus();
         }
         return true;
@@ -730,14 +727,8 @@ test("timeline action context menu opens at the click site", async ({
 }) => {
   await openOwnedContextMenuApp(page, backendSlot.backendPort);
 
-  const timelineUid = await openFirstTimeline(page);
-  expect(timelineUid).toBeTruthy();
-  if (!timelineUid) throw new Error("Expected a timeline UID from appStores");
-
-  const surface = page.locator(
-    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]:visible`,
-  );
-  await expect(surface).toBeVisible();
+  const timelineUid = TIMELINE_UID;
+  const surface = await openTimelineSurface(page, timelineUid);
 
   const viewport = page.viewportSize();
   const targetItem = surface.locator(
@@ -845,24 +836,27 @@ test("timeline action context menu opens cue target editor", async ({
   ).toBeVisible();
 });
 
-/** Verifies a default-showfile world swap mounts timeline items under app providers. */
-test("default showfile reload renders timeline track items", async ({
+/** Verifies a saved-showfile world swap mounts timeline items under app providers. */
+test("saved showfile reload renders timeline track items", async ({
   backendSlot,
   page,
 }, testInfo) => {
-  await openOwnedContextMenuApp(page, backendSlot.backendPort);
+  const showfileName = await openOwnedContextMenuApp(
+    page,
+    backendSlot.backendPort,
+  );
   await sendOwnedCommand(page, {
     module: "DeskCommand",
     command: { type: "SaveShowfile", data: {} },
   });
 
-  await loadOwnedDefaultShowfile(page);
+  await loadOwnedShowfile(page, showfileName);
   const seeded = ownedCueTimelineItem();
   await waitForTimelineStoreItems(page, seeded.timelineUid, [seeded.itemId]);
   const surface = await openTimelineSurface(page, seeded.timelineUid);
   await expect(
     surface.locator(
-      `[data-timeline-track-item="true"][data-item-id="${seeded.itemId}"]`,
+      `[data-timeline-action="true"][data-action-id="${seeded.itemId}"]`,
     ),
   ).toBeVisible();
   await expect(page.getByText("Error rendering component")).toHaveCount(0);
@@ -1013,14 +1007,8 @@ test("timeline track header context menu can mute, solo, and remove tracks", asy
 
   await openOwnedContextMenuApp(page, backendSlot.backendPort);
 
-  const timelineUid = await openFirstTimeline(page);
-  expect(timelineUid).toBeTruthy();
-  if (!timelineUid) throw new Error("Expected a timeline UID from appStores");
-
-  const surface = page.locator(
-    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]:visible`,
-  );
-  await expect(surface).toBeVisible();
+  const timelineUid = TIMELINE_UID;
+  const surface = await openTimelineSurface(page, timelineUid);
 
   const fxHeader = surface
     .locator('[data-timeline-track-header="true"]')
@@ -1198,14 +1186,8 @@ test("timeline track header can rename tracks inline", async ({
 
   await openOwnedContextMenuApp(page, backendSlot.backendPort);
 
-  const timelineUid = await openFirstTimeline(page);
-  expect(timelineUid).toBeTruthy();
-  if (!timelineUid) throw new Error("Expected a timeline UID from appStores");
-
-  const surface = page.locator(
-    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]:visible`,
-  );
-  await expect(surface).toBeVisible();
+  const timelineUid = TIMELINE_UID;
+  const surface = await openTimelineSurface(page, timelineUid);
 
   const { trackId, initialLabel } = await page.evaluate(
     ({ timelineUid: uid, ownedTrackId }) => {

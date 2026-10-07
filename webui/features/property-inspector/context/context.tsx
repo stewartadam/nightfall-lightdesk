@@ -105,6 +105,9 @@ export const PropertiesContextProvider: ParentComponent = (props) => {
   };
 
   const $api = useStore(dockApi);
+  const [lastInspectedPanelId, setLastInspectedPanelId] = createSignal<
+    string | undefined
+  >();
 
   /** Syncs the properties panel with Dockview active panel changes. */
   createEffect(() => {
@@ -116,6 +119,7 @@ export const PropertiesContextProvider: ParentComponent = (props) => {
       if (!panelId || panelId === "panel-PropertiesInspector") {
         return;
       }
+      setLastInspectedPanelId(panelId);
       if (providerRegistrations().has(panelId)) {
         setActiveProviderId(panelId);
       } else {
@@ -125,20 +129,27 @@ export const PropertiesContextProvider: ParentComponent = (props) => {
     onCleanup(() => dispose.dispose());
   });
 
-  /** Handles panels that register their properties after Dockview restore. */
+  /**
+   * Handles panels that register their properties after Dockview restore or
+   * after they became active. While the inspector itself is focused, the panel
+   * it inspects is the last other panel that was active.
+   */
   createEffect(() => {
     const api = $api();
     const providers = providerRegistrations();
     if (!api) return;
 
-    const currentPanel = api.activePanel;
+    const currentPanelId = api.activePanel?.id;
+    const inspectedPanelId =
+      currentPanelId === "panel-PropertiesInspector"
+        ? lastInspectedPanelId()
+        : currentPanelId;
     if (
-      currentPanel?.id &&
-      currentPanel.id !== "panel-PropertiesInspector" &&
-      providers.has(currentPanel.id) &&
-      activeProviderId() !== currentPanel.id
+      inspectedPanelId &&
+      providers.has(inspectedPanelId) &&
+      activeProviderId() !== inspectedPanelId
     ) {
-      setActiveProviderId(currentPanel.id);
+      setActiveProviderId(inspectedPanelId);
     }
   });
 

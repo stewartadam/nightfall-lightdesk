@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const COMMAND_INPUT_PLACEHOLDER = "Type a command or search...";
 const CLIP_VIEW_MODE_KEY = "nightfall-crud-panel-view-mode:clips-list";
@@ -49,6 +49,7 @@ async function openOwnedCuePartsApp(
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       Boolean((window as any).appStores?.dockApi?.get?.()) &&
@@ -109,7 +110,7 @@ async function openOwnedCuePartsApp(
  * Opens a panel used by cue part workflow tests.
  */
 async function openPanel(page: Page, panelName: string) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();

@@ -13,7 +13,7 @@ path = "src/main.rs"
 futures-util.workspace = true
 itertools = "0.15"
 minicbor-serde.workspace = true
-reedline = "0.51"
+reedline = "0.52"
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-config = { path = "../config" }
 serde_json.workspace = true
@@ -23,6 +23,9 @@ tokio-tungstenite = "0.30"
 tracing-subscriber.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true

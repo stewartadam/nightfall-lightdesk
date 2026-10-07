@@ -72,9 +72,7 @@ async function openFixtureGrid(page: Page) {
       }),
     );
   });
-  await page.goto(
-    "/?startup:draftRecovery=false&e2e=fixture-table-visibility-probe",
-  );
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
   await prepareStoreSeededTestApp(page);
   await seedFixtureRows(page);
   await page.evaluate(() => {

@@ -55,22 +55,15 @@ async function sendWorldSwapDeskCommand(
   command: Record<string, unknown>,
 ) {
   try {
-    await page.evaluate(async (commandData) => {
-      const websocket = await import("/lib/engine-runtime.ts");
-      const { waitForStartupWorldSwapCommand } = await import(
-        "/components/shell/startup/readiness.ts"
-      );
-      const timeoutMs = 15_000;
-      websocket.markResyncPending();
-      await waitForStartupWorldSwapCommand(
-        (window as any).appStores.sendAndAwait({
-          module: "DeskCommand",
-          command: commandData,
-        }),
-        timeoutMs,
-        typeof commandData.data === "string" ? commandData.data : "default",
-      );
-    }, command);
+    await page.evaluate(
+      (commandData) =>
+        window.__nightfallTest.showfiles.swapWorld(
+          commandData,
+          typeof commandData.data === "string" ? commandData.data : "default",
+          { timeoutMs: 15_000 },
+        ),
+      command,
+    );
   } catch (error) {
     if (!isNavigationContextError(error)) throw error;
   }
@@ -84,9 +77,9 @@ async function currentActivePanelLayout(page: Page) {
     if (!api) {
       throw new Error("Dockview API unavailable");
     }
-    const { createActivePanelLayout } = await import(
-      "/lib/dockview-active-layout.ts"
-    );
+    const { createActivePanelLayout } = (
+      await window.__nightfallHarness.load("app")
+    ).dockviewActiveLayout;
     return createActivePanelLayout(api);
   });
 }
@@ -116,7 +109,9 @@ async function savedRightEdgeGroupSize(page: Page) {
 async function activeLayoutSummary(page: Page) {
   return page.evaluate(async () => {
     const api = (window as any).appStores.dockApi.get();
-    const { createSerializedLayout } = await import("/lib/dockview-layout.ts");
+    const { createSerializedLayout } = (
+      await window.__nightfallHarness.load("app")
+    ).dockviewLayout;
     const layout = createSerializedLayout(api).layout as any;
     const programmerLocation = api.getPanel("panel-ProgrammerGrid")?.api
       .location;
@@ -148,10 +143,10 @@ async function moveProgrammerPanelToGrid(page: Page) {
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     const programmerPanel = api.getPanel("panel-ProgrammerGrid");
-    const fixtureGroup = api.getPanel("panel-FixtureGrid")?.api.group;
+    const mainGroup = api.getPanel("panel-Groups")?.api.group;
 
     programmerPanel?.api.moveTo({
-      group: fixtureGroup,
+      group: mainGroup,
       position: "center",
     });
   });
@@ -163,8 +158,8 @@ async function setRightEdgeGroupState(
   options: { collapsed: boolean; size: number },
 ) {
   const helpers = await page.evaluateHandle(async () => ({
-    ...(await import("/lib/dockview-layout.ts")),
-    ...(await import("/lib/layoutStorage.ts")),
+    ...(await window.__nightfallHarness.load("app")).dockviewLayout,
+    ...(await window.__nightfallHarness.load("app")).layoutStorage,
   }));
   try {
     await page.evaluate(
@@ -216,10 +211,10 @@ async function arrangeDiscardedLayout(page: Page) {
     const api = (window as any).appStores.dockApi.get();
     api.getEdgeGroup("right")?.expand();
     const propertiesPanel = api.getPanel("panel-PropertiesInspector");
-    const fixtureGroup = api.getPanel("panel-FixtureGrid")?.api.group;
+    const mainGroup = api.getPanel("panel-Groups")?.api.group;
 
     propertiesPanel?.api.moveTo({
-      group: fixtureGroup,
+      group: mainGroup,
       position: "center",
     });
   });
@@ -228,21 +223,33 @@ async function arrangeDiscardedLayout(page: Page) {
     .poll(() => activeLayoutSummary(page))
     .toMatchObject({
       propertiesLocationType: "grid",
-      rightVisible: false,
+      rightCollapsed: false,
     });
 }
 
-/** Submits a command through the header command line. */
-async function submitHeaderCommand(page: Page, command: string) {
+/**
+ * Saves the showfile under a new name through the header command line and waits
+ * until the browser adopts that name, so later header input cannot race the save.
+ */
+async function saveShowfileFromHeader(page: Page, showfileName: string) {
   const input = page.locator("#header-cmdline");
-  await input.fill(command);
+  await input.fill(`save ${showfileName}`);
   await input.press("Enter");
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          window.localStorage.getItem("nightfall.currentShowfileName"),
+        ),
+      { timeout: 20_000 },
+    )
+    .toBe(showfileName);
 }
 
 /** Submits a world-swap header command and waits for its replacement session. */
 async function submitWorldSwapHeaderCommand(page: Page, command: string) {
   const previousGeneration = await page.evaluate(async () => {
-    const websocket = await import("/lib/engine-runtime.ts");
+    const websocket = window.__nightfallTest.runtime;
     return websocket.resyncGeneration();
   });
 
@@ -259,7 +266,7 @@ async function submitWorldSwapHeaderCommand(page: Page, command: string) {
     .poll(
       () =>
         page.evaluate(async (generation) => {
-          const websocket = await import("/lib/engine-runtime.ts");
+          const websocket = window.__nightfallTest.runtime;
           return (
             websocket.resyncComplete() &&
             websocket.resyncGeneration() > generation
@@ -315,14 +322,7 @@ test("restores saved active panel layout on showfile load", async ({
 
   await arrangeDistinctiveLayout(page);
 
-  await submitHeaderCommand(page, `save ${showfileName}`);
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        window.localStorage.getItem("nightfall.currentShowfileName"),
-      ),
-    )
-    .toBe(showfileName);
+  await saveShowfileFromHeader(page, showfileName);
 
   await arrangeDiscardedLayout(page);
 
@@ -361,7 +361,7 @@ test("keeps saved active panel layout after repeated command-line loads", async 
   await waitForDockviewApp(page);
 
   await arrangeDistinctiveLayout(page);
-  await submitHeaderCommand(page, `save ${showfileName}`);
+  await saveShowfileFromHeader(page, showfileName);
 
   await arrangeDiscardedLayout(page);
   await submitWorldSwapHeaderCommand(page, `load ${showfileName}`);

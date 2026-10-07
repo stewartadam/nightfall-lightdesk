@@ -108,7 +108,6 @@ function WaveformEditorInline(props: {
       <WaveformEditor
         waveform={draft()}
         onWaveformChange={(updates) => updateDraft({ ...draft(), ...updates })}
-        onKindChange={(kind) => updateDraft({ ...draft(), kind })}
       />
     </div>
   );

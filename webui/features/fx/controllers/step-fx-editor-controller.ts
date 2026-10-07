@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import {
   connectionStatus,
   EngineRuntimeStatus,
@@ -53,7 +54,7 @@ export function createStepFxEditorController(
   const initialDraft = options.initialDraft
     ? cloneStepFx(options.initialDraft)
     : undefined;
-  const previewSessionId = crypto.randomUUID();
+  const previewSessionId = uuidv4();
   let previewStarted = false;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let autoSaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -175,10 +176,12 @@ export function createStepFxEditorController(
       return;
     }
     if (previewTimer) clearTimeout(previewTimer);
-    previewTimer = setTimeout(
-      () => updateStepFxPreview(previewSessionId, cloneStepFx(current)),
-      150,
-    );
+    previewTimer = setTimeout(() => {
+      previewTimer = undefined;
+      // The backend treats Update as an upsert, so a stopped session must not be revived.
+      if (previewStarted)
+        updateStepFxPreview(previewSessionId, cloneStepFx(current));
+    }, 150);
   });
 
   let wasConnected = connectionStatus() === EngineRuntimeStatus.Connected;
@@ -273,6 +276,8 @@ export function createStepFxEditorController(
   const togglePreview = (): void => {
     if (deletedExternally()) return;
     if (previewActive()) {
+      if (previewTimer) clearTimeout(previewTimer);
+      previewTimer = undefined;
       if (previewStarted) stopStepFxPreview(previewSessionId);
       previewStarted = false;
       setPreviewActive(false);

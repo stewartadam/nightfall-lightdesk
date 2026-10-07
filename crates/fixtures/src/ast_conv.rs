@@ -237,6 +237,23 @@ fn binding_endpoint_from_ast(
             address: address_from_ast(transport.address.as_ref())?,
         }),
         ast::PatchEndpointAst::Fixture(fixture) => {
+            if let Some(dmx_break) = fixture
+                .target
+                .as_ref()
+                .and_then(|target| target.dmx_break.as_ref())
+            {
+                let dmx_break = parse_u16(dmx_break)?;
+                if dmx_break < 2 || fixture_element_from_ids(&fixture.ids)?.is_some() {
+                    return Err(DispatchError::ConversionFailed(
+                        "fixture break must be 2 or higher and applies to whole fixtures"
+                            .to_string(),
+                    ));
+                }
+                return Ok(BindingEndpoint::FixtureBreak {
+                    ids: fixture_ids_from_ast(&fixture.ids)?,
+                    dmx_break,
+                });
+            }
             let element_from_target = fixture
                 .target
                 .as_ref()

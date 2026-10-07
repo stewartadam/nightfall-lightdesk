@@ -13,9 +13,9 @@ use nightfall::prelude::{FadeCurve, Identifiers};
 use nightfall_dmx::prelude::{
     Attribute, DmxValueResolution, ParameterUnit, ParameterValue, Percentage,
 };
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
-    BeamType, Fixture, FixtureElement, FixturePhysical, FixturePlacement, MergeStrategy,
-    ParameterMetadata,
+    BeamType, Fixture, FixtureElement, FixturePhysical, FixturePlacement,
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -422,7 +422,7 @@ fn to_wit_fixture_physical(
     bindings::nightfall::fx_module::shared::FixturePhysical {
         beam_angle: physical.beam_angle,
         field_angle: physical.field_angle,
-        lumens: physical.lumens,
+        lumens: Some(physical.lumens),
         color_temperature: physical.color_temperature,
         beam_type: to_wit_beam_type(physical.beam_type),
     }
@@ -505,6 +505,7 @@ fn to_wit_beam_type(beam_type: BeamType) -> bindings::nightfall::fx_module::shar
         BeamType::Fresnel => bindings::nightfall::fx_module::shared::BeamType::Fresnel,
         BeamType::Pc => bindings::nightfall::fx_module::shared::BeamType::Pc,
         BeamType::Glow => bindings::nightfall::fx_module::shared::BeamType::Glow,
+        BeamType::Rectangle => bindings::nightfall::fx_module::shared::BeamType::Rectangle,
     }
 }
 

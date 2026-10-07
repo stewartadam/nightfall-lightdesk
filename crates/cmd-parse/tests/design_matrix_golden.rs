@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-#[path = "common.rs"]
+#[path = "support/common.rs"]
 mod common;
 
 use std::collections::BTreeSet;

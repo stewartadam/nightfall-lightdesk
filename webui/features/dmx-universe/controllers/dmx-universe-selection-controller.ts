@@ -8,14 +8,22 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal } from "solid-js";
+import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { dmxUniverseData } from "../../../state/appStores";
 import { $ioSettings } from "../../../state/settings";
 import { DmxIoMode, InputUniverseVisibilityMode } from "../../../types";
+import { outputSpaceSelection } from "../model/output-binding-follow";
 
-const TRANSPORT_SORT_ORDER = ["Console", "sACN", "Art-Net", "USB", "Disabled"];
+const TRANSPORT_SORT_ORDER = [
+  CONSOLE_TRANSPORT,
+  "sACN",
+  "Art-Net",
+  "USB",
+  "Disabled",
+];
 
 /** Owns DMX I/O mode, transport selection, and visible-universe projection. */
 export function createDmxUniverseSelectionController() {
@@ -26,7 +34,7 @@ export function createDmxUniverseSelectionController() {
   const settings = useStore($ioSettings);
   const [ioMode, setIoMode] = createSignal<DmxIoMode>(DmxIoMode.Output);
   const [selectedOutputTransport, setSelectedOutputTransport] =
-    createSignal("Console");
+    createSignal(CONSOLE_TRANSPORT);
   const [selectedInputTransport, setSelectedInputTransport] = createSignal("");
   const [selectedUniverse, setSelectedUniverse] = createSignal<number | null>(
     null,
@@ -59,27 +67,39 @@ export function createDmxUniverseSelectionController() {
     dmxData().filter((universe) => universe.io_mode === DmxIoMode.Input),
   );
 
-  /** Sorts known transports by operator-facing priority, then alphabetically. */
+  /**
+   * Returns the sort rank of a transport label by its family, so concrete labels such as
+   * "sACN → 10.0.0.4" sort with their family; unknown families return -1.
+   */
+  const transportRank = (label: string) =>
+    TRANSPORT_SORT_ORDER.findIndex(
+      (family) => label === family || label.startsWith(`${family} `),
+    );
+
+  /** Sorts transports by operator-facing family priority, then alphabetically. */
   const sortTransports = (a: string, b: string) => {
-    const aIndex = TRANSPORT_SORT_ORDER.indexOf(a);
-    const bIndex = TRANSPORT_SORT_ORDER.indexOf(b);
-    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+    const aIndex = transportRank(a);
+    const bIndex = transportRank(b);
+    if (aIndex === bIndex) return a.localeCompare(b);
     if (aIndex === -1) return 1;
     if (bIndex === -1) return -1;
     return aIndex - bIndex;
   };
 
-  /** Returns transports available for the active I/O mode. */
+  /**
+   * Returns numbering spaces available for the active I/O mode. Output mode lists
+   * "Console" (console numbering) and each transport family (wire numbering) that has
+   * data, falling back to "Console" alone when nothing is being output.
+   */
   const availableTransports = createMemo(() => {
     const transports = new Set<string>();
-    if (ioMode() === DmxIoMode.Output) {
-      for (const universe of outputUniverses()) {
-        for (const transport of universe.transports) transports.add(transport);
-      }
-      return ["Console", ...Array.from(transports).sort(sortTransports)];
-    }
-    for (const universe of inputUniverses()) {
+    const universes =
+      ioMode() === DmxIoMode.Output ? outputUniverses() : inputUniverses();
+    for (const universe of universes) {
       if (universe.transport) transports.add(universe.transport);
+    }
+    if (ioMode() === DmxIoMode.Output && transports.size === 0) {
+      return [CONSOLE_TRANSPORT];
     }
     return Array.from(transports).sort(sortTransports);
   });
@@ -112,18 +132,24 @@ export function createDmxUniverseSelectionController() {
     }
   });
 
-  /** Filters universes to the active I/O mode and transport. */
+  /** Filters universes to the active I/O mode and numbering space. */
   const filteredUniverses = createMemo(() => {
     const transport = selectedTransport();
-    if (ioMode() === DmxIoMode.Output) {
-      if (!transport || transport === "Console") return outputUniverses();
-      return outputUniverses().filter((universe) =>
-        universe.transports.includes(transport),
-      );
-    }
     if (!transport) return [];
-    return inputUniverses().filter(
-      (universe) => universe.transport === transport,
+    const universes =
+      ioMode() === DmxIoMode.Output ? outputUniverses() : inputUniverses();
+    return universes.filter((universe) => universe.transport === transport);
+  });
+
+  /**
+   * Resolves the selected output numbering space: console space, or the concrete output
+   * transport reported by the selected label's universes. `null` outside output mode.
+   */
+  const selectedOutputSpace = createMemo(() => {
+    if (ioMode() !== DmxIoMode.Output) return null;
+    return outputSpaceSelection(
+      selectedOutputTransport(),
+      filteredUniverses()[0]?.output_transport,
     );
   });
 
@@ -168,6 +194,7 @@ export function createDmxUniverseSelectionController() {
     availableTransports,
     selectedTransport,
     setSelectedTransport,
+    selectedOutputSpace,
     universeIds,
     universeById,
     currentUniverse,

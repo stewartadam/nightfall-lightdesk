@@ -11,6 +11,9 @@ import { join } from "node:path";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Opens a new show and the transport panel through the public navigation flow. */
 async function openTransports(page: Page): Promise<void> {
   await page.setViewportSize({ width: 2200, height: 1000 });
@@ -76,6 +79,38 @@ test("external control binds All and a selected interface, then returns to local
         ),
       )
       .toEqual({ enabled: true, interface: null });
+
+    // The operator sees the pairing PIN and can replace it.
+    const pin = section.getByTestId("remote-pairing-pin");
+    await expect(pin).toHaveText(/^\d{3} \d{3}$/);
+    const firstPin = await pin.textContent();
+    await section.getByRole("button", { name: "New PIN" }).click();
+    await expect(pin).not.toHaveText(firstPin ?? "");
+    await expect(pin).toHaveText(/^\d{3} \d{3}$/);
+
+    // Each LAN address gets a link whose QR code carries the PIN.
+    const qrButtons = section.getByRole("button", { name: /^Show QR code/ });
+    const lanAddresses = await page.evaluate(
+      () =>
+        (window as any).appStores.availableNetworkInterfaces
+          .get()
+          .flatMap((item: { addresses: string[] }) => item.addresses)
+          .filter((address: string) => !address.startsWith("127.")).length,
+    );
+    if (lanAddresses > 0) {
+      const qrCode = page.getByRole("img", {
+        name: /^QR code to open http:\/\//,
+      });
+      await qrButtons.first().hover();
+      await expect(qrCode).toBeVisible();
+      // Let the pop-over finish fading in so the capture shows the scannable code.
+      await page.waitForTimeout(300);
+      await page.screenshot({
+        path: testInfo.outputPath("external-control-share-link.png"),
+      });
+      await page.mouse.move(0, 0);
+      await expect(qrCode).toBeHidden();
+    }
 
     const choices = await selector
       .locator("option")

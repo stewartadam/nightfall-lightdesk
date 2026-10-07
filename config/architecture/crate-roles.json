@@ -5,17 +5,20 @@
       "open-fixture-library",
       "nightfall",
       "nightfall-actions",
+      "nightfall-beat-detection",
       "nightfall-cmd-parse",
       "nightfall-config",
       "nightfall-coremidi-hotplug",
       "nightfall-dmx",
       "nightfall-engine-derive",
+      "nightfall-fixture-model",
       "nightfall-io",
       "nightfall-lookahead-projection",
       "nightfall-instances",
       "nightfall-playback-planner",
       "nightfall-selection",
-      "nightfall-waveform"
+      "nightfall-waveform",
+      "nightfall-workspace-hack"
     ],
     "infrastructure": [
       "nightfall-compositor",
@@ -55,7 +58,8 @@
       "nightfall-wasm-bridge"
     ],
     "composition": [
-      "nightfall-app",
+      "app-runtime",
+      "app-tauri",
       "nightfall-browser-runtime",
       "nightfall-cli"
     ]

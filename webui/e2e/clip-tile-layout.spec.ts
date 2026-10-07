@@ -7,15 +7,28 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 /** Checks fixed clip geometry, header alignment, and reflow across panel widths. */
 test("clip tiles keep uniform geometry with mixed badges", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1200, height: 900 });
+  await page.addInitScript(() => {
+    // Collapsed controls keep the docked clip grid tall enough that its
+    // cards are not covered by scroll-edge indicators, which reject clicks.
+    window.localStorage.setItem(
+      "nightfall-clip-panel:controls-collapsed",
+      "true",
+    );
+  });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.getByRole("tab", { name: "Clips", exact: true }).click();
   await page.waitForFunction(
     () => Object.keys((window as any).appStores?.clips?.get() ?? {}).length > 0,
@@ -113,17 +126,28 @@ test("clip tiles keep uniform geometry with mixed badges", async ({
     .locator("..")
     .screenshot({ path: testInfo.outputPath("uniform-clip-tiles.png") });
 
+  // Widen the viewport and the column spanned by Timelines so the docked
+  // Clips group can grow beyond its 515px-minimum neighbours during reflow.
+  await page.setViewportSize({ width: 1800, height: 900 });
+  await dockFixturesInMainGrid(page);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     api.getPanel("panel-ClipList").api.moveTo({
       group: api.getPanel("panel-FixtureGrid").api.group,
       position: "right",
     });
+    api.getPanel("panel-TimelinesPanel")?.api.setSize({ width: 1250 });
   });
   const cards = page
     .locator(".nf-crud-card")
     .filter({ has: page.getByRole("button", { name: /Inspect clip/ }) });
-  for (const width of [360, 220, 120]) {
+  // Clips declares a 515px minimum width, so reflow is checked between
+  // widths that fit four and three fixed-size tiles per row.
+  const firstRowCountByWidth = new Map([
+    [700, 4],
+    [520, 3],
+  ]);
+  for (const [width, firstRowCount] of firstRowCountByWidth) {
     await page.evaluate((width) => {
       (window as any).appStores.dockApi
         .get()
@@ -145,7 +169,7 @@ test("clip tiles keep uniform geometry with mixed badges", async ({
           firstRowCount: boxes.filter((box) => box.y === boxes[0].y).length,
         };
       })
-      .toEqual({ fixedSize: true, firstRowCount: width === 360 ? 2 : 1 });
+      .toEqual({ fixedSize: true, firstRowCount });
     await page.screenshot({
       path: testInfo.outputPath(`clip-panel-${width}.png`),
     });
@@ -154,7 +178,7 @@ test("clip tiles keep uniform geometry with mixed badges", async ({
     (window as any).appStores.dockApi
       .get()
       .getPanel("panel-ClipList")
-      .api.setSize({ width: 360 });
+      .api.setSize({ width: 700 });
   });
   await page
     .getByRole("button", { name: "Inspect clip 16", exact: true })

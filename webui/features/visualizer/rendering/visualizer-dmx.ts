@@ -11,7 +11,27 @@
  * Derives normalized visualizer values from ParameterState output.
  */
 
-import { type FixtureElement, ParameterValuePolarity } from "../../../types";
+import { cieChromaticityToFullBrightnessRgb } from "../../../lib/color-path-preview";
+import {
+  type CieColor,
+  type FixtureElement,
+  type ParameterFunction,
+  ParameterValuePolarity,
+} from "../../../types";
+import {
+  attributeOutputKey,
+  type EvaluatedChannel,
+  evaluateElementChannels,
+  evaluateFixtureChannels,
+} from "./channel-evaluation";
+import {
+  applyPhysicalColor,
+  collectPhysical,
+  definesSourceColor,
+  type PhysicalState,
+  resetPhysicalState,
+} from "./gdtf-physical";
+import { writeOpticalReadouts } from "./optical-readouts";
 
 /** Visualizer-friendly parameter state */
 export interface VisualizerDmx {
@@ -25,9 +45,24 @@ export interface VisualizerDmx {
   uv: number;
   pan?: number;
   tilt?: number;
-  zoom: number;
+  /** Pan angle in degrees from the profile's physical range, when it declares one. */
+  panDegrees?: number;
+  /** Tilt angle in degrees from the profile's physical range, when it declares one. */
+  tiltDegrees?: number;
+  /** Continuous pan rotation speed in degrees per second; 0 when not spinning. */
+  panRotation: number;
+  /** Continuous tilt rotation speed in degrees per second; 0 when not spinning. */
+  tiltRotation: number;
+  /** Normalized zoom (1 = focused), only when the element has a zoom channel. */
+  zoom?: number;
+  /** Beam angle in degrees from the profile's zoom function, when it states one. */
+  zoomDegrees?: number;
+  /** Iris aperture as a fraction of the open beam, when the element has an iris. */
+  iris?: number;
   tiltSpeed: number;
   strobeShutter: number;
+  /** Strobe frequency in hertz from the profile, while a strobe function is active. */
+  strobeHz?: number;
 }
 
 export const STROBE_SHUTTER_MIN_HZ = 1;
@@ -35,6 +70,43 @@ export const STROBE_SHUTTER_MAX_HZ = 20;
 const DEFAULT_TILT_SPEED_NORMALIZED = 3 / 13;
 const DEFAULT_PAN_RANGE_DEG = 540;
 const DEFAULT_TILT_RANGE_DEG = 270;
+
+/**
+ * Profile function attributes whose physical value drives movement:
+ * positions in degrees and continuous rotation in degrees per second.
+ */
+const MOVEMENT_FUNCTIONS: Record<
+  string,
+  "panDegrees" | "tiltDegrees" | "panRotation" | "tiltRotation"
+> = {
+  Pan: "panDegrees",
+  Tilt: "tiltDegrees",
+  PanRotate: "panRotation",
+  TiltRotate: "tiltRotation",
+};
+
+/** Smallest physical span, in degrees, taken as a position function's real range. */
+const MIN_POSITION_SPAN_DEG = 1;
+
+/**
+ * Returns true when a position channel's physical value is a usable angle:
+ * its active channel set or, failing that, its function states an angular
+ * range. Profiles that leave both empty or at GDTF's 0-1 default fall back
+ * to the normalized position instead of moving through at most one degree.
+ */
+function statesAngles(channel: EvaluatedChannel): boolean {
+  const set = channel.set;
+  if (set?.physical_from !== undefined && set.physical_to !== undefined) {
+    return (
+      Math.abs(set.physical_to - set.physical_from) > MIN_POSITION_SPAN_DEG
+    );
+  }
+  const fn = channel.function;
+  return (
+    fn !== undefined &&
+    Math.abs(fn.physical_to - fn.physical_from) > MIN_POSITION_SPAN_DEG
+  );
+}
 
 const TILT_SPEED_LABELS = new Set([
   "Tilt Speed",
@@ -63,7 +135,8 @@ function getDmxFromPool(): VisualizerDmx {
       frost: 0,
       prism: 0,
       uv: 0,
-      zoom: 0.5,
+      panRotation: 0,
+      tiltRotation: 0,
       tiltSpeed: DEFAULT_TILT_SPEED_NORMALIZED,
       strobeShutter: 0,
     });
@@ -80,9 +153,14 @@ function getDmxFromPool(): VisualizerDmx {
   dmx.uv = 0;
   dmx.pan = undefined;
   dmx.tilt = undefined;
-  dmx.zoom = 0.5;
+  dmx.panDegrees = undefined;
+  dmx.tiltDegrees = undefined;
+  dmx.panRotation = 0;
+  dmx.tiltRotation = 0;
+  dmx.zoom = undefined;
   dmx.tiltSpeed = DEFAULT_TILT_SPEED_NORMALIZED;
   dmx.strobeShutter = 0;
+  dmx.zoomDegrees = undefined;
   return dmx;
 }
 
@@ -154,6 +232,41 @@ function normalizeSignedPositionOutput(
   return value;
 }
 
+/** Display colors of profile CIE colors, keyed by chromaticity. */
+const cieDisplayColors = new Map<string, ColorContribution>();
+
+/** Returns the display RGB of a profile CIE color, caching conversions for the render loop. */
+function cieDisplayColor(color: CieColor): ColorContribution {
+  const key = `${color.x},${color.y}`;
+  let cached = cieDisplayColors.get(key);
+  if (!cached) {
+    const rgb = cieChromaticityToFullBrightnessRgb(color);
+    cached = { r: rgb.red, g: rgb.green, b: rgb.blue };
+    cieDisplayColors.set(key, cached);
+  }
+  return cached;
+}
+
+/** Smallest strobe rate that still strobes; zero means an open shutter. */
+const MIN_PROFILE_STROBE_RATE = 1e-3;
+
+/**
+ * Returns the normalized strobe rate of a profile shutter function at a DMX value.
+ *
+ * GDTF separates plain `ShutterN` functions (open/closed) from strobe
+ * variants such as `ShutterNStrobe`, `...Pulse` and `...Random`. Only the
+ * latter strobe, at a rate given by the position within the function's
+ * DMX range, reversed when the physical frequency descends across it;
+ * plain shutter functions return 0 so the beam stays steady.
+ */
+function profileStrobeRate(fn: ParameterFunction, dmx: number): number {
+  if (!/strobe|pulse|random/i.test(fn.attribute)) return 0;
+  const span = fn.dmx_to - fn.dmx_from;
+  let position = span > 0 ? (dmx - fn.dmx_from) / span : 1;
+  if (fn.physical_from > fn.physical_to) position = 1 - position;
+  return Math.max(MIN_PROFILE_STROBE_RATE, Math.min(1, position));
+}
+
 /** Converts a normalized strobe shutter value into the visualizer strobe frequency. */
 export function strobeShutterFrequencyHz(strobeShutter: number): number {
   const normalized = Math.min(1, Math.max(0, strobeShutter));
@@ -163,16 +276,21 @@ export function strobeShutterFrequencyHz(strobeShutter: number): number {
   );
 }
 
-/** Returns the on/off intensity scale for a strobe shutter at a render time. */
+/**
+ * Returns the on/off intensity scale for a strobe shutter at a render time.
+ * `strobeHz`, when the profile states the frequency, replaces the
+ * visualizer's 1-20 Hz mapping of the normalized rate.
+ */
 export function strobeShutterOutputScale(
   strobeShutter: number | undefined,
   timeSeconds: number,
+  strobeHz?: number,
 ): number {
   if (strobeShutter === undefined || strobeShutter <= 0) {
     return 1;
   }
 
-  const frequencyHz = strobeShutterFrequencyHz(strobeShutter);
+  const frequencyHz = strobeHz ?? strobeShutterFrequencyHz(strobeShutter);
   const phase = (timeSeconds * frequencyHz) % 1;
   return phase < 0.5 ? 1 : 0;
 }
@@ -182,12 +300,18 @@ export function applyStrobeShutterIntensity(
   intensity: number,
   strobeShutter: number | undefined,
   timeSeconds: number,
+  strobeHz?: number,
 ): number {
-  return intensity * strobeShutterOutputScale(strobeShutter, timeSeconds);
+  return (
+    intensity * strobeShutterOutputScale(strobeShutter, timeSeconds, strobeHz)
+  );
 }
 
 /**
  * Extract normalized DMX values from ParameterState output for a single element.
+ *
+ * The element is evaluated on its own, so mode masters and relations naming
+ * other elements are ignored; renderers use {@link extractFixtureDmxData}.
  * Uses object pooling to avoid allocations in hot path.
  * @param output The output record from ParameterState (attribute name -> value)
  * @param element Element metadata containing parameter definitions
@@ -198,6 +322,27 @@ export function extractVisualizerDmx(
   element: FixtureElement,
   fixtureIntensity: number | undefined = undefined,
 ): VisualizerDmx {
+  return visualizerDmxFromChannels(
+    evaluateElementChannels(element, output),
+    element,
+    fixtureIntensity,
+  );
+}
+
+/**
+ * Derives visualizer values for one element from its evaluated channels.
+ *
+ * An intensity channel that masters emitter channels of its own element
+ * reaches them through relations, so it does not also dim the element. Elements
+ * without an effective intensity take their brightness from the brightest
+ * color component, with colors rescaled so brightness is not applied twice,
+ * scaled by the fixture-level dimmer when one is given.
+ */
+function visualizerDmxFromChannels(
+  channels: (EvaluatedChannel | undefined)[],
+  element: FixtureElement,
+  fixtureIntensity: number | undefined,
+): VisualizerDmx {
   const dmx = getDmxFromPool();
   let baseRed = 0;
   let baseGreen = 0;
@@ -206,20 +351,69 @@ export function extractVisualizerDmx(
   let addGreen = 0;
   let addBlue = 0;
   let hasIntensity = false;
-  const declaresIntensityControl = elementDeclaresIntensityControl(element);
+  let filterRed = 1;
+  let filterGreen = 1;
+  let filterBlue = 1;
+  let hasFilter = false;
+  let declaresIntensityControl = elementDeclaresIntensityControl(element);
+  const physical = resetPhysicalState(physicalState);
 
-  for (const param of element.parameters) {
+  for (const channel of channels) {
+    if (!channel) continue;
+    const param = channel.parameter;
     const attrType = param.attribute.type;
     const prop = ATTR_TO_PROP[attrType];
     const color = ATTR_TO_COLOR[attrType];
+    if (prop === "intensity" && channel.mastersOwnEmitters) {
+      declaresIntensityControl = false;
+      continue;
+    }
+    if (collectPhysical(physical, channel)) continue;
 
-    const value = attributeOutputValue(output, param.attribute);
-    if (value === undefined || param.max <= 0) continue;
     const normalized =
-      param.value_polarity === ParameterValuePolarity.Signed &&
-      (attrType === "Pan" || attrType === "Tilt")
-        ? normalizeSignedPositionOutput(value, attrType)
-        : normalizeParameterOutput(value, param);
+      attrType === "Pan" || attrType === "Tilt"
+        ? param.value_polarity === ParameterValuePolarity.Signed
+          ? normalizeSignedPositionOutput(channel.value, attrType)
+          : normalizeParameterOutput(channel.value, param)
+        : channel.level;
+
+    // Profile colors take precedence over attribute-name approximations.
+    if (channel.function?.emitter_color) {
+      const emitter = cieDisplayColor(channel.function.emitter_color);
+      addRed += emitter.r * normalized;
+      addGreen += emitter.g * normalized;
+      addBlue += emitter.b * normalized;
+      if (prop === "intensity") {
+        hasIntensity = true;
+        dmx.intensity = normalized;
+      }
+      continue;
+    }
+    const slot = channel.set;
+    if (slot?.color) {
+      // A filter passes its measured share of white light (Y of 100).
+      const filter = cieDisplayColor(slot.color);
+      const transmission = Math.min(1, Math.max(0, slot.color.Y / 100));
+      filterRed *= filter.r * transmission;
+      filterGreen *= filter.g * transmission;
+      filterBlue *= filter.b * transmission;
+      hasFilter = true;
+    }
+    if (prop === "strobeShutter" && channel.function) {
+      dmx.strobeShutter = profileStrobeRate(channel.function, channel.dmx);
+      continue;
+    }
+    const movement = channel.function
+      ? MOVEMENT_FUNCTIONS[channel.function.attribute]
+      : undefined;
+    if (movement === "panRotation" || movement === "tiltRotation") {
+      dmx[movement] = channel.physical;
+      continue;
+    }
+    if (movement && statesAngles(channel)) {
+      dmx[movement] = channel.physical;
+    }
+
     if (attrType === "Custom") {
       if (TILT_SPEED_LABELS.has(param.attribute.data.label)) {
         dmx.tiltSpeed = normalized;
@@ -255,15 +449,124 @@ export function extractVisualizerDmx(
   dmx.red = Math.min(1, baseRed + addRed);
   dmx.green = Math.min(1, baseGreen + addGreen);
   dmx.blue = Math.min(1, baseBlue + addBlue);
-  if (!hasIntensity && !declaresIntensityControl) {
-    if (fixtureIntensity !== undefined) {
-      dmx.intensity = fixtureIntensity;
-      return dmx;
-    }
-    dmx.intensity = Math.max(dmx.red, dmx.green, dmx.blue);
+  const filtersSource =
+    hasFilter ||
+    physical.kelvin !== undefined ||
+    physical.cyan + physical.magenta + physical.yellow > 0;
+  if (
+    filtersSource &&
+    !definesSourceColor(physical) &&
+    !elementDeclaresAdditiveColor(element) &&
+    dmx.red + dmx.green + dmx.blue <= 0
+  ) {
+    // Filters act on the source; a lamp without additive color is white.
+    // Additive emitters at zero stay dark instead.
+    dmx.red = 1;
+    dmx.green = 1;
+    dmx.blue = 1;
   }
+  applyPhysicalColor(physical, dmx);
+  if (hasFilter) {
+    dmx.red *= filterRed;
+    dmx.green *= filterGreen;
+    dmx.blue *= filterBlue;
+  }
+  if (!hasIntensity && !declaresIntensityControl) {
+    const peak = Math.max(dmx.red, dmx.green, dmx.blue);
+    if (peak > 0) {
+      dmx.red /= peak;
+      dmx.green /= peak;
+      dmx.blue /= peak;
+    }
+    dmx.intensity = peak * (fixtureIntensity ?? 1);
+  }
+  dmx.intensity *= physical.transmission;
+  dmx.frost = Math.max(dmx.frost, physical.frost ?? 0);
+  dmx.strobeHz = dmx.strobeShutter > 0 ? physical.strobeHz : undefined;
+  dmx.iris = physical.iris;
+  dmx.zoomDegrees = physical.zoomDegrees;
 
   return dmx;
+}
+
+/** Physical state reused by every extraction in the render loop. */
+const physicalState: PhysicalState = resetPhysicalState({
+  cyan: 0,
+  magenta: 0,
+  yellow: 0,
+  transmission: 1,
+});
+
+/** Visualizer values of one element, keyed by its label. */
+export type LabelledElementDmx = [label: string, dmx: Record<string, number>];
+
+/**
+ * Extracts visualizer values for every element of a fixture that has output.
+ *
+ * Channels are evaluated together so mode masters and relations can name
+ * other elements. Dimmers that master no relation dim the elements that
+ * have no dimmer of their own (see {@link evaluateFixtureChannels}).
+ */
+export function extractFixtureDmxData(
+  elements: FixtureElement[],
+  outputs: (Record<string, number> | undefined)[],
+): LabelledElementDmx[] {
+  const { channels, dimmerLevel: fixtureIntensity } = evaluateFixtureChannels(
+    elements,
+    outputs,
+  );
+  const result: LabelledElementDmx[] = [];
+  for (let i = 0; i < elements.length; i++) {
+    const output = outputs[i];
+    if (!output) continue;
+    result.push([
+      elements[i].label,
+      elementDmxData(channels[i], output, elements[i], fixtureIntensity),
+    ]);
+  }
+  return result;
+}
+
+/** Attribute types that drive an additive emitter; CMY here are subtractive flags. */
+const ADDITIVE_COLOR_ATTRIBUTES = new Set([
+  "Red",
+  "Green",
+  "Blue",
+  "White",
+  "WarmWhite",
+  "CoolWhite",
+  "Amber",
+  "UV",
+]);
+
+/** Matches GDTF additive color-mixing attributes (`ColorAdd_R`, `ColorRGB_Red`, ...). */
+const ADDITIVE_COLOR_FUNCTION = /^Color(Add|RGB)_/;
+
+/** Additive-color declarations per element, computed once per element object. */
+const elementAdditiveColorCache = new WeakMap<FixtureElement, boolean>();
+
+/**
+ * Returns true when the element's channels in the active mode mix color
+ * additively: RGB-family attributes, GDTF `ColorAdd_*`/`ColorRGB_*`
+ * functions, or functions carrying a measured emitter color. Such an element
+ * produces its own light color, so all emitters at zero means no light rather
+ * than a white lamp behind its filters.
+ */
+export function elementDeclaresAdditiveColor(element: FixtureElement): boolean {
+  let declares = elementAdditiveColorCache.get(element);
+  if (declares === undefined) {
+    declares = element.parameters.some(
+      (parameter) =>
+        ADDITIVE_COLOR_ATTRIBUTES.has(parameter.attribute.type) ||
+        (parameter.functions ?? []).some(
+          (fn) =>
+            fn.emitter_color !== undefined ||
+            ADDITIVE_COLOR_FUNCTION.test(fn.attribute),
+        ),
+    );
+    elementAdditiveColorCache.set(element, declares);
+  }
+  return declares;
 }
 
 /** Returns true when an element contains a real or virtual dimmer attribute. */
@@ -276,38 +579,14 @@ export function elementDeclaresIntensityControl(
 }
 
 /**
- * Derives the fixture-level dimmer from element outputs when any element declares intensity control.
+ * Derives the fixture-level dimmer from element outputs: the level of the
+ * dimmers that master no relation, or undefined when the fixture has none.
  */
 export function fixtureIntensityValueFromOutputs(
-  elementOutputs: Record<string, number>[],
+  elementOutputs: (Record<string, number> | undefined)[],
   elements: FixtureElement[],
 ): number | undefined {
-  let fixtureDeclaresIntensity = false;
-  let fixtureIntensity = 0;
-
-  for (let i = 0; i < elements.length; i++) {
-    const element = elements[i];
-    if (!elementDeclaresIntensityControl(element)) continue;
-
-    fixtureDeclaresIntensity = true;
-    const output = elementOutputs[i];
-    if (!output) continue;
-
-    for (const param of element.parameters) {
-      if (!["Intensity", "VirtualIntensity"].includes(param.attribute.type)) {
-        continue;
-      }
-
-      const value = attributeOutputValue(output, param.attribute);
-      if (value === undefined || param.max <= 0) continue;
-      fixtureIntensity = Math.max(
-        fixtureIntensity,
-        normalizeParameterOutput(value, param),
-      );
-    }
-  }
-
-  return fixtureDeclaresIntensity ? fixtureIntensity : undefined;
+  return evaluateFixtureChannels(elements, elementOutputs).dimmerLevel;
 }
 
 /**
@@ -322,6 +601,24 @@ export function extractElementDmxData(
   element: FixtureElement,
   fixtureIntensity: number | undefined = undefined,
 ): Record<string, number> {
+  return elementDmxData(
+    evaluateElementChannels(element, output),
+    output,
+    element,
+    fixtureIntensity,
+  );
+}
+
+/**
+ * Builds an element's visualizer record: every parameter's normalized value
+ * by attribute key, plus the derived aliases from its evaluated channels.
+ */
+function elementDmxData(
+  channels: (EvaluatedChannel | undefined)[],
+  output: Record<string, number>,
+  element: FixtureElement,
+  fixtureIntensity: number | undefined,
+): Record<string, number> {
   const elementDmx: Record<string, number> = {};
 
   for (const param of element.parameters) {
@@ -335,7 +632,7 @@ export function extractElementDmxData(
         : normalizeParameterOutput(value, param);
   }
 
-  const dmx = extractVisualizerDmx(output, element, fixtureIntensity);
+  const dmx = visualizerDmxFromChannels(channels, element, fixtureIntensity);
   elementDmx.red = dmx.red;
   elementDmx.green = dmx.green;
   elementDmx.blue = dmx.blue;
@@ -348,6 +645,10 @@ export function extractElementDmxData(
   if (elementDmx.StrobeShutter !== undefined) {
     elementDmx.strobeShutter = dmx.strobeShutter;
   }
+  if (dmx.strobeHz !== undefined) elementDmx.strobeHz = dmx.strobeHz;
+  if (dmx.iris !== undefined) elementDmx.iris = dmx.iris;
+  if (dmx.zoomDegrees !== undefined) elementDmx.zoomDegrees = dmx.zoomDegrees;
+  writeOpticalReadouts(element, channels, elementDmx);
 
   if (elementDmx.Pan !== undefined && dmx.pan !== undefined) {
     elementDmx.pan = dmx.pan;
@@ -355,20 +656,15 @@ export function extractElementDmxData(
   if (elementDmx.Tilt !== undefined && dmx.tilt !== undefined) {
     elementDmx.tilt = dmx.tilt;
   }
-  if (elementDmx.Zoom !== undefined) {
+  if (dmx.panDegrees !== undefined) elementDmx.panDegrees = dmx.panDegrees;
+  if (dmx.tiltDegrees !== undefined) elementDmx.tiltDegrees = dmx.tiltDegrees;
+  if (dmx.panRotation !== 0) elementDmx.panRotation = dmx.panRotation;
+  if (dmx.tiltRotation !== 0) elementDmx.tiltRotation = dmx.tiltRotation;
+  if (elementDmx.Zoom !== undefined && dmx.zoom !== undefined) {
     elementDmx.zoom = dmx.zoom;
   }
 
   return elementDmx;
-}
-
-/**
- * Resolve the output key used by parameter state records for an attribute.
- */
-function attributeOutputKey(
-  attribute: FixtureElement["parameters"][number]["attribute"],
-): string {
-  return attribute.type === "Custom" ? attribute.data.label : attribute.type;
 }
 
 /**

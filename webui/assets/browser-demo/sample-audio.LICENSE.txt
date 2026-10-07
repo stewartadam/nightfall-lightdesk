@@ -1,0 +1,14 @@
+Nightfall browser-demo sample audio
+
+The browser demo packages audio for each timeline in its sample show:
+
+- lofi.mp3 and rap.mp3 are the Nightfall sample tracks, copied from
+  crates/app/assets/sample-audio when available.
+- When a sample track is unavailable, scripts/generate-browser-demo-audio.mjs
+  writes a deterministic synthesized click track at that timeline's audio path
+  instead.
+
+To the extent copyright applies, all of this audio (lofi.mp3, rap.mp3, and the
+generated click track) is dedicated to the public domain under CC0 1.0
+Universal:
+https://creativecommons.org/publicdomain/zero/1.0/

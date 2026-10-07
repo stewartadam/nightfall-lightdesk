@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import type { FlowWaveform } from "../types";
 import * as types from "../types";
 import { WaveformKind } from "../types";
@@ -13,6 +14,7 @@ import { requireCommandSuccess } from "./command-result";
 import { durationToSeconds, secondsToDuration } from "./duration";
 import { engineRuntime } from "./engine-runtime";
 import { getLogger } from "./logger";
+import { createShowObjectUid } from "./sequence-factory";
 
 const log = getLogger(import.meta.url);
 
@@ -100,7 +102,7 @@ export function createDefaultFx(id: number, label?: string): types.Fx {
   return {
     identifiers: {
       id,
-      uid: crypto.randomUUID(),
+      uid: uuidv4(),
       label: label ?? `FX ${id}`,
     },
     selection: {
@@ -129,7 +131,7 @@ export function createDefaultStepFx(id: number, label?: string): types.StepFx {
   return {
     identifiers: {
       id,
-      uid: crypto.randomUUID(),
+      uid: uuidv4(),
       label: label ?? `Step FX ${id}`,
     },
     selection: {
@@ -146,14 +148,14 @@ export function createDefaultStepFx(id: number, label?: string): types.StepFx {
         absolute: {
           steps: [
             {
-              uid: crypto.randomUUID(),
+              uid: createShowObjectUid(),
               target: { type: "AbsolutePercent", data: { value: 1 } },
               width_beats: 1,
               transition: { start: 0, end: 1 },
               curve: { type: "Snap", data: {} },
             },
             {
-              uid: crypto.randomUUID(),
+              uid: createShowObjectUid(),
               target: { type: "AbsolutePercent", data: { value: 0 } },
               width_beats: 1,
               transition: { start: 0, end: 1 },

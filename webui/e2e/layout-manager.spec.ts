@@ -303,7 +303,8 @@ test("stores and loads named panel layouts from the layout manager", async ({
   await page.screenshot({
     path: testInfo.outputPath("shared-layout-manager.png"),
   });
-  await page.setViewportSize({ width: 390, height: 844 });
+  // The narrowest docked width; the compact shell below it has no layout manager.
+  await page.setViewportSize({ width: 640, height: 844 });
   await expect(
     layoutsDialog.getByRole("button", { name: "Save current as new" }),
   ).toBeInViewport();

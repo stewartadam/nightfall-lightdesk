@@ -6,12 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { blockAppScripts } from "./app-hooks";
 import {
   expect,
   type Page,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Opens appearance preferences through the registered application shortcut. */
 async function openAppearance(page: Page) {
@@ -36,8 +37,11 @@ async function workspacePositions(page: Page) {
 test("appearance settings update panels and portals and survive reload", async ({
   page,
 }, testInfo) => {
+  // Covers two full app loads plus a layout replacement.
+  test.setTimeout(60_000);
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     (window as any).appearanceOriginalPanel = api.getPanel("panel-FixtureGrid");
@@ -63,7 +67,7 @@ test("appearance settings update panels and portals and survive reload", async (
   );
   await expect
     .poll(() => workspacePositions(page))
-    .toEqual(["bottom", "bottom"]);
+    .toEqual(["bottom", "bottom", "bottom"]);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -83,9 +87,10 @@ test("appearance settings update panels and portals and survive reload", async (
   await expect(
     page.getByRole("button", { name: "Add group", exact: true }),
   ).toBeVisible();
+  // Timelines also has a view toggle, so stay inside Groups.
   await page
+    .locator('[data-panel-id="panel-Groups"]')
     .getByRole("button", { name: "Switch to list view", exact: true })
-    .filter({ visible: true })
     .click();
   const cell = page.locator('[role="gridcell"]:visible').first();
   await expect(cell).toHaveCSS(
@@ -112,7 +117,7 @@ test("appearance settings update panels and portals and survive reload", async (
   });
   await expect
     .poll(() => workspacePositions(page))
-    .toEqual(["bottom", "bottom", "bottom"]);
+    .toEqual(["bottom", "bottom", "bottom", "bottom"]);
   await page.evaluate(() => {
     (window as any).appStores.dockApi
       .get()
@@ -120,7 +125,7 @@ test("appearance settings update panels and portals and survive reload", async (
   });
   await expect
     .poll(() => workspacePositions(page))
-    .toEqual(["bottom", "bottom"]);
+    .toEqual(["bottom", "bottom", "bottom"]);
   await page.reload();
   await waitForDockviewApp(page);
   const restoredDialog = await openAppearance(page);
@@ -133,10 +138,12 @@ test("appearance settings update panels and portals and survive reload", async (
   );
   await expect
     .poll(() => workspacePositions(page))
-    .toEqual(["bottom", "bottom"]);
+    .toEqual(["bottom", "bottom", "bottom"]);
   await restoredDialog.getByLabel("Panel tab position").selectOption("top");
   await restoredDialog.getByLabel("Table gridlines").uncheck();
-  await expect.poll(() => workspacePositions(page)).toEqual(["top", "top"]);
+  await expect
+    .poll(() => workspacePositions(page))
+    .toEqual(["top", "top", "top"]);
   await page.setViewportSize({ width: 390, height: 780 });
   await expect(
     restoredDialog.getByRole("button", { name: "Magenta accent" }),
@@ -163,6 +170,7 @@ test("appearance settings recover from invalid stored preferences", async ({
   });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const dialog = await openAppearance(page);
   await expect(
     dialog.getByRole("button", { name: "Mint accent" }),
@@ -183,6 +191,7 @@ test("reduced motion supports Auto, On, and Off", async ({
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const dialog = await openAppearance(page);
   const select = dialog.getByLabel("Reduced motion", { exact: true });
   const root = page.locator("html");
@@ -231,20 +240,8 @@ for (const preference of ["on", "off"] as const) {
         JSON.stringify({ reducedMotion }),
       );
     }, preference);
-    await page.route("**/main.tsx", (route) => route.abort());
-    await page.route("**/*", async (route) => {
-      if (route.request().resourceType() !== "document") {
-        await route.fallback();
-        return;
-      }
-      const response = await route.fetch();
-      await route.fulfill({
-        response,
-        headers: {
-          ...response.headers(),
-          "content-security-policy": "script-src 'self' 'wasm-unsafe-eval'",
-        },
-      });
+    await blockAppScripts(page, {
+      "content-security-policy": "script-src 'self' 'wasm-unsafe-eval'",
     });
     await page.goto("/");
     await expect(page.locator("#bootstrap-splash")).toBeVisible();

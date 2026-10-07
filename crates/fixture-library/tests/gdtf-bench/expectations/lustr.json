@@ -1,0 +1,19 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Direct": [
+      "Beam · Intensity · b1 · 1",
+      "Beam · Custom { label: \"ColorAdd_DR\" } · b1 · 2",
+      "Beam · Red · b1 · 3",
+      "Beam · Custom { label: \"ColorAdd_RY\" } · b1 · 4",
+      "Beam · Custom { label: \"ColorAdd_GY\" } · b1 · 5",
+      "Beam · Green · b1 · 6",
+      "Beam · Cyan · b1 · 7",
+      "Beam · Blue · b1 · 8",
+      "Beam · Custom { label: \"ColorAdd_I\" } · b1 · 9",
+      "Beam · Custom { label: \"StrobeModeShutter\" } · b1 · 10",
+      "Head · Custom { label: \"DimmerCurve\" } · b1 · 11",
+      "Head · Custom { label: \"Fans\" } · b1 · 12"
+    ]
+  }
+}

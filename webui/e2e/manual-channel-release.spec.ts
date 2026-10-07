@@ -18,7 +18,15 @@ type AppStoresWindow = Window & {
   appStores?: {
     bindings?: { get: () => BindingsSnapshot };
     layerStack?: { get: () => LayerState[] };
+    dmxUniverseData?: { get: () => DmxUniverseState[] };
   };
+};
+
+type DmxUniverseState = {
+  universe_id: number;
+  io_mode: string;
+  transport?: string | null;
+  channels: number[];
 };
 
 type BindingsSnapshot = {
@@ -42,11 +50,8 @@ type LayerState = {
   asserted_relative_values?: unknown[];
 };
 
-/** Opens a blank backend containing one explicitly patched fixture. */
-async function openOwnedManualChannelApp(
-  page: Page,
-  backendPort: number,
-): Promise<void> {
+/** Opens a fresh backend showfile with no fixtures. */
+async function openBlankApp(page: Page, backendPort: number): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
   await page.addInitScript(() => {
     window.localStorage.clear();
@@ -62,7 +67,14 @@ async function openOwnedManualChannelApp(
       ),
     )
     .toBe(0);
+}
 
+/** Opens a blank backend containing one explicitly patched fixture. */
+async function openOwnedManualChannelApp(
+  page: Page,
+  backendPort: number,
+): Promise<void> {
+  await openBlankApp(page, backendPort);
   await page.evaluate(async () => {
     const stores = (window as any).appStores;
     const fixtureId = Math.floor(600_000 + Math.random() * 100_000);
@@ -117,6 +129,43 @@ async function openOwnedManualChannelApp(
     .toBe(1);
 }
 
+/** Creates one fixture from the built-in library with the given model and mode. */
+async function createLibraryFixture(
+  page: Page,
+  id: number,
+  model: string,
+  mode: string,
+) {
+  await page.evaluate(
+    async ([fixtureId, fixtureModel, fixtureMode]) => {
+      const result = await (window as any).appStores.sendAndAwait({
+        module: "FixtureLibraryCommand",
+        command: {
+          type: "CreateFixtureFromLibrary",
+          data: {
+            id: fixtureId,
+            make: "Generic",
+            model: fixtureModel,
+            mode: fixtureMode,
+            label: `Release Fixture ${fixtureId}`,
+            update_existing_ids: [],
+            update_existing_only: false,
+          },
+        },
+      });
+      if (result.outcome.type !== "Succeeded") {
+        throw new Error(`fixture setup failed: ${JSON.stringify(result)}`);
+      }
+    },
+    [id, model, mode] as const,
+  );
+}
+
+/** Creates one RGB pixel tape fixture whose first channel is red. */
+async function createPixelTapeFixture(page: Page, id: number) {
+  await createLibraryFixture(page, id, "RGBPixelTape 120ch RGB", "RGB");
+}
+
 /**
  * Submits a command-line command through the UI and waits for completion.
  */
@@ -161,7 +210,6 @@ async function firstFixtureOutputChannel(page: Page) {
       const target = entry.target.data;
       return (
         entry.source.type === "Fixture" &&
-        entry.target.type !== "Disabled" &&
         target !== undefined &&
         target.address !== undefined
       );
@@ -178,6 +226,48 @@ async function firstFixtureOutputChannel(page: Page) {
       address: binding.target.data.address,
     };
   });
+}
+
+/** Labels the engine reports for console space and for routed sACN wire output. */
+type OutputSpace = "Console" | "sACN";
+
+/**
+ * Reads one output universe from app stores, or `null` while the engine is not outputting it.
+ */
+async function outputUniverse(
+  page: Page,
+  space: OutputSpace,
+  universe: number,
+) {
+  return page.evaluate(
+    ([label, universeId]) => {
+      const data =
+        (window as AppStoresWindow).appStores?.dmxUniverseData?.get() ?? [];
+      const entry = data.find(
+        (candidate) =>
+          candidate.io_mode === "output" &&
+          candidate.transport === label &&
+          candidate.universe_id === universeId,
+      );
+      return entry ? entry.channels : null;
+    },
+    [space, universe] as const,
+  );
+}
+
+/** Polls one output slot until it reports the expected value. */
+async function expectSlotValue(
+  page: Page,
+  space: OutputSpace,
+  universe: number,
+  address: number,
+  value: number,
+) {
+  await expect
+    .poll(
+      async () => (await outputUniverse(page, space, universe))?.[address - 1],
+    )
+    .toBe(value);
 }
 
 test("global release clears manual channel assertion layer", async ({
@@ -209,4 +299,115 @@ test("global release clears manual channel assertion layer", async ({
 
   await submitCommand(page, "release");
   await waitForManualLayerAssertionCount(page, 0);
+});
+
+/**
+ * `fix 310 red @ 100; ch 2.1 @ 50; release ch 2.1` returns the routed console slot to the
+ * fixture's full output, and undo re-applies the manual value on console and wire.
+ */
+test("release channel resumes fixture output and undo restores the manual value", async ({
+  backendSlot,
+  page,
+}) => {
+  await openBlankApp(page, backendSlot.backendPort);
+  await createPixelTapeFixture(page, 310);
+  await submitCommand(page, "patch fix 310 @ console:2");
+  await submitCommand(page, "patch console:2 @ sacn:10");
+  await submitCommand(page, "fix 310 red @ 100");
+
+  /** Expects console slot 2.1 and its routed wire slot sACN 10.1 to read `value`. */
+  const expectRed = async (value: number) => {
+    await expectSlotValue(page, "Console", 2, 1, value);
+    await expectSlotValue(page, "sACN", 10, 1, value);
+  };
+  await expectRed(255);
+
+  await submitCommand(page, "ch 2.1 @ 50");
+  await expectRed(50);
+
+  await submitCommand(page, "release ch 2.1");
+  await expectRed(255);
+  await waitForManualLayerAssertionCount(page, 0);
+
+  await submitCommand(page, "undo");
+  await expectRed(50);
+});
+
+/**
+ * Releasing the only manual write on a routed console universe frees it, so the route stops
+ * transmitting, and undo brings the value back on the wire.
+ */
+test("release channel stops a routed console universe nothing feeds and undo restores it", async ({
+  backendSlot,
+  page,
+}) => {
+  await openBlankApp(page, backendSlot.backendPort);
+  await submitCommand(page, "patch console:7 @ sacn:17");
+
+  await submitCommand(page, "ch 7.1 @ 50");
+  await expectSlotValue(page, "Console", 7, 1, 50);
+  await expectSlotValue(page, "sACN", 17, 1, 50);
+
+  await submitCommand(page, "release ch 7.1");
+  await expect.poll(() => outputUniverse(page, "Console", 7)).toBeNull();
+  await expect.poll(() => outputUniverse(page, "sACN", 17)).toBeNull();
+
+  await submitCommand(page, "undo");
+  await expectSlotValue(page, "Console", 7, 1, 50);
+  await expectSlotValue(page, "sACN", 17, 1, 50);
+});
+
+/** Plain `release` frees manual console slots, so a routed console universe stops transmitting. */
+test("global release stops a routed console universe fed only by manual writes", async ({
+  backendSlot,
+  page,
+}) => {
+  await openBlankApp(page, backendSlot.backendPort);
+  await submitCommand(page, "patch console:7 @ sacn:17");
+
+  await submitCommand(page, "ch 7.1 @ 50");
+  await expectSlotValue(page, "sACN", 17, 1, 50);
+
+  await submitCommand(page, "release");
+  await expect.poll(() => outputUniverse(page, "Console", 7)).toBeNull();
+  await expect.poll(() => outputUniverse(page, "sACN", 17)).toBeNull();
+});
+
+/**
+ * After plain `release`, every patched slot reads its parameter default again on console and
+ * wire, including non-zero defaults such as a centred pan, and manual slots are gone.
+ */
+test("global release returns console and wire DMX to parameter defaults", async ({
+  backendSlot,
+  page,
+}) => {
+  await openBlankApp(page, backendSlot.backendPort);
+  await createLibraryFixture(page, 320, "Moving Head RGBW", "Spot");
+  await submitCommand(page, "patch fix 320 @ console:3");
+  await submitCommand(page, "patch console:3 @ sacn:30");
+
+  await expect
+    .poll(async () => (await outputUniverse(page, "sACN", 30)) !== null)
+    .toBe(true);
+  const consoleDefaults = await outputUniverse(page, "Console", 3);
+  const wireDefaults = await outputUniverse(page, "sACN", 30);
+  expect(
+    consoleDefaults?.some((value) => value !== 0),
+    "the fixture should have at least one non-zero default to prove defaults are restored",
+  ).toBe(true);
+
+  await submitCommand(page, "fix 320 @ 100");
+  await submitCommand(page, "ch 3.1 @ 77");
+  await submitCommand(page, "ch 3.500 @ 99");
+  await expect
+    .poll(() => outputUniverse(page, "Console", 3))
+    .not.toEqual(consoleDefaults);
+
+  await submitCommand(page, "release");
+  await expect
+    .poll(() => outputUniverse(page, "Console", 3))
+    .toEqual(consoleDefaults);
+  await expect
+    .poll(() => outputUniverse(page, "sACN", 30))
+    .toEqual(wireDefaults);
 });

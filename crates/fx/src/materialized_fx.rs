@@ -204,6 +204,7 @@ mod tests {
     use bevy_ecs::{system::SystemState, world::World};
     use moonshine_kind::prelude::Instance;
     use nightfall_engine::prelude::DataProvider;
+    use nightfall_fixture_model::prelude::*;
     use nightfall_waveform::prelude::WaveformKind;
     use uuid::Uuid;
 
@@ -337,8 +338,8 @@ mod tests {
         );
 
         assert_eq!(layer.absolute.len(), 2);
-        assert!(layer.absolute.contains_key(&parameter_1));
-        assert!(layer.absolute.contains_key(&parameter_2));
+        assert!(layer.absolute.contains_key(parameter_1));
+        assert!(layer.absolute.contains_key(parameter_2));
     }
 
     #[test]

@@ -6,23 +6,5 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-/**
- * Maps a normalized zoom value to a rendered cone angle.
- *
- * Visualizer zoom follows fixture operator semantics: 1 is fully zoomed in and
- * focused, while 0 is zoomed out and unfocused.
- */
-export function beamConeAngleDegrees(
-  beamAngleDegrees: number,
-  fieldAngleDegrees: number,
-  zoom: number,
-): number {
-  const focusedAngleDegrees = Math.min(beamAngleDegrees, fieldAngleDegrees);
-  const unfocusedAngleDegrees = Math.max(beamAngleDegrees, fieldAngleDegrees);
-  const normalizedZoom = Math.max(0, Math.min(1, zoom));
-
-  return (
-    unfocusedAngleDegrees -
-    (unfocusedAngleDegrees - focusedAngleDegrees) * normalizedZoom
-  );
-}
+/** Narrowest cone angle rendered, in degrees, so a beam never collapses to a line. */
+export const MIN_CONE_ANGLE_DEGREES = 0.5;

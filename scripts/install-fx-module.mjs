@@ -16,7 +16,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
  * Returns the command-line usage text for the fx module installer.
  */
 function usage() {
-  return `usage: npm run fx-module:install -- <manifest-or-dir> [options]
+  return `usage: pnpm run fx-module:install <manifest-or-dir> [options]
 
 Options:
   --release             Build and package the release profile

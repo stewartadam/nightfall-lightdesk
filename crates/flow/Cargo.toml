@@ -33,10 +33,14 @@ nightfall-desk = { path = "../desk" }
 nightfall-clips = { path = "../clips" }
 tokio.workspace = true
 wit-component.workspace = true
+nightfall-fixture-model = { path = "../fixture-model" }
 
 [features]
 default = ["fx-module"]
 fx-module = ["dep:nightfall-fx-module"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true

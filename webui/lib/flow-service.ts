@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import { flows, pushToast } from "../state/appStores";
 import type * as types from "../types/index";
 import { engineRuntime } from "./engine-runtime";
@@ -22,7 +23,7 @@ export function createDefaultFlow(
   return {
     identifiers: {
       id,
-      uid: crypto.randomUUID(),
+      uid: uuidv4(),
       label: label ?? `Flow ${id}`,
     },
     flow_version: 0,

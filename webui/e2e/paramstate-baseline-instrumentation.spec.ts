@@ -7,8 +7,8 @@
  */
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
-import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { expect, type Locator, type Page, test } from "./playwright-fixtures";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 test.setTimeout(60_000);
 
@@ -25,6 +25,7 @@ async function openOwnedParamstateApp(
   });
   await page.goto(`/?startup:draftRecovery=false&e2e=1&scenario=${scenario}`);
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await expect
     .poll(() =>
       page.evaluate(
@@ -66,12 +67,18 @@ async function openOwnedParamstateApp(
     .toBe(1);
 }
 
-/** Opens the instrumentation panel through the dock API. */
-async function openInstrumentationPanel(page: Page) {
-  await page.evaluate(() => {
+const INSTRUMENTATION_PANEL_ID = "panel-Instrumentation-paramstate-baseline";
+
+/**
+ * Opens a dedicated instrumentation panel through the dock API and returns a
+ * locator scoped to its content, since the default layout already mounts
+ * another Instrumentation panel whose sections share the same labels.
+ */
+async function openInstrumentationPanel(page: Page): Promise<Locator> {
+  await page.evaluate((panelId) => {
     const api = (window as any).appStores.dockApi.get();
     const panel = api.addPanel({
-      id: "panel-Instrumentation-paramstate-baseline",
+      id: panelId,
       component: "Instrumentation",
       title: "Instrumentation",
       position: {
@@ -82,7 +89,10 @@ async function openInstrumentationPanel(page: Page) {
     });
     panel.api.setActive();
     panel.focus();
-  });
+  }, INSTRUMENTATION_PANEL_ID);
+  const panel = page.locator(`[data-panel-id="${INSTRUMENTATION_PANEL_ID}"]`);
+  await expect(panel).toBeVisible();
+  return panel;
 }
 
 /** Verifies baseline parameter-state measurements are visible and emitted. */
@@ -104,24 +114,36 @@ test("parameter state baseline instrumentation is exposed", async ({
     ),
   );
 
-  await openInstrumentationPanel(page);
-  await page.getByText("Backend").click();
+  const instrumentation = await openInstrumentationPanel(page);
+  await instrumentation.getByRole("button", { name: /^▶\s*Backend\b/ }).click();
 
-  await expect(page.getByText("ParameterState Build")).toBeVisible();
-  await expect(page.getByText("ParameterState Broadcast")).toBeVisible();
-  await expect(page.getByText("LayerStack Build")).toBeVisible();
-  await expect(page.getByText("Layer Transition Build")).toBeVisible();
-
-  await page.getByText("Performance Metrics").click();
+  await expect(instrumentation.getByText("ParameterState Build")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Download JSON" }),
+    instrumentation.getByText("ParameterState Broadcast"),
   ).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Avg" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "P90" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "P95" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Max" })).toBeVisible();
+  await expect(instrumentation.getByText("LayerStack Build")).toBeVisible();
   await expect(
-    page.getByText("websocket-main.parameter-state.process"),
+    instrumentation.getByText("Layer Transition Build"),
+  ).toBeVisible();
+
+  await instrumentation.getByText("Performance Metrics").click();
+  await expect(
+    instrumentation.getByRole("button", { name: "Download JSON" }),
+  ).toBeVisible();
+  await expect(
+    instrumentation.getByRole("columnheader", { name: "Avg" }),
+  ).toBeVisible();
+  await expect(
+    instrumentation.getByRole("columnheader", { name: "P90" }),
+  ).toBeVisible();
+  await expect(
+    instrumentation.getByRole("columnheader", { name: "P95" }),
+  ).toBeVisible();
+  await expect(
+    instrumentation.getByRole("columnheader", { name: "Max" }),
+  ).toBeVisible();
+  await expect(
+    instrumentation.getByText("websocket-main.parameter-state.process"),
   ).toBeVisible();
 
   const timingNames = await page.evaluate(() =>
@@ -155,11 +177,11 @@ test("performance baseline metrics download as JSON", async ({
     ),
   );
 
-  await openInstrumentationPanel(page);
-  await page.getByText("Performance Metrics").click();
+  const instrumentation = await openInstrumentationPanel(page);
+  await instrumentation.getByText("Performance Metrics").click();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download JSON" }).click();
+  await instrumentation.getByRole("button", { name: "Download JSON" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(
     /^nightfall-performance-baseline-.*\.json$/,

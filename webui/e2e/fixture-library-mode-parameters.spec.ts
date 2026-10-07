@@ -61,6 +61,41 @@ const OWNED_FIXTURE_PROFILE = {
             merge_type: MergeStrategy.LTP,
             use_grandmaster: false,
           },
+          {
+            resolution: DmxValueResolution.Coarse,
+            attribute: { type: "Gobo" },
+            value_polarity: ParameterValuePolarity.Unsigned,
+            min: 0,
+            max: 255,
+            offset: { type: "Absolute", data: { value: 0 } },
+            is_inverted: false,
+            is_snap: true,
+            merge_type: MergeStrategy.LTP,
+            use_grandmaster: false,
+            functions: [
+              {
+                name: "Gobo Select",
+                attribute: "Gobo1",
+                dmx_from: 0,
+                dmx_to: 127,
+                physical_from: 0,
+                physical_to: 1,
+                wheel: "Gobo Wheel",
+                sets: [
+                  { name: "Open", dmx_from: 0, dmx_to: 9, wheel_slot: 1 },
+                  { name: "Stars", dmx_from: 10, dmx_to: 127, wheel_slot: 2 },
+                ],
+              },
+              {
+                name: "Gobo Spin",
+                attribute: "Gobo1PosRotate",
+                dmx_from: 128,
+                dmx_to: 255,
+                physical_from: -100,
+                physical_to: 100,
+              },
+            ],
+          },
         ],
       },
       {
@@ -201,9 +236,8 @@ async function seedFixtureLibrary(page: Page) {
  */
 async function seedFixtureProfile(page: Page) {
   await page.evaluate(async (profile) => {
-    const { fixtureProfile } = await import(
-      /* @vite-ignore */ "/state/appStores.ts"
-    );
+    const { fixtureProfile } = (await window.__nightfallHarness.load("app"))
+      .appStores;
     fixtureProfile.set(profile);
   }, OWNED_FIXTURE_PROFILE);
 }
@@ -213,9 +247,8 @@ async function seedFixtureProfile(page: Page) {
  */
 async function seedNullFixtureProfile(page: Page) {
   await page.evaluate(async () => {
-    const { fixtureProfile } = await import(
-      /* @vite-ignore */ "/state/appStores.ts"
-    );
+    const { fixtureProfile } = (await window.__nightfallHarness.load("app"))
+      .appStores;
     fixtureProfile.set({
       info: {
         make: "E2E Lighting",
@@ -287,7 +320,7 @@ test("fixture library properties inspect selected mode parameters", async ({
 
   await expect(page.getByText("Mode Parameters")).toBeVisible();
   await expect(page.getByText("Extended").last()).toBeVisible();
-  await expect(page.getByText("4 ch")).toBeVisible();
+  await expect(page.getByText("5 ch", { exact: true })).toBeVisible();
   await expect(page.getByText("Head #1")).toBeVisible();
   await expect(page.getByText("Cell #2")).toBeVisible();
   await expect(page.getByRole("cell", { name: "Pan" })).toBeVisible();
@@ -297,7 +330,16 @@ test("fixture library properties inspect selected mode parameters", async ({
   ).toBeVisible();
   await expect(page.getByText("Offset -12")).toBeVisible();
   await expect(page.getByText("Inverted")).toBeVisible();
-  await expect(page.getByText("Snap", { exact: true })).toBeVisible();
+  await expect(page.getByText("Snap", { exact: true }).first()).toBeVisible();
+  const functions = page.getByRole("list", { name: "DMX functions" });
+  await expect(functions).toContainText(
+    "0-127 Gobo Select: Open 0-9, Stars 10-127",
+  );
+  await expect(functions).toContainText("128-255 Gobo Spin");
+  await functions.scrollIntoViewIfNeeded();
+  await functions
+    .locator("xpath=ancestor::tr")
+    .screenshot({ path: test.info().outputPath("gobo-functions.png") });
 
   await modeSelect.scrollIntoViewIfNeeded();
   await page.screenshot({
@@ -346,4 +388,51 @@ test("fixture library properties reset selected mode for new fixtures", async ({
   await expect(page.getByTestId("fixture-library-selected-mode")).toHaveText(
     "5 channel",
   );
+});
+
+/**
+ * Verifies two library revisions of one make/model render as separate rows
+ * that the Revision column tells apart.
+ */
+test("fixture library lists each revision of a model with its revision label", async ({
+  page,
+}, testInfo) => {
+  await openApp(page);
+  await page.evaluate(() => {
+    (window as any).appStores.fixtureLibrary.set([
+      {
+        make: "E2E Lighting",
+        model: "Revised",
+        modes: ["Default"],
+        source_format: "GDTF",
+        asset_etag: "bbbbbbbb22222222",
+      },
+      {
+        make: "E2E Lighting",
+        model: "Revised",
+        modes: ["Default", "Extended"],
+        source_format: "GDTF",
+        asset_etag: "aaaaaaaa11111111",
+      },
+    ]);
+  });
+  await addPanel(page, {
+    id: "panel-FixtureLibrary-revisions",
+    component: "FixtureLibrary",
+    title: "Fixture Library",
+    params: { initialPanelId: "panel-FixtureLibrary-revisions" },
+  });
+
+  const grid = gridContaining(page, "Revised");
+  await expect(grid.getByText("aaaaaaaa", { exact: true })).toBeVisible();
+  await expect(grid.getByText("bbbbbbbb", { exact: true })).toBeVisible();
+  await expect(
+    grid.getByText("Default, Extended", { exact: true }),
+  ).toBeVisible();
+  const path = testInfo.outputPath("fixture-library-revisions.png");
+  await grid.screenshot({ path });
+  await testInfo.attach("fixture-library-revisions", {
+    path,
+    contentType: "image/png",
+  });
 });

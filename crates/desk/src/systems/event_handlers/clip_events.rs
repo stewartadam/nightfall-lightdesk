@@ -10,12 +10,15 @@
 
 use std::collections::{HashMap, HashSet};
 
-use bevy_ecs::{prelude::*, system::SystemState};
-use nightfall_clips::ClipSourceRef;
+use bevy_ecs::{
+    prelude::*,
+    system::{SystemParam, SystemState},
+};
 use nightfall_clips::{
     Clip, ClipAction, ClipCommand, ClipLookup, ClipLookupError, MaterializedClip,
     RestoreClipSource, Source, clip_action_from_command, log_clip_lookup_failure,
 };
+use nightfall_clips::{ClipReleaseAfterInstance, ClipSourceRef, InstanceIndex};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_engine::object_registry::{ObjectLookupError, resolve_object};
 use nightfall_engine::prelude::*;
@@ -28,8 +31,6 @@ use nightfall_instances::{
     InstanceControls, InstanceId, InstanceKind, InstanceMetadata, InstanceOptions,
 };
 use nightfall_playback_planner::PlaybackReconstructionTiming;
-
-use crate::prelude::*;
 
 /// Playback identity and control state used to resolve clip actions.
 type ClipPlaybackData = (
@@ -44,14 +45,26 @@ type ClipPlaybackData = (
 #[derive(Default, Resource)]
 pub struct PendingClipPlaybackRates(HashMap<u32, f32>);
 
+/// Clip access and command lifecycle publishing used to apply clip configuration commands.
+#[derive(SystemParam)]
+pub struct ClipConfigurationParams<'w, 's> {
+    clips: ParamSet<
+        'w,
+        's,
+        (
+            ClipLookup<'w, 's>,
+            Query<'w, 's, &'static Clip>,
+            Query<'w, 's, &'static mut Clip>,
+        ),
+    >,
+    responder: CommandResponder<'w>,
+}
+
 /// Handles clip source assignment and option updates.
 pub fn handle_configuration_commands(
     world: &mut World,
     reader: &mut SystemState<MessageReader<CommandEnvelope<ClipCommand>>>,
-    configuration: &mut SystemState<(
-        ParamSet<(ClipLookup, Query<&Clip>, Query<&mut Clip>)>,
-        CommandResponder,
-    )>,
+    configuration: &mut SystemState<ClipConfigurationParams>,
 ) {
     let events: Vec<_> = reader
         .get_mut(world)
@@ -68,15 +81,18 @@ pub fn handle_configuration_commands(
             match resolve_clip_source(world, source) {
                 Ok(source) => event.command = ClipCommand::AssignSource { clip_id, source },
                 Err(error) => {
-                    let (_, mut responder) = configuration
+                    let mut params = configuration
                         .get_mut(world)
                         .expect("clip command lifecycle must be installed");
-                    finish_clip_configuration(&mut responder, event.command_id, Err(error));
+                    finish_clip_configuration(&mut params.responder, event.command_id, Err(error));
                     continue;
                 }
             }
         }
-        let (mut exec_params, mut responder) = configuration
+        let ClipConfigurationParams {
+            clips: mut exec_params,
+            mut responder,
+        } = configuration
             .get_mut(world)
             .expect("clip command lifecycle must be installed");
         let result = match &event.command {
@@ -628,6 +644,7 @@ pub fn route_clip_playback_actions(
     #[cfg(feature = "fx-module-host")] mut fx_module_actions: Option<
         MessageWriter<EngineActionEnvelope<FxModulePlaybackAction>>,
     >,
+    mut responder: CommandResponder,
 ) {
     for event in clip_events.read() {
         match &event.action {
@@ -643,12 +660,17 @@ pub fn route_clip_playback_actions(
                     } => (Some(*timing), *instance_options),
                     _ => (None, None),
                 };
+                let mut completion = RoutedClipCompletion::default();
                 for id in id_expr.expand() {
                     let Some(clip) = exec_query.iter().find(|clip| clip.identifiers.id == id)
                     else {
                         log_clip_lookup_failure(id, "NoEntities", &exec_query, "StartClip");
+                        completion.defer_to_sequence_domain();
                         continue;
                     };
+                    if cue_domain_reports_clip(clip) {
+                        completion.defer_to_sequence_domain();
+                    }
                     let attached_instance = attached_instance_for_clip(id, &materialized_clips);
                     release_cross_domain_retarget_playback(
                         &mut commands,
@@ -656,7 +678,7 @@ pub fn route_clip_playback_actions(
                         attached_instance,
                         &instance_query,
                     );
-                    route_start_action(
+                    if let Err(error) = route_start_action(
                         event,
                         clip,
                         timing,
@@ -666,8 +688,11 @@ pub fn route_clip_playback_actions(
                         &mut flow_actions,
                         #[cfg(feature = "fx-module-host")]
                         fx_module_actions.as_mut(),
-                    );
+                    ) {
+                        completion.record_failure(error);
+                    }
                 }
+                completion.publish(&mut responder, event.command_id);
             }
             ClipAction::Go(id_expr) => {
                 for id in id_expr.expand() {
@@ -687,7 +712,7 @@ pub fn route_clip_playback_actions(
                             attached_instance,
                             &instance_query,
                         );
-                        route_start_action(
+                        if let Err(error) = route_start_action(
                             event,
                             clip,
                             None,
@@ -697,7 +722,9 @@ pub fn route_clip_playback_actions(
                             &mut flow_actions,
                             #[cfg(feature = "fx-module-host")]
                             fx_module_actions.as_mut(),
-                        );
+                        ) {
+                            tracing::warn!(clip_id = id, ?error, "Clip go was not routed");
+                        }
                     }
                 }
             }
@@ -709,15 +736,24 @@ pub fn route_clip_playback_actions(
                     ClipAction::StopAtTiming { timing, .. } => Some(*timing),
                     _ => None,
                 };
+                let mut completion = RoutedClipCompletion::default();
                 for id in id_expr.expand() {
                     let Some(clip) = exec_query.iter().find(|clip| clip.identifiers.id == id)
                     else {
                         log_clip_lookup_failure(id, "NoEntities", &exec_query, "StopClip");
+                        completion.defer_to_sequence_domain();
                         continue;
                     };
-                    #[cfg(not(feature = "fx-module-host"))]
-                    let _ = clip;
                     let attached_instances = attached_instances_for_clip(id, &materialized_clips);
+                    if matches!(clip.source, Some(Source::Sequence(_)))
+                        || attached_instances_include_kind(
+                            &attached_instances,
+                            InstanceKind::Sequence,
+                            &instance_query,
+                        )
+                    {
+                        completion.defer_to_sequence_domain();
+                    }
                     for (entity, mexec) in materialized_clips
                         .iter()
                         .filter(|(_, mexec)| mexec.clip_id == id)
@@ -759,10 +795,72 @@ pub fn route_clip_playback_actions(
                         ));
                     }
                 }
+                completion.publish(&mut responder, event.command_id);
             }
             _ => {}
         }
     }
+}
+
+/// Terminal outcome for one clip start or stop action whose clips route outside the cue domain.
+///
+/// The cue domain answers commands that touch missing clips, sequence clips or sequence playback,
+/// and starts of clips without a source. Every other clip is handed to fire-and-forget playback
+/// domains (FX, step FX, flow, or FX module) that never report back, so the router publishes the
+/// outcome for those actions.
+#[derive(Default)]
+struct RoutedClipCompletion {
+    /// Whether the cue domain publishes the outcome because at least one clip belongs to it.
+    deferred: bool,
+    /// First routing failure, reported instead of success.
+    failure: Option<CommandError>,
+}
+
+impl RoutedClipCompletion {
+    /// Hands the terminal outcome to the cue domain, which reports sequence clip results.
+    fn defer_to_sequence_domain(&mut self) {
+        self.deferred = true;
+    }
+
+    /// Retains the first failure encountered while routing the action's clips.
+    fn record_failure(&mut self, error: CommandError) {
+        self.failure.get_or_insert(error);
+    }
+
+    /// Publishes exactly one terminal outcome for a tracked command unless the cue domain owns it.
+    fn publish(self, responder: &mut CommandResponder, command_id: Option<CommandId>) {
+        let Some(command_id) = command_id else {
+            return;
+        };
+        if self.deferred || !responder.is_active(command_id) {
+            return;
+        }
+        let result = match self.failure {
+            Some(error) => responder.fail(command_id, error),
+            None => responder.succeed(command_id),
+        };
+        if let Err(error) = result {
+            tracing::error!(%command_id, %error, "clip_playback_completion_failed");
+        }
+    }
+}
+
+/// Returns whether the cue domain publishes command outcomes for playback actions on this clip.
+fn cue_domain_reports_clip(clip: &Clip) -> bool {
+    matches!(clip.source, None | Some(Source::Sequence(_)))
+}
+
+/// Returns whether any attached playback instance belongs to the given playback domain.
+fn attached_instances_include_kind(
+    attached_instances: &[InstanceId],
+    kind: InstanceKind,
+    instance_query: &Query<ClipPlaybackData>,
+) -> bool {
+    instance_query.iter().any(
+        |(_entity, instance_id, metadata, _controls, _release_marker)| {
+            metadata.kind == kind && attached_instances.contains(instance_id)
+        },
+    )
 }
 
 /// Applies domain playback attachment results to desk-owned materialized clip state.
@@ -800,6 +898,9 @@ pub fn handle_clip_playback_attachments(
 }
 
 /// Sends a start action to the domain that owns the clip source.
+///
+/// Sequence and sourceless clips are left to the cue domain. Fails when the clip targets an FX
+/// module but this runtime has no FX module host.
 fn route_start_action(
     event: &EngineActionEnvelope<ClipAction>,
     clip: &Clip,
@@ -811,7 +912,7 @@ fn route_start_action(
     #[cfg(feature = "fx-module-host")] fx_module_actions: Option<
         &mut MessageWriter<EngineActionEnvelope<FxModulePlaybackAction>>,
     >,
-) {
+) -> Result<(), CommandError> {
     let context = ClipInstanceStartContext {
         clip_id: clip.identifiers.id,
         clip_uid: clip.identifiers.uid,
@@ -856,10 +957,18 @@ fn route_start_action(
                 },
             ));
         }
-        #[cfg(not(feature = "fx-module-host"))]
-        Some(Source::FxModule(_)) => {}
-        _ => {}
+        Some(Source::FxModule(_)) => {
+            return Err(CommandError::new(
+                "clip.fx_module_unavailable",
+                format!(
+                    "Clip '{}' targets an FX module, but this runtime has no FX module host",
+                    clip.identifiers.label
+                ),
+            ));
+        }
+        Some(Source::Sequence(_)) | None => {}
     }
+    Ok(())
 }
 
 /// Wraps one routed playback action with fresh operation identity and inherited lifecycle context.
@@ -1056,6 +1165,31 @@ mod tests {
         app.init_resource::<CommandTracker>();
         app.add_systems(Update, handle_configuration_commands);
         app
+    }
+
+    /// Builds an app that routes clip playback actions to domain playback messages.
+    fn setup_clip_playback_routing_app() -> App {
+        let mut app = App::new();
+        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        app.add_message::<EngineActionEnvelope<FxPlaybackAction>>();
+        app.add_message::<EngineActionEnvelope<FlowPlaybackAction>>();
+        #[cfg(feature = "fx-module-host")]
+        app.add_message::<EngineActionEnvelope<FxModulePlaybackAction>>();
+        app.add_message::<CommandResult>();
+        app.add_message::<CommandReply>();
+        app.add_message::<FinishedCommand>();
+        app.add_message::<CommandNotice>();
+        app.init_resource::<CommandTracker>();
+        app.add_systems(Update, route_clip_playback_actions);
+        app
+    }
+
+    /// Drains every terminal command result published during the last update.
+    fn drain_command_results(app: &mut App) -> Vec<CommandResult> {
+        app.world_mut()
+            .resource_mut::<Messages<CommandResult>>()
+            .drain()
+            .collect()
     }
 
     /// Registers and submits one clip command through its semantic envelope.
@@ -1765,5 +1899,124 @@ mod tests {
         assert_eq!(action.undo_id, Some(UndoId::from(undo_id)));
         assert_ne!(action.operation_id, event.operation_id);
         assert_eq!(action.action, "start playback");
+    }
+
+    /// Verifies starting and stopping FX and flow clips, and stopping a sourceless clip, each
+    /// publish exactly one success, since no playback domain reports back for them and a waiting
+    /// client would otherwise hang.
+    #[test]
+    fn fx_and_flow_clip_start_and_stop_publish_one_result() {
+        let mut app = setup_clip_playback_routing_app();
+        let mut fx_clip = clip(6, Uuid::from_u128(6), "FX");
+        fx_clip.source = Some(Source::Fx(Uuid::from_u128(60)));
+        let mut flow_clip = clip(24, Uuid::from_u128(24), "Flow");
+        flow_clip.source = Some(Source::Flow(Uuid::from_u128(240)));
+        app.world_mut().spawn(fx_clip);
+        app.world_mut().spawn(flow_clip);
+        app.world_mut().spawn(clip(2, Uuid::from_u128(2), "Empty"));
+
+        for command in [
+            ClipCommand::StopClip(IdExpr::Single(2)),
+            ClipCommand::StartClip(IdExpr::Single(6)),
+            ClipCommand::StartClip(IdExpr::Single(24)),
+            ClipCommand::StartClip(IdExpr::Add {
+                lhs: Box::new(IdExpr::Single(6)),
+                rhs: Box::new(IdExpr::Single(24)),
+            }),
+            ClipCommand::StopClip(IdExpr::Single(6)),
+            ClipCommand::StopClip(IdExpr::Single(24)),
+        ] {
+            let description = format!("{command:?}");
+            let command_id = submit_clip_command(&mut app, command);
+            app.update();
+
+            let results = drain_command_results(&mut app);
+            assert_eq!(results.len(), 1, "{description} should publish one result");
+            assert_eq!(results[0].command_id, command_id);
+            assert!(
+                matches!(results[0].outcome, CommandOutcome::Succeeded { .. }),
+                "{description} should succeed: {:?}",
+                results[0].outcome
+            );
+        }
+    }
+
+    /// Verifies the router leaves sequence, sourceless, and missing clips to the cue domain, which
+    /// publishes their outcome, so commands touching them are not answered twice.
+    #[test]
+    fn clip_actions_owned_by_cue_domain_are_not_answered_by_router() {
+        let mut app = setup_clip_playback_routing_app();
+        let mut sequence_clip = clip(1, Uuid::from_u128(1), "Sequence");
+        sequence_clip.source = Some(Source::Sequence(Uuid::from_u128(10)));
+        let mut fx_clip = clip(6, Uuid::from_u128(6), "FX");
+        fx_clip.source = Some(Source::Fx(Uuid::from_u128(60)));
+        app.world_mut().spawn(sequence_clip);
+        app.world_mut().spawn(fx_clip);
+        app.world_mut().spawn(clip(2, Uuid::from_u128(2), "Empty"));
+
+        for command in [
+            ClipCommand::StartClip(IdExpr::Single(1)),
+            ClipCommand::StartClip(IdExpr::Single(2)),
+            ClipCommand::StartClip(IdExpr::Single(99)),
+            ClipCommand::StartClip(IdExpr::Add {
+                lhs: Box::new(IdExpr::Single(1)),
+                rhs: Box::new(IdExpr::Single(6)),
+            }),
+            ClipCommand::StopClip(IdExpr::Single(1)),
+            ClipCommand::StopClip(IdExpr::Single(99)),
+        ] {
+            let description = format!("{command:?}");
+            submit_clip_command(&mut app, command);
+            app.update();
+
+            assert!(
+                drain_command_results(&mut app).is_empty(),
+                "{description} should be answered by the cue domain"
+            );
+        }
+    }
+
+    /// Verifies stopping an FX clip that still owns a sequence playback defers to the cue domain,
+    /// which releases that playback and reports the stop.
+    #[test]
+    fn stop_of_clip_with_sequence_playback_defers_to_cue_domain() {
+        let mut app = setup_clip_playback_routing_app();
+        let mut fx_clip = clip(6, Uuid::from_u128(6), "Retargeted");
+        fx_clip.source = Some(Source::Fx(Uuid::from_u128(60)));
+        app.world_mut().spawn(fx_clip);
+        let instance_id = InstanceId::new();
+        app.world_mut()
+            .spawn((instance_id, InstanceMetadata::new(InstanceKind::Sequence)));
+        app.world_mut().spawn(MaterializedClip {
+            clip_id: 6,
+            attached_instance: instance_id,
+            auto_release_on_stop: false,
+        });
+
+        submit_clip_command(&mut app, ClipCommand::StopClip(IdExpr::Single(6)));
+        app.update();
+
+        assert!(drain_command_results(&mut app).is_empty());
+    }
+
+    /// Verifies starting an FX module clip fails instead of hanging when no module host is built.
+    #[cfg(not(feature = "fx-module-host"))]
+    #[test]
+    fn fx_module_clip_start_fails_without_module_host() {
+        let mut app = setup_clip_playback_routing_app();
+        let mut module_clip = clip(8, Uuid::from_u128(8), "Module");
+        module_clip.source = Some(Source::FxModule(Uuid::from_u128(80)));
+        app.world_mut().spawn(module_clip);
+
+        let command_id = submit_clip_command(&mut app, ClipCommand::StartClip(IdExpr::Single(8)));
+        app.update();
+
+        let results = drain_command_results(&mut app);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].command_id, command_id);
+        let CommandOutcome::Failed(error) = &results[0].outcome else {
+            panic!("FX module start without a host should fail");
+        };
+        assert_eq!(error.code, "clip.fx_module_unavailable");
     }
 }

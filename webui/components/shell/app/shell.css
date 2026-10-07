@@ -6,6 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+/* Keeps content clear of notches and rounded corners now that the page
+   extends under them (viewport-fit=cover). Insets are zero elsewhere. */
+.nf-app-shell {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.nf-app-shell > :last-child {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 .nf-app-header,
 .nf-status-bar {
   background: var(--color-neutral-950);

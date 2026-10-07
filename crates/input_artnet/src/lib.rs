@@ -125,7 +125,7 @@ impl Plugin for InputArtnetPlugin {
         app.insert_resource(ArtNetInputStartup::default());
         app.add_systems(Update, sync_artnet_input_binding.after(EventHandling));
         app.add_systems(
-            Update,
+            Render,
             artnet_event_system
                 .in_set(DmxInputSet::Ingress)
                 .in_set(LayerGeneration),
@@ -239,6 +239,7 @@ mod tests {
     use nightfall_compositor::prelude::Layer;
     use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
     use nightfall_dmx::prelude::{DmxValueResolution, ParameterValue};
+    use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::input_apply::TransportInputPlugin;
     use nightfall_fixtures::prelude::TRANSPORT_INPUT_LAYER_PRIORITY;
     use nightfall_fixtures::prelude::*;
@@ -408,6 +409,7 @@ mod tests {
     #[test]
     fn artnet_input_accepts_frames_from_local_source_without_metadata_match() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -437,7 +439,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(make_frame_with_source_addr(
             2,
@@ -455,6 +457,7 @@ mod tests {
     #[test]
     fn artnet_input_accepts_frames_from_local_ip_with_different_port_without_metadata_match() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -483,7 +486,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(make_frame_with_source_addr(
             2,
@@ -501,6 +504,7 @@ mod tests {
     #[test]
     fn artnet_input_accepts_frames_from_non_matching_source_ip() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -529,7 +533,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(make_frame_with_source_addr(
             2,
@@ -547,6 +551,7 @@ mod tests {
     #[test]
     fn artnet_input_ignores_frames_matching_recent_output_metadata() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -562,7 +567,7 @@ mod tests {
             77,
         );
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             frame.universe_id,
             frame.sequence,
@@ -590,7 +595,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(frame).expect("failed to enqueue frame");
         app.update();
@@ -603,6 +608,7 @@ mod tests {
     #[test]
     fn artnet_input_accepts_matching_recent_output_metadata_from_same_ip_different_port() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -618,7 +624,7 @@ mod tests {
             77,
         );
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             frame.universe_id,
             frame.sequence,
@@ -646,7 +652,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(frame).expect("failed to enqueue frame");
         app.update();
@@ -659,6 +665,7 @@ mod tests {
     #[test]
     fn artnet_input_ignores_delayed_loopback_when_many_newer_frames_were_sent() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -673,7 +680,7 @@ mod tests {
             make_frame_with_source_addr_and_sequence(2, &[(1, 99), (2, 77)], source_addr, 77);
         delayed_loopback_frame.received_at = sent_at + Duration::from_millis(900);
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             delayed_loopback_frame.universe_id,
             delayed_loopback_frame.sequence,
@@ -713,7 +720,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(delayed_loopback_frame)
             .expect("failed to enqueue frame");
@@ -727,6 +734,7 @@ mod tests {
     #[test]
     fn artnet_input_accepts_recent_loopback_from_same_ip_with_non_matching_sequence() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -738,7 +746,7 @@ mod tests {
         let source_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 40123);
         let sent_at = Instant::now();
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         let original =
             make_frame_with_source_addr_and_sequence(2, &[(1, 10), (2, 20)], source_addr, 10);
         identity.record_recent_frame(
@@ -768,7 +776,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         let mut incoming = make_frame_with_source_addr_and_sequence(
             2,
@@ -789,6 +797,7 @@ mod tests {
     #[test]
     fn artnet_input_accepts_matching_recent_output_metadata_from_different_source_ip() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -806,7 +815,7 @@ mod tests {
         );
         frame.received_at = sent_at + Duration::from_millis(100);
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             frame.universe_id,
             frame.sequence,
@@ -837,7 +846,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(frame).expect("failed to enqueue frame");
         app.update();
@@ -850,6 +859,7 @@ mod tests {
     #[test]
     fn artnet_input_marks_local_frames_as_self_in_all_detected_mode() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -868,7 +878,7 @@ mod tests {
         );
         frame.received_at = sent_at + Duration::from_millis(100);
 
-        let mut identity = ArtNetRecentFramesByUniverse::default();
+        let identity = ArtNetRecentFramesByUniverse::default();
         identity.record_recent_frame(
             frame.universe_id,
             frame.sequence,
@@ -896,7 +906,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(frame).expect("failed to enqueue frame");
         app.update();
@@ -914,6 +924,7 @@ mod tests {
     #[test]
     fn artnet_input_ignores_frames_during_startup_grace_for_external_only_mode() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -948,7 +959,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(frame).expect("failed to enqueue frame");
         app.update();
@@ -961,6 +972,7 @@ mod tests {
     #[test]
     fn artnet_input_accepts_frames_during_startup_grace_for_all_detected_mode() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
@@ -995,7 +1007,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, artnet_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(frame).expect("failed to enqueue frame");
         app.update();
@@ -1008,15 +1020,9 @@ mod tests {
     #[test]
     fn artnet_input_runs_in_layer_generation_before_dmx_output() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
-        app.configure_sets(
-            Update,
-            (
-                InputHandling,
-                LayerGeneration.after(InputHandling),
-                DmxOutput.after(LayerGeneration),
-            ),
-        );
+        app.configure_sets(Render, DmxOutput.after(LayerGeneration));
         app.add_plugins(InputArtnetPlugin {
             network_input_enabled: false,
         });
@@ -1040,7 +1046,7 @@ mod tests {
                             mode: ArtNetDelivery::Broadcast,
                         },
                         universe: 2,
-                        address: 1,
+                        addresses: vec![1],
                     }],
                 },
             ))
@@ -1062,7 +1068,7 @@ mod tests {
                 },
                 targets: vec![ResolvedInputTarget {
                     entity: parameter_entity,
-                    offset: 0,
+                    offsets: vec![0],
                 }],
             },
         }];

@@ -65,7 +65,8 @@ impl Plugin for InputOscPlugin {
         );
         let osc_service = service::process_osc_input_service();
         let status = osc_service.configure_bind_addr(self.bind_addr);
-        let osc_rx = osc_service.client().subscribe().unwrap_or_else(|| {
+        let waker = app.world().get_resource::<FrameWaker>().cloned();
+        let osc_rx = osc_service.client().subscribe(waker).unwrap_or_else(|| {
             let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawOscEvent>();
             rx
         });
@@ -91,9 +92,10 @@ impl Plugin for InputOscPlugin {
             Update,
             (forward_external_command_invocations, handle_osc_crud).in_set(EventHandling),
         );
+        app.add_systems(Render, websocket::send_osc_state.in_set(ClientOutput));
         app.add_systems(
-            Update,
-            (websocket::send_osc_state, websocket::send_external_evals).in_set(ClientOutput),
+            PostUpdate,
+            websocket::send_external_evals.in_set(ClientFeedback),
         );
         app.add_systems(
             Update,

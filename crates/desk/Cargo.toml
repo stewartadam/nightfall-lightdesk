@@ -11,7 +11,6 @@ bevy_app.workspace = true
 bevy_diagnostic.workspace = true
 bevy_ecs.workspace = true
 bevy_platform.workspace = true
-bimap.workspace = true
 dashmap.workspace = true
 moonshine-kind.workspace = true
 netwatcher = { workspace = true, optional = true }
@@ -22,6 +21,7 @@ nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
+nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-flow = { path = "../flow", default-features = false }
 nightfall-framepace = { path = "../framepace" }
@@ -49,6 +49,9 @@ debug = ["nightfall-engine/debug"]
 fx-module-host = ["dep:nightfall-fx-module", "nightfall-flow/fx-module"]
 native-network-watch = ["dep:netwatcher"]
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
 [lints]
 workspace = true
 
@@ -57,7 +60,16 @@ async-channel.workspace = true
 nightfall-programmer = { path = "../programmer" }
 criterion.workspace = true
 minicbor-serde.workspace = true
+nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
 
 [[bench]]
 name = "clip_lookup"
+harness = false
+
+[[bench]]
+name = "layer_stack"
+harness = false
+
+[[bench]]
+name = "vdim"
 harness = false

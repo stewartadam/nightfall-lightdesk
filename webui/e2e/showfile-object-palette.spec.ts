@@ -231,7 +231,7 @@ async function openSequenceGridPanel(page: Page): Promise<void> {
 
 /** Opens the showfile object palette and returns its search input. */
 async function openObjectPalette(page: Page) {
-  await page.keyboard.press("Meta+P");
+  await page.keyboard.press("ControlOrMeta+P");
   const input = page.getByPlaceholder(OBJECT_INPUT_PLACEHOLDER);
   await expect(input).toBeVisible();
   await expect(input).toBeFocused();
@@ -361,7 +361,7 @@ test("showfile object palette captures typing immediately after the hotkey", asy
   await expect(palette).toBeHidden();
   await expect(palette).toHaveAttribute("data-dialog-visible", "false");
 
-  await page.keyboard.press("Meta+P");
+  await page.keyboard.press("ControlOrMeta+P");
   await page.keyboard.type("stage wash");
 
   const input = page.getByPlaceholder(OBJECT_INPUT_PLACEHOLDER);
@@ -390,7 +390,7 @@ test("showfile and command palette shortcuts stay separate", async ({
   ).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
   await expect(page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER)).toBeVisible();
   await expect(
     page.locator(
@@ -518,12 +518,12 @@ test("enter opens editors and mod-enter selects objects in their panel", async (
   input = await openObjectPalette(page);
   await input.fill("fx ");
   await input.fill("12");
-  await page.keyboard.down("Meta");
+  await page.keyboard.down("ControlOrMeta");
   await expect(
     page.locator('[data-showfile-object-action-badge="true"]'),
   ).toHaveText("Select in panel");
   await input.press("Enter");
-  await page.keyboard.up("Meta");
+  await page.keyboard.up("ControlOrMeta");
 
   await expect(
     page.getByRole("checkbox", { name: "Select row 1" }),
@@ -548,9 +548,9 @@ test("mod-enter selects fixtures and focuses the existing groups panel", async (
   const fixtureResult = page.locator('[data-showfile-object-id="fixture:16"]');
   await expect(fixtureResult.getByText("Unnamed")).toBeVisible();
   await expect(fixtureResult.getByText("Fixture 16")).toBeVisible();
-  await page.keyboard.down("Meta");
+  await page.keyboard.down("ControlOrMeta");
   await page.keyboard.press("Enter");
-  await page.keyboard.up("Meta");
+  await page.keyboard.up("ControlOrMeta");
 
   const fixturePanel = page.locator('[data-panel-id="panel-FixtureGrid"]');
   await expect(
@@ -563,9 +563,9 @@ test("mod-enter selects fixtures and focuses the existing groups panel", async (
   await expect(
     page.locator('[data-showfile-object-id="group:33"]'),
   ).toBeVisible();
-  await page.keyboard.down("Meta");
+  await page.keyboard.down("ControlOrMeta");
   await page.keyboard.press("Enter");
-  await page.keyboard.up("Meta");
+  await page.keyboard.up("ControlOrMeta");
 
   await expect
     .poll(() =>

@@ -70,7 +70,10 @@ function claimPortPair(runRoot, backendPort) {
   }
 }
 
-/** Finds and claims two consecutive ports for one worker's backend and Vite. */
+/**
+ * Finds and claims two consecutive ports, matching the backend and frontend
+ * port pairing that `NIGHTFALL_PORT` implies for every service in the run.
+ */
 export async function claimAvailablePortPair(runRoot) {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const backend = await openEphemeralPort();
@@ -175,48 +178,70 @@ async function stopService(service) {
   }
 }
 
-/** Starts one worker-scoped Vite proxy on a claimed service port pair. */
-export async function startPlaywrightWorkerSlot({ runRoot, workerIndex }) {
+/**
+ * Starts the one Vite dev server a Playwright run shares across workers. Its
+ * `/api` and `/ws` proxies follow each browser context's backend cookie, and
+ * the app routes WebSocket traffic through the proxy so the cookie reaches it.
+ * The default target is a claimed port that nothing listens on, so a request
+ * without the cookie fails instead of reaching another test's backend. Its
+ * process registry lives in the run root, so the pool sweep stops it when
+ * Playwright exits.
+ */
+export async function startPlaywrightSharedVite(runRoot) {
+  const { backendPort: unusedBackendPort } =
+    await claimAvailablePortPair(runRoot);
+  const baseURL = `http://127.0.0.1:${unusedBackendPort + 1}`;
+  await startService({
+    environment: {
+      NIGHTFALL_PLAYWRIGHT_SHARED_VITE: "1",
+      NIGHTFALL_PORT: String(unusedBackendPort),
+      NIGHTFALL_VITE_PROXY: "1",
+      NIGHTFALL_VITE_WARMUP_PANELS: "1",
+    },
+    registryPath: join(runRoot, "shared-vite.jsonl"),
+    scriptName: "run-playwright-vite.mjs",
+    timeoutMs: 120_000,
+    url: baseURL,
+  });
+  return baseURL;
+}
+
+/** Claims a backend port for one Playwright worker and points it at the shared Vite server. */
+export async function startPlaywrightWorkerSlot({
+  baseURL,
+  runRoot,
+  workerIndex,
+}) {
   const { backendPort, claimPaths } = await claimAvailablePortPair(runRoot);
-  const baseURL = `http://127.0.0.1:${backendPort + 1}`;
-  const registryPath = join(runRoot, `worker-${workerIndex}-vite.jsonl`);
-  try {
-    const viteService = await startService({
-      environment: { NIGHTFALL_PORT: String(backendPort) },
-      registryPath,
-      scriptName: "run-playwright-vite.mjs",
-      timeoutMs: 120_000,
-      url: baseURL,
-    });
-    return {
-      backendPort,
-      baseURL,
-      claimPaths,
-      runRoot,
-      viteService,
-      workerIndex,
-    };
-  } catch (error) {
-    for (const claimPath of claimPaths) {
-      rmSync(claimPath, { force: true });
-    }
-    throw error;
+  return { backendPort, baseURL, claimPaths, runRoot, workerIndex };
+}
+
+/** Releases one worker's claimed port pair. */
+export function stopPlaywrightWorkerSlot(workerSlot) {
+  for (const claimPath of workerSlot.claimPaths) {
+    rmSync(claimPath, { force: true });
   }
 }
 
-/** Stops one worker's Vite proxy and releases its claimed port pair. */
-export async function stopPlaywrightWorkerSlot(workerSlot) {
-  try {
-    await stopService(workerSlot.viteService);
-  } finally {
-    for (const claimPath of workerSlot.claimPaths) {
-      rmSync(claimPath, { force: true });
-    }
-  }
+/**
+ * Returns backend environment that bootstraps and saves the sample show when the
+ * seed lacks the stable E2E showfiles. Tests of the startup flow opt out so the
+ * backend stays Initialized (no world loaded) regardless of the developer's data.
+ */
+export function sampleDataBootstrapEnvironment({
+  seedDataAvailable,
+  emptyStartupWorld,
+}) {
+  if (seedDataAvailable || emptyStartupWorld) return {};
+  return {
+    NIGHTFALL_SAMPLE_DATA: "1",
+    NIGHTFALL_STARTUP_CMDS: "save sample; save default",
+  };
 }
 
 /** Starts a freshly seeded backend for one test on its worker's fixed port. */
 export async function startPlaywrightTestBackend({
+  emptyStartupWorld = false,
   experimentalFlows = false,
   seedDataDir,
   testId,
@@ -246,12 +271,10 @@ export async function startPlaywrightTestBackend({
         NIGHTFALL_PORT: String(workerSlot.backendPort),
         NIGHTFALL_TIMELINE_AUDIO_ENABLED:
           process.env.NIGHTFALL_TIMELINE_AUDIO_ENABLED ?? "0",
-        ...(!seedDataAvailable
-          ? {
-              NIGHTFALL_SAMPLE_DATA: "1",
-              NIGHTFALL_STARTUP_CMDS: "save sample; save default",
-            }
-          : {}),
+        ...sampleDataBootstrapEnvironment({
+          seedDataAvailable,
+          emptyStartupWorld,
+        }),
       },
       registryPath,
       scriptName: "run-playwright-backend.mjs",

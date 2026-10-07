@@ -7,8 +7,8 @@
  */
 
 use nightfall_actions::{ActionInvocation, ActionReference, ActionSurface, ActionsPlugin};
-use nightfall_desk::instances::InstanceIndex;
-use nightfall_desk::prelude::{CLIP_START_ACTION_ID, ClipTarget, start_clip_action};
+use nightfall_clips::InstanceIndex;
+use nightfall_clips::{CLIP_START_ACTION_ID, ClipTarget, start_clip_action};
 use nightfall_desk::systems::event_handlers::clip_events::{
     PendingClipPlaybackRates, handle_clip_rate_commands,
 };
@@ -39,7 +39,7 @@ fn timeline_for_live_action_edit(
 #[test]
 fn process_actions_skips_regular_trigger_scan_on_seek_frames() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -118,7 +118,7 @@ fn process_actions_skips_regular_trigger_scan_on_seek_frames() {
 #[test]
 fn process_actions_resumes_after_running_seek_target() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -218,7 +218,7 @@ fn process_actions_resumes_after_running_seek_target() {
 #[test]
 fn process_actions_replays_mutation_after_move_playhead_only_seek_frame() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -322,7 +322,7 @@ fn process_actions_dispatches_registered_clip_action() {
     let mut app = App::new();
     app.add_plugins(ActionsPlugin);
     nightfall_desk::automation_actions::register_desk_actions(&mut app);
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -402,7 +402,7 @@ fn process_actions_dispatches_registered_clip_action() {
 #[test]
 fn process_actions_delegates_registered_domain_action() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
     app.add_message::<ActionInvocation>();
@@ -459,7 +459,7 @@ fn process_actions_delegates_registered_domain_action() {
 #[test]
 fn process_actions_syncs_live_fire_cue_clock_from_timeline_position() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -628,7 +628,7 @@ fn process_actions_syncs_live_fire_cue_clock_from_timeline_position() {
 #[test]
 fn process_actions_releases_bounded_fire_cue_at_action_end() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -762,7 +762,7 @@ fn process_actions_releases_bounded_fire_cue_at_action_end() {
 #[test]
 fn process_actions_skips_bounded_fire_cue_after_release_tail() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -838,7 +838,7 @@ fn process_actions_skips_bounded_fire_cue_after_release_tail() {
 #[test]
 fn process_actions_sends_timed_start_clip_from_timeline_position() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -923,7 +923,7 @@ fn process_actions_sends_timed_start_clip_from_timeline_position() {
 #[test]
 fn process_actions_stops_clip_when_started_action_is_deleted() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1023,7 +1023,7 @@ fn process_actions_stops_clip_when_started_action_is_deleted() {
 #[test]
 fn process_actions_applies_inserted_elapsed_stop_action() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1129,7 +1129,7 @@ fn process_actions_applies_inserted_elapsed_stop_action() {
 #[test]
 fn process_actions_restores_start_when_elapsed_stop_action_is_deleted() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1241,7 +1241,7 @@ fn process_actions_restores_start_when_elapsed_stop_action_is_deleted() {
 #[test]
 fn process_actions_leaves_lookahead_unset_when_timeline_setting_is_unset() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1318,7 +1318,7 @@ fn process_actions_leaves_lookahead_unset_when_timeline_setting_is_unset() {
 #[test]
 fn process_actions_tracks_last_processed_per_timeline() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1437,7 +1437,7 @@ fn process_actions_tracks_last_processed_per_timeline() {
 #[test]
 fn process_actions_keeps_started_clip_active_after_action_duration() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1530,7 +1530,7 @@ fn process_actions_keeps_started_clip_active_after_action_duration() {
 #[test]
 fn process_actions_ignores_start_clip_duration_resize() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1631,7 +1631,7 @@ fn process_actions_ignores_start_clip_duration_resize() {
 #[test]
 fn process_actions_ignores_inserted_elapsed_muted_action() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1749,7 +1749,7 @@ fn process_actions_ignores_inserted_elapsed_muted_action() {
 #[test]
 fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1875,7 +1875,8 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
 fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<CommandEnvelope<CueCommand>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
@@ -2029,7 +2030,7 @@ fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
 #[test]
 fn process_actions_preserves_active_start_after_future_only_edit() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2153,7 +2154,7 @@ fn process_actions_preserves_active_start_after_future_only_edit() {
 #[test]
 fn process_actions_ignores_inserted_stop_before_active_start() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2262,7 +2263,7 @@ fn process_actions_ignores_inserted_stop_before_active_start() {
 #[test]
 fn process_actions_ignores_deleted_stop_before_active_start() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2371,7 +2372,7 @@ fn process_actions_ignores_deleted_stop_before_active_start() {
 #[test]
 fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2480,7 +2481,7 @@ fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
 #[test]
 fn process_actions_replays_inserted_rate_before_active_start() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2586,7 +2587,7 @@ fn process_actions_replays_inserted_rate_before_active_start() {
 #[test]
 fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2697,7 +2698,7 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
 #[test]
 fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2806,7 +2807,7 @@ fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
 #[test]
 fn process_actions_replays_start_after_elapsed_stop_moves_before_it() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2920,7 +2921,7 @@ fn process_actions_replays_start_after_elapsed_stop_moves_before_it() {
 #[test]
 fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -2992,7 +2993,7 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
 
     app.update();
     app.world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineActionEnvelope<EvalAction>>>()
         .clear();
 
     timeline_for_live_action_edit(&mut app, timeline_entity)
@@ -3005,14 +3006,14 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineActionEnvelope<EvalAction>>>()
         .drain()
         .map(|event| event.action)
         .collect();
     assert_eq!(desk_events.len(), 1);
     assert!(matches!(
         &desk_events[0],
-        DeskAction::Eval(command) if command == "clip 52 go"
+        EvalAction(command) if command == "clip 52 go"
     ));
 }
 
@@ -3020,7 +3021,7 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
 #[test]
 fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3126,7 +3127,7 @@ fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
 #[test]
 fn process_actions_desk_eval_delete_does_not_duplicate_active_fire_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3241,7 +3242,7 @@ fn process_actions_desk_eval_delete_does_not_duplicate_active_fire_cue() {
 #[test]
 fn process_actions_skips_inserted_desk_eval_when_seek_policy_ignores_it() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3300,7 +3301,7 @@ fn process_actions_skips_inserted_desk_eval_when_seek_policy_ignores_it() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineActionEnvelope<EvalAction>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -3314,7 +3315,7 @@ fn process_actions_skips_inserted_desk_eval_when_seek_policy_ignores_it() {
 #[test]
 fn process_actions_drops_skipped_deleted_action_trigger_state() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3416,7 +3417,7 @@ fn process_actions_drops_skipped_deleted_action_trigger_state() {
 #[test]
 fn process_actions_does_not_pretrigger_skipped_future_action() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3520,7 +3521,7 @@ fn process_actions_does_not_pretrigger_skipped_future_action() {
 #[test]
 fn process_actions_sends_untimed_stop_without_tracked_origin() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3595,7 +3596,7 @@ fn process_actions_sends_untimed_stop_without_tracked_origin() {
 #[test]
 fn process_actions_dispatches_desk_eval_actions() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3643,13 +3644,13 @@ fn process_actions_dispatches_desk_eval_actions() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineActionEnvelope<EvalAction>>>()
         .drain()
         .collect();
     assert_eq!(desk_events.len(), 1);
     assert!(matches!(
         &desk_events[0].action,
-        DeskAction::Eval(actual) if actual == &command
+        EvalAction(actual) if actual == &command
     ));
     assert!(
         app.world()
@@ -3668,7 +3669,7 @@ fn process_actions_dispatches_desk_eval_actions() {
 #[test]
 fn process_actions_tracks_desk_eval_clip_actions() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3744,7 +3745,7 @@ fn process_actions_tracks_desk_eval_clip_actions() {
 #[test]
 fn process_actions_tracks_sequence_navigation_clip_actions() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -3837,7 +3838,7 @@ fn process_actions_tracks_sequence_navigation_clip_actions() {
     ));
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineActionEnvelope<EvalAction>>>()
         .drain()
         .collect();
     assert!(
@@ -3868,7 +3869,7 @@ fn process_actions_tracks_sequence_navigation_clip_actions() {
 #[test]
 fn process_actions_sends_timed_sequence_navigation_from_planner() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -4020,7 +4021,7 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
 
     let desk_events: Vec<_> = app
         .world_mut()
-        .resource_mut::<Messages<EngineActionEnvelope<DeskAction>>>()
+        .resource_mut::<Messages<EngineActionEnvelope<EvalAction>>>()
         .drain()
         .map(|event| event.action)
         .collect();
@@ -5044,7 +5045,7 @@ fn paused_timeline_freezes_owned_cue_instance_clock_without_shifting() {
 #[test]
 fn process_actions_skips_missing_clip_actions_without_panicking() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -5106,7 +5107,7 @@ fn process_actions_skips_missing_clip_actions_without_panicking() {
 #[test]
 fn process_actions_tracks_clip_autostarted_by_jump_to_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -5201,7 +5202,7 @@ fn process_actions_tracks_clip_autostarted_by_jump_to_cue() {
 #[test]
 fn process_actions_tracks_running_clip_for_jump_to_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -5302,7 +5303,7 @@ fn process_actions_tracks_running_clip_for_jump_to_cue() {
 #[test]
 fn process_actions_preserves_started_clip_origin_for_jump_to_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 

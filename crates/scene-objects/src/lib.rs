@@ -64,7 +64,7 @@ impl Plugin for SceneObjectPlugin {
 
         // WebSocket forwarding and sends
         app.add_systems(
-            Update,
+            Render,
             websocket::send_scene_objects_on_change.in_set(ClientOutput),
         );
 

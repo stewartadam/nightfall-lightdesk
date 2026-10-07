@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { harnessPageUrl } from "./app-hooks";
 import {
   expect,
   type Page,
@@ -14,16 +15,13 @@ import {
 
 /** Loads an isolated production controller with a controllable browser clock. */
 async function openPlaybackClock(page: Page) {
-  await page.route("**/playback-clock", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: '<html><body><script type="module" src="/e2e/fixtures/timeline-playback.ts"></script></body></html>',
-    }),
-  );
   await page.clock.install();
-  await page.goto("/playback-clock");
-  await page.evaluate(() => import("/e2e/fixtures/timeline-playback.ts"));
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
+  await page.goto(harnessPageUrl("timeline-playback"));
+  await page.evaluate(() =>
+    window.__nightfallHarness.load("timeline-playback").then(() => undefined),
+  );
+  // Leave headroom for the round trip so a loaded runner never pauses in the past.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
 }
 
 /** Reproduces the phase mismatch between 44 Hz engine snapshots and browser ticks. */
@@ -32,8 +30,11 @@ test("timecode snapshots do not double-count part of the previous animation tick
 }) => {
   await openPlaybackClock(page);
   await page.evaluate(async () => {
-    const { playback } = await import("/e2e/fixtures/timeline-playback.ts");
-    const { TimelineTriggerMode } = await import("/types/index.ts");
+    const { playback } =
+      await window.__nightfallHarness.load("timeline-playback");
+    const { TimelineTriggerMode } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).types;
     const origin = performance.now();
     const samples: { actual: number; expected: number }[] = [];
     (window as any).playbackClockSamples = samples;
@@ -87,8 +88,11 @@ test("playback anchors follow seeks, wraps, pauses and disposal", async ({
 }) => {
   await openPlaybackClock(page);
   await page.evaluate(async () => {
-    const { playback } = await import("/e2e/fixtures/timeline-playback.ts");
-    const { TimelineTriggerMode } = await import("/types/index.ts");
+    const { playback } =
+      await window.__nightfallHarness.load("timeline-playback");
+    const { TimelineTriggerMode } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).types;
     playback.syncTimecodeState({
       currentTime: { secs: 10, nanos: 0 },
       isActive: true,
@@ -99,18 +103,25 @@ test("playback anchors follow seeks, wraps, pauses and disposal", async ({
   /** Reads the live clock without involving DOM rounding. */
   const position = () =>
     page.evaluate(async () =>
-      (await import("/e2e/fixtures/timeline-playback.ts")).playback.position(),
+      (
+        await window.__nightfallHarness.load("timeline-playback")
+      ).playback.position(),
     );
   expect(await position()).toBeGreaterThan(10050);
   await page.evaluate(async () =>
-    (await import("/e2e/fixtures/timeline-playback.ts")).playback.seek(500),
+    (await window.__nightfallHarness.load("timeline-playback")).playback.seek(
+      500,
+    ),
   );
   await page.clock.runFor(100);
   expect(await position()).toBeGreaterThan(550);
   expect(await position()).toBeLessThan(700);
   await page.evaluate(async () => {
-    const { playback } = await import("/e2e/fixtures/timeline-playback.ts");
-    const { TimelineTriggerMode } = await import("/types/index.ts");
+    const { playback } =
+      await window.__nightfallHarness.load("timeline-playback");
+    const { TimelineTriggerMode } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).types;
     playback.syncTimecodeState({
       currentTime: { secs: 0, nanos: 0 },
       isActive: true,
@@ -127,8 +138,11 @@ test("playback anchors follow seeks, wraps, pauses and disposal", async ({
     "stop",
   ] as const) {
     await page.evaluate(async (operation) => {
-      const { playback } = await import("/e2e/fixtures/timeline-playback.ts");
-      const { TimelineTriggerMode } = await import("/types/index.ts");
+      const { playback } =
+        await window.__nightfallHarness.load("timeline-playback");
+      const { TimelineTriggerMode } = (
+        await window.__nightfallHarness.load("visualizer")
+      ).types;
       playback.syncTimecodeState({
         currentTime: { secs: 1, nanos: 0 },
         isActive: true,
@@ -141,10 +155,11 @@ test("playback anchors follow seeks, wraps, pauses and disposal", async ({
     expect(await position()).toBe(stoppedPosition);
   }
   await page.evaluate(async () => {
-    const { playback, dispose } = await import(
-      "/e2e/fixtures/timeline-playback.ts"
-    );
-    const { TimelineTriggerMode } = await import("/types/index.ts");
+    const { playback, dispose } =
+      await window.__nightfallHarness.load("timeline-playback");
+    const { TimelineTriggerMode } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).types;
     playback.syncTimecodeState({
       currentTime: { secs: 2, nanos: 0 },
       isActive: true,
@@ -163,8 +178,11 @@ test("variable snapshot delivery preserves continuous forward playback", async (
 }) => {
   await openPlaybackClock(page);
   await page.evaluate(async () => {
-    const { playback } = await import("/e2e/fixtures/timeline-playback.ts");
-    const { TimelineTriggerMode } = await import("/types/index.ts");
+    const { playback } =
+      await window.__nightfallHarness.load("timeline-playback");
+    const { TimelineTriggerMode } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).types;
     const origin = performance.now();
     /** Publishes a backend timestamp independently of its delivery time. */
     const snapshot = (ms: number) =>

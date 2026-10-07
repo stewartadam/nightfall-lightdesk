@@ -155,11 +155,25 @@ function linearRgbToXyz(color: types.ColorPathRgb): {
   };
 }
 
+/**
+ * Converts CIE XYZ (D65 reference white) into linear-light sRGB. Channels are left unclamped,
+ * so out-of-gamut colors yield negative or above-one values for the caller to resolve.
+ */
+export function xyzToLinearSrgb(
+  x: number,
+  y: number,
+  z: number,
+): types.ColorPathRgb {
+  return {
+    red: 3.2404542 * x - 1.5371385 * y - 0.4985314 * z,
+    green: -0.969266 * x + 1.8760108 * y + 0.041556 * z,
+    blue: 0.0556434 * x - 0.2040259 * y + 1.0572252 * z,
+  };
+}
+
 /** Converts CIE XYZ into display-encoded sRGB, fitting chromaticity hues into gamut. */
 function xyzToDisplayRgb(x: number, y: number, z: number): types.ColorPathRgb {
-  let red = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
-  let green = -0.969266 * x + 1.8760108 * y + 0.041556 * z;
-  let blue = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
+  let { red, green, blue } = xyzToLinearSrgb(x, y, z);
   const minChannel = Math.min(red, green, blue);
   if (minChannel < 0) {
     red -= minChannel;
@@ -176,6 +190,31 @@ function xyzToDisplayRgb(x: number, y: number, z: number): types.ColorPathRgb {
     red: linearToSrgb(red),
     green: linearToSrgb(green),
     blue: linearToSrgb(blue),
+  };
+}
+
+/**
+ * Converts a CIE 1931 xy chromaticity to the brightest display sRGB color of
+ * that hue. Out-of-gamut chromaticities are desaturated toward white.
+ */
+export function cieChromaticityToFullBrightnessRgb(
+  chromaticity: CieChromaticity,
+): types.ColorPathRgb {
+  const safeY = Math.max(chromaticity.y, 0.001);
+  const x = chromaticity.x / safeY;
+  const z = (1 - chromaticity.x - chromaticity.y) / safeY;
+  let { red, green, blue } = xyzToLinearSrgb(x, 1, z);
+  const minChannel = Math.min(red, green, blue);
+  if (minChannel < 0) {
+    red -= minChannel;
+    green -= minChannel;
+    blue -= minChannel;
+  }
+  const maxChannel = Math.max(red, green, blue, Number.EPSILON);
+  return {
+    red: linearToSrgb(red / maxChannel),
+    green: linearToSrgb(green / maxChannel),
+    blue: linearToSrgb(blue / maxChannel),
   };
 }
 
@@ -616,7 +655,7 @@ export function rgbToHsv(color: types.ColorPathRgb): ColorPathHsv {
 }
 
 /** Converts HSV coordinates into a normalized RGB color. */
-function hsvToRgb(hsv: ColorPathHsv): types.ColorPathRgb {
+export function hsvToRgb(hsv: ColorPathHsv): types.ColorPathRgb {
   const hue = ((hsv.hue % 360) + 360) % 360;
   const saturation = clamp(hsv.saturation, 0, 1);
   const value = clamp(hsv.value, 0, 1);

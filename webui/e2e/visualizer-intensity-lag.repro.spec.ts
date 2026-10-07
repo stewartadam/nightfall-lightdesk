@@ -156,7 +156,7 @@ async function ledTapeSceneLevel(
 }
 
 /**
- * Reads whether the first moving-head beam is visibly enabled in the scene.
+ * Reads whether the moving head's aperture currently lights the shared optical batch.
  */
 async function movingHeadBeamVisible(
   page: Page,
@@ -164,41 +164,8 @@ async function movingHeadBeamVisible(
 ): Promise<boolean> {
   return page.evaluate((uid) => {
     const scene = (window as any).visualizerApi.getScene();
-    const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const beam = root?.getObjectByName?.("Beam");
-    return Boolean(beam?.visible && (beam.material?.opacity ?? 0) > 0.05);
-  }, fixtureUid);
-}
-
-/**
- * Reads the synthetic moving-head floor footprint state from the visualizer scene.
- */
-async function movingHeadFloorSpotStats(
-  page: Page,
-  fixtureUid: string,
-): Promise<{
-  visible: boolean;
-  spotlightVisible: boolean;
-  opacity: number;
-  worldY: number;
-  scaleX: number;
-  scaleY: number;
-}> {
-  return page.evaluate((uid) => {
-    const scene = (window as any).visualizerApi.getScene();
-    const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const footprint = root?.getObjectByName?.("BeamFootprint");
-    const spotLight = root?.getObjectByName?.("SpotLight");
-    root?.updateMatrixWorld?.(true);
-    const matrixWorld = footprint?.matrixWorld?.elements ?? [];
-    return {
-      visible: Boolean(footprint?.visible),
-      spotlightVisible: Boolean(spotLight?.visible),
-      opacity: footprint?.material?.opacity ?? 0,
-      worldY: matrixWorld[13] ?? Number.NaN,
-      scaleX: footprint?.scale?.x ?? 0,
-      scaleY: footprint?.scale?.y ?? 0,
-    };
+    const light = scene?.getObjectByName?.(`OpticalSurface:${uid}:MainEmitter`);
+    return Boolean(light?.visible && light.intensity > 0.05);
   }, fixtureUid);
 }
 
@@ -216,19 +183,30 @@ async function measureVisualLatency(
 ): Promise<LatencyMeasurement> {
   await page.evaluate(
     ({ mode: visualMode, uid }) => {
-      const findDescriptor = (target: any, property: string) => {
-        let cursor = target;
-        while (cursor) {
-          const descriptor = Object.getOwnPropertyDescriptor(cursor, property);
-          if (descriptor) return descriptor;
-          cursor = Object.getPrototypeOf(cursor);
-        }
-        return undefined;
-      };
-
       const stores = (window as any).appStores;
       const scene = (window as any).visualizerApi.getScene();
       const root = scene?.getObjectByName?.(`Fixture_${uid}`);
+      const instanceColor = root?.getObjectByName?.("Pixels")?.instanceColor;
+      if (visualMode === "led" && !instanceColor) {
+        throw new Error("LED instance colors not found");
+      }
+      /**
+       * Reports whether the fixture's rendered output is lit: the LED cell colors that
+       * feed the filtered emitter row, or the aperture's shared optical light.
+       */
+      const sceneLit = () => {
+        if (visualMode === "led") {
+          const values = instanceColor.array as ArrayLike<number>;
+          for (let i = 0; i < values.length; i++) {
+            if (values[i] > 0.05) return true;
+          }
+          return false;
+        }
+        const light = scene?.getObjectByName?.(
+          `OpticalSurface:${uid}:MainEmitter`,
+        );
+        return Boolean(light?.visible && light.intensity > 0.05);
+      };
 
       const probe = {
         received: null as number | null,
@@ -254,6 +232,11 @@ async function measureVisualLatency(
           );
         }
         probe.lastFrameTime = frameTime;
+        // Optical lights are created lazily and LED rows upload through a filtered texture,
+        // so neither exposes a synchronous hook; scene changes are sampled per frame.
+        // The visual stamp is taken on the frame after the scene change was seen, once
+        // the render that consumed the change has been presented, so render lag shows
+        // up as visual latency beyond scene latency.
         if (
           probe.received != null &&
           probe.sceneObserved != null &&
@@ -261,6 +244,13 @@ async function measureVisualLatency(
         ) {
           probe.visualFrames += 1;
           probe.visualObserved = performance.now();
+        }
+        if (
+          probe.received != null &&
+          probe.sceneObserved == null &&
+          sceneLit()
+        ) {
+          probe.sceneObserved = performance.now();
         }
 
         probe.rafId = requestAnimationFrame(sampleFrame);
@@ -290,106 +280,8 @@ async function measureVisualLatency(
         stores.parameterUpdateTimestamp.set = originalTimestampSet;
       });
 
-      if (visualMode === "led") {
-        const pixels = root?.getObjectByName?.("Pixels");
-        const instanceColor = pixels?.instanceColor;
-        const values = Array.from(instanceColor?.array ?? []) as number[];
-        if (values.length > 0 && Math.max(...values) > 0.05) {
-          throw new Error("LED control fixture was already lit");
-        }
-        if (!instanceColor) throw new Error("LED instance colors not found");
-
-        const originalOwnDescriptor = Object.getOwnPropertyDescriptor(
-          instanceColor,
-          "needsUpdate",
-        );
-        const originalDescriptor = findDescriptor(instanceColor, "needsUpdate");
-        let currentNeedsUpdate = instanceColor.needsUpdate;
-
-        Object.defineProperty(instanceColor, "needsUpdate", {
-          configurable: true,
-          get() {
-            return originalDescriptor?.get
-              ? originalDescriptor.get.call(instanceColor)
-              : currentNeedsUpdate;
-          },
-          set(value) {
-            if (value) {
-              const colorValues = Array.from(
-                instanceColor.array ?? [],
-              ) as number[];
-              if (
-                probe.sceneObserved == null &&
-                colorValues.length > 0 &&
-                Math.max(...colorValues) > 0.05
-              ) {
-                probe.sceneObserved = performance.now();
-              }
-            }
-            if (originalDescriptor?.set) {
-              originalDescriptor.set.call(instanceColor, value);
-            } else {
-              currentNeedsUpdate = value;
-            }
-          },
-        });
-
-        restoreCallbacks.push(() => {
-          if (originalOwnDescriptor) {
-            Object.defineProperty(
-              instanceColor,
-              "needsUpdate",
-              originalOwnDescriptor,
-            );
-          } else {
-            delete instanceColor.needsUpdate;
-          }
-        });
-      } else {
-        const beam = root?.getObjectByName?.("Beam");
-        const material = beam?.material;
-        const intensityUniform = material?.beamIntensityUniform;
-        const isLit = Boolean(
-          beam?.visible &&
-            ((intensityUniform?.value ?? 0) > 0.05 ||
-              (material?.opacity ?? 0) > 0.05),
-        );
-        if (isLit) throw new Error("Beam fixture was already lit");
-        if (!material || !intensityUniform) {
-          throw new Error("Beam intensity uniform not found");
-        }
-
-        const originalOwnDescriptor = Object.getOwnPropertyDescriptor(
-          intensityUniform,
-          "value",
-        );
-        let currentIntensity = intensityUniform.value;
-
-        Object.defineProperty(intensityUniform, "value", {
-          configurable: true,
-          get() {
-            return currentIntensity;
-          },
-          set(value) {
-            currentIntensity = value;
-            if (probe.sceneObserved == null && currentIntensity > 0.05) {
-              probe.sceneObserved = performance.now();
-            }
-          },
-        });
-
-        restoreCallbacks.push(() => {
-          if (originalOwnDescriptor) {
-            Object.defineProperty(
-              intensityUniform,
-              "value",
-              originalOwnDescriptor,
-            );
-            intensityUniform.value = currentIntensity;
-          } else {
-            delete intensityUniform.value;
-          }
-        });
+      if (sceneLit()) {
+        throw new Error(`${visualMode} fixture was already lit`);
       }
 
       probe.restore = () => {
@@ -482,10 +374,7 @@ test("moving-head intensity visual latency is comparable to fix 311 LED control"
   const ledUid = await fixtureUidById(page, 311);
   const movingHeadUid = await fixtureUidById(page, 501);
   await waitForFixtureSceneObjects(page, ledUid, ["Pixels"]);
-  await waitForFixtureSceneObjects(page, movingHeadUid, [
-    "Beam",
-    "BeamFootprint",
-  ]);
+  await waitForFixtureSceneObjects(page, movingHeadUid, ["OpticalAperture"]);
   await placeFixtureForFloorFootprint(page, movingHeadUid);
 
   await submitCommand(page, "clear");
@@ -519,49 +408,4 @@ test("moving-head intensity visual latency is comparable to fix 311 LED control"
   expect(led.visualElapsedMs).toBeLessThan(250);
   expect(beam.visualElapsedMs).toBeLessThan(500);
   expect(beam.visualElapsedMs).toBeLessThan(led.visualElapsedMs + 350);
-});
-
-/**
- * Verifies moving-head beams render floor illumination without enabling a Three.js light.
- */
-test("moving-head beam renders synthetic floor footprint without spotlight", async ({
-  page,
-}) => {
-  await seedStartupShowfileName(page, "sample");
-  await page.goto("/?visualizer:offscreenCanvas=false&e2e=1");
-  await waitForDockviewApp(page, { showfileName: "sample" });
-  await waitForVisualizerReady(page);
-
-  const movingHeadUid = await fixtureUidById(page, 501);
-  await waitForFixtureSceneObjects(page, movingHeadUid, [
-    "Beam",
-    "BeamFootprint",
-  ]);
-  await placeFixtureForFloorFootprint(page, movingHeadUid);
-
-  await submitCommand(page, "clear");
-  await expect
-    .poll(() => movingHeadBeamVisible(page, movingHeadUid))
-    .toBe(false);
-  await submitCommand(
-    page,
-    "fix 501.1 pan @ 0 tilt @ 0 intensity @ 100 red @ 100 green @ 0 blue @ 0",
-  );
-  await expect
-    .poll(() => movingHeadBeamVisible(page, movingHeadUid))
-    .toBe(true);
-
-  await expect
-    .poll(() => movingHeadFloorSpotStats(page, movingHeadUid))
-    .toMatchObject({
-      visible: true,
-      spotlightVisible: false,
-    });
-
-  const stats = await movingHeadFloorSpotStats(page, movingHeadUid);
-  expect(stats.opacity).toBeGreaterThan(0.05);
-  expect(stats.worldY).toBeGreaterThan(0);
-  expect(stats.worldY).toBeLessThan(0.02);
-  expect(stats.scaleX).toBeGreaterThan(0);
-  expect(stats.scaleY).toBeGreaterThan(0);
 });

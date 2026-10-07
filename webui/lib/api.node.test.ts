@@ -14,6 +14,7 @@ import {
   getWebSocketUrl,
   resolveBackendPort,
   resolveBackendUrl,
+  resolveShareablePort,
   resolveWebSocketUrl,
 } from "./api";
 
@@ -44,11 +45,28 @@ test("resolveBackendPort ignores baked NIGHTFALL_PORT outside dev", () => {
   assert.equal(resolveBackendPort(false, "5172"), 3030);
 });
 
+/** A production bundle loaded from the backend reaches it on the page's own port. */
+test("resolveBackendPort uses the serving port for production browser pages", () => {
+  assert.equal(resolveBackendPort(false, "5172", undefined, "4000"), 4000);
+  assert.equal(resolveBackendPort(false, undefined, undefined, ""), 3030);
+  assert.equal(resolveBackendPort(false, undefined, 3891, "4000"), 3891);
+  assert.equal(resolveBackendPort(true, "5172", undefined, "3031"), 5172);
+});
+
+/** Share links point at the server that served this page, or the backend for the desktop protocol. */
+test("resolveShareablePort follows the page's server", () => {
+  assert.equal(resolveShareablePort(3030, "http:", "3031"), 3031);
+  assert.equal(resolveShareablePort(3030, "http:", "3030"), 3030);
+  assert.equal(resolveShareablePort(3891, "tauri:", ""), 3891);
+  assert.equal(resolveShareablePort(3891, "http:", ""), 3891);
+  assert.equal(resolveShareablePort(3030), 3030);
+});
+
 test("resolveBackendUrl uses same-origin backend in browser Vite dev", () => {
   assert.equal(
     resolveBackendUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: { origin: "http://localhost:3031" },
       tauriRuntime: false,
     }),
@@ -60,7 +78,7 @@ test("resolveBackendUrl bypasses same-origin backend in Tauri dev", () => {
   assert.equal(
     resolveBackendUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: { origin: "http://localhost:3031" },
       tauriRuntime: true,
     }),
@@ -72,7 +90,7 @@ test("resolveWebSocketUrl uses same-origin proxy in browser Vite dev when enable
   assert.equal(
     resolveWebSocketUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: { protocol: "https:", host: "localhost:3031" },
       tauriRuntime: false,
       viteProxyEnabled: true,
@@ -81,11 +99,56 @@ test("resolveWebSocketUrl uses same-origin proxy in browser Vite dev when enable
   );
 });
 
+/** A phone loading Vite dev over the LAN must reach the dev machine's backend, not its own loopback. */
+test("resolveWebSocketUrl targets the page's host in browser Vite dev without the proxy", () => {
+  assert.equal(
+    resolveWebSocketUrl({
+      backendPort: 3030,
+      sameOrigin: true,
+      runtimeLocation: {
+        protocol: "http:",
+        host: "192.168.1.20:3031",
+        hostname: "192.168.1.20",
+      },
+      tauriRuntime: false,
+      viteProxyEnabled: false,
+    }),
+    "ws://192.168.1.20:3030/ws",
+  );
+});
+
+/** Built browser bundles served to another device reach the backend on the serving machine. */
+test("resolveWebSocketUrl targets the page's host for built browser bundles", () => {
+  assert.equal(
+    resolveWebSocketUrl({
+      backendPort: 3030,
+      sameOrigin: false,
+      runtimeLocation: { host: "192.168.1.20:3031", hostname: "192.168.1.20" },
+      tauriRuntime: false,
+      viteProxyEnabled: false,
+    }),
+    "ws://192.168.1.20:3030/ws",
+  );
+});
+
+/** The desktop shell always talks to the backend it launched on loopback. */
+test("resolveBackendUrl keeps loopback in built Tauri bundles", () => {
+  assert.equal(
+    resolveBackendUrl({
+      backendPort: 3891,
+      sameOrigin: false,
+      runtimeLocation: { origin: "tauri://localhost", hostname: "tauri.local" },
+      tauriRuntime: true,
+    }),
+    "http://localhost:3891",
+  );
+});
+
 test("resolveWebSocketUrl bypasses same-origin proxy in Tauri dev", () => {
   assert.equal(
     resolveWebSocketUrl({
       backendPort: 3030,
-      isDev: true,
+      sameOrigin: true,
       runtimeLocation: { protocol: "https:", host: "localhost:3031" },
       tauriRuntime: true,
       viteProxyEnabled: true,

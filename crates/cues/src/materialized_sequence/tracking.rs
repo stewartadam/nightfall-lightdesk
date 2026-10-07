@@ -8,6 +8,8 @@
 
 use std::collections::HashSet;
 
+use nightfall_fixture_model::prelude::*;
+
 use super::*;
 use crate::materialized_cue::MaterializedCuePartLayer;
 
@@ -528,7 +530,7 @@ fn compute_absolute_sequence_transition(
 
     let computed_value = if let Some(transition) = transition {
         nightfall_compositor::stages::transition::process_transition_with_compositing_context(
-            &parameter,
+            &parameter.compositing_context(),
             base_value,
             asserted_value,
             transition,
@@ -575,7 +577,7 @@ fn compute_relative_sequence_transition(
 
     let computed_value = if let Some(transition) = transition {
         nightfall_compositor::stages::transition::process_transition_with_compositing_context(
-            &parameter,
+            &parameter.compositing_context(),
             base_value,
             asserted_value,
             transition,

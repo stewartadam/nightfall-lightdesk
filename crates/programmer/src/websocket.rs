@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_cues::prelude::CueInstruction;
-use nightfall_desk::prelude::BlueprintDefinitionChange;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;

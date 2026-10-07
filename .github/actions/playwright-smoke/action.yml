@@ -1,10 +1,13 @@
-name: Playwright product smoke tests
+name: Playwright product flows
 description: Run isolated Chromium product flows using the calling job's prepared application assets and Cargo target directory.
 
 inputs:
   workers:
-    description: Number of isolated Playwright workers.
-    default: "2"
+    description: Number of isolated Playwright workers. Empty sizes the pool from the runner's cores.
+    default: ""
+  shard:
+    description: Full-suite shard to run, as "index/total". Empty runs only the smoke specs.
+    default: ""
   artifact-name:
     description: Unique report artifact name for this invocation.
     default: playwright-product-smoke-${{ github.job }}-${{ github.run_attempt }}
@@ -12,9 +15,10 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install browsers and system dependencies
+    # Chromium's system dependencies include ALSA, the headless backend's only native runtime library.
+    - name: Install Chromium and system dependencies
       shell: bash
-      run: npm run playwright:install -- --with-deps
+      run: node scripts/run-playwright.mjs install --with-deps --no-shell chromium
 
     # Saved fixtures keep each isolated backend at its normal startup picker.
     - name: Seed disposable showfiles from the repository fixture
@@ -23,20 +27,26 @@ runs:
       run: |
         seed_dir=$(mktemp -d "$RUNNER_TEMP/nightfall-ci-seed.XXXXXX")
         mkdir -p "$seed_dir/default.nightfall-show" "$seed_dir/sample.nightfall-show"
-        cp crates/app/tests/data/procedural-showfile-parse-data.json "$seed_dir/default.nightfall-show/showfile.json"
-        cp crates/app/tests/data/procedural-showfile-parse-data.json "$seed_dir/sample.nightfall-show/showfile.json"
+        cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/default.nightfall-show/showfile.json"
+        cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/sample.nightfall-show/showfile.json"
         echo "data-dir=$seed_dir" >> "$GITHUB_OUTPUT"
 
-    - name: Test startup, showfiles, navigation, patching, and playback
+    - name: Test product flows
       shell: bash
       env:
         NIGHTFALL_PLAYWRIGHT_WORKERS: ${{ inputs.workers }}
         NIGHTFALL_DATA_DIR: ${{ steps.seed.outputs.data-dir }}
-      run: npm run test:webui-smoke -- --max-failures=3
+        PLAYWRIGHT_SHARD: ${{ inputs.shard }}
+      run: |
+        if [ -n "$PLAYWRIGHT_SHARD" ]; then
+          pnpm run test:webui-playwright --shard="$PLAYWRIGHT_SHARD" --max-failures=20
+        else
+          pnpm run test:webui-smoke --max-failures=3
+        fi
 
     - name: Upload Playwright report and failure artifacts
       if: always()
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       with:
         name: ${{ inputs.artifact-name }}
         path: |

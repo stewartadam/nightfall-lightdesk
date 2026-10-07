@@ -10,8 +10,13 @@ import { parseKeybinding } from "tinykeys";
 import { Input, InputGroup } from "../../../components/ui/form-controls";
 import { clearConsoleScrollback } from "../../../state/appStores";
 import type { CommandLineController } from "../controllers/command-line-controller";
+import {
+  remainingStatementCount,
+  unsentStatements,
+} from "../model/command-queue";
 import { CommandClearButton } from "./command-clear-button";
 import { CommandHistory } from "./command-history";
+import { CommandQueueStatus } from "./command-queue-status";
 import { CommandSuggestions } from "./command-suggestions";
 import { CommandValidationStatus } from "./command-validation-status";
 
@@ -29,6 +34,15 @@ export function CommandLineView(props: CommandLineViewProps) {
   const controller = props.controller;
   const analysis = controller.analysis;
   const history = controller.history;
+  /** Tracks whether the validation chip is shown, which only happens for non-empty input. */
+  const hasInput = () => controller.input().trim().length > 0;
+  /** Reserves room on the right for the validation and queue chips. */
+  const inputPaddingRight = () =>
+    remainingStatementCount(controller.pendingSubmissions()) > 0
+      ? hasInput()
+        ? "76px"
+        : "48px"
+      : "32px";
   const input = (
     <div class="relative min-w-0 flex-1">
       <Input
@@ -36,7 +50,7 @@ export function CommandLineView(props: CommandLineViewProps) {
         ref={controller.setInputElement}
         class={controller.inputClasses()}
         style={{
-          "padding-right": "32px",
+          "padding-right": inputPaddingRight(),
           "font-family": "var(--font-mono)",
           "min-height": controller.variant === "nav" ? "32px" : undefined,
         }}
@@ -83,6 +97,12 @@ export function CommandLineView(props: CommandLineViewProps) {
         onApplyToken={analysis.applySuggestion}
         onHover={analysis.setSuggestionIndex}
       />
+      <CommandQueueStatus
+        variant={controller.variant}
+        pending={controller.pendingSubmissions}
+        besideValidation={hasInput}
+        onReveal={controller.openConsole}
+      />
       <CommandValidationStatus
         variant={controller.variant}
         input={controller.input}
@@ -103,6 +123,7 @@ export function CommandLineView(props: CommandLineViewProps) {
         <CommandHistory
           entries={history.visibleConsoleEntries}
           totalEntries={() => history.consoleEntries().length}
+          queued={() => unsentStatements(controller.pendingSubmissions())}
           normalizedSearch={history.normalizedHistorySearch}
           searchOpen={history.historySearchOpen}
           search={history.historySearch}

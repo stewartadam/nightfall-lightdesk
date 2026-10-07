@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks the shared divider behind inactive tabs in regular and expanded edge groups. */
 test("inactive Dockview tabs share a grey content-edge divider", async ({
@@ -15,6 +15,7 @@ test("inactive Dockview tabs share a grey content-edge divider", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     for (const edge of ["left", "right", "bottom"]) {
@@ -27,6 +28,17 @@ test("inactive Dockview tabs share a grey content-edge divider", async ({
         inactive: true,
       });
       group.expand();
+    }
+    // Single-panel grid groups such as Timelines get an inactive tab to inspect too.
+    for (const group of [...api.groups]) {
+      if (group.panels.length > 1) continue;
+      api.addPanel({
+        id: `border-check-${group.id}`,
+        component: "GroupsPanel",
+        title: `Extra ${group.id}`,
+        position: { referenceGroup: group.id, direction: "within" },
+        inactive: true,
+      });
     }
   });
 

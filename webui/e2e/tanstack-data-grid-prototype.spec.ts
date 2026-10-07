@@ -255,6 +255,14 @@ async function prepareOwnedTanStackBackend(
   backendPort: number,
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
+  // Keep the fixture's auto-open of the seeded default show from replacing the
+  // fresh blank world on either page load.
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "nightfall.e2eAutoOpenStartupShowfile",
+      "false",
+    );
+  });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await page.evaluate(() => {
@@ -512,6 +520,26 @@ function fixtureDataGrid(page: Page) {
 }
 
 /**
+ * Moves a panel into the 3D Visualizer's group and activates it. The default
+ * layout keeps Fixtures and Clips in collapsed edge groups; these scenarios were
+ * written for them sharing the large visualizer group.
+ */
+async function dockBesideVisualizer(page: Page, panelId: string) {
+  await page.evaluate((id) => {
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.getPanel(id);
+    const visualizerGroup = api.getPanel("panel-Visualizer")?.api.group;
+    if (!panel || !visualizerGroup) {
+      throw new Error(`Cannot dock ${id} beside the visualizer`);
+    }
+    if (panel.api.group !== visualizerGroup) {
+      panel.api.moveTo({ group: visualizerGroup, position: "center" });
+    }
+    panel.api.setActive();
+  }, panelId);
+}
+
+/**
  * Opens the TanStack fixture grid and waits for it to render rows.
  */
 async function openTanStackFixturesGrid(page: Page) {
@@ -528,11 +556,55 @@ async function openTanStackFixturesGrid(page: Page) {
   });
   await openOwnedApp(page);
   await waitForFixtureGridData(page);
-  await page.getByText("Fixtures", { exact: true }).first().click();
+  await dockBesideVisualizer(page, "panel-FixtureGrid");
 
   const grid = fixtureDataGrid(page);
   await expect(grid).toBeVisible();
   return grid;
+}
+
+/**
+ * Shrinks the viewport and waits until Dockview has shrunk the fixture grid to
+ * a stable layout box and the grid virtualizers have observed the new scroll
+ * viewport. The grid may still extend under edge groups at narrow widths, so
+ * this waits for a smaller, settled box rather than one inside the viewport.
+ * Overflow probes alone are not enough: the 2200px default layout can already
+ * overflow horizontally before Dockview applies the smaller size, which lets
+ * scroll and virtualization assertions run against the stale large layout.
+ */
+async function resizeViewportForFixtureGrid(
+  page: Page,
+  grid: Locator,
+  size: { width: number; height: number },
+) {
+  const before = await grid.boundingBox();
+  if (!before) throw new Error("Fixture grid has no layout box before resize");
+  await page.setViewportSize(size);
+  let previous = "";
+  await expect
+    .poll(async () => {
+      const box = await grid.boundingBox();
+      if (
+        !box ||
+        (box.width >= before.width - 1 && box.height >= before.height - 1)
+      ) {
+        previous = "";
+        return false;
+      }
+      const current = [box.x, box.y, box.width, box.height]
+        .map(Math.round)
+        .join(",");
+      const settled = current === previous;
+      previous = current;
+      return settled;
+    })
+    .toBe(true);
+  await grid.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 }
 
 /**
@@ -803,7 +875,7 @@ async function openSequenceEditorPanel(
           initialSequenceUid: sequenceUid,
         },
         position: {
-          referencePanel: "panel-FixtureGrid",
+          referencePanel: "panel-Visualizer",
           direction: "within",
         },
       });
@@ -946,7 +1018,7 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
   });
   await openOwnedApp(page);
   await waitForFixtureGridData(page);
-  await page.getByText("Fixtures", { exact: true }).first().click();
+  await dockBesideVisualizer(page, "panel-FixtureGrid");
 
   const grid = fixtureDataGrid(page);
   await expect(grid).toBeVisible();
@@ -1107,7 +1179,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
   );
 
   await grid.locator("#tanstack-cell-0-0").click();
-  await grid.locator("#tanstack-cell-0-0").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-0-0")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "false",
@@ -1127,7 +1201,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "data-selected",
     "true",
   );
-  await grid.locator("#tanstack-cell-1-1").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-1-1")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "true",
@@ -1146,7 +1222,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "data-selected",
     "true",
   );
-  await grid.locator("#tanstack-cell-2-2").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-2-2")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "true",
@@ -1155,7 +1233,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "data-selected",
     "false",
   );
-  await grid.locator("#tanstack-cell-2-2").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-2-2")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-2-2")).toHaveAttribute(
     "data-selected",
     "true",
@@ -1164,7 +1244,9 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "data-selected",
     "false",
   );
-  await grid.locator("#tanstack-cell-0-0").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-0-0")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "false",
@@ -1175,8 +1257,12 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
   );
 
   await grid.locator("#tanstack-cell-0-0").click();
-  await grid.locator("#tanstack-cell-2-2").click({ modifiers: ["Meta"] });
-  await grid.locator("#tanstack-cell-2-2").click({ modifiers: ["Meta"] });
+  await grid
+    .locator("#tanstack-cell-2-2")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await grid
+    .locator("#tanstack-cell-2-2")
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
     "true",
@@ -1207,7 +1293,7 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     page,
     grid.locator("#tanstack-cell-0-0"),
     grid.locator("#tanstack-cell-1-1"),
-    ["Meta"],
+    ["ControlOrMeta"],
   );
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
@@ -1227,7 +1313,7 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     page,
     grid.locator("#tanstack-cell-2-2"),
     grid.locator("#tanstack-cell-3-3"),
-    ["Meta"],
+    ["ControlOrMeta"],
   );
   await expect(grid.locator("#tanstack-cell-0-0")).toHaveAttribute(
     "data-selected",
@@ -1246,7 +1332,7 @@ test("TanStack Fixtures panel renders nested attribute headers", async ({
     "true",
   );
 
-  await page.setViewportSize({ width: 900, height: 700 });
+  await resizeViewportForFixtureGrid(page, grid, { width: 900, height: 700 });
   await expect
     .poll(() =>
       grid.evaluate((element) => element.scrollWidth > element.clientWidth),
@@ -1267,11 +1353,15 @@ test("TanStack Fixtures preserves scroll position when switching dock tabs", asy
   page,
 }) => {
   const grid = await openTanStackFixturesGrid(page);
-  await page.setViewportSize({ width: 900, height: 500 });
+  await resizeViewportForFixtureGrid(page, grid, { width: 900, height: 500 });
   await expect(grid).toBeVisible();
   await expect
     .poll(() =>
-      grid.evaluate((element) => element.scrollWidth > element.clientWidth),
+      grid.evaluate(
+        (element) =>
+          element.scrollWidth > element.clientWidth &&
+          element.scrollHeight > element.clientHeight,
+      ),
     )
     .toBe(true);
 
@@ -1417,7 +1507,7 @@ test("TanStack Fixtures supports page and row-boundary keyboard navigation", asy
   page,
 }) => {
   const grid = await openTanStackFixturesGrid(page);
-  await page.setViewportSize({ width: 900, height: 420 });
+  await resizeViewportForFixtureGrid(page, grid, { width: 900, height: 420 });
 
   /** Reads the active grid cell coordinate from the rendered selected cell. */
   const activeCell = () =>
@@ -1533,7 +1623,7 @@ test("TanStack Fixtures keeps nested headers aligned when scrolling horizontally
   page,
 }, testInfo) => {
   const grid = await openTanStackFixturesGrid(page);
-  await page.setViewportSize({ width: 900, height: 600 });
+  await resizeViewportForFixtureGrid(page, grid, { width: 900, height: 600 });
   await expect
     .poll(() =>
       grid.evaluate((element) => element.scrollWidth - element.clientWidth),
@@ -1604,7 +1694,7 @@ test("TanStack Fixtures bounds body DOM across horizontal scrolling", async ({
   page,
 }) => {
   const grid = await openTanStackFixturesGrid(page);
-  await page.setViewportSize({ width: 900, height: 600 });
+  await resizeViewportForFixtureGrid(page, grid, { width: 900, height: 600 });
   await expect
     .poll(() =>
       grid.evaluate((element) => element.scrollWidth - element.clientWidth),
@@ -1629,6 +1719,12 @@ test("TanStack Fixtures bounds body DOM across horizontal scrolling", async ({
     await expect
       .poll(() => grid.evaluate((element) => Math.round(element.scrollLeft)))
       .toBe(targetScrollLeft);
+    await grid.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
     renderedCellCounts.push(await grid.getByRole("gridcell").count());
   }
 
@@ -1796,7 +1892,7 @@ test("TanStack Fixtures panel collapses immediately after expanding a fixture ro
   await openOwnedApp(page);
   await waitForFixtureGridData(page);
   const { fixtureId, rowIndex } = await expandableFixtureRowIndex(page);
-  await page.getByText("Fixtures", { exact: true }).first().click();
+  await dockBesideVisualizer(page, "panel-FixtureGrid");
 
   const grid = fixtureDataGrid(page);
   await expect(grid).toBeVisible();
@@ -1876,6 +1972,7 @@ test("TanStack renderer is used by shared list tables", async ({ page }) => {
   });
   await openOwnedApp(page);
   const firstClipLabel = await openClipListPanel(page);
+  await dockBesideVisualizer(page, "panel-ClipList");
 
   const clipPanel = page.locator(
     '[data-panel-kind="clips"][data-panel-id="panel-ClipList"]',

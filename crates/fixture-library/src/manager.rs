@@ -10,9 +10,12 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use bevy_ecs::prelude::*;
+use nightfall_fixtures::library::catalog;
 use nightfall_fixtures::prelude::{Fixture, FixtureGeometry};
+use uuid::Uuid;
 
 use crate::gdtf_metadata::GdtfMetadata;
 use crate::{FixtureLibraryError, Result};
@@ -33,6 +36,10 @@ pub enum FixtureSource {
     },
 }
 
+/// Default-selection precedence of a profile: source layer, file modification
+/// time, then path.
+type DefaultRank = (u8, Option<std::time::SystemTime>, PathBuf);
+
 /// A fixture profile from the library
 #[derive(Debug, Clone)]
 pub struct FixtureProfile {
@@ -44,6 +51,8 @@ pub struct FixtureProfile {
     pub model: String,
     /// File path for file-backed profiles, empty for built-ins.
     pub file_path: PathBuf,
+    /// Content fingerprint identifying this revision of the definition.
+    pub revision: String,
 }
 
 impl FixtureProfile {
@@ -67,8 +76,18 @@ impl FixtureProfile {
 /// Manages a collection of fixture definitions from GDTF and OFL files.
 #[derive(Resource, Clone)]
 pub struct FixtureLibraryManager {
-    /// Indexed fixtures by "make:model" key
-    fixtures: HashMap<String, FixtureProfile>,
+    /// Profiles by revision key (make, model, revision); several revisions of
+    /// one make/model coexist so patched fixtures keep their definition.
+    fixtures: HashMap<(String, String, String), FixtureProfile>,
+    /// Revision chosen by default for each (make, model): the one with the
+    /// highest [`DefaultRank`], independent of scan order.
+    latest: HashMap<(String, String), String>,
+    /// Every file whose contents produced each revision key. Identical copies
+    /// share one indexed profile, so deleting a revision removes all of them.
+    copies: HashMap<(String, String, String), Vec<PathBuf>>,
+    /// Conversions of file-backed profiles, reused for every fixture created
+    /// from, previewing, or falling back to one revision and mode.
+    conversions: ProfileConversions,
     /// Library directory path
     library_path: PathBuf,
     /// Optional package library overlaid on installed profiles.
@@ -86,6 +105,9 @@ impl FixtureLibraryManager {
     pub fn with_path(library_path: PathBuf) -> Result<Self> {
         let mut manager = Self {
             fixtures: HashMap::new(),
+            latest: HashMap::new(),
+            copies: HashMap::new(),
+            conversions: ProfileConversions::default(),
             library_path,
             showfile_directory: None,
         };
@@ -112,6 +134,9 @@ impl FixtureLibraryManager {
     ) -> Result<Self> {
         let mut manager = Self {
             fixtures: HashMap::new(),
+            latest: HashMap::new(),
+            copies: HashMap::new(),
+            conversions: ProfileConversions::default(),
             library_path,
             showfile_directory,
         };
@@ -120,9 +145,29 @@ impl FixtureLibraryManager {
     }
 
     /// Selects package-local definitions, rebuilding the index so a previous show's assets cannot leak.
+    ///
+    /// When no package library was selected yet, the index holds only built-in
+    /// and installed profiles, so the package profiles are overlaid without
+    /// rescanning the installed library. This keeps a fresh world's showfile
+    /// load to one installed-library scan.
     pub fn set_showfile_directory(&mut self, directory: Option<PathBuf>) -> Result<()> {
-        self.showfile_directory = directory;
-        self.scan()
+        if self.showfile_directory.is_some() {
+            self.showfile_directory = directory;
+            return self.scan();
+        }
+        let Some(directory) = directory else {
+            return Ok(());
+        };
+        let profiles = crate::scanner::FixtureScanner::new(&directory.join("fixtures")).scan()?;
+        self.showfile_directory = Some(directory);
+        for profile in profiles {
+            self.insert_profile(profile);
+        }
+        tracing::info!(
+            "Loaded {} fixtures from fixture library, built-ins, and showfile package",
+            self.fixtures.len()
+        );
+        Ok(())
     }
 
     /// Get the platform-specific library path
@@ -144,6 +189,9 @@ impl FixtureLibraryManager {
     /// Scan the library directory for fixtures
     pub fn scan(&mut self) -> Result<()> {
         self.fixtures.clear();
+        self.latest.clear();
+        self.copies.clear();
+        self.conversions = ProfileConversions::default();
         self.insert_builtin_profiles();
 
         let scanner = crate::scanner::FixtureScanner::new(&self.library_path);
@@ -154,8 +202,7 @@ impl FixtureLibraryManager {
         }
 
         for profile in profiles {
-            let key = format!("{}:{}", profile.make, profile.model);
-            self.fixtures.insert(key, profile);
+            self.insert_profile(profile);
         }
 
         tracing::info!(
@@ -171,13 +218,92 @@ impl FixtureLibraryManager {
         self.fixtures.values().collect()
     }
 
-    /// Find a fixture by manufacturer and model
-    pub fn find_fixture(&self, make: &str, model: &str) -> Option<&FixtureProfile> {
-        let key = format!("{}:{}", make, model);
-        self.fixtures.get(&key)
+    /// Indexes a profile under its revision and makes it the default for its
+    /// make/model when it outranks the current default.
+    ///
+    /// Files with identical contents share a revision key; the highest-ranked
+    /// copy is indexed and every copy's path is recorded for deletion, so the
+    /// outcome does not depend on scan order.
+    fn insert_profile(&mut self, profile: FixtureProfile) {
+        let key = (
+            profile.make.clone(),
+            profile.model.clone(),
+            profile.revision.clone(),
+        );
+        if !profile.file_path.as_os_str().is_empty() {
+            self.copies
+                .entry(key.clone())
+                .or_default()
+                .push(profile.file_path.clone());
+        }
+        let rank = self.default_rank(&profile);
+        if self
+            .fixtures
+            .get(&key)
+            .is_some_and(|indexed| self.default_rank(indexed) > rank)
+        {
+            return;
+        }
+        let identity = (key.0.clone(), key.1.clone());
+        let outranks_default = self
+            .latest
+            .get(&identity)
+            .and_then(|revision| {
+                self.fixtures
+                    .get(&(identity.0.clone(), identity.1.clone(), revision.clone()))
+            })
+            .is_none_or(|current| rank >= self.default_rank(current));
+        if outranks_default {
+            self.latest.insert(identity, key.2.clone());
+        }
+        self.fixtures.insert(key, profile);
     }
 
-    /// Create a fixture instance from the library.
+    /// Ranks a profile for default selection: package-local definitions beat
+    /// installed ones, which beat built-ins; within a source the most recently
+    /// modified file wins, and the path breaks remaining ties.
+    fn default_rank(&self, profile: &FixtureProfile) -> DefaultRank {
+        let source = if matches!(profile.source, FixtureSource::BuiltIn { .. }) {
+            0
+        } else if self
+            .showfile_directory
+            .as_ref()
+            .is_some_and(|directory| profile.file_path.starts_with(directory))
+        {
+            2
+        } else {
+            1
+        };
+        let modified = std::fs::metadata(&profile.file_path)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        (source, modified, profile.file_path.clone())
+    }
+
+    /// Find the default (highest-ranked) revision of a fixture by manufacturer and model
+    pub fn find_fixture(&self, make: &str, model: &str) -> Option<&FixtureProfile> {
+        self.find_revision(make, model, None)
+    }
+
+    /// Find a specific revision of a fixture, or the default revision when `revision` is `None`.
+    pub fn find_revision(
+        &self,
+        make: &str,
+        model: &str,
+        revision: Option<&str>,
+    ) -> Option<&FixtureProfile> {
+        let revision = match revision {
+            Some(revision) => revision.to_string(),
+            None => self
+                .latest
+                .get(&(make.to_string(), model.to_string()))?
+                .clone(),
+        };
+        self.fixtures
+            .get(&(make.to_string(), model.to_string(), revision))
+    }
+
+    /// Create a fixture instance from the default revision in the library.
     ///
     /// Returns a tuple of user-configurable `Fixture` data and optionally
     /// runtime-derived geometry (for GDTF sources).
@@ -188,13 +314,58 @@ impl FixtureLibraryManager {
         mode: &str,
         id: u32,
     ) -> Result<(Fixture, Option<FixtureGeometry>)> {
-        let profile =
-            self.find_fixture(make, model)
-                .ok_or_else(|| FixtureLibraryError::NotFound {
-                    make: make.to_string(),
-                    model: model.to_string(),
-                })?;
+        self.create_fixture_from_revision(make, model, None, mode, id)
+    }
 
+    /// Create a fixture instance from a specific library revision (or the default when `None`).
+    ///
+    /// The created fixture records the revision in `library_asset_etag`, so
+    /// its geometry and parameters stay tied to that definition. File-backed
+    /// profiles are converted once per revision and mode until the next scan;
+    /// each instance copies that conversion with its own ID and UID.
+    pub fn create_fixture_from_revision(
+        &self,
+        make: &str,
+        model: &str,
+        revision: Option<&str>,
+        mode: &str,
+        id: u32,
+    ) -> Result<(Fixture, Option<FixtureGeometry>)> {
+        let profile = self.find_revision(make, model, revision).ok_or_else(|| {
+            FixtureLibraryError::NotFound {
+                make: make.to_string(),
+                model: model.to_string(),
+            }
+        })?;
+        if matches!(profile.source, FixtureSource::BuiltIn { .. }) {
+            return Self::convert_profile(profile, make, model, mode, id);
+        }
+
+        let (mut fixture, geometry) = match &*self.conversions.get(profile, mode) {
+            Some(converted) => {
+                let mut fixture = converted.fixture.clone();
+                fixture.identifiers.id = id;
+                fixture.identifiers.uid = Uuid::new_v4();
+                (fixture, converted.geometry.clone())
+            }
+            // Convert again to report why this mode cannot be created.
+            None => Self::convert_profile(profile, make, model, mode, id)?,
+        };
+        fixture.library_asset_etag = Some(profile.revision.clone());
+        Ok((
+            fixture,
+            geometry.map(|geometry| with_revision(geometry, profile)),
+        ))
+    }
+
+    /// Converts one mode of a profile into a fixture and optional geometry.
+    fn convert_profile(
+        profile: &FixtureProfile,
+        make: &str,
+        model: &str,
+        mode: &str,
+        id: u32,
+    ) -> Result<(Fixture, Option<FixtureGeometry>)> {
         match &profile.source {
             FixtureSource::Gdtf(metadata) => {
                 crate::converters::gdtf::convert_gdtf_to_fixture(metadata, mode, id)
@@ -211,11 +382,9 @@ impl FixtureLibraryManager {
                     });
                 }
 
-                nightfall_fixtures::library::create_fixture_from_library(id, make, model, mode)
-                    .map(|mut fixture| {
-                        fixture.mode = mode.to_string();
-                        (fixture, None)
-                    })
+                catalog::find_builtin_fixture_profile(make, model)
+                    .and_then(|builtin| builtin.create_fixture(id, mode))
+                    .map(|fixture| (fixture, None))
                     .ok_or_else(|| FixtureLibraryError::NotFound {
                         make: make.to_string(),
                         model: model.to_string(),
@@ -224,17 +393,79 @@ impl FixtureLibraryManager {
         }
     }
 
-    /// Get geometry for a fixture from the library.
+    /// Get geometry for a patched fixture from the library.
     ///
-    /// This is used to materialize fixtures at runtime without recreating the full fixture.
-    /// Returns `None` if the fixture source doesn't have geometry (e.g., OFL) or if not found.
-    pub fn get_geometry(&self, make: &str, model: &str, mode: &str) -> Option<FixtureGeometry> {
-        let profile = self.find_fixture(make, model)?;
+    /// Uses the definition chosen by [`Self::profile_for_fixture`]. Returns
+    /// `None` when no compatible definition exists or its source has no
+    /// geometry.
+    pub fn geometry_for_fixture(&self, fixture: &Fixture) -> Option<FixtureGeometry> {
+        self.profile_geometry(self.profile_for_fixture(fixture)?, &fixture.mode)
+    }
 
+    /// Resolves the library definition that backs a patched fixture.
+    ///
+    /// Uses the revision the fixture was created from. When that revision is
+    /// no longer available, the default revision is used only if converting it
+    /// yields the same elements and parameter placement (the conversion is
+    /// cached per revision and mode until the next scan); otherwise `None` is
+    /// returned rather than pairing the fixture's controls with a different
+    /// definition. Fixtures without a recorded revision use the default
+    /// revision. Geometry lookup and showfile export share this so an export
+    /// packages the definition the show renders with.
+    pub fn profile_for_fixture(&self, fixture: &Fixture) -> Option<&FixtureProfile> {
+        let (make, model) = (&fixture.make, &fixture.model);
+        let recorded = fixture.library_asset_etag.as_deref();
+        if let Some(profile) =
+            recorded.and_then(|revision| self.find_revision(make, model, Some(revision)))
+        {
+            return Some(profile);
+        }
+
+        let profile = self.find_fixture(make, model)?;
+        let Some(recorded) = recorded else {
+            return Some(profile);
+        };
+        if matches!(profile.source, FixtureSource::BuiltIn { .. }) {
+            return None;
+        }
+        if self
+            .conversions
+            .get(profile, &fixture.mode)
+            .as_ref()
+            .as_ref()
+            .is_some_and(|candidate| same_element_structure(&candidate.fixture, fixture))
+        {
+            tracing::info!(
+                make,
+                model,
+                recorded,
+                available = profile.revision,
+                "Using a structurally identical library revision for fixture"
+            );
+            Some(profile)
+        } else {
+            tracing::warn!(
+                make,
+                model,
+                recorded,
+                available = profile.revision,
+                "Fixture's library revision is missing and the available revision differs; \
+                 repatch the fixture to use it"
+            );
+            None
+        }
+    }
+
+    /// Returns geometry for one mode of a profile, if its source provides geometry.
+    fn profile_geometry(&self, profile: &FixtureProfile, mode: &str) -> Option<FixtureGeometry> {
         match &profile.source {
-            FixtureSource::Gdtf(metadata) => {
-                crate::converters::gdtf::get_gdtf_geometry(metadata, mode).ok()
-            }
+            FixtureSource::Gdtf(_) => self
+                .conversions
+                .get(profile, mode)
+                .as_ref()
+                .as_ref()
+                .and_then(|converted| converted.geometry.clone())
+                .map(|geometry| with_revision(geometry, profile)),
             FixtureSource::Ofl(_) => None, // OFL doesn't have geometry
             FixtureSource::BuiltIn { .. } => None,
         }
@@ -289,17 +520,26 @@ impl FixtureLibraryManager {
     /// Removes the fixture file from disk. The file watcher will automatically
     /// detect the removal and trigger a rescan.
     pub fn delete_fixture(&mut self, make: &str, model: &str) -> Result<()> {
-        let key = format!("{}:{}", make, model);
+        self.delete_fixture_revision(make, model, None)
+    }
 
-        let profile = self
-            .fixtures
-            .get(&key)
-            .ok_or_else(|| FixtureLibraryError::NotFound {
+    /// Delete one revision of a fixture (the default revision when `revision` is `None`).
+    ///
+    /// Removes every file with that revision's contents from disk, so an
+    /// identical copy cannot bring it back. The file watcher will automatically
+    /// detect the removal and trigger a rescan.
+    pub fn delete_fixture_revision(
+        &mut self,
+        make: &str,
+        model: &str,
+        revision: Option<&str>,
+    ) -> Result<()> {
+        let profile = self.find_revision(make, model, revision).ok_or_else(|| {
+            FixtureLibraryError::NotFound {
                 make: make.to_string(),
                 model: model.to_string(),
-            })?;
-
-        let file_path = profile.file_path.clone();
+            }
+        })?;
 
         if matches!(&profile.source, FixtureSource::BuiltIn { .. }) {
             return Err(FixtureLibraryError::InvalidDataDirectory(format!(
@@ -309,24 +549,49 @@ impl FixtureLibraryManager {
         }
 
         // Remove from our cache first
+        let key = (
+            make.to_string(),
+            model.to_string(),
+            profile.revision.clone(),
+        );
+        let indexed_path = profile.file_path.clone();
+        let file_paths = self
+            .copies
+            .remove(&key)
+            .unwrap_or_else(|| vec![indexed_path]);
         self.fixtures.remove(&key);
+        self.conversions = ProfileConversions::default();
+        let identity = (key.0.clone(), key.1.clone());
+        if self.latest.get(&identity) == Some(&key.2) {
+            self.latest.remove(&identity);
+            if let Some(promoted) = self
+                .fixtures
+                .values()
+                .filter(|profile| profile.make == key.0 && profile.model == key.1)
+                .max_by_key(|profile| self.default_rank(profile))
+            {
+                self.latest.insert(identity, promoted.revision.clone());
+            }
+        }
 
-        // Delete the file
-        if file_path.exists() {
-            std::fs::remove_file(&file_path)?;
-            tracing::info!(
-                path = %file_path.display(),
-                make,
-                model,
-                "Deleted fixture file"
-            );
-        } else {
-            tracing::warn!(
-                path = %file_path.display(),
-                make,
-                model,
-                "Fixture file was already removed"
-            );
+        // Delete every identical copy so none reappears on rescan
+        for file_path in file_paths {
+            if file_path.exists() {
+                std::fs::remove_file(&file_path)?;
+                tracing::info!(
+                    path = %file_path.display(),
+                    make,
+                    model,
+                    "Deleted fixture file"
+                );
+            } else {
+                tracing::warn!(
+                    path = %file_path.display(),
+                    make,
+                    model,
+                    "Fixture file was already removed"
+                );
+            }
         }
 
         Ok(())
@@ -335,8 +600,7 @@ impl FixtureLibraryManager {
     /// Insert built-in fixture profiles, preserving any file-backed duplicates added later.
     fn insert_builtin_profiles(&mut self) {
         for profile in builtin_fixture_profiles() {
-            let key = format!("{}:{}", profile.make, profile.model);
-            self.fixtures.insert(key, profile);
+            self.insert_profile(profile);
         }
     }
 }
@@ -348,92 +612,19 @@ pub fn fixture_source_version(source_path: &Path) -> Result<String> {
 }
 
 /// Return built-in profiles that should be available even when no fixture files are installed.
-fn builtin_fixture_profiles() -> Vec<FixtureProfile> {
-    [
-        (
-            "Generic",
-            "100-segment LED Bar",
-            "RGB",
-            "builtin:generic-100-segment-led-bar:v1",
-        ),
-        (
-            "Generic",
-            "10-segment Rotating RGBW Bar",
-            "RGBW",
-            "builtin:generic-10-segment-rotating-rgbw-bar:v1",
-        ),
-        (
-            "Generic",
-            "12-segment RGBW Bar",
-            "RGBW",
-            "builtin:generic-12-segment-rgbw-bar:v1",
-        ),
-        (
-            "Generic",
-            "RGBPixelTape 180ch",
-            "RGB",
-            "builtin:generic-rgb-pixeltape-180ch:v1",
-        ),
-        (
-            "Generic",
-            "RGBPixelTape 120ch GRB",
-            "GRB",
-            "builtin:generic-rgb-pixeltape-120ch-grb:v1",
-        ),
-        (
-            "Generic",
-            "RGBPixelTape 120ch RGB",
-            "RGB",
-            "builtin:generic-rgb-pixeltape-120ch-rgb:v1",
-        ),
-        (
-            "Generic",
-            "Strobe Matrix 308ch",
-            "Strobe",
-            "builtin:generic-strobe-matrix-308ch:v1",
-        ),
-        (
-            "Generic",
-            "Strobe Matrix 312ch",
-            "Strobe",
-            "builtin:generic-strobe-matrix-312ch:v1",
-        ),
-        (
-            "Generic",
-            "RGB Strobe Bar 168ch",
-            "Strobe",
-            "builtin:generic-rgb-strobe-bar-168ch:v1",
-        ),
-        (
-            "Generic",
-            "12-segment Rotating Wash Beam",
-            "Beam",
-            "builtin:generic-12-segment-rotating-wash-beam:v1",
-        ),
-        (
-            "Generic",
-            "Moving Head Spot 16ch",
-            "Spot",
-            "builtin:generic-moving-head-spot-16ch:v1",
-        ),
-        (
-            "Generic",
-            "Moving Head RGBW",
-            "Spot",
-            "builtin:generic-moving-head-rgbw:v1",
-        ),
-    ]
-    .into_iter()
-    .map(|(make, model, mode, asset_etag)| FixtureProfile {
-        source: FixtureSource::BuiltIn {
-            mode: mode.to_string(),
-            asset_etag: asset_etag.to_string(),
-        },
-        make: make.to_string(),
-        model: model.to_string(),
-        file_path: PathBuf::new(),
-    })
-    .collect()
+fn builtin_fixture_profiles() -> impl Iterator<Item = FixtureProfile> {
+    catalog::builtin_fixture_profiles()
+        .iter()
+        .map(|profile| FixtureProfile {
+            source: FixtureSource::BuiltIn {
+                mode: profile.mode.to_string(),
+                asset_etag: profile.asset_etag.to_string(),
+            },
+            make: profile.make.to_string(),
+            model: profile.model.to_string(),
+            file_path: PathBuf::new(),
+            revision: profile.asset_etag.to_string(),
+        })
 }
 
 /// Format bytes as a stable FNV-1a hex fingerprint.
@@ -450,5 +641,408 @@ fn fnv1a64_hex(bytes: &[u8]) -> String {
 impl Default for FixtureLibraryManager {
     fn default() -> Self {
         Self::new().expect("Failed to create fixture library manager")
+    }
+}
+
+/// Make, model, revision and mode of one cached conversion.
+type ConversionKey = (String, String, String, String);
+
+/// One mode of a file-backed profile, converted once for its revision.
+#[derive(Debug)]
+struct ConvertedMode {
+    /// Fixture template with placeholder identifiers.
+    fixture: Fixture,
+    /// Geometry from the source file, when the format provides one.
+    geometry: Option<FixtureGeometry>,
+}
+
+/// Conversion of one (revision, mode), filled by whichever caller needs it first;
+/// `None` records a mode that failed to convert.
+type ConversionSlot = Arc<OnceLock<Arc<Option<ConvertedMode>>>>;
+
+/// Conversions of file-backed profiles keyed by revision key and mode.
+///
+/// Converting a GDTF profile parses its archive and probes its meshes, so each
+/// (revision, mode) is converted once: creating many instances, previewing,
+/// fallback compatibility checks and geometry lookup all reuse the result.
+/// Failed conversions are cached too, so geometry lookups do not retry them per
+/// fixture. Clones of the manager share the cache; replacing it after the index
+/// changes leaves clones of the previous index with their own consistent cache.
+#[derive(Debug, Default, Clone)]
+struct ProfileConversions(Arc<Mutex<HashMap<ConversionKey, ConversionSlot>>>);
+
+impl ProfileConversions {
+    /// Returns one mode of a file-backed profile, converting it on first use.
+    ///
+    /// The map lock is held only to find the mode's slot, so converting one
+    /// archive never blocks lookups of other modes, including from clones.
+    fn get(&self, profile: &FixtureProfile, mode: &str) -> Arc<Option<ConvertedMode>> {
+        let key = (
+            profile.make.clone(),
+            profile.model.clone(),
+            profile.revision.clone(),
+            mode.to_string(),
+        );
+        let slot = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(key)
+            .or_default()
+            .clone();
+        slot.get_or_init(|| Arc::new(convert_mode(profile, mode)))
+            .clone()
+    }
+
+    /// Returns how many (revision, mode) conversions have been requested.
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
+    }
+}
+
+/// Converts one mode of a file-backed profile, logging why a mode fails.
+fn convert_mode(profile: &FixtureProfile, mode: &str) -> Option<ConvertedMode> {
+    FixtureLibraryManager::convert_profile(profile, &profile.make, &profile.model, mode, 0)
+        .inspect_err(|error| {
+            tracing::debug!(
+                make = profile.make,
+                model = profile.model,
+                mode,
+                %error,
+                "Library fixture mode failed to convert"
+            );
+        })
+        .ok()
+        .map(|(fixture, geometry)| ConvertedMode { fixture, geometry })
+}
+
+/// Returns whether two fixtures expose the same elements and parameter placement.
+///
+/// Programming refers to elements by index and parameters by attribute, and
+/// output depends on resolution and slots, so any difference in these means
+/// one definition cannot stand in for the other.
+fn same_element_structure(left: &Fixture, right: &Fixture) -> bool {
+    left.elements.len() == right.elements.len()
+        && left
+            .elements
+            .iter()
+            .zip(&right.elements)
+            .all(|(left, right)| {
+                left.label == right.label
+                    && left.parameters.len() == right.parameters.len()
+                    && left
+                        .parameters
+                        .iter()
+                        .zip(&right.parameters)
+                        .all(|(left, right)| {
+                            left.attribute == right.attribute
+                                && left.resolution == right.resolution
+                                && left.dmx_slots == right.dmx_slots
+                        })
+            })
+}
+
+/// Tags geometry with the profile revision it was built from, versioning its resource URLs.
+fn with_revision(mut geometry: FixtureGeometry, profile: &FixtureProfile) -> FixtureGeometry {
+    geometry.gdtf_revision = Some(profile.revision.clone());
+    geometry
+}
+
+#[cfg(test)]
+mod revision_tests {
+    use super::*;
+    use crate::testing::{ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec, translation};
+
+    /// Builds a one-channel archive whose root geometry name and offset vary per revision.
+    fn revision(root: &str, z: f64, attribute: &str) -> GdtfBuilder {
+        GdtfBuilder::new("Rev Test", "Fixture")
+            .geometry(GeometrySpec::generic(root).at(translation(0.0, 0.0, z)))
+            .mode(ModeSpec::new("Mode", root).channel(ChannelSpec::new(root, attribute, &[1])))
+    }
+
+    /// Writes archives to a fresh library directory and scans it.
+    fn library(revisions: &[(&str, GdtfBuilder)]) -> (tempfile::TempDir, FixtureLibraryManager) {
+        let dir = tempfile::tempdir().unwrap();
+        for (file, builder) in revisions {
+            builder.write_to(&dir.path().join(file));
+        }
+        let manager = FixtureLibraryManager::with_path(dir.path().to_path_buf()).unwrap();
+        (dir, manager)
+    }
+
+    /// Verifies two revisions of one make/model are both listed and individually addressable.
+    #[test]
+    fn revisions_of_one_model_coexist() {
+        let (_dir, manager) = library(&[
+            ("a.gdtf", revision("Body", 0.0, "Dimmer")),
+            ("b.gdtf", revision("Body", 0.5, "Dimmer")),
+        ]);
+        let revisions: Vec<&FixtureProfile> = manager
+            .list_fixtures()
+            .into_iter()
+            .filter(|profile| profile.make == "Rev Test")
+            .collect();
+        assert_eq!(revisions.len(), 2);
+        for profile in revisions {
+            let found = manager
+                .find_revision("Rev Test", "Fixture", Some(&profile.revision))
+                .unwrap();
+            assert_eq!(found.file_path, profile.file_path);
+        }
+        assert!(manager.find_fixture("Rev Test", "Fixture").is_some());
+    }
+
+    /// Verifies a fixture keeps its own revision's geometry even when another revision is the default.
+    #[test]
+    fn geometry_follows_the_fixtures_revision() {
+        let (_dir, manager) = library(&[
+            ("a.gdtf", revision("Body", 0.0, "Dimmer")),
+            ("b.gdtf", revision("Body", 0.5, "Dimmer")),
+        ]);
+        for profile in manager.list_fixtures() {
+            if profile.make != "Rev Test" {
+                continue;
+            }
+            let (fixture, geometry) = manager
+                .create_fixture_from_revision(
+                    "Rev Test",
+                    "Fixture",
+                    Some(&profile.revision),
+                    "Mode",
+                    1,
+                )
+                .unwrap();
+            assert_eq!(
+                fixture.library_asset_etag.as_deref(),
+                Some(profile.revision.as_str())
+            );
+            assert_eq!(manager.geometry_for_fixture(&fixture), geometry);
+        }
+    }
+
+    /// Verifies a missing revision falls back only to a structurally identical definition.
+    #[test]
+    fn missing_revision_falls_back_only_when_structure_matches() {
+        let (_dir, manager) = library(&[("b.gdtf", revision("Body", 0.5, "Dimmer"))]);
+        let (mut fixture, _) = manager
+            .create_fixture("Rev Test", "Fixture", "Mode", 1)
+            .unwrap();
+        fixture.library_asset_etag = Some("deleted-revision".to_string());
+        assert!(manager.geometry_for_fixture(&fixture).is_some());
+
+        let (_dir, changed) = library(&[("c.gdtf", revision("Body", 0.5, "Zoom"))]);
+        assert_eq!(changed.geometry_for_fixture(&fixture), None);
+    }
+
+    /// Verifies the most recently modified revision is the default regardless
+    /// of which file the directory scan yields last.
+    #[test]
+    fn default_revision_is_the_most_recently_modified() {
+        let dir = tempfile::tempdir().unwrap();
+        let older = dir.path().join("z-older.gdtf");
+        let newer = dir.path().join("a-newer.gdtf");
+        revision("Body", 0.0, "Dimmer").write_to(&older);
+        revision("Body", 0.5, "Dimmer").write_to(&newer);
+        let now = std::time::SystemTime::now();
+        for (path, age) in [(&older, 120), (&newer, 60)] {
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(now - std::time::Duration::from_secs(age))
+                .unwrap();
+        }
+        let manager = FixtureLibraryManager::with_path(dir.path().to_path_buf()).unwrap();
+        let default = manager.find_fixture("Rev Test", "Fixture").unwrap();
+        assert_eq!(default.file_path, newer);
+    }
+
+    /// Verifies a fixture whose recorded revision is gone resolves to the
+    /// structurally identical default, so export can package it.
+    #[test]
+    fn missing_revision_resolves_to_compatible_profile() {
+        let (_dir, manager) = library(&[("b.gdtf", revision("Body", 0.5, "Dimmer"))]);
+        let (mut fixture, _) = manager
+            .create_fixture("Rev Test", "Fixture", "Mode", 1)
+            .unwrap();
+        fixture.library_asset_etag = Some("deleted-revision".to_string());
+        let profile = manager.profile_for_fixture(&fixture).unwrap();
+        assert!(profile.file_path.ends_with("b.gdtf"));
+    }
+
+    /// Verifies deleting the default revision promotes a remaining one.
+    #[test]
+    fn deleting_default_revision_promotes_another() {
+        let (_dir, mut manager) = library(&[
+            ("a.gdtf", revision("Body", 0.0, "Dimmer")),
+            ("b.gdtf", revision("Body", 0.5, "Dimmer")),
+        ]);
+        let default = manager
+            .find_fixture("Rev Test", "Fixture")
+            .unwrap()
+            .revision
+            .clone();
+        manager
+            .delete_fixture_revision("Rev Test", "Fixture", Some(&default))
+            .unwrap();
+        let remaining = manager.find_fixture("Rev Test", "Fixture").unwrap();
+        assert_ne!(remaining.revision, default);
+    }
+
+    /// Sets a file's modification time to `age_secs` seconds ago.
+    fn age(path: &Path, age_secs: u64) {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(age_secs))
+            .unwrap();
+    }
+
+    /// Verifies identical copies index the most recently modified file
+    /// whichever copy the scan yields first.
+    #[test]
+    fn identical_copies_index_the_highest_ranked_file() {
+        for newer_name in ["a-copy.gdtf", "z-copy.gdtf"] {
+            let dir = tempfile::tempdir().unwrap();
+            let older = dir.path().join(if newer_name == "a-copy.gdtf" {
+                "z-copy.gdtf"
+            } else {
+                "a-copy.gdtf"
+            });
+            let newer = dir.path().join(newer_name);
+            revision("Body", 0.0, "Dimmer").write_to(&older);
+            revision("Body", 0.0, "Dimmer").write_to(&newer);
+            age(&older, 120);
+            age(&newer, 60);
+            let manager = FixtureLibraryManager::with_path(dir.path().to_path_buf()).unwrap();
+            let default = manager.find_fixture("Rev Test", "Fixture").unwrap();
+            assert_eq!(default.file_path, newer);
+        }
+    }
+
+    /// Verifies deleting a revision removes every identical copy, so a
+    /// rescan does not bring it back.
+    #[test]
+    fn deleting_a_revision_removes_identical_copies() {
+        let (dir, mut manager) = library(&[
+            ("a.gdtf", revision("Body", 0.0, "Dimmer")),
+            ("b.gdtf", revision("Body", 0.0, "Dimmer")),
+        ]);
+        manager.delete_fixture("Rev Test", "Fixture").unwrap();
+        assert!(!dir.path().join("a.gdtf").exists());
+        assert!(!dir.path().join("b.gdtf").exists());
+        manager.scan().unwrap();
+        assert!(manager.find_fixture("Rev Test", "Fixture").is_none());
+    }
+
+    /// Verifies fixtures falling back from a missing revision share one
+    /// conversion of the default revision per mode.
+    #[test]
+    fn fallback_conversion_is_reused_across_fixtures() {
+        let (_dir, manager) = library(&[("b.gdtf", revision("Body", 0.5, "Dimmer"))]);
+        for id in 1..=3 {
+            let (mut fixture, _) = manager
+                .create_fixture("Rev Test", "Fixture", "Mode", id)
+                .unwrap();
+            fixture.library_asset_etag = Some("deleted-revision".to_string());
+            assert!(manager.profile_for_fixture(&fixture).is_some());
+            assert!(manager.geometry_for_fixture(&fixture).is_some());
+        }
+        assert_eq!(manager.conversions.len(), 1);
+    }
+
+    /// Verifies repeated instances reuse one conversion, even once the source is
+    /// unreadable, while each still receives its own identifiers and the geometry
+    /// provider's clone shares the cache.
+    #[test]
+    fn repeated_instances_reuse_one_conversion() {
+        let (dir, manager) = library(&[("a.gdtf", revision("Body", 0.0, "Dimmer"))]);
+        let (first, first_geometry) = manager
+            .create_fixture("Rev Test", "Fixture", "Mode", 1)
+            .unwrap();
+        std::fs::remove_file(dir.path().join("a.gdtf")).unwrap();
+
+        let (second, second_geometry) = manager
+            .create_fixture("Rev Test", "Fixture", "Mode", 2)
+            .expect("the cached conversion should not reread the archive");
+        assert_eq!(
+            (first.identifiers.id, second.identifiers.id),
+            (1, 2),
+            "each instance keeps its requested ID"
+        );
+        assert_ne!(first.identifiers.uid, second.identifiers.uid);
+        assert_eq!(first.library_asset_etag, second.library_asset_etag);
+        assert!(first_geometry.is_some());
+        assert_eq!(first_geometry, second_geometry);
+        assert_eq!(
+            manager.clone().geometry_for_fixture(&second),
+            second_geometry
+        );
+        assert_eq!(manager.conversions.len(), 1);
+    }
+
+    /// Verifies a rescan discards cached conversions without disturbing clones
+    /// of the previous index.
+    #[test]
+    fn rescan_replaces_cached_conversions() {
+        let (dir, mut manager) = library(&[("a.gdtf", revision("Body", 0.0, "Dimmer"))]);
+        let (fixture, _) = manager
+            .create_fixture("Rev Test", "Fixture", "Mode", 1)
+            .unwrap();
+        let previous_index = manager.clone();
+        std::fs::remove_file(dir.path().join("a.gdtf")).unwrap();
+
+        manager.scan().unwrap();
+
+        assert!(manager.find_fixture("Rev Test", "Fixture").is_none());
+        assert!(manager.conversions.len() == 0);
+        assert!(previous_index.geometry_for_fixture(&fixture).is_some());
+    }
+
+    /// Writes one single-channel package archive for a model under a show directory.
+    fn package(model: &str) -> tempfile::TempDir {
+        let show = tempfile::tempdir().unwrap();
+        std::fs::create_dir(show.path().join("fixtures")).unwrap();
+        GdtfBuilder::new("Rev Test", model)
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body").channel(ChannelSpec::new("Body", "Dimmer", &[1])))
+            .write_to(&show.path().join("fixtures").join(format!("{model}.gdtf")));
+        show
+    }
+
+    /// Returns the sorted make/model/revision keys the manager indexes.
+    fn indexed_keys(manager: &FixtureLibraryManager) -> Vec<(String, String, String)> {
+        let mut keys: Vec<_> = manager.fixtures.keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+
+    /// Verifies overlaying a first package matches a full rescan, and switching
+    /// packages still drops the previous show's profiles.
+    #[test]
+    fn package_overlay_matches_rescan_and_switching_drops_previous_package() {
+        let (dir, mut manager) = library(&[("a.gdtf", revision("Body", 0.0, "Dimmer"))]);
+        let first = package("First");
+        let second = package("Second");
+
+        manager
+            .set_showfile_directory(Some(first.path().to_path_buf()))
+            .unwrap();
+        let rescanned = FixtureLibraryManager::read_from_directories(
+            dir.path().to_path_buf(),
+            Some(first.path().to_path_buf()),
+        )
+        .unwrap();
+        assert_eq!(indexed_keys(&manager), indexed_keys(&rescanned));
+        assert!(manager.find_fixture("Rev Test", "First").is_some());
+
+        manager
+            .set_showfile_directory(Some(second.path().to_path_buf()))
+            .unwrap();
+        assert!(manager.find_fixture("Rev Test", "First").is_none());
+        assert!(manager.find_fixture("Rev Test", "Second").is_some());
+        assert!(manager.find_fixture("Rev Test", "Fixture").is_some());
     }
 }

@@ -18,7 +18,14 @@
   border: 0;
   border-bottom: 1px solid var(--line, #34383b);
   border-radius: 0;
-  background: #141718;
+  background: var(--nf-panel-toolbar-surface);
+}
+:root {
+  --nf-panel-toolbar-surface: #141718;
+}
+/* Scroll cues blend into the toolbar they cover. */
+.nf-scroll-indicators.nf-panel-toolbar-scroll {
+  --nf-scroll-surface: var(--nf-panel-toolbar-surface);
 }
 .nf-toolbar-group {
   display: flex;
@@ -31,18 +38,45 @@
   border-bottom: 0;
   border-top: 1px solid var(--line, #34383b);
 }
-.nf-toolbar-button {
+/* Non-interactive indicators beside toolbar buttons share their slot geometry. */
+.nf-toolbar-button,
+.nf-toolbar-slot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   width: 30px;
   height: 30px;
-  border: 1px solid transparent;
   border-radius: var(--nf-corner-radius, 5px);
+}
+.nf-toolbar-button {
+  border: 1px solid transparent;
   color: #c7cdca;
   background: transparent;
   cursor: pointer;
+  position: relative;
+}
+/* Overlays the button corner so a selection count never changes toolbar width. */
+.nf-toolbar-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: #dbeafe;
+  background: #1e40af;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 1;
+}
+.nf-toolbar-button[data-variant="danger"] .nf-toolbar-badge {
+  color: #fee2e2;
+  background: #991b1b;
 }
 .nf-toolbar-button[data-size="labeled"] {
   width: auto;

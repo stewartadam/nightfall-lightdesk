@@ -12,7 +12,15 @@
 //! of exact make/model identifiers. User-imported GDTF and OFL definitions are
 //! scanned and converted by the separate `nightfall-fixture-library` crate; this
 //! module intentionally does not duplicate that general profile system.
+//!
+//! Submodules define the fixture-library command contract (`commands`), the
+//! built-in profile catalog (`catalog`), and fixture instantiation with parameter
+//! spawning (`instantiate`), shared by every runtime that serves fixture profiles,
+//! including the embedded browser demo, which has no file-backed library.
 
+pub mod catalog;
+pub mod commands;
+pub mod instantiate;
 mod moving_heads;
 mod pixel_bars;
 mod strobes;
@@ -38,34 +46,5 @@ pub fn create_fixture_from_library(
     model: &str,
     _mode: &str,
 ) -> Option<Fixture> {
-    let mut fixture = match (make, model) {
-        ("Generic", "100-segment LED Bar") => Some(pixel_bars::create_rgb_bar_100(id, make, model)),
-        ("Generic", "10-segment Rotating RGBW Bar") => {
-            Some(moving_heads::create_linear_wash_bar(id, make, model))
-        }
-        ("Generic", "12-segment RGBW Bar") => Some(pixel_bars::create_rgbw_bar_12(id, make, model)),
-        ("Generic", "RGBPixelTape 180ch") => Some(pixel_bars::create_rgb_bar_60(id, make, model)),
-        ("Generic", "RGBPixelTape 120ch GRB") => {
-            Some(pixel_bars::create_grb_bar_40(id, make, model))
-        }
-        ("Generic", "RGBPixelTape 120ch RGB") => {
-            Some(pixel_bars::create_rgb_bar_40(id, make, model))
-        }
-        ("Generic", "Strobe Matrix 308ch") => Some(strobes::create_strobe(id, make, model, 16)),
-        ("Generic", "Strobe Matrix 312ch") => Some(strobes::create_strobe(id, make, model, 20)),
-        ("Generic", "RGB Strobe Bar 168ch") => {
-            Some(strobes::create_rgb_strobe_bar_168(id, make, model))
-        }
-        ("Generic", "12-segment Rotating Wash Beam") => {
-            Some(moving_heads::create_rotating_wash_beam_194(id, make, model))
-        }
-        ("Generic", "Moving Head Spot 16ch") => {
-            Some(moving_heads::create_moving_spot_16ch(id, make, model))
-        }
-        ("Generic", "Moving Head RGBW") => Some(moving_heads::create_moving_spot(id, make, model)),
-        _ => None,
-    }?;
-
-    normalize_fixture_profile(&mut fixture);
-    Some(fixture)
+    catalog::find_builtin_fixture_profile(make, model).map(|profile| profile.build_fixture(id))
 }

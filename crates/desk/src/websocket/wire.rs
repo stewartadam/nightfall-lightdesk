@@ -170,11 +170,13 @@ pub struct DeskMetrics {
     pub entity_count: Option<u32>,
     /// Time spent in frame pacing in milliseconds
     pub framepace_time_ms: Option<f64>,
-    /// Oversleep duration from frame pacing in milliseconds
+    /// How much longer the frame limiter's last sleep took than requested, in milliseconds
     pub framepace_oversleep_ms: Option<f64>,
+    /// How far the last frame's work exceeded the frame target, in milliseconds
+    pub framepace_overrun_ms: Option<f64>,
     /// Number of active compositor layers
     pub active_layers: u32,
-    /// Number of active DMX universes
+    /// Number of DMX wire frames being output: one per concrete transport and wire universe
     pub active_universes: u32,
     /// Time spent sending Art-Net universes in milliseconds
     pub artnet_send_time_ms: Option<f64>,
@@ -339,13 +341,13 @@ pub(super) struct OutboundLayerState {
     pub is_releasing: bool,
     /// Current source-specific playback position for playback-backed layers.
     pub runtime_position: Option<InstancePosition>,
-    /// Asserted absolute parameter values for this layer, in the same shape as `ParameterState`
+    /// Asserted absolute parameter values for this layer, grouped by fixture element
     pub asserted_absolute_values: Vec<OutboundElementParameterValues>,
-    /// Asserted relative parameter values for this layer, in the same shape as `ParameterState`
+    /// Asserted relative parameter values for this layer, grouped by fixture element
     pub asserted_relative_values: Vec<OutboundElementParameterValues>,
     /// Backend-owned lookahead assertions, such as lookahead values.
     pub lookahead_asserted_values: Vec<OutboundElementParameterValues>,
-    /// Computed parameter values for this layer, in the same shape as `ParameterState`
+    /// Computed parameter values for this layer, grouped by fixture element
     pub computed_values: Vec<OutboundElementComputedState>,
     /// Transition-active flags for computed parameter values in this layer
     pub computed_transitioning: Vec<OutboundElementTransitionState>,

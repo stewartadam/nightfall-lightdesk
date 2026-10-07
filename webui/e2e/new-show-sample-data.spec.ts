@@ -11,6 +11,10 @@ import { join } from "node:path";
 import { readShowfileJsonSync } from "../../scripts/showfile-storage.mjs";
 import { expect, test } from "./playwright-fixtures";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+test.setTimeout(60_000);
+
 /** Creates sample data from startup, checks its draft, and verifies the next new show defaults empty. */
 test("new show optionally includes standalone sample data", async ({
   page,
@@ -57,8 +61,13 @@ test("new show optionally includes standalone sample data", async ({
   );
   expect(snapshot.fixtures).toHaveLength(56);
   expect(snapshot.sceneObjects).toHaveLength(3);
-  expect(snapshot.bindings.output).toEqual([]);
-  expect(snapshot.bindings.disabled).toHaveLength(56);
+  expect(snapshot.bindings.output).toHaveLength(15);
+  expect(
+    snapshot.bindings.output.every(
+      (binding: any) => binding.target.type === "Console",
+    ),
+  ).toBe(true);
+  expect(snapshot.bindings.disabled).toEqual([]);
   expect(
     snapshot.sceneObjects.every(
       (object: any) =>
@@ -74,7 +83,10 @@ test("new show optionally includes standalone sample data", async ({
     const audioPath = timeline.audio_path as string;
     expect(audioPath).toMatch(/^timeline-audio\/[a-f0-9]+\/(lofi|rap)\.mp3$/);
     const bundledAudio = readFileSync(
-      join("crates/app/assets/sample-audio", audioPath.split("/").at(-1)!),
+      join(
+        "crates/app-runtime/assets/sample-audio",
+        audioPath.split("/").at(-1)!,
+      ),
     );
     const installedAudio = readFileSync(
       join(backendSlot.dataDir, "drafts/Sample Tour.nightfall-show", audioPath),
@@ -111,10 +123,9 @@ test("new show optionally includes standalone sample data", async ({
     .toBe("Sample Tour");
 
   const identityBeforeResync = await page.evaluate(async () => {
-    const showfile = await import(
-      /* @vite-ignore */ "/lib/showfile-loading.ts"
-    );
-    const runtime = await import(/* @vite-ignore */ "/lib/engine-runtime.ts");
+    const showfile = (await window.__nightfallHarness.load("app"))
+      .showfileLoading;
+    const runtime = window.__nightfallTest.runtime;
     const revision = showfile.currentShowfileRevision.get();
     const generation = runtime.resyncGeneration();
     localStorage.removeItem("nightfall.currentShowfileName");
@@ -127,9 +138,7 @@ test("new show optionally includes standalone sample data", async ({
   await expect
     .poll(async () =>
       page.evaluate(async () => {
-        const runtime = await import(
-          /* @vite-ignore */ "/lib/engine-runtime.ts"
-        );
+        const runtime = window.__nightfallTest.runtime;
         return runtime.resyncGeneration();
       }),
     )
@@ -143,9 +152,8 @@ test("new show optionally includes standalone sample data", async ({
     .toBe("Sample Tour");
   expect(
     await page.evaluate(async () => {
-      const showfile = await import(
-        /* @vite-ignore */ "/lib/showfile-loading.ts"
-      );
+      const showfile = (await window.__nightfallHarness.load("app"))
+        .showfileLoading;
       return showfile.currentShowfileRevision.get();
     }),
   ).toBe(identityBeforeResync.revision);

@@ -37,6 +37,8 @@ pub enum PersistenceCapability {
 pub enum LibraryCapability {
     /// Native library discovery and import are available.
     Native,
+    /// Only entries compiled into the runtime are available; discovery and import are not.
+    BuiltInOnly,
     /// Library discovery and import are unavailable.
     Unavailable,
 }
@@ -120,7 +122,7 @@ impl RuntimeCapabilities {
         Self {
             runtime_mode: RuntimeMode::EmbeddedDemo,
             persistence: PersistenceCapability::Unavailable,
-            fixture_library: LibraryCapability::Unavailable,
+            fixture_library: LibraryCapability::BuiltInOnly,
             object_library: LibraryCapability::Unavailable,
             fx_modules: FxModuleCapability::Unavailable,
             timeline_audio: TimelineAudioCapability::BundledBrowser,

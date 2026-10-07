@@ -172,6 +172,7 @@ export function collectUniversesFromOutputSource(
       return expanded ?? [];
     }
     case "Fixture":
+    case "FixtureBreak":
       return [];
   }
 }
@@ -186,8 +187,6 @@ export function collectUniversesFromOutputTarget(
       if (expanded === "wildcard") return ["*"];
       return expanded ?? [];
     }
-    case "Disabled":
-      return [];
   }
 }
 

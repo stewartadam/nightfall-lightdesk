@@ -13,6 +13,7 @@ import { QueueIcon } from "@squidlab/phosphor-solid/queue";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { Dynamic } from "solid-js/web";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
+import { Toolbar } from "../../../components/ui/toolbar";
 import {
   ToggleToolbarButton,
   ToolbarButton,
@@ -33,11 +34,10 @@ export function TapPatternToolbar(props: TapPatternToolbarProps) {
   return (
     <PanelToolbar
       left={
-        <div
-          aria-label="Tap capture controls"
+        <Toolbar
+          label="Tap capture controls"
           class="flex items-center gap-0.5"
           data-tap-control="true"
-          role="toolbar"
         >
           <ToggleToolbarButton
             label={props.isCaptureArmed ? "Disarm" : "Arm"}
@@ -71,7 +71,7 @@ export function TapPatternToolbar(props: TapPatternToolbarProps) {
           >
             <QueueIcon class="size-4" aria-hidden />
           </ToolbarButton>
-        </div>
+        </Toolbar>
       }
     />
   );

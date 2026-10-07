@@ -9,13 +9,10 @@
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
 import { createSignal, For, Show } from "solid-js";
 import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../../../components/ui/dialog";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import { Table } from "../../../components/ui/table";
@@ -194,175 +191,151 @@ export function ShowfileImportModal(props: ShowfileImportModalProps) {
   };
 
   return (
-    <Show when={props.open}>
-      <DialogBackdrop
-        role="presentation"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) props.onClose();
-        }}
-      >
-        <DialogSurface
-          role="dialog"
-          aria-modal="true"
-          aria-label="Import Showfile"
-          class="max-w-3xl max-h-[86vh]"
+    <Dialog
+      kind="task"
+      isOpen={props.open}
+      usePortal={false}
+      title="Import Showfile"
+      closeLabel="Close import showfile dialog"
+      class="max-w-3xl max-h-[86vh]"
+      onDismiss={props.onClose}
+      onSubmit={submitImport}
+    >
+      <DialogBody class="max-h-[calc(86vh-8rem)] overflow-y-auto">
+        <input
+          ref={(element) => {
+            fileInputRef = element;
+            element.setAttribute("webkitdirectory", "");
+            element.setAttribute("directory", "");
+          }}
+          class="hidden"
+          type="file"
+          onChange={(event) => {
+            const path = pathFromFiles(
+              Array.from(event.currentTarget.files ?? []),
+            );
+            if (path) setPath(path);
+            event.currentTarget.value = "";
+          }}
+        />
+        <div
+          id="showfile-import-path"
+          role="button"
+          tabIndex={0}
+          aria-label="Showfile Path"
+          class={`flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-6 text-center outline-none transition-colors ${
+            isDraggingPath()
+              ? "border-blue-400 bg-blue-500/10"
+              : "border-neutral-600 hover:border-neutral-500"
+          }`}
+          onClick={chooseShowfile}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              chooseShowfile();
+            }
+          }}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setIsDraggingPath(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setIsDraggingPath(true);
+          }}
+          onDragLeave={(event) => {
+            if (event.currentTarget === event.target) {
+              setIsDraggingPath(false);
+            }
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setIsDraggingPath(false);
+            if (event.dataTransfer) setPathFromDrop(event.dataTransfer);
+          }}
         >
-          <DialogHeader>
-            <DialogTitle>Import Showfile</DialogTitle>
-            <DialogCloseButton
-              type="button"
-              aria-label="Close import showfile dialog"
-              onClick={props.onClose}
-            />
-          </DialogHeader>
+          <CloudArrowUpIcon class="mb-3 size-12 text-gray-500" aria-hidden />
+          <Show
+            when={options().path}
+            fallback={
+              <p class="text-sm font-medium text-gray-400">
+                Drop a .nightfall-show folder here or click to browse
+              </p>
+            }
+          >
+            {(path) => (
+              <p class="max-w-full truncate font-mono text-sm text-gray-200">
+                {path()}
+              </p>
+            )}
+          </Show>
+        </div>
 
-          <DialogBody class="max-h-[calc(86vh-8rem)] overflow-y-auto">
-            <input
-              ref={(element) => {
-                fileInputRef = element;
-                element.setAttribute("webkitdirectory", "");
-                element.setAttribute("directory", "");
-              }}
-              class="hidden"
-              type="file"
-              onChange={(event) => {
-                const path = pathFromFiles(
-                  Array.from(event.currentTarget.files ?? []),
-                );
-                if (path) setPath(path);
-                event.currentTarget.value = "";
-              }}
-            />
-            <div
-              id="showfile-import-path"
-              role="button"
-              tabIndex={0}
-              aria-label="Showfile Path"
-              class={`flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-6 text-center outline-none transition-colors ${
-                isDraggingPath()
-                  ? "border-blue-400 bg-blue-500/10"
-                  : "border-neutral-600 hover:border-neutral-500"
-              }`}
-              onClick={chooseShowfile}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  chooseShowfile();
-                }
-              }}
-              onDragEnter={(event) => {
-                event.preventDefault();
-                setIsDraggingPath(true);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                setIsDraggingPath(true);
-              }}
-              onDragLeave={(event) => {
-                if (event.currentTarget === event.target) {
-                  setIsDraggingPath(false);
-                }
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                setIsDraggingPath(false);
-                if (event.dataTransfer) setPathFromDrop(event.dataTransfer);
-              }}
+        <div class="mt-4 flex flex-wrap items-end gap-3 rounded border border-gray-700 bg-gray-950 px-3 py-3">
+          <label class="flex min-w-48 flex-1 flex-col gap-1 text-xs font-medium uppercase text-gray-400">
+            Bulk Policy
+            <NativeSelect
+              aria-label="Bulk import policy"
+              value={bulkPolicy()}
+              onChange={(event) =>
+                setBulkPolicy(event.currentTarget.value as ShowfileImportPolicy)
+              }
             >
-              <CloudArrowUpIcon
-                class="mb-3 size-12 text-gray-500"
-                aria-hidden
-              />
-              <Show
-                when={options().path}
-                fallback={
-                  <p class="text-sm font-medium text-gray-400">
-                    Drop a .nightfall-show folder here or click to browse
-                  </p>
-                }
-              >
-                {(path) => (
-                  <p class="max-w-full truncate font-mono text-sm text-gray-200">
-                    {path()}
-                  </p>
-                )}
-              </Show>
-            </div>
+              <For each={FULL_POLICY_OPTIONS}>
+                {(policy) => <option value={policy}>{policy}</option>}
+              </For>
+            </NativeSelect>
+          </label>
+          <Button type="button" onClick={applyBulkPolicy}>
+            Apply to all applicable rows
+          </Button>
+        </div>
 
-            <div class="mt-4 flex flex-wrap items-end gap-3 rounded border border-gray-700 bg-gray-950 px-3 py-3">
-              <label class="flex min-w-48 flex-1 flex-col gap-1 text-xs font-medium uppercase text-gray-400">
-                Bulk Policy
-                <NativeSelect
-                  aria-label="Bulk import policy"
-                  value={bulkPolicy()}
-                  onChange={(event) =>
-                    setBulkPolicy(
-                      event.currentTarget.value as ShowfileImportPolicy,
-                    )
-                  }
-                >
-                  <For each={FULL_POLICY_OPTIONS}>
-                    {(policy) => <option value={policy}>{policy}</option>}
-                  </For>
-                </NativeSelect>
-              </label>
-              <Button type="button" onClick={applyBulkPolicy}>
-                Apply to all applicable rows
-              </Button>
-            </div>
-
-            <div class="mt-4 overflow-hidden rounded border border-gray-700">
-              <Table aria-label="Showfile import policies">
-                <thead class="text-left">
+        <div class="mt-4 overflow-hidden rounded border border-gray-700">
+          <Table aria-label="Showfile import policies">
+            <thead class="text-left">
+              <tr>
+                <th scope="col">Object Type</th>
+                <th scope="col" class="w-44">
+                  Policy
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={IMPORT_ROWS}>
+                {(row) => (
                   <tr>
-                    <th scope="col">Object Type</th>
-                    <th scope="col" class="w-44">
-                      Policy
-                    </th>
+                    <td>{row.label}</td>
+                    <td>
+                      <NativeSelect
+                        value={options()[row.key]}
+                        aria-label={`${row.label} import policy`}
+                        onChange={(event) =>
+                          setPolicy(
+                            row.key,
+                            event.currentTarget.value as ShowfileImportPolicy,
+                          )
+                        }
+                      >
+                        <For each={row.policies}>
+                          {(policy) => <option value={policy}>{policy}</option>}
+                        </For>
+                      </NativeSelect>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  <For each={IMPORT_ROWS}>
-                    {(row) => (
-                      <tr>
-                        <td>{row.label}</td>
-                        <td>
-                          <NativeSelect
-                            value={options()[row.key]}
-                            aria-label={`${row.label} import policy`}
-                            onChange={(event) =>
-                              setPolicy(
-                                row.key,
-                                event.currentTarget
-                                  .value as ShowfileImportPolicy,
-                              )
-                            }
-                          >
-                            <For each={row.policies}>
-                              {(policy) => (
-                                <option value={policy}>{policy}</option>
-                              )}
-                            </For>
-                          </NativeSelect>
-                        </td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </Table>
-            </div>
-          </DialogBody>
+                )}
+              </For>
+            </tbody>
+          </Table>
+        </div>
+      </DialogBody>
 
-          <DialogFooter>
-            <Button type="button" onClick={props.onClose}>
-              Cancel
-            </Button>
-            <Button variant="primary" type="button" onClick={submitImport}>
-              Import
-            </Button>
-          </DialogFooter>
-        </DialogSurface>
-      </DialogBackdrop>
-    </Show>
+      <DialogFooter>
+        <DialogCancelButton />
+        <Button variant="primary" type="button" onClick={submitImport}>
+          Import
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 }

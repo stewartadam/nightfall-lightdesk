@@ -126,23 +126,25 @@ mod tests {
     fn accepted_beatgrid_survives_showfile_save_and_load_without_model() {
         let mut timelines = DataProvider::<Timeline>::default();
         let timecodes = DataProvider::<Timecode>::default();
-        let mut timeline = Timeline::default();
-        timeline.bpm = 128.5;
-        timeline.beats_per_bar = 3;
-        timeline.use_beat_grid = true;
-        timeline.beatgrid = Some(BeatgridData {
-            source: BeatgridSource::Manual,
-            audio_fingerprint: "saved-audio".into(),
+        let timeline = Timeline {
             bpm: 128.5,
             beats_per_bar: 3,
-            markers: vec![BeatMarker {
-                time: Duration::from_millis(1375),
-                beat_index: 2,
-                is_downbeat: false,
-                confidence: Some(0.95),
-            }],
-            confidence: 0.9,
-        });
+            use_beat_grid: true,
+            beatgrid: Some(BeatgridData {
+                source: BeatgridSource::Manual,
+                audio_fingerprint: "saved-audio".into(),
+                bpm: 128.5,
+                beats_per_bar: 3,
+                markers: vec![BeatMarker {
+                    time: Duration::from_millis(1375),
+                    beat_index: 2,
+                    is_downbeat: false,
+                    confidence: Some(0.95),
+                }],
+                confidence: 0.9,
+            }),
+            ..Default::default()
+        };
         timelines.add(timeline.clone()).unwrap();
         let saver = TimecodesTimelinesSaveContributor::new(&timecodes, &timelines);
         let snapshot = super::super::collect_save_contributions(&[&saver]);

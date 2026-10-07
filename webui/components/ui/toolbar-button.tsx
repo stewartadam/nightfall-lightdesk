@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type JSX, splitProps } from "solid-js";
+import { type JSX, Show, splitProps } from "solid-js";
 import Tooltip from "./tooltip";
 import "./toolbar.css";
 import "./button-feedback.css";
@@ -20,13 +20,19 @@ interface ToolbarButtonProps
   variant?: "neutral" | "danger";
   size?: "icon" | "labeled";
   ariaPressed?: boolean;
+  /** Item count shown as a corner badge when positive, without resizing the button. */
+  count?: number;
 }
 
 interface ToggleToolbarButtonProps extends ToolbarButtonProps {
   pressed: boolean;
 }
 
-/** Provides shared toolbar states and a tooltip, with an independently named accessible action. */
+/**
+ * Provides shared toolbar states and a tooltip, with an independently named
+ * accessible action. A positive `count` overlays a corner badge so selection
+ * changes never reflow the toolbar.
+ */
 export function ToolbarButton(props: ToolbarButtonProps) {
   const [local, rest] = splitProps(props, [
     "label",
@@ -36,6 +42,8 @@ export function ToolbarButton(props: ToolbarButtonProps) {
     "ariaPressed",
     "class",
     "type",
+    "count",
+    "children",
   ]);
   return (
     <Tooltip content={() => local.tooltip ?? local.label}>
@@ -48,7 +56,14 @@ export function ToolbarButton(props: ToolbarButtonProps) {
         aria-label={local.label}
         aria-pressed={local.ariaPressed}
         {...rest}
-      />
+      >
+        {local.children}
+        <Show when={(local.count ?? 0) > 0}>
+          <span class="nf-toolbar-badge" aria-hidden="true">
+            {local.count}
+          </span>
+        </Show>
+      </button>
     </Tooltip>
   );
 }

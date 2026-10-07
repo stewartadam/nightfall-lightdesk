@@ -39,6 +39,7 @@ bd init --branch beads-sync --actor agent
   - Only stop services that you personally started during the current turn.
   - If a service was already running at the start of the turn, leave it running at completion unless the user explicitly asks you to stop it.
   - When reporting completion, mention any services left running.
+  - Start any backend you launch yourself (e.g. `cargo run`, a built `nightfall-headless`) with `NIGHTFALL_TIMELINE_AUDIO_ENABLED=0` so timeline playback never plays through the user's speakers. The Playwright wrapper already does this for its backends.
 
 ### Protected-branches task workflow
 
@@ -52,7 +53,7 @@ When the user provides implementation tasks while the current worktree is on `ma
 6. Commit the validated changes
    - When committing changes, do not add untracked files unless you created them.
 7. Perform a formal review pass before handing work back.
-   - Use the review skill/workflow (`/review` when available); do not substitute an implicit sanity check.
+   - Run a dedicated code review focused on finding bugs; do not substitute an implicit sanity check.
    - Surface review findings explicitly in the handoff, ordered by severity with file/line references when applicable.
    - If there are no findings, say that clearly and note any remaining test gaps or residual risk.
 8. Stop before pushing the branch or opening a PR so the user can review, manually test, and guide the next direction.
@@ -64,16 +65,14 @@ When the user explicitly asks to work on multiple items in parallel:
 3. Keep status, tests, review findings, and handoff notes separate per worktree.
 4. Do not merge items together unless the user explicitly directs it.
 
-When work or follow-up work was initiated within a worktree, let the user decide when to initiate a review.
-
 ## Lifecycle commands
 
 The backend is accessible on NIGHTFALL_PORT and frontend at http://localhost:{NIGHTFALL_PORT+1}, `.env` defines NIGHTFALL_PORT.
 
-- `npm run lint` - run biome lints
-- `npm run typecheck` - run tsc to validate typescript
-- `npm run typeshare` - export typeshare types from Rust to TS
-- `npm run wasm-build:dev` - rebuild WASM binaries (in particular after adjusting command parsing)
+- `pnpm run lint` - run biome lints
+- `pnpm run typecheck` - run tsc to validate typescript
+- `pnpm run typeshare` - export typeshare types from Rust to TS
+- `pnpm run wasm-build:dev` - rebuild WASM binaries (in particular after adjusting command parsing)
 
 ## Comments
 
@@ -98,15 +97,15 @@ Application data (fixtures, fx modules, showfiles, etc) can be found at:
 ## Interacting with the Browser/UI
 
 - Validate changes in the UI flows with Playwright. If you need interaction instructions, ask.
-- Run browser automation through the repo wrapper instead: `npm run test:webui-playwright -- <spec-or-dir> [--grep <pattern>]`.
+- Run browser automation through the repo wrapper instead: `pnpm run test:webui-playwright <spec-or-dir> [--grep <pattern>]`.
   - Use `--target embedded-demo` for browser-demo tests that do not need a native backend; the default is `--target native`.
   - On macOS, run browser-launching Playwright commands using approved escalated execution outside the agent sandbox, including both headed and headless runs. Request escalation before the first launch.
   - If escalation is unavailable, provide the wrapper command for the user to run in Terminal. Do not retry browser launches inside the sandbox after an application-registration failure (`_RegisterApplication`, `TransformProcessType`, or `SIGABRT`).
-  - The wrapper rejects browser launches on macOS when `CODEX_SANDBOX=seatbelt`. Do not unset or override this indicator to bypass the guard; it does not remove the operating system's restrictions. Help, installation, and test listing remain available inside the sandbox; put `--help` or `--list` immediately after the command (for example, `npm run test:webui-playwright -- --list`).
+  - The wrapper rejects browser launches on macOS when `CODEX_SANDBOX=seatbelt`. Do not unset or override this indicator to bypass the guard; it does not remove the operating system's restrictions. Help, installation, and test listing remain available inside the sandbox; put `--help` or `--list` immediately after the command (for example, `pnpm run test:webui-playwright --list`).
   - Playwright browser path is already configured in `.env`, don't try to override it.
   - Do not use ad hoc Playwright invocations such as `node -e 'const { chromium } = require("playwright"); ...'`.
   - Remember to stop timeline playback once at the end of your test if you start it for a test so it doesn't keep running in the background.
-- For one-off interactive checks, add or update a spec under `playwright/tests/` and run it with `npm run test:webui-playwright -- --headed <spec>`.
+- For one-off interactive checks, add or update a spec under `playwright/tests/` and run it with `pnpm run test:webui-playwright --headed <spec>`.
 - Reuse Playwright artifacts under `test-results/playwright/` for screenshots, traces, and debugging instead of hand-rolled scripts.
 - The frontend takes 2-3s on page load to connect to the backend.
 - Clicking the Search icon in the top toolbar (or Ctrl/Cmd+Shift+P) opens the Command Palette, which is the primary way of opening panels.
@@ -122,7 +121,17 @@ Application data (fixtures, fx modules, showfiles, etc) can be found at:
   - Commit messages should have a one-line summary alongside a description of changes.
 - When opening pull requests, use the same conventional commit naming style for the PR title.
   - Do not prefix PR titles with `[codex]` or other agent markers.
+  - Every PR description must include a `## Release notes` section with a `Notes:` declaration for the release changelog. Write concise, user-facing prose describing the resulting behavior, or put one entry per bullet after an empty `Notes:` line.
+  - For changes with no user-visible impact, explicitly use `Notes: none (specific reason)`; do not omit the declaration.
+  - Keep the release notes current when updating a PR's scope, and verify the declaration before creating or handing off the PR.
 - If commit fails, resolve and retry until it succeeds
+- Run a code review at the end of every work session, including follow-up work on an existing branch or PR, before handing back.
+  - Make it a dedicated review focused on finding bugs; do not substitute an implicit sanity check.
+  - Address findings or surface them in the handoff, ordered by severity with file/line references. If there are none, say so.
+- Attach screenshots or videos of completed UI-visible work to the handoff or PR.
+  - Capture them with the Playwright wrapper (see above) against the real app, showing the actual end result rather than mockups or intermediate states.
+  - Walk each flow step by step so every state, anchor, and target the user would see is actually rendered in the capture, not skipped or jumped to.
+  - For changes with no visible UI, say so instead.
 - Use 'bd' for tracking work you skipped for implementation later
 
 <!-- BEGIN BEADS CODEX SETUP: generated by bd setup codex -->

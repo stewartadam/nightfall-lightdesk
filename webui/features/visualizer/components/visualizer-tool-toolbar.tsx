@@ -20,6 +20,7 @@ import { SunIcon } from "@squidlab/phosphor-solid/sun";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { VideoCameraIcon } from "@squidlab/phosphor-solid/video-camera";
 import { Dynamic } from "solid-js/web";
+import { v4 as uuidv4 } from "uuid";
 /**
  * Toolbar for Visualizer interaction modes and view/debug toggles.
  *
@@ -50,6 +51,7 @@ import {
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { deleteSceneObject } from "../../../lib/scene-object-service";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   bindings,
   fixtures,
@@ -99,8 +101,8 @@ export const VisualizerToolToolbar: Component = () => {
   const $visualizerSceneObjectSelection = useStore(
     visualizerSceneObjectSelection,
   );
-  const $fixtures = useStore(fixtures);
-  const $sceneObjects = useStore(sceneObjects);
+  const $fixtures = useSharedStore(fixtures);
+  const $sceneObjects = useSharedStore(sceneObjects);
   const $bindings = useStore(bindings);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
 
@@ -184,7 +186,7 @@ export const VisualizerToolToolbar: Component = () => {
 
     const fixtureIds = selectedFixtureIds();
     const sceneObjectIds = selectedSceneObjectIds();
-    const batchId = crypto.randomUUID();
+    const batchId = uuidv4();
 
     context.sendProgrammerCommand(
       { type: "ClearProgrammerSelection" },

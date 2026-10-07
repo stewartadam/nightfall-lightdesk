@@ -26,9 +26,33 @@ pub enum BeamType {
     Fresnel,
     /// Soft-edged beam with plano-convex lens characteristics
     Pc,
-    /// Glow/pixel fixtures that emit light but shouldn't render volumetric beams
-    /// (e.g., LED bars, pixel fixtures, GDTF Glow/Rectangle/None beam types)
+    /// Rectangular projected distribution described by throw and aspect ratios.
+    Rectangle,
+    /// Self-emitting geometry without a projected beam (GDTF Glow/None).
     Glow,
+}
+
+/// Luminous flux assumed for a fixture whose profile states none.
+pub const DEFAULT_LUMENS: f32 = 10000.0;
+
+/// Supplies [`DEFAULT_LUMENS`] when deserializing photometry without a flux.
+fn default_lumens() -> f32 {
+    DEFAULT_LUMENS
+}
+
+/// Optical properties of one emitting aperture, independent of fixture layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct BeamOptics {
+    /// Distribution, flux and color temperature of this emitter alone.
+    pub physical: FixturePhysical,
+    /// Radius of the emitting aperture in meters.
+    pub radius: f32,
+    /// Projection distance divided by projected width for rectangular beams.
+    pub throw_ratio: f32,
+    /// Projected width divided by height for rectangular beams.
+    pub rectangle_ratio: f32,
 }
 
 /// Physical fixture characteristics from GDTF/OFL profiles.
@@ -40,9 +64,10 @@ pub struct FixturePhysical {
     pub beam_angle: f32,
     /// Outer beam angle in degrees (GDTF: FieldAngle, OFL: degreesMinMax[1])
     pub field_angle: f32,
-    /// Light output in lumens (GDTF: LuminousFlux, OFL: bulb.lumens)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lumens: Option<f32>,
+    /// Light output in lumens (GDTF: LuminousFlux, OFL: bulb.lumens), or
+    /// [`DEFAULT_LUMENS`] when the profile omits it.
+    #[serde(default = "default_lumens")]
+    pub lumens: f32,
     /// Native color temperature in Kelvin (GDTF/OFL: colorTemperature)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color_temperature: Option<f32>,
@@ -55,7 +80,7 @@ impl Default for FixturePhysical {
         Self {
             beam_angle: 15.0,
             field_angle: 15.0,
-            lumens: None,
+            lumens: DEFAULT_LUMENS,
             color_temperature: None,
             beam_type: BeamType::default(),
         }

@@ -104,7 +104,23 @@ process.stdout.write(JSON.stringify({ state: process.env.GH_TEST_STATE, baseRefN
     assert.ok(existsSync(worktree));
     git(repo, "show-ref", "--verify", "refs/heads/feature");
   }
-  return { root, upstream, repo, worktree, env, git, done, assertRetained };
+  /** Commits work on the feature branch that no target contains, so only a PR can vouch for it. */
+  function addUnmergedWork() {
+    writeFileSync(join(worktree, "unmerged.txt"), "unmerged work\n");
+    git(worktree, "add", "unmerged.txt");
+    git(worktree, "commit", "-m", "unmerged work");
+  }
+  return {
+    root,
+    upstream,
+    repo,
+    worktree,
+    env,
+    git,
+    done,
+    assertRetained,
+    addUnmergedWork,
+  };
 }
 
 for (const target of ["main", "develop"]) {
@@ -178,33 +194,89 @@ test("forwards --no-delete-branch", { skip: !hasWorktrunk }, (t) => {
 });
 
 for (const state of ["OPEN", "CLOSED"]) {
-  /** Refuses PRs that have not been merged before invoking any removal operation. */
-  test(`refuses ${state.toLowerCase()} PRs`, (t) => {
+  /** Keeps unmerged work whose PR has not been merged and lists the commits that would be lost. */
+  test(`keeps unmerged work with ${state.toLowerCase()} PRs`, (t) => {
     const f = fixture(t);
+    f.addUnmergedWork();
     f.env.GH_TEST_STATE = state;
-    f.assertRetained(f.done());
+    const result = f.done();
+    f.assertRetained(result);
+    assert.match(result.stderr, /Kept feature/);
+    assert.match(result.stderr, /unmerged work/);
   });
 }
 
-/** Leaves worktrees and branches intact when GitHub cannot provide reliable metadata. */
-test("refuses cleanup after a GitHub lookup failure", (t) => {
+/** Keeps unmerged work when GitHub cannot vouch for it, reporting the commits instead. */
+test("keeps unmerged work after a GitHub lookup failure", (t) => {
+  const f = fixture(t);
+  f.addUnmergedWork();
+  f.env.GH_TEST_FAIL = "1";
+  const result = f.done();
+  f.assertRetained(result);
+  assert.match(result.stderr, /unmerged work/);
+});
+
+/** Landed commits need no PR, so GitHub being unavailable does not block cleanup. */
+test("removes a branch already in the default branch without GitHub", {
+  skip: !hasWorktrunk,
+}, (t) => {
   const f = fixture(t);
   f.env.GH_TEST_FAIL = "1";
-  f.assertRetained(f.done());
+  const result = f.done();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(f.worktree), false);
+  assert.throws(() =>
+    f.git(f.repo, "show-ref", "--verify", "refs/heads/feature"),
+  );
+});
+
+/** Offline cleanup compares against the last fetched default branch instead of failing. */
+test("removes a landed branch while origin is unreachable", {
+  skip: !hasWorktrunk,
+}, (t) => {
+  const f = fixture(t);
+  f.git(f.repo, "fetch", "origin");
+  f.git(f.repo, "remote", "set-url", "origin", join(f.root, "missing"));
+  f.env.GH_TEST_FAIL = "1";
+  const result = f.done();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(f.worktree), false);
+  assert.match(result.stderr, /last fetched/);
 });
 
 /** Avoids using a different repository's identically named PR branch as evidence. */
-test("refuses fork PRs", (t) => {
+test("keeps unmerged work with fork PRs", (t) => {
   const f = fixture(t);
+  f.addUnmergedWork();
   f.env.GH_TEST_FORK = "1";
   f.assertRetained(f.done());
 });
 
 /** A missing target must not trigger cleanup against stale tracking references. */
-test("refuses cleanup when fetching the target fails", (t) => {
+test("keeps unmerged work when fetching the PR target fails", (t) => {
   const f = fixture(t);
+  f.addUnmergedWork();
   f.env.GH_TEST_TARGET = "deleted-target";
   f.assertRetained(f.done());
+});
+
+/** One unmerged branch is reported without stopping cleanup of the branches that landed. */
+test("cleans landed branches and reports the unmerged ones", {
+  skip: !hasWorktrunk,
+}, (t) => {
+  const f = fixture(t);
+  const other = join(f.root, "other-worktree");
+  f.git(f.repo, "worktree", "add", "-b", "other", other, "origin/main");
+  writeFileSync(join(other, "other.txt"), "never merged\n");
+  f.git(other, "add", "other.txt");
+  f.git(other, "commit", "-m", "never merged");
+  f.env.GH_TEST_FAIL = "1";
+  const result = f.done(["feature", "other", "--foreground", "--no-hooks"]);
+  assert.notEqual(result.status, 0);
+  assert.equal(existsSync(f.worktree), false);
+  assert.ok(existsSync(other));
+  assert.match(result.stderr, /Kept other/);
+  assert.match(result.stderr, /never merged/);
 });
 
 /** Rejects force flags so a typo cannot bypass the alias's normal cleanup checks. */

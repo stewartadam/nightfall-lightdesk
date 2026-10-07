@@ -9,6 +9,9 @@
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 const SEQUENCE_EDITOR_PANEL_ID =
   "panel-SequenceEditor-create-tracking-mode-e2e";
 
@@ -57,7 +60,7 @@ async function openSequenceListPanel(page: Page): Promise<void> {
     const api = stores.dockApi.get();
     const panelId = "panel-SequenceList-create-tracking-mode-e2e";
     const referencePanel =
-      api.getPanel("panel-FixtureGrid") ??
+      api.getPanel("panel-Groups") ??
       api.panels.find(
         (candidate: any) => candidate.api.location.type === "grid",
       );
@@ -148,7 +151,7 @@ async function openCreatedSequenceProperties(
     api.getPanel(`sequence-editor-panel-${uid}`)?.api.close();
     api.getPanel(panelId)?.api.close();
     const referencePanel =
-      api.getPanel("panel-FixtureGrid") ??
+      api.getPanel("panel-Groups") ??
       api.panels.find(
         (candidate: any) => candidate.api.location.type === "grid",
       );

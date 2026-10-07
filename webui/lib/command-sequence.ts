@@ -31,6 +31,14 @@ export async function splitCommandSequence(input: string): Promise<string[]> {
   return statements;
 }
 
+/** Observers notified as a sequence advances through its statements. */
+export interface CommandSequenceProgress {
+  /** Called once a statement has been submitted, before its result arrives. */
+  onStatementStarted?: (index: number) => void;
+  /** Called once a statement's terminal result has arrived. */
+  onStatementSettled?: (index: number, result: types.CommandResult) => void;
+}
+
 /** Runs console statements serially with one command and undo identity per statement. */
 export class CommandSequenceRunner {
   private readonly client: CommandClient;
@@ -40,19 +48,32 @@ export class CommandSequenceRunner {
     this.client = client;
   }
 
-  /** Submits statements in order and stops after the first failed command. */
-  async run(input: string): Promise<CommandSequenceResult> {
-    const statements = await splitCommandSequence(input);
+  /** Splits console input into statements, then submits them in order. */
+  async run(
+    input: string,
+    progress: CommandSequenceProgress = {},
+  ): Promise<CommandSequenceResult> {
+    return this.runStatements(await splitCommandSequence(input), progress);
+  }
+
+  /** Submits already-split statements in order and stops after the first failed command. */
+  async runStatements(
+    statements: readonly string[],
+    progress: CommandSequenceProgress = {},
+  ): Promise<CommandSequenceResult> {
     const steps: CommandSequenceStep[] = [];
 
-    for (const statement of statements) {
+    for (const [index, statement] of statements.entries()) {
       const command: types.DeskCommand = {
         type: "Eval",
         data: statement,
       };
-      const result = await this.client.submitCommand("DeskCommand", command, {
+      const pendingResult = this.client.submitCommand("DeskCommand", command, {
         consoleCommandText: statement,
       });
+      progress.onStatementStarted?.(index);
+      const result = await pendingResult;
+      progress.onStatementSettled?.(index, result);
       steps.push({ statement, result });
       if (result.outcome.type === "Failed") {
         return { steps, stoppedOnFailure: true };

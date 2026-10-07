@@ -10,6 +10,9 @@
 
 use std::time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
+// Leaf crate: mark the cargo-hakari workspace-hack as used so cargo's unused_dependencies lint passes.
+use nightfall_workspace_hack as _;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -263,7 +266,7 @@ impl PlaybackDurationProfile {
 }
 
 /// Timeline-authored owner for a planned playback interval.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct TimelinePlaybackOwner {
     /// Timeline runtime UID that authored this playback.
@@ -586,7 +589,7 @@ pub struct PlannedNoOp {
 }
 
 /// Reason a planned aggregate is a no-op at the target.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(rename_all = "snake_case")]
 pub enum PlannedNoOpReason {

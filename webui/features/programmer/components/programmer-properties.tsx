@@ -18,6 +18,7 @@ import { sortedAttributes } from "../../../lib/attribute-ordering";
 import { parseHexColor } from "../../../lib/color-utils";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { getFixtureAttributeNames } from "../../../lib/fixture-attributes";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import { fixtures, programmerSelection } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -35,7 +36,7 @@ const formatAttributeForCommand = (attr: string): string => {
 };
 
 export default function ProgrammerProperties() {
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $selection = useStore(programmerSelection);
   const [attributeValues, setAttributeValues] = createSignal<
     Record<string, number>

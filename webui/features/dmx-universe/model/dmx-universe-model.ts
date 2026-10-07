@@ -8,7 +8,6 @@
 
 import { FIXTURE_VALUE_TEXT_COLORS } from "../../../lib/datagrid";
 import { normalizeAttributeName } from "../../../lib/utils";
-import type * as types from "../../../types";
 import type { Attribute } from "../../../types";
 export interface ChannelInfo {
   fixtureUid: string;
@@ -54,45 +53,6 @@ export function getAttributeName(attr: Attribute): string {
     return attr.data.label;
   }
   return attr.type;
-}
-
-/** Calculate DMX channel width from resolution */
-export function getChannelWidth(resolution: string): number {
-  switch (resolution) {
-    case "Coarse":
-      return 1;
-    case "Fine":
-      return 2;
-    case "UltraFine":
-      return 3;
-    case "Uber":
-      return 4;
-    default:
-      return 1;
-  }
-}
-
-export function normalizeSelectedTransport(
-  transport: string,
-): "sacn" | "artnet" | "udmx" | "console" | null {
-  if (transport === "Console") return "console";
-  if (transport === "sACN") return "sacn";
-  if (transport === "Art-Net") return "artnet";
-  if (transport === "USB") return "udmx";
-  return null;
-}
-
-/** Returns whether a resolved output transport belongs to the selected family. */
-export function outputTransportMatchesSelection(
-  transport: types.OutputTransport | undefined,
-  selection: "sacn" | "artnet" | "udmx" | "console" | null,
-): boolean {
-  if (selection === null || selection === "console") return true;
-  if (!transport) return false;
-  if (selection === "sacn") return transport.type === "Sacn";
-  if (selection === "artnet") return transport.type === "ArtNet";
-  if (selection === "udmx") return transport.type === "Udmx";
-  return false;
 }
 
 /** Normalizes typed and patched attribute names for case-insensitive matching. */

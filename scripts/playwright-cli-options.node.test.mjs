@@ -24,6 +24,7 @@ test("extracts the rust log filter from Playwright arguments", () => {
 
   assert.deepEqual(options, {
     target: undefined,
+    viteMode: undefined,
     browser: undefined,
     dataDir: undefined,
     playwrightArgs: [
@@ -42,6 +43,7 @@ test("preserves Playwright arguments without a rust log filter", () => {
 
   assert.deepEqual(options, {
     target: undefined,
+    viteMode: undefined,
     browser: undefined,
     dataDir: undefined,
     playwrightArgs: ["test", "--headed"],
@@ -60,6 +62,7 @@ test("extracts the data directory from Playwright arguments", () => {
 
   assert.deepEqual(options, {
     target: undefined,
+    viteMode: undefined,
     browser: undefined,
     dataDir: "/tmp/nightfall-sample-blueprints",
     playwrightArgs: ["test", "webui/e2e/sample-blueprints-visual.spec.ts"],
@@ -78,6 +81,7 @@ test("extracts a browser selection from Playwright arguments", () => {
 
   assert.deepEqual(options, {
     target: undefined,
+    viteMode: undefined,
     browser: "firefox",
     dataDir: undefined,
     playwrightArgs: ["test", "webui/e2e/browser-demo.spec.ts"],
@@ -207,5 +211,45 @@ test("rejects invalid or ambiguous targets", () => {
         "embedded-demo",
       ]),
     /--target may only be specified once/,
+  );
+});
+
+/** Verifies the frontend mode is consumed while Playwright arguments keep their order. */
+test("extracts the Vite frontend mode", () => {
+  for (const viteMode of ["dev", "e2e", "preview"]) {
+    const options = extractPlaywrightCliOptions([
+      "test",
+      "--vite-mode",
+      viteMode,
+      "webui/e2e/command-palette.spec.ts",
+    ]);
+    assert.equal(options.viteMode, viteMode);
+    assert.deepEqual(options.playwrightArgs, [
+      "test",
+      "webui/e2e/command-palette.spec.ts",
+    ]);
+  }
+});
+
+/** Verifies missing, unsupported, and repeated frontend modes fail before setup. */
+test("rejects invalid or repeated Vite frontend modes", () => {
+  for (const value of [undefined, "", "build", "--headed"]) {
+    const args = ["test", "--vite-mode"];
+    if (value !== undefined) args.push(value);
+    assert.throws(
+      () => extractPlaywrightCliOptions(args),
+      /--vite-mode requires one of dev, e2e, preview/,
+    );
+  }
+  assert.throws(
+    () =>
+      extractPlaywrightCliOptions([
+        "test",
+        "--vite-mode",
+        "dev",
+        "--vite-mode",
+        "e2e",
+      ]),
+    /--vite-mode may only be specified once/,
   );
 });

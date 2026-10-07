@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -14,18 +15,15 @@ const CONTROLS_COLLAPSED_STORAGE_KEY =
 
 test.setTimeout(60_000);
 
-/** Opens an isolated showfile and waits for the panel shell to become interactive. */
-async function loadTestApp(page: Page, showfileName: string): Promise<void> {
+/** Swaps the backend to a fresh blank showfile and waits for the panel shell to become interactive. */
+async function loadTestApp(page: Page, backendPort: number): Promise<void> {
+  await prepareFreshBackendShowfile(backendPort);
   await page.addInitScript(() => {
     window.localStorage.removeItem("nightfall.currentShowfileName");
     window.localStorage.removeItem("nightfall.e2eAutoOpenStartupShowfile");
   });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
-  await waitForDockviewApp(page, {
-    showfileName,
-    createIfMissing: true,
-    newShowfileName: showfileName,
-  });
+  await waitForDockviewApp(page);
 }
 
 /** Returns the current number of masters in the frontend store. */
@@ -135,23 +133,25 @@ async function dragMasterToControl(
   await expectMasterAssignedToControl(page, masterId, controlIndex);
 }
 
-test("masters can be created and assigned to a control", async ({ page }) => {
+test("masters can be created and assigned to a control", async ({
+  backendSlot,
+  page,
+}) => {
   await page.setViewportSize({ width: 1800, height: 1000 });
   await page.addInitScript((storageKey) => {
     window.localStorage.setItem(storageKey, "false");
   }, CONTROLS_COLLAPSED_STORAGE_KEY);
 
-  await loadTestApp(page, "masters-assignment-e2e");
+  await loadTestApp(page, backendSlot.backendPort);
   await page.waitForTimeout(3_000);
 
   await addPanel(page, {
     id: "panel-Masters-assignment-e2e",
     component: "MastersPanel",
     title: "Masters",
-    position: {
-      referencePanel: "panel-FixtureGrid",
-      direction: "left",
-    },
+    // Fixtures lives in a collapsed edge group by default, so dock a
+    // full-height column on the main grid's left edge instead.
+    position: { direction: "left" },
   });
   await addPanel(page, {
     id: "panel-Clips-assignment-e2e",
@@ -221,6 +221,7 @@ test("masters can be created and assigned to a control", async ({ page }) => {
 });
 
 test("playback rate masters use control midpoint as normal speed", async ({
+  backendSlot,
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 1000 });
@@ -228,17 +229,16 @@ test("playback rate masters use control midpoint as normal speed", async ({
     window.localStorage.setItem(storageKey, "false");
   }, CONTROLS_COLLAPSED_STORAGE_KEY);
 
-  await loadTestApp(page, "rate-masters-assignment-e2e");
+  await loadTestApp(page, backendSlot.backendPort);
   await page.waitForTimeout(3_000);
 
   await addPanel(page, {
     id: "panel-Masters-assignment-e2e",
     component: "MastersPanel",
     title: "Masters",
-    position: {
-      referencePanel: "panel-FixtureGrid",
-      direction: "left",
-    },
+    // Fixtures lives in a collapsed edge group by default, so dock a
+    // full-height column on the main grid's left edge instead.
+    position: { direction: "left" },
   });
   await addPanel(page, {
     id: "panel-Clips-assignment-e2e",

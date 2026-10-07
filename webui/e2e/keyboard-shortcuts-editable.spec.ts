@@ -56,7 +56,8 @@ async function replaceProbeInputValue(input: Locator): Promise<void> {
 /** Initializes the real global shortcut root for the isolated browser probe. */
 async function initializeGlobalShortcuts(page: Page): Promise<void> {
   const hasUndoShortcut = await page.evaluate(async () => {
-    const shortcuts = await import("/lib/keyboardShortcuts.ts");
+    const shortcuts = (await window.__nightfallHarness.load("app"))
+      .keyboardShortcuts;
     shortcuts.initKeyboardShortcuts();
     return shortcuts
       .allShortcuts()
@@ -111,7 +112,8 @@ async function registerSequenceShortcutProbe(page: Page): Promise<void> {
     probeWindow.__keyboardShortcutSequenceHits = 0;
     probeWindow.__keyboardShortcutSequenceUnregister?.();
 
-    const shortcuts = await import("/lib/keyboardShortcuts.ts");
+    const shortcuts = (await window.__nightfallHarness.load("app"))
+      .keyboardShortcuts;
     probeWindow.__keyboardShortcutSequenceUnregister =
       shortcuts.registerKeyboardShortcut(
         {

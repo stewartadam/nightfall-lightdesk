@@ -8,9 +8,12 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
+import { writeClipboardText } from "../../../lib/clipboard";
 import { sendCueUpdate, sendSequenceUpdate } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { cues, dockApi, pushToast, sequences } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -54,7 +57,8 @@ export interface TapPatternPanelProps extends BasePanelComponentProps {
 const log = getLogger(import.meta.url);
 
 /** Coordinates tap capture, analysis, persistence, and sequence creation. */
-export function TapPatternController(_props: TapPatternPanelProps) {
+export function TapPatternController(props: TapPatternPanelProps) {
+  const isPanelVisible = usePanelVisibility(props.panelApi);
   let panelElement: HTMLDivElement | undefined;
   let segmentTimelineElement: HTMLButtonElement | undefined;
   const $dockApi = useStore(dockApi);
@@ -236,7 +240,7 @@ export function TapPatternController(_props: TapPatternPanelProps) {
       loopLengthMs: pattern.loopLengthMs,
       existingSequences: Object.values($sequences()),
     });
-    const batchId = crypto.randomUUID().replace(/-/g, "");
+    const batchId = uuidv4().replace(/-/g, "");
     const stepLabel = generated.cues.length === 1 ? "step" : "steps";
 
     setPendingGeneratedSequence(generated);
@@ -322,16 +326,11 @@ export function TapPatternController(_props: TapPatternPanelProps) {
 
   /** Copies captured tap timings, or full persisted state when requested. */
   const copyTapTimings = async (includeStoredState = false) => {
-    if (!navigator?.clipboard?.writeText) {
-      pushToast("error", "Clipboard access unavailable");
-      return;
-    }
-
     try {
       const payload = includeStoredState
         ? { taps: taps(), detectionOptions: detectionOptions() }
         : analysis().relativeTapsMs;
-      await navigator.clipboard.writeText(JSON.stringify(payload));
+      await writeClipboardText(JSON.stringify(payload));
       pushToast(
         "success",
         includeStoredState
@@ -378,6 +377,7 @@ export function TapPatternController(_props: TapPatternPanelProps) {
     focusTapsTimeline,
     isCaptureArmed,
     isPanelKeyboardActive,
+    isPanelVisible,
     panelElement: () => panelElement,
     recordTap,
     setIsCaptureArmed,

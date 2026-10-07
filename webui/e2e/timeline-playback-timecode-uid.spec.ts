@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /**
  * Opens a unique blank showfile for a timeline playback UID scenario.
  */
@@ -142,7 +145,7 @@ test("timeline playback targets linked timecode uid when numeric ids differ", as
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });
@@ -262,7 +265,7 @@ test("deleting linked timecode stops visible timeline playhead", async ({
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });

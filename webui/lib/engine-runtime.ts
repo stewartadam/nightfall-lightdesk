@@ -7,6 +7,7 @@
  */
 
 import { createSignal } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import type {
   ElementParameterRow,
   ElementProgrammerRow,
@@ -35,6 +36,7 @@ import { recordExternalPerformanceMeasure } from "./performance-measure-collecto
 import {
   applyConfirmedShowfileChange,
   currentShowfileName,
+  currentShowfileRevision,
   normalizedShowfileName,
   persistCurrentShowfileName,
 } from "./showfile-loading";
@@ -125,6 +127,7 @@ import {
   wsLatency,
   wsStats,
 } from "../state/appStores";
+import { beginShowfileTransition } from "../state/showfile-transition";
 import type * as types from "../types";
 import type * as flowTypes from "../types/index";
 import { setAttributeMetadata } from "./attribute-metadata";
@@ -134,9 +137,20 @@ import {
 } from "./console-scrollback";
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 import { applyFlowDeltaToDefinition } from "./flow-delta";
+import {
+  carriesParameterState,
+  ParameterStateDecoder,
+  queuedWorkerMessageData,
+  type WorkerQueuedMessage,
+} from "./parameter-state-transfer";
+import { watchWorkerUncaughtErrors } from "./uncaught-error-reporter";
 import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
-import type { AnyWsMessage } from "./ws/types";
+import type {
+  AnyWsMessage,
+  ElementParameterState,
+  FixtureParameterState,
+} from "./ws/types";
 
 /** Worker stats per message type */
 interface WorkerTypeStats {
@@ -170,12 +184,6 @@ function cueDurationProfileArrayToMap(
   return Object.fromEntries(
     profiles.map((profile) => [profile.cue_uid, profile]),
   );
-}
-
-interface WorkerQueuedMessage {
-  data: AnyWsMessage;
-  postedAtMs?: unknown;
-  deliveryMessageId?: unknown;
 }
 
 type WebsocketPullHandle =
@@ -314,8 +322,7 @@ function recordWebsocketPullResponse(messages: unknown): void {
   }
 
   for (const message of messages) {
-    const data = (message as WorkerQueuedMessage | undefined)?.data;
-    if (data?.type === "ParameterState") {
+    if (carriesParameterState(message)) {
       websocketPullMetrics.parameterStatesSinceSample++;
     }
   }
@@ -417,13 +424,17 @@ function scheduleWebsocketPull(): void {
   }
 }
 
+/** Resolves slot-indexed parameter values frames against the backend's latest layout. */
+const parameterStateDecoder = new ParameterStateDecoder();
+
 /** Applies one pulled websocket payload from the worker. */
 function applyWorkerQueuedMessage(message: WorkerQueuedMessage): void {
   recordWorkerDeliveryLag(message.postedAtMs);
   if (typeof message.deliveryMessageId === "number") {
     lastSeenDeliveryMessageId = message.deliveryMessageId;
   }
-  queueWorkerMessage(message.data);
+  const data = queuedWorkerMessageData(message, parameterStateDecoder);
+  if (data) queueWorkerMessage(data);
 }
 
 /** Applies a pulled worker batch and schedules the next frame pull. */
@@ -454,7 +465,7 @@ function applyWorkerMessageBatch(messages: unknown): void {
  * Extract and update the immediate parameter output map synchronously.
  * Called when ParameterState arrives so visualizer has fresh DMX data.
  */
-function updateImmediateParams(rawData: types.OutboundParameterState[]) {
+function updateImmediateParams(rawData: FixtureParameterState[]) {
   const outputMap: ParameterOutputMap = new Map();
   for (const item of rawData) {
     // Preserve per-element output arrays for multi-element fixtures
@@ -474,7 +485,7 @@ function updateImmediateParams(rawData: types.OutboundParameterState[]) {
  * load pose, so only forward pan/tilt when absolute or relative state asserts it.
  */
 function visualizerOutputForElement(
-  state: types.ParameterState,
+  state: ElementParameterState,
 ): Record<string, number> {
   if (!("Pan" in state.output) && !("Tilt" in state.output)) {
     return state.output;
@@ -502,8 +513,8 @@ function queueWorkerMessage(raw: AnyWsMessage) {
   if (raw.type === "ParameterState") {
     measurePerformanceScope(
       "websocket-main.parameter-state.immediate-params",
-      () => updateImmediateParams(raw.data as types.OutboundParameterState[]),
-      { fixtureCount: (raw.data as types.OutboundParameterState[]).length },
+      () => updateImmediateParams(raw.data as FixtureParameterState[]),
+      { fixtureCount: (raw.data as FixtureParameterState[]).length },
     );
   }
 
@@ -1107,7 +1118,7 @@ function dispatchMessage(raw: AnyWsMessage) {
     }
 
     case "ParameterState": {
-      const rawData = raw.data as types.OutboundParameterState[];
+      const rawData = raw.data as FixtureParameterState[];
       // Note: immediate output map already updated in queueMessage().
       // The reactive panel store is throttled to keep Solid subscribers responsive.
       queueReactiveParameterState(rawData);
@@ -1370,6 +1381,16 @@ function dispatchMessage(raw: AnyWsMessage) {
       break;
     }
 
+    case "WorldReplaced": {
+      log.debug("Backend replaced its world, requesting resync");
+      beginShowfileTransition({
+        resyncGeneration: resyncGeneration(),
+        showfileRevision: currentShowfileRevision.get(),
+      });
+      engineRuntime.requestBackendSessionState();
+      break;
+    }
+
     case "CommandResult": {
       log.debug("CommandResult received:", raw.data);
       const result = raw.data as types.CommandResult;
@@ -1387,9 +1408,7 @@ function dispatchMessage(raw: AnyWsMessage) {
       if (correlationKey) {
         const showfileUpdate = settledCommand.resultMetadata;
         if (showfileUpdate && result.outcome.type === "Succeeded") {
-          persistCurrentShowfileName(showfileUpdate.name, {
-            bumpRevision: showfileUpdate.bumpRevision,
-          });
+          persistCurrentShowfileName(showfileUpdate.name);
         }
         if (!flattenRetry) {
           const displayCorrelationKey =
@@ -1816,6 +1835,13 @@ function handleFixtureLibraryCommand(command: types.FixtureLibraryCommand) {
       break;
     }
 
+    case "CreateFixturesFromLibrary": {
+      log.trace(
+        `CreateFixturesFromLibrary acknowledged for ${command.data.fixtures.length} ${command.data.make} ${command.data.model}`,
+      );
+      break;
+    }
+
     case "GetFixtureProfile": {
       // Server echoes this back - response comes via separate message
       log.trace("GetFixtureProfile acknowledged");
@@ -2189,7 +2215,7 @@ const [resyncGeneration, setResyncGeneration] = hmrSignals?.resyncGeneration
 const [backendAppState, setBackendAppState] = hmrSignals?.backendAppState
   ? [hmrSignals.backendAppState, hmrSignals.setBackendAppState]
   : createSignal<types.AppState | null>(null);
-let pendingReactiveParameterState: types.OutboundParameterState[] | null = null;
+let pendingReactiveParameterState: FixtureParameterState[] | null = null;
 let reactiveParameterStateTimer: ReturnType<typeof setTimeout> | null = null;
 let lastReactiveParameterStateFlushMs = 0;
 let previousParameterRows = new Map<string, ParameterRow>();
@@ -2257,9 +2283,7 @@ function scheduleReactiveParameterStateFlush(delayMs: number): void {
 }
 
 /** Queues the newest parameter state and throttles reactive store notification. */
-function queueReactiveParameterState(
-  rawData: types.OutboundParameterState[],
-): void {
+function queueReactiveParameterState(rawData: FixtureParameterState[]): void {
   pendingReactiveParameterState = rawData;
   const nowMs = performance.now();
   const elapsedMs = nowMs - lastReactiveParameterStateFlushMs;
@@ -2373,7 +2397,7 @@ function parameterRowsEqual(left: ParameterRow, right: ParameterRow): boolean {
  * Aggregates per-element data and detects conflicts.
  */
 function processParameterState(
-  rawData: types.OutboundParameterState[],
+  rawData: FixtureParameterState[],
 ): Map<string, ParameterRow> {
   const paramMap = new Map<string, ParameterRow>();
   for (const item of rawData) {
@@ -2554,7 +2578,6 @@ function rejectPendingCommandWaiters(error: Error): void {
 
 interface PendingCurrentShowfileName {
   name: string;
-  bumpRevision: boolean;
 }
 
 const pendingCurrentShowfileNames = new Map<
@@ -2583,7 +2606,7 @@ function currentShowfileNameFromCommand(
   switch (command?.type) {
     case "NewShowfile":
     case "LoadShowfile":
-      return { name: "default", bumpRevision: true };
+      return { name: "default" };
     case "NewNamedShowfile":
       return command.data &&
         typeof command.data === "object" &&
@@ -2591,7 +2614,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.name === "string"
         ? {
             name: normalizedShowfileName(command.data.name),
-            bumpRevision: true,
           }
         : null;
     case "LoadNamedShowfile":
@@ -2599,7 +2621,6 @@ function currentShowfileNameFromCommand(
       return typeof command.data === "string"
         ? {
             name: normalizedShowfileName(command.data),
-            bumpRevision: true,
           }
         : null;
     case "LoadShowfileRevision":
@@ -2609,7 +2630,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.showfileName === "string"
         ? {
             name: normalizedShowfileName(command.data.showfileName),
-            bumpRevision: true,
           }
         : null;
     case "SaveNamedShowfile":
@@ -2619,7 +2639,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.name === "string"
         ? {
             name: normalizedShowfileName(command.data.name),
-            bumpRevision: false,
           }
         : null;
     default:
@@ -2648,6 +2667,47 @@ export const engineRuntime = {
   worker: null as Worker | null,
   config: null as EngineRuntimeConfig | null,
   isRunning: false,
+
+  /**
+   * Discards session-scoped state and requests a full snapshot plus catalogs
+   * from the backend. Runs when a connection opens and when the backend
+   * replaces its world behind an existing connection.
+   */
+  requestBackendSessionState() {
+    cancelPendingSelectionFlattenConfirmation(
+      BACKEND_SESSION_CHANGED_CONFIRMATION_CANCEL_REASON,
+    );
+    markResyncPending();
+    this.sendCommand({
+      module: "EngineCommand",
+      command: {
+        type: "ResyncState",
+      } as types.EngineCommand,
+    });
+    // Native backends and the embedded demo both serve fixture profiles.
+    this.sendCommand({
+      module: "FixtureLibraryCommand",
+      command: {
+        type: "ListAvailableFixtures",
+      } satisfies types.FixtureLibraryCommand,
+    });
+    if (this.config?.mode === "remote") {
+      // Request native-only catalog state from the remote backend.
+      this.sendCommand({
+        module: "ObjectLibraryCommand",
+        command: {
+          type: "ListAvailableObjects",
+        } as any,
+      });
+      this.sendCommand({
+        module: "FxModuleCommand",
+        command: {
+          type: "ListAvailableFxModules",
+        } as any,
+      });
+    }
+    scheduleWebsocketPull();
+  },
 
   /** Starts a fresh engine connection using the selected runtime adapter. */
   start(config: EngineRuntimeConfig) {
@@ -2704,39 +2764,7 @@ export const engineRuntime = {
 
         case "connected":
           log.trace("Engine runtime connected, requesting resync");
-          cancelPendingSelectionFlattenConfirmation(
-            BACKEND_SESSION_CHANGED_CONFIRMATION_CANCEL_REASON,
-          );
-          // Worker connected, reset resync flag and send resync request
-          markResyncPending();
-          this.sendCommand({
-            module: "EngineCommand",
-            command: {
-              type: "ResyncState",
-            } as types.EngineCommand,
-          });
-          if (this.config?.mode === "remote") {
-            // Request native-only catalog state from the remote backend.
-            this.sendCommand({
-              module: "FixtureLibraryCommand",
-              command: {
-                type: "ListAvailableFixtures",
-              } as any,
-            });
-            this.sendCommand({
-              module: "ObjectLibraryCommand",
-              command: {
-                type: "ListAvailableObjects",
-              } as any,
-            });
-            this.sendCommand({
-              module: "FxModuleCommand",
-              command: {
-                type: "ListAvailableFxModules",
-              } as any,
-            });
-          }
-          scheduleWebsocketPull();
+          this.requestBackendSessionState();
           break;
 
         case "message":
@@ -2838,20 +2866,24 @@ export const engineRuntime = {
         }
 
         case "error":
-          lastWorkerError ??= msg.error;
+          lastWorkerError = msg.error;
           log.error("Worker error:", msg.error);
           break;
       }
     };
 
-    this.worker.onerror = (event) => {
-      log.error("Worker error:", event);
+    watchWorkerUncaughtErrors(activeWorker, "engine runtime", (failure) => {
+      // A rejection leaves the worker running; a thrown exception may have lost the command.
+      if (failure.kind !== "error" || this.worker !== activeWorker) return;
+      const reported = lastWorkerError
+        ? ` (last reported worker error: ${lastWorkerError})`
+        : "";
       rejectPendingCommandWaiters(
         new Error(
-          `WebSocket worker failed before the command completed: ${lastWorkerError ?? event.message ?? "unknown worker error"}`,
+          `WebSocket worker failed before the command completed: ${failure.name}: ${failure.message}${reported}`,
         ),
       );
-    };
+    });
 
     // Tell worker to connect
     this.worker.postMessage({ type: "start", config });
@@ -2912,7 +2944,7 @@ export const engineRuntime = {
     let payload: string | object = data;
     let commandId: string | null = null;
     if (typeof data === "object") {
-      commandId = crypto.randomUUID();
+      commandId = uuidv4();
       (data as Record<string, unknown>).command_id = commandId;
       (data as Record<string, unknown>).undo_id ??= commandId;
       registerPendingCurrentShowfileName(commandId, data);
@@ -2928,6 +2960,12 @@ export const engineRuntime = {
       }
     }
 
+    if (shouldLog) {
+      log.debug("Sending:", payload);
+    }
+    this.worker.postMessage({ type: "submit", data: payload });
+
+    // Results arrive in a later task, so console rendering can follow the send.
     if (consoleCommandText && commandId) {
       addPendingConsoleCommand(consoleCommandText, commandId, "UI");
     } else if (
@@ -2945,11 +2983,6 @@ export const engineRuntime = {
         "UI",
       );
     }
-
-    if (shouldLog) {
-      log.debug("Sending:", payload);
-    }
-    this.worker.postMessage({ type: "submit", data: payload });
     return commandId;
   },
 
@@ -3012,15 +3045,12 @@ export const engineRuntime = {
           return;
         }
 
-        const commandId = crypto.randomUUID();
+        const commandId = uuidv4();
         const commandKey = normalizeCorrelationId(commandId);
         originalCommandKey = commandKey;
         (data as Record<string, unknown>).command_id = commandId;
         (data as Record<string, unknown>).undo_id ??= commandId;
         registerPendingCurrentShowfileName(commandId, data);
-        if (consoleCommandText) {
-          addPendingConsoleCommand(consoleCommandText, commandId, "UI");
-        }
 
         commandWaiters.set(commandKey, {
           resolve: (result) => {
@@ -3036,6 +3066,10 @@ export const engineRuntime = {
           const payload = sanitizeWebsocketPayload(data);
           log.debug("Sending (awaited):", payload);
           this.worker.postMessage({ type: "submit", data: payload });
+          // Results arrive in a later task, so console rendering can follow the send.
+          if (consoleCommandText) {
+            addPendingConsoleCommand(consoleCommandText, commandId, "UI");
+          }
         } catch (error) {
           abandonPendingCommand(pendingCommandLifecycle, commandKey);
           reject(error);

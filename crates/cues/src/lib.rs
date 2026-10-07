@@ -12,7 +12,7 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::ApplyDeferred;
-use nightfall::prelude::{ColorPath, ColorPathId, builtin_color_paths};
+use nightfall::prelude::{ColorPath, ColorPathId, ObjectRef, builtin_color_paths};
 use nightfall_engine::prelude::*;
 use nightfall_instances::InstanceId;
 use nightfall_playback_planner::PlaybackReconstructionTiming;
@@ -129,15 +129,20 @@ impl Plugin for CuePlugin {
         );
 
         app.add_systems(
-            Update,
+            PostUpdate,
             (
                 websocket::forward_commands,
                 websocket::send_cue_definition_changes,
                 websocket::send_sequence_definition_changes,
+            )
+                .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
+            (
                 websocket::send_cues_on_change,
                 websocket::send_color_paths_on_change,
-                websocket::send_sequence_lookahead_states_on_change,
-                websocket::send_sequence_lookahead_states_after_cue_commands,
+                websocket::send_stale_sequence_lookahead_states,
             )
                 .in_set(ClientOutput),
         );
@@ -168,7 +173,7 @@ impl Plugin for CuePlugin {
                 .after(events::handle_sequence_playback_actions),
         );
         app.add_systems(
-            Update,
+            Render,
             (
                 (
                     materialized_sequence::advance_sequences,
@@ -404,6 +409,9 @@ pub enum CueCommand {
 
     /// Delete a sequence
     DeleteSequence(u32),
+
+    /// Release every active instance of the referenced cue.
+    ReleaseCue(ObjectRef),
 }
 
 impl IngressCommand for CueCommand {}

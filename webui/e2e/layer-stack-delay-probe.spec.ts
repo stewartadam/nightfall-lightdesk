@@ -7,6 +7,7 @@
  */
 
 import { expect, type Page, test } from "./playwright-fixtures";
+import { waitForDockviewApp } from "./showfile-startup";
 
 type ProbeResult = {
   avgSetMs: number;
@@ -36,8 +37,12 @@ const ATTRIBUTES = [
   "Gobo",
 ] as const;
 
-/** Waits until the application stores needed by the probe are available. */
+/**
+ * Waits for the shared startup readiness gate (saved showfile load, resync,
+ * layout restore), then for the stores the probe drives directly.
+ */
 async function waitForAppReady(page: Page): Promise<void> {
+  await waitForDockviewApp(page);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -239,7 +244,8 @@ async function runLayerStackProbe(page: Page): Promise<ProbeResult> {
 /** Clears collected User Timing metrics before the measured scenarios run. */
 async function clearPerformanceMetrics(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    const metrics = await import("/lib/performance-measure-collector.ts");
+    const metrics = (await window.__nightfallHarness.load("app"))
+      .performanceMeasures;
     metrics.clearPerformanceMeasures();
   });
 }
@@ -279,7 +285,7 @@ test("Layers panel avoids blocking layer-stack updates while mounted", async ({
   await page.goto("/?e2e=1");
   await waitForAppReady(page);
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
   await seedSyntheticLayerStack(page);

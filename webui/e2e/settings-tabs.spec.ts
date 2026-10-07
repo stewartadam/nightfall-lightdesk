@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Checks category content, keyboard selection, and access to the segmented strip on narrow screens. */
 test("settings segmented tabs support pointer and keyboard navigation", async ({
@@ -15,6 +15,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });
@@ -64,6 +65,36 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await expect(visualizer).toBeFocused();
   await expect(visualizer).toBeInViewport({ ratio: 1 });
   await expect(dialog.getByLabel("Quality preset")).toBeVisible();
+  for (const name of ["Highlight selection", "Show current orbit target"]) {
+    const toggle = dialog.getByRole("switch", { name, exact: true });
+    const checked = await toggle.isChecked();
+    await toggle.focus();
+    await toggle.press("Space");
+    await expect(toggle).toBeChecked({ checked: !checked });
+    await toggle.press("Space");
+    await expect(toggle).toBeChecked({ checked });
+  }
+  const quality = dialog.getByRole("slider", { name: "Quality preset" });
+  await quality.focus();
+  await quality.press("Home");
+  await expect(quality).toHaveAttribute("aria-valuetext", "Low (faster)");
+  await expect(
+    dialog.getByText(
+      "Simple geometry beams without surface lighting, for maximum performance.",
+    ),
+  ).toBeVisible();
+  await quality.press("ArrowRight");
+  await expect(quality).toHaveAttribute("aria-valuetext", "Medium");
+  await expect(
+    dialog.getByText(
+      "Smoothly shaded beams and surface lighting, without fog or glow.",
+    ),
+  ).toBeVisible();
+  await quality.press("End");
+  await expect(quality).toHaveAttribute("aria-valuetext", "High (slower)");
+  await expect(
+    dialog.getByText("Atmospheric beams, fog, glow, and optical effects."),
+  ).toBeVisible();
   await expect
     .poll(async () => {
       const highlight = await indicator.boundingBox();
@@ -103,6 +134,7 @@ test("shared tabs slide their associated content", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });

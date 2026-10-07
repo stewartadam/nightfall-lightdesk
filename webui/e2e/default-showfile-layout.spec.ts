@@ -56,7 +56,7 @@ test("new showfiles use the performance workspace", async ({
             .getPanel("panel-ClipList")
             .api.group.panels.map((panel: any) => panel.title),
           bottom: api
-            .getPanel("panel-CommandLine")
+            .getPanel("panel-StatusDisplay")
             .api.group.panels.map((panel: any) => panel.title),
           right: api
             .getPanel("panel-PropertiesInspector")
@@ -74,14 +74,14 @@ test("new showfiles use the performance workspace", async ({
     )
     .toEqual({
       left: ["Clips"],
-      bottom: ["Console", "Programmer", "Selection Inspector", "Tap Pattern"],
-      right: [
-        "Properties",
+      bottom: [
         "Status Display",
+        "Programmer",
+        "Selection Inspector",
         "Fixtures",
         "Patch",
-        "Instrumentation",
       ],
+      right: ["Properties", "Tap Pattern", "Console", "Instrumentation"],
       collapsed: [false, true, true],
       objects: ["Groups", "Sequences", "FX List"],
       activeObjects: "Groups",
@@ -144,7 +144,7 @@ test("new showfiles use the performance workspace", async ({
     .toEqual([false, true, true]);
 
   await page.setViewportSize({ width: 1366, height: 900 });
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
   await page
     .getByPlaceholder("Type a command or search...")
     .fill("Reset Layout");

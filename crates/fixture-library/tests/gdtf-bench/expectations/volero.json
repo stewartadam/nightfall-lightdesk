@@ -1,0 +1,26 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Standard": [
+      "Base · Red · b1 · 1",
+      "Base · Green · b1 · 2",
+      "Base · Blue · b1 · 3",
+      "Base · White · b1 · 4",
+      "Base · Custom { label: \"CTO\" } · b1 · 5",
+      "Base · Custom { label: \"Color1\" } · b1 · 6",
+      "Base · StrobeShutter · b1 · 7",
+      "Base · Intensity · b1 · 8,9",
+      "Base · Custom { label: \"Control1\" } · b1 · 10",
+      "Base · Custom { label: \"FixtureGlobalReset\" } · b1 · 11",
+      "Base · Custom { label: \"Dummy\" } · b1 · 12",
+      "Head 1 · Tilt · b1 · 13",
+      "Head 2 · Tilt · b1 · 14",
+      "Head 3 · Tilt · b1 · 15",
+      "Head 4 · Tilt · b1 · 16",
+      "Head 5 · Tilt · b1 · 17",
+      "Head 6 · Tilt · b1 · 18",
+      "Head 7 · Tilt · b1 · 19",
+      "Head 8 · Tilt · b1 · 20"
+    ]
+  }
+}

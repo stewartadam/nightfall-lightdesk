@@ -60,6 +60,7 @@ export function workerNoticesPlugin(): Plugin {
 /** Connect Vite's bundled-package license inventory to offline distribution notices. */
 export function distributionNoticesPlugin(): Plugin {
   let config: ResolvedConfig;
+  let bundleFailed = false;
   return {
     name: "nightfall:distribution-notices",
     enforce: "post",
@@ -95,10 +96,32 @@ export function distributionNoticesPlugin(): Plugin {
         }
       });
     },
+    /** Remember a failed build so `closeBundle` leaves Rolldown's original error in charge. */
+    buildEnd(error) {
+      bundleFailed = error !== undefined;
+    },
+    /** Remember a failed render so `closeBundle` leaves Rolldown's original error in charge. */
+    renderError() {
+      bundleFailed = true;
+    },
     /** Finish notices only after Vite has written the actual bundled-package inventory. */
     closeBundle() {
-      if (config.command !== "build") return;
+      // Rolldown still closes a failed bundle, which has written no notices directory.
+      if (config.command !== "build" || bundleFailed) return;
       const outDir = resolve(config.root, config.build.outDir);
+      // e2e builds never ship; serve the dev server's preview without a Rust license scan.
+      if (config.mode === "e2e") {
+        const document = developmentNotices();
+        writeFileSync(
+          join(outDir, "notices", noticesJson),
+          JSON.stringify(document),
+        );
+        writeFileSync(
+          join(outDir, "notices", noticesText),
+          renderNotices(document),
+        );
+        return;
+      }
       const inventory = join(outDir, "notices/frontend.json");
       const entries = JSON.parse(readFileSync(inventory, "utf8"));
       writeFileSync(

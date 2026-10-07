@@ -162,7 +162,7 @@ async function cleanupSelectionInspectorState(page: Page): Promise<void> {
     stores.programmerSpatialSelection.set(null);
     stores.activeSelectionSpanTargets.set([]);
 
-    const websocket = await import("/lib/engine-runtime.ts");
+    const websocket = window.__nightfallTest.runtime;
     const fixtureIds = (
       Object.values(stores.fixtures.get()) as Array<{
         identifiers: { id: number };

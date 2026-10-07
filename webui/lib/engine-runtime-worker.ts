@@ -7,5 +7,7 @@
  */
 
 import { startEngineRuntimeWorker } from "./engine-runtime-worker-core";
+import { forwardWorkerUncaughtErrors } from "./uncaught-error";
 
+forwardWorkerUncaughtErrors();
 startEngineRuntimeWorker();

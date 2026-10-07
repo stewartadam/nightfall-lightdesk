@@ -21,12 +21,17 @@ import {
   preparePlaywrightDataDir,
 } from "./nightfall-test-data-dir.mjs";
 import { exitWithOutcome, runOwnedCommand } from "./owned-process.mjs";
-import { terminatePlaywrightBackendPool } from "./playwright-backend-pool.mjs";
+import {
+  startPlaywrightSharedVite,
+  terminatePlaywrightBackendPool,
+} from "./playwright-backend-pool.mjs";
 import { extractPlaywrightCliOptions } from "./playwright-cli-options.mjs";
 import { sharedBrowsersPath } from "./playwright-path.mjs";
-import { resolvePlaywrightRunMode } from "./playwright-run-mode.mjs";
+import {
+  resolvePlaywrightRunMode,
+  resolvePlaywrightViteMode,
+} from "./playwright-run-mode.mjs";
 import { playwrightSandboxError } from "./playwright-sandbox.mjs";
-import { nativeCargoArgs } from "./run-native-cargo.mjs";
 
 const cliEntrypoint = join(
   process.cwd(),
@@ -34,6 +39,13 @@ const cliEntrypoint = join(
   "@playwright",
   "test",
   "cli.js",
+);
+const viteEntrypoint = join(
+  process.cwd(),
+  "node_modules",
+  "vite",
+  "bin",
+  "vite.js",
 );
 const osReleaseMajor = Number.parseInt(os.release().split(".")[0] ?? "0", 10);
 const playwrightHostPlatform =
@@ -51,7 +63,9 @@ function playwrightBackendExecutable() {
     }),
   );
   const executableName =
-    process.platform === "win32" ? "nightfall-app.exe" : "nightfall-app";
+    process.platform === "win32"
+      ? "nightfall-headless.exe"
+      : "nightfall-headless";
   return join(metadata.target_directory, "debug", executableName);
 }
 
@@ -67,17 +81,30 @@ function stagePlaywrightBackend(runRoot, sourcePath) {
   return stagedPath;
 }
 
-const { browser, dataDir, playwrightArgs, rustLog, target } =
+/** Builds the e2e bundle the run's shared `vite preview` server serves. */
+function buildE2eFrontend() {
+  return runOwnedCommand(
+    process.execPath,
+    [viteEntrypoint, "build", "--mode", "e2e", "--logLevel", "warn"],
+    { spawnOptions: { stdio: "inherit" } },
+  );
+}
+
+const { browser, dataDir, playwrightArgs, rustLog, target, viteMode } =
   extractPlaywrightCliOptions(process.argv.slice(2));
 const sandboxError = playwrightSandboxError(playwrightArgs);
 if (sandboxError) {
   process.stderr.write(`${sandboxError}\n`);
   process.exit(1);
 }
-const { isTestRun, needsBackend } = resolvePlaywrightRunMode(
-  playwrightArgs,
-  target,
-);
+const { isTestRun, needsBackend, targetsEmbeddedDemo } =
+  resolvePlaywrightRunMode(playwrightArgs, target);
+// The shared server, Playwright and every spec read the resolved mode.
+process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE = resolvePlaywrightViteMode({
+  requested: viteMode,
+  environment: process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE,
+  targetsEmbeddedDemo,
+});
 const sourceDataDir = needsBackend
   ? await nightfallDataDirForTestProcess(
       process.cwd(),
@@ -92,6 +119,14 @@ const runRoot = isTestRun
 let seedDataDir = sourceDataDir;
 let outcome;
 try {
+  // Each run builds into its own directory, so concurrent runs in one
+  // worktree never replace the bundle another run's preview server serves.
+  if (runRoot) process.env.NIGHTFALL_E2E_OUT_DIR = join(runRoot, "e2e-build");
+  // The e2e bundle builds while Cargo checks the backend.
+  const frontendBuild =
+    isTestRun && process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "e2e"
+      ? buildE2eFrontend()
+      : undefined;
   let backendExecutable;
   if (needsBackend) {
     const preparedBackend = process.env.NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE;
@@ -99,11 +134,14 @@ try {
       ? { code: 0 }
       : await runOwnedCommand(
           "cargo",
-          nativeCargoArgs("build", [
+          [
+            "build",
+            // Test targets align dev-dependency features with the nextest run, so its units are reused.
+            "--tests",
             ...(process.env.CI ? ["--timings"] : ["--quiet"]),
             "--bin",
-            "nightfall-app",
-          ]),
+            "nightfall-headless",
+          ],
           { spawnOptions: { stdio: "inherit" } },
         );
     if (buildOutcome.code !== 0 || buildOutcome.signal) {
@@ -116,6 +154,20 @@ try {
       seedDataDir = preparePlaywrightDataDir(sourceDataDir, runRoot).runDataDir;
     }
   }
+
+  const frontendOutcome = await frontendBuild;
+  if (
+    !outcome &&
+    frontendOutcome &&
+    (frontendOutcome.code !== 0 || frontendOutcome.signal)
+  ) {
+    outcome = frontendOutcome;
+  }
+
+  // One shared server serves every worker: a single e2e build, or one warm
+  // dev server where only the first page load compiles the app.
+  const sharedViteURL =
+    !outcome && runRoot ? await startPlaywrightSharedVite(runRoot) : undefined;
 
   if (!outcome) {
     outcome = await runOwnedCommand(
@@ -140,6 +192,7 @@ try {
               ? {
                   NIGHTFALL_PLAYWRIGHT_BACKEND_POOL: "1",
                   NIGHTFALL_PLAYWRIGHT_RUN_ROOT: runRoot,
+                  NIGHTFALL_PLAYWRIGHT_VITE_URL: sharedViteURL,
                   ...(needsBackend
                     ? {
                         NIGHTFALL_DATA_DIR: seedDataDir,

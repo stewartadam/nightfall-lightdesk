@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Exercises saved Patch views and grouping, keyboard selection, and wrapping toolbar geometry. */
 test("Patch segmented tabs switch views and preserve grouping", async ({
@@ -15,6 +15,7 @@ test("Patch segmented tabs switch views and preserve grouping", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await page.getByRole("button", { name: "Open command palette" }).click();
   await page.getByPlaceholder("Type a command or search...").fill("Open Patch");
   await page.keyboard.press("Enter");
@@ -41,9 +42,7 @@ test("Patch segmented tabs switch views and preserve grouping", async ({
   const universe = grouping.getByRole("tab", { name: "Universe" });
   await expect(none).toHaveAttribute("aria-selected", "true");
   await expect(
-    panel.getByText(
-      "No bindings. Use patch commands or the wizard to create fixture patches.",
-    ),
+    panel.getByRole("tabpanel", { name: "None", exact: true }),
   ).toBeVisible();
   await fixture.click();
   await expect(
@@ -56,7 +55,7 @@ test("Patch segmented tabs switch views and preserve grouping", async ({
   await expect(universe).toBeFocused();
   await expect(universe).toHaveAttribute("aria-selected", "true");
   await expect(
-    panel.getByText("No universe data", { exact: true }),
+    panel.getByRole("tabpanel", { name: "Universe", exact: true }),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("patch-segmented-desktop.png"),

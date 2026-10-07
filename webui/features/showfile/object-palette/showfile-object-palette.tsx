@@ -16,12 +16,14 @@ import {
   createRenderEffect,
   createSignal,
   For,
+  onCleanup,
   Show,
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { DialogBackdrop } from "../../../components/ui/dialog";
+import { registerDialog } from "../../../components/ui/modal/dialog-stack";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import {
   SearchPickerInput,
@@ -50,6 +52,7 @@ import {
   showfileObjectTypeDefinition,
 } from "../../../lib/showfile-object-search";
 import { useShallowStore } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   blueprints,
   clips,
@@ -111,11 +114,11 @@ const ShowfileObjectResultTagBadge: Component<{
 export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   props,
 ) => {
-  const $fixtures = useStore(fixtures);
-  const $groups = useStore(groups);
+  const $fixtures = useSharedStore(fixtures);
+  const $groups = useSharedStore(groups);
   const $cues = useShallowStore(cues);
   const $sequences = useShallowStore(sequences);
-  const $fx = useStore(fx);
+  const $fx = useSharedStore(fx);
   const $stepFx = useStore(stepFx);
   const $fxModules = useStore(fxModules);
   const $clips = useStore(clips);
@@ -124,7 +127,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   const $blueprints = useStore(blueprints);
   const $colorPaths = useStore(colorPaths);
   const $masters = useStore(masters);
-  const $sceneObjects = useStore(sceneObjects);
+  const $sceneObjects = useSharedStore(sceneObjects);
   const $timecodes = useStore(timecodes);
   const $timelines = useShallowStore(timelines);
   const $dockApi = useStore(dockApi);
@@ -137,6 +140,20 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   let inputRef: HTMLInputElement | undefined;
   let containerRef: HTMLDivElement | undefined;
   let scrollContainerRef: HTMLDivElement | undefined;
+  let backdropRef: HTMLDivElement | undefined;
+
+  /** Joins the dialog stack while visible so dialogs underneath never take its Enter or Escape. */
+  createEffect(() => {
+    if (!props.isOpen) return;
+    onCleanup(
+      registerDialog({
+        element: () => backdropRef,
+        escapeAction: () => undefined,
+        enterAction: () => undefined,
+        blocksBackgroundKeys: () => false,
+      }),
+    );
+  });
 
   /** Builds the latest object search index from nanostore snapshots. */
   const entries = createMemo(() =>
@@ -465,6 +482,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
 
   return (
     <DialogBackdrop
+      ref={backdropRef}
       style={{
         display: props.isOpen ? "flex" : "none",
         "align-items": "flex-start",

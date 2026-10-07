@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 type JumpTimelineFixture = {
   timelineId: number;
   timelineUid: string;
@@ -233,7 +236,7 @@ async function openJumpPopout(page: Page, fixture: JumpTimelineFixture) {
 
 /** Opens the global command palette and returns its search input. */
 async function openCommandPalette(page: Page) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
   const commandInput = page.getByPlaceholder("Type a command or search...");
   await expect(commandInput).toBeVisible();
   return commandInput;

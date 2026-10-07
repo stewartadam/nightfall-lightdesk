@@ -45,9 +45,7 @@ export function stableUniverseKey(range?: types.DmxRange): string {
   return `${range.start}-${range.end}`;
 }
 
-export function stableOutputTargetKey(
-  target: types.OutputTarget,
-): string | null {
+export function stableOutputTargetKey(target: types.OutputTarget): string {
   switch (target.type) {
     case "Transport":
       return `transport:${target.data.target}:${stableUniverseKey(
@@ -55,8 +53,6 @@ export function stableOutputTargetKey(
       )}:${target.data.address ?? "*"}`;
     case "Console":
       return `console:${stableUniverseKey(target.data.universe)}:${target.data.address ?? "*"}`;
-    case "Disabled":
-      return null;
   }
 }
 
@@ -81,12 +77,15 @@ export function fixtureUidsFromInputTarget(
 }
 
 /**
- * Extracts normalized fixture UIDs from fixture-based output binding sources.
+ * Extracts normalized fixture UIDs from fixture-based output binding sources,
+ * including additional DMX break sources.
  */
 export function fixtureUidsFromOutputSource(
   source: types.OutputSource,
 ): Set<string> {
-  if (source.type !== "Fixture") return new Set();
+  if (source.type !== "Fixture" && source.type !== "FixtureBreak") {
+    return new Set();
+  }
   return new Set(source.data.uids.map((uid) => normalizeFixtureUid(uid)));
 }
 
@@ -100,6 +99,26 @@ export function inputBindingTouchesFixture(
   return targetUids.has(fixtureUid);
 }
 
+/**
+ * Returns the stable key of the output location where a binding sends a
+ * fixture's DMX, or null when it does not output that fixture (another
+ * source or another fixture).
+ *
+ * Primary (`Fixture`) and additional-break (`FixtureBreak`) sources both
+ * occupy their target, so two breaks of one fixture patched to the same
+ * address share a key and are reported as overlapping, while breaks patched
+ * to different addresses do not.
+ */
+export function fixtureOutputOccupancyKey(
+  binding: types.OutputBinding,
+  fixtureUid: string,
+): string | null {
+  if (!fixtureUidsFromOutputSource(binding.source).has(fixtureUid)) {
+    return null;
+  }
+  return stableOutputTargetKey(binding.target);
+}
+
 export function outputBindingTouchesFixture(
   binding: types.OutputBinding,
   fixtureUid: string,
@@ -108,16 +127,12 @@ export function outputBindingTouchesFixture(
   return sourceUids.has(fixtureUid);
 }
 
+/** Returns whether a disabled input rule filters input from the fixture. */
 export function disabledBindingTouchesFixture(
   binding: types.DisabledBinding,
   fixtureUid: string,
 ): boolean {
-  if (binding.type === "Input") {
-    const uids = fixtureUidsFromInputSource(binding.data.source);
-    return uids.has(fixtureUid);
-  }
-  const uids = fixtureUidsFromOutputSource(binding.data.source);
-  return uids.has(fixtureUid);
+  return fixtureUidsFromInputSource(binding.data.source).has(fixtureUid);
 }
 
 export function formatFixtureGroupLabel(fixture: types.Fixture): string {

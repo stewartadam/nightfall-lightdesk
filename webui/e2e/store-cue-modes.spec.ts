@@ -8,7 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const CUE_EDITOR_PANEL_ID = "panel-CueEditor-store-mode-row-regression";
 
@@ -57,6 +57,7 @@ async function openOwnedStoreCueApp(
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await waitForAppStores(page);
   await expect
     .poll(() => ownedStoreCounts(page))
@@ -78,6 +79,7 @@ async function resetOwnedStoreCueApp(
   await prepareFreshBackendShowfile(backendPort);
   await page.reload();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await waitForAppStores(page);
   await expect
     .poll(() => ownedStoreCounts(page))

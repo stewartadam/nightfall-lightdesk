@@ -1,0 +1,5 @@
+# wasm-pack's install script downloads its prebuilt binary.
+allowBuilds:
+  wasm-pack: true
+# Run package scripts in pnpm's POSIX shell on every platform, including Windows.
+shellEmulator: true

@@ -10,7 +10,6 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::ApplyDeferred;
 use nightfall_cues::events::handle_events as handle_cue_events;
-use nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions;
 use nightfall_engine::prelude::*;
 
 #[cfg(feature = "audio")]
@@ -33,7 +32,7 @@ pub fn add_event_handling_systems(app: &mut App) {
             .in_set(EventHandling)
             .after(nightfall_timecode::events::handle_events)
             .before(nightfall_timecode::events::crud_events)
-            .before(route_clip_playback_actions)
+            .before(DeskEventSet::ClipRouting)
             .before(handle_cue_events),
     );
 
@@ -45,7 +44,7 @@ pub fn add_event_handling_systems(app: &mut App) {
             .after(crate::systems::mark_timeline_reconstruction_deferred_flush)
             .before(crate::systems::clear_timeline_reconstruction_deferred_flush)
             .before(nightfall_timecode::events::crud_events)
-            .before(route_clip_playback_actions)
+            .before(DeskEventSet::ClipRouting)
             .before(handle_cue_events),
     );
 
@@ -61,7 +60,7 @@ pub fn add_event_handling_systems(app: &mut App) {
             .in_set(EventHandling)
             .after(crate::systems::mark_timeline_reconstruction_deferred_flush)
             .before(nightfall_timecode::events::crud_events)
-            .before(route_clip_playback_actions)
+            .before(DeskEventSet::ClipRouting)
             .before(handle_cue_events),
     );
 
@@ -69,7 +68,7 @@ pub fn add_event_handling_systems(app: &mut App) {
         Update,
         crate::systems::cleanup_timeline_entities
             .in_set(EventHandling)
-            .after(route_clip_playback_actions)
+            .after(DeskEventSet::ClipRouting)
             .after(handle_cue_events)
             .before(nightfall_timecode::events::crud_events),
     );
@@ -81,12 +80,11 @@ pub fn add_event_handling_systems(app: &mut App) {
             crate::systems::detach_stopped_timeline_release_clocks,
         )
             .chain()
-            .after(EventHandling)
-            .before(ClockUpdate),
+            .after(EventHandling),
     );
 
     app.add_systems(
-        Update,
+        Render,
         (
             (
                 crate::diagnostics::start_timeline_layer_generation_diagnostic,
@@ -136,7 +134,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        Render,
         crate::systems::sync_timeline_paused_instance_controls_system
             .after(ClockUpdate)
             .before(LayerGeneration),
@@ -163,7 +161,7 @@ pub fn add_event_handling_systems(app: &mut App) {
             .in_set(EventHandling)
             .after(nightfall_timecode::events::handle_events)
             .before(nightfall_timecode::events::crud_events)
-            .before(route_clip_playback_actions)
+            .before(DeskEventSet::ClipRouting)
             .before(handle_cue_events),
     );
 
@@ -175,7 +173,7 @@ pub fn add_event_handling_systems(app: &mut App) {
             .after(crate::systems::mark_timeline_reconstruction_deferred_flush)
             .before(crate::systems::clear_timeline_reconstruction_deferred_flush)
             .before(nightfall_timecode::events::crud_events)
-            .before(route_clip_playback_actions)
+            .before(DeskEventSet::ClipRouting)
             .before(handle_cue_events),
     );
 
@@ -191,7 +189,7 @@ pub fn add_event_handling_systems(app: &mut App) {
             .in_set(EventHandling)
             .after(crate::systems::mark_timeline_reconstruction_deferred_flush)
             .before(nightfall_timecode::events::crud_events)
-            .before(route_clip_playback_actions)
+            .before(DeskEventSet::ClipRouting)
             .before(handle_cue_events),
     );
 
@@ -199,7 +197,7 @@ pub fn add_event_handling_systems(app: &mut App) {
         Update,
         crate::systems::cleanup_timeline_entities
             .in_set(EventHandling)
-            .after(route_clip_playback_actions)
+            .after(DeskEventSet::ClipRouting)
             .after(handle_cue_events)
             .before(nightfall_timecode::events::crud_events),
     );
@@ -211,12 +209,11 @@ pub fn add_event_handling_systems(app: &mut App) {
             crate::systems::detach_stopped_timeline_release_clocks,
         )
             .chain()
-            .after(EventHandling)
-            .before(ClockUpdate),
+            .after(EventHandling),
     );
 
     app.add_systems(
-        Update,
+        Render,
         (
             (
                 crate::diagnostics::start_timeline_layer_generation_diagnostic,
@@ -259,7 +256,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        Render,
         crate::systems::sync_timeline_paused_instance_controls_system
             .after(ClockUpdate)
             .before(LayerGeneration),

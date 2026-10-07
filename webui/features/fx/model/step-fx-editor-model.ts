@@ -7,6 +7,7 @@
  */
 
 import { durationToSeconds, secondsToDuration } from "../../../lib/duration";
+import { createShowObjectUid } from "../../../lib/sequence-factory";
 import type * as types from "../../../types";
 import { FxDirection } from "../../../types";
 
@@ -144,7 +145,7 @@ export function stepFxStepsFromClipboard(
     .filter((target): target is types.ParameterValue => Boolean(target))
     .map((target) => ({
       ...structuredClone(template),
-      uid: crypto.randomUUID(),
+      uid: createShowObjectUid(),
       target,
     }));
 }
@@ -337,7 +338,7 @@ export function createDefaultStepFxTrack(kind: StepFxTrackKind): types.FxTrack {
   const values = kind === "absolute" ? [1, 0] : [0.25, -0.25];
   return {
     steps: values.map((value) => ({
-      uid: crypto.randomUUID(),
+      uid: createShowObjectUid(),
       target:
         kind === "absolute"
           ? { type: "AbsolutePercent", data: { value } }
@@ -376,10 +377,10 @@ export function insertStepFxStep(
   const inserted: types.FxStep = source
     ? {
         ...structuredClone(source),
-        uid: crypto.randomUUID(),
+        uid: createShowObjectUid(),
       }
     : {
-        uid: crypto.randomUUID(),
+        uid: createShowObjectUid(),
         target: { type: "AbsolutePercent", data: { value: 0 } },
         width_beats: 1,
         transition: { start: 0, end: 1 },
@@ -401,7 +402,7 @@ export function duplicateStepFxSteps(
     if (!selectedUids.has(step.uid)) continue;
     const duplicate = {
       ...structuredClone(step),
-      uid: crypto.randomUUID(),
+      uid: createShowObjectUid(),
     };
     steps.push(duplicate);
     duplicates.add(duplicate.uid);

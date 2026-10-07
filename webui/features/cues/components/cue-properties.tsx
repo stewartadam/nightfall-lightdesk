@@ -19,6 +19,7 @@ import {
   Switch,
   untrack,
 } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { calculateCueTransitionDurations } from "../../../lib/cue-timing-values";
@@ -202,7 +203,7 @@ export default function CueProperties() {
     parts.push({
       identifiers: {
         id: nextPartId,
-        uid: crypto.randomUUID().replace(/-/g, ""),
+        uid: uuidv4().replace(/-/g, ""),
         label: `Part ${nextPartId}`,
       },
       transitions: {},

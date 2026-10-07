@@ -55,6 +55,7 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { bindings, dmxUniverseData, fixtures } from "../../../state/appStores";
 import {
   type BindingRow,
@@ -68,14 +69,13 @@ import {
   disabledBindingTouchesFixture,
   type FixtureDisplayRow,
   fixtureDisplayCellHasConflict,
+  fixtureOutputOccupancyKey,
   fixtureUidsFromInputSource,
   fixtureUidsFromInputTarget,
-  fixtureUidsFromOutputSource,
   formatFixtureGroupLabel,
   formatGroupWithChevron,
   inputBindingTouchesFixture,
   outputBindingTouchesFixture,
-  stableOutputTargetKey,
 } from "../model/fixtures-model";
 
 export interface PatchFixturesTabProps {
@@ -86,7 +86,7 @@ export interface PatchFixturesTabProps {
 
 export default function PatchFixturesTab(props: PatchFixturesTabProps) {
   const $bindings = useStore(bindings);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $dmxUniverseData = useStore(dmxUniverseData);
 
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
@@ -231,18 +231,10 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
 
       snapshot.output.forEach((binding, index) => {
         if (!outputBindingTouchesFixture(binding, uid)) return;
-        if (binding.target.type === "Disabled") {
-          disabledByBinding = true;
-        }
-        if (
-          binding.source.type === "Fixture" &&
-          fixtureUidsFromOutputSource(binding.source).has(uid)
-        ) {
-          const key = stableOutputTargetKey(binding.target);
-          if (key) {
-            if (seenOutputTargets.has(key)) outputOverlap = true;
-            seenOutputTargets.add(key);
-          }
+        const key = fixtureOutputOccupancyKey(binding, uid);
+        if (key) {
+          if (seenOutputTargets.has(key)) outputOverlap = true;
+          seenOutputTargets.add(key);
         }
         outputRows.push(
           toOutputBindingRow(binding, fixtureMap, `output-${index}`),

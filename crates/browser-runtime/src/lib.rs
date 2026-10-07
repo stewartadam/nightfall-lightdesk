@@ -10,6 +10,8 @@
 
 #![warn(missing_docs)]
 
+pub mod fixture_library;
+
 #[cfg(target_arch = "wasm32")]
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -23,8 +25,8 @@ use nightfall_cues::prelude::CuePlugin;
 use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::EnginePlugin;
 use nightfall_engine::prelude::{
-    AppState, ClientBridgeHost, ClientBridgePlugin, CommandJsonEnvelope, DataProvider,
-    RuntimeCapabilities, UpdateJsonEnvelope,
+    AppState, ClientBridgeHost, ClientBridgePlugin, CommandJsonEnvelope, CommandSender,
+    DataProvider, RuntimeCapabilities, UpdateJsonEnvelope,
 };
 use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
@@ -37,11 +39,14 @@ use nightfall_undo::prelude::UndoPlugin;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+use crate::fixture_library::BuiltinFixtureLibraryPlugin;
+
 const MAX_TICK_DELTA_MS: f64 = 100.0;
 #[cfg(test)]
 const TEST_SAMPLE_ID: &str = "nightfall-demo-v1";
 #[cfg(test)]
-const TEST_SHOWFILE_JSON: &str = include_str!("../../../test-fixtures/browser-show/showfile.json");
+const TEST_SHOWFILE_JSON: &str =
+    include_str!("../../../webui/public/nightfall-demo.nightfall-show/showfile.json");
 #[cfg(target_arch = "wasm32")]
 static CONSTRUCTION_STAGE: AtomicU8 = AtomicU8::new(0);
 
@@ -65,7 +70,7 @@ pub struct RuntimeInfo {
 #[wasm_bindgen]
 pub struct BrowserEngine {
     app: App,
-    command_tx: Sender<CommandJsonEnvelope>,
+    command_tx: CommandSender,
     update_tx: Sender<UpdateJsonEnvelope>,
     output_rx: Receiver<Vec<u8>>,
     runtime_info: RuntimeInfo,
@@ -166,6 +171,7 @@ fn construction_stage_name(stage: u8) -> &'static str {
         2 => "adding UndoPlugin",
         3 => "adding ClientBridgePlugin",
         4 => "adding FixturePlugin",
+        5 => "adding BuiltinFixtureLibraryPlugin",
         6 => "adding FixtureCompositorPlugin",
         7 => "loading the demo showfile",
         8 => "attaching the client bridge host",
@@ -199,6 +205,8 @@ impl BrowserEngine {
         app.add_plugins(ClientBridgePlugin);
         set_construction_stage(4);
         app.add_plugins(FixturePlugin);
+        set_construction_stage(5);
+        app.add_plugins(BuiltinFixtureLibraryPlugin);
         set_construction_stage(6);
         app.add_plugins(FixtureCompositorPlugin);
         app.add_plugins(SceneObjectPlugin);
@@ -310,19 +318,22 @@ mod tests {
 
     use super::*;
 
-    /// Build the tracked browser test fixture through the canonical JSON load boundary.
-    fn sample_engine() -> BrowserEngine {
+    /// Build the packaged demo show through the canonical JSON load boundary.
+    pub(crate) fn sample_engine() -> BrowserEngine {
         BrowserEngine::create_core(TEST_SAMPLE_ID.to_owned(), TEST_SHOWFILE_JSON)
-            .expect("runtime should initialize from the test showfile")
+            .expect("runtime should initialize from the demo showfile")
     }
 
     /// Decode one discriminator-prefixed engine publication into JSON.
-    fn decode_publication(bytes: &[u8]) -> Value {
+    ///
+    /// Returns `None` for publications carrying CBOR byte strings (such as DMX output
+    /// buffers), which have no JSON representation and are not inspected by these tests.
+    pub(crate) fn decode_publication(bytes: &[u8]) -> Option<Value> {
         assert!(
             !bytes.is_empty(),
             "publication must contain a discriminator"
         );
-        minicbor_serde::from_slice(&bytes[1..]).expect("publication should contain valid CBOR")
+        minicbor_serde::from_slice(&bytes[1..]).ok()
     }
 
     /// Verify resync publishes the complete deterministic demo before its completion fence.
@@ -345,7 +356,7 @@ mod tests {
         let messages = engine
             .drain_output_core()
             .iter()
-            .map(|bytes| decode_publication(bytes))
+            .filter_map(|bytes| decode_publication(bytes))
             .collect::<Vec<_>>();
         let types = messages
             .iter()
@@ -354,7 +365,7 @@ mod tests {
         let command_id_text = command_id.simple().to_string();
 
         assert!(types.contains(&"FixtureDefinitions"));
-        assert!(types.contains(&"ParameterState"));
+        assert!(types.contains(&"ParameterLayout"));
         assert!(types.contains(&"ResyncComplete"));
         assert!(types.contains(&"CommandResult"));
         let capability_index = types
@@ -370,30 +381,34 @@ mod tests {
         assert_eq!(capabilities["runtime_mode"], "EmbeddedDemo");
         assert_eq!(capabilities["timeline_audio"], "BundledBrowser");
         assert_eq!(capabilities["fx_modules"], "Unavailable");
+        assert_eq!(capabilities["fixture_library"], "BuiltInOnly");
         let fixtures = messages
             .iter()
             .find(|message| message["type"] == "FixtureDefinitions")
             .and_then(|message| message["data"].as_array())
             .expect("fixture snapshot should be an array");
-        assert_eq!(fixtures.len(), 6);
+        let showfile: Value =
+            serde_json::from_str(TEST_SHOWFILE_JSON).expect("demo showfile should be JSON");
+        let showfile_len = |key: &str| showfile[key].as_array().map(Vec::len);
+        assert_eq!(Some(fixtures.len()), showfile_len("fixtures"));
         let timelines = messages
             .iter()
             .find(|message| message["type"] == "TimelineDefinitions")
             .and_then(|message| message["data"].as_array())
             .expect("timeline snapshot should be an array");
-        assert_eq!(timelines.len(), 1);
-        let timeline_uid = timelines[0]["identifiers"]["uid"]
-            .as_str()
-            .expect("timeline should have a UID");
-        let audio_path = timelines[0]["audio_path"]
-            .as_str()
-            .expect("timeline should have an audio path");
-        assert_eq!(
-            audio_path,
-            format!("timeline-audio/{timeline_uid}/nightfall-demo-click.wav")
-        );
-        assert_eq!(timelines[0]["markers"].as_array().map(Vec::len), Some(2));
-        assert_eq!(timelines[0]["regions"].as_array().map(Vec::len), Some(1));
+        assert_eq!(Some(timelines.len()), showfile_len("timelines"));
+        for timeline in timelines {
+            let timeline_uid = timeline["identifiers"]["uid"]
+                .as_str()
+                .expect("timeline should have a UID");
+            let audio_path = timeline["audio_path"]
+                .as_str()
+                .expect("timeline should have an audio path");
+            assert!(
+                audio_path.starts_with(&format!("timeline-audio/{timeline_uid}/")),
+                "bundled audio should be keyed by timeline UID: {audio_path}"
+            );
+        }
         assert!(
             messages.iter().any(|message| {
                 message.get("type") == Some(&Value::String("CommandResult".to_owned()))
@@ -424,7 +439,7 @@ mod tests {
         let messages = engine
             .drain_output_core()
             .iter()
-            .map(|bytes| decode_publication(bytes))
+            .filter_map(|bytes| decode_publication(bytes))
             .collect::<Vec<_>>();
         let directives = messages
             .iter()
@@ -445,7 +460,7 @@ mod tests {
             .filter(|bytes| {
                 bytes.first() == Some(&nightfall_engine::prelude::DISCRIMINATOR_NON_DROPPABLE)
             })
-            .map(|bytes| decode_publication(bytes))
+            .filter_map(|bytes| decode_publication(bytes))
             .filter(|message| message["type"] == "TimelineAudioDirective")
             .collect::<Vec<_>>();
         assert!(

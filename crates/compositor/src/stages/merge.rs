@@ -7,24 +7,22 @@
  */
 
 //! Compositor stage for merging computed layers according to merge strategies.
-use bevy_ecs::prelude::*;
-use moonshine_kind::prelude::*;
 
-use crate::types::{CompositorParameter, ComputedLayer};
+use crate::types::{ComputedLayer, ParameterLookup};
 
 /// Merges another computed layer onto this one, honoring HTP/LTP merge rules for same-priority layers.
-pub fn merge<P: CompositorParameter>(
+pub fn merge(
     base: &mut ComputedLayer,
     other: &ComputedLayer,
     same_priority: bool,
-    param_query: &Query<InstanceMut<P>>,
+    param_query: &impl ParameterLookup,
 ) {
     // Apply absolute values from the upper layer
     for (param, value) in other.absolute.iter() {
         let should_update = if same_priority {
             // For same priority, honor the parameter's merge strategy
-            if let Ok(parameter) = param_query.get(param.entity()) {
-                if parameter.uses_htp_merge() {
+            if let Some(parameter) = param_query.parameter_compositing_context(param) {
+                if parameter.uses_htp_merge {
                     base.absolute
                         .get(param)
                         .is_none_or(|existing| *value > *existing)
@@ -53,7 +51,9 @@ pub fn merge<P: CompositorParameter>(
 
 #[cfg(test)]
 mod tests {
+    use bevy_ecs::prelude::*;
     use bevy_ecs::world::World;
+    use moonshine_kind::prelude::*;
     use moonshine_kind::Instance;
     use nightfall_dmx::prelude::*;
 
@@ -88,7 +88,7 @@ mod tests {
         merge(&mut base, &other, false, &param_query);
 
         // Different priority: higher priority (other) always wins
-        assert_eq!(*base.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*base.absolute.get(param).unwrap(), 100.0);
     }
 
     #[test]
@@ -108,7 +108,7 @@ mod tests {
         merge(&mut base, &other, true, &param_query);
 
         // Same priority with LTP: last value wins
-        assert_eq!(*base.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*base.absolute.get(param).unwrap(), 100.0);
     }
 
     #[test]
@@ -128,7 +128,7 @@ mod tests {
         merge(&mut base, &other, true, &param_query);
 
         // Same priority with HTP: highest value wins (150 > 100)
-        assert_eq!(*base.absolute.get(&param).unwrap(), 150.0);
+        assert_eq!(*base.absolute.get(param).unwrap(), 150.0);
     }
 
     #[test]
@@ -148,7 +148,7 @@ mod tests {
         merge(&mut base, &other, true, &param_query);
 
         // Same priority with HTP: highest value wins (200 > 100)
-        assert_eq!(*base.absolute.get(&param).unwrap(), 200.0);
+        assert_eq!(*base.absolute.get(param).unwrap(), 200.0);
     }
 
     #[test]
@@ -168,7 +168,7 @@ mod tests {
         merge(&mut base, &other, true, &param_query);
 
         // Same priority with HTP and equal values: keeps the value
-        assert_eq!(*base.absolute.get(&param).unwrap(), 100.0);
+        assert_eq!(*base.absolute.get(param).unwrap(), 100.0);
     }
 
     #[test]
@@ -189,8 +189,8 @@ mod tests {
         merge(&mut base, &other, false, &param_query);
 
         // Should have both parameters
-        assert_eq!(*base.absolute.get(&param1).unwrap(), 50.0);
-        assert_eq!(*base.absolute.get(&param2).unwrap(), 100.0);
+        assert_eq!(*base.absolute.get(param1).unwrap(), 50.0);
+        assert_eq!(*base.absolute.get(param2).unwrap(), 100.0);
     }
 
     #[test]
@@ -210,7 +210,7 @@ mod tests {
         merge(&mut base, &other, false, &param_query);
 
         // Relative values accumulate
-        assert_eq!(*base.relative.get(&param).unwrap(), 50.0);
+        assert_eq!(*base.relative.get(param).unwrap(), 50.0);
     }
 
     #[test]
@@ -230,7 +230,7 @@ mod tests {
         merge(&mut base, &other, true, &param_query);
 
         // Relative values accumulate regardless of priority or merge strategy
-        assert_eq!(*base.relative.get(&param).unwrap(), 50.0);
+        assert_eq!(*base.relative.get(param).unwrap(), 50.0);
     }
 
     #[test]
@@ -251,8 +251,8 @@ mod tests {
         merge(&mut base, &other, false, &param_query);
 
         // Should have both parameters
-        assert_eq!(*base.relative.get(&param1).unwrap(), 25.0);
-        assert_eq!(*base.relative.get(&param2).unwrap(), 75.0);
+        assert_eq!(*base.relative.get(param1).unwrap(), 25.0);
+        assert_eq!(*base.relative.get(param2).unwrap(), 75.0);
     }
 
     #[test]
@@ -272,8 +272,8 @@ mod tests {
         merge(&mut base, &other, false, &param_query);
 
         // Should add all values from other
-        assert_eq!(*base.absolute.get(&param).unwrap(), 100.0);
-        assert_eq!(*base.relative.get(&param).unwrap(), 25.0);
+        assert_eq!(*base.absolute.get(param).unwrap(), 100.0);
+        assert_eq!(*base.relative.get(param).unwrap(), 25.0);
     }
 
     #[test]
@@ -293,8 +293,8 @@ mod tests {
         merge(&mut base, &other, false, &param_query);
 
         // Base should remain unchanged
-        assert_eq!(*base.absolute.get(&param).unwrap(), 50.0);
-        assert_eq!(*base.relative.get(&param).unwrap(), 10.0);
+        assert_eq!(*base.absolute.get(param).unwrap(), 50.0);
+        assert_eq!(*base.relative.get(param).unwrap(), 10.0);
     }
 
     #[test]
@@ -317,8 +317,8 @@ mod tests {
         merge(&mut base, &other, false, &param_query);
 
         // Absolute should be replaced, relative should accumulate
-        assert_eq!(*base.absolute.get(&param1).unwrap(), 100.0);
-        assert_eq!(*base.relative.get(&param2).unwrap(), 30.0);
+        assert_eq!(*base.absolute.get(param1).unwrap(), 100.0);
+        assert_eq!(*base.relative.get(param2).unwrap(), 30.0);
     }
 
     #[test]
@@ -339,7 +339,7 @@ mod tests {
         merge(&mut base, &other, true, &param_query);
 
         // Should still merge (defaults to accepting the value when parameter not found)
-        assert_eq!(*base.absolute.get(&fake_param).unwrap(), 100.0);
+        assert_eq!(*base.absolute.get(fake_param).unwrap(), 100.0);
     }
 
     #[test]
@@ -370,10 +370,10 @@ mod tests {
         merge(&mut base, &other, true, &param_query);
 
         // HTP: highest wins
-        assert_eq!(*base.absolute.get(&htp_param1).unwrap(), 150.0);
-        assert_eq!(*base.absolute.get(&htp_param2).unwrap(), 200.0);
+        assert_eq!(*base.absolute.get(htp_param1).unwrap(), 150.0);
+        assert_eq!(*base.absolute.get(htp_param2).unwrap(), 200.0);
         // LTP: latest wins
-        assert_eq!(*base.absolute.get(&ltp_param1).unwrap(), 75.0);
-        assert_eq!(*base.absolute.get(&ltp_param2).unwrap(), 150.0);
+        assert_eq!(*base.absolute.get(ltp_param1).unwrap(), 75.0);
+        assert_eq!(*base.absolute.get(ltp_param2).unwrap(), 150.0);
     }
 }

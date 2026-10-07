@@ -14,8 +14,10 @@ nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-io = { path = "../io" }
 nightfall-service-host = { path = "../service_host" }
-tokio.workspace = true
 tracing.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true

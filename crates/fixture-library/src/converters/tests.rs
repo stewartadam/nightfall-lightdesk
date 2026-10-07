@@ -11,7 +11,7 @@
 #[cfg(test)]
 mod native_unit_tests {
     use nightfall_dmx::prelude::{Attribute, ParameterUnit};
-    use nightfall_fixtures::prelude::ParameterMetadata;
+    use nightfall_fixture_model::prelude::*;
 
     use super::super::apply_position_physical_range;
 
@@ -108,6 +108,20 @@ mod gdtf_tests {
         );
     }
 
+    /// Keeps lens focus distinct from beam-angle zoom during import.
+    #[test]
+    fn test_map_gdtf_focus() {
+        assert_eq!(
+            map_gdtf_attribute_to_nightfall(&"Focus1"),
+            Some(Attribute::Focus)
+        );
+        assert_eq!(
+            map_gdtf_attribute_to_nightfall(&"Focus"),
+            Some(Attribute::Focus)
+        );
+        assert_eq!(Attribute::Focus.category(), AttributeCategory::Focus);
+    }
+
     #[test]
     fn test_map_gdtf_attribute_shutter() {
         assert_eq!(
@@ -126,6 +140,7 @@ mod gdtf_tests {
         assert!(matches!(attr, Some(Attribute::Custom { label }) if label == "CustomAttr"));
     }
 
+    /// Rectangular projectors must retain their distribution instead of becoming glow-only pixels.
     #[test]
     fn test_map_gdtf_beam_type() {
         use gdtf::geometry::BeamType as GdtfBeamType;
@@ -137,10 +152,79 @@ mod gdtf_tests {
             BeamType::Fresnel
         );
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Pc), BeamType::Pc);
-        // None, Glow, Rectangle should map to Glow (no spotlight rendering)
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::None), BeamType::Glow);
         assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Glow), BeamType::Glow);
-        assert_eq!(map_gdtf_beam_type(&GdtfBeamType::Rectangle), BeamType::Glow);
+        assert_eq!(
+            map_gdtf_beam_type(&GdtfBeamType::Rectangle),
+            BeamType::Rectangle
+        );
+    }
+
+    /// Different apertures keep their own distribution and photometry through conversion.
+    #[test]
+    fn test_convert_per_emitter_optics() {
+        let mut beam = gdtf::geometry::BeamGeometry {
+            name: None,
+            model: None,
+            position: gdtf::values::Matrix::identity(),
+            children: Vec::new(),
+            lamp_type: gdtf::geometry::LampType::Led,
+            power_consumption: 10.0,
+            luminous_flux: 700.0,
+            color_temperature: 5600.0,
+            beam_angle: 2.0,
+            field_angle: 4.0,
+            throw_ratio: 2.5,
+            rectangle_ratio: 12.0,
+            beam_radius: 0.012,
+            beam_type: gdtf::geometry::BeamType::Rectangle,
+            color_rendering_index: 90,
+            emitter_spectrum: None,
+        };
+        let rectangle = convert_beam_optics(&beam);
+        beam.beam_type = gdtf::geometry::BeamType::Wash;
+        beam.beam_angle = 40.0;
+        beam.luminous_flux = 1200.0;
+        let wash = convert_beam_optics(&beam);
+        assert_eq!(rectangle.physical.beam_type, BeamType::Rectangle);
+        assert_eq!(rectangle.physical.beam_angle, 2.0);
+        assert_eq!(rectangle.physical.field_angle, 4.0);
+        assert_eq!(rectangle.physical.lumens, 700.0);
+        assert_eq!(rectangle.radius, 0.012);
+        assert_eq!(rectangle.throw_ratio, 2.5);
+        assert_eq!(rectangle.rectangle_ratio, 12.0);
+        assert_eq!(wash.physical.beam_type, BeamType::Wash);
+        assert_eq!(wash.physical.beam_angle, 40.0);
+        assert_eq!(wash.physical.lumens, 1200.0);
+    }
+
+    /// Beam nodes of the geometry tree carry their own aperture optics; other nodes carry none.
+    #[test]
+    fn test_geometry_tree_carries_beam_optics() {
+        use crate::testing::{ChannelSpec, FunctionSpec, GdtfBuilder, GeometrySpec, ModeSpec};
+
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Optics")
+            .geometry(GeometrySpec::generic("Base").child(GeometrySpec::beam("Lens")))
+            .mode(ModeSpec::new("Mode", "Base").channel(
+                ChannelSpec::new("Base", "Dimmer", &[1]).function(FunctionSpec::new("Dimmer")),
+            ))
+            .write_metadata(dir.path());
+        let (fixture, geometry) = convert_gdtf_to_fixture(&metadata, "Mode", 1).unwrap();
+        let geometry = geometry.unwrap();
+        let node = |name: &str| {
+            geometry
+                .nodes
+                .iter()
+                .find(|node| node.name == name)
+                .unwrap()
+        };
+        assert!(node("Base").beam.is_none());
+        let optics = node("Lens").beam.as_ref().unwrap();
+        assert_eq!(optics.radius, 0.05);
+        assert_eq!(optics.physical.beam_angle, 20.0);
+        assert_eq!(optics.physical.beam_type, BeamType::Spot);
+        assert_eq!(fixture.physical.as_ref(), Some(&optics.physical));
     }
 }
 
@@ -201,10 +285,14 @@ mod ofl_tests {
         assert_eq!(map_channel_key_to_attribute("Zoom"), Some(Attribute::Zoom));
     }
 
+    /// Verifies channel keys without a standard attribute map to custom attributes, while
+    /// focus keys resolve to the standard Focus attribute.
     #[test]
     fn test_map_channel_key_to_attribute_custom() {
-        let attr = map_channel_key_to_attribute("Focus");
-        assert!(matches!(attr, Some(Attribute::Custom { label }) if label == "Focus"));
+        assert_eq!(
+            map_channel_key_to_attribute("Focus"),
+            Some(Attribute::Focus)
+        );
 
         let attr = map_channel_key_to_attribute("Iris");
         assert!(matches!(attr, Some(Attribute::Custom { label }) if label == "Iris"));
@@ -426,8 +514,7 @@ mod ofl_tests {
         );
 
         // Next 4 elements should be pixels
-        for i in 1..=4 {
-            let element = &fixture.elements[i];
+        for (i, element) in fixture.elements.iter().enumerate().skip(1).take(4) {
             assert_eq!(element.label, format!("Pixel {}", i));
             assert_eq!(element.parameters.len(), 3); // R, G, B
 
@@ -501,6 +588,10 @@ mod ofl_tests {
             fixture.elements[0].parameters[0].native_unit,
             ParameterUnit::Percent
         );
+        // A profile without a physical block still gets the backend's photometry defaults.
+        let physical = fixture.physical.expect("default photometry");
+        assert_eq!((physical.beam_angle, physical.field_angle), (15.0, 40.0));
+        assert_eq!(physical.lumens, DEFAULT_LUMENS);
     }
 
     /// Verifies OFL focus metadata turns raw position channels into degree-valued parameters.

@@ -7,7 +7,11 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 /** Checks Clips keeps its minimum width and toolbar search presents only the grouped clear action. */
 test("Clips minimum width and grouped search clear", async ({
@@ -16,6 +20,8 @@ test("Clips minimum width and grouped search clear", async ({
   await page.setViewportSize({ width: 1100, height: 800 });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
+  await dockFixturesInMainGrid(page);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     api.addPanel({
@@ -61,6 +67,8 @@ test("searchable CRUD panels enforce 515px minimum width", async ({
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
+  await dockFixturesInMainGrid(page);
   for (const component of [
     "ClipList",
     "SequenceList",

@@ -49,6 +49,7 @@ function repositorySourcePaths() {
       "--exclude-standard",
       "--",
       "crates",
+      "desktop",
       "webui",
     ],
     { cwd: repoRoot, encoding: "utf8" },

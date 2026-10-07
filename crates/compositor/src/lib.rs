@@ -13,12 +13,18 @@ use std::marker::PhantomData;
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall_engine::prelude::Render;
 use nightfall_engine::Compositing;
 
-use crate::types::{CompositorParameter, FinalLayerAttributedAssertions, FinalLayerOutput};
+use crate::system::CompositorRemovals;
+use crate::types::{
+    CompositorParameter, FinalLayerAttributedAssertions, FinalLayerOutput, LayerCompositingContext,
+    ReleaseMarker,
+};
 
 /// Prelude for ergonomic imports
 pub mod prelude {
+    pub use crate::add_compositor_removal_observers;
     pub use crate::pipeline::CompositorPipeline;
     pub use crate::system::compositor;
     pub use crate::types::*;
@@ -28,6 +34,35 @@ pub mod pipeline;
 pub mod stages;
 pub mod system;
 pub mod types;
+
+/// Registers the observers that record removals the [`compositor`](system::compositor) system
+/// must react to.
+///
+/// The compositor runs in the [`Render`](nightfall_engine::prelude::Render) schedule, which can
+/// skip several updates, so removals are recorded in [`CompositorRemovals`] when they happen
+/// instead of being read from [`RemovedComponents`]. Apps that add the system without
+/// [`CompositorPlugin`] call this. Calling it again for the same parameter kind has no effect.
+pub fn add_compositor_removal_observers<P: CompositorParameter>(app: &mut App) {
+    if app.world().contains_resource::<CompositorRemovals<P>>() {
+        return;
+    }
+    app.init_resource::<CompositorRemovals<P>>();
+    app.add_observer(
+        |_: On<Remove, P>, mut removals: ResMut<CompositorRemovals<P>>| {
+            removals.parameters = true;
+        },
+    );
+    app.add_observer(
+        |_: On<Remove, ReleaseMarker>, mut removals: ResMut<CompositorRemovals<P>>| {
+            removals.layer_state = true;
+        },
+    );
+    app.add_observer(
+        |_: On<Remove, LayerCompositingContext>, mut removals: ResMut<CompositorRemovals<P>>| {
+            removals.layer_state = true;
+        },
+    );
+}
 
 /// Compositor plugin that adds the layer compositing system to a Bevy app.
 ///
@@ -51,10 +86,11 @@ impl<P: CompositorParameter> Plugin for CompositorPlugin<P> {
         // Initialize the final layer resources.
         app.init_resource::<FinalLayerAttributedAssertions>();
         app.init_resource::<FinalLayerOutput>();
+        add_compositor_removal_observers::<P>(app);
 
         // Add system to compose the layers from materialized outputs
         app.add_systems(
-            Update,
+            Render,
             (
                 crate::system::compositor::<P>.in_set(Compositing),
                 // ensure current OutputLayer is available for the next systems

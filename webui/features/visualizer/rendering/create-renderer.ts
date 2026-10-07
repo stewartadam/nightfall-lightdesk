@@ -14,9 +14,17 @@
  */
 
 import * as Comlink from "comlink";
-import { getVisualizerBeamQuality } from "../../../lib/feature-flags";
+import {
+  isVisualizerFramePacingEnabled,
+  isVisualizerInspectorEnabled,
+} from "../../../lib/feature-flags";
+import { watchWorkerUncaughtErrors } from "../../../lib/uncaught-error-reporter";
+import { visualizerEffectiveQuality } from "../state/settings";
 import { MainThreadRenderer } from "./renderers/main-thread-renderer";
-import type { IVisualizerRenderer } from "./renderers/renderer-api";
+import type {
+  CameraState,
+  IVisualizerRenderer,
+} from "./renderers/renderer-api";
 import {
   type VisualizerWorkerApi,
   WorkerRendererProxy,
@@ -28,10 +36,14 @@ import {
 export interface CreateRendererOptions {
   /** Force main thread rendering even if OffscreenCanvas is available */
   forceMainThread?: boolean;
+  /** Camera pose to start from instead of the persisted camera state. */
+  initialCameraState?: CameraState;
 }
 
 interface VisualizerRendererInitializationTestWindow extends Window {
-  __nightfallE2eVisualizerRendererInitializationGate?: () => Promise<void>;
+  __nightfallE2eVisualizerRendererInitializationGate?: (
+    renderer: IVisualizerRenderer,
+  ) => Promise<void>;
 }
 
 /**
@@ -46,12 +58,17 @@ function supportsOffscreenCanvas(): boolean {
 
 /**
  * Allows E2E tests to suspend renderer creation after initialization but before
- * the component takes ownership of the renderer.
+ * the component takes ownership of the renderer. The gate receives the raw
+ * renderer so tests can keep a reference that outlives its disposal.
  */
-async function waitAtRendererInitializationTestGate(): Promise<void> {
+async function waitAtRendererInitializationTestGate(
+  renderer: IVisualizerRenderer,
+): Promise<void> {
   if (new URLSearchParams(window.location.search).get("e2e") !== "1") return;
   const testWindow = window as VisualizerRendererInitializationTestWindow;
-  await testWindow.__nightfallE2eVisualizerRendererInitializationGate?.();
+  await testWindow.__nightfallE2eVisualizerRendererInitializationGate?.(
+    renderer,
+  );
 }
 
 /**
@@ -83,6 +100,7 @@ export async function createVisualizerRenderer(
         new URL("./renderers/worker-renderer.ts", import.meta.url),
         { type: "module" },
       );
+      watchWorkerUncaughtErrors(worker, "visualizer");
       const workerApi = Comlink.wrap<VisualizerWorkerApi>(worker);
       return new WorkerRendererProxy(worker, workerApi);
     } else {
@@ -97,10 +115,13 @@ export async function createVisualizerRenderer(
     width,
     height,
     devicePixelRatio: window.devicePixelRatio,
-    beamQuality: getVisualizerBeamQuality(),
+    initialCameraState: options.initialCameraState,
+    diagnostics:
+      isVisualizerInspectorEnabled() || isVisualizerFramePacingEnabled(),
+    quality: visualizerEffectiveQuality.get(),
   });
 
-  await waitAtRendererInitializationTestGate();
+  await waitAtRendererInitializationTestGate(renderer);
 
   if (renderer.setupResizeObserver) {
     renderer.setupResizeObserver(container);

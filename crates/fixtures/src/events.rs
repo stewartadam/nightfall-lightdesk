@@ -118,20 +118,10 @@ pub fn handle_restore_fixture_snapshot(
 }
 
 fn output_binding_matches_fixture(binding: &OutputBinding, uid: uuid::Uuid) -> bool {
-    match &binding.source {
-        OutputSource::Fixture { uids, .. } => uids.contains(&uid),
-        _ => false,
-    }
-}
-
-fn disabled_binding_matches_fixture(binding: &DisabledBinding, uid: uuid::Uuid) -> bool {
-    match binding {
-        DisabledBinding::Output {
-            source: OutputSource::Fixture { uids, .. },
-            ..
-        } => uids.contains(&uid),
-        _ => false,
-    }
+    binding
+        .source
+        .fixture_uids()
+        .is_some_and(|uids| uids.contains(&uid))
 }
 
 /// Handle RestoreBindingSnapshot commands to restore fixture binding configuration.
@@ -139,7 +129,6 @@ pub fn handle_restore_binding_snapshot(
     mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreBindingSnapshot>>,
     data_provider: Res<FixtureDataProviderExt>,
     mut output_bindings: ResMut<OutputBindings>,
-    mut disabled_bindings: ResMut<DisabledBindings>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
@@ -169,16 +158,9 @@ pub fn handle_restore_binding_snapshot(
         output_bindings
             .bindings
             .retain(|binding| !output_binding_matches_fixture(binding, fixture_uid));
-        disabled_bindings
-            .bindings
-            .retain(|binding| !disabled_binding_matches_fixture(binding, fixture_uid));
-
         output_bindings
             .bindings
             .extend(snapshot.output_bindings.clone());
-        disabled_bindings
-            .bindings
-            .extend(snapshot.disabled_bindings.clone());
         succeed_action(&mut responder, event.command_id);
     }
 }
@@ -255,7 +237,7 @@ pub fn handle_restore_offset_snapshot(
             }
 
             // Update the ECS Parameter components per-element
-            let param_attr_map = data_provider.parameter_attribute_map.read().unwrap();
+            let param_index = data_provider.parameter_index();
             for (element_index, offset) in &snapshot.offsets {
                 let fixture_ref = FixtureRef {
                     fixture_uid: uid,
@@ -263,7 +245,7 @@ pub fn handle_restore_offset_snapshot(
                 };
 
                 if let Some(param_instance) =
-                    param_attr_map.get_by_left(&(fixture_ref, snapshot.attribute.clone()))
+                    param_index.parameter(&fixture_ref, &snapshot.attribute)
                 {
                     if let Ok(mut param) = parameter_query.get_mut(param_instance.entity()) {
                         tracing::trace!(
@@ -289,31 +271,6 @@ pub fn handle_restore_offset_snapshot(
                 format!("Fixture {} was not found", snapshot.fixture_id),
             );
         }
-    }
-}
-
-/// Handle ClearDmxChannels commands to clear manual DMX override.
-///
-/// Resets affected parameters to their default values.
-pub fn handle_clear_dmx_channels(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::ClearDmxChannels>>,
-    mut universes: ResMut<ConsoleDmxUniverses>,
-    mut responder: CommandResponder,
-) {
-    for event in events.read() {
-        let snapshot = &event.action.0;
-        let expanded_channels = snapshot.channels.expand();
-
-        tracing::debug!(
-            "Clearing DMX channels {} (manual override)",
-            snapshot.channels
-        );
-
-        // Step 1: Set DMX values to 0
-        for ch in &expanded_channels {
-            universes.set_value(ch.universe, ch.address, 0, ConsoleChannelOrigin::System);
-        }
-        succeed_action(&mut responder, event.command_id);
     }
 }
 

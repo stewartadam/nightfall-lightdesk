@@ -9,6 +9,9 @@
 import { expect, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Desktop HTTP requests bypass Vite and complete discovery, draft saves, and ranged reads. */
 test("desktop startup can access a backend on another origin", async ({
   page,
@@ -75,8 +78,10 @@ test("desktop startup can access a backend on another origin", async ({
       headers: { "Content-Type": "application/json" },
       body: "invalid JSON",
     });
+    // The snapshot is decoded from gzip and always returned whole, so ranged
+    // reads target a plain file that every saved showfile carries.
     const resource = await fetch(
-      `${baseUrl}/api/showfiles/current/showfile.json`,
+      `${baseUrl}/api/showfiles/current/showfile-manifest.json`,
       {
         headers: { Range: "bytes=0-31" },
       },

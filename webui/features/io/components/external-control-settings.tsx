@@ -16,6 +16,7 @@ import {
   $externalControlState,
 } from "../../../state/settings";
 import type { ExternalControlSettings as ControlSettings } from "../../../types";
+import { RemoteAccess } from "./remote-access";
 
 /** Edits host-scoped remote access and displays listener configuration errors. */
 export function ExternalControlSettings() {
@@ -85,8 +86,12 @@ export function ExternalControlSettings() {
         <p class="mt-2 text-xs text-gray-400">
           Allow devices on your network to control Nightfall. Use a trusted
           network. Local control remains available. Saved on this computer,
-          independently of your showfile.
+          independently of your showfile. Other devices enter the pairing PIN
+          once per app session.
         </p>
+        <Show when={state().settings.enabled}>
+          <RemoteAccess />
+        </Show>
         <Show when={state().error}>
           {(error) => (
             <p class="mt-2 text-xs text-red-300" role="alert">

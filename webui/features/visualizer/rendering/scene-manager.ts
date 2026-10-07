@@ -13,7 +13,6 @@
 
 import { Raycaster, Vector2, Vector3 } from "three";
 import { Mesh, type PerspectiveCamera, type Scene } from "three/webgpu";
-import type { VisualizerBeamQuality } from "../../../lib/feature-flags";
 import { createLogger } from "../../../lib/logger";
 import type { SelectionTarget } from "../../../lib/selection-targets";
 import type { FixtureElement } from "../../../types";
@@ -23,16 +22,15 @@ import {
 } from "../model/selection-utils";
 import type { RenderableFixture, RenderableSceneObject } from "../model/types";
 import { BeamManager, BeamUpdater } from "./effects";
+import { FixtureColorState, type StrobeState } from "./fixture-color-state";
 import { FixtureManager } from "./fixture-manager";
 import {
   type ExtendedFixtureInstance,
   updateFixtureColors,
 } from "./fixture-renderers";
-import {
-  type EmitterColor,
-  updateEmitterColors,
-  updateGdtfPanTilt,
-} from "./geometry-builder";
+import { updateGdtfJoints } from "./gdtf-joints";
+import { type EmitterColor, updateEmitterColors } from "./geometry-builder";
+import type { QualityProfile } from "./quality-profile";
 import type {
   FixtureElementDmxMap,
   VisualizerScreenPoint,
@@ -46,53 +44,32 @@ import {
 
 const log = createLogger("visualizer:scene-manager");
 
-function getPanTiltFromElements(
-  elementDmx: Map<
-    string,
-    {
-      pan?: number;
-      tilt?: number;
-    }
-  >,
-): { pan: number; tilt: number } {
-  for (const dmx of elementDmx.values()) {
-    if (dmx.pan !== undefined || dmx.tilt !== undefined) {
-      return {
-        pan: dmx.pan ?? 0,
-        tilt: dmx.tilt ?? 0,
-      };
-    }
-  }
-
-  return { pan: 0, tilt: 0 };
-}
-
-/** Returns the strongest fixture-level strobe shutter value in an element map. */
+/** Returns the element with the strongest strobe in an element map, if any strobes. */
 function getFixtureStrobeShutter(
-  elementDmx: Map<string, { strobeShutter?: number }>,
-): number | undefined {
-  let strobeShutter: number | undefined;
+  elementDmx: Map<string, StrobeState>,
+): StrobeState | undefined {
+  let strongest: StrobeState | undefined;
   for (const dmx of elementDmx.values()) {
     if (dmx.strobeShutter === undefined || dmx.strobeShutter <= 0) continue;
-    strobeShutter =
-      strobeShutter === undefined
-        ? dmx.strobeShutter
-        : Math.max(strobeShutter, dmx.strobeShutter);
+    if ((strongest?.strobeShutter ?? 0) < dmx.strobeShutter) strongest = dmx;
   }
-  return strobeShutter;
+  return strongest;
 }
 
 /** Applies element-local or fixture-level strobe shutter timing to intensity. */
 function strobeAdjustedIntensity(
   intensity: number,
-  elementStrobeShutter: number | undefined,
-  fixtureStrobeShutter: number | undefined,
+  elementStrobe: StrobeState,
+  fixtureStrobe: StrobeState | undefined,
   timeSeconds: number,
 ): number {
+  const strobe =
+    elementStrobe.strobeShutter !== undefined ? elementStrobe : fixtureStrobe;
   return applyStrobeShutterIntensity(
     intensity,
-    elementStrobeShutter ?? fixtureStrobeShutter,
+    strobe?.strobeShutter,
     timeSeconds,
+    strobe?.strobeHz,
   );
 }
 
@@ -108,11 +85,16 @@ export class SceneManager {
   private selectionHighlighter: SelectionHighlighter;
   private raycaster = new Raycaster();
   private mouseNdc = new Vector2();
+  private readonly fixtureColors = new WeakMap<
+    ExtendedFixtureInstance,
+    FixtureColorState
+  >();
 
-  constructor(scene: Scene, beamQuality: VisualizerBeamQuality = "high") {
-    this.fixtureManager = new FixtureManager(scene, beamQuality);
+  /** Builds every scene subsystem with the renderer's resolved quality profile. */
+  constructor(scene: Scene, profile: QualityProfile) {
+    this.fixtureManager = new FixtureManager(scene, profile);
     this.sceneObjectManager = new SceneObjectManager(scene);
-    this.beamManager = new BeamManager(beamQuality);
+    this.beamManager = new BeamManager(scene);
     this.beamUpdater = new BeamUpdater(this.beamManager);
     this.selectionHighlighter = new SelectionHighlighter(
       this.fixtureManager.getAllFixtureInstances(),
@@ -131,6 +113,16 @@ export class SceneManager {
    */
   getBeamsEnabled(): boolean {
     return this.beamUpdater.isEnabled();
+  }
+
+  /** Reports active prism approximation for renderer-independent instrumentation. */
+  get reducedPrismEmitters(): number {
+    return this.beamUpdater.reducedPrismEmitters;
+  }
+
+  /** Reports active mask approximation for renderer-independent instrumentation. */
+  get reducedGoboEmitters(): number {
+    return this.beamManager.reducedGoboEmitters;
   }
 
   /**
@@ -467,56 +459,30 @@ export class SceneManager {
     const instance = this.fixtureManager.getFixtureInstance(fixtureUid);
     if (!instance) return;
 
-    // Convert to the format expected by update functions
-    const colorMap = new Map<
-      string,
-      Record<string, number | undefined> &
-        EmitterColor & {
-          pan?: number;
-          tilt?: number;
-          tiltSpeed?: number;
-          zoom?: number;
-          frost?: number;
-          strobeShutter?: number;
-        }
-    >();
-    const nowSeconds = performance.now() / 1000;
-    const fixtureStrobeShutter = getFixtureStrobeShutter(elementDmx);
-    for (const [key, dmx] of elementDmx) {
-      const intensity = strobeAdjustedIntensity(
-        dmx.intensity ?? 0,
-        dmx.strobeShutter,
-        fixtureStrobeShutter,
-        nowSeconds,
-      );
-      colorMap.set(key, {
-        ...dmx,
-        red: dmx.red ?? 0,
-        green: dmx.green ?? 0,
-        blue: dmx.blue ?? 0,
-        intensity,
-        pan: dmx.pan,
-        tilt: dmx.tilt,
-        tiltSpeed: dmx.tiltSpeed,
-        zoom: dmx.zoom,
-        frost: dmx.frost,
-        white: dmx.white,
-        strobeShutter: dmx.strobeShutter,
-      });
+    // Reuse this fixture's color records; strobes advance on every frame.
+    let colorState = this.fixtureColors.get(instance);
+    if (!colorState) {
+      colorState = new FixtureColorState();
+      this.fixtureColors.set(instance, colorState);
     }
+    const colorMap = colorState.update(
+      elementDmx,
+      getFixtureStrobeShutter(elementDmx),
+      performance.now() / 1000,
+    );
 
     // Use appropriate update function based on renderer type
     if (instance.rendererType !== "gdtf") {
       // Non-GDTF renderers (LED bar, strobe, moving head) use label-based keys
       updateFixtureColors(instance, colorMap);
+      this.beamUpdater.updateFixtureBeam(fixtureUid, instance, colorMap);
     } else {
       // GDTF renderer uses label-based emitter mapping
       updateEmitterColors(instance, colorMap);
 
-      // Apply pan/tilt rotations to GDTF geometry axis nodes
-      if (instance.geometry) {
-        const { pan, tilt } = getPanTiltFromElements(colorMap);
-        updateGdtfPanTilt(instance, instance.geometry, pan, tilt);
+      // Move each GDTF joint from its own element's pan/tilt
+      if (instance.joints) {
+        updateGdtfJoints(instance.joints, colorMap, performance.now());
       }
 
       // Update beam for this fixture
@@ -544,7 +510,8 @@ export class SceneManager {
       pan?: number;
       tilt?: number;
       tiltSpeed: number;
-      zoom: number;
+      zoom?: number;
+      zoomDegrees?: number;
       frost: number;
       white?: number;
       strobeShutter?: number;
@@ -605,7 +572,7 @@ export class SceneManager {
             blue: dmx.blue,
             intensity: strobeAdjustedIntensity(
               dmx.intensity,
-              dmx.strobeShutter,
+              dmx,
               fixtureStrobeShutter,
               nowSeconds,
             ),
@@ -619,6 +586,7 @@ export class SceneManager {
           });
         }
         updateFixtureColors(instance, elementColors);
+        this.beamUpdater.updateFixtureBeam(uid, instance, elementColors);
       } else {
         // Default GDTF renderer - use label-based mapping
         const elementColors = new Map<string, EmitterColor>();
@@ -643,18 +611,20 @@ export class SceneManager {
         );
         for (const { element, dmx } of rawElementDmx) {
           elementColors.set(element.label, {
+            ...dmx,
             red: dmx.red,
             green: dmx.green,
             blue: dmx.blue,
             intensity: strobeAdjustedIntensity(
               dmx.intensity,
-              dmx.strobeShutter,
+              dmx,
               fixtureStrobeShutter,
               nowSeconds,
             ),
             pan: dmx.pan,
             tilt: dmx.tilt,
             zoom: dmx.zoom,
+            zoomDegrees: dmx.zoomDegrees,
             frost: dmx.frost,
           });
         }
@@ -669,11 +639,9 @@ export class SceneManager {
         }
         updateEmitterColors(instance, emitterColors);
 
-        // Apply pan/tilt rotations to GDTF geometry axis nodes
-        // Use the first element that provides pan/tilt values.
-        if (instance.geometry) {
-          const { pan, tilt } = getPanTiltFromElements(elementColors);
-          updateGdtfPanTilt(instance, instance.geometry, pan, tilt);
+        // Move each GDTF joint from its own element's pan/tilt
+        if (instance.joints) {
+          updateGdtfJoints(instance.joints, elementColors, performance.now());
         }
 
         // Update beam for this fixture using shared BeamUpdater

@@ -6,7 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+} from "solid-js";
+import { Table, TableScroll } from "../components/ui/table";
 import { ToggleSwitch } from "../components/ui/toggle-switch";
 import DataGrid, {
   createKeyedDataGridCellProvider,
@@ -102,6 +109,64 @@ const statusExtension: DataGridRichCellExtension = {
   renderEditor: () => null,
 };
 
+/** Number of sources in the static native snapshot, short enough to fit tall panels. */
+const SNAPSHOT_ROW_COUNT = 12;
+
+/**
+ * Renders a static timecode snapshot with the native shared table, the way the
+ * timecode and status displays do, so the lab also shows `TableScroll` with its
+ * sticky header and two-axis scroll indicators.
+ */
+function MonitorTableSnapshot(props: {
+  compact: boolean;
+  columnGuides: boolean;
+}) {
+  const snapshot = sampleSources().slice(0, SNAPSHOT_ROW_COUNT);
+  return (
+    <TableScroll
+      aria-label="Timecode table scroll area"
+      class="lab-monitor-scroll"
+    >
+      <Table
+        aria-label="Timecode table snapshot"
+        class="lab-monitor-table"
+        density={props.compact ? "compact" : "comfortable"}
+        columnGuides={props.columnGuides}
+      >
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Source</th>
+            <th scope="col">Timecode</th>
+            <th scope="col">Rate</th>
+            <th scope="col">State</th>
+          </tr>
+        </thead>
+        <tbody>
+          <For each={snapshot}>
+            {(row) => (
+              <tr>
+                <td>{String(row.id).padStart(2, "0")}</td>
+                <td>{row.name}</td>
+                <td class="monitor-timecode">
+                  {formatSMPTETime(row.positionMs, TimecodeRate.Fps30)}
+                </td>
+                <td>30 fps</td>
+                <td>
+                  <span class="monitor-state" data-state={row.state}>
+                    <i aria-hidden="true" />
+                    {row.state}
+                  </span>
+                </td>
+              </tr>
+            )}
+          </For>
+        </tbody>
+      </Table>
+    </TableScroll>
+  );
+}
+
 /** Demonstrates live read-only values using the production grid's sorting, resizing and selection. */
 export function ReadOnlyTableDemo(props: {
   compact: boolean;
@@ -173,6 +238,10 @@ export function ReadOnlyTableDemo(props: {
           onGridSelectionChange={setSelection}
         />
       </div>
+      <MonitorTableSnapshot
+        compact={props.compact}
+        columnGuides={props.columnGuides}
+      />
       <div class="panel-footnote">
         <span>Live sample · No output</span>
         <span>

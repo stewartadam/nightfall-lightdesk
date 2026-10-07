@@ -19,7 +19,6 @@ const MIN_OVERLAP_FPS = 35;
 const WEBGL_FALLBACK_MIN_OVERLAP_FPS = 1;
 const WEBGL_FALLBACK_FPS_TOLERANCE = 0.25;
 const VISUALIZER_SETTLE_MS = 2_000;
-const BEAM_PREWARM_TIMEOUT_MS = 60_000;
 const OVERLAP_SAMPLE_DURATION_MS = 10_000;
 const OVERLAP_CAMERA_STATE = {
   position: {
@@ -62,7 +61,9 @@ async function openSampleHighQualityVisualizer(page: Page): Promise<void> {
   await expect(page.locator(inputSelector)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".fps-label")).toBeVisible({ timeout: 30_000 });
   await waitForSampleWashFixtures(page);
-  await waitForBeamPrewarm(page);
+  await expect
+    .poll(() => renderedQualityPreset(page), { timeout: 30_000 })
+    .toBe("high");
 }
 
 /** Activates the 3D Visualizer panel so its canvas and FPS overlay are rendered. */
@@ -125,28 +126,6 @@ async function waitForSampleWashFixtures(page: Page): Promise<void> {
 }
 
 /**
- * Waits until invisible high-quality beam meshes have rendered once for pipeline prewarming.
- */
-async function waitForBeamPrewarm(page: Page): Promise<void> {
-  await expect
-    .poll(
-      () =>
-        page.evaluate(() => {
-          const scene = (window as any).visualizerApi?.getScene?.();
-          let pending = 0;
-          scene?.traverse?.((object: any) => {
-            if (object.userData?.beamPrewarmPending === true) {
-              pending += 1;
-            }
-          });
-          return pending;
-        }),
-      { timeout: BEAM_PREWARM_TIMEOUT_MS },
-    )
-    .toBe(0);
-}
-
-/**
  * Submits an operator command through the shared header command line.
  */
 async function submitCommand(page: Page, command: string): Promise<void> {
@@ -182,17 +161,53 @@ async function setBeamOverlapCamera(page: Page): Promise<void> {
     .toEqual(OVERLAP_CAMERA_STATE);
 }
 
-/** Counts high-quality beam meshes that are visible in the current visualizer scene. */
+/**
+ * Counts lit apertures of the overlap wash fixtures in the shared optical pipeline.
+ *
+ * Each lit aperture owns one visible `OpticalSurface:<fixtureUid>:<emitter>` light and one
+ * instance of the atmospheric volume batch, so a beam counts only when its surface light is
+ * lit and the volumetric batch draws at least as many instances as there are lit apertures.
+ */
 async function visibleBeamCount(page: Page): Promise<number> {
-  return page.evaluate(() => {
+  return page.evaluate(async (fixtureIdsToCount) => {
     const scene = (window as any).visualizerApi?.getScene?.();
-    let visibleBeams = 0;
-    scene?.traverse?.((object: any) => {
-      if (object.name?.startsWith?.("Beam_") && object.visible === true) {
-        visibleBeams += 1;
+    if (!scene) return 0;
+    const { getOpticalRenderContext } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).opticalRenderContext;
+    const volumes = getOpticalRenderContext(scene)?.scene.getObjectByName(
+      "EmitterVolumes",
+    ) as { visible?: boolean; count?: number } | undefined;
+    if (!volumes?.visible) return 0;
+    const fixtures = Object.values(
+      (window as any).appStores.fixtures.get() ?? {},
+    ) as any[];
+    const prefixes = fixtures
+      .filter((fixture) => fixtureIdsToCount.includes(fixture.identifiers?.id))
+      .map((fixture) => `OpticalSurface:${fixture.identifiers.uid}:`);
+    let litApertures = 0;
+    scene.traverse((object: any) => {
+      if (
+        object.visible === true &&
+        object.intensity > 0 &&
+        prefixes.some((prefix) => object.name?.startsWith?.(prefix))
+      ) {
+        litApertures += 1;
       }
     });
-    return visibleBeams;
+    return Math.min(litApertures, volumes.count ?? 0);
+  }, OVERLAP_FIXTURE_IDS);
+}
+
+/** Reads the quality preset the live main-thread renderer's optical pipeline was built with. */
+async function renderedQualityPreset(page: Page): Promise<string | undefined> {
+  return page.evaluate(async () => {
+    const scene = (window as any).visualizerApi?.getScene?.();
+    if (!scene) return undefined;
+    const { getOpticalRenderContext } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).opticalRenderContext;
+    return getOpticalRenderContext(scene)?.profile.preset;
   });
 }
 
@@ -263,6 +278,10 @@ test("high-quality Generic wash beam overlap view keeps acceptable FPS", async (
     250,
   );
   expect(overlapSamples.length).toBeGreaterThan(5);
+  await testInfo.attach("beam-overlap.png", {
+    body: await page.screenshot(),
+    contentType: "image/png",
+  });
 
   const fpsSamples = overlapSamples.map((sample) => sample.fps);
   const maxVisibleBeams = Math.max(

@@ -8,10 +8,11 @@
 
 //! Undo/redo implementations for fixture commands.
 
-use nightfall::command_types::DmxChannelExpr;
+use nightfall::command_types::DmxChannelRef;
 use nightfall::prelude::{ColorPathDefault, FixtureRef};
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
+use nightfall_fixture_model::prelude::*;
 #[cfg(test)]
 use nightfall_io::prelude::{OutputTransport, SacnDelivery};
 use nightfall_undo::prelude::*;
@@ -48,8 +49,6 @@ pub struct BindingSnapshot {
     pub fixture_id: u32,
     /// Output bindings tied to the fixture.
     pub output_bindings: Vec<OutputBinding>,
-    /// Disabled bindings tied to the fixture.
-    pub disabled_bindings: Vec<DisabledBinding>,
 }
 
 /// Command to restore binding configuration for a fixture.
@@ -86,22 +85,6 @@ pub struct OffsetSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 pub struct RestoreOffsetSnapshot(pub OffsetSnapshot);
 
-/// Snapshot of DMX channel values for restoration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DmxChannelSnapshot {
-    /// The original channel expression
-    pub channels: DmxChannelExpr,
-    /// The DMX value that was set (used for description)
-    pub value: ChannelDmxValue,
-}
-
-/// Command to clear DMX channel manual override.
-///
-/// Restores the affected parameters to their default values, clearing
-/// the manual override set by SetDmxChannels.
-#[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub struct ClearDmxChannels(pub DmxChannelSnapshot);
-
 /// Snapshot of all color path defaults before restoring a fixture-default edit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColorPathDefaultsSnapshot {
@@ -124,8 +107,6 @@ impl EngineAction for RestoreBindingSnapshot {}
 impl EngineAction for RestorePatchBindingsSnapshot {}
 
 impl EngineAction for RestoreOffsetSnapshot {}
-
-impl EngineAction for ClearDmxChannels {}
 
 impl EngineAction for RestoreColorPathDefaultsSnapshot {}
 
@@ -203,17 +184,49 @@ impl UndoableOperation for RestoreOffsetSnapshot {
     }
 }
 
-impl UndoableOperation for ClearDmxChannels {
-    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
-        // Inverse of clearing is to set the value again
-        Some(Box::new(FixtureCommand::SetDmxChannels {
-            channels: self.0.channels.clone(),
-            value: self.0.value,
-        }))
+/// Captures the current manual write state of each channel so undo can put it back.
+fn snapshot_manual_channels(
+    ctx: &UndoContext,
+    channels: impl IntoIterator<Item = DmxChannelRef>,
+) -> Vec<ManualDmxChannelState> {
+    let universes = ctx.world.resource::<ConsoleDmxUniverses>();
+    channels
+        .into_iter()
+        .map(|channel| ManualDmxChannelState {
+            channel,
+            manual_value: (universes.get_origin(channel.universe, channel.address)
+                == Some(ConsoleChannelOrigin::ManualCommand))
+            .then(|| universes.get_value(channel.universe, channel.address))
+            .flatten(),
+        })
+        .collect()
+}
+
+impl UndoableOperation for DmxAction {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+        match self {
+            DmxAction::ReleaseChannels { channels } => {
+                let snapshot = snapshot_manual_channels(ctx, channels.expand());
+                // Releasing channels that carry no manual write changes nothing worth undoing.
+                snapshot
+                    .iter()
+                    .any(|state| state.manual_value.is_some())
+                    .then(|| {
+                        Box::new(DmxAction::RestoreChannels { channels: snapshot })
+                            as Box<dyn UndoableOperation>
+                    })
+            }
+            DmxAction::RestoreChannels { channels } => Some(Box::new(DmxAction::RestoreChannels {
+                channels: snapshot_manual_channels(ctx, channels.iter().map(|state| state.channel)),
+            })),
+        }
     }
 
     fn description(&self) -> String {
-        format!("Clear DMX {}", self.0.channels)
+        match self {
+            DmxAction::ReleaseChannels { channels } => format!("Release DMX {channels}"),
+            DmxAction::RestoreChannels { .. } => "Restore DMX Channels".to_string(),
+        }
     }
 }
 
@@ -265,12 +278,10 @@ impl UndoableOperation for FixtureCommand {
                     new_id: *id,
                 }))
             }
-            FixtureCommand::SetDmxChannels { channels, value } => {
-                // Undo clears the manual override by setting affected parameters to default
-                Some(Box::new(ClearDmxChannels(DmxChannelSnapshot {
-                    channels: channels.clone(),
-                    value: *value,
-                })))
+            FixtureCommand::SetDmxChannels { channels, .. } => {
+                Some(Box::new(DmxAction::RestoreChannels {
+                    channels: snapshot_manual_channels(ctx, channels.expand()),
+                }))
             }
             FixtureCommand::UpdateFixturePlacements { updates } => {
                 let mut inverse_updates = Vec::new();
@@ -428,27 +439,16 @@ fn snapshot_fixture(ctx: &UndoContext, fixture: &Fixture) -> FixtureSnapshot {
 }
 
 fn output_binding_matches_fixture(binding: &OutputBinding, uid: uuid::Uuid) -> bool {
-    match &binding.source {
-        OutputSource::Fixture { uids, .. } => uids.contains(&uid),
-        _ => false,
-    }
-}
-
-fn disabled_binding_matches_fixture(binding: &DisabledBinding, uid: uuid::Uuid) -> bool {
-    match binding {
-        DisabledBinding::Output {
-            source: OutputSource::Fixture { uids, .. },
-            ..
-        } => uids.contains(&uid),
-        _ => false,
-    }
+    binding
+        .source
+        .fixture_uids()
+        .is_some_and(|uids| uids.contains(&uid))
 }
 
 fn snapshot_binding_state(ctx: &UndoContext, fixture_id: u32) -> Option<BindingSnapshot> {
     let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
     let fixture = fixtures.inner.from_id(fixture_id).ok()?;
     let output_bindings = ctx.world.resource::<OutputBindings>();
-    let disabled_bindings = ctx.world.resource::<DisabledBindings>();
 
     let output_snapshot = output_bindings
         .bindings
@@ -456,17 +456,10 @@ fn snapshot_binding_state(ctx: &UndoContext, fixture_id: u32) -> Option<BindingS
         .filter(|binding| output_binding_matches_fixture(binding, fixture.identifiers.uid))
         .cloned()
         .collect();
-    let disabled_snapshot = disabled_bindings
-        .bindings
-        .iter()
-        .filter(|binding| disabled_binding_matches_fixture(binding, fixture.identifiers.uid))
-        .cloned()
-        .collect();
 
     Some(BindingSnapshot {
         fixture_id,
         output_bindings: output_snapshot,
-        disabled_bindings: disabled_snapshot,
     })
 }
 
@@ -506,6 +499,10 @@ mod tests {
                 .map(|i| FixtureElement {
                     label: format!("Pixel {}", i + 1),
                     parameters: vec![ParameterMetadata {
+                        dmx_slots: Default::default(),
+                        functions: Vec::new(),
+                        default_dmx: None,
+                        highlight_dmx: None,
                         resolution: DmxValueResolution::Coarse,
                         attribute: Attribute::Intensity,
                         native_unit: Attribute::Intensity.native_unit(),
@@ -571,23 +568,10 @@ mod tests {
             ],
         });
 
-        world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Output {
-                source: OutputSource::Fixture {
-                    uids: vec![fixture_uid],
-                    element: None,
-                    param: None,
-                },
-                priority: 0,
-                clone: false,
-            }],
-        });
-
         let ctx = UndoContext { world: &world };
         let snapshot = snapshot_binding_state(&ctx, 1).expect("Snapshot should exist");
 
         assert_eq!(snapshot.output_bindings.len(), 1);
-        assert_eq!(snapshot.disabled_bindings.len(), 1);
 
         let binding = &snapshot.output_bindings[0];
         assert!(matches!(
@@ -687,6 +671,10 @@ mod tests {
                 FixtureElement {
                     label: "Pixel 1".to_string(),
                     parameters: vec![ParameterMetadata {
+                        dmx_slots: Default::default(),
+                        functions: Vec::new(),
+                        default_dmx: None,
+                        highlight_dmx: None,
                         resolution: DmxValueResolution::Coarse,
                         attribute: Attribute::Intensity,
                         native_unit: Attribute::Intensity.native_unit(),
@@ -703,6 +691,10 @@ mod tests {
                 FixtureElement {
                     label: "Pixel 2".to_string(),
                     parameters: vec![ParameterMetadata {
+                        dmx_slots: Default::default(),
+                        functions: Vec::new(),
+                        default_dmx: None,
+                        highlight_dmx: None,
                         resolution: DmxValueResolution::Coarse,
                         attribute: Attribute::Intensity,
                         native_unit: Attribute::Intensity.native_unit(),
@@ -719,6 +711,10 @@ mod tests {
                 FixtureElement {
                     label: "Pixel 3".to_string(),
                     parameters: vec![ParameterMetadata {
+                        dmx_slots: Default::default(),
+                        functions: Vec::new(),
+                        default_dmx: None,
+                        highlight_dmx: None,
                         resolution: DmxValueResolution::Coarse,
                         attribute: Attribute::Intensity,
                         native_unit: Attribute::Intensity.native_unit(),
@@ -836,18 +832,6 @@ mod tests {
             ],
         });
 
-        world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Output {
-                source: OutputSource::Fixture {
-                    uids: vec![fixture_uid],
-                    element: None,
-                    param: None,
-                },
-                priority: 0,
-                clone: false,
-            }],
-        });
-
         let ctx = UndoContext { world: &world };
 
         let command = FixtureCommand::UpdateFixturePatch {
@@ -867,7 +851,6 @@ mod tests {
             .expect("Should be RestoreBindingSnapshot");
 
         assert_eq!(restore_cmd.0.output_bindings.len(), 1);
-        assert_eq!(restore_cmd.0.disabled_bindings.len(), 1);
     }
 
     #[test]
@@ -911,8 +894,8 @@ mod tests {
         });
 
         world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Output {
-                source: OutputSource::Fixture {
+            bindings: vec![DisabledBinding::Input {
+                source: InputSource::Fixture {
                     uids: vec![fixture_uid],
                     element: None,
                     param: None,
@@ -986,8 +969,8 @@ mod tests {
         });
 
         world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Output {
-                source: OutputSource::Fixture {
+            bindings: vec![DisabledBinding::Input {
+                source: InputSource::Fixture {
                     uids: vec![fixture_uid],
                     element: None,
                     param: None,

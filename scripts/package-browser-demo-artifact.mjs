@@ -82,7 +82,7 @@ function main() {
   mkdirSync(noticesDirectory, { recursive: true });
   copyFileSync("LICENSE", resolve(noticesDirectory, "NIGHTFALL-LICENSE.txt"));
   copyFileSync(
-    "webui/assets/browser-demo/nightfall-demo-click.LICENSE.txt",
+    "webui/assets/browser-demo/sample-audio.LICENSE.txt",
     resolve(noticesDirectory, "SAMPLE-AUDIO-LICENSE.txt"),
   );
 

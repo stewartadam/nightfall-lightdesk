@@ -17,6 +17,9 @@ use bevy_ecs::{
     schedule::IntoScheduleConfigs,
     system::SystemState,
 };
+#[cfg(not(target_arch = "wasm32"))]
+// Leaf crate: mark the cargo-hakari workspace-hack as used so cargo's unused_dependencies lint passes.
+use nightfall_workspace_hack as _;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use uuid::Uuid;

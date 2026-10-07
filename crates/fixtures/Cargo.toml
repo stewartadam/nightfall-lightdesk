@@ -8,7 +8,6 @@ edition.workspace = true
 bevy_app.workspace = true
 bevy_diagnostic.workspace = true
 bevy_ecs.workspace = true
-bimap.workspace = true
 dashmap.workspace = true
 moonshine-kind.workspace = true
 nightfall = { path = "../common" }
@@ -16,10 +15,12 @@ nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-engine = { path = "../engine" }
 nightfall-dmx = { path = "../dmx" }
+nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-io = { path = "../io" }
 nightfall-instances = { path = "../instances" }
 nightfall-selection = { path = "../selection" }
 nightfall-undo = { path = "../undo" }
+rustc-hash.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 smart-default.workspace = true
@@ -28,13 +29,25 @@ tracing.workspace = true
 uuid.workspace = true
 web-time.workspace = true
 
+[features]
+test-support = []
+
 [dev-dependencies]
+async-channel.workspace = true
 bevy.workspace = true
 criterion.workspace = true
+nightfall-fixtures = { path = ".", features = ["test-support"] }
 
 [[bench]]
 name = "compositor"
 harness = false
+
+[[bench]]
+name = "frame_output"
+harness = false
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true

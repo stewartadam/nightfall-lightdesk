@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use bevy_app::prelude::*;
 use bevy_ecs::system::SystemState;
 use moonshine_kind::prelude::Instance;
-use nightfall_desk::prelude::BlueprintDefinitionChange;
-use nightfall_engine::prelude::DataProvider;
+use nightfall_engine::prelude::*;
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use uuid::Uuid;
 
@@ -153,7 +153,7 @@ fn materialized_absolute_value(
     match cue
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("parameter should be materialized")
         .0
     {
@@ -224,12 +224,7 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         materialized_absolute_value(&first_reference, red_parameter),
         32.0
     );
-    assert!(
-        !first_reference
-            .values
-            .absolute
-            .contains_key(&blue_parameter)
-    );
+    assert!(!first_reference.values.absolute.contains_key(blue_parameter));
 
     let original = blueprint.clone();
     let mut updated = blueprint;
@@ -268,7 +263,7 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         !unchanged_absolute
             .values
             .absolute
-            .contains_key(&blue_parameter)
+            .contains_key(blue_parameter)
     );
 
     let mut removed_red = updated;
@@ -282,7 +277,7 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         !removed_reference
             .values
             .absolute
-            .contains_key(&red_parameter)
+            .contains_key(red_parameter)
     );
     assert_eq!(
         materialized_absolute_value(&removed_reference, blue_parameter),
@@ -303,7 +298,7 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         !restored_reference
             .values
             .absolute
-            .contains_key(&blue_parameter)
+            .contains_key(blue_parameter)
     );
 }
 
@@ -621,7 +616,7 @@ fn paint_materialized_cues_applies_color_path_samples() {
         .expect("standalone cue should paint a layer");
     let sampled = |parameter: Instance<Parameter>| match layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("color parameter should be sampled")
         .0
     {
@@ -735,7 +730,7 @@ fn paint_materialized_cues_samples_color_paths_from_lower_layer_base() {
         .expect("standalone cue should paint a layer");
     let sampled = |parameter: Instance<Parameter>| match layer
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("color parameter should be sampled")
         .0
     {
@@ -759,6 +754,127 @@ fn paint_materialized_cues_samples_color_paths_from_lower_layer_base() {
         blue < 40.0,
         "HSV midpoint from red to cyan should not route through cyan/blue, got blue {blue}"
     );
+}
+
+/// Several color-path cues painted in one pass each sample from the layers below them only.
+#[test]
+fn paint_materialized_cues_gives_each_color_path_cue_its_own_lower_base() {
+    let mut app = App::new();
+    app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.add_systems(Update, paint_materialized_cues);
+
+    let (fixture_ref, parameters) = add_single_element_fixture(
+        app.world_mut(),
+        103,
+        &[
+            (Attribute::Red, 0.0, 255.0),
+            (Attribute::Green, 0.0, 255.0),
+            (Attribute::Blue, 0.0, 255.0),
+        ],
+    );
+    let parameter = |attribute: Attribute| {
+        *parameters
+            .get(&attribute)
+            .expect("color parameter should exist")
+    };
+
+    let mut lower_layer = Layer::new("lower red".to_owned(), Priority(-1));
+    lower_layer.absolute.insert(
+        parameter(Attribute::Red),
+        (ParameterValue::Absolute { value: 255.0 }, None),
+    );
+    app.world_mut().spawn(lower_layer);
+    // A higher layer must not leak into any cue's base: a yellow base would shift the midpoint.
+    let mut upper_layer = Layer::new("upper green".to_owned(), Priority(5));
+    upper_layer.absolute.insert(
+        parameter(Attribute::Green),
+        (ParameterValue::Absolute { value: 255.0 }, None),
+    );
+    app.world_mut().spawn(upper_layer);
+
+    let cue = Cue {
+        transitions: PartialTransition {
+            fade_in: Some(TransitionMode::Fixed(Duration::from_secs(10))),
+            ..Default::default()
+        },
+        instructions: vec![BoundCueInstruction {
+            selection: SpatialSelection {
+                source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
+                clauses: vec![],
+                union: Vec::new(),
+            },
+            cue_instruction: CueInstruction {
+                blueprint_application: None,
+                values: HashMap::from([
+                    (
+                        Attribute::Red,
+                        ValueSource::Inline(ParameterValue::Absolute { value: 0.0 }),
+                    ),
+                    (
+                        Attribute::Green,
+                        ValueSource::Inline(ParameterValue::Absolute { value: 255.0 }),
+                    ),
+                    (
+                        Attribute::Blue,
+                        ValueSource::Inline(ParameterValue::Absolute { value: 255.0 }),
+                    ),
+                ]),
+                color_path_id: Some(ColorPathId(2)),
+                ..Default::default()
+            },
+        }],
+        ..Default::default()
+    };
+
+    let cue_entities = (0..3)
+        .map(|_| {
+            let (materialized, _) = make_materialized_cue(app.world_mut(), &cue);
+            app.world_mut()
+                .spawn((
+                    materialized,
+                    InstanceClock {
+                        position: Duration::from_secs(5),
+                        ..Default::default()
+                    },
+                ))
+                .id()
+        })
+        .collect::<Vec<_>>();
+
+    app.update();
+
+    for entity in cue_entities {
+        let layer = app
+            .world()
+            .get::<Layer>(entity)
+            .expect("standalone cue should paint a layer");
+        let sampled = |attribute: Attribute| match layer
+            .absolute
+            .get(parameter(attribute))
+            .expect("color parameter should be sampled")
+            .0
+        {
+            ParameterValue::Absolute { value } => value,
+            ref value => panic!("expected absolute sampled value, got {value:?}"),
+        };
+
+        let red = sampled(Attribute::Red);
+        let green = sampled(Attribute::Green);
+        let blue = sampled(Attribute::Blue);
+        assert!(
+            (90.0..170.0).contains(&red),
+            "each cue should sample from the lower red base, got red {red}"
+        );
+        assert!(
+            green > 220.0,
+            "HSV midpoint from red to cyan should route through yellow/green, got green {green}"
+        );
+        assert!(
+            blue < 40.0,
+            "HSV midpoint from red to cyan should not route through cyan/blue, got blue {blue}"
+        );
+    }
 }
 
 #[test]
@@ -829,7 +945,7 @@ fn non_intensity_out_timing_supplies_assertion_fade() {
     let transition = materialized
         .values
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("red should be materialized")
         .1
         .as_ref()
@@ -876,14 +992,14 @@ fn set_start_position_updates_value_and_release_timing_transitions() {
     assert_eq!(
         cue.values
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .and_then(|(_, transition)| transition.as_ref())
             .map(|transition| transition.start_position),
         Some(Duration::from_millis(750))
     );
     assert_eq!(
         cue.release_timing_overrides
-            .get(&parameter)
+            .get(parameter)
             .map(|transition| transition.start_position),
         Some(Duration::from_millis(750))
     );
@@ -1503,7 +1619,7 @@ fn materialize_fans_values_by_resolved_selection_index() {
             materialized
                 .values
                 .absolute
-                .get(&parameter)
+                .get(parameter)
                 .expect("fixture should receive an intensity value")
                 .0
         })
@@ -1579,7 +1695,7 @@ fn materialize_fixture_attribute_timing_overrides_instruction_fan() {
             materialized
                 .values
                 .absolute
-                .get(&parameter)
+                .get(parameter)
                 .expect("fixture should receive an intensity value")
                 .1
                 .as_ref()
@@ -1676,7 +1792,7 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
     let virtual_intensity_transition = materialized
         .values
         .absolute
-        .get(&virtual_intensity_parameter)
+        .get(virtual_intensity_parameter)
         .expect("virtual intensity should be materialized")
         .1
         .as_ref()
@@ -1689,7 +1805,7 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
     let red_transition = materialized
         .values
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("red should be materialized")
         .1
         .as_ref()
@@ -1699,7 +1815,6 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
     assert_eq!(red_transition.release_position, Some(Duration::ZERO));
 
     let _ = parameter_query;
-    drop(fixture_data_provider);
     drop(system_state);
 
     let mut param_query_state = app.world_mut().query::<InstanceMut<Parameter>>();
@@ -1717,11 +1832,11 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
     );
     let virtual_intensity_value = *computed
         .absolute
-        .get(&virtual_intensity_parameter)
+        .get(virtual_intensity_parameter)
         .expect("virtual intensity should still output while fading");
     let red_value = *computed
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("red should remain asserted during virtual intensity fade");
 
     assert!(
@@ -1815,21 +1930,21 @@ fn release_cue_intensity_timing_resolves_virtual_intensity() {
         release_materialized
             .values
             .absolute
-            .get(&virtual_intensity_parameter)
+            .get(virtual_intensity_parameter)
             .is_none(),
         "release cue should carry timing without asserting virtual intensity"
     );
     assert!(
         release_materialized
             .release_timing_overrides
-            .get(&virtual_intensity_parameter)
+            .get(virtual_intensity_parameter)
             .is_some(),
         "release cue should materialize Intensity timing against virtual intensity"
     );
 
     let release_timings = release_materialized.release_timings_by_parameter();
     let virtual_intensity_transition = release_timings
-        .get(&virtual_intensity_parameter)
+        .get(virtual_intensity_parameter)
         .expect("release timing should resolve against virtual intensity");
     assert_eq!(
         virtual_intensity_transition.fade_out,
@@ -1838,7 +1953,7 @@ fn release_cue_intensity_timing_resolves_virtual_intensity() {
     let red_transition = materialized
         .values
         .absolute
-        .get(&red_parameter)
+        .get(red_parameter)
         .expect("red should be materialized")
         .1
         .as_ref()
@@ -1928,17 +2043,17 @@ fn release_cue_global_timing_resolves_virtual_intensity() {
         release_materialized
             .values
             .absolute
-            .get(&virtual_intensity_parameter)
+            .get(virtual_intensity_parameter)
             .is_none(),
         "release cue should not assert virtual intensity"
     );
     let release_timings = release_materialized.release_timings_by_parameter();
     let release_virtual_transition = release_timings
-        .get(&virtual_intensity_parameter)
+        .get(virtual_intensity_parameter)
         .expect("cue-level release timing should resolve against virtual intensity");
     assert_eq!(release_virtual_transition.fade_out, Duration::from_secs(2));
     assert!(
-        materialized.values.absolute.get(&red_parameter).is_some(),
+        materialized.values.absolute.get(red_parameter).is_some(),
         "source cue should still materialize red independently of release timing extraction"
     );
 }
@@ -2002,7 +2117,7 @@ fn materialize_inverts_only_targeted_attributes() {
             materialized
                 .values
                 .absolute
-                .get(&parameter)
+                .get(parameter)
                 .expect("fixture should receive a pan value")
                 .0
         })
@@ -2015,7 +2130,7 @@ fn materialize_inverts_only_targeted_attributes() {
             materialized
                 .values
                 .absolute
-                .get(&parameter)
+                .get(parameter)
                 .expect("fixture should receive a tilt value")
                 .0
         })
@@ -2098,7 +2213,7 @@ fn materialize_cue_parts_share_start_and_override_in_order() {
     let (value, transition) = materialized
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .expect("fixture should receive an intensity value");
 
     assert_eq!(*value, ParameterValue::Absolute { value: 30.0 });
@@ -2187,7 +2302,7 @@ fn materialize_cue_part_inherits_parent_cue_transition() {
     let transition = materialized
         .values
         .absolute
-        .get(&parameter)
+        .get(parameter)
         .and_then(|(_, transition)| transition.as_ref())
         .expect("part value should materialize with inherited transition");
 
@@ -2195,7 +2310,7 @@ fn materialize_cue_part_inherits_parent_cue_transition() {
         materialized
             .values
             .absolute
-            .get(&parameter)
+            .get(parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 0.0 })
     );

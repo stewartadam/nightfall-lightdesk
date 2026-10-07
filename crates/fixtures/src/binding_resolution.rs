@@ -15,6 +15,7 @@ use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::FixtureRef;
 use nightfall_dmx::prelude::Attribute;
+use nightfall_fixture_model::prelude::*;
 use nightfall_io::BindingTransport;
 use nightfall_io::prelude::{
     NetworkDmxOutputTarget, NetworkDmxOutputTargets, OutputTransport, UsbDmxOutputTarget,
@@ -22,16 +23,12 @@ use nightfall_io::prelude::{
 };
 use uuid::Uuid;
 
+use crate::output_frames::{
+    ChannelWindow, ConsoleWindowRoute, OutputBindingRoute, OutputFrameKey, OutputRouting,
+};
 use crate::prelude::*;
 
 const DEFAULT_UNIVERSE_MAX: u16 = 512;
-
-/// Resolved fixture parameter target used during binding resolution.
-#[derive(Debug, Clone)]
-struct ParameterTarget {
-    entity: Entity,
-    width: u16,
-}
 
 fn parse_attribute(name: &str) -> Attribute {
     Attribute::from_str(name).unwrap_or_else(|_| Attribute::Custom {
@@ -57,68 +54,78 @@ fn range_contains(range: Option<DmxRange>, value: u16) -> bool {
     }
 }
 
+/// Lays out the DMX slots of a fixture's parameters selected by a binding.
+///
+/// Whole-fixture selections keep the profile's footprint offsets. Element or
+/// parameter selections are rebased so the first selected byte lands on the
+/// binding's address. `VirtualIntensity` parameters are included only for
+/// input bindings that request them; they are placed as sequential bytes.
+/// Only parameters on `dmx_break` are laid out; secondary breaks keep their
+/// break-relative offsets since each break has its own start address.
 fn collect_fixture_parameters(
     data_provider: &FixtureDataProviderExt,
     param_query: &Query<InstanceRef<Parameter>>,
     fixture_uid: Uuid,
     element: Option<u16>,
     param: Option<&str>,
+    dmx_break: u16,
     include_virtual: bool,
-) -> Vec<ParameterTarget> {
-    let mut results = Vec::new();
+) -> WireLayout<Entity> {
     let element_indices: Vec<u32> = if let Some(element) = element {
         vec![element as u32]
     } else {
         fixture_element_indices_in_dmx_order(data_provider, fixture_uid)
     };
 
-    if let Some(param_name) = param {
-        for element_index in element_indices {
-            let fixture_ref = FixtureRef {
-                fixture_uid,
-                index: Some(element_index),
-            };
-            let attribute = parse_attribute(param_name);
-            if let Some(resolved_parameter) =
-                data_provider.try_parameter_for_logical_attribute(&fixture_ref, &attribute)
-            {
-                let param_instance = resolved_parameter.instance;
-                if let Ok(param_ref) = param_query.get(param_instance.entity()) {
-                    if !include_virtual
-                        && param_ref.metadata.attribute == Attribute::VirtualIntensity
-                    {
-                        continue;
-                    }
-                    results.push(ParameterTarget {
-                        entity: param_instance.entity(),
-                        width: param_ref.metadata.resolution.channel_width(),
-                    });
-                }
-            }
-        }
-        return results;
-    }
-
+    let mut selected: Vec<(Entity, ParameterMetadata)> = Vec::new();
     for element_index in element_indices {
         let fixture_ref = FixtureRef {
             fixture_uid,
             index: Some(element_index),
         };
-        let params = data_provider.parameter_entities_for_element(&fixture_ref);
-        for param_instance in params {
-            if let Ok(param_ref) = param_query.get(param_instance.entity()) {
-                if !include_virtual && param_ref.metadata.attribute == Attribute::VirtualIntensity {
+        let instances = match param {
+            Some(param_name) => data_provider
+                .try_parameter_for_logical_attribute(&fixture_ref, &parse_attribute(param_name))
+                .map(|resolved| vec![resolved.instance])
+                .unwrap_or_default(),
+            None => data_provider.parameter_entities_for_element(&fixture_ref),
+        };
+        for instance in instances {
+            let Ok(param_ref) = param_query.get(instance.entity()) else {
+                continue;
+            };
+            let mut metadata = param_ref.metadata.clone();
+            if metadata.attribute == Attribute::VirtualIntensity {
+                if !include_virtual {
                     continue;
                 }
-                results.push(ParameterTarget {
-                    entity: param_instance.entity(),
-                    width: param_ref.metadata.resolution.channel_width(),
-                });
+                // Input bindings may drive virtual intensity from a console slot.
+                metadata.attribute = Attribute::Intensity;
+                metadata.dmx_slots = DmxSlots::Sequential;
             }
+            selected.push((instance.entity(), metadata));
         }
     }
 
-    results
+    let layout = WireLayout::for_break(
+        selected
+            .iter()
+            .map(|(entity, metadata)| (*entity, metadata)),
+        dmx_break,
+    );
+    if element.is_some() || param.is_some() {
+        layout.rebased()
+    } else {
+        layout
+    }
+}
+
+/// Offsets every slot of a laid-out parameter by `base`.
+fn offset_slots(slots: &[u16], base: u16) -> Vec<u16> {
+    slots
+        .iter()
+        .map(|slot| base.saturating_add(*slot))
+        .collect()
 }
 
 /// Resolves logical element positions to the declared physical wiring layout.
@@ -130,19 +137,8 @@ fn fixture_element_indices_in_dmx_order(
         return Vec::new();
     };
 
-    if fixture.layout == Some(crate::fixture::FixtureLayout::RgbStrobeBar) {
-        return (25..=48)
-            .rev()
-            .chain(49..=72)
-            .chain((1..=24).rev())
-            .collect();
-    }
-
-    if fixture.layout == Some(crate::fixture::FixtureLayout::RotatingWashBeam) {
-        return std::iter::once(1)
-            .chain((2..=13).rev())
-            .chain(14..=37)
-            .collect();
+    if let Some(order) = fixture.layout.and_then(FixtureLayout::dmx_element_order) {
+        return order;
     }
 
     match data_provider.element_count(fixture_uid) {
@@ -246,48 +242,6 @@ fn input_source_matches(source: &ResolvedInputSource, disabled: &InputSource) ->
     }
 }
 
-fn output_source_matches(source: &OutputSource, disabled: &OutputSource) -> bool {
-    match (source, disabled) {
-        (
-            OutputSource::Fixture {
-                uids,
-                element,
-                param,
-            },
-            OutputSource::Fixture {
-                uids: disabled_uids,
-                element: disabled_element,
-                param: disabled_param,
-            },
-        ) => {
-            uids.iter().any(|uid| disabled_uids.contains(uid))
-                && disabled_element.is_none_or(|idx| *element == Some(idx))
-                && disabled_param
-                    .as_ref()
-                    .is_none_or(|p| param.as_ref() == Some(p))
-        }
-        (
-            OutputSource::Console { universe, address },
-            OutputSource::Console {
-                universe: disabled_universe,
-                address: disabled_address,
-            },
-        ) => {
-            let universe_match = match (universe, disabled_universe) {
-                (Some(source_range), Some(disabled_range)) => {
-                    source_range.start <= disabled_range.end
-                        && disabled_range.start <= source_range.end
-                }
-                (Some(_), None) | (None, Some(_)) | (None, None) => true,
-            };
-            let address_match = disabled_address
-                .is_none_or(|addr| address.is_none_or(|source_addr| source_addr == addr));
-            universe_match && address_match
-        }
-        _ => false,
-    }
-}
-
 fn output_transport_from_target_id(
     target: &str,
     network_outputs: &NetworkDmxOutputTargets,
@@ -311,43 +265,41 @@ fn output_protocol_for_transport(transport: &OutputTransport) -> BindingTranspor
     }
 }
 
+/// Orders output bindings lowest precedence first: ascending priority, and among equal
+/// priorities the earliest-authored binding last. Consumers where a later binding replaces an
+/// earlier one therefore leave the highest-priority, earliest-authored binding in effect.
+fn output_bindings_in_overlay_order(output_bindings: &OutputBindings) -> Vec<&OutputBinding> {
+    let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
+        output_bindings.bindings.iter().enumerate().collect();
+    bindings_with_index
+        .sort_by_key(|(index, binding)| (binding.priority, std::cmp::Reverse(*index)));
+    bindings_with_index
+        .into_iter()
+        .map(|(_, binding)| binding)
+        .collect()
+}
+
 /// Rebuild `ConsoleDmxAddresses` from output bindings and fixtures when inputs change.
+///
+/// Fixture→console bindings apply in overlay order; a later binding replaces earlier
+/// addresses for the parameters it selects, so the highest-priority binding wins and ties go
+/// to the earliest-authored one. Each binding lays out only the parameters
+/// selected by its element/parameter filter, placed by the selection's wire layout in DMX
+/// order (explicit footprint slots and gaps included).
 pub fn derive_console_addresses(
     output_bindings: Res<OutputBindings>,
-    disabled_bindings: Res<DisabledBindings>,
     data_provider: Res<FixtureDataProviderExt>,
     param_query: Query<InstanceRef<Parameter>>,
     mut console_addresses: ResMut<ConsoleDmxAddresses>,
 ) {
-    let should_rebuild = output_bindings.is_changed()
-        || disabled_bindings.is_changed()
-        || data_provider.is_changed();
+    let should_rebuild = output_bindings.is_changed() || data_provider.is_changed();
     if !should_rebuild {
         return;
     }
 
-    let mut disabled_sources: Vec<OutputSource> = disabled_bindings
-        .bindings
-        .iter()
-        .filter_map(|binding| match binding {
-            DisabledBinding::Output { source, .. } => Some(source.clone()),
-            _ => None,
-        })
-        .collect();
+    console_addresses.clear();
 
-    for binding in &output_bindings.bindings {
-        if matches!(binding.target, OutputTarget::Disabled) {
-            disabled_sources.push(binding.source.clone());
-        }
-    }
-
-    console_addresses.addresses.clear();
-
-    let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
-        output_bindings.bindings.iter().enumerate().collect();
-    bindings_with_index.sort_by_key(|(index, binding)| (binding.priority, *index));
-
-    for (_, binding) in bindings_with_index {
+    for binding in output_bindings_in_overlay_order(&output_bindings) {
         let OutputSource::Fixture {
             uids,
             element,
@@ -359,13 +311,6 @@ pub fn derive_console_addresses(
         let OutputTarget::Console { universe, address } = &binding.target else {
             continue;
         };
-
-        if disabled_sources
-            .iter()
-            .any(|source| output_source_matches(&binding.source, source))
-        {
-            continue;
-        }
 
         let target_universes = expand_range(*universe);
         let base_universes = if target_universes.is_empty() {
@@ -392,9 +337,10 @@ pub fn derive_console_addresses(
                 *uid,
                 *element,
                 param.as_deref(),
+                1,
                 false,
             );
-            if params.is_empty() {
+            if params.parameters.is_empty() {
                 continue;
             }
 
@@ -406,8 +352,18 @@ pub fn derive_console_addresses(
                 },
             );
 
+            let footprint = params.footprint();
+            for param in params.parameters {
+                console_addresses.parameters.insert(
+                    param.target,
+                    ConsoleParameterAddress {
+                        universe: target_universe,
+                        addresses: offset_slots(&param.slots, running_address),
+                    },
+                );
+            }
+
             if !binding.clone {
-                let footprint: u16 = params.iter().map(|param| param.width).sum();
                 running_address = running_address.saturating_add(footprint);
             }
         }
@@ -439,9 +395,8 @@ pub fn resolve_input_bindings(
     let mut disabled_sources: Vec<InputSource> = disabled_bindings
         .bindings
         .iter()
-        .filter_map(|binding| match binding {
-            DisabledBinding::Input { source, .. } => Some(source.clone()),
-            _ => None,
+        .map(|binding| match binding {
+            DisabledBinding::Input { source, .. } => source.clone(),
         })
         .collect();
 
@@ -721,23 +676,24 @@ fn resolve_input_targets(
                     *uid,
                     *element,
                     param.as_deref(),
+                    1,
                     include_virtual,
                 );
-                if params.is_empty() {
+                if params.parameters.is_empty() {
                     continue;
                 }
 
-                let mut fixture_offset = if clone { 0 } else { running_offset };
-                for param in params {
+                let fixture_offset = if clone { 0 } else { running_offset };
+                let footprint = params.footprint();
+                for param in params.parameters {
                     targets.push(ResolvedInputTarget {
-                        entity: param.entity,
-                        offset: fixture_offset,
+                        entity: param.target,
+                        offsets: offset_slots(&param.slots, fixture_offset),
                     });
-                    fixture_offset = fixture_offset.saturating_add(param.width);
                 }
 
                 if !clone {
-                    running_offset = fixture_offset;
+                    running_offset = fixture_offset.saturating_add(footprint);
                 }
             }
 
@@ -745,43 +701,29 @@ fn resolve_input_targets(
         }
         InputTarget::Console { universe, address } => {
             let base_address = address.unwrap_or(1);
-            let universe_match = |value: u16| range_contains(*universe, value);
-            let mut fixtures: Vec<(Uuid, ConsoleDmxAddress)> = console_addresses
-                .addresses
-                .iter()
-                .filter(|(_, address)| universe_match(address.universe))
-                .map(|(uid, addr)| (*uid, *addr))
-                .collect();
-
-            fixtures.sort_by_key(|(_, address)| (address.universe, address.address));
-
-            let mut targets = Vec::new();
-
-            for (uid, console_address) in fixtures {
-                if console_address.universe != target_universe {
-                    continue;
-                }
-                if console_address.address < base_address {
-                    continue;
-                }
-
-                let params =
-                    collect_fixture_parameters(data_provider, param_query, uid, None, None, false);
-                if params.is_empty() {
-                    continue;
-                }
-
-                let base_offset = console_address.address - base_address;
-                let mut param_offset = base_offset;
-                for param in params {
-                    targets.push(ResolvedInputTarget {
-                        entity: param.entity,
-                        offset: param_offset,
-                    });
-                    param_offset = param_offset.saturating_add(param.width);
-                }
+            if !range_contains(*universe, target_universe) {
+                return Vec::new();
             }
-
+            let mut targets: Vec<ResolvedInputTarget> = console_addresses
+                .parameters
+                .iter()
+                .filter(|(_, console_address)| {
+                    console_address.universe == target_universe
+                        && console_address
+                            .addresses
+                            .iter()
+                            .all(|address| *address >= base_address)
+                })
+                .map(|(entity, console_address)| ResolvedInputTarget {
+                    entity: *entity,
+                    offsets: console_address
+                        .addresses
+                        .iter()
+                        .map(|address| address - base_address)
+                        .collect(),
+                })
+                .collect();
+            targets.sort_by_key(|target| (target.offsets.iter().min().copied(), target.entity));
             targets
         }
         InputTarget::Transport { .. } => Vec::new(),
@@ -789,24 +731,33 @@ fn resolve_input_targets(
     }
 }
 
-/// Resolve output bindings into per-parameter output destinations.
+/// Resolved per-parameter output components rewritten by [`resolve_output_bindings`].
+type ResolvedParameterOutputs<'a> = (
+    Option<&'a mut ResolvedOutputDestinations>,
+    Option<&'a mut ResolvedConsoleDestination>,
+);
+
+/// Resolve output bindings into per-parameter destinations and the wire output routing plan.
+///
+/// Fixture→transport bindings become per-parameter [`ResolvedOutputDestinations`] feeding
+/// direct output buffers; console→transport bindings become console window routes. Each
+/// parameter's console address is mirrored into [`ResolvedConsoleDestination`]. On rebuild,
+/// fixture-owned console and output buffer values are cleared so moved or removed
+/// bindings leave no ghost values behind.
 pub fn resolve_output_bindings(
     output_bindings: Res<OutputBindings>,
-    disabled_bindings: Res<DisabledBindings>,
     console_addresses: Res<ConsoleDmxAddresses>,
     data_provider: Res<FixtureDataProviderExt>,
     network_outputs: Res<NetworkDmxOutputTargets>,
     usb_outputs: Res<UsbDmxOutputTargets>,
     param_query: Query<InstanceRef<Parameter>>,
     param_entities: Query<Entity, With<Parameter>>,
-    mut destinations_query: Query<
-        (Entity, Option<&mut ResolvedOutputDestinations>),
-        With<Parameter>,
-    >,
+    mut destinations_query: Query<ResolvedParameterOutputs, With<Parameter>>,
+    mut routing: ResMut<OutputRouting>,
+    mut universes: ResMut<ConsoleDmxUniverses>,
     mut commands: Commands,
 ) {
     let should_rebuild = output_bindings.is_changed()
-        || disabled_bindings.is_changed()
         || console_addresses.is_changed()
         || data_provider.is_changed()
         || network_outputs.is_changed()
@@ -815,52 +766,22 @@ pub fn resolve_output_bindings(
         return;
     }
 
-    let mut disabled_sources: Vec<OutputSource> = disabled_bindings
-        .bindings
-        .iter()
-        .filter_map(|binding| match binding {
-            DisabledBinding::Output { source, .. } => Some(source.clone()),
-            _ => None,
-        })
-        .collect();
-
-    for binding in &output_bindings.bindings {
-        if matches!(binding.target, OutputTarget::Disabled) {
-            disabled_sources.push(binding.source.clone());
-        }
-    }
-
     let mut destinations: HashMap<Entity, Vec<OutputDestination>> = HashMap::new();
+    let mut routes: HashMap<OutputFrameKey, OutputBindingRoute> = HashMap::new();
 
-    let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
-        output_bindings.bindings.iter().enumerate().collect();
-    bindings_with_index.sort_by_key(|(index, binding)| (binding.priority, *index));
-
-    for (_, binding) in bindings_with_index {
-        if matches!(binding.target, OutputTarget::Disabled) {
-            continue;
-        }
-
-        if disabled_sources
-            .iter()
-            .any(|source| output_source_matches(&binding.source, source))
-        {
-            continue;
-        }
-
+    for binding in output_bindings_in_overlay_order(&output_bindings) {
         match (&binding.source, &binding.target) {
             (
-                OutputSource::Fixture {
-                    uids,
-                    element,
-                    param,
-                },
+                source @ (OutputSource::Fixture { .. } | OutputSource::FixtureBreak { .. }),
                 OutputTarget::Transport {
                     target,
                     universe,
                     address,
                 },
             ) => {
+                let Some(selection) = source.fixture_selection() else {
+                    continue;
+                };
                 let Some(output_transport) =
                     output_transport_from_target_id(target, &network_outputs, &usb_outputs)
                 else {
@@ -877,7 +798,7 @@ pub fn resolve_output_bindings(
                 let mut running_address = base_address;
                 let mut last_universe = base_universes.first().copied().unwrap_or(1);
 
-                for (index, uid) in uids.iter().enumerate() {
+                for (index, uid) in selection.uids.iter().enumerate() {
                     let target_universe =
                         map_universe_by_index(&base_universes, &base_universes, index);
                     if target_universe != last_universe {
@@ -889,34 +810,34 @@ pub fn resolve_output_bindings(
                         &data_provider,
                         &param_query,
                         *uid,
-                        *element,
-                        param.as_deref(),
+                        selection.element,
+                        selection.param,
+                        selection.dmx_break,
                         false,
                     );
-                    if params.is_empty() {
+                    if params.parameters.is_empty() {
                         continue;
                     }
 
-                    let mut fixture_offset = if binding.clone {
-                        0
+                    let fixture_address = if binding.clone {
+                        base_address
                     } else {
-                        running_address - base_address
+                        running_address
                     };
-                    for param in params {
-                        let dest_address = base_address.saturating_add(fixture_offset);
+                    let footprint = params.footprint();
+                    for param in params.parameters {
                         destinations
-                            .entry(param.entity)
+                            .entry(param.target)
                             .or_default()
                             .push(OutputDestination {
                                 transport: output_transport.clone(),
                                 universe: target_universe,
-                                address: dest_address,
+                                addresses: offset_slots(&param.slots, fixture_address),
                             });
-                        fixture_offset = fixture_offset.saturating_add(param.width);
                     }
 
                     if !binding.clone {
-                        running_address = base_address.saturating_add(fixture_offset);
+                        running_address = fixture_address.saturating_add(footprint);
                     }
                 }
             }
@@ -933,15 +854,12 @@ pub fn resolve_output_bindings(
                 else {
                     continue;
                 };
+                if matches!(output_transport, OutputTransport::Disabled) {
+                    continue;
+                }
                 let source_universes = expand_range(*universe);
                 let source_universes = if source_universes.is_empty() {
-                    let mut universes: Vec<u16> = console_addresses
-                        .addresses
-                        .values()
-                        .map(|addr| addr.universe)
-                        .collect();
-                    universes.sort_unstable();
-                    universes.dedup();
+                    let universes = console_addresses.universes();
                     if universes.is_empty() {
                         vec![1]
                     } else {
@@ -958,57 +876,21 @@ pub fn resolve_output_bindings(
                     target_universes
                 };
 
-                let source_base_address = address.unwrap_or(1);
-                let target_base_address = target_address.unwrap_or(1);
-
-                let mut fixtures_by_universe: HashMap<u16, Vec<(Uuid, ConsoleDmxAddress)>> =
-                    HashMap::new();
-                for (uid, addr) in &console_addresses.addresses {
-                    fixtures_by_universe
-                        .entry(addr.universe)
-                        .or_default()
-                        .push((*uid, *addr));
-                }
-
+                let window = ChannelWindow {
+                    source_address: address.unwrap_or(1),
+                    target_address: target_address.unwrap_or(1),
+                };
                 for (source_index, source_universe) in source_universes.iter().enumerate() {
-                    let target_universe_value =
+                    let wire_universe =
                         map_universe_by_index(&source_universes, &target_universes, source_index);
-
-                    let fixtures = fixtures_by_universe
-                        .get(source_universe)
-                        .cloned()
-                        .unwrap_or_default();
-                    for (uid, console_addr) in fixtures {
-                        if console_addr.address < source_base_address {
-                            continue;
-                        }
-
-                        let params = collect_fixture_parameters(
-                            &data_provider,
-                            &param_query,
-                            uid,
-                            None,
-                            None,
-                            false,
-                        );
-                        if params.is_empty() {
-                            continue;
-                        }
-
-                        let mut param_offset = console_addr.address - source_base_address;
-                        for param in params {
-                            let dest_address = target_base_address.saturating_add(param_offset);
-                            destinations
-                                .entry(param.entity)
-                                .or_default()
-                                .push(OutputDestination {
-                                    transport: output_transport.clone(),
-                                    universe: target_universe_value,
-                                    address: dest_address,
-                                });
-                            param_offset = param_offset.saturating_add(param.width);
-                        }
-                    }
+                    routes
+                        .entry((output_transport.clone(), wire_universe))
+                        .or_default()
+                        .console_windows
+                        .push(ConsoleWindowRoute {
+                            console_universe: *source_universe,
+                            window,
+                        });
                 }
             }
             _ => {}
@@ -1017,12 +899,40 @@ pub fn resolve_output_bindings(
 
     for entity in &param_entities {
         let entry = destinations.remove(&entity).unwrap_or_default();
-        if let Ok((_, Some(mut destinations_component))) = destinations_query.get_mut(entity) {
-            destinations_component.destinations = entry;
-            continue;
+        for destination in &entry {
+            if !matches!(destination.transport, OutputTransport::Disabled) {
+                routes
+                    .entry((destination.transport.clone(), destination.universe))
+                    .or_default()
+                    .direct = true;
+            }
         }
-        commands.entity(entity).insert(ResolvedOutputDestinations {
-            destinations: entry,
-        });
+        let console_destination = ResolvedConsoleDestination {
+            address: console_addresses.parameters.get(&entity).cloned(),
+        };
+        let Ok((destinations_component, console_component)) = destinations_query.get_mut(entity)
+        else {
+            continue;
+        };
+
+        match destinations_component {
+            Some(mut component) => component.destinations = entry,
+            None => {
+                commands.entity(entity).insert(ResolvedOutputDestinations {
+                    destinations: entry,
+                });
+            }
+        }
+        match console_component {
+            Some(mut component) => {
+                component.set_if_neq(console_destination);
+            }
+            None => {
+                commands.entity(entity).insert(console_destination);
+            }
+        }
     }
+
+    routing.set_output_routes(routes);
+    universes.clear_output_binding_values();
 }

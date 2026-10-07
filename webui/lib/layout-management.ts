@@ -7,6 +7,7 @@
  */
 
 import type { DockviewApi } from "dockview";
+import { v4 as uuidv4 } from "uuid";
 import { pushToast } from "../state/appStores";
 import {
   acknowledgeLayoutResize,
@@ -208,7 +209,7 @@ export function duplicateNamedLayout(
         ...layouts,
         {
           ...source,
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           name,
           shownInSwitcher: true,
           createdAt: Date.now(),

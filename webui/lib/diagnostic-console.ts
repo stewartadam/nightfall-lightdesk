@@ -8,7 +8,7 @@
 
 import { isTauri } from "@tauri-apps/api/core";
 import { debug, error, info, trace, warn } from "@tauri-apps/plugin-log";
-import { serializeError } from "serialize-error";
+import { formatDiagnosticValue } from "./diagnostic-format";
 
 export type ConsoleLogLevel =
   | "log"
@@ -18,27 +18,6 @@ export type ConsoleLogLevel =
   | "warn"
   | "error";
 type ForwardLog = (level: ConsoleLogLevel, message: string) => Promise<void>;
-
-/** Serializes console arguments immediately, preserving errors, cyclic objects, and bigint values. */
-function formatArgument(value: unknown): string {
-  if (typeof value === "string") return value;
-  const seen = new WeakSet<object>();
-  try {
-    return (
-      JSON.stringify(value, (_key, item: unknown) => {
-        if (typeof item === "bigint") return String(item);
-        if (item && typeof item === "object") {
-          if (seen.has(item)) return "[Circular]";
-          seen.add(item);
-          if (item instanceof Error) return serializeError(item);
-        }
-        return item;
-      }) ?? String(value)
-    );
-  } catch {
-    return "[Unserializable console argument]";
-  }
-}
 
 /** Forwards console calls and uncaught errors directly to native logging without retaining events. */
 export function forwardDiagnosticConsole(
@@ -51,7 +30,9 @@ export function forwardDiagnosticConsole(
   /** Isolates logging transport failures from console output and avoids rejection loops. */
   const send = (level: ConsoleLogLevel, args: unknown[]) => {
     try {
-      void forward(level, args.map(formatArgument).join(" ")).catch(() => {});
+      void forward(level, args.map(formatDiagnosticValue).join(" ")).catch(
+        () => {},
+      );
     } catch {
       // Diagnostic forwarding must not interrupt the application or original console output.
     }

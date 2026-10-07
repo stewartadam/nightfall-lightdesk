@@ -20,13 +20,17 @@
 pub mod commands;
 pub mod converters;
 pub mod gdtf_metadata;
+pub mod gdtf_repair;
 pub mod http_routes;
 pub mod manager;
 pub mod mesh;
 pub mod plugin;
 pub mod scanner;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
 pub mod watcher;
 pub mod websocket;
+pub mod wheel_media;
 
 pub use gdtf_metadata::GdtfMetadata;
 pub use manager::{FixtureLibraryManager, FixtureProfile, FixtureSource};

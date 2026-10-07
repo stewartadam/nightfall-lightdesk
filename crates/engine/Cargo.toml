@@ -9,6 +9,7 @@ edition.workspace = true
 [dependencies]
 async-channel.workspace = true
 bevy_app.workspace = true
+bevy_diagnostic.workspace = true
 bevy_ecs.workspace = true
 bevy_state.workspace = true
 bimap.workspace = true
@@ -28,6 +29,7 @@ uuid.workspace = true
 web-time.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 tokio = { workspace = true, features = ["sync"] }
 
 [features]

@@ -10,6 +10,7 @@
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 
+use crate::stages::transition::SkippedAssertions;
 use crate::types::{AttributedAssertionsLayer, Layer};
 
 /// Merges raw layer data for a materialized object into the attributed assertions layer.
@@ -18,10 +19,27 @@ pub fn merge_layer_with_attribution(
     upper_layer: &Layer,
     object_ref: ObjectRef,
 ) {
+    merge_layer_with_attribution_skipping(
+        assertions,
+        upper_layer,
+        object_ref,
+        &SkippedAssertions::default(),
+    );
+}
+
+/// Merges a layer's assertions into the attributed assertions layer, leaving out the assertions
+/// the layer skipped this frame so attribution matches the effective output.
+pub fn merge_layer_with_attribution_skipping(
+    assertions: &mut AttributedAssertionsLayer,
+    upper_layer: &Layer,
+    object_ref: ObjectRef,
+    skipped: &SkippedAssertions,
+) {
     // Absolute values override one another
     upper_layer
         .absolute
         .iter()
+        .filter(|(param, _)| !skipped.absolute.contains(param))
         .for_each(|(param, (value, transition))| {
             assertions
                 .absolute
@@ -32,6 +50,7 @@ pub fn merge_layer_with_attribution(
     upper_layer
         .relative
         .iter()
+        .filter(|(param, _)| !skipped.relative.contains(param))
         .for_each(|(param, (value, transition))| {
             if let Some((_existing_object_ref, (existing_value, _existing_transition))) =
                 assertions.relative.get(param)
@@ -120,8 +139,8 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer1, object1.clone());
 
         // Verify first layer is tracked
-        assert!(composited.absolute.contains_key(&param));
-        let (owner, (value, _)) = composited.absolute.get(&param).unwrap();
+        assert!(composited.absolute.contains_key(param));
+        let (owner, (value, _)) = composited.absolute.get(param).unwrap();
         assert_eq!(owner, &object1);
         if let ParameterValue::Absolute { value: v } = value {
             assert_eq!(*v, 100.0);
@@ -138,7 +157,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer2, object2.clone());
 
         // Verify second layer overwrote the first
-        let (owner, (value, _)) = composited.absolute.get(&param).unwrap();
+        let (owner, (value, _)) = composited.absolute.get(param).unwrap();
         assert_eq!(owner, &object2);
         if let ParameterValue::Absolute { value: v } = value {
             assert_eq!(*v, 200.0);
@@ -165,8 +184,8 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer1, object1.clone());
 
         // Verify first layer
-        assert!(composited.relative.contains_key(&param));
-        let (owner, (value, _)) = composited.relative.get(&param).unwrap();
+        assert!(composited.relative.contains_key(param));
+        let (owner, (value, _)) = composited.relative.get(param).unwrap();
         assert_eq!(owner, &object1);
         if let ParameterValue::Relative { offset } = value {
             assert_eq!(*offset, 30.0);
@@ -183,7 +202,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer2, object2.clone());
 
         // Verify values accumulated and owner updated to most recent
-        let (owner, (value, _)) = composited.relative.get(&param).unwrap();
+        let (owner, (value, _)) = composited.relative.get(param).unwrap();
         assert_eq!(owner, &object2); // Most recent object
         if let ParameterValue::Relative { offset } = value {
             assert_eq!(*offset, 50.0); // 30 + 20
@@ -230,7 +249,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer2, object2.clone());
 
         // Verify values accumulated
-        let (owner, (value, _)) = composited.relative.get(&param).unwrap();
+        let (owner, (value, _)) = composited.relative.get(param).unwrap();
         assert_eq!(owner, &object2);
         if let ParameterValue::RelativePercent { offset } = value {
             // Values accumulated (25 + 15 = 40)
@@ -271,7 +290,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer, object1.clone());
 
         // Verify transition is tracked
-        let (_, (_, stored_transition)) = composited.absolute.get(&param).unwrap();
+        let (_, (_, stored_transition)) = composited.absolute.get(param).unwrap();
         assert!(stored_transition.is_some());
         assert_eq!(stored_transition.as_ref().unwrap(), &transition);
     }
@@ -303,13 +322,53 @@ mod tests {
         assert_eq!(composited.absolute.len(), 2);
         assert_eq!(composited.relative.len(), 1);
 
-        let (owner1, _) = composited.absolute.get(&param1).unwrap();
-        let (owner2, _) = composited.absolute.get(&param2).unwrap();
-        let (owner3, _) = composited.relative.get(&param3).unwrap();
+        let (owner1, _) = composited.absolute.get(param1).unwrap();
+        let (owner2, _) = composited.absolute.get(param2).unwrap();
+        let (owner3, _) = composited.relative.get(param3).unwrap();
 
         assert_eq!(owner1, &object1);
         assert_eq!(owner2, &object1);
         assert_eq!(owner3, &object1);
+    }
+
+    /// Verifies skipped assertions keep the attribution of the layer below them.
+    #[test]
+    fn merge_layer_with_attribution_skipping_leaves_skipped_parameters_attributed_below() {
+        let mut world = World::new();
+        let skipped_param = create_test_parameter(&mut world);
+        let merged_param = create_test_parameter(&mut world);
+
+        let mut composited = AttributedAssertionsLayer::default();
+        let lower = create_object_ref(1);
+        let upper = create_object_ref(2);
+
+        let mut lower_layer = Layer::new("lower".to_string(), Priority(1));
+        lower_layer.absolute.insert(
+            skipped_param,
+            (ParameterValue::Absolute { value: 10.0 }, None),
+        );
+        merge_layer_with_attribution(&mut composited, &lower_layer, lower.clone());
+
+        let mut upper_layer = Layer::new("upper".to_string(), Priority(2));
+        upper_layer.absolute.insert(
+            skipped_param,
+            (ParameterValue::Absolute { value: 200.0 }, None),
+        );
+        upper_layer.absolute.insert(
+            merged_param,
+            (ParameterValue::Absolute { value: 100.0 }, None),
+        );
+        let mut skipped = SkippedAssertions::default();
+        skipped.absolute.insert(skipped_param.into());
+        merge_layer_with_attribution_skipping(
+            &mut composited,
+            &upper_layer,
+            upper.clone(),
+            &skipped,
+        );
+
+        assert_eq!(composited.absolute.get(skipped_param).unwrap().0, lower);
+        assert_eq!(composited.absolute.get(merged_param).unwrap().0, upper);
     }
 
     #[test]
@@ -361,7 +420,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer3, object3.clone());
 
         // Verify final owner is object3
-        let (owner, (value, _)) = composited.absolute.get(&param).unwrap();
+        let (owner, (value, _)) = composited.absolute.get(param).unwrap();
         assert_eq!(owner, &object3);
         if let ParameterValue::Absolute { value: v } = value {
             assert_eq!(*v, 200.0);
@@ -402,7 +461,7 @@ mod tests {
         merge_layer_with_attribution(&mut composited, &layer2, object2.clone());
 
         // Should replace with the new value (and log warning)
-        let (owner, (value, _)) = composited.relative.get(&param).unwrap();
+        let (owner, (value, _)) = composited.relative.get(param).unwrap();
         assert_eq!(owner, &object2);
         if let ParameterValue::RelativePercent { offset } = value {
             assert_eq!(*offset, Percentage::from(20.0));

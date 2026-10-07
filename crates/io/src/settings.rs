@@ -8,7 +8,6 @@
 
 use std::time::Duration;
 
-use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
 use crate::{InputUniverseVisibilityMode, NetworkDmxOutputTargets, UsbDmxOutputTargets};
@@ -16,12 +15,26 @@ use crate::{InputUniverseVisibilityMode, NetworkDmxOutputTargets, UsbDmxOutputTa
 /// Default timeout before clearing channels set by a stale input.
 pub const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS: u32 = 2_000;
 
+/// Default network DMX output rate, the DMX512 refresh ceiling for a full 512-slot universe.
+pub const DEFAULT_DMX_OUTPUT_RATE_HZ: u32 = 44;
+
+/// Lowest configurable network DMX output rate.
+pub const MIN_DMX_OUTPUT_RATE_HZ: u32 = 1;
+
+/// Highest configurable network DMX output rate.
+///
+/// Neither Art-Net nor sACN caps the network packet rate, but gateways driving DMX512 cables
+/// cannot refresh a full universe faster than about 44 Hz; rates above that only benefit
+/// network-native receivers such as pixel controllers and media servers.
+pub const MAX_DMX_OUTPUT_RATE_HZ: u32 = 60;
+
 /// Process-scoped permissions that cap showfile transport preferences.
 ///
 /// This resource is intentionally not serialized. A showfile can preserve the
 /// operator's preferred transport state while a host process prevents physical
 /// input or output for its entire lifetime.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct TransportRuntimePolicy {
     /// Whether showfiles may enable network DMX output.
     pub allow_network_output: bool,
@@ -79,7 +92,8 @@ pub struct ExternalControlSettings {
 }
 
 /// Host control preferences and the native listener's actual runtime state.
-#[derive(Resource, Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub struct ExternalControlState {
     /// Whether this runtime hosts a native network listener.
@@ -92,8 +106,36 @@ pub struct ExternalControlState {
     pub error: Option<String>,
 }
 
+/// Whether the requesting device must pair before it may control the backend.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct RemotePairingStatus {
+    /// Whether the device connects from another computer and so needs the pairing PIN.
+    pub required: bool,
+    /// Whether the device may control the backend now, either because it is local or
+    /// because it already paired during this app session.
+    pub paired: bool,
+}
+
+/// Pairing PIN entered by a device on the network.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct RemotePairingAttempt {
+    /// Digits the user typed or scanned.
+    pub pin: String,
+}
+
+/// Pairing PIN shown to the operator on the computer running Nightfall.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct RemotePairingPin {
+    /// Six-digit PIN other devices enter to pair for this app session.
+    pub pin: String,
+}
+
 /// Showfile-scoped runtime settings for network and USB transports.
-#[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub struct IoRuntimeSettings {
     /// Selected network interface name, or `None` for the system default.
@@ -123,6 +165,12 @@ pub struct IoRuntimeSettings {
     /// Which transport inputs are surfaced in input views.
     #[serde(default)]
     pub input_universe_visibility_mode: InputUniverseVisibilityMode,
+    /// Network DMX packets sent per second for every output universe, clamped on load.
+    #[serde(
+        default = "default_dmx_output_rate_hz",
+        deserialize_with = "deserialize_dmx_output_rate_hz"
+    )]
+    pub dmx_output_rate_hz: u32,
 }
 
 impl Default for IoRuntimeSettings {
@@ -137,7 +185,15 @@ impl Default for IoRuntimeSettings {
             input_signal_loss_policy: InputSignalLossPolicy::Hold,
             input_signal_loss_timeout: default_input_signal_loss_timeout(),
             input_universe_visibility_mode: InputUniverseVisibilityMode::default(),
+            dmx_output_rate_hz: default_dmx_output_rate_hz(),
         }
+    }
+}
+
+impl IoRuntimeSettings {
+    /// Returns the interval between network DMX output ticks for the sanitized output rate.
+    pub fn dmx_output_interval(&self) -> Duration {
+        dmx_output_interval(self.dmx_output_rate_hz)
     }
 }
 
@@ -159,6 +215,29 @@ pub fn default_usb_output_enabled() -> bool {
 /// Returns the default stale input timeout for serde defaults.
 pub fn default_input_signal_loss_timeout() -> Duration {
     Duration::from_millis(DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS.into())
+}
+
+/// Returns the default network DMX output rate for serde defaults.
+pub fn default_dmx_output_rate_hz() -> u32 {
+    DEFAULT_DMX_OUTPUT_RATE_HZ
+}
+
+/// Clamps a network DMX output rate to [`MIN_DMX_OUTPUT_RATE_HZ`]..=[`MAX_DMX_OUTPUT_RATE_HZ`].
+pub fn sanitize_dmx_output_rate_hz(rate_hz: u32) -> u32 {
+    rate_hz.clamp(MIN_DMX_OUTPUT_RATE_HZ, MAX_DMX_OUTPUT_RATE_HZ)
+}
+
+/// Deserializes a showfile's network DMX output rate, clamping it to the supported range.
+fn deserialize_dmx_output_rate_hz<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u32::deserialize(deserializer).map(sanitize_dmx_output_rate_hz)
+}
+
+/// Returns the tick interval for a network DMX output rate after sanitizing it.
+pub fn dmx_output_interval(rate_hz: u32) -> Duration {
+    Duration::from_secs_f64(1.0 / f64::from(sanitize_dmx_output_rate_hz(rate_hz)))
 }
 
 /// Ensures timeout is at least 1 ms to avoid zero-duration expiry loops.
@@ -183,7 +262,8 @@ pub enum InputSignalLossPolicy {
 }
 
 /// Snapshot of compatible USB DMX devices currently surfaced to clients.
-#[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct AvailableUsbDmxDevices(pub Vec<UsbDmxDeviceInfo>);
 
 /// Compatible USB DMX device currently visible to the host OS.
@@ -221,7 +301,8 @@ pub struct NetworkInterfaceInfo {
 }
 
 /// Snapshot of currently available/default network interfaces.
-#[derive(Resource, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct NetworkInterfaceState {
     /// Available non-loopback IPv4 interfaces.
     pub available_interfaces: Vec<NetworkInterfaceInfo>,
@@ -466,6 +547,47 @@ mod tests {
             sanitize_input_signal_loss_timeout(Duration::from_millis(250)),
             Duration::from_millis(250)
         );
+    }
+
+    /// Output rates outside 1..=60 Hz are clamped, and in-range rates such as MA's 30 Hz pass
+    /// through unchanged.
+    #[test]
+    fn dmx_output_rate_is_clamped_to_supported_range() {
+        assert_eq!(sanitize_dmx_output_rate_hz(0), MIN_DMX_OUTPUT_RATE_HZ);
+        assert_eq!(sanitize_dmx_output_rate_hz(30), 30);
+        assert_eq!(sanitize_dmx_output_rate_hz(500), MAX_DMX_OUTPUT_RATE_HZ);
+    }
+
+    /// The default interval is exactly 1/44 s, and an out-of-range rate yields the clamped
+    /// interval.
+    #[test]
+    fn dmx_output_interval_uses_sanitized_rate() {
+        assert_eq!(
+            IoRuntimeSettings::default().dmx_output_interval(),
+            Duration::from_secs_f64(1.0 / 44.0)
+        );
+        assert_eq!(
+            dmx_output_interval(0),
+            Duration::from_secs_f64(1.0 / f64::from(MIN_DMX_OUTPUT_RATE_HZ))
+        );
+    }
+
+    /// Showfiles saved before the output rate setting existed load with the 44 Hz default.
+    #[test]
+    fn dmx_output_rate_defaults_when_missing_from_showfile() {
+        let mut value = serde_json::to_value(IoRuntimeSettings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("dmx_output_rate_hz");
+        let settings: IoRuntimeSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(settings.dmx_output_rate_hz, DEFAULT_DMX_OUTPUT_RATE_HZ);
+    }
+
+    /// Out-of-range rates in a hand-edited showfile are clamped when it loads.
+    #[test]
+    fn dmx_output_rate_is_clamped_on_load() {
+        let mut value = serde_json::to_value(IoRuntimeSettings::default()).unwrap();
+        value["dmx_output_rate_hz"] = serde_json::json!(1000);
+        let settings: IoRuntimeSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(settings.dmx_output_rate_hz, MAX_DMX_OUTPUT_RATE_HZ);
     }
 
     /// Verifies automatic selection resolves to the host default interface.

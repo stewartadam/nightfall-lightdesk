@@ -9,5 +9,8 @@ publish = false
 serde = { workspace = true, features = ["derive"] }
 typeshare = { workspace = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
 [lints]
 workspace = true

@@ -7,6 +7,10 @@
  */
 
 //! IO transport configuration and named output target definitions.
+//!
+//! The Bevy ECS derives on these types are gated behind the default `ecs`
+//! feature. Disable default features to use the plain types and constants
+//! without pulling `bevy_ecs` into the dependency tree, as the WASM bridge does.
 
 #![warn(missing_docs)]
 
@@ -17,7 +21,6 @@ mod settings;
 
 use std::{collections::HashSet, net::Ipv4Addr};
 
-use bevy_ecs::prelude::*;
 pub use input::{
     AcceptedDmxFrame, ArtNetRecentFramesByUniverse, BindingTransport, DmxInputSet,
     IoRuntimeNotification, SacnOutputIdentity,
@@ -33,30 +36,36 @@ pub use crate::constants::{
 pub mod prelude {
     pub use crate::{
         AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse, AvailableUsbDmxDevices,
-        BindingTransport, CurrentNetworkInterfaceMode, DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS,
-        DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet, ExternalControlSettings,
-        ExternalControlState, InputSignalLossPolicy, InputUniverseVisibilityMode,
-        IoRuntimeNotification, IoRuntimeSettings, NetworkDmxDelivery, NetworkDmxOutputTarget,
+        BindingTransport, CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
+        DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet,
+        ExternalControlSettings, ExternalControlState, InputSignalLossPolicy,
+        InputUniverseVisibilityMode, IoRuntimeNotification, IoRuntimeSettings,
+        MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ, NetworkDmxDelivery, NetworkDmxOutputTarget,
         NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo, NetworkInterfaceState,
         NetworkInterfaceStatus, OutputTransport, RESERVED_NETWORK_DMX_TARGET_KEYWORDS,
-        RESERVED_USB_DMX_TARGET_KEYWORDS, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy,
+        RESERVED_USB_DMX_TARGET_KEYWORDS, RemotePairingAttempt, RemotePairingPin,
+        RemotePairingStatus, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy,
         UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets,
-        get_available_interfaces, get_default_interface, is_reserved_network_dmx_target_id,
-        is_reserved_usb_dmx_target_id, is_valid_network_dmx_target_id,
-        output_transport_to_target_id, resolve_configured_network_interface,
-        resolve_network_interface_status, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
+        dmx_output_interval, get_available_interfaces, get_default_interface,
+        is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
+        is_valid_network_dmx_target_id, output_transport_to_target_id,
+        resolve_configured_network_interface, resolve_network_interface_status,
+        sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
         usb_dmx_device_selector, usb_dmx_device_selector_matches,
         usb_dmx_device_selector_with_tiebreaker,
     };
 }
 
 pub use settings::{
-    AvailableUsbDmxDevices, CurrentNetworkInterfaceMode, DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS,
-    ExternalControlSettings, ExternalControlState, InputSignalLossPolicy, IoRuntimeSettings,
-    NetworkInterfaceInfo, NetworkInterfaceState, NetworkInterfaceStatus, TransportRuntimePolicy,
-    UsbDmxDeviceInfo, default_input_signal_loss_timeout, default_network_input_enabled,
-    default_network_output_enabled, default_usb_output_enabled, get_available_interfaces,
-    get_default_interface, resolve_configured_network_interface, resolve_network_interface_status,
+    AvailableUsbDmxDevices, CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
+    DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, ExternalControlSettings, ExternalControlState,
+    InputSignalLossPolicy, IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ,
+    NetworkInterfaceInfo, NetworkInterfaceState, NetworkInterfaceStatus, RemotePairingAttempt,
+    RemotePairingPin, RemotePairingStatus, TransportRuntimePolicy, UsbDmxDeviceInfo,
+    default_dmx_output_rate_hz, default_input_signal_loss_timeout, default_network_input_enabled,
+    default_network_output_enabled, default_usb_output_enabled, dmx_output_interval,
+    get_available_interfaces, get_default_interface, resolve_configured_network_interface,
+    resolve_network_interface_status, sanitize_dmx_output_rate_hz,
     sanitize_input_signal_loss_timeout, usb_dmx_device_label,
 };
 
@@ -192,7 +201,8 @@ impl NetworkDmxOutputTarget {
 }
 
 /// Showfile-scoped network DMX output target definitions.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Resource)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub struct NetworkDmxOutputTargets {
     /// Configured target list.
@@ -295,7 +305,8 @@ impl UsbDmxOutputTarget {
 }
 
 /// Showfile-scoped USB DMX output target definitions.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Resource)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub struct UsbDmxOutputTargets {
     /// Configured target list.
@@ -540,7 +551,8 @@ pub fn is_reserved_usb_dmx_target_id(id: &str) -> bool {
 }
 
 /// Input universe visibility mode.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Resource, Copy)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[typeshare::typeshare]
 pub enum InputUniverseVisibilityMode {
     /// Show only external transport inputs.

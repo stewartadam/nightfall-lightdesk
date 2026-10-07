@@ -20,8 +20,9 @@
   --nf-input-focus-color: var(--color-warning);
 }
 
+/* The slider handle selector outranks index.css skins that clear its shadow. */
 :is(input, textarea, select, .nf-select-toggle):focus-visible,
-.noUi-handle:focus-visible,
+.noUi-target .noUi-origin .noUi-handle:focus-visible,
 .nf-switch input:focus-visible ~ .nf-switch-track,
 .nf-input-group:has(:is(input, textarea, select):focus-visible) {
   outline: none;

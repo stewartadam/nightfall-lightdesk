@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /**
  * Opens a unique blank showfile and waits for the application shell to render.
  */
@@ -48,9 +51,7 @@ test("programmer column visibility control is right aligned", async ({
   await expect(columnButton).toBeVisible();
 
   const metrics = await columnButton.evaluate((button) => {
-    const toolbar = button.closest(
-      '[class*="justify-between"][class*="border-b"]',
-    );
+    const toolbar = button.closest('[data-component="PanelToolbar"]');
     if (!toolbar) {
       throw new Error("Programmer toolbar not found");
     }

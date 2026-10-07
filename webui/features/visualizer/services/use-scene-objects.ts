@@ -13,8 +13,8 @@
  * suitable for Three.js rendering.
  */
 
-import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo } from "solid-js";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { sceneObjects } from "../../../state/appStores";
 import type { RenderableSceneObject } from "../model/types";
 
@@ -23,7 +23,7 @@ import type { RenderableSceneObject } from "../model/types";
  * Recomputes when scene objects store changes.
  */
 export function useSceneObjects(): Accessor<readonly RenderableSceneObject[]> {
-  const $sceneObjects = useStore(sceneObjects);
+  const $sceneObjects = useSharedStore(sceneObjects);
 
   return createMemo(() => {
     const sceneObjectMap = $sceneObjects();

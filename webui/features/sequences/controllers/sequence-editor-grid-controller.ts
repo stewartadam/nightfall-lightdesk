@@ -58,10 +58,10 @@ import {
   isTimingColumnId,
   lookaheadIndicators,
   PART_ROW_BACKGROUND,
-  SEQUENCE_DURATION_SUMMARY_ROW_KEY,
   type SequenceGridRow,
   type SequenceProgressContext,
   SUMMARY_ROW_BACKGROUND,
+  sequenceGridRowKey,
   timingColumnValue,
 } from "../model/sequence-editor-model";
 
@@ -180,12 +180,7 @@ export function createSequenceEditorGridController(
       rows: rows(),
       columns: columns(),
       contentSizingKey: contentSizingKey(),
-      rowKey: (row) =>
-        row.rowKind === "summary"
-          ? SEQUENCE_DURATION_SUMMARY_ROW_KEY
-          : row.rowKind === "part"
-            ? `${row.cueUid}:part:${row.partId ?? row.partIndex ?? ""}`
-            : `${row.cueUid}:cue`,
+      rowKey: sequenceGridRowKey,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row: item, column }): GridCell => {
         const columnId = column.id;

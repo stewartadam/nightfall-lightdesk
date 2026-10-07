@@ -8,11 +8,13 @@
 
 //! Runtime metrics projection for websocket clients.
 
+use nightfall_engine::diagnostic_paths::*;
+
 use super::*;
 
 /// Send aggregated engine metrics (active layers/universes, network stats) to UI
 pub fn send_metrics(
-    dmx_universes: Res<ConsoleDmxUniverses>,
+    output_frames: Res<OutputDmxFrames>,
     network_stats: Res<NetworkStats>,
     layer_query: Query<&Layer>,
     entities_query: Query<Entity>,
@@ -26,7 +28,9 @@ pub fn send_metrics(
             .and_then(|diagnostic| diagnostic.smoothed())
     };
     let active_layers = layer_query.iter().count() as u32;
-    let active_universes = dmx_universes.universe_ids().count() as u32;
+    // One per composed wire frame (concrete transport and wire universe), matching what the
+    // output drivers transmit this engine frame.
+    let active_universes = output_frames.len() as u32;
 
     let metrics = DeskMetrics {
         fps: diagnostics
@@ -42,6 +46,7 @@ pub fn send_metrics(
         framepace_oversleep_ms: framepace_stats
             .oversleep()
             .map(|d| d.as_secs_f64() * 1000.0),
+        framepace_overrun_ms: framepace_stats.overrun().map(|d| d.as_secs_f64() * 1000.0),
         active_layers,
         active_universes,
         artnet_send_time_ms: network_stats

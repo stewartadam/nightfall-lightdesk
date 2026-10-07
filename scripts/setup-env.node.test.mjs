@@ -31,7 +31,7 @@ test("secondary worktree inherits dotenv text before applying overrides", () => 
     seed,
   });
   const env = envMapFromLines(lines);
-  assert.ok(lines.join("\n").startsWith(seed));
+  assert.deepEqual(lines.slice(0, 3), seed.split("\n").slice(0, 3));
   assert.equal(env.NIGHTFALL_CARGO_COMMAND, "mbx");
   assert.equal(env.CUSTOM, "hello # world");
   assert.equal(env.NIGHTFALL_PORT, "3674");
@@ -101,4 +101,28 @@ test("secondary worktree env disables network transport startup", () => {
   assert.equal(env.NIGHTFALL_OUTPUT_ARTNET, "false");
   assert.equal(env.NIGHTFALL_INPUT_SACN_ENABLED, "false");
   assert.equal(env.NIGHTFALL_INPUT_ARTNET, "false");
+});
+
+/**
+ * Verifies overridden keys are replaced in place rather than appended, so a
+ * seed that already carries generated values (or duplicates from earlier runs)
+ * yields exactly one assignment per key.
+ */
+test("overridden keys are replaced instead of duplicated", () => {
+  const projectRoot = "/repo/nightfall-worktrees/branch-a";
+  const seed =
+    "NIGHTFALL_PORT=5172\nPLAYWRIGHT_BROWSERS_PATH=/old\nKEEP=1\nexport NIGHTFALL_PORT=3646\nPLAYWRIGHT_BROWSERS_PATH=/old\nNIGHTFALL_OUTPUT_ARTNET=true\n";
+  const lines = buildEnvLines({
+    port: 3674,
+    projectRoot,
+    mainWorktree: "/repo/nightfall",
+    seed,
+  });
+  const keys = lines.map((line) => line.split("=")[0]);
+
+  assert.equal(new Set(keys).size, keys.length);
+  assert.equal(lines[0], "NIGHTFALL_PORT=3674");
+  assert.equal(lines[2], "KEEP=1");
+  assert.equal(lines[3], "NIGHTFALL_OUTPUT_ARTNET=false");
+  assert.equal(envMapFromLines(lines).NIGHTFALL_PORT, "3674");
 });

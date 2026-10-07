@@ -7,7 +7,11 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 for (const surface of ["app", "designer"] as const) {
   /** Verifies focus changes only the outer frame while preserving the divider and accent tab. */
@@ -20,7 +24,11 @@ for (const surface of ["app", "designer"] as const) {
         ? "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1"
         : "/design-lab.html",
     );
-    if (surface === "app") await waitForDockviewApp(page);
+    if (surface === "app") {
+      await waitForDockviewApp(page);
+      await resetToDefaultLayout(page);
+      await dockFixturesInMainGrid(page);
+    }
     const tab = page.getByRole("tab", {
       name: surface === "app" ? "Fixtures" : "Groups",
       exact: true,
@@ -44,7 +52,9 @@ for (const surface of ["app", "designer"] as const) {
 
     await page
       .getByRole("tab", {
-        name: surface === "app" ? "Clips" : "Properties",
+        // Timelines shares the main grid, so focusing it leaves the Fixtures
+        // group's size alone (opening an edge group would resize it).
+        name: surface === "app" ? "Timelines" : "Properties",
         exact: true,
       })
       .click();

@@ -61,6 +61,8 @@ const EDGE_GROUP_SIZE_TARGETS = [
 
 interface DockviewEventListenerProps {
   isActivating?: () => boolean;
+  /** Saves the arrangement as the local session; false for views that only present it. */
+  persist?: boolean;
   hasSessionLayout?: () => boolean;
   onResetLayout?: () => void;
 }
@@ -162,6 +164,16 @@ function createEdgeGroupSizePersistence(
   };
 }
 
+/**
+ * The showfile layout already applied to the local session. It outlives one
+ * listener, so remounting the workspace when the shell switches between docked
+ * and compact keeps the session instead of restoring the showfile over it.
+ */
+const appliedShowfileLayout: { key: string | null; revision: number } = {
+  key: null,
+  revision: -1,
+};
+
 /** Handles Dockview focus, restore, and showfile-backed layout persistence events. */
 export function DockviewEventListener(props: DockviewEventListenerProps) {
   log.trace("mounting");
@@ -171,8 +183,11 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
   const showfileRevision = useStore(currentShowfileRevision);
   let hasInitializedLayout = false;
   let isRestoringLayout = false;
-  let lastRestoredLayoutKey: string | null = null;
-  let lastRestoredShowfileRevision = -1;
+
+  /** Saves the arrangement as the local session, unless this view only presents it. */
+  const persistSession = (api: DockviewApi) => {
+    if (props.persist !== false) saveLayout(api);
+  };
 
   /** Restores the showfile-backed active layout when settings snapshots change. */
   createEffect(() => {
@@ -183,7 +198,7 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
     if (snapshotRevision === 0) return;
 
     const currentShowfileRevisionValue = showfileRevision();
-    if (currentShowfileRevisionValue !== lastRestoredShowfileRevision) {
+    if (currentShowfileRevisionValue !== appliedShowfileLayout.revision) {
       clearLayoutSessions();
     }
     const activeLayout = settings().active_panel_layout;
@@ -191,8 +206,8 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
     if (!activeLayout) {
       if (!hasInitializedLayout && props.hasSessionLayout?.()) {
         hasInitializedLayout = true;
-        lastRestoredLayoutKey = null;
-        lastRestoredShowfileRevision = currentShowfileRevisionValue;
+        appliedShowfileLayout.key = null;
+        appliedShowfileLayout.revision = currentShowfileRevisionValue;
         markDockviewLayoutReady(
           currentShowfileRevisionValue,
           snapshotRevision,
@@ -203,15 +218,15 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
 
       if (
         !hasInitializedLayout ||
-        currentShowfileRevisionValue !== lastRestoredShowfileRevision
+        currentShowfileRevisionValue !== appliedShowfileLayout.revision
       ) {
         log.debug("No showfile active layout found, using default layout");
         props.onResetLayout?.();
-        saveLayout(api);
+        persistSession(api);
         hasInitializedLayout = true;
       }
-      lastRestoredLayoutKey = null;
-      lastRestoredShowfileRevision = currentShowfileRevisionValue;
+      appliedShowfileLayout.key = null;
+      appliedShowfileLayout.revision = currentShowfileRevisionValue;
       markDockviewLayoutReady(
         currentShowfileRevisionValue,
         snapshotRevision,
@@ -221,11 +236,12 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
     }
 
     if (
-      nextLayoutKey === lastRestoredLayoutKey &&
-      currentShowfileRevisionValue === lastRestoredShowfileRevision
+      nextLayoutKey === appliedShowfileLayout.key &&
+      currentShowfileRevisionValue === appliedShowfileLayout.revision &&
+      (hasInitializedLayout || props.hasSessionLayout?.())
     ) {
       hasInitializedLayout = true;
-      lastRestoredLayoutKey = nextLayoutKey;
+      appliedShowfileLayout.key = nextLayoutKey;
       markDockviewLayoutReady(
         currentShowfileRevisionValue,
         snapshotRevision,
@@ -241,17 +257,17 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
         api,
         activeLayoutToSerializedLayout(activeLayout),
       );
-      lastRestoredLayoutKey = nextLayoutKey;
-      lastRestoredShowfileRevision = currentShowfileRevisionValue;
+      appliedShowfileLayout.key = nextLayoutKey;
+      appliedShowfileLayout.revision = currentShowfileRevisionValue;
       hasInitializedLayout = true;
-      saveLayout(api);
+      persistSession(api);
     } catch (error) {
       log.error("Error restoring showfile active layout:", error);
       props.onResetLayout?.();
-      lastRestoredLayoutKey = nextLayoutKey;
-      lastRestoredShowfileRevision = currentShowfileRevisionValue;
+      appliedShowfileLayout.key = nextLayoutKey;
+      appliedShowfileLayout.revision = currentShowfileRevisionValue;
       hasInitializedLayout = true;
-      saveLayout(api);
+      persistSession(api);
     } finally {
       markDockviewLayoutReady(
         currentShowfileRevisionValue,
@@ -264,10 +280,10 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
     }
   });
 
-  /** Registers Dockview persistence and focus listeners. */
+  /** Registers Dockview layout persistence listeners. */
   createEffect(() => {
     const api = dockviewApi();
-    if (!api) return;
+    if (!api || props.persist === false) return;
 
     /** Persists the current Dockview layout to local session storage. */
     const persistActiveLayout = () => {
@@ -385,12 +401,6 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
       api.onDidTabGroupCollapsedChange(saveActiveLayout),
     );
 
-    const disposeFocusChange = api.onDidActivePanelChange((event) => {
-      // TODO: ideally we would pass on this notification to the underlying component
-      if (event.panel?.id === "panel-CommandLine") {
-        focusCommandLinePanelInputIfNeeded();
-      }
-    });
     const disposeEdgeGroupSizePersistence = createEdgeGroupSizePersistence(
       api,
       saveActiveLayout,
@@ -405,9 +415,21 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
       window.removeEventListener("pointercancel", endGeometryGesture);
       disposeLayoutChange.dispose();
       for (const listener of groupLayoutListeners.values()) listener.dispose();
-      disposeFocusChange.dispose();
       disposeEdgeGroupSizePersistence.dispose();
     });
+  });
+
+  /** Moves keyboard focus into the command line when its panel is activated. */
+  createEffect(() => {
+    const api = dockviewApi();
+    if (!api) return;
+    const disposeFocusChange = api.onDidActivePanelChange((event) => {
+      // TODO: ideally we would pass on this notification to the underlying component
+      if (event.panel?.id === "panel-CommandLine") {
+        focusCommandLinePanelInputIfNeeded();
+      }
+    });
+    onCleanup(() => disposeFocusChange.dispose());
   });
 
   // This component doesn't render anything

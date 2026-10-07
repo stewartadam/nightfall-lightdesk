@@ -1,0 +1,13 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Mode 1 7DMX": [
+      "Array 49 · Red · b1 · 1",
+      "Array 49 · Green · b1 · 2",
+      "Array 49 · Blue · b1 · 3",
+      "Array 50 · White · b1 · 4",
+      "Body 1 · Intensity · b1 · 5,6",
+      "Body 1 · Frost · b1 · 7"
+    ]
+  }
+}

@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use nightfall_engine::prelude::FrameWaker;
 use nightfall_service_host::prelude::{ModeWorkerSlot, process_singleton};
 use tokio::sync::{
     broadcast,
@@ -20,7 +21,9 @@ use tokio::sync::{
 use crate::command::OscListenerStatus;
 use crate::osc::{self, RawOscEvent};
 
-const BRIDGE_IDLE_SLEEP: Duration = Duration::from_millis(5);
+/// How long the bridge thread sleeps when no OSC frame is waiting. It bounds the latency the
+/// bridge adds to each frame.
+const BRIDGE_IDLE_SLEEP: Duration = Duration::from_millis(1);
 
 /// OSC input client used inside ECS worlds.
 #[derive(Clone, Default)]
@@ -30,12 +33,16 @@ pub struct OscInputClient {
 
 impl OscInputClient {
     /// Subscribe to OSC frames as a per-subscriber `mpsc` stream.
-    pub fn subscribe(&self) -> Option<UnboundedReceiver<RawOscEvent>> {
-        self.subscribe_with_bridge_done_signal(None)
+    ///
+    /// Each forwarded frame wakes `waker`, so the engine handles it without waiting for the next
+    /// render.
+    pub fn subscribe(&self, waker: Option<FrameWaker>) -> Option<UnboundedReceiver<RawOscEvent>> {
+        self.subscribe_with_bridge_done_signal(waker, None)
     }
 
     fn subscribe_with_bridge_done_signal(
         &self,
+        waker: Option<FrameWaker>,
         bridge_done_tx: Option<std::sync::mpsc::Sender<()>>,
     ) -> Option<UnboundedReceiver<RawOscEvent>> {
         let event_tx = self
@@ -56,6 +63,9 @@ impl OscInputClient {
                         Ok(event) => {
                             if event_mpsc_tx.send(event).is_err() {
                                 break;
+                            }
+                            if let Some(waker) = &waker {
+                                waker.wake();
                             }
                         }
                         Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
@@ -81,7 +91,7 @@ impl OscInputClient {
         std::sync::mpsc::Receiver<()>,
     )> {
         let (bridge_done_tx, bridge_done_rx) = std::sync::mpsc::channel();
-        let event_mpsc_rx = self.subscribe_with_bridge_done_signal(Some(bridge_done_tx))?;
+        let event_mpsc_rx = self.subscribe_with_bridge_done_signal(None, Some(bridge_done_tx))?;
         Some((event_mpsc_rx, bridge_done_rx))
     }
 
@@ -292,12 +302,12 @@ mod tests {
         let initial_status = service.configure_bind_addr(bind_addr);
         assert!(initial_status.is_listening);
 
-        let mut rx_a = service.client().subscribe().expect("first subscriber");
+        let mut rx_a = service.client().subscribe(None).expect("first subscriber");
 
         let reload_status = service.configure_bind_addr(bind_addr);
         assert!(reload_status.is_listening);
 
-        let mut rx_b = service.client().subscribe().expect("second subscriber");
+        let mut rx_b = service.client().subscribe(None).expect("second subscriber");
 
         send_test_packet(bind_addr, "/reload/test");
 

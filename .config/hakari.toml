@@ -1,0 +1,47 @@
+# This file contains settings for `cargo hakari`.
+# See https://docs.rs/cargo-hakari/latest/cargo_hakari/config for a full list of options.
+
+hakari-package = "nightfall-workspace-hack"
+
+# Format version for hakari's output. Version 4 requires cargo-hakari 0.9.22 or above.
+dep-format-version = "4"
+unify-target-host = "unify-if-both"
+
+# Setting workspace.resolver = "2" or higher in the root Cargo.toml is HIGHLY recommended.
+# Hakari works much better with the v2 resolver. (The v2 and v3 resolvers are identical from
+# hakari's perspective, so you're welcome to set either.)
+#
+# For more about the new feature resolver, see:
+# https://blog.rust-lang.org/2021/03/25/Rust-1.51.0.html#cargos-new-feature-resolver
+resolver = "2"
+
+# Native desktop targets that CI packages. wasm32 is deliberately absent: every crate gates its
+# workspace-hack dependency to non-wasm32 targets, so browser builds never see these features.
+# https://doc.rust-lang.org/rustc/platform-support.html
+platforms = [
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+]
+
+# Cargo.lock is checked in, so pin exact versions.
+exact-versions = true
+
+# - nightfall-engine-derive: proc macros compile for the host, where the non-wasm32 gate always
+#   holds, so depending on the workspace-hack would build Tokio, axum, and wasmtime natively for
+#   every wasm32 browser build.
+[traversal-excludes]
+workspace-members = ["nightfall-engine-derive"]
+
+# app-tauri is traversed so the features it enables on shared crates (serde "rc", proc-macro2
+# "span-locations", log "kv", ...) are unified into every native build. Without that, adding
+# app-tauri to a build re-keys most of the dependency graph and build caches miss on every switch
+# between default runtime builds and `-p app-tauri` or `--workspace`. Tauri crates that hakari
+# would otherwise unify are listed below so runtime builds never compile them;
+# scripts/workspace-hack.node.test.mjs fails if a new one appears in the workspace-hack.
+[final-excludes]
+third-party = [
+    { name = "tauri-utils" },
+    { name = "clap" },
+    { name = "clap_builder" },
+]

@@ -21,17 +21,23 @@ pub mod fixture;
 pub mod geometry;
 pub mod input_apply;
 pub mod library;
+pub mod output_frames;
 pub mod parameter;
+pub mod parameter_index;
+pub mod parameter_state;
 pub mod physical;
 pub mod placement;
 pub mod selection;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
 pub mod undo;
 pub mod universe;
 pub mod websocket;
+pub mod wire_layout;
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use nightfall::command_types::DmxChannelExpr;
+use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{ColorPathId, FixtureRef};
 use nightfall_dmx::ChannelDmxValue;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
@@ -46,11 +52,25 @@ use crate::placement::{PlacementPosition, PlacementRotation};
 /// Runtime actions owned by fixture-level DMX processing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DmxAction {
-    /// Release DMX channels.
+    /// Release manual writes on DMX channels, returning each slot to whatever else feeds it.
     ReleaseChannels {
         /// Channels to release.
         channels: DmxChannelExpr,
     },
+    /// Put DMX channels back into a previously captured manual state (used by undo).
+    RestoreChannels {
+        /// Per-channel manual state to restore.
+        channels: Vec<ManualDmxChannelState>,
+    },
+}
+
+/// Manual write state of one console DMX channel, captured for undo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ManualDmxChannelState {
+    /// Console channel the state belongs to.
+    pub channel: DmxChannelRef,
+    /// Manually written value, or `None` when no manual write owned the channel.
+    pub manual_value: Option<ChannelDmxValue>,
 }
 
 impl EnginePayload for DmxAction {}
@@ -64,9 +84,10 @@ pub mod prelude {
         BindingValidationIssue, BindingValidationMode, BindingValidationSettings,
     };
     pub use crate::bindings::{
-        ConsoleDmxAddress, ConsoleDmxAddresses, DisabledBinding, DisabledBindings, DmxRange,
-        InputBinding, InputBindings, InputSource, InputTarget, OutputBinding, OutputBindings,
-        OutputDestination, OutputSource, OutputTarget, ResolvedConsoleTarget, ResolvedInputBinding,
+        ConsoleDmxAddress, ConsoleDmxAddresses, ConsoleParameterAddress, DisabledBinding,
+        DisabledBindings, DmxRange, InputBinding, InputBindings, InputSource, InputTarget,
+        OutputBinding, OutputBindings, OutputDestination, OutputSource, OutputTarget,
+        ResolvedConsoleDestination, ResolvedConsoleTarget, ResolvedInputBinding,
         ResolvedInputBindings, ResolvedInputDestination, ResolvedInputSource, ResolvedInputTarget,
         ResolvedOutputDestinations, ResolvedTransportTarget,
     };
@@ -82,17 +103,24 @@ pub mod prelude {
         GeometryProviderResource, GeometryType, MeshFormat, MeshResource, PrimitiveType, Transform,
     };
     pub use crate::input_apply::{ParameterAssertion, ParameterAssertionSource};
-    pub use crate::parameter::{MergeStrategy, Parameter, ParameterMetadata, ParameterValues};
-    pub use crate::physical::{BeamType, FixturePhysical};
+    pub use crate::output_frames::{
+        ChannelWindow, OutputBindingRoute, OutputDmxFrame, OutputDmxFrames, OutputFrameKey,
+        OutputRouting, output_transport_label,
+    };
+    pub use crate::parameter::{Parameter, ParameterValues};
+    pub use crate::parameter_index::{ParameterIndex, ParameterLocation};
+    pub use crate::parameter_state::ParameterStateProjection;
+    pub use crate::physical::{BeamOptics, BeamType, DEFAULT_LUMENS, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
     pub use crate::universe::{
         ConsoleChannelOrigin, ConsoleDmxUniverses, DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS,
-        InputDmxUniverses, InputUniverseStaleTimeout, UniverseTransportMap,
+        InputDmxUniverses, InputUniverseStaleTimeout,
     };
+    pub use crate::wire_layout::{PlacedParameter, WireLayout};
     pub use crate::{
         BindingEndpoint, DmxAction, FixtureCommand, FixturePlacementPositionUpdate,
-        FixturePlacementRotationUpdate, FixturePlugin,
+        FixturePlacementRotationUpdate, FixturePlugin, ManualDmxChannelState,
     };
 }
 
@@ -118,10 +146,12 @@ impl Plugin for FixturePlugin {
         app.init_resource::<bindings::ResolvedInputBindings>();
         app.init_resource::<bindings::ConsoleDmxAddresses>();
         app.init_resource::<binding_validation::BindingValidationSettings>();
+        app.init_resource::<parameter_state::ParameterStateProjection>();
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();
         app.init_resource::<universe::InputUniverseStaleTimeout>();
-        app.init_resource::<universe::UniverseTransportMap>();
+        app.init_resource::<output_frames::OutputRouting>();
+        app.init_resource::<output_frames::OutputDmxFrames>();
         app.init_resource::<nightfall_io::NetworkDmxOutputTargets>();
         app.init_resource::<nightfall_io::UsbDmxOutputTargets>();
         app.init_resource::<nightfall_io::InputUniverseVisibilityMode>();
@@ -137,7 +167,7 @@ impl Plugin for FixturePlugin {
             registry.register_action::<undo::RestorePatchBindingsSnapshot>();
             registry.register_action::<undo::RestoreOffsetSnapshot>();
             registry.register_action::<undo::RestoreColorPathDefaultsSnapshot>();
-            registry.register_action::<undo::ClearDmxChannels>();
+            registry.register_action::<DmxAction>();
         }
 
         // Register event dispatchers for undo helper commands
@@ -146,7 +176,6 @@ impl Plugin for FixturePlugin {
         register_engine_action::<undo::RestorePatchBindingsSnapshot>(app);
         register_engine_action::<undo::RestoreOffsetSnapshot>(app);
         register_engine_action::<undo::RestoreColorPathDefaultsSnapshot>(app);
-        register_engine_action::<undo::ClearDmxChannels>(app);
 
         app.add_systems(
             Update,
@@ -158,7 +187,6 @@ impl Plugin for FixturePlugin {
                 events::handle_restore_patch_bindings_snapshot,
                 events::handle_restore_offset_snapshot,
                 events::handle_restore_color_path_defaults_snapshot,
-                events::handle_clear_dmx_channels,
             )
                 .chain()
                 .in_set(EventHandling),
@@ -177,11 +205,12 @@ impl Plugin for FixturePlugin {
         );
 
         app.add_systems(
-            Update,
+            Render,
             (
                 binding_resolution::resolve_output_bindings,
-                universe::update_transport_map,
+                output_frames::update_input_routing,
                 universe::dmx_universes,
+                output_frames::compose_output_frames,
                 universe::dmx_universes_debug,
             )
                 .chain()
@@ -190,10 +219,17 @@ impl Plugin for FixturePlugin {
 
         // WebSocket forwarding and sends owned by fixtures plugin
         app.add_systems(
-            Update,
+            PostUpdate,
             (
                 websocket::forward_fixture_commands,
+                // Reads the snapshot suppression messages written by fixture commands.
                 websocket::send_fixtures_on_change,
+            )
+                .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
+            (
                 websocket::send_dmx_universes.after(DmxOutput),
                 websocket::send_bindings_on_change,
                 websocket::send_color_path_defaults_on_change,
@@ -281,6 +317,13 @@ pub enum BindingEndpoint {
         element: Option<u16>,
         /// Optional parameter name
         param: Option<String>,
+    },
+    /// An additional DMX break (2 or higher) of fixtures, patched as a whole
+    FixtureBreak {
+        /// Fixture IDs
+        ids: Vec<u32>,
+        /// DMX break number
+        dmx_break: u16,
     },
     /// Disabled endpoint (filter)
     Disabled,

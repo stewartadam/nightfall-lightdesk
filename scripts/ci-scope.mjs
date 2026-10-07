@@ -1,0 +1,135 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+import { appendFileSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const sharedPackaging = [
+  /^Cargo\.(toml|lock)$/,
+  /^package\.json$/,
+  /^pnpm-(lock|workspace)\.yaml$/,
+  /^rust-toolchain\.toml$/,
+  /^\.cargo\//,
+  /^vite\.config\.ts$/,
+  /^about\.toml$/,
+  /^config\/(notices\/|project-links\.json$)/,
+  /^scripts\/.*notices/,
+  /^scripts\/(package-sample-audio|check-distribution-wasm)/,
+  /^scripts\/ci-scope/,
+  /^\.github\/workflows\/(ci|wasm)\.yml$/,
+  /^\.github\/actions\/wasm-assets\//,
+  /^crates\/wasm-bridge\//,
+  /^crates\/app-runtime\/assets\//,
+  /^webui\/(index\.html$|public\/|lib\/engine-runtime|lib\/runtime-config\.ts$)/,
+];
+const desktopPackaging = [
+  /^desktop\/app-tauri\/(Cargo\.toml$|build\.rs$|tauri.*\.json$|capabilities\/|icons\/)/,
+  /^crates\/app-runtime\/Cargo\.toml$/,
+  /^scripts\/desktop-artifacts/,
+  /^\.github\/workflows\/(desktop-artifacts|desktop-check|release)\.yml$/,
+];
+const desktopChecks = [
+  /^desktop\/app-tauri\//,
+  /^crates\/app-runtime\/Cargo\.toml$/,
+  /^\.github\/workflows\/desktop-check\.yml$/,
+  /^crates\/app-runtime\/src\/(lib|main|logging|runtime_config|session|shutdown|diagnostic_bundle|diagnostic_logs|diagnostic_showfile)\.rs$/,
+  /^crates\/config\//,
+];
+const browserPackaging = [
+  /^crates\/browser-runtime\//,
+  /^scripts\/.*browser-demo/,
+  /^\.github\/workflows\/browser-demo\.yml$/,
+  /^webui\/e2e\/(browser-demo|distribution-notices)\.spec\.ts$/,
+];
+
+/**
+ * Select validation by integration risk. Packaging compiles the desktop app but does not run
+ * its tests, so desktop code or build-configuration changes select the desktop check even when
+ * packaging also runs; shared inputs such as the lockfile rely on packaging alone.
+ *
+ * Browser previews build the demo for every same-repository PR once a preview target is
+ * configured. Fork PRs never receive the deployment credential, so they never select one.
+ *
+ * Draft PRs skip desktop installers and Chromium product flows; marking the PR ready for review
+ * re-runs selection and runs them then.
+ */
+export function selectScope({
+  event,
+  ref,
+  paths = [],
+  distribution = "all",
+  previewTarget = false,
+  sameRepository = false,
+  draft = false,
+}) {
+  let desktopPackage = false;
+  let browserPackage = false;
+  let browserPreview = false;
+  let desktopCheck = false;
+  if (event === "workflow_dispatch") {
+    if (!["all", "desktop", "browser"].includes(distribution)) {
+      throw new Error(`Unknown distribution: ${distribution}`);
+    }
+    desktopPackage = distribution !== "browser";
+    browserPackage = distribution !== "desktop";
+  } else if (event === "push") {
+    desktopPackage = ref === "refs/heads/main" || ref.startsWith("refs/tags/v");
+    browserPackage = ref === "refs/heads/main";
+  } else if (event === "pull_request") {
+    browserPreview = previewTarget && sameRepository;
+    for (const path of paths) {
+      if (sharedPackaging.some((pattern) => pattern.test(path))) {
+        desktopPackage = true;
+        browserPackage = true;
+      }
+      if (desktopPackaging.some((pattern) => pattern.test(path)))
+        desktopPackage = true;
+      if (browserPackaging.some((pattern) => pattern.test(path)))
+        browserPackage = true;
+      if (desktopChecks.some((pattern) => pattern.test(path)))
+        desktopCheck = true;
+    }
+  } else {
+    throw new Error(`Unsupported CI event: ${event}`);
+  }
+  return {
+    desktop_check: desktopCheck,
+    desktop_package: desktopPackage && !draft,
+    browser_package: browserPackage,
+    browser_preview: browserPreview,
+    product_flows: !draft,
+  };
+}
+
+/** Read the NUL-delimited PR diff captured by the credentialed source-acquisition job. */
+export function readChangedPaths(contents) {
+  return contents.split("\0").filter(Boolean);
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  const scope = selectScope({
+    event: process.env.GITHUB_EVENT_NAME,
+    ref: process.env.GITHUB_REF,
+    distribution: process.env.DISTRIBUTION || "all",
+    paths: readChangedPaths(readFileSync(".ci-changed-files", "utf8")),
+    previewTarget: Boolean(process.env.PREVIEW_WORKER),
+    sameRepository:
+      Boolean(process.env.HEAD_REPOSITORY) &&
+      process.env.HEAD_REPOSITORY === process.env.GITHUB_REPOSITORY,
+    draft: process.env.PR_DRAFT === "true",
+  });
+  appendFileSync(
+    process.env.GITHUB_OUTPUT,
+    Object.entries(scope)
+      .map(([key, value]) => `${key}=${value}\n`)
+      .join(""),
+  );
+}

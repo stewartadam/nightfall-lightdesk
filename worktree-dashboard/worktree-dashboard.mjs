@@ -7,7 +7,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
@@ -36,17 +36,20 @@ const DASHBOARD_HOST =
 const DASHBOARD_ROOT = resolve(process.cwd());
 const LOG_DIR = join(tmpdir(), "nightfall-worktree-dashboard");
 const DEFAULT_BACKEND_STARTUP_CMDS = "fps 5";
+const FALLBACK_PRIMARY_BRANCHES = ["develop", "main"];
+/** @type {Promise<string[]> | null} */
+let primaryBranchesPromise = null;
 const SERVICE_DEFINITIONS = {
   backend: {
     cargo: true,
     args: ["run"],
   },
   ui: {
-    command: process.platform === "win32" ? "npm.cmd" : "npm",
+    command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     args: ["run", "dev"],
   },
   wasm: {
-    command: process.platform === "win32" ? "npm.cmd" : "npm",
+    command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     args: ["run", "wasm-build:dev"],
   },
   "artnet-sender": {
@@ -523,7 +526,7 @@ function runGit(args) {
       reject(error);
     });
 
-    child.on("exit", (code) => {
+    child.on("close", (code) => {
       if (code !== 0) {
         reject(new Error(`git ${args.join(" ")} failed: ${stderr.trim()}`));
         return;
@@ -650,9 +653,64 @@ async function getServicePort(worktreePath, service) {
   return nightfallPort + 1;
 }
 
-async function findListeningPids(port) {
+/**
+ * @typedef {Object} ListenerLookup
+ * @property {number[]} pids Listener PIDs on the port, excluding the dashboard itself.
+ * @property {string[]} attempts One line per lookup method tried, with its outcome.
+ */
+
+/**
+ * Resolves the PIDs listening on a TCP port (IPv4 and IPv6) by trying each
+ * platform lookup method in order until one finds a listener. On macOS, lsof
+ * leads because `netstat -anv` (pid-port's source) returns no rows on macOS 27.
+ * On Linux, lsof backs up pid-port: without `ss`, pid-port's own lsof fallback
+ * queries TCP and UDP together and fails whenever no UDP socket is open.
+ * @param {number} port
+ * @returns {Promise<ListenerLookup>}
+ */
+export async function findListeningPids(port) {
+  const methods = {
+    darwin: [
+      ["lsof", lsofListeningPids],
+      ["pid-port", pidPortListeningPids],
+    ],
+    win32: [["pid-port", pidPortListeningPids]],
+  }[process.platform] ?? [
+    ["pid-port", pidPortListeningPids],
+    ["lsof", lsofListeningPids],
+  ];
+  const attempts = [];
+  for (const [name, lookup] of methods) {
+    let found;
+    try {
+      found = await lookup(port);
+    } catch (error) {
+      attempts.push(`${name}: ${error?.message ?? String(error)}`);
+      continue;
+    }
+    const pids = [...new Set(found)].filter(
+      (pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid,
+    );
+    if (pids.length > 0) {
+      return {
+        pids,
+        attempts: [...attempts, `${name}: found ${pids.join(", ")}`],
+      };
+    }
+    attempts.push(`${name}: no listeners`);
+  }
+  return { pids: [], attempts };
+}
+
+/**
+ * Lists listener PIDs on a port through pid-port's netstat/ss parsing,
+ * treating its "could not find" error as an empty result.
+ * @param {number} port
+ * @returns {Promise<number[]>}
+ */
+async function pidPortListeningPids(port) {
   const { portBindings } = await loadPidPort();
-  let bindings = [];
+  let bindings;
   try {
     bindings = await portBindings(port, { host: "*" });
   } catch (error) {
@@ -661,14 +719,41 @@ async function findListeningPids(port) {
     }
     throw error;
   }
-  const pids = new Set();
-  for (const binding of bindings) {
-    const pid = Number.parseInt(String(binding?.pid ?? ""), 10);
-    if (!Number.isFinite(pid)) continue;
-    if (pid === process.pid) continue;
-    pids.add(pid);
-  }
-  return [...pids];
+  return bindings.map((binding) =>
+    Number.parseInt(String(binding?.pid ?? ""), 10),
+  );
+}
+
+/**
+ * Lists listener PIDs on a port with `lsof -t`, whose `-iTCP:<port>` filter
+ * covers IPv4 and IPv6 sockets. lsof exits 1 with no output when nothing
+ * matches, which is reported as an empty result rather than a failure; PIDs
+ * printed alongside a non-zero exit (e.g. with warnings) are still used.
+ * @param {number} port
+ * @returns {Promise<number[]>}
+ */
+function lsofListeningPids(port) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "lsof",
+      ["-nP", "-t", `-iTCP:${port}`, "-sTCP:LISTEN"],
+      { timeout: 5000 },
+      (error, stdout, stderr) => {
+        const output = String(stdout).trim();
+        if (error && output.length === 0 && error.code !== 1) {
+          const detail = String(stderr).trim() || error.message;
+          reject(new Error(`lsof failed: ${detail}`));
+          return;
+        }
+        resolve(
+          output
+            .split(/\s+/u)
+            .filter(Boolean)
+            .map((pid) => Number.parseInt(pid, 10)),
+        );
+      },
+    );
+  });
 }
 
 function isMissingPortBindingsError(error, port) {
@@ -724,11 +809,11 @@ async function killPidSafe(pid, signal) {
 }
 
 async function evictExternalListeners(port) {
-  const pids = await findListeningPids(port);
+  const { pids, attempts } = await findListeningPids(port);
   if (pids.length === 0) {
     if (!(await waitForPortFree(port, 1000))) {
       throw new Error(
-        `Port ${port} is busy, but no owning process could be resolved`,
+        `Port ${port} is busy, but no listener PID was found (tried ${attempts.join("; ")})`,
       );
     }
     return {
@@ -912,13 +997,9 @@ function openServiceLog(worktreePath, service) {
 async function collectWorktreeState() {
   const raw = await runGit(["worktree", "list", "--porcelain"]);
   const parsed = parseWorktreeList(raw);
-  let pidByPort = new Map();
-  try {
-    const { allPortsWithPid } = await loadPidPort();
-    pidByPort = await allPortsWithPid({ host: "*" });
-  } catch {
-    pidByPort = new Map();
-  }
+  /** Returns the first listener PID on an open port, or null when none resolves. */
+  const listenerPid = async (port) =>
+    (await findListeningPids(port)).pids[0] ?? null;
 
   const collected = await Promise.all(
     parsed.map(async (entry) => {
@@ -941,10 +1022,10 @@ async function collectWorktreeState() {
       ]);
       const [backendPid, webUiPid] = await Promise.all([
         backendPort && backendPortOpen
-          ? Promise.resolve(pidByPort.get(backendPort) ?? null)
+          ? listenerPid(backendPort)
           : Promise.resolve(null),
         webUiPort && webUiPortOpen
-          ? Promise.resolve(pidByPort.get(webUiPort) ?? null)
+          ? listenerPid(webUiPort)
           : Promise.resolve(null),
       ]);
       const record = getManagedRecord(worktreePath);
@@ -979,11 +1060,26 @@ async function collectWorktreeState() {
       };
     }),
   );
-  const worktrees = collected;
+  return sortWorktrees(collected, await getPrimaryBranches());
+}
 
-  worktrees.sort((a, b) => {
-    if (a.isMain !== b.isMain) {
-      return a.isMain ? -1 : 1;
+/**
+ * Orders worktrees for display: primary branches first (in the order given),
+ * then worktrees with a `.env` before those without, then by branch name,
+ * falling back to path for detached worktrees.
+ */
+export function sortWorktrees(worktrees, primaryBranches) {
+  const primaryRank = (worktree) => {
+    const index = worktree.branch
+      ? primaryBranches.indexOf(worktree.branch)
+      : -1;
+    return index === -1 ? primaryBranches.length : index;
+  };
+
+  return [...worktrees].sort((a, b) => {
+    const rankDelta = primaryRank(a) - primaryRank(b);
+    if (rankDelta !== 0) {
+      return rankDelta;
     }
     if (a.envExists !== b.envExists) {
       return a.envExists ? -1 : 1;
@@ -993,8 +1089,33 @@ async function collectWorktreeState() {
     }
     return a.path.localeCompare(b.path);
   });
+}
 
-  return worktrees;
+/**
+ * Builds the ordered primary branch list from the remote's default branch
+ * (e.g. `origin/develop`, when known) followed by the conventional
+ * long-lived branches, without duplicates.
+ */
+export function primaryBranchesFrom(remoteHeadRef) {
+  const detected = remoteHeadRef?.trim().replace(/^[^/]+\//u, "");
+  return [...new Set([detected, ...FALLBACK_PRIMARY_BRANCHES].filter(Boolean))];
+}
+
+/**
+ * Resolves the primary branches once per dashboard process. `origin/HEAD` is
+ * only set by `git clone` or `git remote set-head`, so its absence just leaves
+ * the fallback list.
+ */
+function getPrimaryBranches() {
+  primaryBranchesPromise ??= runGit([
+    "symbolic-ref",
+    "--quiet",
+    "--short",
+    "refs/remotes/origin/HEAD",
+  ])
+    .catch(() => null)
+    .then(primaryBranchesFrom);
+  return primaryBranchesPromise;
 }
 
 function jsonResponse(res, statusCode, payload) {

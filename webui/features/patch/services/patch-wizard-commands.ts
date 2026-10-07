@@ -6,10 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { v4 as uuidv4 } from "uuid";
 import { findFixtureVersionConflictIds } from "../../../lib/asset-version";
 import { commandSucceeded } from "../../../lib/command-result";
 import {
   createFixtureFromLibrary,
+  createFixturesFromLibrary,
   sendAddPatchBinding,
   sendFixturePlacementUpdates,
 } from "../../../lib/fixture-service";
@@ -36,7 +38,12 @@ export type PatchWizardCommandOptions = {
   forceUpdateExisting?: boolean;
 };
 
-/** Creates or morphs fixtures and applies the wizard's patch and placement commands. */
+/**
+ * Creates or morphs fixtures and applies the wizard's patch and placement commands.
+ *
+ * New fixtures are created by one atomic batch command, so a failure leaves the show
+ * unchanged. The follow-up patch bindings and placements share one undo group.
+ */
 export async function executePatchWizardCommands(
   options: PatchWizardCommandOptions,
 ): Promise<PatchWizardCommandResult> {
@@ -46,7 +53,7 @@ export async function executePatchWizardCommands(
     return { status: "failed" };
   }
 
-  const [make, model] = state.fixtureDefinitionId.split(":");
+  const { make, model, asset_etag: assetEtag } = options.libraryFixtureInfo;
   const isMorphMode = state.morphFixtureIds.length > 0;
   const versionConflictIds = isMorphMode
     ? []
@@ -62,7 +69,6 @@ export async function executePatchWizardCommands(
   const updateExistingIds = options.forceUpdateExisting
     ? versionConflictIds
     : [];
-  const createdFixtureIds: number[] = [];
 
   try {
     if (isMorphMode) {
@@ -74,6 +80,7 @@ export async function executePatchWizardCommands(
         undefined,
         state.morphFixtureIds,
         true,
+        assetEtag,
       );
       if (!commandSucceeded(result)) {
         log.error("Failed to morph fixtures:", result.outcome);
@@ -85,57 +92,62 @@ export async function executePatchWizardCommands(
       return { status: "success" };
     }
 
-    for (let index = 0; index < state.quantity; index++) {
-      const fixtureId = options.baseFixtureId + index;
-      const label = state.label
-        ? state.quantity > 1
-          ? `${state.label} ${index + 1}`
-          : state.label
-        : undefined;
-      const result = await createFixtureFromLibrary(
-        fixtureId,
-        make,
-        model,
-        state.fixtureMode,
-        label,
-        index === 0 ? updateExistingIds : undefined,
-      );
-      if (commandSucceeded(result)) {
-        createdFixtureIds.push(fixtureId);
-      }
+    const instances: types.LibraryFixtureInstance[] = Array.from(
+      { length: state.quantity },
+      (_, index) => ({
+        id: options.baseFixtureId + index,
+        label: state.label
+          ? state.quantity > 1
+            ? `${state.label} ${index + 1}`
+            : state.label
+          : undefined,
+      }),
+    );
+    const result = await createFixturesFromLibrary(
+      make,
+      model,
+      state.fixtureMode,
+      instances,
+      updateExistingIds,
+      assetEtag,
+    );
+    if (!commandSucceeded(result)) {
+      log.error("Failed to create fixtures:", result.outcome);
+      return { status: "failed" };
+    }
 
-      if (
-        commandSucceeded(result) &&
-        state.assignConsoleDmx &&
-        state.universeId !== null &&
-        state.startAddress !== null
-      ) {
-        const absoluteAddress =
-          state.startAddress + index * options.channelCount;
-        const universeOffset = Math.floor((absoluteAddress - 1) / 512);
+    const batchId = uuidv4().replace(/-/g, "");
+    const { universeId, startAddress } = state;
+    if (
+      state.assignConsoleDmx &&
+      universeId !== null &&
+      startAddress !== null
+    ) {
+      instances.forEach(({ id }, index) => {
+        const absoluteAddress = startAddress + index * options.channelCount;
+        const universe = universeId + Math.floor((absoluteAddress - 1) / 512);
         sendAddPatchBinding(
-          { type: "Fixture", data: { ids: [fixtureId] } },
+          { type: "Fixture", data: { ids: [id] } },
           {
             type: "Console",
             data: {
-              universe: {
-                start: state.universeId + universeOffset,
-                end: state.universeId + universeOffset,
-              },
+              universe: { start: universe, end: universe },
               address: ((absoluteAddress - 1) % 512) + 1,
             },
           },
           0,
           false,
+          batchId,
         );
-      }
+      });
     }
 
     sendFixturePlacementUpdates(
       buildSequentialFixturePlacementUpdates(
-        createdFixtureIds,
+        instances.map(({ id }) => id),
         options.geometry,
       ),
+      batchId,
     );
     log.info(
       `Created ${state.quantity} fixture(s): ${make} ${model} (${state.fixtureMode})`,

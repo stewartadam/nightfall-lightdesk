@@ -16,6 +16,7 @@ import {
   useConditionalShallowStore,
   useShallowStore,
 } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   activeInstances,
   attributeMetadata,
@@ -60,7 +61,7 @@ export function LayerPanelController(props: BasePanelComponentProps) {
   const isPanelVisible = usePanelVisibility(props.panelApi);
   const $dockApi = useStore(dockApi);
   const $cues = useShallowStore(cues);
-  const $fx = useStore(fx);
+  const $fx = useSharedStore(fx);
   const $flows = useStore(flows);
   const $activeInstances = useStore(activeInstances);
   const $attributeMetadata = useStore(attributeMetadata);
@@ -68,7 +69,7 @@ export function LayerPanelController(props: BasePanelComponentProps) {
   const $layersRaw = useConditionalShallowStore(layerStack, isPanelVisible);
   const $layerNavigationRequest = useStore(layerNavigationRequest);
   const $layerObjectNavigationRequest = useStore(layerObjectNavigationRequest);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $inputTrace = useStore(inputContributionTrace);
   const [openLayerKeys, setOpenLayerKeys] = createSignal<Set<string>>(
     new Set(),

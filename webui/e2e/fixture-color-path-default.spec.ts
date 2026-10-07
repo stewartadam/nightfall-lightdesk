@@ -108,8 +108,18 @@ async function openVisualizerProperties(page: Page): Promise<void> {
         params: {},
       });
     }
-    api.getPanel("panel-Visualizer-color-path-default")?.focus();
-    api.getPanel("panel-PropertiesInspector")?.focus();
+    const properties = api.getPanel("panel-PropertiesInspector");
+    if (properties?.api.location.type === "edge") {
+      api.setEdgeGroupVisible(properties.api.location.position, true);
+      api.getEdgeGroup(properties.api.location.position)?.expand();
+    }
+    properties?.api.setActive();
+  });
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const visualizer = api.getPanel("panel-Visualizer-color-path-default");
+    visualizer?.api.setActive();
+    visualizer?.focus();
   });
 
   await expect(page.getByText("3D Visualizer Properties")).toBeVisible();

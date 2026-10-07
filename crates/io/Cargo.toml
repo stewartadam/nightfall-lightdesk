@@ -4,14 +4,22 @@ version.workspace = true
 license.workspace = true
 edition.workspace = true
 
+[features]
+default = ["ecs"]
+# Derives the Bevy ECS traits (`Resource`, `Message`, `SystemSet`) on IO types.
+# Consumers that only need the plain data types and constants, such as the WASM
+# bridge, disable default features so Bevy stays out of their dependency tree.
+ecs = ["dep:bevy_ecs"]
+
 [dependencies]
-bevy_ecs.workspace = true
+bevy_ecs = { workspace = true, optional = true }
 nightfall-dmx = { path = "../dmx" }
 web-time.workspace = true
 serde.workspace = true
 typeshare.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 netdev.workspace = true
 
 [dev-dependencies]

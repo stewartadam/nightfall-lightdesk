@@ -98,6 +98,29 @@ impl ParameterValue {
     }
 }
 
+impl Display for ParameterValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParameterValue::Absolute { value } => write!(f, "{}", value),
+            ParameterValue::AbsolutePercent { value } => write!(f, "{}", value),
+            ParameterValue::Relative { offset } => {
+                if *offset >= 0.0 {
+                    write!(f, "+{:.1}", offset)
+                } else {
+                    write!(f, "{:.1}", offset)
+                }
+            }
+            ParameterValue::RelativePercent { offset } => {
+                if offset.as_f32() >= 0.0 {
+                    write!(f, "+{}", offset)
+                } else {
+                    write!(f, "{}", offset)
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,28 +151,5 @@ mod tests {
         };
         let value_f = value.as_f32();
         assert!((value_f - 0.15).abs() < 0.000_01);
-    }
-}
-
-impl Display for ParameterValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParameterValue::Absolute { value } => write!(f, "{}", value),
-            ParameterValue::AbsolutePercent { value } => write!(f, "{}", value),
-            ParameterValue::Relative { offset } => {
-                if *offset >= 0.0 {
-                    write!(f, "+{:.1}", offset)
-                } else {
-                    write!(f, "{:.1}", offset)
-                }
-            }
-            ParameterValue::RelativePercent { offset } => {
-                if offset.as_f32() >= 0.0 {
-                    write!(f, "+{}", offset)
-                } else {
-                    write!(f, "{}", offset)
-                }
-            }
-        }
     }
 }

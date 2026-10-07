@@ -10,15 +10,29 @@
 
 use std::collections::HashMap;
 
-use gdtf::geometry::AnyGeometry;
+use gdtf::geometry::Geometry;
 use nightfall::prelude::Identifiers;
 use nightfall_dmx::prelude::*;
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use uuid::Uuid;
 
+use super::gdtf_links::Placement;
+use super::gdtf_resolve::{GdtfDiagnostic, ResolvedChannel, ResolvedMode};
 use crate::converters::apply_position_physical_range;
 use crate::gdtf_metadata::GdtfMetadata;
 use crate::{FixtureLibraryError, Result};
+
+/// Fixture data converted from one GDTF DMX mode.
+#[derive(Debug, Clone)]
+pub struct ConvertedGdtfMode {
+    /// Operator-facing fixture with elements and parameters.
+    pub fixture: Fixture,
+    /// Geometry tree for visualization, when the fixture type has geometry.
+    pub geometry: Option<FixtureGeometry>,
+    /// Problems found while resolving the mode.
+    pub diagnostics: Vec<super::gdtf_resolve::GdtfDiagnostic>,
+}
 
 /// Convert a GDTF fixture to a nightfall Fixture with optional geometry.
 ///
@@ -29,98 +43,118 @@ pub fn convert_gdtf_to_fixture(
     mode_name: &str,
     id: u32,
 ) -> Result<(Fixture, Option<FixtureGeometry>)> {
-    // Re-parse the GDTF file to access full data
     let mut gdtf = metadata.reparse()?;
+    let converted = convert_gdtf_mode(&mut gdtf, metadata, mode_name, id)?;
+    for diagnostic in &converted.diagnostics {
+        tracing::warn!(
+            make = %metadata.manufacturer,
+            model = %metadata.model,
+            mode = mode_name,
+            ?diagnostic,
+            "GDTF mode resolved with a diagnostic"
+        );
+    }
+    Ok((converted.fixture, converted.geometry))
+}
 
-    // Get the first fixture type (most GDTF files have only one)
+/// Converts one DMX mode of a parsed archive, resolving the mode exactly once.
+///
+/// Elements are geometry instances in the order their first channel appears
+/// in the mode. Channels declared on a referenced template geometry produce
+/// one parameter per reference instance, placed at the reference's offsets.
+pub fn convert_gdtf_mode(
+    gdtf: &mut gdtf::GdtfFile,
+    metadata: &GdtfMetadata,
+    mode_name: &str,
+    id: u32,
+) -> Result<ConvertedGdtfMode> {
     let fixture_type = gdtf
         .description
         .fixture_types
         .first()
         .ok_or_else(|| FixtureLibraryError::Conversion("No fixture types found".to_string()))?;
 
-    // Find the requested DMX mode
     let dmx_mode = fixture_type
         .dmx_modes
         .iter()
-        .find(|mode| {
-            mode.name
-                .as_ref()
-                .map(|n| n.to_string() == mode_name)
-                .unwrap_or(false)
-        })
+        .find(|mode| mode.name.as_ref().map(|n| n.as_ref()) == Some(mode_name))
         .ok_or_else(|| FixtureLibraryError::ModeNotFound {
             make: metadata.manufacturer.clone(),
             model: metadata.model.clone(),
             mode: mode_name.to_string(),
         })?;
 
-    // Group parameters by geometry to create elements, preserving GDTF channel order
-    //
-    // GDTF fixtures organize their physical structure as a tree of geometries.
-    // Each DMX channel references a geometry name indicating which part it controls.
-    // The gdtf crate's Vec<DmxChannel> preserves the XML ordering from the GDTF file.
-    //
-    // For simple fixtures (e.g., moving heads):
-    //   - All channels may reference a single root geometry like "Yoke"
-    //   - This creates a single element with all parameters
-    //
-    // For complex fixtures (e.g., LED bars with 100 pixels):
-    //   - Each pixel is a separate geometry (e.g., "Segment4of100", "Segment5of100", ...)
-    //   - Each pixel has its own RGB channels
-    //   - This creates 100 elements, each with Red/Green/Blue parameters
-    let mut geometry_params: HashMap<String, Vec<ParameterMetadata>> = HashMap::new();
-
-    for channel in &dmx_mode.dmx_channels {
-        let geometry_name = channel.geometry.to_string();
-
-        for logical_channel in &channel.logical_channels {
-            if let Some(param) =
-                convert_logical_channel_to_parameter(logical_channel, channel, fixture_type)
-            {
-                geometry_params
-                    .entry(geometry_name.clone())
-                    .or_default()
-                    .push(param);
-            }
+    let resolved = match ResolvedMode::new(fixture_type, dmx_mode) {
+        Ok(resolved) => resolved,
+        Err(diagnostics) => {
+            let fixture = build_fixture(metadata, mode_name, id, Vec::new(), None, "Main");
+            return Ok(ConvertedGdtfMode {
+                fixture,
+                geometry: None,
+                diagnostics,
+            });
         }
-    }
+    };
 
-    // Create elements in the order geometries first appeared in DMX channels.
-    // We deduplicate geometries as we iterate through dmx_channels in order.
-    let mut seen_geometries = std::collections::HashSet::new();
-    let elements: Vec<FixtureElement> = dmx_mode
-        .dmx_channels
-        .iter()
-        .map(|channel| channel.geometry.to_string())
-        .filter(|name| seen_geometries.insert(name.clone()))
-        .filter_map(|name| {
-            geometry_params
-                .remove(&name)
-                .map(|parameters| FixtureElement {
-                    label: name,
-                    parameters,
-                })
-        })
-        .collect();
+    let mut built = build_elements(&resolved, fixture_type);
+    super::gdtf_links::link_functions(
+        &resolved,
+        dmx_mode,
+        &mut built.elements,
+        super::gdtf_links::LinkTargets {
+            placements: &built.placements,
+            slot_owners: &built.slot_owners,
+        },
+        &mut built.diagnostics,
+    );
+    let physical = extract_physical_properties(&resolved);
+    let geometry = build_geometry_tree(
+        &resolved,
+        &built.placements,
+        &built.elements,
+        fixture_type,
+        &mut gdtf.resources,
+        metadata,
+    );
+    // A mode without channels still gets one element; name it after the root
+    // so it maps onto the geometry tree.
+    let fixture = build_fixture(
+        metadata,
+        mode_name,
+        id,
+        built.elements,
+        physical,
+        &resolved.instances[0].name,
+    );
 
-    // Fallback: if no elements were created, create a single default element
+    let mut diagnostics = resolved.diagnostics;
+    diagnostics.extend(built.diagnostics);
+    Ok(ConvertedGdtfMode {
+        fixture,
+        geometry: Some(geometry),
+        diagnostics,
+    })
+}
+
+/// Assembles the operator-facing fixture record, adding one empty element
+/// labelled `fallback_label` when the mode produced none.
+fn build_fixture(
+    metadata: &GdtfMetadata,
+    mode_name: &str,
+    id: u32,
+    elements: Vec<FixtureElement>,
+    physical: Option<FixturePhysical>,
+    fallback_label: &str,
+) -> Fixture {
     let elements = if elements.is_empty() {
         vec![FixtureElement {
-            label: "Main".to_string(),
+            label: fallback_label.to_string(),
             parameters: vec![],
         }]
     } else {
         elements
     };
-
-    // Extract physical properties from the first BeamGeometry found
-    let physical = extract_physical_properties(fixture_type);
-
-    // Extract geometry tree for 3D visualization
-    let geometry = extract_geometry_tree(fixture_type, dmx_mode, &mut gdtf.resources, metadata);
-
-    let fixture = Fixture {
+    Fixture {
         identifiers: Identifiers {
             id,
             uid: Uuid::new_v4(),
@@ -131,100 +165,126 @@ pub fn convert_gdtf_to_fixture(
         mode: mode_name.to_string(),
         elements,
         physical,
-        // Coordinate system conversion is handled by convert_gdtf_matrix() which applies
-        // the similarity transformation S * M * S⁻¹ to each geometry matrix
         placement: FixturePlacement::default(),
         layout: None,
         library_asset_etag: None,
-    };
-
-    Ok((fixture, geometry))
+    }
 }
 
-/// Extract geometry from a GDTF fixture for runtime materialization.
+/// Elements built from a resolved mode.
+struct BuiltElements {
+    /// Elements in first-channel order.
+    elements: Vec<FixtureElement>,
+    /// Per resolved channel, the parameter it produced.
+    placements: Vec<Placement>,
+    /// Per resolved channel demoted for sharing slots, the channel that owns them.
+    slot_owners: Vec<Option<usize>>,
+    /// Channels dropped or demoted while building.
+    diagnostics: Vec<GdtfDiagnostic>,
+}
+
+/// Groups resolved channels into one element per geometry instance, in first-channel order.
 ///
-/// This extracts only the geometry tree without creating a full fixture,
-/// useful for materializing fixtures that were loaded from a showfile.
-pub fn get_gdtf_geometry(metadata: &GdtfMetadata, mode_name: &str) -> Result<FixtureGeometry> {
-    // Re-parse the GDTF file to access full data
-    let mut gdtf = metadata.reparse()?;
-
-    // Get the first fixture type (most GDTF files have only one)
-    let fixture_type = gdtf
-        .description
-        .fixture_types
-        .first()
-        .ok_or_else(|| FixtureLibraryError::Conversion("No fixture types found".to_string()))?;
-
-    // Find the requested DMX mode to get element geometry names
-    let dmx_mode = fixture_type
-        .dmx_modes
-        .iter()
-        .find(|mode| {
-            mode.name
-                .as_ref()
-                .map(|n| n.to_string() == mode_name)
-                .unwrap_or(false)
-        })
-        .ok_or_else(|| FixtureLibraryError::ModeNotFound {
-            make: metadata.manufacturer.clone(),
-            model: metadata.model.clone(),
-            mode: mode_name.to_string(),
-        })?;
-
-    // Extract geometry tree for 3D visualization
-    extract_geometry_tree(fixture_type, dmx_mode, &mut gdtf.resources, metadata).ok_or_else(|| {
-        FixtureLibraryError::Conversion("No geometry found in GDTF file".to_string())
-    })
+/// Channels whose slots cannot be represented are dropped with a diagnostic.
+/// A channel reusing slots of an earlier one becomes a virtual parameter, so
+/// two parameters never write the same byte; the earlier channel is recorded
+/// as the owner that links to the demoted copy resolve to.
+fn build_elements(
+    resolved: &ResolvedMode<'_>,
+    fixture_type: &gdtf::fixture_type::FixtureType,
+) -> BuiltElements {
+    let mut element_by_instance: HashMap<usize, usize> = HashMap::new();
+    let mut elements: Vec<FixtureElement> = Vec::new();
+    let mut placements = vec![None; resolved.channels.len()];
+    let mut slot_owners = vec![None; resolved.channels.len()];
+    let mut diagnostics = Vec::new();
+    let mut used_slots: HashMap<(u16, u16), usize> = HashMap::new();
+    for (index, channel) in resolved.channels.iter().enumerate() {
+        let instance = &resolved.instances[channel.instance].name;
+        let Some(mut parameter) = convert_channel_to_parameter(channel, fixture_type) else {
+            if let Some(offsets) = &channel.offsets {
+                diagnostics.push(GdtfDiagnostic::UnrepresentableChannel {
+                    instance: instance.clone(),
+                    offsets: offsets.clone(),
+                });
+            }
+            continue;
+        };
+        if let DmxSlots::Explicit { dmx_break, offsets } = &parameter.dmx_slots {
+            if let Some(owner) = offsets
+                .iter()
+                .find_map(|slot| used_slots.get(&(*dmx_break, *slot)))
+            {
+                diagnostics.push(GdtfDiagnostic::SharedSlots {
+                    instance: instance.clone(),
+                    offsets: offsets.clone(),
+                });
+                slot_owners[index] = Some(*owner);
+                parameter.dmx_slots = DmxSlots::Virtual;
+                parameter.default_dmx = None;
+                parameter.highlight_dmx = None;
+            } else {
+                used_slots.extend(offsets.iter().map(|slot| ((*dmx_break, *slot), index)));
+            }
+        }
+        let element = *element_by_instance
+            .entry(channel.instance)
+            .or_insert_with(|| {
+                elements.push(FixtureElement {
+                    label: resolved.instances[channel.instance].name.clone(),
+                    parameters: Vec::new(),
+                });
+                elements.len() - 1
+            });
+        placements[index] = Some((element, elements[element].parameters.len()));
+        elements[element].parameters.push(parameter);
+    }
+    BuiltElements {
+        elements,
+        placements,
+        slot_owners,
+        diagnostics,
+    }
 }
 
-/// Convert a GDTF logical channel to a parameter
-fn convert_logical_channel_to_parameter(
-    logical_channel: &gdtf::dmx_mode::LogicalChannel,
-    dmx_channel: &gdtf::dmx_mode::DmxChannel,
+/// Converts a resolved DMX channel's first logical channel to a parameter.
+///
+/// Logical channels of one DMX channel are mutually exclusive views of the
+/// same bytes, so only the first becomes the output-bearing parameter.
+fn convert_channel_to_parameter(
+    resolved: &ResolvedChannel<'_>,
     fixture_type: &gdtf::fixture_type::FixtureType,
 ) -> Option<ParameterMetadata> {
-    // Map GDTF attribute to nightfall Attribute
+    let logical_channel = resolved.channel.logical_channels.first()?;
     let attribute = map_gdtf_attribute_to_nightfall(&logical_channel.attribute)?;
+    let (resolution, dmx_slots) = resolved_channel_slots(resolved)?;
 
-    // Determine resolution from offset array length
-    let resolution = if let Some(offset) = &dmx_channel.offset {
-        match offset.len() {
-            1 => DmxValueResolution::Coarse,
-            2 => DmxValueResolution::Fine,
-            3 => DmxValueResolution::UltraFine,
-            _ => DmxValueResolution::Coarse,
-        }
-    } else {
-        DmxValueResolution::Coarse
-    };
-
-    // Determine merge strategy based on attribute
     let merge_type = match &attribute {
         Attribute::Intensity | Attribute::VirtualIntensity => MergeStrategy::HTP,
         _ => MergeStrategy::LTP,
     };
-
     let use_grandmaster = matches!(
         attribute,
         Attribute::Intensity | Attribute::VirtualIntensity
     );
 
-    // Calculate max value based on resolution (2^bits - 1)
-    let max = match resolution {
-        DmxValueResolution::Coarse => 255.0,           // 2^8 - 1
-        DmxValueResolution::Fine => 65_535.0,          // 2^16 - 1
-        DmxValueResolution::UltraFine => 16_777_215.0, // 2^24 - 1
-        DmxValueResolution::Uber => 4_294_967_295.0,   // 2^32 - 1
-    };
-
+    let semantics = super::gdtf_functions::channel_semantics(
+        fixture_type,
+        resolved.channel,
+        logical_channel,
+        resolution,
+    );
     let mut metadata = ParameterMetadata {
+        dmx_slots,
+        functions: semantics.functions,
+        default_dmx: semantics.default_dmx,
+        highlight_dmx: semantics.highlight_dmx,
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
         attribute,
         resolution,
         min: 0.0,
-        max,
+        max: resolution.dmx_max() as ParameterDmxValue,
         offset: ParameterValue::Absolute { value: 0.0 },
         is_inverted: false,
         is_snap: logical_channel.snap,
@@ -236,6 +296,41 @@ fn convert_logical_channel_to_parameter(
         gdtf_position_physical_range(logical_channel, fixture_type),
     );
     Some(metadata)
+}
+
+/// Resolves a channel's byte resolution and footprint slots from its resolved offsets and break.
+///
+/// Channels without an `Offset` are virtual and occupy no slots. Returns
+/// `None` for offsets that cannot be represented (more than four bytes, or
+/// slots outside `1..=512`).
+pub(super) fn resolved_channel_slots(
+    resolved: &ResolvedChannel<'_>,
+) -> Option<(DmxValueResolution, DmxSlots)> {
+    let Some(offsets) = &resolved.offsets else {
+        return Some((DmxValueResolution::Coarse, DmxSlots::Virtual));
+    };
+    let resolution = match offsets.len() {
+        1 => DmxValueResolution::Coarse,
+        2 => DmxValueResolution::Fine,
+        3 => DmxValueResolution::UltraFine,
+        4 => DmxValueResolution::Uber,
+        _ => return None,
+    };
+    let offsets = offsets
+        .iter()
+        .map(|offset| {
+            u16::try_from(*offset)
+                .ok()
+                .filter(|slot| (1..=512).contains(slot))
+        })
+        .collect::<Option<Vec<u16>>>()?;
+    Some((
+        resolution,
+        DmxSlots::Explicit {
+            dmx_break: resolved.dmx_break,
+            offsets,
+        },
+    ))
 }
 
 /// Resolve an angular physical range from a GDTF logical channel.
@@ -293,6 +388,7 @@ pub(super) fn map_gdtf_attribute_to_nightfall(
 
         // Beam
         "Zoom" => Some(Attribute::Zoom),
+        "Focus1" | "Focus" => Some(Attribute::Focus),
         "Gobo1" | "Gobo" => Some(Attribute::Gobo),
         "Gobo1Rot" | "GoboRot" => Some(Attribute::GoboRot),
         "Prism1" | "Prism" => Some(Attribute::Prism),
@@ -311,57 +407,6 @@ pub(super) fn map_gdtf_attribute_to_nightfall(
     }
 }
 
-/// Extract physical properties from GDTF fixture type
-///
-/// Searches the geometry tree for BeamGeometry instances and extracts physical
-/// properties like beam angles, lumens, and color temperature.
-fn extract_physical_properties(
-    fixture_type: &gdtf::fixture_type::FixtureType,
-) -> Option<FixturePhysical> {
-    // Find the first BeamGeometry in the geometry tree
-    let beam_geometry = find_beam_geometry(&fixture_type.geometries)?;
-
-    // Convert GDTF beam type to nightfall beam type
-    let beam_type = map_gdtf_beam_type(&beam_geometry.beam_type);
-
-    // Extract physical properties
-    Some(FixturePhysical {
-        beam_angle: beam_geometry.beam_angle as f32,
-        field_angle: beam_geometry.field_angle as f32,
-        lumens: if beam_geometry.luminous_flux > 0.0 {
-            Some(beam_geometry.luminous_flux as f32)
-        } else {
-            None
-        },
-        color_temperature: if beam_geometry.color_temperature > 0.0 {
-            Some(beam_geometry.color_temperature as f32)
-        } else {
-            None
-        },
-        beam_type,
-    })
-}
-
-/// Recursively search for a BeamGeometry in the geometry tree
-fn find_beam_geometry(
-    geometries: &[gdtf::geometry::Geometry],
-) -> Option<&gdtf::geometry::BeamGeometry> {
-    use gdtf::geometry::{AnyGeometry, Geometry};
-
-    for geom in geometries {
-        match geom {
-            Geometry::Beam(beam) => return Some(beam),
-            _ => {
-                // Recursively search children
-                if let Some(beam) = find_beam_geometry(geom.children()) {
-                    return Some(beam);
-                }
-            }
-        }
-    }
-    None
-}
-
 /// Map GDTF BeamType to nightfall BeamType
 pub(super) fn map_gdtf_beam_type(gdtf_beam_type: &gdtf::geometry::BeamType) -> BeamType {
     use gdtf::geometry::BeamType as GdtfBeamType;
@@ -371,8 +416,29 @@ pub(super) fn map_gdtf_beam_type(gdtf_beam_type: &gdtf::geometry::BeamType) -> B
         GdtfBeamType::Wash => BeamType::Wash,
         GdtfBeamType::Fresnel => BeamType::Fresnel,
         GdtfBeamType::Pc => BeamType::Pc,
-        // Glow, Rectangle, and None are pixel/LED fixtures that shouldn't render spotlights
-        GdtfBeamType::Glow | GdtfBeamType::Rectangle | GdtfBeamType::None => BeamType::Glow,
+        GdtfBeamType::Rectangle => BeamType::Rectangle,
+        GdtfBeamType::Glow | GdtfBeamType::None => BeamType::Glow,
+    }
+}
+
+/// Preserves each GDTF aperture's photometry and shape without inferring fixture identity.
+pub(super) fn convert_beam_optics(beam: &gdtf::geometry::BeamGeometry) -> BeamOptics {
+    BeamOptics {
+        radius: beam.beam_radius as f32,
+        throw_ratio: beam.throw_ratio as f32,
+        rectangle_ratio: beam.rectangle_ratio as f32,
+        physical: FixturePhysical {
+            beam_angle: beam.beam_angle as f32,
+            field_angle: beam.field_angle as f32,
+            lumens: if beam.luminous_flux > 0.0 {
+                beam.luminous_flux as f32
+            } else {
+                DEFAULT_LUMENS
+            },
+            color_temperature: (beam.color_temperature > 0.0)
+                .then_some(beam.color_temperature as f32),
+            beam_type: map_gdtf_beam_type(&beam.beam_type),
+        },
     }
 }
 
@@ -417,314 +483,233 @@ fn is_emitter_attribute(attr_name: &str) -> bool {
     )
 }
 
-/// Check if a DMX channel has any emitter attributes (color or intensity).
-fn channel_has_emitter_attributes(channel: &gdtf::dmx_mode::DmxChannel) -> bool {
-    channel.logical_channels.iter().any(|lc| {
-        let attr_str = lc.attribute.to_string();
-        is_emitter_attribute(&attr_str)
-    })
+/// Extracts beam physical properties from the first beam instance in the mode.
+fn extract_physical_properties(resolved: &ResolvedMode<'_>) -> Option<FixturePhysical> {
+    let beam = resolved
+        .instances
+        .iter()
+        .find_map(|instance| match instance.geometry {
+            Geometry::Beam(beam) => Some(beam),
+            _ => None,
+        })?;
+
+    Some(convert_beam_optics(beam).physical)
 }
 
-/// Collect all beam names that are descendants of a geometry node.
-fn collect_descendant_beam_names(geom: &gdtf::geometry::Geometry, beam_names: &mut Vec<String>) {
-    use gdtf::geometry::Geometry;
-
-    if let Geometry::Beam(_) = geom {
-        if let Some(name) = geom.name() {
-            beam_names.push(name.to_string());
-        }
-    }
-
-    for child in geom.children() {
-        collect_descendant_beam_names(child, beam_names);
-    }
-}
-
-/// Find a geometry by name in the geometry tree.
-fn find_geometry_by_name<'a>(
-    geometries: &'a [gdtf::geometry::Geometry],
-    name: &str,
-) -> Option<&'a gdtf::geometry::Geometry> {
-    for geom in geometries {
-        if let Some(found) = find_geometry_by_name_recursive(geom, name) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-fn find_geometry_by_name_recursive<'a>(
-    geom: &'a gdtf::geometry::Geometry,
-    name: &str,
-) -> Option<&'a gdtf::geometry::Geometry> {
-    if geom.name().map(|n| n.as_ref() == name).unwrap_or(false) {
-        return Some(geom);
-    }
-    for child in geom.children() {
-        if let Some(found) = find_geometry_by_name_recursive(child, name) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-/// Build a mapping from beam names to their controlling element geometry.
+/// Returns, for every instance, the element label controlling its emitted light.
 ///
-/// For each DMX channel with emitter attributes, find all beam descendants
-/// and map them to the channel's geometry. If a beam is controlled by multiple
-/// geometries, the most specific one (deepest in hierarchy) wins.
-///
-/// Returns a HashMap where:
-/// - Key: beam name (e.g., "Pixel 1")
-/// - Value: element geometry name that controls this beam's color/intensity
-fn build_beam_to_element_mapping(
-    dmx_mode: &gdtf::dmx_mode::DmxMode,
-    geometries: &[gdtf::geometry::Geometry],
-) -> HashMap<String, String> {
-    // First pass: collect all (beam_name, element_name, depth) tuples
-    // where depth is how deep the element geometry is in the tree
-    let mut beam_candidates: HashMap<String, Vec<(String, usize)>> = HashMap::new();
+/// A beam is controlled by the nearest ancestor-or-self instance that has an
+/// emitter (dimmer or color) channel.
+fn emitter_owners(resolved: &ResolvedMode<'_>, placements: &[Placement]) -> Vec<Option<String>> {
+    let mut has_emitter = vec![false; resolved.instances.len()];
+    for (channel, _) in resolved
+        .channels
+        .iter()
+        .zip(placements)
+        .filter(|(_, placement)| placement.is_some())
+    {
+        if channel
+            .channel
+            .logical_channels
+            .iter()
+            .any(|logical| is_emitter_attribute(&logical.attribute.to_string()))
+        {
+            has_emitter[channel.instance] = true;
+        }
+    }
 
-    for channel in &dmx_mode.dmx_channels {
-        // Only consider channels with emitter attributes
-        if !channel_has_emitter_attributes(channel) {
+    let mut owners: Vec<Option<String>> = vec![None; resolved.instances.len()];
+    for (index, instance) in resolved.instances.iter().enumerate() {
+        // Instances are in depth-first order, so parents are resolved first.
+        owners[index] = if has_emitter[index] {
+            Some(instance.name.clone())
+        } else {
+            instance.parent.and_then(|parent| owners[parent].clone())
+        };
+    }
+    owners
+}
+
+/// Returns, for every instance, the optical parameters its beam inherits.
+///
+/// Gobo wheels, prisms, zoom and focus sit on any ancestor of a beam (a head's
+/// gobo wheel reaches every beam below it). Walking from the instance to the
+/// root, the first parameter seen for an attribute wins, so a nearer control
+/// overrides an ancestor's only for its own descendants.
+fn optical_parameters(
+    resolved: &ResolvedMode<'_>,
+    placements: &[Placement],
+    elements: &[FixtureElement],
+) -> Vec<Vec<ElementParameterRef>> {
+    let mut local: Vec<Vec<ElementParameterRef>> = vec![Vec::new(); resolved.instances.len()];
+    for (channel, placement) in resolved.channels.iter().zip(placements) {
+        let Some((element, parameter)) = *placement else {
             continue;
-        }
-
-        let element_name = channel.geometry.to_string();
-
-        // Find this geometry in the tree
-        if let Some(geom) = find_geometry_by_name(geometries, &element_name) {
-            // Calculate depth of this geometry
-            let depth = calculate_geometry_depth(geometries, &element_name);
-
-            // Collect all beam descendants
-            let mut beam_names = Vec::new();
-            collect_descendant_beam_names(geom, &mut beam_names);
-
-            for beam_name in beam_names {
-                beam_candidates
-                    .entry(beam_name)
-                    .or_default()
-                    .push((element_name.clone(), depth));
-            }
+        };
+        let metadata = &elements[element].parameters[parameter];
+        if metadata
+            .functions
+            .iter()
+            .any(|function| function.optical.is_some())
+        {
+            local[channel.instance].push(ElementParameterRef {
+                element: element as u32,
+                attribute: metadata.attribute.clone(),
+            });
         }
     }
 
-    // Second pass: for each beam, pick the most specific (deepest) element
-    let mut result = HashMap::new();
-    for (beam_name, candidates) in beam_candidates {
-        if let Some((element_name, _)) = candidates.into_iter().max_by_key(|(_, depth)| *depth) {
-            result.insert(beam_name, element_name);
+    let mut inherited: Vec<Vec<ElementParameterRef>> = Vec::with_capacity(local.len());
+    for (index, instance) in resolved.instances.iter().enumerate() {
+        // Instances are in depth-first order, so parents are resolved first.
+        let mut parameters = local[index].clone();
+        if let Some(parent) = instance.parent {
+            parameters.extend(
+                inherited[parent]
+                    .iter()
+                    .filter(|reference| {
+                        !local[index]
+                            .iter()
+                            .any(|own| own.attribute == reference.attribute)
+                    })
+                    .cloned(),
+            );
         }
+        inherited.push(parameters);
     }
-
-    result
+    inherited
 }
 
-/// Calculate the depth of a geometry in the tree (0 = root level).
-fn calculate_geometry_depth(geometries: &[gdtf::geometry::Geometry], name: &str) -> usize {
-    for geom in geometries {
-        if let Some(depth) = calculate_geometry_depth_recursive(geom, name, 0) {
-            return depth;
-        }
-    }
-    0
-}
-
-fn calculate_geometry_depth_recursive(
-    geom: &gdtf::geometry::Geometry,
-    name: &str,
-    current_depth: usize,
-) -> Option<usize> {
-    if geom.name().map(|n| n.as_ref() == name).unwrap_or(false) {
-        return Some(current_depth);
-    }
-    for child in geom.children() {
-        if let Some(depth) = calculate_geometry_depth_recursive(child, name, current_depth + 1) {
-            return Some(depth);
-        }
-    }
-    None
-}
-
-/// Extract geometry tree from GDTF fixture type for 3D visualization
-fn extract_geometry_tree(
+/// Builds the visualization geometry tree from resolved instances.
+///
+/// `placements` records which resolved channels produced parameters; only
+/// those can own beams or drive joints.
+fn build_geometry_tree(
+    resolved: &ResolvedMode<'_>,
+    placements: &[Placement],
+    elements: &[FixtureElement],
     fixture_type: &gdtf::fixture_type::FixtureType,
-    dmx_mode: &gdtf::dmx_mode::DmxMode,
     resources: &mut gdtf::ResourceMap,
     metadata: &GdtfMetadata,
-) -> Option<FixtureGeometry> {
-    if fixture_type.geometries.is_empty() {
-        return None;
-    }
-
-    // Build model lookup from fixture type
+) -> FixtureGeometry {
     let models: HashMap<&str, &gdtf::model::Model> = fixture_type
         .models
         .iter()
         .filter_map(|m| m.name.as_ref().map(|n| (n.as_ref(), m)))
         .collect();
-
-    // Build the beam→element mapping based on DMX channels with emitter attributes.
-    // This ensures beams are only mapped to elements that control their color/intensity,
-    // and that each beam maps to its most specific controlling element.
-    let beam_to_element = build_beam_to_element_mapping(dmx_mode, &fixture_type.geometries);
-
-    let mut nodes = Vec::new();
-    let mut roots: Vec<u32> = Vec::new();
+    let owners = emitter_owners(resolved, placements);
+    let mut optical = optical_parameters(resolved, placements, elements);
+    let mut axes = joint_axes(resolved, placements);
     let mut mesh_resources = HashMap::new();
 
-    // Process all root geometries
-    for root_geom in &fixture_type.geometries {
-        let root_index = traverse_geometry(
-            root_geom,
-            -1,
-            &mut nodes,
-            &models,
-            &mut mesh_resources,
-            resources,
-            &beam_to_element,
-        );
-        roots.push(root_index as u32);
-    }
-
-    if nodes.is_empty() {
-        return None;
-    }
-
-    Some(FixtureGeometry {
-        nodes,
-        roots,
-        mesh_resources,
-        gdtf_path: Some(metadata.file_path.to_string_lossy().to_string()),
-    })
-}
-
-/// Recursively traverse a geometry node and its children.
-///
-/// Builds the geometry tree by traversing the GDTF geometry hierarchy.
-///
-/// # Arguments
-///
-/// * `beam_to_element` - Pre-computed mapping from beam names to their controlling element.
-///   This mapping is built by `build_beam_to_element_mapping` which ensures that:
-///   - Only beams controlled by DMX channels with emitter attributes (color/intensity) are included
-///   - Each beam maps to its most specific (deepest in hierarchy) controlling element
-///
-/// # Side Effects
-///
-/// This function modifies several mutable parameters:
-/// - `nodes`: Appends new [`GeometryNode`] entries for each traversed geometry
-/// - `mesh_resources`: Populated with mesh resource entries when models reference mesh files
-/// - `resources`: GDTF resource map may be read from to extract mesh availability info
-///
-/// # Returns
-///
-/// The index of the newly created node in the `nodes` vector.
-fn traverse_geometry(
-    geom: &gdtf::geometry::Geometry,
-    parent_index: i32,
-    nodes: &mut Vec<GeometryNode>,
-    models: &HashMap<&str, &gdtf::model::Model>,
-    mesh_resources: &mut HashMap<String, MeshResource>,
-    resources: &mut gdtf::ResourceMap,
-    beam_to_element: &HashMap<String, String>,
-) -> usize {
-    use gdtf::geometry::Geometry;
-
-    let node_index = nodes.len();
-
-    // Determine geometry type and axis info
-    let (geometry_type, axis) = match geom {
-        Geometry::Axis(_) => {
-            // Try to determine axis type from name
-            let name = geom.name().map(|n| n.to_string()).unwrap_or_default();
-            let name_lower = name.to_lowercase();
-            let axis_type = if name_lower.contains("yoke") || name_lower.contains("pan") {
-                Some(AxisType::Pan)
-            } else if name_lower.contains("head") || name_lower.contains("tilt") {
-                Some(AxisType::Tilt)
-            } else {
-                None
-            };
-            (GeometryType::Axis, axis_type)
-        }
-        Geometry::Beam(_) => (GeometryType::Beam, None),
-        Geometry::Reference(_) => (GeometryType::Reference, None),
-        Geometry::FilterBeam(_) => (GeometryType::FilterBeam, None),
-        Geometry::FilterColor(_) => (GeometryType::FilterColor, None),
-        Geometry::FilterGobo(_) => (GeometryType::FilterGobo, None),
-        Geometry::Display(_) => (GeometryType::Display, None),
-        Geometry::Generic(_) => (GeometryType::Generic, None),
-        _ => (GeometryType::Generic, None),
-    };
-
-    // Get position matrix and convert to our Transform format
-    let transform = convert_gdtf_matrix(geom);
-
-    // Get model if present
-    let model = geom.model_name().and_then(|model_name| {
-        models.get(model_name.as_ref()).map(|m| {
-            // Check for mesh resources
-            if let Some(file) = &m.file {
-                check_mesh_resource(file, resources, mesh_resources);
-            }
-
-            GeometryModel {
-                name: model_name.to_string(),
-                primitive_type: convert_primitive_type(&m.primitive_type),
-                length: m.length as f32,
-                width: m.width as f32,
-                height: m.height as f32,
-                mesh_file: m.file.clone(),
-            }
-        })
-    });
-
-    let node_name = geom.name().map(|n| n.to_string()).unwrap_or_default();
-
-    // For Beam nodes, look up the element name from the pre-computed mapping.
-    // This mapping only includes beams that are controlled by DMX channels with
-    // emitter attributes (color/intensity), so beams not in the mapping will
-    // have controlled_element = None and won't be rendered.
-    let controlled_element = match geometry_type {
-        GeometryType::Beam => beam_to_element.get(&node_name).cloned(),
-        _ => None,
-    };
-
-    nodes.push(GeometryNode {
-        name: node_name.clone(),
-        geometry_type,
-        transform,
-        model,
-        axis,
-        parent_index,
-        children: Vec::new(),
-        controlled_element,
-    });
-
-    // Recursively process children
-    let child_indices: Vec<u32> = geom
-        .children()
+    let nodes = resolved
+        .instances
         .iter()
-        .map(|child| {
-            traverse_geometry(
-                child,
-                node_index as i32,
-                nodes,
-                models,
-                mesh_resources,
-                resources,
-                beam_to_element,
-            ) as u32
+        .enumerate()
+        .map(|(index, instance)| {
+            let geometry_type = geometry_type(instance.geometry);
+            let axes = std::mem::take(&mut axes[index]);
+            let model = instance
+                .model
+                .and_then(|name| models.get(name))
+                .map(|model| {
+                    if let Some(file) = &model.file {
+                        check_mesh_resource(file, resources, &mut mesh_resources);
+                    }
+                    GeometryModel {
+                        name: instance.model.unwrap_or_default().to_string(),
+                        primitive_type: convert_primitive_type(&model.primitive_type),
+                        length: model.length as f32,
+                        width: model.width as f32,
+                        height: model.height as f32,
+                        mesh_file: model.file.clone(),
+                    }
+                });
+            GeometryNode {
+                name: instance.name.clone(),
+                geometry_type,
+                transform: convert_gdtf_matrix(instance.placement),
+                model,
+                parent_index: instance.parent.map_or(-1, |parent| parent as i32),
+                children: instance
+                    .children
+                    .iter()
+                    .map(|child| *child as u32)
+                    .collect(),
+                // Beams follow the element that sets their light; joints follow
+                // the element whose pan or tilt channel names them, which is
+                // always the joint's own instance.
+                controlled_element: match geometry_type {
+                    GeometryType::Beam => owners[index].clone(),
+                    _ if !axes.is_empty() => Some(instance.name.clone()),
+                    _ => None,
+                },
+                axes,
+                beam: match instance.geometry {
+                    Geometry::Beam(beam) => Some(convert_beam_optics(beam)),
+                    _ => None,
+                },
+                optical_parameters: match geometry_type {
+                    GeometryType::Beam => std::mem::take(&mut optical[index]),
+                    _ => Vec::new(),
+                },
+            }
         })
         .collect();
 
-    // Update node with child indices
-    nodes[node_index].children = child_indices;
+    FixtureGeometry {
+        nodes,
+        roots: vec![0],
+        mesh_resources,
+        gdtf_path: Some(metadata.file_path.to_string_lossy().to_string()),
+        gdtf_revision: None,
+    }
+}
 
-    node_index
+/// Maps a GDTF geometry variant to a visualization node type.
+fn geometry_type(geometry: &Geometry) -> GeometryType {
+    match geometry {
+        Geometry::Axis(_) => GeometryType::Axis,
+        Geometry::Beam(_) => GeometryType::Beam,
+        Geometry::Reference(_) => GeometryType::Reference,
+        Geometry::FilterBeam(_) => GeometryType::FilterBeam,
+        Geometry::FilterColor(_) => GeometryType::FilterColor,
+        Geometry::FilterGobo(_) => GeometryType::FilterGobo,
+        Geometry::Display(_) => GeometryType::Display,
+        _ => GeometryType::Generic,
+    }
+}
+
+/// Returns the joint each instance becomes when a pan or tilt channel names it.
+///
+/// GDTF places a movement channel on the geometry it moves, so the channel's
+/// geometry is the joint regardless of its tag (`<Axis>` or plain
+/// `<Geometry>`) or its name. An instance carrying both pan and tilt becomes
+/// a two-axis joint with pan applied first.
+fn joint_axes(resolved: &ResolvedMode<'_>, placements: &[Placement]) -> Vec<Vec<AxisType>> {
+    let mut axes = vec![Vec::new(); resolved.instances.len()];
+    for (channel, _) in resolved
+        .channels
+        .iter()
+        .zip(placements)
+        .filter(|(_, placement)| placement.is_some())
+    {
+        let Some(logical) = channel.channel.logical_channels.first() else {
+            continue;
+        };
+        let axis = match map_gdtf_attribute_to_nightfall(&logical.attribute) {
+            Some(Attribute::Pan) => AxisType::Pan,
+            Some(Attribute::Tilt) => AxisType::Tilt,
+            _ => continue,
+        };
+        let node_axes: &mut Vec<AxisType> = &mut axes[channel.instance];
+        if !node_axes.contains(&axis) {
+            node_axes.push(axis);
+            // Pan carries tilt, so pan always applies first.
+            node_axes.sort_by_key(|axis| *axis != AxisType::Pan);
+        }
+    }
+    axes
 }
 
 /// Convert GDTF position matrix to column-major Transform for Three.js.

@@ -19,6 +19,7 @@ import {
 import { Portal } from "solid-js/web";
 import type { AppIcon } from "../icon";
 import { MenuItem, MenuSeparator, MenuSurface } from "../menu";
+import { overlayHost } from "../modal/dialog-stack";
 
 const FOCUSABLE_MENU_CONTROL_SELECTOR = [
   "button:not([disabled])",
@@ -29,6 +30,10 @@ const FOCUSABLE_MENU_CONTROL_SELECTOR = [
 ].join(",");
 
 const DropdownContext = createContext<{ close: () => void }>();
+/** Space between the trigger and its menu. */
+const MENU_GAP_PX = 4;
+/** Closest a menu may come to the viewport edge. */
+const MENU_EDGE_MARGIN_PX = 8;
 
 interface DropdownMenuProps {
   trigger: JSX.Element;
@@ -56,19 +61,34 @@ export function DropdownMenu(props: DropdownMenuProps) {
   /** Resolves controlled and self-owned menu visibility through one accessor. */
   const isOpen = (): boolean => props.open ?? internalOpen();
 
-  /** Anchors the portaled menu to the trigger's current viewport bounds. */
+  /**
+   * Anchors the portaled menu to the trigger's current viewport bounds. The
+   * menu scrolls when it is taller than the space on its side of the trigger,
+   * and slides sideways when its aligned edge would push it off screen, as on
+   * a phone where the trigger sits mid-toolbar.
+   */
   const updateMenuPosition = () => {
     if (!triggerRef) return;
     const bounds = triggerRef.getBoundingClientRect();
-    const vertical =
-      props.placement === "below"
-        ? { top: `${bounds.bottom + 4}px` }
-        : { bottom: `${window.innerHeight - bounds.top + 4}px` };
-    const horizontal =
-      props.align === "end"
-        ? { right: `${window.innerWidth - bounds.right}px` }
-        : { left: `${bounds.left}px` };
-    setMenuPosition({ ...vertical, ...horizontal });
+    const below = props.placement === "below";
+    const vertical = below
+      ? { top: `${bounds.bottom + MENU_GAP_PX}px` }
+      : { bottom: `${window.innerHeight - bounds.top + MENU_GAP_PX}px` };
+    const available = below
+      ? window.innerHeight - bounds.bottom - MENU_GAP_PX - MENU_EDGE_MARGIN_PX
+      : bounds.top - MENU_GAP_PX - MENU_EDGE_MARGIN_PX;
+    const width = menuRef?.offsetWidth ?? 0;
+    const maxLeft = window.innerWidth - MENU_EDGE_MARGIN_PX - width;
+    const anchoredLeft =
+      props.align === "end" ? bounds.right - width : bounds.left;
+    const left = Math.max(MENU_EDGE_MARGIN_PX, Math.min(anchoredLeft, maxLeft));
+    setMenuPosition({
+      ...vertical,
+      left: `${left}px`,
+      "max-height": `${Math.max(0, available)}px`,
+      "max-width": `calc(100vw - ${2 * MENU_EDGE_MARGIN_PX}px)`,
+      "overflow-y": "auto",
+    });
   };
 
   /** Updates the menu state and notifies its owner. */
@@ -113,7 +133,11 @@ export function DropdownMenu(props: DropdownMenuProps) {
     const open = isOpen();
     if (open) {
       updateMenuPosition();
-      if (!wasOpen) queueMicrotask(focusFirstControl);
+      if (!wasOpen) {
+        // Measure again once the menu has laid out so its width can be clamped.
+        queueMicrotask(updateMenuPosition);
+        queueMicrotask(focusFirstControl);
+      }
     }
     wasOpen = open;
   });
@@ -152,7 +176,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
           {props.trigger}
         </button>
         <Show when={isOpen()}>
-          <Portal mount={document.body}>
+          <Portal mount={overlayHost(triggerRef)}>
             <MenuSurface
               ref={menuRef}
               data-component="DropdownMenuContent"
@@ -251,7 +275,7 @@ export function DropdownMenuSubmenu(props: DropdownMenuSubmenuProps) {
         ref={menuRef}
         role="menu"
         aria-label={props.label}
-        aria-hidden={!isOpen()}
+        inert={!isOpen()}
         data-menu-kind="dropdown-submenu"
         class="fixed min-w-[220px]"
         classList={{ invisible: !isOpen(), visible: isOpen() }}

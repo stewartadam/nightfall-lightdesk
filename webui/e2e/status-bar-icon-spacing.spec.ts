@@ -11,7 +11,7 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Reads rendered control bounds after confirming that the control is visible. */
 async function bounds(control: Locator) {
@@ -25,6 +25,7 @@ test("status bar left icons match undo and redo sizing and spacing", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const bar = page.getByRole("region", { name: "Application status bar" });
   const menu = bar.getByRole("button", { name: "Menu", exact: true });
   const connection = bar.getByRole("status", {

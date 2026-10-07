@@ -66,6 +66,7 @@ import { ButtonDemo, DockingDemo, SliderDemo } from "./component-demos";
 import { ComponentIndex } from "./component-index";
 import { AttributeDemo, FaderDemo, SwitchDemo } from "./control-demos";
 import { DataGridDemo } from "./data-grid-demo";
+import { DialogsDemo } from "./dialogs-demo";
 import { SparklineDemo, TooltipDemo } from "./feedback-demos";
 import { InputFormsDemo } from "./input-forms-demo";
 import { CommandPaletteDemo, ShortcutsDemo } from "./keyboard-demos";
@@ -106,6 +107,7 @@ const componentDemos = [
   { id: "tooltips", title: "Tooltips", component: "tooltips" },
   { id: "color-picker", title: "Color picker", component: "colorPicker" },
   { id: "docking", title: "Docking", component: "docking" },
+  { id: "dialogs", title: "Dialogs", component: "dialogs" },
   { id: "popups", title: "Popups & popouts", component: "popups" },
   { id: "toasts", title: "Toasts", component: "toasts" },
 ];
@@ -790,6 +792,7 @@ function DesignLab() {
               colorPicker: ColorPickerDemo,
               buttons: ButtonDemo,
               toolbars: ToolbarDemo,
+              dialogs: DialogsDemo,
               popups: () => (
                 <PopupDemo
                   onFloat={() => void openDetachedPreview(false)}

@@ -37,16 +37,16 @@ repos:
     # code style and lints
     - id: biome-check
       name: biome check
-      entry: npx biome check --files-ignore-unknown=true --no-errors-on-unmatched
+      entry: pnpm exec biome check --files-ignore-unknown=true --no-errors-on-unmatched
       language: system
       pass_filenames: true
       types: [text]
       files: "\\.(jsx?|tsx?|c(js|ts)|m(js|ts)|d\\.(ts|cts|mts)|jsonc?|css|svelte|vue|astro|graphql|gql)$"
       stages: [pre-commit]
 
-    - id: npm-typecheck
-      name: npm typecheck
-      entry: npm run typecheck
+    - id: typecheck
+      name: TypeScript typecheck
+      entry: pnpm run typecheck
       language: system
       pass_filenames: false
       files: "\\.(jsx?|tsx?|c(js|ts)|m(js|ts)|d\\.(ts|cts|mts))$|(^|/)tsconfig(\\..+)?\\.json$"
@@ -63,10 +63,19 @@ repos:
 
     - id: cargo-clippy
       name: Cargo clippy
-      entry: node scripts/run-native-cargo.mjs clippy --all-targets
+      entry: cargo clippy --all-targets
       language: system
       pass_filenames: false
-      files: \.rs$|(^|/)Cargo\.toml$|^scripts/run-native-cargo\.mjs$
+      files: \.rs$|(^|/)Cargo\.toml$
+      stages: [pre-commit]
+
+    - id: cargo-hakari
+      name: Cargo workspace-hack
+      description: Check the hakari workspace-hack matches the dependency graph and every crate uses it
+      entry: bash -c 'cargo hakari generate --diff && cargo hakari manage-deps --dry-run'
+      language: system
+      pass_filenames: false
+      files: (^|/)Cargo\.(toml|lock)$|^\.config/hakari\.toml$
       stages: [pre-commit]
 
     - id: typeshare
@@ -80,32 +89,43 @@ repos:
 
     - id: command-architecture
       name: command architecture
-      entry: npm run check:command-architecture
+      entry: pnpm run check:command-architecture
       language: system
       pass_filenames: false
-      files: ^(crates|webui)/.*\.(rs|tsx?)$|^scripts/check-command-architecture\.mjs$
+      files: ^(crates|desktop|webui)/.*\.(rs|tsx?)$|^scripts/check-command-architecture\.mjs$
       stages: [pre-commit]
 
     - id: crate-boundaries
       name: backend crate boundaries
-      entry: npm run check:crate-boundaries
+      entry: pnpm run check:crate-boundaries
       language: system
       pass_filenames: false
       files: (^|/)Cargo\.toml$|^scripts/check-crate-boundaries\.mjs$|^config/architecture/(crate-boundary-exceptions|crate-roles)\.json$|^docs/backend-crate-boundaries\.md$
       stages: [pre-commit]
 
     # tests
-    - id: cargo-test
+    - id: cargo-nextest
       name: Rust tests
-      entry: node scripts/run-native-cargo.mjs test
+      entry: cargo nextest run --tests
       language: system
       pass_filenames: false
-      files: \.rs$|(^|/)Cargo\.(toml|lock)$|^scripts/run-native-cargo\.mjs$
+      files: \.rs$|(^|/)Cargo\.(toml|lock)$|^\.config/nextest\.toml$
       stages: [pre-push]
+
+    # CI-only: rustdoc must process every library crate, which costs more per push
+    # than the handful of doctests it runs. CI invokes the manual stage explicitly,
+    # and contributors run `pnpm exec prek run cargo-doctest --stage manual`.
+    - id: cargo-doctest
+      name: Rust doctests
+      entry: cargo test --doc
+      language: system
+      pass_filenames: false
+      always_run: true
+      stages: [manual]
 
     - id: node-tests
       name: Node tests
-      entry: npm test
+      entry: pnpm test
       language: system
       pass_filenames: false
       files: "\\.(jsx?|tsx?|c(js|ts)|m(js|ts)|d\\.(ts|cts|mts))$|(^|/)tsconfig(\\..+)?\\.json$|^config/architecture/webui-boundary-exceptions\\.json$"
@@ -114,7 +134,7 @@ repos:
     # post-merge and post-rewrite hooks cannot filter by filename - see j178/prek#2144
     - id: typeshare-after-git-update
       name: Run typeshare
-      entry: npm run typeshare
+      entry: pnpm run typeshare
       language: system
       stages: [post-merge, post-rewrite]
       always_run: true
@@ -122,7 +142,7 @@ repos:
 
     - id: wasm-build-after-git-update
       name: Build Wasm
-      entry: npm run wasm-build:dev
+      entry: pnpm run wasm-build:dev
       language: system
       stages: [post-merge, post-rewrite]
       always_run: true

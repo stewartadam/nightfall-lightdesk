@@ -19,9 +19,9 @@ use nightfall::prelude::{
 };
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
+use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
-    Fixture, FixtureDataProviderExt, FixtureElement, MergeStrategy, Parameter, ParameterMetadata,
-    ParameterValues,
+    Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };
 
 /// Compositor benchmark assertion styles for validating generated output.
@@ -190,6 +190,42 @@ fn bench_compositor_frame_throughput(c: &mut Criterion) {
     group.finish();
 }
 
+/// Times compositor frames at sample-show scale, with every assertion changing and mid-fade.
+///
+/// Profiling the sample show under load found 17 to 47 active layers over about 1,500 fixture
+/// elements, with transition application and attributed merging dominating the frame. These
+/// cases use 1,536 eight-parameter elements and dense, fading layers to reproduce that shape.
+fn bench_compositor_show_scale(c: &mut Criterion) {
+    let mut group = c.benchmark_group("compositor_show_scale");
+    for layer_count in [16, 32] {
+        let case = BenchmarkCase {
+            parameter_count: 1_536 * 8,
+            layer_count,
+            assertion_shape: AssertionShape::Dense,
+            transition_mode: BenchTransitionMode::All,
+        };
+        group.throughput(Throughput::Elements(
+            (case.parameter_count * case.layer_count) as u64,
+        ));
+        group.bench_function(BenchmarkId::from_parameter(case.id()), |b| {
+            let mut app = changing_compositor_app(case);
+            app.update();
+
+            b.iter(|| {
+                app.update();
+                black_box(
+                    app.world()
+                        .resource::<FinalLayerAttributedAssertions>()
+                        .0
+                        .absolute
+                        .len(),
+                );
+            });
+        });
+    }
+    group.finish();
+}
+
 fn configured_layer_counts() -> Vec<usize> {
     env::var("NIGHTFALL_COMPOSITOR_BENCH_LAYERS")
         .ok()
@@ -239,6 +275,7 @@ fn changing_compositor_app(case: BenchmarkCase) -> App {
 /// Builds the shared parameter and layer world used by compositor benchmarks.
 fn compositor_world(case: BenchmarkCase) -> App {
     let mut app = App::new();
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
 
@@ -257,7 +294,11 @@ fn mutate_benchmark_layer_assertions(
     mut frame_index: Local<usize>,
     mut layers: Query<&mut Layer, With<ChangingBenchmarkLayer>>,
 ) {
-    let next_value = if *frame_index % 2 == 0 { 64.0 } else { 192.0 };
+    let next_value = if (*frame_index).is_multiple_of(2) {
+        64.0
+    } else {
+        192.0
+    };
     *frame_index += 1;
 
     for mut layer in &mut layers {
@@ -320,6 +361,10 @@ fn benchmark_transition(mode: BenchTransitionMode) -> Option<MaterializedTransit
 
 fn spawn_parameters(app: &mut App, parameter_count: usize) -> Vec<Instance<Parameter>> {
     let metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Intensity,
         native_unit: Attribute::Intensity.native_unit(),
@@ -354,6 +399,10 @@ fn spawn_parameters(app: &mut App, parameter_count: usize) -> Vec<Instance<Param
 
 fn register_fixture_data(app: &mut App, parameters: &[Instance<Parameter>]) {
     let parameter_metadata = ParameterMetadata {
+        dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
         resolution: DmxValueResolution::Coarse,
         attribute: Attribute::Intensity,
         native_unit: Attribute::Intensity.native_unit(),
@@ -403,5 +452,146 @@ fn register_fixture_data(app: &mut App, parameters: &[Instance<Parameter>]) {
     }
 }
 
-criterion_group!(benches, bench_compositor, bench_compositor_frame_throughput);
+criterion_group!(
+    benches,
+    bench_compositor,
+    bench_compositor_frame_throughput,
+    bench_compositor_show_scale,
+    bench_compositor_show_scale_mixed
+);
 criterion_main!(benches);
+
+/// Marker for layers whose compositing context advances every measured frame, like a fading cue.
+#[derive(Component)]
+struct FadingBenchmarkLayer;
+
+/// Where fading layers sit in the priority stack of a mixed show-scale benchmark.
+#[derive(Clone, Copy)]
+enum FadingPosition {
+    /// Fading layers have the highest priorities, above every settled layer.
+    Top,
+    /// Fading layers have the lowest priorities, below every settled layer.
+    Bottom,
+}
+
+impl FadingPosition {
+    /// Returns the benchmark id fragment for this position.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+        }
+    }
+}
+
+/// Benchmarks show-scale frames where most dense layers have finished fading and only a few are
+/// still mid-fade, which is the usual shape of a running show between cue changes.
+fn bench_compositor_show_scale_mixed(c: &mut Criterion) {
+    let mut group = c.benchmark_group("compositor_show_scale_mixed");
+    let parameter_count = 1_536 * 8;
+    let layer_count = 32;
+    for (fading_count, position) in [
+        (1, FadingPosition::Top),
+        (4, FadingPosition::Top),
+        (1, FadingPosition::Bottom),
+    ] {
+        group.bench_function(
+            BenchmarkId::from_parameter(format!(
+                "params={parameter_count}/layers={layer_count}/fading={fading_count}/{}",
+                position.name()
+            )),
+            |b| {
+                let mut app =
+                    mixed_compositor_app(parameter_count, layer_count, fading_count, position);
+                // Newly spawned layers are composited in full on their first pass and cached from
+                // the next one on, so measure the steady state after both.
+                app.update();
+                app.update();
+
+                b.iter(|| {
+                    app.update();
+                    black_box(
+                        app.world()
+                            .resource::<FinalLayerAttributedAssertions>()
+                            .0
+                            .absolute
+                            .len(),
+                    );
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+/// Builds a compositor app with dense layers that have all finished fading except `fading_count`
+/// layers at `position`, whose compositing contexts advance before every compositor pass.
+fn mixed_compositor_app(
+    parameter_count: usize,
+    layer_count: usize,
+    fading_count: usize,
+    position: FadingPosition,
+) -> App {
+    let mut app = App::new();
+    add_compositor_removal_observers::<Parameter>(&mut app);
+    app.insert_resource(FixtureDataProviderExt::default());
+    app.init_resource::<FinalLayerAttributedAssertions>();
+
+    let parameters = spawn_parameters(&mut app, parameter_count);
+    register_fixture_data(&mut app, &parameters);
+
+    for layer_index in 0..layer_count {
+        let is_fading = match position {
+            FadingPosition::Top => layer_index >= layer_count - fading_count,
+            FadingPosition::Bottom => layer_index < fading_count,
+        };
+        let priority = i8::try_from(layer_index).unwrap_or(i8::MAX);
+        let mut layer = Layer::new(format!("bench layer {layer_index}"), Priority(priority));
+        for (assertion_index, parameter) in parameters.iter().enumerate() {
+            layer.absolute.insert(
+                *parameter,
+                (
+                    ParameterValue::Absolute {
+                        value: ((assertion_index + layer_index) % 256) as f32,
+                    },
+                    benchmark_transition(BenchTransitionMode::All),
+                ),
+            );
+        }
+        let context = LayerCompositingContext {
+            position: if is_fading {
+                Duration::ZERO
+            } else {
+                Duration::from_secs(10)
+            },
+            released_at: None,
+        };
+        let mut entity = app.world_mut().spawn((
+            ObjectRefMarker(ObjectRef::ById {
+                object_type: ObjectType::Cue,
+                id: layer_index as u32 + 1,
+            }),
+            layer,
+            context,
+        ));
+        if is_fading {
+            entity.insert(FadingBenchmarkLayer);
+        }
+    }
+
+    app.add_systems(
+        Update,
+        (advance_fading_layers, compositor::<Parameter>).chain(),
+    );
+    app
+}
+
+/// Advances fading layers by one 60 fps frame, wrapping inside the one-second fade so they never
+/// finish.
+fn advance_fading_layers(
+    mut contexts: Query<&mut LayerCompositingContext, With<FadingBenchmarkLayer>>,
+) {
+    for mut context in &mut contexts {
+        context.position = Duration::from_millis((context.position.as_millis() as u64 + 16) % 900);
+    }
+}

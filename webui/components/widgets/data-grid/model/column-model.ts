@@ -50,6 +50,29 @@ export function columnWidth(column: GridColumn | undefined): number {
     : 120;
 }
 
+/**
+ * Returns `previous` when `next` serializes to the same column data, so owners that rebuild
+ * equivalent column arrays on every data change do not rebuild the table's column, header
+ * and sizing models.
+ *
+ * Grid columns are plain data. Owner extensions such as filter accessors are recreated with
+ * each rebuild but never read by the grid, so serialization drops those functions and an
+ * owner reading columns back from grid callbacks may receive the earlier equivalent object.
+ */
+export function reuseEquivalentColumns(
+  previous: readonly GridColumn[] | undefined,
+  next: readonly GridColumn[],
+): readonly GridColumn[] {
+  if (
+    previous &&
+    previous.length === next.length &&
+    JSON.stringify(previous) === JSON.stringify(next)
+  ) {
+    return previous;
+  }
+  return next;
+}
+
 /** Resolves the nested attribute label represented by a source grid column. */
 function attributeGroupFor(column: GroupableGridColumn): string | undefined {
   return column.visibilityGroupLabel ?? column.visibilityGroup ?? column.group;

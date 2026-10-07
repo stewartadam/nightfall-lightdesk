@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { inflateSync } from "node:zlib";
 import {
   type Attribute,
   DmxValueResolution,
@@ -19,7 +18,9 @@ import {
   type ParameterMetadata,
 } from "../types/index";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { ALWAYS_ATTACH_ARTIFACTS, collectPageErrors } from "./optics-harness";
 import { expect, type Page, test } from "./playwright-fixtures";
+import { decodePng } from "./png-decode";
 import { waitForDockviewApp } from "./showfile-startup";
 
 const inputSelector = "#header-cmdline";
@@ -165,6 +166,10 @@ test.beforeEach(async ({ backendSlot, page }) => {
       window.sessionStorage.getItem("visualizer-render-owned-init") !== "true"
     ) {
       window.localStorage.clear();
+      window.localStorage.setItem(
+        "nightfall-visualizer-settings",
+        JSON.stringify({ qualityPreset: "high" }),
+      );
       window.sessionStorage.setItem("visualizer-render-owned-init", "true");
     }
     window.localStorage.setItem("nightfall.currentShowfileName", "default");
@@ -425,16 +430,215 @@ test("3D visualizer main-thread renderer paints the canvas", async ({
   await expectVisualizerFpsLabel(page);
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-visualizer-main-thread", {
-    body: screenshot,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-visualizer-main-thread", {
+      body: screenshot,
+      contentType: "image/png",
+    });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 
   expect(pageErrors).not.toContainEqual(
     expect.stringContaining("localStorage"),
   );
 });
+
+/** Opens the Settings dialog on its Visualizer tab and returns the dialog locator. */
+async function openVisualizerSettings(page: Page) {
+  await page.keyboard.press("ControlOrMeta+,");
+  const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+  await dialog.getByRole("tab", { name: "Visualizer", exact: true }).click();
+  return dialog;
+}
+
+/** Reads the quality preset the live main-thread renderer's optical context was built with, or undefined mid-rebuild. */
+async function renderedQualityPreset(page: Page) {
+  return page.evaluate(async () => {
+    const scene = (window as any).visualizerApi?.getScene?.();
+    if (!scene) return undefined;
+    const { getOpticalRenderContext } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).opticalRenderContext;
+    return getOpticalRenderContext(scene)?.profile.preset;
+  });
+}
+
+/** A diagnostic URL quality shows in Settings, and re-picking the already-saved preset drops the override and renders that preset. */
+test("settings quality slider reflects and clears the URL override", async ({
+  page,
+}) => {
+  const pageErrors = collectPageErrors(page, { consoleErrors: false });
+  await page.goto(
+    "/?visualizer:offscreenCanvas=false&visualizer:beamQuality=low",
+  );
+  await waitForVisualizerReady(page);
+  await waitForMainThreadVisualizerApi(page);
+  await expect.poll(() => renderedQualityPreset(page)).toBe("low");
+  const dialog = await openVisualizerSettings(page);
+  const slider = dialog.getByRole("slider", { name: "Quality preset" });
+  // The saved preset is High (see beforeEach); the slider must show what renders.
+  await expect(slider).toHaveValue("0");
+  await slider.fill("2");
+  await expect(slider).toHaveValue("2");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => renderedQualityPreset(page)).toBe("high");
+  expect(pageErrors).toEqual([]);
+});
+
+/**
+ * Minimum mean-luma drop (0–255) between Darkness 0 and 100. The unlit stage fills most of
+ * the canvas, so darkening it moves the mean by tens of levels; a missed re-render moves it by none.
+ */
+const DARKNESS_MIN_LUMA_DROP = 5;
+
+/** Largest mean-luma change between consecutive screenshots of a settled, static canvas. */
+const SETTLED_LUMA_DELTA = 0.5;
+
+/** Polls canvas screenshots until two consecutive frames have the same mean luma, then returns it. */
+async function settledCanvasLuma(page: Page): Promise<number> {
+  let previous = Number.NaN;
+  let current = Number.NaN;
+  await expect
+    .poll(
+      async () => {
+        previous = current;
+        current = pngMeanLuma(
+          await page.screenshot({ clip: await largestVisibleCanvasBox(page) }),
+        );
+        return Math.abs(current - previous);
+      },
+      { timeout: 15_000 },
+    )
+    .toBeLessThanOrEqual(SETTLED_LUMA_DELTA);
+  return current;
+}
+
+for (const worker of [false, true]) {
+  const mode = worker ? "worker" : "main";
+
+  /** Switches the running renderer through every preset and checks the rebuilt renderer draws visible output. */
+  test(`quality settings replace the ${mode} renderer live`, async ({
+    page,
+  }, testInfo) => {
+    const pageErrors = collectPageErrors(page, { consoleErrors: false });
+    await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
+    await waitForVisualizerReady(page);
+    if (worker) await waitForWorkerVisualizerApi(page);
+    else await waitForMainThreadVisualizerApi(page);
+    const uid = await installRotatingWashBeamFixture(page);
+    await waitForFixtureStoreHydration(page);
+    await holdRotatingWashBeamImmediateOutput(page, uid);
+    for (const preset of ["medium", "low", "high"] as const) {
+      const previousApi = await page.evaluateHandle(
+        () => (window as any).visualizerApi,
+      );
+      const dialog = await openVisualizerSettings(page);
+      await dialog
+        .getByRole("slider", { name: "Quality preset" })
+        .fill(String(["low", "medium", "high"].indexOf(preset)));
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (previous) =>
+              Boolean((window as any).visualizerApi) &&
+              (window as any).visualizerApi !== previous,
+            previousApi,
+          ),
+        )
+        .toBe(true);
+      await previousApi.dispose();
+      await page.keyboard.press("Escape");
+      if (worker) await waitForWorkerVisualizerApi(page);
+      else {
+        await waitForMainThreadVisualizerApi(page);
+        await expect
+          .poll(() =>
+            page.evaluate(async () => {
+              const scene = (window as any).visualizerApi.getScene();
+              const { getOpticalRenderContext } = (
+                await window.__nightfallHarness.load("visualizer")
+              ).opticalRenderContext;
+              const context = getOpticalRenderContext(scene);
+              return {
+                quality: context?.profile.preset,
+                cones: !!context?.scene.getObjectByName("EmitterBeams"),
+                volumes: !!context?.scene.getObjectByName("EmitterVolumes"),
+              };
+            }),
+          )
+          .toEqual({
+            quality: preset,
+            cones: preset !== "high",
+            volumes: preset === "high",
+          });
+      }
+      await holdRotatingWashBeamImmediateOutput(page, uid);
+      await expectVisualizerFpsLabel(page);
+      const screenshot = await page.screenshot({
+        clip: await largestVisibleCanvasBox(page),
+      });
+      const range = pngLumaRange(screenshot);
+      if (range <= 5)
+        await testInfo.attach(`quality-${preset}.png`, {
+          body: screenshot,
+          contentType: "image/png",
+        });
+      expect(range, `${preset} preset draws visible output`).toBeGreaterThan(5);
+    }
+    expect(pageErrors).toEqual([]);
+  });
+
+  /** Darkness re-renders the running renderer darker, and both it and the quality preset survive a reload. */
+  test(`visualizer settings dim the ${mode} renderer and persist`, async ({
+    page,
+  }, testInfo) => {
+    const pageErrors = collectPageErrors(page, { consoleErrors: false });
+    await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
+    await waitForVisualizerReady(page);
+    if (worker) await waitForWorkerVisualizerApi(page);
+    else await waitForMainThreadVisualizerApi(page);
+    await expectVisualizerFpsLabel(page);
+    let dialog = await openVisualizerSettings(page);
+    await dialog.getByRole("slider", { name: "Quality preset" }).fill("1");
+    await dialog
+      .getByRole("slider", { name: "Darkness", exact: true })
+      .fill("0");
+    await page.keyboard.press("Escape");
+    const bright = await settledCanvasLuma(page);
+    dialog = await openVisualizerSettings(page);
+    await dialog
+      .getByRole("slider", { name: "Darkness", exact: true })
+      .fill("100");
+    await page.keyboard.press("Escape");
+    // Worker frames arrive asynchronously, so poll until a re-rendered frame shows the change.
+    let dark = bright;
+    await expect
+      .poll(
+        async () => {
+          const screenshot = await page.screenshot({
+            clip: await largestVisibleCanvasBox(page),
+          });
+          dark = pngMeanLuma(screenshot);
+          return bright - dark;
+        },
+        { message: "Darkness 100 dims the canvas", timeout: 15_000 },
+      )
+      .toBeGreaterThanOrEqual(DARKNESS_MIN_LUMA_DROP);
+    testInfo.annotations.push({
+      type: "mean luma",
+      description: `darkness 0: ${bright.toFixed(1)}, darkness 100: ${dark.toFixed(1)}`,
+    });
+    await page.reload();
+    await waitForVisualizerReady(page);
+    dialog = await openVisualizerSettings(page);
+    await expect(
+      dialog.getByRole("slider", { name: "Quality preset" }),
+    ).toHaveValue("1");
+    await expect(
+      dialog.getByRole("slider", { name: "Darkness", exact: true }),
+    ).toHaveValue("100");
+    expect(pageErrors).toEqual([]);
+  });
+}
 
 /** Verifies camera panning retargets the orbit controls to the stage floor. */
 test("camera pan updates orbit target to the floor intersection", async ({
@@ -588,10 +792,11 @@ test("rgb strobe bar fixture renders its three emitter groups", async ({
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-rgb-strobe-bar", {
-    body: screenshot,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-rgb-strobe-bar", {
+      body: screenshot,
+      contentType: "image/png",
+    });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 });
 
@@ -745,7 +950,7 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
     .toEqual({
       baseCount: 1,
       lensCount: 12,
-      beamCount: 12,
+      apertureCount: 12,
       topStripCount: 12,
       bottomStripCount: 12,
       litTopStripCount: 0,
@@ -755,15 +960,130 @@ test("generic wash beam fixture renders beams and strip pixels", async ({
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-rotating-wash-beam", {
-    body: screenshot,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-rotating-wash-beam", {
+      body: screenshot,
+      contentType: "image/png",
+    });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
+  await holdRotatingWashBeamImmediateOutput(page, fixtureUid);
+  await expect
+    .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
+    .toEqual({
+      opticalBeamCount: 12,
+      atmosphericBeamCount: 12,
+      atmosphericDraws: 1,
+    });
 });
 
-/** Verifies the owned Generic wash beam uses cheap materials in low quality. */
-test("generic wash beam low-quality setting uses cheap beam materials", async ({
+/** Compares the actual spot and wash rendering paths together under the Low preset. */
+test("low quality spot and wash comparison", async ({ page }, testInfo) => {
+  await page.goto(
+    "/?visualizer:offscreenCanvas=false&visualizer:beamQuality=low",
+  );
+  await waitForVisualizerReady(page);
+  await waitForMainThreadVisualizerApi(page);
+  const wash = await installRotatingWashBeamFixture(page);
+  const spot = await installMovingSpotFixture(page);
+  await page.evaluate(
+    ({ wash, spot }) => {
+      const stores = (window as any).appStores;
+      const fixtures = stores.fixtures.get();
+      stores.fixtures.set({
+        ...fixtures,
+        [wash]: {
+          ...fixtures[wash],
+          physical: {
+            beamType: "Wash",
+            beamAngle: 1,
+            fieldAngle: 1.2,
+            lumens: 12000,
+          },
+          placement: {
+            position: { x: -2, y: 1, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+          },
+        },
+        [spot]: {
+          ...fixtures[spot],
+          physical: {
+            beamType: "Spot",
+            beamAngle: 8,
+            fieldAngle: 15,
+            lumens: 8000,
+          },
+          placement: {
+            position: { x: 2, y: 1, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+          },
+        },
+      });
+      (window as any).visualizerApi.setCameraState({
+        position: { x: 9, y: 5, z: 14 },
+        target: { x: 0, y: -5, z: 0 },
+      });
+      (window as any).visualizerApi
+        .getScene()
+        .getObjectByName("StageFloor").visible = false;
+    },
+    { wash, spot },
+  );
+  await waitForFixtureStoreHydration(page);
+  await holdRotatingWashBeamImmediateOutput(page, wash);
+  await holdFixtureImmediateOutput(page, spot, {
+    Intensity: 255,
+    Tilt: 127,
+    Zoom: 127,
+    "Color Wheel": 0,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const scene = (window as any).visualizerApi.getScene();
+        const { getOpticalRenderContext } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalRenderContext;
+        const context = getOpticalRenderContext(scene)!;
+        return {
+          quality: context.profile.preset,
+          count: (context.scene.getObjectByName("EmitterBeams") as any)?.count,
+        };
+      }),
+    )
+    .toEqual({ quality: "low", count: 13 });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("low-spot-wash.png", {
+      body: await page.screenshot({
+        clip: await largestVisibleCanvasBox(page),
+      }),
+      contentType: "image/png",
+    });
+  await holdRotatingWashBeamImmediateOutput(page, wash, 1);
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { getOpticalRenderContext } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalRenderContext;
+        return (
+          getOpticalRenderContext(
+            (window as any).visualizerApi.getScene(),
+          )!.scene.getObjectByName("EmitterBeams") as any
+        ).count;
+      }),
+    )
+    .toBe(2);
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("low-single-wash-emitter.png", {
+      body: await page.screenshot({
+        clip: await largestVisibleCanvasBox(page),
+      }),
+      contentType: "image/png",
+    });
+});
+
+/** Verifies low quality uses batched geometry beams without atmospheric integration. */
+test("generic wash beam low-quality setting uses geometry beams", async ({
   page,
 }) => {
   await page.goto("/");
@@ -773,13 +1093,12 @@ test("generic wash beam low-quality setting uses cheap beam materials", async ({
       JSON.stringify({
         features: {
           visualizerOffscreenCanvas: false,
-          visualizerBeamQuality: "low",
           startupDraftRecovery: false,
         },
       }),
     );
   });
-  await page.goto("/?startup:draftRecovery=false");
+  await page.goto("/?startup:draftRecovery=false&visualizer:beamQuality=low");
 
   await expect
     .poll(() =>
@@ -791,34 +1110,59 @@ test("generic wash beam low-quality setting uses cheap beam materials", async ({
       ),
     )
     .toBe(false);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          JSON.parse(
-            window.localStorage.getItem("nightfall-feature-flags") ?? "{}",
-          ).features?.visualizerBeamQuality,
-      ),
-    )
-    .toBe("low");
   await waitForVisualizerReady(page);
+  // The diagnostic URL quality applies to this session without being saved.
+  expect(
+    await page.evaluate(
+      () =>
+        JSON.parse(
+          window.localStorage.getItem("nightfall-visualizer-settings") ?? "{}",
+        ).qualityPreset,
+    ),
+  ).not.toBe("low");
   await largestVisibleCanvasBox(page);
   await expectVisualizerFpsLabel(page);
   await waitForMainThreadVisualizerApi(page);
   const fixtureUid = await installRotatingWashBeamFixture(page);
   await waitForFixtureStoreHydration(page);
   await holdRotatingWashBeamImmediateOutput(page, fixtureUid);
+  // Low draws every lit beam as one batched geometry instance and installs no
+  // optical surface lights, so no atmospheric volume can be linked to them.
   await expect
-    .poll(() => rotatingWashBeamLowQualityStats(page, fixtureUid))
-    .toMatchObject({ lowQualityBeamCount: 12, visibleSpotLightCount: 0 });
+    .poll(() =>
+      page.evaluate(async () => {
+        const { getOpticalRenderContext } = (
+          await window.__nightfallHarness.load("visualizer")
+        ).opticalRenderContext;
+        const context = getOpticalRenderContext(
+          (window as any).visualizerApi.getScene(),
+        );
+        return {
+          quality: context?.profile.preset,
+          geometryBeamCount: (
+            context?.scene.getObjectByName("EmitterBeams") as any
+          )?.count,
+        };
+      }),
+    )
+    .toEqual({ quality: "low", geometryBeamCount: 12 });
+  await expect
+    .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
+    .toEqual({
+      opticalBeamCount: 0,
+      atmosphericBeamCount: 0,
+      atmosphericDraws: 0,
+    });
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 });
 
-/** Verifies the owned Generic wash beam narrows its beam at full zoom. */
-test("generic wash beam zoom 100 renders a focused beam", async ({ page }) => {
+/** Verifies the owned Generic wash beam narrows as its zoom function moves to the narrowest angle (DMX 255 = 1°). */
+test("generic wash beam minimum zoom renders a focused beam", async ({
+  page,
+}) => {
   await page.goto(
     "/?startup:draftRecovery=false&visualizer:offscreenCanvas=false",
   );
@@ -826,10 +1170,13 @@ test("generic wash beam zoom 100 renders a focused beam", async ({ page }) => {
   await largestVisibleCanvasBox(page);
   await expectVisualizerFpsLabel(page);
   await waitForMainThreadVisualizerApi(page);
-  const fixtureUid = await installRotatingWashBeamFixture(page);
+  const fixtureUid = await installOwnedBackendFixture(page, OWNED_WASH_BEAM);
   await waitForFixtureStoreHydration(page);
 
-  await writeRotatingWashBeamImmediateOutput(page, fixtureUid, 0);
+  await submitCommand(
+    page,
+    `fix ${OWNED_WASH_BEAM.id} int @ 100 red @ 100 zoom @ 0 tilt @ 0`,
+  );
   await expect
     .poll(
       async () =>
@@ -841,7 +1188,7 @@ test("generic wash beam zoom 100 renders a focused beam", async ({ page }) => {
     fixtureUid,
   );
 
-  await writeRotatingWashBeamImmediateOutput(page, fixtureUid, 255);
+  await submitCommand(page, `fix ${OWNED_WASH_BEAM.id} zoom @ 100`);
   await expect
     .poll(async () => {
       const radius = await rotatingWashBeamFirstBeamRadius(page, fixtureUid);
@@ -854,6 +1201,38 @@ test("generic wash beam zoom 100 renders a focused beam", async ({ page }) => {
     throw new Error("expected Generic wash beam radius to be available");
   }
   expect(focusedRadius).toBeLessThan(unfocusedRadius);
+  expect(focusedRadius).toBeLessThan(0.4);
+  await expect
+    .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
+    .toMatchObject({ opticalBeamCount: 12, atmosphericBeamCount: 12 });
+  const focusedImage = await page.screenshot({
+    clip: await largestVisibleCanvasBox(page),
+  });
+  const pixels = decodePng(focusedImage);
+  for (const fraction of [0.2, 0.3, 0.4]) {
+    expect(
+      pngRedDominantStats(focusedImage, {
+        x: 0,
+        y: Math.floor(pixels.height * fraction),
+        width: pixels.width,
+        height: 4,
+      }).count,
+      "The narrow beam must stay continuous above its emitting face",
+    ).toBeGreaterThan(40);
+  }
+  expect(
+    await page.evaluate((uid) => {
+      const root = (window as any).visualizerApi
+        .getScene()
+        .getObjectByName(`Fixture_${uid}`);
+      const counts: number[] = [];
+      root.traverse((object: any) => {
+        if (object.name.startsWith("WashEmitterInstances_"))
+          counts.push(object.count);
+      });
+      return counts;
+    }, fixtureUid),
+  ).toEqual([12, 24]);
 });
 
 /** Verifies the owned Generic moving spot orients its yoke arms at zero pan. */
@@ -889,10 +1268,11 @@ test("generic moving spot fixture renders yoke arms along the x axis at pan zero
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const screenshot = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-generic-moving-spot", {
-    body: screenshot,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-generic-moving-spot", {
+      body: screenshot,
+      contentType: "image/png",
+    });
   expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 });
 
@@ -967,10 +1347,11 @@ test("clearing a tilted strobe panel removes rendered LED pixels", async ({
 
   const canvasBox = await largestVisibleCanvasBox(page);
   const asserted = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-tilted-strobe-asserted", {
-    body: asserted,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-tilted-strobe-asserted", {
+      body: asserted,
+      contentType: "image/png",
+    });
   const searchRegion = {
     x: 0,
     y: Math.floor(canvasBox.height * 0.45),
@@ -986,10 +1367,11 @@ test("clearing a tilted strobe panel removes rendered LED pixels", async ({
   await page.waitForTimeout(500);
 
   const cleared = await page.screenshot({ clip: canvasBox });
-  await testInfo.attach("owned-tilted-strobe-cleared", {
-    body: cleared,
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("owned-tilted-strobe-cleared", {
+      body: cleared,
+      contentType: "image/png",
+    });
   const clearedRed = pngRedDominantStats(cleared, {
     x: Math.max(0, bounds.x - 8),
     y: Math.max(0, bounds.y - 8),
@@ -1000,15 +1382,186 @@ test("clearing a tilted strobe panel removes rendered LED pixels", async ({
   expect(clearedRed.count).toBe(0);
 });
 
+/** A built-in fixture per specialized renderer and the meshes its selection outline may cover. */
+type SelectionOutlineCase = {
+  title: string;
+  fixture: OwnedBackendFixture;
+  /** Command arguments (after the fixture target) that light its emitters. */
+  light: string;
+  /** Element selector appended to `fix <id>` when only some elements take the light values. */
+  lightElements?: string;
+  /** Unique names of the structural meshes left eligible for the outline. */
+  outlined: string[];
+};
+
+/** Structural meshes shared by rotating wash-beam and linear wash-bar layouts. */
+const WASH_BEAM_STRUCTURE = [
+  "BaseRail",
+  "EndCap",
+  "Housing",
+  "LeftPivotBoss",
+  "LeftPivotSupport",
+  "RightPivotBoss",
+  "RightPivotSupport",
+];
+
+const SELECTION_OUTLINE_CASES: SelectionOutlineCase[] = [
+  {
+    title: "moving head",
+    fixture: {
+      id: 701,
+      label: "Outline Moving Head",
+      make: "Generic",
+      model: "Moving Head Spot 16ch",
+      mode: "Spot",
+      update_existing_ids: [],
+      update_existing_only: false,
+      placement: {
+        position: { x: 0, y: 3, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+      },
+    },
+    light: "int @ 100",
+    outlined: ["Base", "HeadBody", "LeftArm", "RightArm"],
+  },
+  {
+    title: "LED bar",
+    fixture: {
+      id: 702,
+      label: "Outline LED Bar",
+      make: "Generic",
+      model: "100-segment LED Bar",
+      mode: "RGB",
+      update_existing_ids: [],
+      update_existing_only: false,
+      placement: {
+        position: { x: 0, y: 2, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+      },
+    },
+    light: "red @ 100",
+    outlined: ["Housing"],
+  },
+  {
+    title: "strobe matrix",
+    fixture: { ...OWNED_TILTED_STROBE, id: 703, label: "Outline Strobe" },
+    light: "red @ 100",
+    outlined: ["Base", "Face", "LeftArm", "RightArm"],
+  },
+  {
+    title: "RGB strobe bar",
+    fixture: { ...OWNED_RGB_STROBE_BAR, id: 704, label: "Outline RGB Bar" },
+    light: "white @ 100",
+    outlined: ["Housing"],
+  },
+  {
+    title: "rotating wash beam",
+    fixture: { ...OWNED_WASH_BEAM, id: 705, label: "Outline Wash Beam" },
+    light: "int @ 100 red @ 100",
+    lightElements: ".(14>25)",
+    outlined: WASH_BEAM_STRUCTURE,
+  },
+  {
+    title: "linear wash bar",
+    fixture: {
+      id: 706,
+      label: "Outline Linear Wash Bar",
+      make: "Generic",
+      model: "10-segment Rotating RGBW Bar",
+      mode: "RGBW",
+      update_existing_ids: [],
+      update_existing_only: false,
+      placement: {
+        position: { x: 0, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+      },
+    },
+    light: "int @ 100 red @ 100",
+    outlined: WASH_BEAM_STRUCTURE,
+  },
+];
+
 /**
- * Collects browser page errors emitted during visualizer render tests.
+ * Returns the sorted unique names of meshes in a fixture group that the
+ * selection outline may cover, and how many light meshes are flagged out.
  */
-function collectPageErrors(page: Page): string[] {
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => {
-    pageErrors.push(error.message);
+async function selectionOutlineMeshes(
+  page: Page,
+  fixtureUid: string,
+): Promise<{ outlined: string[]; excluded: number }> {
+  return page.evaluate((uid) => {
+    const root = (window as any).visualizerApi
+      .getScene()
+      .getObjectByName(`Fixture_${uid}`);
+    const outlined = new Set<string>();
+    let excluded = 0;
+    root?.traverse((child: any) => {
+      if (!child.isMesh) return;
+      if (child.userData.excludeFromSelection === true) excluded++;
+      else outlined.add(child.name);
+    });
+    return { outlined: [...outlined].sort(), excluded };
+  }, fixtureUid);
+}
+
+for (const outlineCase of SELECTION_OUTLINE_CASES) {
+  /**
+   * Verifies a selected, lit fixture on a specialized renderer outlines only
+   * its structural meshes; beams, lenses, pixels and footprints stay flagged
+   * out. The capture is attached for visual review of the outline.
+   */
+  test(`${outlineCase.title} selection outline excludes its light meshes`, async ({
+    page,
+  }, testInfo) => {
+    await page.goto("/?visualizer:offscreenCanvas=false");
+    await waitForVisualizerReady(page);
+    await expect(page.locator(inputSelector)).toBeVisible();
+    await waitForMainThreadVisualizerApi(page);
+    const { id } = outlineCase.fixture;
+    const fixtureUid = await installOwnedBackendFixture(
+      page,
+      outlineCase.fixture,
+    );
+    await waitForFixtureStoreHydration(page);
+
+    await submitCommand(
+      page,
+      `fix ${id}${outlineCase.lightElements ?? ""} ${outlineCase.light}`,
+    );
+    await submitCommand(page, `fix ${id}`);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (uid) =>
+            (
+              (window as any).appStores.programmerSelection.get() as string[]
+            ).includes(uid),
+          fixtureUid,
+        ),
+      )
+      .toBe(true);
+
+    await expect
+      .poll(() => selectionOutlineMeshes(page, fixtureUid))
+      .toEqual({
+        outlined: outlineCase.outlined,
+        excluded: expect.any(Number),
+      });
+    expect(
+      (await selectionOutlineMeshes(page, fixtureUid)).excluded,
+    ).toBeGreaterThan(0);
+
+    await page.evaluate(() => (window as any).visualizerApi.zoomToSelection());
+    await page.waitForTimeout(500);
+    const canvasBox = await largestVisibleCanvasBox(page);
+    const path = testInfo.outputPath("selection-outline.png");
+    await page.screenshot({ clip: canvasBox, path });
+    await testInfo.attach("selection-outline", {
+      path,
+      contentType: "image/png",
+    });
+    await submitCommand(page, "clear");
   });
-  return pageErrors;
 }
 
 /**
@@ -1358,7 +1911,8 @@ async function rgbStrobeBarSceneStats(
 }
 
 /**
- * Holds immediate output for the RGB strobe bar fixture long enough for renderer frames.
+ * Holds immediate output for the RGB strobe bar fixture long enough for renderer frames,
+ * replacing any earlier hold still running for the fixture.
  */
 async function holdRgbStrobeBarImmediateOutput(
   page: Page,
@@ -1366,11 +1920,24 @@ async function holdRgbStrobeBarImmediateOutput(
   elementOutputs: Record<string, number>[],
 ): Promise<void> {
   await page.evaluate(
-    ({ fixtureUid, elementOutputs }) => {
+    async ({ fixtureUid, elementOutputs }) => {
+      // A newer hold for this fixture supersedes this one, so slow frames
+      // cannot let a stale output overwrite the next scenario step.
+      const pageState = window as any;
+      pageState.__e2eImmediateOutputHolds ??= new Map<string, number>();
+      const holds: Map<string, number> = pageState.__e2eImmediateOutputHolds;
+      const token = (holds.get(fixtureUid) ?? 0) + 1;
+      holds.set(fixtureUid, token);
       let framesRemaining = 120;
       const writeOutput = () => {
+        if (holds.get(fixtureUid) !== token) return;
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(fixtureUid, elementOutputs);
+        stores.setParametersImmediate(
+          new Map(stores.getParametersImmediate()).set(
+            fixtureUid,
+            elementOutputs,
+          ),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);
@@ -1471,6 +2038,14 @@ async function installRotatingWashBeamFixture(page: Page): Promise<string> {
             ],
           })),
         ],
+        // Beams draw only from profile photometry; the flux is shared by the 12 beams.
+        physical: {
+          beamType: "Wash",
+          beamAngle: 6,
+          fieldAngle: 34,
+          lumens: 12000,
+          colorTemperature: 6500,
+        },
         placement: {
           position: { x: 0, y: 0.5, z: 0 },
           rotation: { x: 0, y: 0, z: 0 },
@@ -1482,61 +2057,18 @@ async function installRotatingWashBeamFixture(page: Page): Promise<string> {
   });
 }
 
-/** Holds immediate output for the Generic wash beam control and beam elements. */
+/** Holds immediate output for the Generic wash beam control and beam elements, replacing any earlier hold for the fixture. */
 async function holdRotatingWashBeamImmediateOutput(
   page: Page,
   fixtureUid: string,
-): Promise<void> {
-  await page.evaluate((uid) => {
-    const control = {
-      Tilt: 127,
-      Zoom: 127,
-      Intensity: 255,
-      "Tilt Speed": 255,
-    };
-    const beam = {
-      Red: 255,
-      Green: 96,
-      Blue: 32,
-      White: 0,
-      Intensity: 255,
-    };
-    const strip = {
-      Red: 0,
-      Green: 0,
-      Blue: 0,
-      White: 0,
-      Yellow: 0,
-    };
-    const output = [
-      control,
-      ...Array.from({ length: 12 }, () => beam),
-      ...Array.from({ length: 24 }, () => strip),
-    ];
-    let framesRemaining = 120;
-    const writeOutput = () => {
-      const stores = (window as any).appStores;
-      stores.getParametersImmediate().set(uid, output);
-      framesRemaining -= 1;
-      if (framesRemaining > 0) {
-        requestAnimationFrame(writeOutput);
-      }
-    };
-    writeOutput();
-  }, fixtureUid);
-}
-
-/** Writes immediate output for the Generic wash beam fixture with a specific zoom channel value. */
-async function writeRotatingWashBeamImmediateOutput(
-  page: Page,
-  fixtureUid: string,
-  zoom: number,
+  activeBeamCount = 12,
 ): Promise<void> {
   await page.evaluate(
-    ({ uid, zoom }) => {
+    async ({ uid, activeBeamCount }) => {
       const control = {
         Tilt: 127,
-        Zoom: zoom,
+        // Mid-travel of the wash's zoom function (DMX 0 = 34°, 255 = 1°).
+        Zoom: 127,
         Intensity: 255,
         "Tilt Speed": 255,
       };
@@ -1556,13 +2088,25 @@ async function writeRotatingWashBeamImmediateOutput(
       };
       const output = [
         control,
-        ...Array.from({ length: 12 }, () => beam),
+        ...Array.from({ length: 12 }, (_, index) =>
+          index < activeBeamCount ? beam : { ...beam, Intensity: 0 },
+        ),
         ...Array.from({ length: 24 }, () => strip),
       ];
-      let framesRemaining = 60;
+      // A newer hold for this fixture supersedes this one, so slow frames
+      // cannot let a stale output overwrite the next scenario step.
+      const pageState = window as any;
+      pageState.__e2eImmediateOutputHolds ??= new Map<string, number>();
+      const holds: Map<string, number> = pageState.__e2eImmediateOutputHolds;
+      const token = (holds.get(uid) ?? 0) + 1;
+      holds.set(uid, token);
+      let framesRemaining = 120;
       const writeOutput = () => {
+        if (holds.get(uid) !== token) return;
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(uid, output);
+        stores.setParametersImmediate(
+          new Map(stores.getParametersImmediate()).set(uid, output),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);
@@ -1570,7 +2114,7 @@ async function writeRotatingWashBeamImmediateOutput(
       };
       writeOutput();
     },
-    { uid: fixtureUid, zoom },
+    { uid: fixtureUid, activeBeamCount },
   );
 }
 
@@ -1583,7 +2127,7 @@ async function rotatingWashBeamSceneStats(
 ): Promise<{
   baseCount: number;
   lensCount: number;
-  beamCount: number;
+  apertureCount: number;
   topStripCount: number;
   bottomStripCount: number;
   litTopStripCount: number;
@@ -1599,7 +2143,7 @@ async function rotatingWashBeamSceneStats(
     const stats = {
       baseCount: 0,
       lensCount: 0,
-      beamCount: 0,
+      apertureCount: 0,
       topStripCount: 0,
       bottomStripCount: 0,
       litTopStripCount: 0,
@@ -1620,8 +2164,8 @@ async function rotatingWashBeamSceneStats(
         stats.baseCount += 1;
       } else if (object.name.startsWith("Lens_")) {
         stats.lensCount += 1;
-      } else if (object.name.startsWith("Beam_")) {
-        stats.beamCount += 1;
+      } else if (object.name.startsWith("OpticalAperture_")) {
+        stats.apertureCount += 1;
       } else if (object.name.startsWith("TopStripPixel_")) {
         stats.topStripCount += 1;
         if (lit) stats.litTopStripCount += 1;
@@ -1673,7 +2217,7 @@ async function rotatingWashBeamElementParameterState(
   );
 }
 
-/** Reads the rendered radius scale for the first Generic wash beam mesh. */
+/** Reads the shared optical field radius at the first wash emitter's configured throw distance. */
 async function rotatingWashBeamFirstBeamRadius(
   page: Page,
   fixtureUid: string,
@@ -1681,50 +2225,59 @@ async function rotatingWashBeamFirstBeamRadius(
   return page.evaluate((uid) => {
     const api = (window as any).visualizerApi;
     const scene = api?.getScene?.();
-    const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const beam = root?.getObjectByName?.("Beam_1");
-    if (!beam) return null;
-    return beam.scale.x;
+    const beam = scene?.getObjectByName?.(`OpticalSurface:${uid}:Beam_0`);
+    if (!beam?.optics) return null;
+    return beam.optics.radius + beam.beamLength * beam.optics.slopeX;
   }, fixtureUid);
 }
 
 /**
- * Reads low-quality beam material and visibility statistics for the Generic wash beam fixture.
+ * Matches active atmospheric instances to this fixture's optical surface lights.
  */
-async function rotatingWashBeamLowQualityStats(
+async function rotatingWashBeamOpticalStats(
   page: Page,
   fixtureUid: string,
 ): Promise<{
-  lowQualityBeamCount: number;
-  visibleBeamCount: number;
-  visibleSpotLightCount: number;
+  opticalBeamCount: number;
+  atmosphericBeamCount: number;
+  atmosphericDraws: number;
 } | null> {
-  return page.evaluate((uid) => {
+  return page.evaluate(async (uid) => {
     const api = (window as any).visualizerApi;
     const scene = api?.getScene?.();
     const root = scene?.getObjectByName?.(`Fixture_${uid}`);
     if (!root) return null;
 
     const stats = {
-      lowQualityBeamCount: 0,
-      visibleBeamCount: 0,
-      visibleSpotLightCount: 0,
+      opticalBeamCount: 0,
+      atmosphericBeamCount: 0,
+      atmosphericDraws: 0,
     };
 
-    root.traverse((object: any) => {
-      if (object.name.startsWith("Beam_")) {
-        if (object.material?.isLowQualityBeamMaterial === true) {
-          stats.lowQualityBeamCount += 1;
-        }
-        if (object.visible === true) {
-          stats.visibleBeamCount += 1;
-        }
-      } else if (
-        object.name.startsWith("SpotLight_") &&
-        object.visible === true
+    // Shadow keys link atmospheric instances to lights; presets without shadow maps leave them 0.
+    const lightIds = new Set<number>();
+    scene.traverse((object: any) => {
+      if (
+        object.name.startsWith(`OpticalSurface:${uid}:`) &&
+        object.visible &&
+        object.intensity > 0.01
       ) {
-        stats.visibleSpotLightCount += 1;
+        stats.opticalBeamCount++;
+        lightIds.add(object.shadowKey);
       }
+    });
+    const { getOpticalRenderContext } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).opticalRenderContext;
+    const atmosphere = getOpticalRenderContext(scene)?.scene;
+    atmosphere?.traverse((object: any) => {
+      if (object.name !== "EmitterVolumes" || !object.visible) return;
+      const shape = object.geometry.getAttribute("volumeShape");
+      let matching = 0;
+      for (let i = 0; i < object.count; i++)
+        if (lightIds.has(shape.getZ(i))) matching++;
+      stats.atmosphericBeamCount += matching;
+      if (matching) stats.atmosphericDraws++;
     });
 
     return stats;
@@ -1789,6 +2342,14 @@ async function installMovingSpotFixture(page: Page): Promise<string> {
           nodes: [],
           roots: [],
         },
+        // Beams draw only from profile photometry.
+        physical: {
+          beamType: "Spot",
+          beamAngle: 15,
+          fieldAngle: 30,
+          lumens: 10000,
+          colorTemperature: 6500,
+        },
         placement: {
           position: { x: 0, y: 1, z: 0 },
           rotation: { x: 0, y: 0, z: 0 },
@@ -1807,26 +2368,38 @@ async function setFixtureImmediateOutput(
   output: Record<string, number>,
 ): Promise<void> {
   await page.evaluate(
-    ({ fixtureUid, output }) => {
+    async ({ fixtureUid, output }) => {
       const stores = (window as any).appStores;
-      stores.getParametersImmediate().set(fixtureUid, [output]);
+      stores.setParametersImmediate(
+        new Map(stores.getParametersImmediate()).set(fixtureUid, [output]),
+      );
     },
     { fixtureUid, output },
   );
 }
 
-/** Holds immediate fixture output long enough for renderer frame updates to consume it. */
+/** Holds immediate fixture output long enough for renderer frame updates to consume it, replacing any earlier hold for the fixture. */
 async function holdFixtureImmediateOutput(
   page: Page,
   fixtureUid: string,
   output: Record<string, number>,
 ): Promise<void> {
   await page.evaluate(
-    ({ fixtureUid, output }) => {
+    async ({ fixtureUid, output }) => {
+      // A newer hold for this fixture supersedes this one, so slow frames
+      // cannot let a stale output overwrite the next scenario step.
+      const pageState = window as any;
+      pageState.__e2eImmediateOutputHolds ??= new Map<string, number>();
+      const holds: Map<string, number> = pageState.__e2eImmediateOutputHolds;
+      const token = (holds.get(fixtureUid) ?? 0) + 1;
+      holds.set(fixtureUid, token);
       let framesRemaining = 120;
       const writeOutput = () => {
+        if (holds.get(fixtureUid) !== token) return;
         const stores = (window as any).appStores;
-        stores.getParametersImmediate().set(fixtureUid, [output]);
+        stores.setParametersImmediate(
+          new Map(stores.getParametersImmediate()).set(fixtureUid, [output]),
+        );
         framesRemaining -= 1;
         if (framesRemaining > 0) {
           requestAnimationFrame(writeOutput);
@@ -1893,7 +2466,7 @@ async function movingSpotBeamStats(
     const api = (window as any).visualizerApi;
     const scene = api?.getScene?.();
     const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const beam = root?.getObjectByName?.("Beam");
+    const beam = scene?.getObjectByName?.(`OpticalSurface:${uid}:MainEmitter`);
     const lens = root?.getObjectByName?.("Lens") as
       | { material?: { color?: { r: number; g: number; b: number } } }
       | undefined;
@@ -1902,7 +2475,7 @@ async function movingSpotBeamStats(
 
     const round = (value: number) => Number(value.toFixed(4));
     return {
-      beamVisible: beam.visible,
+      beamVisible: beam.visible && beam.intensity > 0.01,
       lensColor: {
         r: round(color.r),
         g: round(color.g),
@@ -1913,7 +2486,7 @@ async function movingSpotBeamStats(
 }
 
 /**
- * Reads split-color material uniforms for the Generic moving spot fixture beam.
+ * Reads split-color state used by shared atmospheric and surface projection for the moving spot.
  */
 async function movingSpotBeamMaterialStats(
   page: Page,
@@ -1928,49 +2501,41 @@ async function movingSpotBeamMaterialStats(
     const api = (window as any).visualizerApi;
     const scene = api?.getScene?.();
     const root = scene?.getObjectByName?.(`Fixture_${uid}`);
-    const beam = root?.getObjectByName?.("Beam") as
+    const beam = scene?.getObjectByName?.(
+      `OpticalSurface:${uid}:MainEmitter`,
+    ) as
       | {
           visible?: boolean;
-          material?: {
-            beamColorUniform?: { value?: { x: number; y: number; z: number } };
-            secondaryBeamColorUniform?: {
-              value?: { x: number; y: number; z: number };
-            };
-            splitColorAmountUniform?: { value?: number };
-          };
+          intensity: number;
+          color: { r: number; g: number; b: number };
+          secondaryColor: { r: number; g: number; b: number };
+          splitColor: boolean;
         }
       | undefined;
-    const primary = beam?.material?.beamColorUniform?.value;
-    const secondary = beam?.material?.secondaryBeamColorUniform?.value;
-    const splitColorAmount = beam?.material?.splitColorAmountUniform?.value;
+    const primary = beam?.color;
+    const secondary = beam?.secondaryColor;
+    const splitColorAmount = beam?.splitColor ? 1 : 0;
     if (!root || !beam || !primary || !secondary) return null;
 
     const round = (value: number) => Number(value.toFixed(4));
     return {
-      beamVisible: Boolean(beam.visible),
+      beamVisible: Boolean(beam.visible) && beam.intensity > 0.01,
       splitColorAmount: round(splitColorAmount ?? 0),
       primaryColor: {
-        r: round(primary.x),
-        g: round(primary.y),
-        b: round(primary.z),
+        r: round(primary.r),
+        g: round(primary.g),
+        b: round(primary.b),
       },
       secondaryColor: {
-        r: round(secondary.x),
-        g: round(secondary.y),
-        b: round(secondary.z),
+        r: round(secondary.r),
+        g: round(secondary.g),
+        b: round(secondary.b),
       },
     };
   }, fixtureUid);
 }
 
 type PngRegion = { x: number; y: number; width: number; height: number };
-
-type DecodedPng = {
-  width: number;
-  height: number;
-  channels: number;
-  data: Buffer;
-};
 
 type RedDominantStats = {
   count: number;
@@ -2041,6 +2606,20 @@ function pngLumaRange(png: Buffer): number {
   }
 
   return maxLuma - minLuma;
+}
+
+/**
+ * Computes the mean Rec. 709 luma (0–255) of every decoded PNG pixel.
+ */
+function pngMeanLuma(png: Buffer): number {
+  const decoded = decodePng(png);
+  let total = 0;
+  for (let i = 0; i < decoded.data.length; i += decoded.channels)
+    total +=
+      decoded.data[i] * 0.2126 +
+      decoded.data[i + 1] * 0.7152 +
+      decoded.data[i + 2] * 0.0722;
+  return total / (decoded.width * decoded.height);
 }
 
 /**
@@ -2118,109 +2697,6 @@ function clampRegion(
   };
 }
 
-/**
- * Decodes a PNG buffer into raw image metadata and pixels.
- */
-function decodePng(png: Buffer): DecodedPng {
-  const signature = png.subarray(0, 8).toString("hex");
-  expect(signature).toBe("89504e470d0a1a0a");
-
-  let offset = 8;
-  let width = 0;
-  let height = 0;
-  let bitDepth = 0;
-  let colorType = 0;
-  const idatChunks: Buffer[] = [];
-
-  while (offset < png.length) {
-    const length = png.readUInt32BE(offset);
-    const type = png.subarray(offset + 4, offset + 8).toString("ascii");
-    const data = png.subarray(offset + 8, offset + 8 + length);
-    offset += 12 + length;
-
-    if (type === "IHDR") {
-      width = data.readUInt32BE(0);
-      height = data.readUInt32BE(4);
-      bitDepth = data[8];
-      colorType = data[9];
-    } else if (type === "IDAT") {
-      idatChunks.push(data);
-    } else if (type === "IEND") {
-      break;
-    }
-  }
-
-  expect(bitDepth).toBe(8);
-  const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : 0;
-  expect(channels).toBeGreaterThan(0);
-
-  const inflated = inflateSync(Buffer.concat(idatChunks));
-  const stride = width * channels;
-  const previous = Buffer.alloc(stride);
-  const current = Buffer.alloc(stride);
-  const data = Buffer.alloc(height * stride);
-  let inputOffset = 0;
-
-  for (let y = 0; y < height; y++) {
-    const filter = inflated[inputOffset++];
-    inflated.copy(current, 0, inputOffset, inputOffset + stride);
-    inputOffset += stride;
-
-    unfilterScanline(current, previous, filter, channels);
-
-    current.copy(data, y * stride);
-    current.copy(previous);
-  }
-
-  return {
-    width,
-    height,
-    channels,
-    data,
-  };
-}
-
-/**
- * Reverses PNG scanline filtering for one decoded row.
- */
-function unfilterScanline(
-  scanline: Buffer,
-  previous: Buffer,
-  filter: number,
-  bytesPerPixel: number,
-): void {
-  for (let index = 0; index < scanline.length; index++) {
-    const left = index >= bytesPerPixel ? scanline[index - bytesPerPixel] : 0;
-    const up = previous[index] ?? 0;
-    const upLeft = index >= bytesPerPixel ? previous[index - bytesPerPixel] : 0;
-
-    if (filter === 1) {
-      scanline[index] = (scanline[index] + left) & 0xff;
-    } else if (filter === 2) {
-      scanline[index] = (scanline[index] + up) & 0xff;
-    } else if (filter === 3) {
-      scanline[index] = (scanline[index] + Math.floor((left + up) / 2)) & 0xff;
-    } else if (filter === 4) {
-      scanline[index] = (scanline[index] + paeth(left, up, upLeft)) & 0xff;
-    }
-  }
-}
-
-/**
- * Computes the Paeth predictor used by PNG scanline decoding.
- */
-function paeth(left: number, up: number, upLeft: number): number {
-  const estimate = left + up - upLeft;
-  const leftDistance = Math.abs(estimate - left);
-  const upDistance = Math.abs(estimate - up);
-  const upLeftDistance = Math.abs(estimate - upLeft);
-
-  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) {
-    return left;
-  }
-  return upDistance <= upLeftDistance ? up : upLeft;
-}
-
 /** Verifies repository-defined generic bars render without installed fixture files. */
 test("generic sample bars render their complete segment layouts", async ({
   page,
@@ -2253,7 +2729,7 @@ test("generic sample bars render their complete segment layouts", async ({
     .poll(() => rotatingWashBeamSceneStats(page, fixtures[2]))
     .toMatchObject({
       lensCount: 10,
-      beamCount: 10,
+      apertureCount: 10,
       topStripCount: 0,
       bottomStripCount: 0,
     });
@@ -2303,8 +2779,9 @@ test("generic sample bars render their complete segment layouts", async ({
     )
     .toBe(10);
   const canvasBox = await largestVisibleCanvasBox(page);
-  await testInfo.attach("generic-sample-bars", {
-    body: await page.screenshot({ clip: canvasBox }),
-    contentType: "image/png",
-  });
+  if (ALWAYS_ATTACH_ARTIFACTS)
+    await testInfo.attach("generic-sample-bars", {
+      body: await page.screenshot({ clip: canvasBox }),
+      contentType: "image/png",
+    });
 });

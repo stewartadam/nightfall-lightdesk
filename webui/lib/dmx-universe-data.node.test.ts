@@ -20,7 +20,6 @@ test("normalizeDmxUniverseData preserves freshness metadata for input universes"
     {
       universe_id: 1,
       channels: [0, 0],
-      transports: ["Art-Net"],
       io_mode: DmxIoMode.Output,
       transport: undefined,
       frame_age_ms: undefined,
@@ -30,7 +29,6 @@ test("normalizeDmxUniverseData preserves freshness metadata for input universes"
     {
       universe_id: 2,
       channels: [255, 0],
-      transports: [],
       io_mode: DmxIoMode.Input,
       transport: "sACN",
       frame_age_ms: 123,
@@ -50,7 +48,6 @@ test("getInputFreshness returns live/stale status for input universes", () => {
   const live = getInputFreshness({
     universe_id: 2,
     channels: [0],
-    transports: [],
     io_mode: DmxIoMode.Input,
     transport: "sACN",
     frame_age_ms: 120,
@@ -64,7 +61,6 @@ test("getInputFreshness returns live/stale status for input universes", () => {
   const stale = getInputFreshness({
     universe_id: 3,
     channels: [0],
-    transports: [],
     io_mode: DmxIoMode.Input,
     transport: "sACN",
     frame_age_ms: 2300,

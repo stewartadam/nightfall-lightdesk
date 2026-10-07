@@ -225,7 +225,7 @@ async function installCommandCapture(page: Page): Promise<void> {
       if (
         message &&
         typeof message === "object" &&
-        (message as any).type === "send"
+        (message as any).type === "submit"
       ) {
         (window as any).__visualizerDeleteCommands.push((message as any).data);
       }

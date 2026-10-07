@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 const COMMAND_INPUT_PLACEHOLDER = "Type a command or search...";
 const TAP_PATTERN_STORAGE_KEY = "nightfall-tap-pattern-panel:taps";
 const TAP_PATTERN_STARTUP_STORAGE_KEY =
@@ -30,7 +33,7 @@ async function becomesVisible(locator: ReturnType<Page["locator"]>) {
  * Opens a panel through the command palette.
  */
 async function openPanel(page: Page, panelName: string) {
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
 
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   if (!(await becomesVisible(commandInput))) {
@@ -451,6 +454,9 @@ test("tap pattern panel clusters repeated hook taps", async ({ page }) => {
   });
   await expect(captureToolbar).toBeVisible();
   await expect(captureToolbar.getByRole("button")).toHaveCount(4);
+  await expect(captureToolbar.locator('[tabindex="0"]')).toHaveAccessibleName(
+    "Arm",
+  );
   await expect(
     captureToolbar.getByRole("button", { name: "Arm", exact: true }),
   ).toBeVisible();

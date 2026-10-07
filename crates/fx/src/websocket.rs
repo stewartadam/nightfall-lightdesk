@@ -134,8 +134,9 @@ pub fn send_step_fx_on_change(
     mut removed_step_fx: RemovedComponents<StepFx>,
     broadcaster: Res<ClientEventSink>,
 ) {
-    let has_step_fx_changes =
-        !changed_step_fx_query.is_empty() || removed_step_fx.read().next().is_some();
+    let step_fx_removed = !removed_step_fx.is_empty();
+    removed_step_fx.clear();
+    let has_step_fx_changes = !changed_step_fx_query.is_empty() || step_fx_removed;
     if has_step_fx_changes {
         send_step_fx(&step_fx_query, &broadcaster);
     }

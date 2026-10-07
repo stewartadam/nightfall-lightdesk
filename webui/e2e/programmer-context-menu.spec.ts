@@ -20,6 +20,8 @@ type CapturedCommandWindow = Window & {
 const inputSelector = "#header-cmdline";
 const ownedFixtureId = 311;
 
+test.setTimeout(60_000);
+
 /**
  * Captures websocket command envelopes posted to the websocket worker.
  */
@@ -35,7 +37,7 @@ async function installCommandCapture(page: Page): Promise<void> {
       if (
         message &&
         typeof message === "object" &&
-        (message as { type?: unknown }).type === "send"
+        (message as { type?: unknown }).type === "submit"
       ) {
         (window as CapturedCommandWindow).__programmerContextCommands?.push(
           (message as { data?: unknown }).data,

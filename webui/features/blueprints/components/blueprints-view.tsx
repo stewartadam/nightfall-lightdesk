@@ -259,7 +259,7 @@ export function BlueprintsView(props: BlueprintsViewProps) {
             </ToolbarButton>
             <ToolbarButton
               variant="danger"
-              size="labeled"
+              count={controller.selectedCount()}
               tooltip={
                 controller.selectedCount() > 0
                   ? `Delete selected blueprints (${controller.selectedCount()})`
@@ -271,11 +271,6 @@ export function BlueprintsView(props: BlueprintsViewProps) {
               label="Delete selected blueprints"
             >
               <TrashIcon class="size-4" aria-hidden />
-              <Show when={controller.selectedCount() > 0}>
-                <span class="rounded bg-red-800 px-1 text-[10px] leading-4 text-red-100">
-                  {controller.selectedCount()}
-                </span>
-              </Show>
             </ToolbarButton>
             <Show when={controller.viewMode() === "grid"}>
               <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />

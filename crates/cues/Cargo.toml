@@ -14,7 +14,6 @@ partially.workspace = true
 nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
-nightfall-desk = { path = "../desk" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
 nightfall-dmx = { path = "../dmx" }
@@ -33,9 +32,21 @@ tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
 web-time.workspace = true
+nightfall-fixture-model = { path = "../fixture-model" }
 
 [dev-dependencies]
+criterion.workspace = true
+nightfall-desk = { path = "../desk" }
 minicbor-serde.workspace = true
+nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
+nightfall-io = { path = "../io" }
+
+[[bench]]
+name = "painting"
+harness = false
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true

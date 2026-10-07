@@ -10,7 +10,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_actions::ActionsPlugin;
-use nightfall_clips::{ClipAction, ClipCommand, RestoreClipSource};
+use nightfall_clips::{ClipAction, ClipCommand, InstanceIndex, RestoreClipSource};
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
 #[cfg(feature = "fx-module-host")]
@@ -47,37 +47,31 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::automation_actions::{
-        CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, CONTROL_SET_ACTION_ID,
-        ClipActionArguments, ClipTarget, ControlActionArguments, DESK_EVAL_ACTION_ID,
+        CONTROL_SET_ACTION_ID, ControlActionArguments, DESK_EVAL_ACTION_ID,
         DeskEvalActionArguments, clip_target_for_action, desk_eval_action,
-        desk_eval_command_for_action, go_clip_action, set_control_action, start_clip_action,
-        stop_clip_action,
-    };
-    pub use crate::blueprint_command::{
-        BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
+        desk_eval_command_for_action, set_control_action,
     };
     pub use crate::controls::{
         ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
     };
     pub use crate::desk_command::{
-        DeskAction, DeskCommand, ShowfileImportOptions, ShowfileImportPolicy,
-        ShowfileRevisionSelection, ShowfileSaveOptions,
+        DeskCommand, ShowfileImportOptions, ShowfileImportPolicy, ShowfileRevisionSelection,
+        ShowfileSaveOptions,
     };
     pub use crate::group_command::GroupAction;
     pub use crate::group_command::GroupCommand;
-    pub use crate::instances::{ClipReleaseAfterInstance, InstanceIndex};
     pub use crate::masters::{
         FixtureMasterTarget, InstanceMasterTarget, MASTER_INTENSITY_ATTRIBUTES, Master,
         MasterCommand, MasterKind, MasterMode, MasterTarget,
     };
     pub use crate::resources::ExclusiveResource;
     pub use crate::resources::network_stats::{NetworkOutputSendFailure, NetworkStats};
-    pub use crate::resources::variables::GlobalVariables;
     pub use crate::settings::{
         ActivePanelLayout, AvailableAudioDevices, DeskSettings, SelectionFlattenPolicy,
         SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
         TimeDisplayPreference, TimelinePlacementPreference,
     };
+    pub use crate::systems::relations::apply_virtual_relations;
     pub use crate::systems::vdim::{
         DEFAULT_GAMMA, VDIM_AFFECTED_ATTRIBUTES, apply_vdim, gamma_correct,
     };
@@ -109,7 +103,7 @@ impl Plugin for DeskPlugin {
         automation_actions::register_desk_actions(app);
 
         register_ingress_command::<DeskCommand>(app);
-        register_engine_action::<DeskAction>(app);
+        register_engine_action::<EvalAction>(app);
         register_ingress_command::<ClipCommand>(app);
         register_engine_action::<ClipAction>(app);
         register_ingress_command::<GroupCommand>(app);
@@ -124,8 +118,10 @@ impl Plugin for DeskPlugin {
         app.add_message::<UiNotification>();
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
         app.add_systems(
-            Update,
-            event_handlers::forward_io_runtime_notifications.in_set(ClientOutput),
+            PostUpdate,
+            event_handlers::forward_io_runtime_notifications
+                .in_set(ClientFeedback)
+                .before(websocket::forward_ui_notifications),
         );
         register_ingress_command::<SettingsCommand>(app);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
@@ -217,13 +213,13 @@ impl Plugin for DeskPlugin {
         app.add_systems(
             Update,
             (
-                instances::add_instances_to_index,
-                instances::remove_instances_from_index,
+                nightfall_clips::add_instances_to_index,
+                nightfall_clips::remove_instances_from_index,
                 // Must run after both index systems so new instances are indexed
                 // and removed instances are de-indexed before we check for orphans
                 instances::sync_active_state_on_instance_despawn
-                    .after(instances::add_instances_to_index)
-                    .after(instances::remove_instances_from_index),
+                    .after(nightfall_clips::add_instances_to_index)
+                    .after(nightfall_clips::remove_instances_from_index),
             ),
         );
         app.add_systems(
@@ -232,7 +228,7 @@ impl Plugin for DeskPlugin {
         );
 
         app.add_systems(
-            Update,
+            Render,
             (
                 instances::add_missing_instance_clocks,
                 ApplyDeferred,
@@ -247,6 +243,7 @@ impl Plugin for DeskPlugin {
             Update,
             (
                 event_handlers::clip_events::forward_clip_ingress_actions
+                    .in_set(DeskEventSet::ClipForwarding)
                     .before(event_handlers::clip_events::handle_clip_rate_commands)
                     .before(event_handlers::clip_events::route_clip_playback_actions),
                 event_handlers::clip_events::handle_configuration_commands,
@@ -255,11 +252,13 @@ impl Plugin for DeskPlugin {
                 event_handlers::fixture_events::crud_events,
                 event_handlers::group_events::crud_events,
                 event_handlers::group_events::action_events,
-                event_handlers::blueprint_events::crud_events,
-                event_handlers::blueprint_events::action_events,
+                event_handlers::blueprint_events::crud_events.in_set(DeskEventSet::BlueprintCrud),
+                event_handlers::blueprint_events::action_events
+                    .in_set(DeskEventSet::BlueprintActions),
                 event_handlers::debug_events::handle_events,
                 event_handlers::instance_events::handle_events,
-                event_handlers::instance_events::handle_playback_commands,
+                event_handlers::instance_events::handle_playback_commands
+                    .in_set(DeskEventSet::InstancePlayback),
                 event_handlers::clip_events::handle_clip_rate_commands
                     .before(event_handlers::instance_events::handle_playback_control_updates),
                 event_handlers::instance_events::handle_playback_control_updates,
@@ -312,31 +311,36 @@ impl Plugin for DeskPlugin {
             Update,
             (
                 event_handlers::clip_events::forward_clip_playback_requests
+                    .in_set(DeskEventSet::ClipForwarding)
                     .before(event_handlers::clip_events::route_clip_playback_actions),
-                route_clip_playback_actions,
+                route_clip_playback_actions.in_set(DeskEventSet::ClipRouting),
             )
                 .in_set(EventHandling),
         );
 
+        // Attachments come from input handlers and from FX module evaluation in render passes, so
+        // they are applied after both, in every update.
         app.add_systems(
-            Update,
-            event_handlers::clip_events::handle_clip_playback_attachments
-                .after(LayerGeneration)
-                .before(Compositing),
+            PostUpdate,
+            event_handlers::clip_events::handle_clip_playback_attachments.before(ClientFeedback),
         );
 
-        // Apply per-playback intensity scaling before compositing
+        // Apply per-playback intensity scaling to the generated layers before compositing.
         app.add_systems(
-            Update,
+            Render,
             systems::instance_controls::apply_playback_intensity
                 .after(LayerGeneration)
                 .before(Compositing),
         );
 
-        // apply virtual dimmer scaling after compositing
+        // apply virtual dimmer scaling and virtual relation masters after compositing
         app.add_systems(
-            Update,
-            (masters::apply_master_inhibition, systems::vdim::apply_vdim)
+            Render,
+            (
+                masters::apply_master_inhibition,
+                systems::vdim::apply_vdim,
+                systems::relations::apply_virtual_relations,
+            )
                 .chain()
                 .in_set(VdimProcessing),
         );
@@ -355,21 +359,28 @@ impl Plugin for DeskPlugin {
         app.add_systems(Update, controls::sync_control_state.after(EventHandling));
 
         app.add_systems(
-            Update,
+            PostUpdate,
             (
                 websocket::forward_group_commands,
                 websocket::forward_clip_commands,
                 websocket::forward_blueprint_commands,
                 websocket::forward_desk_commands,
                 websocket::forward_ui_notifications,
+                // These read removals, which only last two updates.
+                websocket::send_clips_on_change,
+                websocket::send_instances_on_change,
+                websocket::send_controls_on_change,
+            )
+                .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
+            (
                 websocket::send_groups_on_change,
                 websocket::send_masters_on_change,
                 websocket::send_blueprints_on_change,
                 websocket::send_blueprint_dependencies_on_change,
-                websocket::send_clips_on_change,
                 websocket::send_clips_on_clip_change,
-                websocket::send_instances_on_change,
-                websocket::send_controls_on_change,
                 websocket::send_undo_state_on_change,
                 websocket::send_settings_on_change,
                 websocket::send_io_settings_on_change,

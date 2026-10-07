@@ -14,6 +14,7 @@ import { NativeSelect } from "../../components/ui/form-controls";
 import { Table, TableEmptyRow, TableScroll } from "../../components/ui/table";
 import { Button } from "../../components/ui/visual-language/button";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
+import { useSharedStore } from "../../lib/use-shared-store";
 import { clips, groups, masters } from "../../state/appStores";
 import * as types from "../../types";
 import {
@@ -42,7 +43,7 @@ export default function MastersPanel(
   props: BasePanelComponentProps,
 ): JSX.Element {
   const $masters = useStore(masters);
-  const $groups = useStore(groups);
+  const $groups = useSharedStore(groups);
   const $clips = useStore(clips);
   const [selectedGroupUid, setSelectedGroupUid] = createSignal("");
   const [selectedMasterUid, setSelectedMasterUid] = createSignal<string | null>(

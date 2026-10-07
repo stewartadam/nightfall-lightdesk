@@ -768,7 +768,8 @@ test("accepts signed and absolute Blueprint Step FX baselines", async ({
   ]) {
     await input.fill(command);
     const validation = await page.evaluate(async (command) => {
-      const { validateCommand } = await import("/lib/wasm-bridge.ts");
+      const { validateCommand } = (await window.__nightfallHarness.load("app"))
+        .wasmBridge;
       return await validateCommand(command);
     }, command);
     expect(validation?.status).toBe("ok");
@@ -932,6 +933,52 @@ test("flags unknown output transport patch targets", async ({ page }) => {
   ).toBeVisible();
 });
 
+/**
+ * Verifies patch targets only offer `disabled` for transport inputs, since outputs cannot be disabled,
+ * and that console sources are not offered an invalid console target.
+ */
+test("offers disabled patch targets only for transport sources", async ({
+  page,
+}, testInfo) => {
+  /** Locates the expanded suggestion row that inserts one target token. */
+  const targetRow = (insertText: string) =>
+    page.locator(`${suggestionRowsSelector}[data-insert-text="${insertText}"]`);
+  const targetIntent = page.locator(
+    `${suggestionRowsSelector}[data-intent-id="patch/target"]`,
+  );
+  /**
+   * Opens the sole patch target intent from a cleared input and shows its token rows. Long
+   * target lists start collapsed and are expanded with Tab; the short console-source list
+   * is already shown expanded.
+   */
+  const expandTargets = async (command: string, collapsed: boolean) => {
+    await page.locator(inputSelector).fill("");
+    await openAutocomplete(page, command);
+    if (collapsed) {
+      await expect(targetIntent).toBeVisible();
+      await page.locator(inputSelector).press("Tab");
+    }
+    await expect(targetRow("sacn")).toBeVisible();
+    await expect(page.locator(inputSelector)).toHaveValue(command);
+  };
+
+  await expandTargets(`patch fix ${FIXTURE_ID} @ `, true);
+  await expect(targetRow("disabled")).toHaveCount(0);
+
+  await expandTargets("patch console:1 @ ", false);
+  await expect(targetRow("disabled")).toHaveCount(0);
+  await expect(targetRow("console")).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("output-patch-targets.png"),
+  });
+
+  await expandTargets("patch sacn:1 @ ", true);
+  await expect(targetRow("disabled")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("input-patch-targets.png"),
+  });
+});
+
 /** Verifies the sole attribute intent opens automatically and Tab inserts its selected token. */
 test("tab inserts the selected @ token from the sole attribute intent", async ({
   page,
@@ -940,8 +987,8 @@ test("tab inserts the selected @ token from the sole attribute intent", async ({
   await openAutocomplete(page, "fix 311 red ");
 
   await expect(
-    page.locator('[data-command-autocomplete="intent-sublist-label"]'),
-  ).toHaveText("Set Attribute");
+    page.locator('[data-command-autocomplete="breadcrumb"]'),
+  ).toHaveText("Programmer > Attributes > Set Attribute");
   await expect(
     page.locator(`${suggestionRowsSelector}[data-insert-text="@"]`),
   ).toHaveAttribute("aria-selected", "true");
@@ -1108,6 +1155,14 @@ test("keeps panel command input focused after storing a cue", async ({
 
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
+    // The performance workspace has no Cues panel; add one to receive focus.
+    api.addPanel({
+      id: "panel-CueList",
+      component: "CueList",
+      title: "Cues",
+      inactive: true,
+      position: { referencePanel: "panel-Groups", direction: "within" },
+    });
     api.getPanel("panel-CommandLine")?.focus();
   });
   await expect(input).toBeVisible();

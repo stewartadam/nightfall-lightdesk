@@ -82,14 +82,16 @@ const Waveform = (props: WaveformProps) => {
     );
   });
 
-  // Effect to handle audio file changing
+  /** Loads the current audio and invalidates callbacks when its source changes or the panel closes. */
   createEffect(() => {
     if (waveSurferObj() === undefined || !props.audioUrl) return;
     const waveSurfer = waveSurferObj()!;
+    let active = true;
     setDecodedDurationMs(0);
     setLoadState("loading");
 
-    waveSurfer.once("decode", (duration: number) => {
+    const stopDecode = waveSurfer.once("decode", (duration: number) => {
+      if (!active) return;
       // Update initial width after audio is loaded to match the audio duration
       waveSurfer.zoom(props.zoom);
       const durationMs = duration * 1000;
@@ -103,7 +105,12 @@ const Waveform = (props: WaveformProps) => {
         props.onAudioLoaded(durationMs);
       }
     });
+    onCleanup(() => {
+      active = false;
+      stopDecode();
+    });
     void waveSurfer.load(props.audioUrl).catch((error: unknown) => {
+      if (!active) return;
       setLoadState("error");
       log.error("Error loading timeline waveform:", error);
     });

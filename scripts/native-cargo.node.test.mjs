@@ -9,24 +9,33 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
-import { nativeCargoArgs } from "./run-native-cargo.mjs";
 
-/** Guard native CI coverage when workspace crates acquire new default features. */
-test("static native selection retains every functional workspace default", () => {
+/**
+ * Plain cargo commands must select every runtime crate and only those, so hooks, CI and
+ * partial builds share one graph while the desktop shell builds only when named.
+ */
+test("default workspace members are every member except the desktop shell", () => {
   const metadata = JSON.parse(
-    execFileSync("cargo", ["metadata", "--no-deps", "--format-version=1"], {
+    execFileSync("cargo", ["metadata", "--format-version=1", "--no-deps"], {
       encoding: "utf8",
     }),
   );
-  const args = nativeCargoArgs("test");
-  const features = new Set(args[args.indexOf("--features") + 1].split(","));
-  for (const pkg of metadata.packages) {
-    for (const feature of pkg.features.default ?? []) {
-      if (pkg.name === "nightfall-app" && feature === "bevy_dynamic") continue;
-      assert.ok(
-        features.has(`${pkg.name}/${feature}`),
-        `Native CI must retain ${pkg.name}/${feature}`,
-      );
-    }
-  }
+  const nameOf = (id) =>
+    metadata.packages.find((pkg) => pkg.id === id)?.name ?? id;
+  const members = metadata.workspace_members.map(nameOf);
+  const defaults = new Set(metadata.workspace_default_members.map(nameOf));
+  assert.deepEqual(
+    members.filter((name) => !defaults.has(name)),
+    ["app-tauri"],
+  );
+});
+
+/** Runtime-only builds must not pull a WebView or Tauri build script into native validation. */
+test("the default runtime dependency graph excludes Tauri", () => {
+  const graph = execFileSync(
+    "cargo",
+    ["tree", "--prefix", "none", "--format", "{p}"],
+    { encoding: "utf8" },
+  );
+  assert.doesNotMatch(graph, /^(?:app-tauri|tauri(?:-[\w-]+)?) v/m);
 });

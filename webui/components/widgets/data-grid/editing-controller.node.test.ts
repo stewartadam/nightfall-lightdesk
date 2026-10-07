@@ -69,3 +69,52 @@ test("read-only policy blocks new editors and pending commits", () => {
     dispose();
   });
 });
+
+/** A commit triggered by focus moving to another element writes the value without reclaiming focus. */
+test("commits leave focus alone when the editor reports focus leaving the grid", () => {
+  createRoot((dispose) => {
+    const committed: unknown[] = [];
+    let focusRequests = 0;
+    const source: GridCell = {
+      kind: GridCellKind.Text,
+      data: "Original",
+      allowOverlay: true,
+    };
+    const props: DataGridProps = {
+      columns: [{ id: "name", title: "Name" }],
+      rows: 1,
+      cellProvider: () => ({
+        rows: ["row"],
+        columns: ["name"],
+        rowKeys: ["row"],
+        columnKeys: ["name"],
+        contentSizingKey: 0,
+        getCellContent: () => source,
+      }),
+      onCellEdited: (_cell, newValue) => {
+        committed.push("data" in newValue ? newValue.data : undefined);
+      },
+    };
+    const controller = createDataGridEditingController({
+      props,
+      getCellContent: () => () => source,
+      selectionState: () => initialDataGridSelectionState,
+      dispatchSelection: () => initialDataGridSelectionState,
+      columnCount: () => 1,
+      focusRoot: () => {
+        focusRequests += 1;
+      },
+    });
+    controller.beginEdit(0, 0, "Blurred");
+    controller.commitEdit("default", { restoreFocus: false });
+    assert.deepEqual(committed, ["Blurred"]);
+    assert.equal(focusRequests, 0);
+    assert.equal(controller.editingCell(), undefined);
+
+    controller.beginEdit(0, 0, "Entered");
+    controller.commitEdit();
+    assert.deepEqual(committed, ["Blurred", "Entered"]);
+    assert.ok(focusRequests > 0);
+    dispose();
+  });
+});

@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const sourceDirectory = fileURLToPath(
-  new URL("../crates/app/assets/sample-audio/", import.meta.url),
+  new URL("../crates/app-runtime/assets/sample-audio/", import.meta.url),
 );
 const filenames = ["lofi.mp3", "rap.mp3"];
 

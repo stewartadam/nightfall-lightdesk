@@ -7,7 +7,7 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Exercises production shell styling, portal dialogs, and card/list workflows with the embedded engine. */
 test("application shares the design lab visual language", async ({
@@ -16,6 +16,7 @@ test("application shares the design lab visual language", async ({
   test.setTimeout(90_000);
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   await expect(page.locator("body")).toHaveCSS("color-scheme", "dark");
   await expect(
     page.locator(".dockview-theme-nightfall-graphite"),
@@ -52,24 +53,26 @@ test("application shares the design lab visual language", async ({
   );
   await page.screenshot({ path: testInfo.outputPath("app-group-dialog.png") });
   await modal.getByRole("button", { name: "Cancel", exact: true }).click();
-  const card = page.locator(".nf-crud-card:visible").first();
+  // Timelines and Clips also render CRUD toolbars, so stay inside Groups.
+  const groupsPanel = page.locator('[data-panel-id="panel-Groups"]:visible');
+  const card = groupsPanel.locator(".nf-crud-card").first();
   await expect(card).toBeVisible();
-  await page
+  await groupsPanel
     .getByRole("button", { name: "Toggle selection mode", exact: true })
     .click();
   await card.click();
-  await expect(
-    page.locator(".nf-crud-card-selected:visible").first(),
-  ).toHaveCSS("border-top-color", "rgb(84, 213, 180)");
+  await expect(groupsPanel.locator(".nf-crud-card-selected").first()).toHaveCSS(
+    "border-top-color",
+    "rgb(84, 213, 180)",
+  );
   await card.click({ button: "right" });
   await expect(page.locator('[data-menu-kind^="context"]')).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("app-group-context-menu.png"),
   });
   await page.keyboard.press("Escape");
-  await page
+  await groupsPanel
     .getByRole("button", { name: "Switch to list view", exact: true })
-    .filter({ visible: true })
     .click();
   await expect(page.locator('[role="grid"]:visible').first()).toHaveCSS(
     "background-color",

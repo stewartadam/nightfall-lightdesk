@@ -19,10 +19,15 @@ import {
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { normalizeFixtureUid } from "../../../lib/binding-utils";
+import { fixtureWireLayout } from "../../../lib/dmx";
+import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
+import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import {
   computeFixtureChannelCount,
   fetchFixtureProfile,
+  libraryDefinitionId,
 } from "../../../lib/fixture-service";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   bindings,
   dmxUniverseData,
@@ -33,46 +38,6 @@ import {
 import type * as types from "../../../types";
 import { usePatchWizard } from "./wizard-context";
 
-function rangeOverlaps(lhs?: types.DmxRange, rhs?: types.DmxRange): boolean {
-  if (!lhs || !rhs) return true;
-  return lhs.start <= rhs.end && rhs.start <= lhs.end;
-}
-
-function outputSourceMatches(
-  source: types.OutputSource,
-  disabled: types.OutputSource,
-): boolean {
-  if (source.type !== disabled.type) return false;
-
-  if (source.type === "Fixture" && disabled.type === "Fixture") {
-    const sourceUids = source.data.uids.map((uid) => normalizeFixtureUid(uid));
-    const disabledUids = new Set(
-      disabled.data.uids.map((uid) => normalizeFixtureUid(uid)),
-    );
-    const hasUidMatch = sourceUids.some((uid) => disabledUids.has(uid));
-    if (!hasUidMatch) return false;
-
-    const elementMatches =
-      disabled.data.element === undefined ||
-      source.data.element === disabled.data.element;
-    const paramMatches =
-      disabled.data.param === undefined ||
-      source.data.param === disabled.data.param;
-    return elementMatches && paramMatches;
-  }
-
-  if (source.type === "Console" && disabled.type === "Console") {
-    return (
-      rangeOverlaps(source.data.universe, disabled.data.universe) &&
-      (disabled.data.address === undefined ||
-        source.data.address === undefined ||
-        source.data.address === disabled.data.address)
-    );
-  }
-
-  return false;
-}
-
 function mapUniverseByIndex(universes: number[], index: number): number {
   if (universes.length === 0) return 1;
   if (universes.length === 1) return universes[0];
@@ -80,54 +45,19 @@ function mapUniverseByIndex(universes: number[], index: number): number {
   return universes[universes.length - 1];
 }
 
-function normalizeParamName(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function attributeName(attribute: types.Attribute): string {
-  if (attribute.type === "Custom") {
-    return attribute.data.label;
-  }
-  return attribute.type;
-}
-
+/**
+ * Returns the DMX footprint a patch selection occupies, laid out like the engine so
+ * explicit footprint slots and gaps count toward the next fixture's address.
+ */
 function computeSourceWidth(
   fixture: types.Fixture,
   elementId?: number,
   paramName?: string,
 ): number {
-  const normalizedParam = paramName ? normalizeParamName(paramName) : undefined;
-  let total = 0;
-
-  const elements =
-    elementId && elementId > 0
-      ? [fixture.elements[elementId - 1]].filter(
-          (element): element is types.FixtureElement => Boolean(element),
-        )
-      : fixture.elements;
-
-  for (const element of elements) {
-    for (const param of element.parameters) {
-      if (param.attribute.type === "VirtualIntensity") continue;
-      if (
-        normalizedParam &&
-        normalizeParamName(attributeName(param.attribute)) !== normalizedParam
-      ) {
-        continue;
-      }
-
-      total +=
-        param.resolution === "Fine"
-          ? 2
-          : param.resolution === "UltraFine"
-            ? 3
-            : param.resolution === "Uber"
-              ? 4
-              : 1;
-    }
-  }
-
-  return total;
+  return fixtureWireLayout(fixture, {
+    elementId,
+    parameterName: paramName || undefined,
+  }).footprint;
 }
 
 function collectConsolePatchOccupancy(
@@ -136,29 +66,9 @@ function collectConsolePatchOccupancy(
 ): Map<string, { label: string }> {
   const occupied = new Map<string, { label: string }>();
 
-  const disabledSources: types.OutputSource[] = [];
-  for (const binding of snapshot.disabled) {
-    if (binding.type === "Output") {
-      disabledSources.push(binding.data.source);
-    }
-  }
-  for (const binding of snapshot.output) {
-    if (binding.target.type === "Disabled") {
-      disabledSources.push(binding.source);
-    }
-  }
-
   for (const binding of snapshot.output) {
     if (binding.source.type !== "Fixture") continue;
     if (binding.target.type !== "Console") continue;
-
-    if (
-      disabledSources.some((disabledSource) =>
-        outputSourceMatches(binding.source, disabledSource),
-      )
-    ) {
-      continue;
-    }
 
     const sourceData = binding.source.data;
     const targetData = binding.target.data;
@@ -214,7 +124,7 @@ export function StepConfigure() {
   const { state, updateState, setPatchConflict, patchConflict } =
     usePatchWizard();
   const $dmxData = useStore(dmxUniverseData);
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
   const $bindings = useStore(bindings);
@@ -223,37 +133,43 @@ export function StepConfigure() {
     collectConsolePatchOccupancy($bindings(), $fixtures()),
   );
 
-  const universeIds = createMemo(() =>
-    $dmxData()
+  /**
+   * Lists active console-space universe numbers for console DMX assignment defaults,
+   * falling back to console universe 1 when nothing is patched to the console yet.
+   */
+  const universeIds = createMemo(() => {
+    const ids = $dmxData()
+      .filter((universe) => universe.transport === CONSOLE_TRANSPORT)
       .map((universe) => universe.universe_id)
-      .sort((a, b) => a - b),
-  );
+      .sort((a, b) => a - b);
+    return ids.length > 0 ? ids : [1];
+  });
 
   const selectedUniverseId = createMemo(() => state().universeId);
 
   const selectedFixture = createMemo(() => {
     const defId = state().fixtureDefinitionId;
     if (!defId) return null;
-    return $fixtureLibrary().find((f) => `${f.make}:${f.model}` === defId);
+    return $fixtureLibrary().find((f) => libraryDefinitionId(f) === defId);
   });
 
   onMount(() => {
     const fixture = selectedFixture();
     const mode = state().fixtureMode;
     if (fixture && mode) {
-      fetchFixtureProfile(fixture.make, fixture.model, mode);
+      fetchFixtureProfile(
+        fixture.make,
+        fixture.model,
+        mode,
+        fixture.asset_etag,
+      );
     }
   });
 
   const channelCount = createMemo(() => {
     const profile = $fixtureProfile();
     const fixture = selectedFixture();
-    if (
-      profile?.fixture &&
-      fixture &&
-      profile.info.make === fixture.make &&
-      profile.info.model === fixture.model
-    ) {
+    if (profileMatchesRevision(profile, fixture) && profile.fixture) {
       return computeFixtureChannelCount(profile.fixture);
     }
     return null;

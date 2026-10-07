@@ -8,6 +8,7 @@
 
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
+use nightfall_clips::InstanceIndex;
 use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
@@ -18,8 +19,6 @@ use nightfall_instances::{
     InstanceClock, InstanceCommand, InstanceControlUpdate, InstanceControls, InstanceId,
     InstanceMetadata, PlaybackAction, PlaybackReleaseAction, PlaybackScope,
 };
-
-use crate::prelude::*;
 
 /// Applies typed playback actions to materialized parameters and DMX state.
 pub fn handle_events(
@@ -52,8 +51,10 @@ pub fn handle_events(
             for mut parameter in &mut parameter_query {
                 parameter.values.current_value = parameter.values.default_value;
             }
+            // Free every console slot; fixture output is rewritten later this frame and
+            // console universes nothing feeds anymore stop being routed.
             if let Some(universes) = dmx_universes.as_deref_mut() {
-                universes.clear_values();
+                universes.clear();
             }
         }
 
@@ -267,6 +268,80 @@ fn release_playback_now(
         let mut resumed_controls = controls.clone();
         resumed_controls.rate = 1.0;
         commands.entity(entity).insert(resumed_controls);
+    }
+}
+
+/// Applies high-frequency playback control updates without command tracking.
+pub fn handle_playback_control_updates(
+    mut events: MessageReader<InstanceControlUpdate>,
+    instance_index: Res<InstanceIndex>,
+    mut instance_query: Query<(
+        &InstanceId,
+        &mut InstanceControls,
+        Option<&mut InstanceClock>,
+    )>,
+) {
+    for event in events.read() {
+        match event {
+            InstanceControlUpdate::SetIntensityScale { instance_id, value } => {
+                if let Some(entity) = instance_index.get(instance_id) {
+                    if let Ok((_id, mut controls, _clock)) = instance_query.get_mut(entity) {
+                        tracing::debug!(
+                            instance_id = ?instance_id,
+                            value = %value,
+                            "Setting playback intensity scale"
+                        );
+                        controls.intensity_scale = value.clamp(0.0, 1.0);
+                    }
+                } else {
+                    tracing::warn!(
+                        instance_id = ?instance_id,
+                        "Playback not found for SetIntensityScale command"
+                    );
+                }
+            }
+
+            InstanceControlUpdate::SetRate { instance_id, value } => {
+                let mut handled = false;
+                if let Some(entity) = instance_index.get(instance_id) {
+                    if let Ok((_id, mut controls, mut clock)) = instance_query.get_mut(entity) {
+                        tracing::debug!(
+                            instance_id = ?instance_id,
+                            value = %value,
+                            "Setting playback rate"
+                        );
+                        controls.set_rate(*value);
+                        if let Some(clock) = clock.as_deref_mut() {
+                            clock.set_rate(controls.effective_rate());
+                        }
+                        handled = true;
+                    }
+                }
+                if handled {
+                    continue;
+                }
+
+                for (candidate_id, mut controls, mut clock) in instance_query.iter_mut() {
+                    if candidate_id != instance_id {
+                        continue;
+                    }
+                    tracing::debug!(
+                        instance_id = ?instance_id,
+                        value = %value,
+                        "Setting playback rate after falling back to playback query"
+                    );
+                    controls.set_rate(*value);
+                    if let Some(clock) = clock.as_deref_mut() {
+                        clock.set_rate(controls.effective_rate());
+                    }
+                    handled = true;
+                    break;
+                }
+                if !handled {
+                    tracing::warn!(instance_id = ?instance_id, "Playback not found for SetRate command");
+                }
+            }
+        }
     }
 }
 
@@ -507,79 +582,5 @@ mod tests {
             .get::<InstanceClock>(playback)
             .expect("playback clock should remain present");
         assert_eq!(clock.rate, 1.5);
-    }
-}
-
-/// Applies high-frequency playback control updates without command tracking.
-pub fn handle_playback_control_updates(
-    mut events: MessageReader<InstanceControlUpdate>,
-    instance_index: Res<InstanceIndex>,
-    mut instance_query: Query<(
-        &InstanceId,
-        &mut InstanceControls,
-        Option<&mut InstanceClock>,
-    )>,
-) {
-    for event in events.read() {
-        match event {
-            InstanceControlUpdate::SetIntensityScale { instance_id, value } => {
-                if let Some(entity) = instance_index.get(instance_id) {
-                    if let Ok((_id, mut controls, _clock)) = instance_query.get_mut(entity) {
-                        tracing::debug!(
-                            instance_id = ?instance_id,
-                            value = %value,
-                            "Setting playback intensity scale"
-                        );
-                        controls.intensity_scale = value.clamp(0.0, 1.0);
-                    }
-                } else {
-                    tracing::warn!(
-                        instance_id = ?instance_id,
-                        "Playback not found for SetIntensityScale command"
-                    );
-                }
-            }
-
-            InstanceControlUpdate::SetRate { instance_id, value } => {
-                let mut handled = false;
-                if let Some(entity) = instance_index.get(instance_id) {
-                    if let Ok((_id, mut controls, mut clock)) = instance_query.get_mut(entity) {
-                        tracing::debug!(
-                            instance_id = ?instance_id,
-                            value = %value,
-                            "Setting playback rate"
-                        );
-                        controls.set_rate(*value);
-                        if let Some(clock) = clock.as_deref_mut() {
-                            clock.set_rate(controls.effective_rate());
-                        }
-                        handled = true;
-                    }
-                }
-                if handled {
-                    continue;
-                }
-
-                for (candidate_id, mut controls, mut clock) in instance_query.iter_mut() {
-                    if candidate_id != instance_id {
-                        continue;
-                    }
-                    tracing::debug!(
-                        instance_id = ?instance_id,
-                        value = %value,
-                        "Setting playback rate after falling back to playback query"
-                    );
-                    controls.set_rate(*value);
-                    if let Some(clock) = clock.as_deref_mut() {
-                        clock.set_rate(controls.effective_rate());
-                    }
-                    handled = true;
-                    break;
-                }
-                if !handled {
-                    tracing::warn!(instance_id = ?instance_id, "Playback not found for SetRate command");
-                }
-            }
-        }
     }
 }

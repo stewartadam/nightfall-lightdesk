@@ -158,7 +158,10 @@ export function HeaderCell(props: HeaderCellProps) {
     <div
       role="columnheader"
       aria-label={
-        typeof props.view.label === "string" ? props.view.label : undefined
+        // Placeholders only span a group row; the leaf header names the column.
+        !props.header.isPlaceholder && typeof props.view.label === "string"
+          ? props.view.label
+          : undefined
       }
       aria-sort={
         canSort()

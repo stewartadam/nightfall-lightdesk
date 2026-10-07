@@ -7,10 +7,9 @@
  */
 
 //! Provides access to fixture data and associated parameters.
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard};
 
 use bevy_ecs::prelude::*;
-use bimap::BiMap;
 use dashmap::{DashMap, iter::Iter};
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
@@ -19,6 +18,7 @@ use nightfall_engine::prelude::*;
 use uuid::Uuid;
 
 use crate::fixture::Fixture;
+use crate::parameter_index::ParameterIndex;
 use crate::prelude::*;
 
 /// Provides access to fixtures and their associated parameters.
@@ -28,8 +28,8 @@ pub struct FixtureDataProviderExt {
     pub inner: DataProvider<Fixture>,
     /// Map of fixture element references to their parameter entities.
     pub parameter_map: DashMap<FixtureRef, Vec<Instance<Parameter>>>,
-    /// Bi-directional map of (fixture element reference, attribute) to parameter entity.
-    pub parameter_attribute_map: RwLock<BiMap<(FixtureRef, Attribute), Instance<Parameter>>>,
+    /// Index between (fixture element reference, attribute) and parameter entity, both ways.
+    pub parameter_index: RwLock<ParameterIndex>,
     /// Default color path assignments keyed by fixture or fixture element.
     pub color_path_defaults: DashMap<FixtureRef, ColorPathId>,
 }
@@ -77,18 +77,13 @@ impl FixtureDataProviderExt {
 
     /// Returns the fixture reference for a given parameter entity.
     pub fn fixture_ref_for_parameter(&self, parameter: &Instance<Parameter>) -> FixtureRef {
-        self.parameter_attribute_map
-            .read()
-            .unwrap()
-            .get_by_right(parameter)
+        self.try_fixture_ref_for_parameter(parameter)
             .unwrap_or_else(|| {
                 panic!(
                     "failed to obtain element reference for parameter {:?}",
                     parameter
                 )
             })
-            .clone()
-            .0
     }
 
     /// Looks up a fixture reference by parameter, returning None if not found.
@@ -96,11 +91,9 @@ impl FixtureDataProviderExt {
         &self,
         parameter: &Instance<Parameter>,
     ) -> Option<FixtureRef> {
-        self.parameter_attribute_map
-            .read()
-            .unwrap()
-            .get_by_right(parameter)
-            .map(|(fixture_ref, _)| fixture_ref.clone())
+        self.parameter_index()
+            .location(parameter)
+            .map(|location| location.element.clone())
     }
 
     /// Returns parameter entities for all elements of a given fixture.
@@ -124,17 +117,13 @@ impl FixtureDataProviderExt {
         element_ref: &FixtureRef,
         attribute: &Attribute,
     ) -> Instance<Parameter> {
-        return *self
-            .parameter_attribute_map
-            .read()
-            .unwrap()
-            .get_by_left(&(element_ref.clone(), attribute.clone()))
+        self.try_parameter_for_element_attribute(element_ref, attribute)
             .unwrap_or_else(|| {
                 panic!(
                     "failed to obtain parameter for element reference {:?}, attribute {:?}",
                     element_ref, attribute
                 )
-            });
+            })
     }
 
     /// Looks up a parameter by element and attribute, returning None if not found.
@@ -143,11 +132,7 @@ impl FixtureDataProviderExt {
         element_ref: &FixtureRef,
         attribute: &Attribute,
     ) -> Option<Instance<Parameter>> {
-        self.parameter_attribute_map
-            .read()
-            .unwrap()
-            .get_by_left(&(element_ref.clone(), attribute.clone()))
-            .cloned()
+        self.parameter_index().parameter(element_ref, attribute)
     }
 
     /// Resolves a logical attribute request to a concrete fixture element attribute.
@@ -181,16 +166,31 @@ impl FixtureDataProviderExt {
     }
 
     /// Looks up a parameter by element and logical attribute, returning None if not found.
+    ///
+    /// Prefers a parameter patched for the exact attribute. An `Intensity` request on an element
+    /// without one falls back to its `VirtualIntensity` parameter. Resolution uses the patched
+    /// parameter index only, so it costs one element lookup and a short scan per call.
     pub fn try_parameter_for_logical_attribute(
         &self,
         element_ref: &FixtureRef,
         attribute: &Attribute,
     ) -> Option<ResolvedElementParameter> {
-        let attribute = self.resolve_logical_attribute_for_element(element_ref, attribute)?;
-        let instance = self.try_parameter_for_element_attribute(element_ref, &attribute)?;
-        Some(ResolvedElementParameter {
-            instance,
-            attribute,
+        let index = self.parameter_index();
+        let parameters = index.element_parameters(element_ref);
+        let find = |wanted: &Attribute| {
+            parameters
+                .iter()
+                .find(|(candidate, _)| candidate == wanted)
+                .map(|(attribute, instance)| ResolvedElementParameter {
+                    instance: *instance,
+                    attribute: attribute.clone(),
+                })
+        };
+
+        find(attribute).or_else(|| {
+            (*attribute == Attribute::Intensity)
+                .then(|| find(&Attribute::VirtualIntensity))
+                .flatten()
         })
     }
 
@@ -259,12 +259,10 @@ impl FixtureDataProviderExt {
         self.inner.get(fixture_uid).ok().map(|f| f.elements.len())
     }
 
-    /// Returns a read guard for batch parameter lookups.
+    /// Returns a read guard over the parameter index for batch lookups.
     /// Use this when performing many lookups to avoid repeated lock acquisitions.
-    pub fn parameter_attribute_map_guard(
-        &self,
-    ) -> std::sync::RwLockReadGuard<'_, BiMap<(FixtureRef, Attribute), Instance<Parameter>>> {
-        self.parameter_attribute_map.read().unwrap()
+    pub fn parameter_index(&self) -> RwLockReadGuard<'_, ParameterIndex> {
+        self.parameter_index.read().unwrap()
     }
 
     /// Adds a parameter entity for a given fixture element and attribute.
@@ -289,16 +287,15 @@ impl FixtureDataProviderExt {
                 .insert(element_ref.clone(), vec![parameter]);
         }
 
-        let key = (element_ref.clone(), attribute.clone());
-        self.parameter_attribute_map
+        self.parameter_index
             .write()
             .unwrap()
-            .insert(key, parameter);
+            .insert(element_ref, attribute, parameter);
     }
 
     /// Removes a fixture and returns parameter entities for despawning.
     ///
-    /// Cleans up all parameter_map and parameter_attribute_map entries
+    /// Cleans up all parameter_map and parameter_index entries
     /// associated with the fixture, returning the Parameter entity instances.
     pub fn remove_fixture(
         &mut self,
@@ -315,22 +312,11 @@ impl FixtureDataProviderExt {
                 index: Some(idx as u32 + 1),
             };
 
-            // Remove from parameter_map
             if let Some((_, params)) = self.parameter_map.remove(&element_ref) {
                 removed_parameters.extend(params);
             }
-
-            // Remove from parameter_attribute_map
-            let mut attr_map = self.parameter_attribute_map.write().unwrap();
-            let keys_to_remove: Vec<_> = attr_map
-                .iter()
-                .filter(|((ref_, _), _)| ref_.fixture_uid == *uuid)
-                .map(|(k, _)| k.clone())
-                .collect();
-            for key in keys_to_remove {
-                attr_map.remove_by_left(&key);
-            }
         }
+        self.parameter_index.write().unwrap().remove_fixture(*uuid);
         self.color_path_defaults
             .retain(|fixture_ref, _| fixture_ref.fixture_uid != *uuid);
 
@@ -366,6 +352,7 @@ impl FixtureDataProviderExt {
 #[cfg(test)]
 mod tests {
     use bevy_ecs::world::World;
+    use nightfall_fixture_model::prelude::*;
 
     use super::*;
 

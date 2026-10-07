@@ -9,6 +9,11 @@
 import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
 import { matchKeybindingPress, parseKeybinding, tinykeys } from "tinykeys";
 import {
+  dialogBlocksBackgroundKeys,
+  isInsideOpenDialog,
+} from "../components/ui/modal/dialog-stack";
+import {
+  componentContainsNode,
   getFocusedComponentId,
   suppressDockFallbackAfterEditableBlur,
   updateFocusedComponent,
@@ -18,6 +23,7 @@ import {
   isDataGridElement,
   isInputField,
   shortcutHandlersForTarget,
+  targetOwnsActivationKey,
 } from "./keyboard-shortcut-targets";
 import { getLogger } from "./logger";
 
@@ -34,6 +40,25 @@ export interface KeyboardShortcut {
   group?: string; // Human-readable group name for organizing shortcuts in help
   capture?: boolean;
   allowInEditable?: boolean;
+}
+
+/**
+ * Returns whether a panel's shortcut may take a key aimed at the target. Enter
+ * and Space on a button or similar control outside the panel (header, status
+ * bar, menus) activate that control instead of the panel's shortcut, even when
+ * the panel holds shortcut focus through dock fallback.
+ */
+function panelMayHandleKey(
+  componentId: string | null,
+  target: HTMLElement | null,
+  event: KeyboardEvent,
+): boolean {
+  if (!targetOwnsActivationKey(target, event)) return true;
+  return (
+    componentId !== null &&
+    target !== null &&
+    componentContainsNode(componentId, target)
+  );
 }
 
 /**
@@ -267,6 +292,13 @@ function dispatchShortcutForKey(
   if (document.querySelector('[data-overlay-kind="connection"]')) {
     return false;
   }
+  // Enter and Escape inside an open dialog belong to that dialog, never to panel shortcuts behind it.
+  if (
+    (event.key === "Enter" || event.key === "Escape") &&
+    isInsideOpenDialog(target ?? event.target)
+  ) {
+    return false;
+  }
 
   let handlers = shortcutsByKey[key];
   if (!handlers || handlers.length === 0) {
@@ -280,14 +312,23 @@ function dispatchShortcutForKey(
   if (handlers.length === 0) {
     return false;
   }
+  // A blocking confirmation holds every shortcut, and the browser default behind it, until it closes.
+  if (dialogBlocksBackgroundKeys()) {
+    event.preventDefault();
+    return false;
+  }
 
   const currentComponentId = getFocusedComponentId();
   log.debug(`Shortcut detected: ${key} in component ${currentComponentId}`);
 
   // First try to find a component-specific handler that matches the current component
-  const componentSpecificHandler = handlers.find(
-    (h) => h.componentId === currentComponentId,
-  );
+  const componentSpecificHandler = panelMayHandleKey(
+    currentComponentId,
+    shortcutTarget,
+    event,
+  )
+    ? handlers.find((h) => h.componentId === currentComponentId)
+    : undefined;
   if (componentSpecificHandler) {
     const handled = componentSpecificHandler.handler(event);
     if (handled !== false) {
@@ -359,9 +400,11 @@ export function initKeyboardShortcuts() {
       const spaceShortcuts = shortcuts().filter((shortcut) => {
         const shortcutApplies =
           shortcut.key === "Space" || shortcut.key === " ";
+        const focusedComponentId = getFocusedComponentId();
         const componentMatches =
           !shortcut.componentId ||
-          shortcut.componentId === getFocusedComponentId();
+          (shortcut.componentId === focusedComponentId &&
+            panelMayHandleKey(focusedComponentId, target, event));
         return shortcutApplies && componentMatches;
       });
 

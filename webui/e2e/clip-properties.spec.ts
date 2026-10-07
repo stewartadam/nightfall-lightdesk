@@ -8,9 +8,12 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 test.use({ experimentalFlows: true });
+
+const CONTROLS_COLLAPSED_STORAGE_KEY =
+  "nightfall-clip-panel:controls-collapsed";
 
 type ClipPropertiesContext = {
   firstClipId: number;
@@ -33,13 +36,17 @@ async function openOwnedClipPropertiesApp(
   backendPort: number,
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
-  await page.addInitScript(() => {
+  await page.addInitScript((controlsCollapsedKey) => {
     window.localStorage.clear();
     window.localStorage.setItem("nightfall.currentShowfileName", "default");
-  });
+    // Collapsed controls leave the clip grid tall enough that its cards are
+    // not covered by the scroll-edge indicators, which reject pointer input.
+    window.localStorage.setItem(controlsCollapsedKey, "true");
+  }, CONTROLS_COLLAPSED_STORAGE_KEY);
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  await dockFixturesInMainGrid(page);
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&

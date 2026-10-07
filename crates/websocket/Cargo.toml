@@ -13,6 +13,8 @@ futures-util.workspace = true
 minicbor-serde.workspace = true
 nightfall = { path = "../common" }
 nightfall-io = { path = "../io" }
+mime_guess.workspace = true
+percent-encoding.workspace = true
 tempfile.workspace = true
 nightfall-engine = { path = "../engine" }
 serde.workspace = true
@@ -20,9 +22,14 @@ serde_json.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 tower-http = { workspace = true, features = ["cors"] }
+tower-service.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tokio-tungstenite = "0.30"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true

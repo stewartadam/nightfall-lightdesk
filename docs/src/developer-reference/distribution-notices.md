@@ -11,7 +11,7 @@ Install the pinned Rust license collector before building web or desktop assets:
 cargo install cargo-about --locked --version 0.8.4
 ```
 
-`npm run build` and `npm run build:browser-demo` generate these files in
+`pnpm run build` and `pnpm run build:browser-demo` generate these files in
 `webui/dist/notices/`:
 
 - `THIRD-PARTY-NOTICES.json`: the searchable About dialog's inventory.
@@ -33,7 +33,7 @@ the native application graph with the features in `tauri.conf.json`. CI builds
 the shared web assets once, then runs this on each packaging runner:
 
 ```sh
-npm run notices:desktop -- aarch64-apple-darwin
+pnpm run notices:desktop aarch64-apple-darwin
 ```
 
 Use the actual installer target. The Tauri resource map includes the notices
@@ -71,9 +71,10 @@ when upstream metadata or collector support improves.
 
 Preline is explicitly treated as MIT **and** its custom Fair Use License, not
 as an SPDX choice of licenses. Both full texts, its copyright, and a clickable
-repository attribution are included. `preline.json` pins the reviewed version
-and license hash, so updates require review of its noncompetition and other
-custom restrictions. Nightfall is a lighting controller, not a UI framework.
+repository attribution are included. `preline.json` pins the reviewed license
+hash, so any update that changes the terms requires review of its
+noncompetition and other custom restrictions. Version bumps with unchanged
+terms pass without review. Nightfall is a lighting controller, not a UI framework.
 
 The original Phosphor artwork notice accompanies the SolidJS wrapper's notice.
 The Beat This notice is included verbatim; its model provenance and treatment

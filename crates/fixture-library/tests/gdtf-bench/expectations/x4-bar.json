@@ -1,0 +1,39 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Norm": [
+      "Norm Head · Tilt · b1 · 1,2",
+      "Norm Head · Zoom · b1 · 3",
+      "Norm Head · Custom { label: \"CTO\" } · b1 · 4",
+      "Norm Head · Intensity · b1 · 12",
+      "Norm Head · StrobeShutter · b1 · 11",
+      "Norm Head · Custom { label: \"FixtureGlobalReset\" } · b1 · 13",
+      "Norm Head · Custom { label: \"ColorMixMSpeed\" } · b1 · 26",
+      "Norm Head · Custom { label: \"Shutter1StrobeEffect\" } · b1 · 27",
+      "Norm Head · Custom { label: \"Gobo1WheelIndex\" } · b1 · 28",
+      "Norm Head · Custom { label: \"Gobo1WheelSpin\" } · b1 · 29",
+      "Norm Head · Custom { label: \"Gobo2WheelIndex\" } · b1 · 30",
+      "Norm Head · Custom { label: \"Gobo2WheelSpin\" } · b1 · 31",
+      "Norm Head · Custom { label: \"AnimationWheel1\" } · b1 · 32",
+      "Norm Head · Custom { label: \"AnimationWheel2\" } · b1 · 33",
+      "Norm Set 1 · Custom { label: \"Color1WheelIndex\" } · b1 · 5",
+      "Norm Set 1 · Red · b1 · 6",
+      "Norm Set 1 · Green · b1 · 7",
+      "Norm Set 1 · Blue · b1 · 8",
+      "Norm Set 1 · White · b1 · 9",
+      "Norm Set 1 · Intensity · b1 · 10",
+      "Norm  Set 2 · Custom { label: \"Color1WheelIndex\" } · b1 · 14",
+      "Norm  Set 2 · Red · b1 · 15",
+      "Norm  Set 2 · Green · b1 · 16",
+      "Norm  Set 2 · Blue · b1 · 17",
+      "Norm  Set 2 · White · b1 · 18",
+      "Norm  Set 2 · Intensity · b1 · 19",
+      "Norm Set 3 · Custom { label: \"Color1WheelIndex\" } · b1 · 20",
+      "Norm Set 3 · Red · b1 · 21",
+      "Norm Set 3 · Green · b1 · 22",
+      "Norm Set 3 · Blue · b1 · 23",
+      "Norm Set 3 · White · b1 · 24",
+      "Norm Set 3 · Intensity · b1 · 25"
+    ]
+  }
+}

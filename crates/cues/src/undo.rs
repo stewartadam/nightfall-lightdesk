@@ -10,7 +10,7 @@
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::ColorPath;
-use nightfall_desk::instances::InstanceIndex;
+use nightfall_clips::InstanceIndex;
 use nightfall_engine::prelude::*;
 use nightfall_instances::InstanceId;
 use nightfall_undo::prelude::*;
@@ -151,6 +151,7 @@ impl UndoableOperation for CueCommand {
                 }))
             }
             CueCommand::ListColorPaths => None,
+            CueCommand::ReleaseCue(_) => None,
             CueCommand::DeleteColorPath(id) => {
                 color_paths.from_id(*id).ok().map(|color_path_ref| {
                     let color_path: ColorPath = (*color_path_ref).clone();
@@ -244,6 +245,7 @@ impl UndoableOperation for CueCommand {
                 format!("Rename Color Path {} → {}", id, new_id)
             }
             CueCommand::ListColorPaths => "List Color Paths".to_string(),
+            CueCommand::ReleaseCue(object_ref) => format!("Release {object_ref}"),
             CueCommand::DeleteColorPath(id) => format!("Delete Color Path {}", id),
             CueCommand::DeleteSequence(id) => format!("Delete Sequence {}", id),
             CueCommand::RenameSequence { id, new_id } => {

@@ -49,6 +49,7 @@ import {
   type DataGridTableCell,
   type DataGridTableHeader,
   groupColumns,
+  reuseEquivalentColumns,
   sourceGridColumn,
 } from "./model/column-model";
 import {
@@ -315,8 +316,13 @@ export default function TanStackDataGrid(props: DataGridProps) {
       })),
     });
 
+  /** Keeps column identity while widths and definitions are unchanged across data updates. */
+  const contentSizedColumns = createMemo<readonly GridColumn[]>((previous) =>
+    reuseEquivalentColumns(previous, resolveContentSizedColumns()),
+  );
+
   /** Resolves intrinsic widths once per data row set and structural column definition. */
-  const contentSizedColumns = createMemo(() => {
+  function resolveContentSizedColumns(): readonly GridColumn[] {
     const sourceColumns = props.columns;
     const provider = effectiveCellProvider();
     const context = columnMeasurementContext;
@@ -362,7 +368,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
       widths: sized.map((column) => columnWidth(column)),
     };
     return sized;
-  });
+  }
 
   /** Adds typed sorting accessors to the same column tree used for layout and resizing. */
   const columnDefs = createMemo(() => {
@@ -829,13 +835,21 @@ export default function TanStackDataGrid(props: DataGridProps) {
     return true;
   };
 
-  /** Restores keyboard focus to the grid root once editing has settled. */
+  /**
+   * Restores keyboard focus to the grid root once editing has settled. The
+   * deferred retry yields if focus has since moved to an element outside the
+   * grid, so a slow frame cannot pull focus back from another panel.
+   */
   const focusRoot = () => {
     if (!editingCell()) {
       rootRef?.focus();
     }
     requestAnimationFrame(() => {
       if (editingCell() || typeSeekActive()) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && !rootRef?.contains(active)) {
+        return;
+      }
       rootRef?.focus();
     });
   };

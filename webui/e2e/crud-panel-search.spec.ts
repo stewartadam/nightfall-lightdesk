@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 test.setTimeout(90_000);
 
 interface SequenceRecord {
@@ -206,7 +209,7 @@ async function openSequenceSearchPanel(page: Page): Promise<void> {
     const panelId = "panel-SequenceList-crud-search-e2e";
     api.getPanel("panel-SequenceList")?.api.close();
     api.getPanel(panelId)?.api.close();
-    const referencePanel = api.getPanel("panel-FixtureGrid");
+    const referencePanel = api.getPanel("panel-Groups");
     api.addPanel({
       id: panelId,
       component: "SequenceList",

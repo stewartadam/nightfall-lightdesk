@@ -11,21 +11,16 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  createUniqueId,
   onCleanup,
   Show,
 } from "solid-js";
 import {
-  DialogBackdrop,
+  Dialog,
   DialogBody,
-  DialogCloseButton,
+  DialogCancelButton,
   DialogFooter,
-  DialogHeader,
-  DialogSurface,
-  DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/form-controls";
-import Modal from "../ui/modal";
 import Tooltip from "../ui/tooltip";
 import { Button } from "../ui/visual-language/button";
 
@@ -50,7 +45,6 @@ interface EntityEditorModalProps {
 
 /** Renders a two-field editor dialog for creating or renaming numbered entities. */
 export default function EntityEditorModal(props: EntityEditorModalProps) {
-  const titleId = createUniqueId();
   const [idValue, setIdValue] = createSignal(1);
   const [labelValue, setLabelValue] = createSignal("");
   let labelInputRef: HTMLInputElement | undefined;
@@ -110,89 +104,73 @@ export default function EntityEditorModal(props: EntityEditorModalProps) {
   };
 
   return (
-    <Modal isOpen={props.isOpen} onEscape={props.onCancel}>
-      <DialogBackdrop role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div class="w-full max-w-lg">
-          <DialogSurface>
-            <DialogHeader>
-              <DialogTitle id={titleId}>{props.title}</DialogTitle>
-              <DialogCloseButton
-                type="button"
-                aria-label="Close"
-                onClick={props.onCancel}
-              />
-            </DialogHeader>
-
-            <form onSubmit={handleSubmit}>
-              <DialogBody class="space-y-4">
-                <label class="flex flex-col gap-1">
-                  <span class="text-sm text-neutral-300">
-                    {props.idLabel ?? "ID"}
+    <Dialog
+      kind="task"
+      isOpen={props.isOpen}
+      title={props.title}
+      onDismiss={props.onCancel}
+    >
+      <form onSubmit={handleSubmit}>
+        <DialogBody class="space-y-4">
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-neutral-300">
+              {props.idLabel ?? "ID"}
+            </span>
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={idValue()}
+              onInput={(event) =>
+                setIdValue(Number.parseInt(event.currentTarget.value, 10) || 1)
+              }
+            />
+          </label>
+          <Show when={conflict()}>
+            {(owner) => (
+              <Tooltip
+                content={() => (
+                  <span class="block max-w-xs whitespace-normal">
+                    {owner().message}
                   </span>
-                  <Input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={idValue()}
-                    onInput={(event) =>
-                      setIdValue(
-                        Number.parseInt(event.currentTarget.value, 10) || 1,
-                      )
-                    }
-                  />
-                </label>
-                <Show when={conflict()}>
-                  {(owner) => (
-                    <Tooltip
-                      content={() => (
-                        <span class="block max-w-xs whitespace-normal">
-                          {owner().message}
-                        </span>
-                      )}
-                    >
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-2 text-amber-400"
-                        aria-label="ID already exists"
-                      >
-                        <WarningIcon class="size-5" aria-hidden />
-                        <span>Hold Alt to overwrite</span>
-                      </button>
-                    </Tooltip>
-                  )}
-                </Show>
-
-                <label class="flex flex-col gap-1">
-                  <span class="text-sm text-neutral-300">
-                    {props.labelLabel ?? "Label"}
-                  </span>
-                  <Input
-                    ref={labelInputRef}
-                    type="text"
-                    value={labelValue()}
-                    onInput={(event) =>
-                      setLabelValue(event.currentTarget.value)
-                    }
-                  />
-                </label>
-              </DialogBody>
-
-              <DialogFooter>
-                <Button type="button" onClick={props.onCancel}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={!!conflict() && armedKey() !== conflict()?.key}
+                )}
+              >
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 text-amber-400"
+                  aria-label="ID already exists"
                 >
-                  {conflict() ? "Overwrite" : props.submitLabel}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogSurface>
-        </div>
-      </DialogBackdrop>
-    </Modal>
+                  <WarningIcon class="size-5" aria-hidden />
+                  <span>Hold Alt to overwrite</span>
+                </button>
+              </Tooltip>
+            )}
+          </Show>
+
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-neutral-300">
+              {props.labelLabel ?? "Label"}
+            </span>
+            <Input
+              ref={labelInputRef}
+              type="text"
+              value={labelValue()}
+              onInput={(event) => setLabelValue(event.currentTarget.value)}
+            />
+          </label>
+        </DialogBody>
+
+        <DialogFooter>
+          <DialogCancelButton />
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!!conflict() && armedKey() !== conflict()?.key}
+          >
+            {conflict() ? "Overwrite" : props.submitLabel}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }

@@ -87,3 +87,32 @@ test("CommandSequenceRunner stops after the first command failure", async () => 
   assert.deepEqual(submissions, ["bad command"]);
   assert.equal(completed.stoppedOnFailure, true);
 });
+
+/** Verifies each statement reports starting once sent and settling once its result arrives. */
+test("CommandSequenceRunner reports each statement starting and settling", async () => {
+  const events: string[] = [];
+  const transport: CommandTransport = {
+    sendCommandAndAwait: async (data) => {
+      events.push(
+        `send ${(data as { command: { data: string } }).command.data}`,
+      );
+      return result("ok", { type: "Succeeded", data: {} });
+    },
+  };
+  await new CommandSequenceRunner(new CommandClient(transport)).runStatements(
+    ["fix 311 red @ 100", "sleep 4"],
+    {
+      onStatementStarted: (index) => events.push(`start ${index}`),
+      onStatementSettled: (index) => events.push(`settle ${index}`),
+    },
+  );
+
+  assert.deepEqual(events, [
+    "send fix 311 red @ 100",
+    "start 0",
+    "settle 0",
+    "send sleep 4",
+    "start 1",
+    "settle 1",
+  ]);
+});

@@ -22,12 +22,15 @@ import {
 } from "../../../../state/appStores";
 import type { DebugOverlayRegistry } from "../../components/debug-overlays";
 import { Instrumentation } from "../../services/instrumentation";
+import { loadFixtureEvaluation } from "../channel-evaluation";
 import {
   setActiveSpanOutlineSelectedObjects,
   setEditSelectionOutlineSelectedObjects,
   setOutlineSelectedObjects,
   setProgrammerValueOutlineSelectedObjects,
 } from "../effects/post-processing";
+import { FixtureDmxSnapshot } from "../fixture-dmx-snapshot";
+import { resolveQualityProfile } from "../quality-profile";
 import {
   cancelControlsInteraction,
   DEFAULT_CAMERA_POSITION,
@@ -43,16 +46,11 @@ import {
   stopRenderLoop,
   zoomCameraToGroups,
 } from "../renderer";
+import { setSceneDarkness } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
-import {
-  extractElementDmxData,
-  fixtureIntensityValueFromOutputs,
-  resetDmxPool,
-} from "../visualizer-dmx";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import type {
   CameraState,
-  ElementDmxData,
   Vec3,
   VisualizerCameraRotationMode,
   VisualizerInitConfig,
@@ -70,6 +68,7 @@ const log = createLogger("visualizer:main-thread-renderer");
  * post-processing and inspector.
  */
 export class MainThreadRenderer extends BaseVisualizerRenderer {
+  private readonly dmxSnapshot = new FixtureDmxSnapshot();
   private rendererState: RendererState | undefined;
   private instrumentation: Instrumentation | undefined;
   private resizeObserver: ResizeObserver | undefined;
@@ -86,14 +85,16 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   async init(config: VisualizerInitConfig): Promise<void> {
     const canvas = config.canvas as HTMLCanvasElement;
 
-    // Initialize renderer using existing initRenderer function
-    this.rendererState = await initRenderer(canvas);
+    // Initialize the renderer and the fixture model that evaluates channel output
+    const profile = resolveQualityProfile(config.quality);
+    const [rendererState] = await Promise.all([
+      initRenderer(canvas, profile, config.initialCameraState),
+      loadFixtureEvaluation(),
+    ]);
+    this.rendererState = rendererState;
 
     // Create scene manager
-    this.sceneManager = new SceneManager(
-      this.rendererState.scene,
-      config.beamQuality,
-    );
+    this.sceneManager = new SceneManager(this.rendererState.scene, profile);
     if (this.rendererState.postProcessing) {
       setOutlineSelectedObjects(
         this.rendererState.postProcessing,
@@ -117,8 +118,10 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     this.initDebugOverlays();
 
     // Create instrumentation
-    this.instrumentation = new Instrumentation();
-    this.instrumentation.setRenderMode("main-thread");
+    this.instrumentation = new Instrumentation({
+      renderMode: "main-thread",
+      diagnostics: config.diagnostics,
+    });
 
     // Handle initial resize
     handleResize(this.rendererState, config.width, config.height);
@@ -140,7 +143,9 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     if (!this.rendererState) return;
 
     // Append inspector UI to container
-    container.appendChild(this.rendererState.inspector.domElement);
+    if (this.rendererState.inspector) {
+      container.appendChild(this.rendererState.inspector.domElement);
+    }
 
     this.resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -175,12 +180,24 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
     this.debugOverlays?.dispose();
+    this.debugOverlays = undefined;
     this.sceneManager?.dispose();
+    this.sceneManager = undefined;
     this.instrumentation?.clear();
+    this.instrumentation = undefined;
     if (this.rendererState) {
-      disposeRenderer(this.rendererState);
+      const state = this.rendererState;
+      this.rendererState = undefined;
+      void disposeRenderer(state).catch((error) => {
+        log.error(
+          "Failed to drain visualizer GPU timestamps during disposal",
+          error,
+        );
+      });
     }
   }
 
@@ -325,6 +342,16 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     this.rendererState.environment.axesHelper.visible = enabled;
   }
 
+  /** Updates ambient lighting and background without rebuilding the renderer. */
+  setDarkness(darkness: number): void {
+    if (this.rendererState)
+      setSceneDarkness(
+        this.rendererState.scene,
+        this.rendererState.environment,
+        darkness,
+      );
+  }
+
   setOrbitTargetIndicatorEnabled(enabled: boolean): void {
     this.orbitTargetIndicatorEnabled = enabled;
     if (!this.rendererState) return;
@@ -383,8 +410,20 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
       onUpdate: () => this.updateEmitters(),
       onFrame: (metrics) => {
         this.instrumentation!.recordFrame(metrics.time, {
+          startedAt: metrics.startedAt,
+          completedAt: metrics.completedAt,
+          reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
+          reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
+          atmosphereScale:
+            this.rendererState?.postProcessing?.volumePass.getResolutionScale(),
+          sceneScale:
+            this.rendererState?.postProcessing?.scenePass.getResolutionScale(),
+          omittedSurfaceLights:
+            this.rendererState?.postProcessing?.surfaceLighting
+              ?.omittedPointLights,
           updateMs: metrics.updateMs,
           renderMs: metrics.renderMs,
+          gpu: metrics.gpu,
         });
       },
     };
@@ -403,42 +442,16 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   }
 
   /**
-   * Update emitter colors from DMX stores.
-   * Called once per frame in the render loop.
+   * Applies the current DMX snapshot to the scene once per rendered frame.
+   * The snapshot is converted only when the engine output or fixture
+   * definitions change, but it is re-applied every frame so strobes and wheel
+   * rotation advance while the engine output is unchanged.
    */
   private updateEmitters(): void {
-    // Reset DMX pool at start of frame
-    resetDmxPool();
-
-    const parametersImmediate = getParametersImmediate();
-    const fixtureMap = fixturesStore.get();
-
-    // Update DMX parameter state for each fixture via the interface method
-    for (const [uid, fixture] of Object.entries(fixtureMap)) {
-      const elementOutputs = parametersImmediate.get(uid);
-      if (!elementOutputs) continue;
-
-      // Build element DMX map using element labels as keys
-      const elementDmx = new Map<string, ElementDmxData>();
-      const fixtureIntensity = fixtureIntensityValueFromOutputs(
-        elementOutputs,
-        fixture.elements,
-      );
-
-      for (let i = 0; i < fixture.elements.length; i++) {
-        const element = fixture.elements[i];
-        const output = elementOutputs[i];
-        if (!output) continue;
-
-        elementDmx.set(
-          element.label,
-          extractElementDmxData(output, element, fixtureIntensity),
-        );
-      }
-
-      if (elementDmx.size > 0) {
-        this.setElementDmx(uid, elementDmx);
-      }
-    }
+    const snapshot = this.dmxSnapshot.read(
+      getParametersImmediate(),
+      fixturesStore.get(),
+    );
+    for (const [uid, dmx] of snapshot) this.setElementDmx(uid, dmx);
   }
 }

@@ -228,6 +228,18 @@ fn parse_patch_fixture_target_from_tokens<'i>(
     let mut element = None;
     let mut param = None;
 
+    // `break N` selects a whole additional DMX break of the fixture.
+    if let [head, value] = tokens
+        && head.text.eq_ignore_ascii_case("break")
+        && value.kind == LexerTokenKind::Number
+    {
+        return Some(Some(FixtureTargetAst {
+            element: None,
+            param: None,
+            dmx_break: Some(IntegerAst(&command_str[value.span.start..value.span.end])),
+        }));
+    }
+
     if let [dot, value, ..] = &tokens[index..]
         && dot.kind == LexerTokenKind::Dot
         && value.kind == LexerTokenKind::Number
@@ -253,13 +265,17 @@ fn parse_patch_fixture_target_from_tokens<'i>(
         return None;
     }
 
-    Some(Some(FixtureTargetAst { element, param }))
+    Some(Some(FixtureTargetAst {
+        element,
+        param,
+        dmx_break: None,
+    }))
 }
 
 #[cfg(test)]
-fn split_target_and_modifiers<'a, 'i>(
+fn split_target_and_modifiers<'i>(
     command_str: &'i str,
-    tokens: &[&'a LexerToken],
+    tokens: &[&LexerToken],
     target_required: bool,
 ) -> Option<(
     Option<PatchEndpointAst<'i>>,

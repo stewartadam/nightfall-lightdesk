@@ -554,32 +554,12 @@ pub fn send_color_paths_on_change(
     }
 }
 
-/// Send sequence lookahead state when its backend inputs change.
-pub fn send_sequence_lookahead_states_on_change(
-    seq_data_provider: Res<DataProvider<Sequence>>,
-    cue_data_provider: Res<DataProvider<Cue>>,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    parameter_query: Query<InstanceRef<Parameter>>,
-    selection_resolver: SpatialSelectionResolver,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if seq_data_provider.is_changed()
-        || cue_data_provider.is_changed()
-        || fixture_data_provider.is_changed()
-    {
-        send_sequence_lookahead_states(
-            &seq_data_provider,
-            &cue_data_provider,
-            &fixture_data_provider,
-            &parameter_query,
-            &selection_resolver,
-            &broadcaster,
-        );
-    }
-}
-
-/// Send sequence lookahead state after cue definition commands mutate backend stores.
-pub fn send_sequence_lookahead_states_after_cue_commands(
+/// Sends sequence lookahead state once per frame when a resync, a cue command, or a change to
+/// its backend inputs has made the UI projection stale.
+///
+/// The projection materializes every sequence, so resync only marks it dirty and it is sent from
+/// client output after `ResyncComplete`, keeping it off the client's readiness boundary.
+pub fn send_stale_sequence_lookahead_states(
     mut dirty: ResMut<SequenceLookaheadStateDirty>,
     seq_data_provider: Res<DataProvider<Sequence>>,
     cue_data_provider: Res<DataProvider<Cue>>,
@@ -588,26 +568,30 @@ pub fn send_sequence_lookahead_states_after_cue_commands(
     selection_resolver: SpatialSelectionResolver,
     broadcaster: Res<ClientEventSink>,
 ) {
-    if dirty.take() {
-        send_sequence_lookahead_states(
-            &seq_data_provider,
-            &cue_data_provider,
-            &fixture_data_provider,
-            &parameter_query,
-            &selection_resolver,
-            &broadcaster,
-        );
+    let inputs_changed = seq_data_provider.is_changed()
+        || cue_data_provider.is_changed()
+        || fixture_data_provider.is_changed();
+    if !dirty.take() && !inputs_changed {
+        return;
     }
+    send_sequence_lookahead_states(
+        &seq_data_provider,
+        &cue_data_provider,
+        &fixture_data_provider,
+        &parameter_query,
+        &selection_resolver,
+        &broadcaster,
+    );
 }
 
-/// Handle ResyncState by sending cues and sequences immediately
+/// Handle ResyncState by sending cues and sequences immediately and queueing their lookahead projection
 pub fn handle_resync_state(
     mut events: MessageReader<ResyncRequested>,
     cue_data_provider: Res<DataProvider<Cue>>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     selection_resolver: SpatialSelectionResolver,
     seq_data_provider: Res<DataProvider<Sequence>>,
-    parameter_query: Query<InstanceRef<Parameter>>,
+    mut sequence_lookahead_dirty: ResMut<SequenceLookaheadStateDirty>,
     color_path_data_provider: Res<DataProvider<ColorPath>>,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -624,14 +608,7 @@ pub fn handle_resync_state(
         &broadcaster,
     );
     send_sequences(&seq_data_provider, &broadcaster);
-    send_sequence_lookahead_states(
-        &seq_data_provider,
-        &cue_data_provider,
-        &fixture_data_provider,
-        &parameter_query,
-        &selection_resolver,
-        &broadcaster,
-    );
+    sequence_lookahead_dirty.mark();
     send_color_paths(color_path_data_provider, broadcaster.clone());
 }
 
@@ -648,9 +625,8 @@ mod tests {
         TransitionMode, ValueSource,
     };
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
-    use nightfall_fixtures::prelude::{
-        Fixture, FixtureElement, Parameter, ParameterMetadata, ParameterValues,
-    };
+    use nightfall_fixture_model::prelude::*;
+    use nightfall_fixtures::prelude::{Fixture, FixtureElement, Parameter, ParameterValues};
     use serde::Serialize;
 
     use super::*;
@@ -805,7 +781,6 @@ mod tests {
             })
             .expect("test fixture should be stored");
         fixtures.add_parameter(fixture_ref.clone(), Attribute::Intensity, parameter);
-        drop(fixtures);
 
         let cue_uid = Uuid::new_v4();
         let mut cues = DataProvider::<Cue>::default();
@@ -923,7 +898,6 @@ mod tests {
             intensity_parameter,
         );
         fixtures.add_parameter(fixture_ref.clone(), Attribute::Pan, pan_parameter);
-        drop(fixtures);
 
         let cue_one_uid = Uuid::new_v4();
         let cue_two_uid = Uuid::new_v4();

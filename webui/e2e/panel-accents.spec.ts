@@ -8,7 +8,7 @@
 
 import type { Locator, Page } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Reads a rendered CSS color in sRGB so relative colors can be compared by channel. */
 async function renderedColor(element: Locator, property = "color") {
@@ -47,6 +47,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
   const camera = page.getByRole("button", { name: "Camera (C)", exact: true });
   await expect(camera).toBeVisible();
   let dialog = await openAppearance(page);
@@ -59,7 +60,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
   await page.getByRole("tab", { name: "3D Visualizer", exact: true }).click();
   await expect(camera).toHaveCSS("color", "rgb(251, 146, 60)");
   const activeBackground = await renderedColor(camera, "background-color");
-  await page.getByRole("tab", { name: "Cues", exact: true }).click();
+  await page.getByRole("tab", { name: "Groups", exact: true }).click();
   await expectGreyAccent(camera);
   expect(await renderedColor(camera, "background-color")).not.toEqual(
     activeBackground,
@@ -89,7 +90,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
   dialog = await openAppearance(page);
   await dialog.getByRole("button", { name: "Violet accent" }).click();
   await page.keyboard.press("Escape");
-  await page.getByRole("tab", { name: "Cues", exact: true }).click();
+  await page.getByRole("tab", { name: "Groups", exact: true }).click();
   await expectGreyAccent(camera);
   await page.reload();
   await waitForDockviewApp(page);
@@ -99,7 +100,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
   ).toBeChecked();
   await dialog.getByLabel("Mute accents in unfocused panels").uncheck();
   await page.keyboard.press("Escape");
-  await page.getByRole("tab", { name: "Cues", exact: true }).click();
+  await page.getByRole("tab", { name: "Groups", exact: true }).click();
   await expect(camera).toHaveCSS("color", "rgb(176, 128, 255)");
 });
 

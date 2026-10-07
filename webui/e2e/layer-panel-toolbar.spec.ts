@@ -330,7 +330,7 @@ test("layers panel toolbar controls layer expansion", async ({ page }) => {
   await openLayerPanelTestApp(page);
 
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
 
@@ -386,7 +386,7 @@ test("layers panel displays computed sequence intensity values", async ({
   await openLayerPanelTestApp(page);
 
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
 
@@ -440,7 +440,7 @@ test("layers panel context menu exposes layer source action", async ({
   await openLayerPanelTestApp(page);
 
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
 
@@ -473,7 +473,7 @@ test("layers panel preserves clicked layer expansion during layer updates", asyn
   await openLayerPanelTestApp(page);
 
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
 
@@ -522,7 +522,7 @@ test("layers panel preserves expansion when a layer moves in the stack", async (
   await openLayerPanelTestApp(page);
 
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
 
@@ -571,7 +571,7 @@ test("layers panel reorders existing layer rows without remounting", async ({
   await openLayerPanelTestApp(page);
 
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
 

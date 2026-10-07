@@ -51,15 +51,23 @@ test("keeps layout slides composited without the shared entrance filter", async 
   await cdp.send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
   const results: Record<string, unknown> = {};
   for (const variant of ["stock", "override", "fixed", "waapi"] as const) {
+    if (variant !== "stock") {
+      // After the stock and override CSS animations, Chromium reports the
+      // next slide on the same workspace as having incompatible animations
+      // (even once they finished), so give every variant a fresh workspace.
+      trial = `${variant}-reload`;
+      await page.reload();
+      await waitForDockviewApp(page);
+    }
     trial = variant;
     events.length = 0;
     await cdp.send("Tracing.start", {
       categories: "devtools.timeline,blink.animations",
     });
     const result = await page.evaluate(async (variant) => {
-      const { createLayoutEntrance } = await import(
-        "/components/shell/docking/dockview/layout-entrance.ts"
-      );
+      const { createLayoutEntrance } = (
+        await window.__nightfallHarness.load("app")
+      ).layoutEntrance;
       const element = document.querySelector<HTMLElement>(
         '[data-workspace-active="true"]',
       )!;

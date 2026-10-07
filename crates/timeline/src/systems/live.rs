@@ -11,7 +11,6 @@ use super::planner_adapter::*;
 use super::*;
 #[cfg(feature = "audio")]
 use crate::TimelineAudioOutputEnabled;
-use crate::timeline_events::TimelineActionsChanged;
 
 /// Synchronize materialized timelines with their timecodes and apply enabled loop seeks.
 pub fn update_timeline_system(
@@ -315,22 +314,19 @@ pub struct TimelineLiveClipState<'w, 's> {
 
 /// System that processes track actions to trigger actions when timecode passes their position
 pub fn process_actions_system(
-    mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
+    mut timeline_query: Query<(&mut MaterializedTimeline, &mut TimelineActionCursor)>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
-    mut timecode_events: MessageReader<TimecodeEvent>,
-    mut action_events: Option<MessageReader<TimelineActionsChanged>>,
     source_data: TimelineLiveSourceData,
     selection_resolver: SpatialSelectionResolver,
     parameter_query: Query<InstanceRef<Parameter>>,
     mut materialized_cues: Query<&mut MaterializedCue>,
     mut commands: Commands,
-    mut ev_desk: MessageWriter<EngineActionEnvelope<DeskAction>>,
+    mut ev_desk: MessageWriter<EngineActionEnvelope<EvalAction>>,
     mut ev_clip: MessageWriter<EngineActionEnvelope<ClipAction>>,
     mut action_invocations: Option<MessageWriter<ActionInvocation>>,
     action_registry: Option<Res<ActionRegistry>>,
     mut timeline_command_origins: ResMut<TimelineCommandOrigins>,
     clip_state: TimelineLiveClipState,
-    mut last_processed_by_timeline: Local<HashMap<Entity, Duration>>,
 ) {
     use crate::components::SpawnedEntityType;
 
@@ -340,37 +336,6 @@ pub fn process_actions_system(
     let sequence_data_provider = source_data.sequence_data_provider;
     let fixture_data_provider = source_data.fixture_data_provider;
     let clip_snapshot = clip_state.clip_lookup.snapshot();
-
-    let timecode_uid_by_id = timecode_uid_by_id(&timecode_query);
-    let seeked_timecode_positions_by_id: std::collections::HashMap<u32, Duration> = timecode_events
-        .read()
-        .filter_map(|event| {
-            if let TimecodeEvent::Seeked { id, position } = event {
-                Some((*id, *position))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let seeked_timecode_positions_by_uid: std::collections::HashMap<Uuid, Duration> =
-        seeked_timecode_positions_by_id
-            .iter()
-            .filter_map(|(id, position)| {
-                timecode_uid_by_id
-                    .get(id)
-                    .copied()
-                    .map(|uid| (uid, *position))
-            })
-            .collect();
-    let changed_timeline_ids = action_events
-        .as_mut()
-        .map(|events| {
-            events
-                .read()
-                .map(|event| event.timeline_id)
-                .collect::<HashSet<_>>()
-        })
-        .unwrap_or_default();
 
     // Create a map of timecode UIDs to their current times for quick lookup
     let mut timecode_times = std::collections::HashMap::new();
@@ -383,7 +348,7 @@ pub fn process_actions_system(
     }
 
     // Process each timeline
-    for (timeline_entity, mut timeline) in timeline_query.iter_mut() {
+    for (mut timeline, mut cursor) in timeline_query.iter_mut() {
         // Skip inactive timelines
         if !timeline.is_active {
             continue;
@@ -400,26 +365,12 @@ pub fn process_actions_system(
         let timeline_uid = timeline.timeline.identifiers.uid;
         let timeline_id = timeline.timeline.identifiers.id;
 
-        let changed_timeline = changed_timeline_ids.contains(&timeline.timeline.identifiers.id);
-        let seeked_timecode_position =
-            seeked_timecode_positions_by_uid.get(&timeline.timeline.timecode_uid);
-        let seeked_timecode = seeked_timecode_position.is_some();
-        let mutation_replaced_ignored_seek = changed_timeline
-            && timeline.timeline.seek_behavior == TimelineSeekBehavior::MovePlayheadOnly;
-
         // Seek replay reconstructs timeline-owned state in handle_timeline_seek_system.
-        // Skip regular trigger scanning in seek frames to avoid duplicate lifecycle actions.
-        if seeked_timecode && !mutation_replaced_ignored_seek {
-            let seek_target_position = seeked_timecode_position
-                .copied()
-                .unwrap_or_default()
-                .saturating_sub(timeline.timeline.timecode_start);
-            last_processed_by_timeline.insert(timeline_entity, seek_target_position);
+        // Skip regular trigger scanning in the render after a seek to avoid duplicate lifecycle
+        // actions.
+        let Some(last_processed) = cursor.take_scan_start() else {
             continue;
-        }
-        if changed_timeline {
-            last_processed_by_timeline.insert(timeline_entity, Duration::ZERO);
-        }
+        };
 
         // Collect tracking updates to apply after processing actions
         let mut entities_to_track: HashMap<Entity, (String, String, SpawnedEntityType)> =
@@ -429,10 +380,6 @@ pub fn process_actions_system(
             active_clip_entities(&clip_state.exec_query, &clip_state.materialized_clip_links);
 
         let action_positions = timeline_action_positions(&timeline);
-        let last_processed = last_processed_by_timeline
-            .get(&timeline_entity)
-            .copied()
-            .unwrap_or_default();
         let has_navigation = timeline
             .collect_actions_in_range(last_processed, current_position)
             .iter()
@@ -467,7 +414,7 @@ pub fn process_actions_system(
         let existing_spawned_entities = timeline.spawned_entities.clone();
         let timeline_instance_options = instance_options_for_timeline(&timeline);
         let actions_to_trigger = timeline.process_actions(last_processed, current_position);
-        last_processed_by_timeline.insert(timeline_entity, current_position);
+        cursor.advance_to(current_position);
 
         // Handle each triggered action
         for (track, timeline_action) in actions_to_trigger {

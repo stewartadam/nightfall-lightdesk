@@ -18,7 +18,7 @@ struct PendingProgrammerActionWorkflow {
 }
 
 /// Tracks nested cue and playback operations by their owning programmer action.
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct PendingProgrammerActionWorkflows {
     actions: HashMap<OperationId, PendingProgrammerActionWorkflow>,
     operation_parents: HashMap<OperationId, OperationId>,

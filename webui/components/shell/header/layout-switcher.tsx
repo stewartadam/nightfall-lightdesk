@@ -33,6 +33,7 @@ import {
 } from "../../../state/layout-switcher";
 import { useAppShell } from "../../providers/app-shell";
 import { DropdownMenu, DropdownMenuItem } from "../../ui/dropdown-menu";
+import { hasOpenDialog } from "../../ui/modal/dialog-stack";
 import { ToggleToolbarButton } from "../../ui/toolbar-button";
 import { Button } from "../../ui/visual-language/button";
 import DeleteConfirmModal from "../../widgets/delete-confirm-dialog";
@@ -154,10 +155,14 @@ export default function LayoutSwitcher() {
       animateOrder(undefined),
     );
   };
-  /** Activates the layout's retained working arrangement. */
+  /**
+   * Activates the layout's retained working arrangement. User-initiated
+   * switches are ignored while a dialog is open so the workspace behind it
+   * never changes underneath the user.
+   */
   const recall = async (layout: { id: string }) => {
     const api = dockviewApi();
-    if (!api || busy().includes(layout.id)) return;
+    if (!api || hasOpenDialog() || busy().includes(layout.id)) return;
     if (!(await activateStoredLayout(api, layout.id)))
       pushToast("error", "Could not load layout.");
   };

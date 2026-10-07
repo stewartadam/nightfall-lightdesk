@@ -46,7 +46,8 @@ pub(super) fn branch_frontier_state_for_branch(
         let parser = structural_clause_parser(frame.clause.clause);
         let (immediate, blocks_ancestors) =
             immediate_frontier_for_clause(branch, &frame.clause, &parser);
-        for expectation in immediate {
+        for mut expectation in immediate {
+            restrict_patch_target_by_source(branch, &mut expectation);
             if !frontier.contains(&expectation) {
                 frontier.push(expectation);
             }
@@ -58,6 +59,65 @@ pub(super) fn branch_frontier_state_for_branch(
     }
 
     (frontier, has_blocking_expectations)
+}
+
+/// Drops patch target offers that the engine rejects for the branch's patch source.
+///
+/// Only transport inputs can be disabled, so `disabled` is kept only for transport sources
+/// and for a target-only `rm patch @ ...` filter with no source. Console sources may only
+/// target transports, so they also lose `console` and fixture-number targets.
+fn restrict_patch_target_by_source(
+    branch: &ParseBranchState<'_>,
+    expectation: &mut ClauseExpectation,
+) {
+    let ContinuationTarget::Slot(slot_ref) = &expectation.target else {
+        return;
+    };
+    if slot_ref.slot != SlotId::PatchTargetEndpoint {
+        return;
+    }
+    let source_head = patch_source_head(branch);
+    let keep_disabled = matches!(
+        source_head,
+        None | Some(Some(TokenId::Sacn | TokenId::Artnet | TokenId::Udmx))
+    );
+    let console_source = source_head == Some(Some(TokenId::Console));
+    // Fixture-number targets are only rejected at the endpoint's start; later placeholders
+    // are universe and address values.
+    let keep_fixture_target = !console_source || patch_target_endpoint_started(branch);
+    expectation.expected_tokens.retain(|token| match token {
+        ExpectedToken::Token(TokenId::Disabled) => keep_disabled,
+        ExpectedToken::Token(TokenId::Console) => !console_source,
+        ExpectedToken::Placeholder(_) => keep_fixture_target,
+        _ => true,
+    });
+}
+
+/// Returns whether the patch target has consumed an endpoint token beyond `@` and `(`.
+fn patch_target_endpoint_started(branch: &ParseBranchState<'_>) -> bool {
+    branch
+        .consumed_items
+        .iter()
+        .filter(|item| item.slot.slot == SlotId::PatchTargetEndpoint)
+        .any(|item| {
+            !matches!(
+                token_id_for_text(item.surface.as_str()),
+                Some(TokenId::AtSign | TokenId::LeftParen)
+            )
+        })
+}
+
+/// Returns the leading token of the branch's patch source, skipping grouping parentheses.
+///
+/// The outer `None` means no source was given (a target-only `rm patch` filter); the inner
+/// `None` means the source starts with a non-keyword token such as a fixture number.
+fn patch_source_head(branch: &ParseBranchState<'_>) -> Option<Option<TokenId>> {
+    branch
+        .consumed_items
+        .iter()
+        .filter(|item| item.slot.slot == SlotId::PatchSourceEndpoint)
+        .map(|item| token_id_for_text(item.surface.as_str()))
+        .find(|token_id| *token_id != Some(TokenId::LeftParen))
 }
 
 /// Compute the next legal expectations for the active structural clause.
@@ -463,14 +523,38 @@ fn immediate_frontier_for_clause(
                 }
             }
             crate::parser::structural::SlotState::ValuePending => {
-                if clause.clause == ClauseId::Rm
+                if matches!(clause.clause, ClauseId::Rm | ClauseId::PatchTarget)
                     && slot.slot == SlotId::PatchTargetEndpoint
                     && slot_fills.len() == 1
                     && slot_fills.first().is_some_and(|item| {
                         token_id_for_text(item.surface.as_str()) == Some(TokenId::AtSign)
                     })
                 {
-                    frontier.push(slot_expectation(parser, clause.clone(), *slot));
+                    let mut expected_tokens = expected_tokens_for_slot(SlotRef {
+                        slot: slot.slot,
+                        clause: Some(clause.clone()),
+                    });
+                    // Only tokens that can begin an endpoint follow a lone `@`.
+                    expected_tokens.retain(|token| {
+                        !matches!(
+                            token,
+                            ExpectedToken::Token(
+                                TokenId::AtSign
+                                    | TokenId::Colon
+                                    | TokenId::Dot
+                                    | TokenId::Plus
+                                    | TokenId::Minus
+                                    | TokenId::GreaterThan
+                                    | TokenId::RightParen
+                            )
+                        )
+                    });
+                    frontier.push(filtered_slot_expectation(
+                        parser,
+                        clause.clone(),
+                        *slot,
+                        expected_tokens,
+                    ));
                     continue;
                 } else if matches!(
                     slot.slot,

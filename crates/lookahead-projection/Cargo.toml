@@ -11,7 +11,15 @@ nightfall-dmx = { path = "../dmx" }
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
+criterion.workspace = true
 uuid = { workspace = true }
+
+[[bench]]
+name = "projection"
+harness = false
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true

@@ -21,7 +21,7 @@ use crate::DeskCommand;
 /// Clears stale transport-owned input channels and parameter assertions based on IO settings.
 pub fn clear_stale_input_channels(
     settings: Res<IoRuntimeSettings>,
-    input_universes: Res<InputDmxUniverses>,
+    mut input_universes: ResMut<InputDmxUniverses>,
     mut universes: ResMut<ConsoleDmxUniverses>,
     mut release_events: MessageReader<CommandEnvelope<DeskCommand>>,
     mut responder: CommandResponder,
@@ -45,7 +45,7 @@ pub fn clear_stale_input_channels(
 
     if let Some(timeout) = scheduled_timeout {
         clear_stale_input_state(
-            &input_universes,
+            &mut input_universes,
             &mut universes,
             &mut input_layer_query,
             now,
@@ -56,7 +56,7 @@ pub fn clear_stale_input_channels(
     if !forced_release_commands.is_empty() {
         let timeout = scheduled_timeout.unwrap_or(configured_timeout);
         clear_stale_input_state(
-            &input_universes,
+            &mut input_universes,
             &mut universes,
             &mut input_layer_query,
             now,
@@ -70,9 +70,10 @@ pub fn clear_stale_input_channels(
     }
 }
 
-/// Clears stale console channel owners and transport assertion layer entries.
+/// Clears stale console channel owners and transport assertion layer entries, then releases
+/// stale input universes so passthrough bindings stop re-sending their last frame.
 fn clear_stale_input_state(
-    input_universes: &InputDmxUniverses,
+    input_universes: &mut InputDmxUniverses,
     universes: &mut ConsoleDmxUniverses,
     input_layer_query: &mut Query<
         (&mut Layer, &mut TransportInputAssertionOwners),
@@ -86,6 +87,8 @@ fn clear_stale_input_state(
     if let Ok((mut layer, mut owners)) = input_layer_query.single_mut() {
         clear_stale_parameter_assertions(&mut layer, &mut owners, input_universes, now, timeout);
     }
+
+    input_universes.release_stale(now, timeout);
 }
 
 #[cfg(test)]
@@ -148,6 +151,80 @@ mod tests {
 
         let universes = app.world().resource::<ConsoleDmxUniverses>();
         assert_eq!(universes.get_value(1, 1), Some(200));
+    }
+
+    /// Verifies Hold keeps a stopped source's last frame available to passthrough bindings.
+    #[test]
+    fn hold_policy_keeps_stale_passthrough_source_active() {
+        let mut app = App::new();
+        add_command_lifecycle(&mut app);
+        app.add_systems(Update, clear_stale_input_channels);
+        app.insert_resource(IoRuntimeSettings {
+            input_signal_loss_policy: InputSignalLossPolicy::Hold,
+            input_signal_loss_timeout: Duration::from_millis(1),
+            ..Default::default()
+        });
+        app.init_resource::<ConsoleDmxUniverses>();
+        app.init_resource::<InputDmxUniverses>();
+        {
+            let past = Instant::now() - Duration::from_millis(50);
+            let mut input_universes = app.world_mut().resource_mut::<InputDmxUniverses>();
+            input_universes.set_universe(BindingTransport::Sacn, 1, [0; 512], past);
+        }
+
+        app.update();
+
+        let input_universes = app.world().resource::<InputDmxUniverses>();
+        assert!(
+            input_universes
+                .active_universe(BindingTransport::Sacn, 1)
+                .is_some()
+        );
+    }
+
+    /// Verifies ClearAfterTimeout drops a stopped source from passthrough after the timeout.
+    #[test]
+    fn clear_policy_releases_stale_passthrough_source() {
+        let mut app = App::new();
+        add_command_lifecycle(&mut app);
+        app.add_systems(Update, clear_stale_input_channels);
+        app.insert_resource(IoRuntimeSettings {
+            input_signal_loss_policy: InputSignalLossPolicy::ClearAfterTimeout {},
+            input_signal_loss_timeout: Duration::from_millis(1),
+            ..Default::default()
+        });
+        app.init_resource::<ConsoleDmxUniverses>();
+        app.init_resource::<InputDmxUniverses>();
+        {
+            let now = Instant::now();
+            let mut input_universes = app.world_mut().resource_mut::<InputDmxUniverses>();
+            input_universes.set_universe(
+                BindingTransport::Sacn,
+                1,
+                [0; 512],
+                now - Duration::from_millis(50),
+            );
+            input_universes.set_universe(
+                BindingTransport::Sacn,
+                2,
+                [0; 512],
+                now + Duration::from_secs(60),
+            );
+        }
+
+        app.update();
+
+        let input_universes = app.world().resource::<InputDmxUniverses>();
+        assert!(
+            input_universes
+                .active_universe(BindingTransport::Sacn, 1)
+                .is_none()
+        );
+        assert!(
+            input_universes
+                .active_universe(BindingTransport::Sacn, 2)
+                .is_some()
+        );
     }
 
     #[test]
@@ -256,8 +333,8 @@ mod tests {
             .world()
             .get::<TransportInputAssertionOwners>(layer_entity)
             .expect("transport assertion owners should still exist");
-        assert!(!layer.absolute.contains_key(&parameter));
-        assert!(!owners.absolute.contains_key(&parameter));
+        assert!(!layer.absolute.contains_key(parameter));
+        assert!(!owners.absolute.contains_key(parameter));
     }
 
     /// Verifies `release stale-inputs` clears stale input state while policy remains Hold.
@@ -350,7 +427,13 @@ mod tests {
             .get::<TransportInputAssertionOwners>(layer_entity)
             .expect("transport assertion owners should still exist");
         assert_eq!(universes.get_value(1, 1), Some(0));
-        assert!(!layer.absolute.contains_key(&parameter));
-        assert!(!owners.absolute.contains_key(&parameter));
+        assert!(!layer.absolute.contains_key(parameter));
+        assert!(!owners.absolute.contains_key(parameter));
+        assert!(
+            app.world()
+                .resource::<InputDmxUniverses>()
+                .active_universe(BindingTransport::Sacn, 1)
+                .is_none()
+        );
     }
 }

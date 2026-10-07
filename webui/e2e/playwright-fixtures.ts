@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test as playwrightTest } from "@playwright/test";
@@ -24,7 +24,6 @@ type WorkerSlot = {
   baseURL: string;
   claimPaths: string[];
   runRoot: string;
-  viteService: unknown;
   workerIndex: number;
 };
 
@@ -38,6 +37,11 @@ type TestFixtures = {
   experimentalFlows: boolean;
   /** Ignores installed shows and generates repository-owned sample data for this test. */
   sampleDataOnly: boolean;
+  /**
+   * Starts the backend with no world loaded (AppState Initialized) even when the
+   * seed lacks the stable E2E showfiles, so startup draft and showfile prompts run.
+   */
+  emptyStartupWorld: boolean;
   backendSlot: BackendSlot;
 };
 
@@ -50,25 +54,27 @@ function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (value) return value;
   throw new Error(
-    `${name} is required; run Playwright through npm run test:webui-playwright`,
+    `${name} is required; run Playwright through pnpm run test:webui-playwright`,
   );
 }
 
 export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   experimentalFlows: [false, { option: true }],
   sampleDataOnly: [false, { option: true }],
-  /** Keeps one Vite proxy and fixed port pair alive for a Playwright worker. */
+  emptyStartupWorld: [false, { option: true }],
+  /** Claims a fixed backend port for a Playwright worker on the run's shared Vite server. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
     async ({}, use, workerInfo) => {
       const workerSlot = await startPlaywrightWorkerSlot({
+        baseURL: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_VITE_URL"),
         runRoot: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_RUN_ROOT"),
         workerIndex: workerInfo.parallelIndex,
       });
       try {
         await use(workerSlot);
       } finally {
-        await stopPlaywrightWorkerSlot(workerSlot);
+        stopPlaywrightWorkerSlot(workerSlot);
       }
     },
     { scope: "worker", timeout: 120_000 },
@@ -77,15 +83,22 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   /** Gives each test a freshly seeded backend and destroys it afterward. */
   backendSlot: [
     async (
-      { workerSlot, experimentalFlows, sampleDataOnly },
+      { workerSlot, experimentalFlows, sampleDataOnly, emptyStartupWorld },
       use,
       testInfo,
     ) => {
+      if (sampleDataOnly && emptyStartupWorld) {
+        // sampleDataOnly relies on the sample-data fallback that emptyStartupWorld disables.
+        throw new Error(
+          "sampleDataOnly and emptyStartupWorld cannot be combined: the backend would start with neither sample data nor a world",
+        );
+      }
       const emptySeed = sampleDataOnly
         ? await mkdtemp(join(tmpdir(), "nightfall-owned-sample-"))
         : undefined;
       try {
         const backendSlot = await startPlaywrightTestBackend({
+          emptyStartupWorld,
           experimentalFlows,
           seedDataDir:
             emptySeed ??
@@ -105,15 +118,30 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
     { timeout: 180_000 },
   ],
 
-  /** Routes relative page URLs through the current worker's Vite proxy. */
+  /** Routes relative page URLs through the run's shared Vite server. */
   baseURL: async ({ backendSlot }, use) => {
     await use(backendSlot.baseURL);
   },
 
-  /** Seeds startup storage for the current test's dynamically assigned origin. */
+  /**
+   * Seeds startup storage for the shared dev server's origin, plus the cookie
+   * its `/api` and `/ws` proxies use to reach this test's backend.
+   */
   storageState: async ({ backendSlot }, use) => {
+    const { hostname } = new URL(backendSlot.baseURL);
     await use({
-      cookies: [],
+      cookies: [
+        {
+          name: "nightfall-playwright-backend",
+          value: String(backendSlot.backendPort),
+          domain: hostname,
+          path: "/",
+          expires: -1,
+          httpOnly: false,
+          secure: false,
+          sameSite: "Lax",
+        },
+      ],
       origins: [
         {
           origin: backendSlot.baseURL,
@@ -129,60 +157,50 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   },
 });
 
-/** Playwright fixture that starts only Vite, leaving the backend port deliberately empty. */
+/** Playwright fixture that uses only the shared Vite server, leaving the backend port deliberately empty. */
 export const frontendOnlyTest = playwrightTest.extend<
   Record<never, never>,
   WorkerFixtures
 >({
-  /** Own one Vite service and port pair for a backend-free browser test worker. */
+  /** Claims a port pair for a backend-free browser test worker on the shared Vite server. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
     async ({}, use, workerInfo) => {
       const workerSlot = await startPlaywrightWorkerSlot({
+        baseURL: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_VITE_URL"),
         runRoot: requiredEnvironment("NIGHTFALL_PLAYWRIGHT_RUN_ROOT"),
         workerIndex: workerInfo.parallelIndex,
       });
       try {
         await use(workerSlot);
       } finally {
-        await stopPlaywrightWorkerSlot(workerSlot);
+        stopPlaywrightWorkerSlot(workerSlot);
       }
     },
     { scope: "worker", timeout: 120_000 },
   ],
 
-  /** Route relative page URLs through the frontend-only Vite process. */
+  /** Route relative page URLs through the run's shared Vite server. */
   baseURL: async ({ workerSlot }, use) => {
     await use(workerSlot.baseURL);
   },
 
-  /** Use packaged release resources in preview mode and deterministic fixtures in development. */
+  /**
+   * Serve generated audio for the demo show's timelines in dev mode, where the sample
+   * media is not packaged; preview tests use the packaged artifact unchanged.
+   */
   context: async ({ context }, use) => {
-    if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview") {
-      await use(context);
-      return;
+    if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview") {
+      await context.route(
+        "**/nightfall-demo.nightfall-show/timeline-audio/**",
+        (route) =>
+          route.fulfill({
+            contentType: "audio/wav",
+            headers: { "accept-ranges": "bytes" },
+            body: Buffer.from(createSampleWav()),
+          }),
+      );
     }
-    const showfile = await readFile(
-      new URL(
-        "../../test-fixtures/browser-show/showfile.json",
-        import.meta.url,
-      ),
-    );
-    await context.route(
-      "**/nightfall-demo.nightfall-show/showfile.json",
-      (route) =>
-        route.fulfill({ contentType: "application/json", body: showfile }),
-    );
-    const audioPath = JSON.parse(showfile.toString()).timelines[0].audio_path;
-    await context.route(
-      `**/nightfall-demo.nightfall-show/${audioPath}`,
-      (route) =>
-        route.fulfill({
-          contentType: "audio/wav",
-          headers: { "accept-ranges": "bytes" },
-          body: Buffer.from(createSampleWav()),
-        }),
-    );
     await use(context);
   },
 

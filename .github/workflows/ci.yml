@@ -1,0 +1,371 @@
+name: CI
+
+on:
+  pull_request:
+    # ready_for_review runs the desktop installers and product flows that draft PRs skip.
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+      - develop
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      distribution:
+        description: Distributions to package
+        type: choice
+        default: all
+        options: [all, desktop, browser]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  scope:
+    name: Acquire source and select validation
+    # Run standalone PRs and the lowest unmerged/top PRs of a stack.
+    if: >-
+      github.event.pull_request.stack == null ||
+      github.event.pull_request.stack.base.ref == github.event.pull_request.base.ref ||
+      github.event.pull_request.stack.position == github.event.pull_request.stack.size
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: ${{ startsWith(github.ref, 'refs/tags/') && '0' || '2' }}
+          lfs: true
+          persist-credentials: false
+      - name: Capture changed paths as data
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          : > .ci-changed-files
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            git diff --no-renames --name-only -z HEAD^1 HEAD > .ci-changed-files
+          fi
+      # This job never executes repository scripts, installs dependencies, or restores caches.
+      - name: Archive credential-free source and Git history
+        run: |
+          if git config --local --get-regexp '(^credential\.|\.extraheader$)' > /dev/null; then
+            echo '::error::Refusing to archive Git authentication configuration'
+            exit 1
+          fi
+          tar --exclude='./.git/hooks' --exclude='./.git/lfs' \
+            -cf "$RUNNER_TEMP/source.tar" .
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: source-${{ github.sha }}
+          path: ${{ runner.temp }}/source.tar
+          if-no-files-found: error
+          retention-days: 7
+      - name: Snapshot published releases as data
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" | jq 'add' > "$RUNNER_TEMP/releases.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: published-releases-${{ github.sha }}
+          path: ${{ runner.temp }}/releases.json
+          if-no-files-found: error
+          retention-days: 7
+
+  selection:
+    name: Select distribution validation
+    needs: scope
+    runs-on: ubuntu-latest
+    outputs:
+      desktop_check: ${{ steps.select.outputs.desktop_check }}
+      desktop_package: ${{ steps.select.outputs.desktop_package }}
+      browser_package: ${{ steps.select.outputs.browser_package }}
+      browser_preview: ${{ steps.select.outputs.browser_preview }}
+      product_flows: ${{ steps.select.outputs.product_flows }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore credential-free source
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Test and select validation
+        id: select
+        env:
+          DISTRIBUTION: ${{ inputs.distribution }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          # Dependabot PRs cannot read Actions secrets, so they never deploy a preview.
+          PREVIEW_WORKER: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && vars.CLOUDFLARE_PREVIEW_WORKER || '' }}
+        run: |
+          node --test scripts/ci-scope.node.test.mjs
+          node scripts/ci-scope.mjs
+
+  desktop-check:
+    name: Desktop check
+    needs: [scope, selection]
+    if: needs.selection.outputs.desktop_check == 'true'
+    uses: ./.github/workflows/desktop-check.yml
+
+  wasm-bridge:
+    name: WASM bridge
+    needs: scope
+    uses: ./.github/workflows/wasm.yml
+    with:
+      package: wasm-bridge
+      directory: wasm
+
+  browser-runtime:
+    name: Browser runtime
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+    uses: ./.github/workflows/wasm.yml
+    with:
+      package: browser-runtime
+      directory: browser-runtime
+
+  desktop:
+    name: Desktop installers
+    needs: [scope, selection, wasm-bridge]
+    if: needs.selection.outputs.desktop_package == 'true'
+    uses: ./.github/workflows/desktop-artifacts.yml
+    # Permission ceiling for the metadata-only job; all build/render jobs use {}.
+    permissions:
+      contents: read
+      pull-requests: read
+
+  release:
+    name: Release
+    needs: desktop
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: write
+    secrets:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  browser-demo:
+    name: Browser demo
+    needs: [scope, selection, wasm-bridge, browser-runtime]
+    if: needs.selection.outputs.browser_package == 'true' || needs.selection.outputs.browser_preview == 'true'
+    uses: ./.github/workflows/browser-demo.yml
+    with:
+      # Preview-only and draft builds skip the product flows that release packaging requires.
+      product-flows: ${{ needs.selection.outputs.browser_package == 'true' && needs.selection.outputs.product_flows == 'true' }}
+
+  preview:
+    name: Browser preview
+    needs: [selection, browser-demo]
+    if: needs.selection.outputs.browser_preview == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Deploys only this run's demo artifact as data; see docs/ci-security.md.
+    permissions:
+      pull-requests: write
+    concurrency:
+      group: preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Download the demo artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: nightfall-browser-demo-${{ github.sha }}
+          path: site/demo/app
+      - name: Describe the preview Worker
+        env:
+          WORKER: ${{ vars.CLOUDFLARE_PREVIEW_WORKER }}
+        run: |
+          printf '/ /demo/app/ 302\n/demo /demo/app/ 302\n' > site/_redirects
+          jq -n --arg name "$WORKER" \
+            '{name: $name, compatibility_date: "2026-10-01", assets: {directory: "./site"}, previews: {}}' \
+            > wrangler.json
+      - name: Deploy a Cloudflare Workers preview
+        id: deploy
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_PREVIEW_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: 4.147.0
+          command: preview --name=pr-${{ github.event.pull_request.number }}
+      - name: Link the preview on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview-url }}
+        run: |
+          url="$PREVIEW_URL"
+          if [[ ! "$url" =~ ^https://[A-Za-z0-9.-]+\.workers\.dev/?$ ]]; then
+            echo "::error::Cloudflare returned an unexpected preview URL"
+            exit 1
+          fi
+          body="<!-- nightfall-browser-preview -->
+          **Browser preview:** ${url%/}/demo/app/
+
+          Built from ${HEAD_SHA}. Sign in with Cloudflare Access to open it."
+          comment_id="$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- nightfall-browser-preview -->"))) | .id' | head -n 1)"
+          if [[ -n "$comment_id" ]]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment_id" -f body="$body" > /dev/null
+          else
+            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -f body="$body" > /dev/null
+          fi
+
+  source-checks:
+    name: Prek hooks and script tests
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # These hooks have dedicated jobs; all other pre-commit hooks run here.
+      SKIP: cargo-clippy,typecheck
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: source-tools
+          cache-targets: false
+      - run: pnpm install --frozen-lockfile
+      - name: Run script tests
+        run: pnpm run test:scripts
+      - run: cargo install --locked typeshare-cli --version 1.13.3
+      - run: cargo install --locked cargo-hakari --version 0.9.39
+      - name: Run source pre-commit hooks
+        run: pnpm exec prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
+
+  native:
+    name: Native
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/native-validation.yml
+
+  webui:
+    name: TypeScript and WebUI Node tests
+    needs: [scope, wasm-bridge, browser-runtime]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: webui-tools
+          cache-targets: false
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          cargo install --locked typeshare-cli --version 1.13.3
+          pnpm run typeshare
+      - name: Download shared release bridge
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-wasm-bridge-${{ github.sha }}
+          path: webui/assets/wasm
+      - name: Download shared release demo engine
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-browser-runtime-${{ github.sha }}
+          path: webui/assets/browser-runtime
+      - name: Run TypeScript pre-commit hook
+        run: pnpm exec prek run typecheck --all-files --show-diff-on-failure --color always --stage pre-commit
+      - name: Run WebUI Node tests
+        # Script tests run independently in source-checks.
+        run: pnpm run test:webui-node
+
+  browser-smoke:
+    name: Chromium product flows
+    needs: [scope, selection, native, wasm-bridge]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.product_flows == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: webui-tools
+          cache-targets: false
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          cargo install --locked typeshare-cli --version 1.13.3
+          pnpm run typeshare
+      - name: Download shared release bridge
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-wasm-bridge-${{ github.sha }}
+          path: webui/assets/wasm
+      - name: Download the tested native backend
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: native-test-backend-${{ github.sha }}
+          path: ci-artifacts
+      - name: Run Chromium product flows
+        env:
+          NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-headless
+        uses: ./.github/actions/playwright-smoke
+
+  gate:
+    # Single required check that aggregates every validation job.
+    name: CI gate
+    needs: [scope, selection, source-checks, native, wasm-bridge, browser-runtime, webui, browser-smoke]
+    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all validation jobs to succeed
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+          PRODUCT_FLOWS: ${{ needs.selection.outputs.product_flows }}
+        # Draft PRs deliberately skip the product flows.
+        run: |
+          printf '%s' "$JOB_RESULTS" | jq -e --arg flows "$PRODUCT_FLOWS" \
+            'with_entries(select($flows != "false" or .key != "browser-smoke")) | all(.[]; .result == "success")'

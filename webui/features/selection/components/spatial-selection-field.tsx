@@ -11,6 +11,7 @@ import { createEffect, createSignal, Show } from "solid-js";
 import { Input, Textarea } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   formatSpatialSelection,
   parseSpatialSelection,
@@ -47,7 +48,7 @@ export interface SpatialSelectionFieldProps {
 /** Renders one reusable, parser-backed field for authored spatial selections. */
 export function SpatialSelectionField(props: SpatialSelectionFieldProps) {
   log.trace("mounting");
-  const $fixtures = useStore(fixturesStore);
+  const $fixtures = useSharedStore(fixturesStore);
   const $groups = useStore(groupsStore);
   const [isEditing, setIsEditing] = createSignal(false);
   const [isApplying, setIsApplying] = createSignal(false);
@@ -58,9 +59,12 @@ export function SpatialSelectionField(props: SpatialSelectionFieldProps) {
   let inputRef: HTMLInputElement | undefined;
   let skipNextBlur = false;
 
-  /** Reports whether external selection updates should replace the visible editor text. */
-  const shouldSynchronizeInput = (): boolean =>
-    (props.variant ?? "compact") === "expanded" || !isDirty();
+  /**
+   * Reports whether external selection updates should replace the visible
+   * editor text. Uncommitted edits win in both variants, so a fixture or group
+   * update that re-formats the selection cannot overwrite what the user typed.
+   */
+  const shouldSynchronizeInput = (): boolean => !isDirty();
 
   /** Formats stable references through current fixture/group IDs without mutating stored data. */
   const formatCurrentSelection = async (): Promise<string> => {

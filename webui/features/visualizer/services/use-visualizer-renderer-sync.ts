@@ -14,7 +14,7 @@
  * independently reactive.
  */
 
-import { createEffect } from "solid-js";
+import { createEffect, untrack } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import type { SelectionTarget } from "../../../lib/selection-targets";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
@@ -39,6 +39,7 @@ interface UseVisualizerRendererSyncOptions {
   showEmitters: () => boolean;
   showGrid: () => boolean;
   showOrbitTargetIndicator: () => boolean;
+  darkness: () => number;
   showLabels: () => boolean;
   toolMode: () => VisualizerInteractionMode;
   rotationMode: () => VisualizerCameraRotationMode;
@@ -49,6 +50,7 @@ interface FixtureSyncSnapshot {
   make: string;
   model: string;
   beamType: string | undefined;
+  physicalSignature: string;
   layout: RenderableFixture["layout"];
   elementSignature: string;
   geometrySignature: string;
@@ -80,6 +82,7 @@ function toFixtureSyncSnapshot(
     make: fixture.make,
     model: fixture.model,
     beamType: fixture.beamType,
+    physicalSignature: fixture.physicalSignature,
     layout: fixture.layout,
     elementSignature: buildElementSignature(fixture),
     geometrySignature: buildGeometrySignature(fixture),
@@ -96,6 +99,7 @@ function requiresFullFixtureSync(
     previous.make !== next.make ||
     previous.model !== next.model ||
     previous.beamType !== next.beamType ||
+    previous.physicalSignature !== next.physicalSignature ||
     previous.layout !== next.layout ||
     previous.elementSignature !== next.elementSignature ||
     previous.geometrySignature !== next.geometrySignature
@@ -174,7 +178,9 @@ export function useVisualizerRendererSync(
 
     if (needsFullSync) {
       const setStartMs = performance.now();
-      r.setFixtures(fixtures);
+      // The snapshots above carry this effect's dependencies; serializing the
+      // full fixtures must not subscribe it to every nested store property.
+      untrack(() => r.setFixtures(fixtures));
       const setMs = performance.now() - setStartMs;
       const totalMs = performance.now() - startMs;
       log.trace(
@@ -274,6 +280,12 @@ export function useVisualizerRendererSync(
     if (!workspaceActive()) return;
     const r = options.renderer();
     r?.setOrbitTargetIndicatorEnabled(options.showOrbitTargetIndicator());
+  });
+
+  /** Applies darkness live after renderer initialization or workspace reactivation. */
+  createEffect(() => {
+    if (!workspaceActive()) return;
+    options.renderer()?.setDarkness(options.darkness());
   });
 
   createEffect(() => {

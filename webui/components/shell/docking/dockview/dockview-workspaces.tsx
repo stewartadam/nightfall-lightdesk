@@ -24,6 +24,7 @@ import { getLogger } from "../../../../lib/logger";
 import { setStoreAction } from "../../../../lib/nanostore-action";
 import { currentShowfileRevision } from "../../../../lib/showfile-loading";
 import { WorkspaceActivityContext } from "../../../../lib/workspace-activity";
+import { appLifecycle } from "../../../../state/app-lifecycle";
 import { dockApi } from "../../../../state/appStores";
 import {
   activeLayoutId,
@@ -74,8 +75,17 @@ function workspace(
   return { initialLayout, layoutId, ready: promise, resolve, reject };
 }
 
+interface DockWorkspacesProps {
+  /**
+   * Shows the active arrangement one panel at a time for small screens. The
+   * compact view never persists or switches named layouts, so it cannot
+   * overwrite an arrangement made on a larger screen.
+   */
+  compact?: boolean;
+}
+
 /** Retains visited layout workspaces and publishes only the active API to the application shell. */
-export default function DockWorkspaces() {
+export default function DockWorkspaces(props: DockWorkspacesProps) {
   const shell = useAppShell();
   const initial = workspace();
   initial.restoreSession = true;
@@ -193,7 +203,8 @@ export default function DockWorkspaces() {
 
   onCleanup(
     registerLayoutActivator(async (api, layoutId, options) => {
-      if (switching() || current.handle?.api !== api) return false;
+      if (props.compact || switching() || current.handle?.api !== api)
+        return false;
       const saved = getStoredLayout(layoutId);
       if (!saved) return false;
       if (options.adoptCurrent) {
@@ -264,6 +275,7 @@ export default function DockWorkspaces() {
   );
 
   const editingLayouts = useStore(layoutEditPending);
+  const lifecycle = useStore(appLifecycle);
   const restoredRevision = useStore(dockviewLayoutShowfileRevision);
   const restoredSettings = useStore(dockviewLayoutSettingsSnapshotRevision);
   const showfileRevision = useStore(currentShowfileRevision);
@@ -272,6 +284,8 @@ export default function DockWorkspaces() {
   createEffect(() => {
     const revision = restoredRevision();
     if (
+      props.compact ||
+      lifecycle().phase !== "interactive" ||
       editingLayouts() ||
       !restoredSettings() ||
       revision !== showfileRevision() ||
@@ -341,6 +355,7 @@ export default function DockWorkspaces() {
                   <DockWorkspace
                     initialLayout={entry.initialLayout}
                     restoreSession={entry.restoreSession}
+                    compact={props.compact}
                     onReady={(handle) => {
                       entry.handle = handle;
                       setReady(true);
@@ -358,6 +373,7 @@ export default function DockWorkspaces() {
       </For>
       <DockviewEventListener
         isActivating={switching}
+        persist={!props.compact}
         hasSessionLayout={() => current.handle?.hasSessionLayout() ?? false}
         onResetLayout={() => current.handle?.reset()}
       />

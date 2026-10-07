@@ -11,7 +11,11 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 /** Reads dialog presentation independently of the caller's width and content. */
 async function presentation(dialog: Locator) {
@@ -72,11 +76,14 @@ test("shared dialog presentation covers lab, store and creation forms", async ({
 
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
+  await dockFixturesInMainGrid(page);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
-    api.getPanel("panel-Programmer")?.api.setActive();
-    api.setEdgeGroupVisible("left", true);
-    api.getEdgeGroup("left")?.expand();
+    // The default layout keeps Programmer in the collapsed bottom edge group.
+    api.setEdgeGroupVisible("bottom", true);
+    api.getEdgeGroup("bottom").expand();
+    api.getPanel("panel-ProgrammerGrid").api.setActive();
   });
   for (const target of ["cue", "group"]) {
     await page
@@ -118,7 +125,7 @@ test("shared dialog presentation covers lab, store and creation forms", async ({
   await expect(
     objectDialog.getByText("Please select a GLB file", { exact: true }),
   ).toBeVisible();
-  const bounds = await objectDialog.boundingBox();
+  const bounds = await objectDialog.locator(".nf-dialog-surface").boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
   expect(bounds!.height).toBeLessThanOrEqual(668);

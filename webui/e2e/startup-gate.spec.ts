@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { blockAppScripts } from "./app-hooks";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { routeShowfileDiscovery } from "./showfile-startup";
 
@@ -13,138 +14,172 @@ import { routeShowfileDiscovery } from "./showfile-startup";
 async function installFakeWebsocketWorker(
   page: Page,
   initialAppState: "Initialized" | "Ready" = "Ready",
+  succeedWorldSwap = false,
 ) {
-  await page.addInitScript((appState) => {
-    type QueuedWorkerMessage = {
-      data: unknown;
-      postedAtMs: number;
-      deliveryMessageId: number;
-    };
+  await page.addInitScript(
+    ({ appState, succeedWorldSwap }) => {
+      type QueuedWorkerMessage = {
+        data: unknown;
+        postedAtMs: number;
+        deliveryMessageId: number;
+      };
 
-    class FakeWebsocketWorker {
-      onmessage: ((event: MessageEvent) => void) | null = null;
-      onerror: ((event: Event) => void) | null = null;
-      private queue: QueuedWorkerMessage[] = [];
-      private nextDeliveryMessageId = 1;
+      class FakeWebsocketWorker {
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
 
-      /** Queue one decoded backend message for the next pullFrame request. */
-      emitBackendMessage(data: unknown): void {
-        this.queue.push({
-          data,
-          postedAtMs: performance.timeOrigin + performance.now(),
-          deliveryMessageId: this.nextDeliveryMessageId++,
-        });
-      }
+        /** Accepts the uncaught-error reporter's listeners; the fake never fails. */
+        addEventListener(): void {}
 
-      /** Dispatch one worker control message to the app. */
-      emitWorkerMessage(data: unknown): void {
-        this.onmessage?.(new MessageEvent("message", { data }));
-      }
+        /** Pairs with `addEventListener` so reporter cleanup succeeds. */
+        removeEventListener(): void {}
+        private queue: QueuedWorkerMessage[] = [];
+        private nextDeliveryMessageId = 1;
 
-      /** Emulates the subset of the websocket worker protocol used by the app. */
-      postMessage(message: unknown): void {
-        const envelope = message as {
-          type?: string;
-          data?: {
-            module?: string;
-            command?: { type?: string; data?: unknown };
+        /** Queue one decoded backend message for the next pullFrame request. */
+        emitBackendMessage(data: unknown): void {
+          this.queue.push({
+            data,
+            postedAtMs: performance.timeOrigin + performance.now(),
+            deliveryMessageId: this.nextDeliveryMessageId++,
+          });
+        }
+
+        /** Dispatch one worker control message to the app. */
+        emitWorkerMessage(data: unknown): void {
+          this.onmessage?.(new MessageEvent("message", { data }));
+        }
+
+        /** Emulates the subset of the websocket worker protocol used by the app. */
+        postMessage(message: unknown): void {
+          const envelope = message as {
+            type?: string;
+            data?: {
+              command_id?: unknown;
+              module?: string;
+              command?: { type?: string; data?: unknown };
+            };
           };
-        };
-        if (envelope.type === "start") {
-          window.setTimeout(() => {
-            this.emitWorkerMessage({ type: "status", status: "connected" });
-            this.emitWorkerMessage({ type: "connected" });
-            this.emitBackendMessage({ type: "AppState", data: appState });
-            this.emitBackendMessage({ type: "ResyncComplete" });
-            this.flush();
-          }, 0);
-          return;
-        }
-
-        const worldSwapCommands = new Set([
-          "LoadDraftShowfile",
-          "LoadNamedShowfile",
-          "LoadShowfile",
-          "NewNamedShowfile",
-          "NewShowfile",
-        ]);
-        if (
-          envelope.type === "submit" &&
-          (
-            window as Window & {
-              __nightfallDisconnectWorldSwapCommands?: boolean;
-            }
-          ).__nightfallDisconnectWorldSwapCommands === true &&
-          envelope.data?.module === "DeskCommand" &&
-          worldSwapCommands.has(envelope.data.command?.type ?? "")
-        ) {
-          const command = envelope.data.command;
-          this.emitWorkerMessage({ type: "status", status: "disconnected" });
-          (
-            window as Window & {
-              __nightfallCompleteWorldSwap?: (
-                confirmedShowfileName?: string,
-              ) => void;
-            }
-          ).__nightfallCompleteWorldSwap = (confirmedShowfileName) => {
-            const showfileName =
-              confirmedShowfileName ??
-              (typeof command?.data === "string" ? command.data : "default");
-            this.emitWorkerMessage({ type: "status", status: "connected" });
-            this.emitWorkerMessage({ type: "connected" });
-            this.emitBackendMessage({
-              type: "UiNotification",
-              data: {
-                type: "CurrentShowfileChanged",
-                data: { name: showfileName, change_id: crypto.randomUUID() },
-              },
-            });
-            this.emitBackendMessage({ type: "AppState", data: "Ready" });
-            this.emitBackendMessage({ type: "ResyncComplete" });
-            this.flush();
-          };
-          return;
-        }
-
-        if (envelope.type === "pullFrame") {
-          this.flush();
-        }
-      }
-
-      /** Stops the fake worker without touching queued browser state. */
-      terminate(): void {
-        this.queue = [];
-      }
-
-      /** Sends queued backend messages as a worker message batch. */
-      private flush(): void {
-        const messages = this.queue.splice(0, this.queue.length);
-        this.emitWorkerMessage({ type: "messageBatch", messages });
-      }
-    }
-
-    const workers: FakeWebsocketWorker[] = [];
-    const NativeWorker = window.Worker;
-    Object.defineProperty(window, "__nightfallFakeWorkers", {
-      configurable: true,
-      value: workers,
-    });
-    Object.defineProperty(window, "Worker", {
-      configurable: true,
-      value: new Proxy(NativeWorker, {
-        construct(target, args: [string | URL, WorkerOptions | undefined]) {
-          const [scriptUrl, options] = args;
-          if (!String(scriptUrl).includes("engine-runtime-worker")) {
-            return Reflect.construct(target, [scriptUrl, options]);
+          if (envelope.type === "start") {
+            window.setTimeout(() => {
+              this.emitWorkerMessage({ type: "status", status: "connected" });
+              this.emitWorkerMessage({ type: "connected" });
+              this.emitBackendMessage({ type: "AppState", data: appState });
+              this.emitBackendMessage({ type: "ResyncComplete" });
+              this.flush();
+            }, 0);
+            return;
           }
 
-          const worker = new FakeWebsocketWorker();
-          workers.push(worker);
-          return worker;
-        },
-      }),
-    });
-  }, initialAppState);
+          const worldSwapCommands = new Set([
+            "LoadDraftShowfile",
+            "LoadNamedShowfile",
+            "LoadShowfile",
+            "NewNamedShowfile",
+            "NewShowfile",
+          ]);
+          if (
+            envelope.type === "submit" &&
+            (succeedWorldSwap ||
+              (
+                window as Window & {
+                  __nightfallDisconnectWorldSwapCommands?: boolean;
+                }
+              ).__nightfallDisconnectWorldSwapCommands === true) &&
+            envelope.data?.module === "DeskCommand" &&
+            worldSwapCommands.has(envelope.data.command?.type ?? "")
+          ) {
+            const command = envelope.data.command;
+            if (succeedWorldSwap) {
+              this.emitBackendMessage({
+                type: "CommandResult",
+                data: {
+                  command_id: envelope.data.command_id,
+                  outcome: { type: "Succeeded", data: {} },
+                },
+              });
+              this.emitBackendMessage({ type: "AppState", data: "Ready" });
+              this.emitBackendMessage({ type: "ResyncComplete" });
+              this.flush();
+            } else {
+              this.emitWorkerMessage({
+                type: "status",
+                status: "disconnected",
+              });
+            }
+            const changeId = crypto.randomUUID();
+            (
+              window as Window & {
+                __nightfallCompleteWorldSwap?: (
+                  confirmedShowfileName?: string,
+                ) => void;
+              }
+            ).__nightfallCompleteWorldSwap = (confirmedShowfileName) => {
+              const showfileName =
+                confirmedShowfileName ??
+                (typeof command?.data === "string" ? command.data : "default");
+              this.emitWorkerMessage({ type: "status", status: "connected" });
+              this.emitWorkerMessage({ type: "connected" });
+              this.emitBackendMessage({
+                type: "UiNotification",
+                data: {
+                  type: "CurrentShowfileChanged",
+                  data: {
+                    name: showfileName,
+                    change_id: confirmedShowfileName
+                      ? crypto.randomUUID()
+                      : changeId,
+                  },
+                },
+              });
+              this.emitBackendMessage({ type: "AppState", data: "Ready" });
+              this.emitBackendMessage({ type: "ResyncComplete" });
+              this.flush();
+            };
+            return;
+          }
+
+          if (envelope.type === "pullFrame") {
+            this.flush();
+          }
+        }
+
+        /** Stops the fake worker without touching queued browser state. */
+        terminate(): void {
+          this.queue = [];
+        }
+
+        /** Sends queued backend messages as a worker message batch. */
+        private flush(): void {
+          const messages = this.queue.splice(0, this.queue.length);
+          this.emitWorkerMessage({ type: "messageBatch", messages });
+        }
+      }
+
+      const workers: FakeWebsocketWorker[] = [];
+      const NativeWorker = window.Worker;
+      Object.defineProperty(window, "__nightfallFakeWorkers", {
+        configurable: true,
+        value: workers,
+      });
+      Object.defineProperty(window, "Worker", {
+        configurable: true,
+        value: new Proxy(NativeWorker, {
+          construct(target, args: [string | URL, WorkerOptions | undefined]) {
+            const [scriptUrl, options] = args;
+            if (!/engine-runtime-(?:demo-)?worker/.test(String(scriptUrl))) {
+              return Reflect.construct(target, [scriptUrl, options]);
+            }
+
+            const worker = new FakeWebsocketWorker();
+            workers.push(worker);
+            return worker;
+          },
+        }),
+      });
+    },
+    { appState: initialAppState, succeedWorldSwap },
+  );
 }
 
 /** Disables the global E2E startup auto-open storage state for startup tests. */
@@ -172,12 +207,7 @@ async function disconnectStartupWorldSwapCommands(page: Page) {
 test("bootstrap html presents startup splash before app shell mounts", async ({
   page,
 }, testInfo) => {
-  await page.route("**/main.tsx", async (route) => {
-    await route.fulfill({
-      contentType: "application/javascript",
-      body: "",
-    });
-  });
+  await blockAppScripts(page);
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
@@ -294,10 +324,13 @@ test("startup splash presents beat-synced logo faders and bottom build metadata"
     expect(keyframeProperties).not.toContain("height");
   }
   await expect.poll(() => logo.getAttribute("data-beat")).toMatch(/^[1-3]$/);
-  const nextTransforms = await faders.evaluateAll((elements) =>
-    elements.map((element) => getComputedStyle(element).transform),
-  );
-  expect(nextTransforms).not.toEqual(initialTransforms);
+  await expect
+    .poll(() =>
+      faders.evaluateAll((elements) =>
+        elements.map((element) => getComputedStyle(element).transform),
+      ),
+    )
+    .not.toEqual(initialTransforms);
   await expect
     .poll(() =>
       faders
@@ -307,9 +340,7 @@ test("startup splash presents beat-synced logo faders and bottom build metadata"
     .toContain("0.22s");
 
   const bootstrapPage = await page.context().newPage();
-  await bootstrapPage.route("**/main.tsx", (route) =>
-    route.fulfill({ contentType: "application/javascript", body: "" }),
-  );
+  await blockAppScripts(bootstrapPage);
   await bootstrapPage.goto("/", { waitUntil: "domcontentloaded" });
   const bootstrap = bootstrapPage.locator("#bootstrap-splash");
   /** Captures typography and layout properties that must survive the handoff. */
@@ -371,7 +402,10 @@ test("startup splash stays visible for at least one second", async ({
 }) => {
   await disableE2eStartupAutoOpen(page);
   await installFakeWebsocketWorker(page, "Initialized");
+  // Paused, the hold only advances through `runFor`, however long the page
+  // takes to load on a busy machine.
   await page.clock.install({ time: 0 });
+  await page.clock.pauseAt(1_000);
   await routeShowfileDiscovery(page, async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -382,76 +416,127 @@ test("startup splash stays visible for at least one second", async ({
   await page.goto("/?startup:draftRecovery=true&e2e=1");
   const splash = page.getByTestId("startup-splash");
   await expect(splash).toBeVisible();
+  // Lets the fake worker's zero-delay connection timer fire.
+  await page.clock.runFor(1);
   await expect(
     page.getByRole("dialog", { name: "Open Showfile" }),
   ).toBeVisible();
 
-  await page.clock.runFor(999);
+  await page.clock.runFor(998);
   await expect(splash).toBeVisible();
 
-  await page.clock.runFor(301);
+  await page.clock.runFor(400);
   await expect(splash).toBeHidden();
 });
 
-/** Verifies a world-swap disconnect stays hidden until the requested showfile is confirmed. */
-test("keeps startup splash visible until world-swap showfile confirmation", async ({
-  page,
-}) => {
-  await disableE2eStartupAutoOpen(page);
-  await disconnectStartupWorldSwapCommands(page);
-  await installFakeWebsocketWorker(page, "Initialized");
-  await routeShowfileDiscovery(page, async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        showfiles: [
-          {
-            name: "tour",
-            path: "/tmp/tour.nightfall-show",
-            modified_ms: 1_700_000_000_000,
-            revisions: [],
-          },
-        ],
-      }),
+for (const succeedWorldSwap of [false, true]) {
+  /** Verifies startup waits for confirmed identity after either a result or disconnect. */
+  test(`keeps startup splash visible until world-swap showfile confirmation (${succeedWorldSwap ? "success" : "disconnect"})`, async ({
+    page,
+  }, testInfo) => {
+    await disableE2eStartupAutoOpen(page);
+    await disconnectStartupWorldSwapCommands(page);
+    await installFakeWebsocketWorker(page, "Initialized", succeedWorldSwap);
+    await routeShowfileDiscovery(page, async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          showfiles: [
+            {
+              name: "tour",
+              path: "/tmp/tour.nightfall-show",
+              modified_ms: 1_700_000_000_000,
+              revisions: [],
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto("/?startup:draftRecovery=true&e2e=1");
+    const picker = page.getByRole("dialog", { name: "Open Showfile" });
+    await expect(picker).toBeVisible();
+    /** Reads the backend-confirmed showfile generation from the running app. */
+    const readRevision = () =>
+      page.evaluate(async () => {
+        const showfile = (await window.__nightfallHarness.load("app"))
+          .showfileLoading;
+        return showfile.currentShowfileRevision.get();
+      });
+    const initialRevision = await readRevision();
+    await page.evaluate(async () => {
+      const settings = (await window.__nightfallHarness.load("app")).settings;
+      const snapshots = (await window.__nightfallHarness.load("app"))
+        .ioSnapshots;
+      snapshots.applySettingsSnapshot(settings.$settings.get());
+    });
+    await picker
+      .getByRole("button", { name: "Show revisions for tour" })
+      .click();
+    await picker
+      .getByRole("button", { name: "Open saved showfile tour" })
+      .click();
+
+    await expect(picker).toBeHidden();
+    await expect(page.getByTestId("startup-splash")).toBeVisible();
+    await expect(
+      page.getByText("WebSocket disconnected before the command completed"),
+    ).toHaveCount(0);
+    await expect(page.locator("button[title='Menu']")).toHaveCount(0);
+    expect(await readRevision()).toBe(initialRevision);
+
+    await page.evaluate(() => {
+      (
+        window as Window & {
+          __nightfallCompleteWorldSwap?: (
+            confirmedShowfileName?: string,
+          ) => void;
+        }
+      ).__nightfallCompleteWorldSwap?.("other");
+    });
+
+    await expect(page.getByTestId("startup-splash")).toBeVisible();
+    await expect(page.locator("button[title='Menu']")).toHaveCount(0);
+
+    await page.evaluate(() => {
+      (
+        window as Window & {
+          __nightfallCompleteWorldSwap?: (
+            confirmedShowfileName?: string,
+          ) => void;
+        }
+      ).__nightfallCompleteWorldSwap?.();
+    });
+    await expect(page.getByTestId("startup-splash")).toBeHidden();
+    await expect(page.locator("button[title='Menu']")).toBeVisible();
+    expect(await readRevision()).toBe(initialRevision + 2);
+    const panel = await page.locator("[data-panel-id]").first().elementHandle();
+    expect(panel).not.toBeNull();
+    const replayGeneration = await page.evaluate(async () => {
+      const runtime = window.__nightfallTest.runtime;
+      const generation = runtime.resyncGeneration();
+      (
+        window as Window & {
+          __nightfallCompleteWorldSwap?: () => void;
+        }
+      ).__nightfallCompleteWorldSwap?.();
+      return generation;
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const runtime = window.__nightfallTest.runtime;
+          return runtime.resyncGeneration();
+        }),
+      )
+      .toBeGreaterThan(replayGeneration);
+    await expect.poll(readRevision).toBe(initialRevision + 2);
+    expect(await panel!.evaluate((element) => element.isConnected)).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("confirmed-startup.png"),
     });
   });
-
-  await page.goto("/?startup:draftRecovery=true&e2e=1");
-  const picker = page.getByRole("dialog", { name: "Open Showfile" });
-  await expect(picker).toBeVisible();
-  await picker.getByRole("button", { name: "Show revisions for tour" }).click();
-  await picker
-    .getByRole("button", { name: "Open saved showfile tour" })
-    .click();
-
-  await expect(picker).toBeHidden();
-  await expect(page.getByTestId("startup-splash")).toBeVisible();
-  await expect(
-    page.getByText("WebSocket disconnected before the command completed"),
-  ).toHaveCount(0);
-  await expect(page.locator("button[title='Menu']")).toHaveCount(0);
-
-  await page.evaluate(() => {
-    (
-      window as Window & {
-        __nightfallCompleteWorldSwap?: (confirmedShowfileName?: string) => void;
-      }
-    ).__nightfallCompleteWorldSwap?.("other");
-  });
-
-  await expect(page.getByTestId("startup-splash")).toBeVisible();
-  await expect(page.locator("button[title='Menu']")).toHaveCount(0);
-
-  await page.evaluate(() => {
-    (
-      window as Window & {
-        __nightfallCompleteWorldSwap?: (confirmedShowfileName?: string) => void;
-      }
-    ).__nightfallCompleteWorldSwap?.();
-  });
-  await expect(page.getByTestId("startup-splash")).toBeHidden();
-  await expect(page.locator("button[title='Menu']")).toBeVisible();
-});
+}
 
 /** Verifies a fresh backend session without a loaded showfile returns to startup selection. */
 test("returns to startup picker when backend reconnects initialized", async ({
@@ -499,4 +584,76 @@ test("returns to startup picker when backend reconnects initialized", async ({
     page.getByRole("dialog", { name: "Open Showfile" }),
   ).toBeVisible();
   await expect(menuButton).toBeHidden();
+});
+
+/** Verifies reopening a showfile after a backend restart reveals the already-mounted shell again. */
+test("reveals the shell after reopening a showfile once the backend restarts", async ({
+  page,
+}) => {
+  await disableE2eStartupAutoOpen(page);
+  await disconnectStartupWorldSwapCommands(page);
+  await installFakeWebsocketWorker(page);
+  await routeShowfileDiscovery(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        showfiles: [
+          {
+            name: "tour",
+            path: "/tmp/tour.nightfall-show",
+            modified_ms: 1_700_000_000_000,
+            revisions: [],
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/");
+  const menuButton = page.locator("button[title='Menu']");
+  await expect(menuButton).toBeVisible();
+
+  await page.evaluate(() => {
+    const worker = (
+      window as Window & {
+        __nightfallFakeWorkers?: Array<{
+          emitWorkerMessage: (data: unknown) => void;
+        }>;
+      }
+    ).__nightfallFakeWorkers?.[0];
+    worker?.emitWorkerMessage({
+      type: "messageBatch",
+      messages: [
+        {
+          data: { type: "AppState", data: "Initialized" },
+          postedAtMs: performance.timeOrigin + performance.now(),
+          deliveryMessageId: 100,
+        },
+        {
+          data: { type: "ResyncComplete" },
+          postedAtMs: performance.timeOrigin + performance.now(),
+          deliveryMessageId: 101,
+        },
+      ],
+    });
+  });
+
+  const picker = page.getByRole("dialog", { name: "Open Showfile" });
+  await expect(picker).toBeVisible();
+  await expect(menuButton).toBeHidden();
+  await picker.getByRole("button", { name: "Show revisions for tour" }).click();
+  await picker
+    .getByRole("button", { name: "Open saved showfile tour" })
+    .click();
+  await expect(picker).toBeHidden();
+
+  await page.evaluate(() => {
+    (
+      window as Window & {
+        __nightfallCompleteWorldSwap?: () => void;
+      }
+    ).__nightfallCompleteWorldSwap?.();
+  });
+  await expect(page.getByTestId("startup-splash")).toBeHidden();
+  await expect(menuButton).toBeVisible();
 });

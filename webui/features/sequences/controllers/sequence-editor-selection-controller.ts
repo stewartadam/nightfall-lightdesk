@@ -12,6 +12,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  untrack,
 } from "solid-js";
 import type { GridColumn, GridSelection } from "../../../lib/data-grid-types";
 import { CompactSelection } from "../../../lib/data-grid-types";
@@ -35,6 +36,7 @@ import {
   isTimingColumnId,
   type SequenceEditorTarget,
   type SequenceGridRow,
+  sequenceGridRowKey,
   type TimingColumnId,
 } from "../model/sequence-editor-model";
 
@@ -63,8 +65,12 @@ export function createSequenceEditorSelectionController(
   const [selectedEditorTarget, setSelectedEditorTarget] = createSignal<
     SequenceEditorTarget | undefined
   >(undefined);
-  const [pendingSelectedCueUids, setPendingSelectedCueUids] = createSignal<
-    Set<string> | undefined
+  const [pendingDeleteSelection, setPendingDeleteSelection] = createSignal<
+    | {
+        deletedRowKeys: ReadonlySet<string>;
+        target?: { column: number; row: number; rowKey: string };
+      }
+    | undefined
   >(undefined);
 
   /** Finds the visible row index for the context-selected cue. */
@@ -223,47 +229,6 @@ export function createSequenceEditorSelectionController(
       .sort((a, b) => a - b);
   });
 
-  /** Collects cue identities that must remain selected after reordering. */
-  const selectedMoveCueUids = createMemo(() => {
-    const selectedUids = new Set<string>();
-    const movableRows = ctx
-      .cueRows()
-      .filter((row) => !row.isSetupCue && !row.isReleaseCue);
-    for (const sequenceIndex of selectedMoveRows()) {
-      const row = movableRows.find((row) => row.index === sequenceIndex);
-      if (row && !row.isMissing) {
-        selectedUids.add(row.cueUid);
-      }
-    }
-    return selectedUids;
-  });
-
-  /** Reapplies cue-row selection after asynchronous row reordering. */
-  createEffect(() => {
-    const pending = pendingSelectedCueUids();
-    if (!pending || pending.size === 0) return;
-
-    const currentRows = rows();
-    const selectedIndices: number[] = [];
-    for (const [index, row] of currentRows.entries()) {
-      if (row.rowKind === "cue" && pending.has(row.cueUid)) {
-        selectedIndices.push(index);
-      }
-    }
-
-    setGridSelection((previous) => {
-      const baseSelection = previous ?? {
-        columns: CompactSelection.empty(),
-        rows: CompactSelection.empty(),
-      };
-      return {
-        ...baseSelection,
-        rows: CompactSelection.fromArray(selectedIndices),
-      };
-    });
-    setPendingSelectedCueUids(undefined);
-  });
-
   /** Opens or focuses the cue editor for the effective selected row. */
   const openSelectedCueEditor = () => {
     const api = $dockApi();
@@ -319,71 +284,15 @@ export function createSequenceEditorSelectionController(
     );
   };
 
-  /** Shifts row and range selection coordinates after a sequence reorder. */
-  const shiftGridSelection = (
-    selection: GridSelection,
-    offset: -1 | 1,
-    maxRows: number,
-  ): GridSelection => {
-    /** Clamps a shifted row coordinate to the current grid bounds. */
-    const clamp = (value: number, min: number, max: number) =>
-      Math.min(Math.max(value, min), max);
-    const nextRows = getSelectedRowIndices(selection)
-      .map((rowIndex) => rowIndex + offset)
-      .filter((rowIndex) => rowIndex >= 0 && rowIndex < maxRows);
-    const nextGridRows = CompactSelection.fromArray(nextRows);
-
-    const current = selection.current;
-    if (!current) {
-      return {
-        ...selection,
-        rows: nextGridRows,
-      };
-    }
-
-    const maxCellRow = Math.max(0, maxRows - 1);
-    const shiftedCurrent = {
-      ...current,
-      cell: [
-        current.cell[0],
-        clamp(current.cell[1] + offset, 0, maxCellRow),
-      ] as [number, number],
-      range: current.range
-        ? {
-            ...current.range,
-            y: clamp(
-              current.range.y + offset,
-              0,
-              Math.max(0, maxRows - current.range.height),
-            ),
-          }
-        : current.range,
-      rangeStack: current.rangeStack.map((range) => ({
-        ...range,
-        y: clamp(range.y + offset, 0, Math.max(0, maxRows - range.height)),
-      })),
-    };
-
-    return {
-      ...selection,
-      rows: nextGridRows,
-      current: shiftedCurrent,
-    };
-  };
-
-  /** Reorders selected cue rows while preserving their grid selection. */
+  /**
+   * Reorders selected cue rows. The grid follows selected rows by their stable
+   * row keys when the reordered rows arrive, so the selection moves with them.
+   */
   const moveSelectedCue = (offset: -1 | 1) => {
     if (!canMoveSelection(offset)) return;
     const selectedRows = selectedMoveRows();
     if (selectedRows.length === 0) return;
-    const selectedCueUids = selectedMoveCueUids();
-
     ctx.reorderCueRows(selectedRows, offset);
-    setPendingSelectedCueUids(new Set(selectedCueUids));
-
-    const selection = gridSelection();
-    if (!selection) return;
-    setGridSelection(shiftGridSelection(selection, offset, rows().length));
   };
 
   /** Stores a grid selection and refreshes derived sequence-editor row focus state. */
@@ -401,22 +310,22 @@ export function createSequenceEditorSelectionController(
     setSelectedEditorTarget(undefined);
   };
 
-  /** Replaces stale row-delete selection with the equivalent selection in the updated row set. */
-  const selectAfterDeletedRows = (
-    selection: GridSelection | undefined,
-    rowIndices: readonly number[],
-    rowCount = rows().length,
-  ): GridSelection => {
-    const nextSelection = sequenceEditorSelectionAfterStructuralDelete(
-      selection,
-      rowIndices,
-      rowCount,
-    );
-    storeGridSelection(nextSelection);
-    return nextSelection;
+  /** Returns the index after the last row that structural selection may land on. */
+  const selectableRowCount = (gridRows: readonly SequenceGridRow[]): number => {
+    for (let rowIndex = gridRows.length - 1; rowIndex >= 0; rowIndex--) {
+      if (!isMetaCueRow(gridRows[rowIndex]!)) return rowIndex + 1;
+    }
+    return 0;
   };
 
-  /** Selects the replacement row after removing visual rows from a current row snapshot. */
+  /**
+   * Selects the replacement row after removing visual rows from a current row snapshot.
+   *
+   * The replacement is applied once the updated rows arrive and is resolved by
+   * row key: the grid follows any selection it already holds by row identity
+   * when its rows change, so a selection expressed in post-delete indexes and
+   * stored before the rows update would be remapped onto the wrong rows.
+   */
   const selectAfterDeletedVisualRows = (
     selection: GridSelection | undefined,
     rowIndices: readonly number[],
@@ -429,19 +338,74 @@ export function createSequenceEditorSelectionController(
     const postDeleteRows = currentRows.filter(
       (_, rowIndex) => !deletedRowSet.has(rowIndex),
     );
-    let lastSelectableRowIndex = -1;
-    for (let rowIndex = postDeleteRows.length - 1; rowIndex >= 0; rowIndex--) {
-      if (!isMetaCueRow(postDeleteRows[rowIndex]!)) {
-        lastSelectableRowIndex = rowIndex;
-        break;
-      }
-    }
-    return selectAfterDeletedRows(
+    const nextSelection = sequenceEditorSelectionAfterStructuralDelete(
       selection,
       deletedRows,
-      lastSelectableRowIndex + 1,
+      selectableRowCount(postDeleteRows),
     );
+    const targetCell = nextSelection.current?.cell;
+    const targetRow =
+      targetCell === undefined ? undefined : postDeleteRows[targetCell[1]];
+    setPendingDeleteSelection({
+      deletedRowKeys: new Set(
+        deletedRows.map((rowIndex) =>
+          sequenceGridRowKey(currentRows[rowIndex]!),
+        ),
+      ),
+      target:
+        targetCell && targetRow
+          ? {
+              column: targetCell[0],
+              row: targetCell[1],
+              rowKey: sequenceGridRowKey(targetRow),
+            }
+          : undefined,
+    });
+    return nextSelection;
   };
+
+  /**
+   * Applies a pending post-delete selection once the deleted rows are gone.
+   * Runs after the current reactive flush so the grid has already remapped its
+   * own selection to the new rows and adopts this selection last.
+   */
+  createEffect(() => {
+    const pending = pendingDeleteSelection();
+    if (!pending) return;
+    const currentRows = rows();
+    const rowKeys = currentRows.map(sequenceGridRowKey);
+    if (rowKeys.some((rowKey) => pending.deletedRowKeys.has(rowKey))) return;
+
+    setPendingDeleteSelection(undefined);
+    const target = pending.target;
+    const rowCount = selectableRowCount(currentRows);
+    const keyedRow = target ? rowKeys.indexOf(target.rowKey) : -1;
+    const row = !target
+      ? undefined
+      : keyedRow >= 0
+        ? keyedRow
+        : rowCount > 0
+          ? Math.min(target.row, rowCount - 1)
+          : undefined;
+    queueMicrotask(() => {
+      storeGridSelection(
+        target && row !== undefined
+          ? {
+              columns: CompactSelection.empty(),
+              rows: CompactSelection.empty(),
+              current: {
+                cell: [target.column, row],
+                range: { x: target.column, y: row, width: 1, height: 1 },
+                rangeStack: [],
+              },
+            }
+          : {
+              columns: CompactSelection.empty(),
+              rows: CompactSelection.empty(),
+            },
+      );
+    });
+  });
 
   /** Returns rendered row indexes expected to disappear after a structural delete. */
   const deletedVisualRowIndicesForTargets = (
@@ -624,6 +588,18 @@ export function createSequenceEditorSelectionController(
 
   /** Publishes a new grid selection into derived editor targeting state. */
   const handleGridSelectionChange = (selection: GridSelection) => {
+    // A selection change while the deleted rows are still present comes from
+    // the user rather than the grid remapping new rows, so it supersedes the
+    // pending post-delete selection.
+    const pending = untrack(pendingDeleteSelection);
+    if (
+      pending &&
+      untrack(rows).some((row) =>
+        pending.deletedRowKeys.has(sequenceGridRowKey(row)),
+      )
+    ) {
+      setPendingDeleteSelection(undefined);
+    }
     storeGridSelection(selection);
   };
 

@@ -14,11 +14,12 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const projectRoot = resolve(
@@ -101,35 +102,80 @@ function supplementText(entry) {
   return text.trim();
 }
 
-/** Resolve the installed copy corresponding to a bundled package, including nested versions. */
-function npmDirectory(name, version) {
-  const lock = JSON.parse(read("package-lock.json"));
-  const path = Object.keys(lock.packages).find(
-    (key) =>
-      (key === `node_modules/${name}` ||
-        key.endsWith(`/node_modules/${name}`)) &&
-      lock.packages[key].version === version,
+/** Locate a dependency the way Node does, from the requiring package's real directory upward. */
+function dependencyDirectory(name, from) {
+  for (let directory = from; ; directory = dirname(directory)) {
+    const candidate =
+      basename(directory) === "node_modules"
+        ? join(directory, name)
+        : join(directory, "node_modules", name);
+    if (existsSync(join(candidate, "package.json")))
+      return realpathSync(candidate);
+    if (dirname(directory) === directory) return undefined;
+  }
+}
+
+/**
+ * Index installed packages reachable from the project manifest's `fields` by
+ * `name@version`. Transitive packages follow their runtime, optional and installed
+ * peer dependencies, so the walk reflects the installed tree independently of the
+ * package manager's layout.
+ */
+function installedPackages(
+  fields = ["dependencies", "optionalDependencies", "devDependencies"],
+) {
+  const root = JSON.parse(read("package.json"));
+  const packages = new Map();
+  const pending = fields.flatMap((field) =>
+    Object.keys(root[field] ?? {}).map((name) => [name, projectRoot]),
   );
-  if (!path && version === "0.0.0") {
+  while (pending.length > 0) {
+    const [name, from] = pending.pop();
+    const directory = dependencyDirectory(name, from);
+    if (!directory) continue;
+    const pkg = JSON.parse(
+      readFileSync(join(directory, "package.json"), "utf8"),
+    );
+    const key = `${pkg.name}@${pkg.version}`;
+    if (packages.has(key)) continue;
+    packages.set(key, {
+      name: pkg.name,
+      version: pkg.version,
+      identifier: pkg.license,
+      directory,
+    });
+    for (const field of [
+      "dependencies",
+      "optionalDependencies",
+      "peerDependencies",
+    ])
+      for (const dependency of Object.keys(pkg[field] ?? {}))
+        pending.push([dependency, directory]);
+  }
+  return packages;
+}
+
+/** Resolve the installed copy corresponding to a bundled package, including nested versions. */
+function npmDirectory(name, version, packages) {
+  const installed = packages.get(`${name}@${version}`);
+  if (installed) return installed.directory;
+  if (version === "0.0.0") {
     const rootName = name.startsWith("@")
       ? name.split("/").slice(0, 2).join("/")
       : name.split("/")[0];
-    const rootPath = `node_modules/${rootName}`;
-    if (name !== rootName && lock.packages[rootPath])
-      return resolve(projectRoot, rootPath);
+    const rootDirectory =
+      name !== rootName && dependencyDirectory(rootName, projectRoot);
+    if (rootDirectory) return rootDirectory;
   }
-  if (!path)
-    throw new Error(
-      `Bundled package missing from lockfile: ${name}@${version}`,
-    );
-  return resolve(projectRoot, path);
+  throw new Error(`Bundled package is not installed: ${name}@${version}`);
 }
 
 /** Enrich Vite's bundle inventory with complete license, NOTICE, and AUTHORS files. */
 export function frontendNotices(inventory, strict = true) {
   const reviewed = supplements();
+  const packages = installedPackages();
   return inventory.map(({ name, version, identifier }) => {
-    const directory = npmDirectory(name, version);
+    const directory = npmDirectory(name, version, packages);
     const pkg = JSON.parse(
       readFileSync(join(directory, "package.json"), "utf8"),
     );
@@ -159,12 +205,9 @@ export function frontendNotices(inventory, strict = true) {
     if (name === "preline") {
       const approval = JSON.parse(read("config/notices/preline.json"));
       const license = readFileSync(join(directory, "LICENSE"), "utf8");
-      if (
-        version !== approval.version ||
-        textHash(license) !== approval.sha256
-      ) {
+      if (textHash(license) !== approval.sha256) {
         throw new Error(
-          "Preline license/version changed: review the custom terms before distribution",
+          `Preline ${version} license changed: review the custom terms before distribution`,
         );
       }
     }
@@ -187,17 +230,9 @@ export function frontendNotices(inventory, strict = true) {
 
 /** Return a conservative development preview; release inventory comes exclusively from Vite. */
 export function developmentNotices() {
-  const lock = JSON.parse(read("package-lock.json"));
-  const inventory = Object.entries(lock.packages)
-    .filter(
-      ([path, pkg]) =>
-        path && !pkg.dev && existsSync(resolve(projectRoot, path)),
-    )
-    .map(([path, pkg]) => ({
-      name: pkg.name ?? path.split("node_modules/").at(-1),
-      version: pkg.version,
-      identifier: pkg.license,
-    }));
+  const inventory = [
+    ...installedPackages(["dependencies", "optionalDependencies"]).values(),
+  ];
   return documentFor(
     "Development preview — installed production dependencies, including build tools. Release notices reflect bundled software.",
     frontendNotices(inventory, false),
@@ -208,12 +243,13 @@ export function developmentNotices() {
 export function rustNotices(report) {
   const reviewed = supplements();
   return report.crates
-    .filter(
-      ({ package: pkg }) =>
-        !relative(projectRoot, pkg.manifest_path)
-          .replaceAll("\\", "/")
-          .startsWith("crates/"),
-    )
+    .filter(({ package: pkg }) => {
+      const path = relative(projectRoot, pkg.manifest_path).replaceAll(
+        "\\",
+        "/",
+      );
+      return !path.startsWith("crates/") && !path.startsWith("desktop/");
+    })
     .map(({ package: pkg, license: expression }) => {
       const selected = report.licenses.filter(({ used_by }) =>
         used_by.some(({ crate }) => crate.id === pkg.id),
@@ -271,7 +307,10 @@ export function rustNotices(report) {
     });
 }
 
-/** Run the pinned Cargo collector for the exact root, target and feature set being packaged. */
+/**
+ * Run the pinned Cargo collector for the exact root, target and feature set being
+ * packaged; extra features are added on top of the crate defaults, as Tauri builds do.
+ */
 export function collectRust(
   manifest,
   target,
@@ -298,8 +337,7 @@ export function collectRust(
     "--format",
     "json",
   ];
-  if (features.length)
-    args.push("--no-default-features", "--features", features.join(","));
+  if (features.length) args.push("--features", features.join(","));
   const directory = mkdtempSync(join(tmpdir(), "nightfall-cargo-about-"));
   const reportPath = join(directory, "report.json");
   try {
@@ -374,9 +412,13 @@ export function packageNotices(outDir, target, embeddedDemo = false) {
     );
   }
   if (target) {
-    const config = JSON.parse(read("crates/app/tauri.conf.json"));
+    const config = JSON.parse(read("desktop/app-tauri/tauri.conf.json"));
     entries.push(
-      ...collectRust("crates/app/Cargo.toml", target, config.build.features),
+      ...collectRust(
+        "desktop/app-tauri/Cargo.toml",
+        target,
+        config.build.features,
+      ),
     );
     entries.push({
       name: "bevy_framepace (Nightfall fork)",

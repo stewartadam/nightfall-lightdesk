@@ -14,7 +14,7 @@ use super::*;
 #[test]
 fn seek_replay_skips_source_less_clip_start() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -87,7 +87,7 @@ fn seek_replay_skips_source_less_clip_start() {
 #[test]
 fn seek_replay_direct_materializes_classic_fx_clip() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -245,7 +245,7 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
 #[test]
 fn seek_replay_direct_materializes_classic_fx_with_same_clip_cleanup() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -421,7 +421,7 @@ fn seek_replay_direct_materializes_classic_fx_with_same_clip_cleanup() {
 #[test]
 fn seek_replay_direct_materializes_step_fx_clip() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -570,7 +570,7 @@ fn seek_replay_direct_materializes_step_fx_clip() {
 #[test]
 fn seek_replay_direct_reconciles_fx_module_clip() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
     app.add_message::<DomainInstanceReconstructionRequest>();
@@ -741,7 +741,7 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
 #[test]
 fn seek_replay_direct_fx_module_second_seek_keeps_existing_layer() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
     app.add_message::<DomainInstanceReconstructionRequest>();
@@ -884,7 +884,7 @@ fn seek_replay_direct_fx_module_second_seek_keeps_existing_layer() {
 #[test]
 fn seek_replay_direct_materializes_flow_clip() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
     app.add_message::<DomainInstanceReconstructionRequest>();
@@ -1039,7 +1039,7 @@ fn seek_replay_direct_materializes_flow_clip() {
 #[test]
 fn seek_replay_skips_source_less_clip_after_action_duration_without_stop() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 
@@ -1126,7 +1126,7 @@ fn seek_replay_skips_source_less_clip_after_action_duration_without_stop() {
 #[test]
 fn seek_replay_skips_stopped_fx_clip_after_zero_release() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<DeskAction>>();
+    app.add_message::<EngineActionEnvelope<EvalAction>>();
     app.add_message::<EngineActionEnvelope<ClipAction>>();
     app.add_message::<TimecodeEvent>();
 

@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Opens a unique blank showfile for the timeline toolbar scenario. */
 async function openOwnedTimelineListApp(page: Page): Promise<void> {
   const testInfo = test.info();
@@ -49,7 +52,7 @@ async function openTimelineListPanel(page: Page) {
       title: "Timelines",
       params: {},
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });
@@ -62,7 +65,10 @@ async function openTimelineListPanel(page: Page) {
 async function focusTimelineListPanel(page: Page) {
   await page.evaluate(() => {
     const api = (window as any).appStores?.dockApi?.get?.();
-    api?.getPanel("panel-TimelinesPanel-e2e")?.focus();
+    const panel = api?.getPanel("panel-TimelinesPanel-e2e");
+    // Opened timelines join the same group, so bring the list tab back first.
+    panel?.api.setActive();
+    panel?.focus();
   });
 }
 
@@ -99,20 +105,29 @@ async function closeTimelinePanel(page: Page, timelineUid: string) {
   }, timelineUid);
 }
 
+/**
+ * Selects a timeline card in the e2e list panel, reactivating the list tab
+ * until the card shows, since a timeline editor opening in the same group
+ * can take the active tab after the first activation.
+ */
 async function selectTimelineCard(
   page: Page,
   timelineId: number,
   timelineLabel: string,
 ) {
-  await focusTimelineListPanel(page);
   const panel = page.locator(
     '[data-panel-kind="timeline-list"][data-panel-id="panel-TimelinesPanel-e2e"]',
   );
-  await panel
-    .getByRole("button", {
-      name: new RegExp(`Timeline ${timelineId}: ${timelineLabel}`),
+  const card = panel.getByRole("button", {
+    name: new RegExp(`Timeline ${timelineId}: ${timelineLabel}`),
+  });
+  await expect
+    .poll(async () => {
+      await focusTimelineListPanel(page);
+      return card.isVisible();
     })
-    .click();
+    .toBe(true);
+  await card.click();
   return panel;
 }
 

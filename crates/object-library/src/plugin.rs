@@ -88,8 +88,8 @@ impl Plugin for ObjectLibraryPlugin {
                 .in_set(EventHandling),
         );
         app.add_systems(
-            Update,
-            crate::websocket::send_available_objects_on_change.in_set(ClientOutput),
+            PostUpdate,
+            crate::websocket::send_available_objects_on_change.in_set(ClientFeedback),
         );
     }
 }

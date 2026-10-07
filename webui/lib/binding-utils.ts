@@ -7,17 +7,43 @@
  */
 
 import type * as types from "../types/index";
-import { getResolutionChannelWidth } from "./dmx";
+import { type FixtureWireLayout, fixtureWireLayout } from "./dmx";
 import {
   defaultNetworkDmxOutputs,
   defaultUsbDmxOutputs,
   outputTransportForOutputTargetId,
 } from "./network-dmx-output-targets";
 
-type FixturePatchEntry = {
+/**
+ * One element's patch location. `transport` is `null` for console-space addresses
+ * (console numbering); otherwise it is the output transport using wire numbering.
+ * `parameterAddresses` lists exactly the bytes the engine writes at this location, per
+ * element parameter, and `address` is the lowest of them.
+ */
+export type FixturePatchEntry = {
   universe: number;
+  /** Address of the element's first patched byte. */
   address: number;
-  transport?: types.OutputTransport;
+  /** Byte addresses per element parameter index, most significant first; empty when unpatched. */
+  parameterAddresses: number[][];
+  transport: types.OutputTransport | null;
+};
+
+/** Console-space byte addresses of one fixture element parameter selected by a console binding. */
+type ConsoleParameterAddress = {
+  uid: string;
+  elementId: number;
+  parameterIndex: number;
+  universe: number;
+  /** Console address of every byte, most significant first. */
+  addresses: number[];
+};
+
+/** Console-space patch location of one fixture element within one console universe. */
+type ConsoleElementLocation = {
+  uid: string;
+  elementId: number;
+  entry: FixturePatchEntry;
 };
 
 export type FixturePatchMap = Record<
@@ -25,28 +51,9 @@ export type FixturePatchMap = Record<
   Record<string, Array<FixturePatchEntry>>
 >;
 
-type ElementLayout = {
-  elementId: number;
-  offset: number;
-  width: number;
-};
-
-type FixtureLayout = {
-  elements: ElementLayout[];
-  totalWidth: number;
-};
-
-type ElementLayoutCache = {
-  totalWidth: number;
-  paramWidths: Record<string, number>;
-};
-
-type FixtureLayoutCache = {
-  elements: ElementLayoutCache[];
-};
-
 const DEFAULT_UNIVERSE = 1;
 const DEFAULT_ADDRESS = 1;
+const MAX_DMX_ADDRESS = 512;
 
 /**
  * Formats UUID bytes as lowercase hexadecimal without separators.
@@ -83,17 +90,6 @@ export function normalizeFixtureUid(uid: unknown): string {
 
 function normalizeFixtureUids(uids: unknown[]): string[] {
   return uids.map((uid) => normalizeFixtureUid(uid));
-}
-
-function normalizeParamName(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function attributeName(attribute: types.Attribute): string {
-  if (attribute.type === "Custom") {
-    return attribute.data.label;
-  }
-  return attribute.type;
 }
 
 function expandRange(range?: types.DmxRange): number[] {
@@ -139,127 +135,49 @@ function outputTargetIdToTransport(
   );
 }
 
-function rangesOverlap(
-  source?: types.DmxRange,
-  disabled?: types.DmxRange,
-): boolean {
-  if (!source || !disabled) return true;
-  return source.start <= disabled.end && disabled.start <= source.end;
-}
+/** Fixtures, and the part of each fixture, patched by a fixture output source. */
+type FixtureOutputSelection = {
+  uids: unknown[];
+  element?: number;
+  param?: string;
+  dmxBreak: number;
+};
 
-function outputSourceMatches(
+/**
+ * Returns the fixture selection of a `Fixture` or `FixtureBreak` output source,
+ * mirroring the engine's `OutputSource::fixture_selection`; `Fixture` sources
+ * address the primary break 1. Console sources return null.
+ */
+function fixtureOutputSelection(
   source: types.OutputSource,
-  disabled: types.OutputSource,
-): boolean {
-  if (source.type !== disabled.type) return false;
-
-  if (source.type === "Fixture" && disabled.type === "Fixture") {
-    const sourceData = source.data;
-    const disabledData = disabled.data;
-    const sourceUids = normalizeFixtureUids(sourceData.uids as unknown[]);
-    const disabledUids = new Set(
-      normalizeFixtureUids(disabledData.uids as unknown[]),
-    );
-    const uidMatch = sourceUids.some((uid) => disabledUids.has(uid));
-    if (!uidMatch) return false;
-    const elementMatch =
-      disabledData.element === undefined ||
-      sourceData.element === disabledData.element;
-    const paramMatch =
-      disabledData.param === undefined ||
-      sourceData.param === disabledData.param;
-    return elementMatch && paramMatch;
+): FixtureOutputSelection | null {
+  switch (source.type) {
+    case "Fixture":
+      return {
+        uids: source.data.uids as unknown[],
+        element: source.data.element,
+        param: source.data.param,
+        dmxBreak: 1,
+      };
+    case "FixtureBreak":
+      return {
+        uids: source.data.uids as unknown[],
+        dmxBreak: source.data.dmx_break,
+      };
+    case "Console":
+      return null;
   }
-
-  if (source.type === "Console" && disabled.type === "Console") {
-    const sourceData = source.data;
-    const disabledData = disabled.data;
-    const universeMatch = rangesOverlap(
-      sourceData.universe,
-      disabledData.universe,
-    );
-    const addressMatch =
-      disabledData.address === undefined ||
-      sourceData.address === undefined ||
-      sourceData.address === disabledData.address;
-    return universeMatch && addressMatch;
-  }
-
-  return false;
 }
 
-function buildFixtureLayoutCache(
-  fixtures: Record<string, types.Fixture>,
-): Record<string, FixtureLayoutCache> {
-  const cache: Record<string, FixtureLayoutCache> = {};
-
-  for (const [uid, fixture] of Object.entries(fixtures)) {
-    const elements: ElementLayoutCache[] = [];
-
-    for (const element of fixture.elements) {
-      const paramWidths: Record<string, number> = {};
-      let totalWidth = 0;
-
-      for (const param of element.parameters) {
-        if (param.attribute.type === "VirtualIntensity") continue;
-
-        const width = getResolutionChannelWidth(param.resolution);
-        totalWidth += width;
-
-        const name = normalizeParamName(attributeName(param.attribute));
-        paramWidths[name] = (paramWidths[name] ?? 0) + width;
-      }
-
-      elements.push({ totalWidth, paramWidths });
-    }
-
-    cache[uid] = { elements };
-  }
-
-  return cache;
-}
-
-function collectFixtureLayout(
-  layoutCache: FixtureLayoutCache | undefined,
-  elementFilter?: number,
-  paramFilter?: string,
-): FixtureLayout {
-  if (!layoutCache) return { elements: [], totalWidth: 0 };
-
-  const elements: ElementLayout[] = [];
-  let offset = 0;
-  const normalizedParam = paramFilter
-    ? normalizeParamName(paramFilter)
-    : undefined;
-
-  const pushElement = (index: number, element?: ElementLayoutCache) => {
-    if (!element) return;
-
-    let width = 0;
-    if (normalizedParam) {
-      width = element.paramWidths[normalizedParam] ?? 0;
-    } else {
-      width = element.totalWidth;
-    }
-
-    if (width === 0) return;
-
-    elements.push({ elementId: index + 1, offset, width });
-    offset += width;
-  };
-
-  if (elementFilter && elementFilter > 0) {
-    const index = elementFilter - 1;
-    pushElement(index, layoutCache.elements[index]);
-  } else {
-    for (let index = 0; index < layoutCache.elements.length; index += 1) {
-      pushElement(index, layoutCache.elements[index]);
-    }
-  }
-
-  return { elements, totalWidth: offset };
-}
-
+/**
+ * Projects output bindings onto per-element patch locations in console numbering and in
+ * each concrete transport's wire numbering.
+ *
+ * Every entry lists exactly the parameter bytes the engine writes there, placed by the
+ * fixture's wire layout (DMX element order, explicit footprint slots and gaps): direct
+ * fixture→transport bindings, fixture→console bindings (per-parameter console layout), and
+ * console→transport passthrough windows remapping those console bytes onto the wire.
+ */
 export function buildFixturePatchMapFromBindings(
   snapshot: types.BindingsSnapshot,
   fixtures: Record<string, types.Fixture>,
@@ -267,30 +185,11 @@ export function buildFixturePatchMapFromBindings(
   usbDmxOutputs: types.UsbDmxOutputTargets = defaultUsbDmxOutputs(),
 ): FixturePatchMap {
   const patchMap: FixturePatchMap = {};
-  const layoutCache = buildFixtureLayoutCache(fixtures);
-  const disabledSources: types.OutputSource[] = [];
-  for (const binding of snapshot.disabled) {
-    if (binding.type === "Output") {
-      disabledSources.push(binding.data.source);
-    }
-  }
-  for (const binding of snapshot.output) {
-    if (binding.target.type === "Disabled") {
-      disabledSources.push(binding.source);
-    }
-  }
 
   for (const binding of snapshot.output) {
     if (binding.target.type !== "Transport") continue;
-    if (binding.source.type !== "Fixture") continue;
-
-    if (
-      disabledSources.some((source) =>
-        outputSourceMatches(binding.source, source),
-      )
-    ) {
-      continue;
-    }
+    const sourceData = fixtureOutputSelection(binding.source);
+    if (!sourceData) continue;
 
     const targetData = binding.target.data;
     const baseUniverses = expandRange(targetData.universe);
@@ -307,8 +206,7 @@ export function buildFixturePatchMapFromBindings(
     let runningAddress = baseAddress;
     let lastUniverse = universes[0] ?? DEFAULT_UNIVERSE;
 
-    const sourceData = binding.source.data;
-    const sourceUids = normalizeFixtureUids(sourceData.uids as unknown[]);
+    const sourceUids = normalizeFixtureUids(sourceData.uids);
     for (const [index, uid] of sourceUids.entries()) {
       const fixture = fixtures[uid];
       if (!fixture) continue;
@@ -319,36 +217,300 @@ export function buildFixturePatchMapFromBindings(
         lastUniverse = targetUniverse;
       }
 
-      const layout = collectFixtureLayout(
-        layoutCache[uid],
-        sourceData.element,
-        sourceData.param,
+      const layout = bindingWireLayout(fixture, sourceData);
+      if (layout.footprint === 0) continue;
+
+      const fixtureAddress = binding.clone ? baseAddress : runningAddress;
+      const entries = layoutElementEntries(
+        fixture,
+        layout,
+        targetUniverse,
+        outputTransport,
+        (slot) => fixtureAddress + slot,
       );
-      if (layout.totalWidth === 0) continue;
-
-      const fixtureOffset = binding.clone ? 0 : runningAddress - baseAddress;
-
-      for (const element of layout.elements) {
-        const elementAddress = baseAddress + fixtureOffset + element.offset;
-        if (!patchMap[uid]) {
-          patchMap[uid] = {};
-        }
-        const elementId = String(element.elementId);
-        if (!patchMap[uid][elementId]) {
-          patchMap[uid][elementId] = [];
-        }
-        patchMap[uid][elementId].push({
-          universe: targetUniverse,
-          address: elementAddress,
-          transport: outputTransport,
-        });
+      for (const [elementIndex, entry] of entries) {
+        pushPatchEntry(patchMap, uid, elementIndex + 1, entry);
       }
 
       if (!binding.clone) {
-        runningAddress = baseAddress + fixtureOffset + layout.totalWidth;
+        runningAddress = fixtureAddress + layout.footprint;
+      }
+    }
+  }
+
+  const consoleLocations = groupConsoleLocations(
+    resolveConsoleAddresses(snapshot, fixtures),
+    fixtures,
+  );
+  for (const location of consoleLocations) {
+    pushPatchEntry(patchMap, location.uid, location.elementId, location.entry);
+  }
+
+  for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
+    if (binding.source.type !== "Console") continue;
+    if (binding.target.type !== "Transport") continue;
+
+    const targetData = binding.target.data;
+    const outputTransport = outputTargetIdToTransport(
+      targetData.target,
+      networkDmxOutputs,
+      usbDmxOutputs,
+    );
+    if (!outputTransport) continue;
+
+    const sourceData = binding.source.data;
+    let sourceUniverses = expandRange(sourceData.universe);
+    if (sourceUniverses.length === 0) {
+      const consoleUniverses = new Set(
+        consoleLocations.map((location) => location.entry.universe),
+      );
+      sourceUniverses =
+        consoleUniverses.size > 0
+          ? Array.from(consoleUniverses).sort((a, b) => a - b)
+          : [DEFAULT_UNIVERSE];
+    }
+    const explicitTargetUniverses = expandRange(targetData.universe);
+    const targetUniverses =
+      explicitTargetUniverses.length > 0
+        ? explicitTargetUniverses
+        : sourceUniverses;
+    const sourceBaseAddress = sourceData.address ?? DEFAULT_ADDRESS;
+    const targetBaseAddress = targetData.address ?? DEFAULT_ADDRESS;
+    const remap = (address: number) =>
+      targetBaseAddress + (address - sourceBaseAddress);
+
+    for (const [index, sourceUniverse] of sourceUniverses.entries()) {
+      const targetUniverse = mapUniverseByIndex(
+        sourceUniverses,
+        targetUniverses,
+        index,
+      );
+      for (const location of consoleLocations) {
+        if (location.entry.universe !== sourceUniverse) continue;
+
+        const parameterAddresses = location.entry.parameterAddresses.map(
+          (addresses) =>
+            addresses.length > 0 &&
+            addresses.every(
+              (address) =>
+                address >= sourceBaseAddress &&
+                remap(address) <= MAX_DMX_ADDRESS,
+            )
+              ? addresses.map(remap)
+              : [],
+        );
+        const entry = patchEntry(
+          targetUniverse,
+          outputTransport,
+          parameterAddresses,
+        );
+        if (!entry) continue;
+
+        pushPatchEntry(patchMap, location.uid, location.elementId, entry);
       }
     }
   }
 
   return patchMap;
+}
+
+/**
+ * Lays out the parameters a fixture output selection picks on one fixture, mirroring the
+ * engine's `collect_fixture_parameters`: the selection's DMX break, elements in DMX wiring
+ * order, one matching parameter per element for a parameter filter, and explicit
+ * footprint slots.
+ */
+function bindingWireLayout(
+  fixture: types.Fixture,
+  selection: FixtureOutputSelection,
+): FixtureWireLayout {
+  return fixtureWireLayout(fixture, {
+    elementId: selection.element,
+    parameterName: selection.param || undefined,
+    dmxBreak: selection.dmxBreak,
+  });
+}
+
+/** Appends one element patch location, creating the fixture and element buckets on demand. */
+function pushPatchEntry(
+  patchMap: FixturePatchMap,
+  uid: string,
+  elementId: number,
+  entry: FixturePatchEntry,
+): void {
+  patchMap[uid] ??= {};
+  const key = String(elementId);
+  patchMap[uid][key] ??= [];
+  patchMap[uid][key].push(entry);
+}
+
+/**
+ * Builds a patch entry from per-parameter byte addresses, using the lowest byte as the
+ * entry address. Returns `null` when no parameter has a byte at this location.
+ */
+function patchEntry(
+  universe: number,
+  transport: types.OutputTransport | null,
+  parameterAddresses: number[][],
+): FixturePatchEntry | null {
+  const allAddresses = parameterAddresses.flat();
+  if (allAddresses.length === 0) return null;
+  return {
+    universe,
+    address: Math.min(...allAddresses),
+    parameterAddresses,
+    transport,
+  };
+}
+
+/**
+ * Groups a fixture's laid-out parameters into one patch entry per element (keyed by
+ * zero-based element index), placing each byte at the address `addressOf` returns for its
+ * footprint slot.
+ */
+function layoutElementEntries(
+  fixture: types.Fixture,
+  layout: FixtureWireLayout,
+  universe: number,
+  transport: types.OutputTransport | null,
+  addressOf: (slot: number) => number,
+): Map<number, FixturePatchEntry> {
+  const parameterAddressesByElement = new Map<number, number[][]>();
+  for (const placed of layout.parameters) {
+    let parameterAddresses = parameterAddressesByElement.get(
+      placed.elementIndex,
+    );
+    if (!parameterAddresses) {
+      parameterAddresses = fixture.elements[placed.elementIndex].parameters.map(
+        () => [],
+      );
+      parameterAddressesByElement.set(placed.elementIndex, parameterAddresses);
+    }
+    parameterAddresses[placed.parameterIndex] = placed.slots.map(addressOf);
+  }
+
+  const entries = new Map<number, FixturePatchEntry>();
+  for (const [
+    elementIndex,
+    parameterAddresses,
+  ] of parameterAddressesByElement) {
+    const entry = patchEntry(universe, transport, parameterAddresses);
+    if (entry) entries.set(elementIndex, entry);
+  }
+  return entries;
+}
+
+/** Orders output bindings by ascending priority, keeping insertion order for ties. */
+function sortOutputBindingsByPriority(
+  bindings: types.OutputBinding[],
+): types.OutputBinding[] {
+  return bindings
+    .map((binding, index) => ({ binding, index }))
+    .sort(
+      (a, b) => a.binding.priority - b.binding.priority || a.index - b.index,
+    )
+    .map(({ binding }) => binding);
+}
+
+/**
+ * Groups per-parameter console addresses into one location per fixture element and
+ * console universe, preserving first-seen order.
+ */
+function groupConsoleLocations(
+  addresses: Map<string, ConsoleParameterAddress>,
+  fixtures: Record<string, types.Fixture>,
+): ConsoleElementLocation[] {
+  const grouped = new Map<
+    string,
+    { uid: string; elementId: number; universe: number; addresses: number[][] }
+  >();
+  for (const address of addresses.values()) {
+    const key = `${address.uid}:${address.elementId}:${address.universe}`;
+    let location = grouped.get(key);
+    if (!location) {
+      const parameters =
+        fixtures[address.uid]?.elements[address.elementId - 1]?.parameters ??
+        [];
+      location = {
+        uid: address.uid,
+        elementId: address.elementId,
+        universe: address.universe,
+        addresses: parameters.map(() => []),
+      };
+      grouped.set(key, location);
+    }
+    location.addresses[address.parameterIndex] = address.addresses;
+  }
+
+  const locations: ConsoleElementLocation[] = [];
+  for (const location of grouped.values()) {
+    const entry = patchEntry(location.universe, null, location.addresses);
+    if (!entry) continue;
+    locations.push({ uid: location.uid, elementId: location.elementId, entry });
+  }
+  return locations;
+}
+
+/**
+ * Resolves the console-space byte addresses of each fixture element parameter selected by
+ * fixture→console bindings, keyed by `uid:elementId:parameterIndex`.
+ *
+ * Mirrors the engine's `derive_console_addresses`: bindings apply in priority order with
+ * later bindings replacing earlier ones for the parameters they select, and each binding
+ * lays out only the parameters its element/parameter filter
+ * selects with the fixture's wire layout (DMX wiring order, explicit footprint slots).
+ * Non-clone bindings place fixtures one after another by that filtered footprint,
+ * restarting at the base address per universe.
+ */
+function resolveConsoleAddresses(
+  snapshot: types.BindingsSnapshot,
+  fixtures: Record<string, types.Fixture>,
+): Map<string, ConsoleParameterAddress> {
+  const addresses = new Map<string, ConsoleParameterAddress>();
+
+  for (const binding of sortOutputBindingsByPriority(snapshot.output)) {
+    if (binding.target.type !== "Console") continue;
+    const sourceData = fixtureOutputSelection(binding.source);
+    if (!sourceData) continue;
+
+    const targetData = binding.target.data;
+    const explicitUniverses = expandRange(targetData.universe);
+    const universes =
+      explicitUniverses.length > 0 ? explicitUniverses : [DEFAULT_UNIVERSE];
+    const baseAddress = targetData.address ?? DEFAULT_ADDRESS;
+    let runningAddress = baseAddress;
+    let lastUniverse = universes[0];
+
+    const sourceUids = normalizeFixtureUids(sourceData.uids);
+    for (const [index, uid] of sourceUids.entries()) {
+      const universe = mapUniverseByIndex(universes, universes, index);
+      if (universe !== lastUniverse) {
+        runningAddress = baseAddress;
+        lastUniverse = universe;
+      }
+
+      const fixture = fixtures[uid];
+      if (!fixture) continue;
+      const layout = bindingWireLayout(fixture, sourceData);
+      if (layout.footprint === 0) continue;
+
+      for (const placed of layout.parameters) {
+        const elementId = placed.elementIndex + 1;
+        const key = `${uid}:${elementId}:${placed.parameterIndex}`;
+        addresses.delete(key);
+        addresses.set(key, {
+          uid,
+          elementId,
+          parameterIndex: placed.parameterIndex,
+          universe,
+          addresses: placed.slots.map((slot) => runningAddress + slot),
+        });
+      }
+      if (!binding.clone) {
+        runningAddress += layout.footprint;
+      }
+    }
+  }
+
+  return addresses;
 }

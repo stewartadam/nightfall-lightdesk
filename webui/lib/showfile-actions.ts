@@ -7,6 +7,7 @@
  */
 
 import { dockApi } from "../state/appStores";
+import { compactViewport } from "../state/viewport";
 import type * as types from "../types";
 import { requireCommandSuccess } from "./command-result";
 import { createActivePanelLayout } from "./dockview-active-layout";
@@ -42,9 +43,16 @@ async function sendDeskCommandAndAwait(
 }
 
 /** Captures the current Dockview active layout when one is available. */
+/**
+ * Captures the docked arrangement to store with the showfile. The compact
+ * shell's one-panel view is not an arrangement, so saves made from it omit
+ * the layout and the showfile keeps the one it already has.
+ */
 function activePanelLayoutForSave(): types.ActivePanelLayout | undefined {
   const api = dockApi.get();
-  return api ? createActivePanelLayout(api) : undefined;
+  return api && !compactViewport.get()
+    ? createActivePanelLayout(api)
+    : undefined;
 }
 
 /** Builds save options from the UI state available at the moment save is requested. */
@@ -167,6 +175,31 @@ export async function discardDraftShowfileAndAwait(
     type: "DiscardDraftShowfile",
     data: showfileName,
   });
+}
+
+/** Moves a show that is not open, with its draft and backups, into the backend trash. */
+export async function deleteShowfileAndAwait(
+  showfileName: string,
+): Promise<void> {
+  await sendDeskCommandAndAwait({
+    type: "DeleteShowfile",
+    data: showfileName,
+  });
+}
+
+/** Restores a deleted show from its trash entry and resolves once it is listed again. */
+export async function restoreDeletedShowfileAndAwait(
+  trashEntryId: string,
+): Promise<void> {
+  await sendDeskCommandAndAwait({
+    type: "RestoreDeletedShowfile",
+    data: trashEntryId,
+  });
+}
+
+/** Permanently removes every deleted show held in the backend trash. */
+export async function emptyShowfileTrashAndAwait(): Promise<void> {
+  await sendDeskCommandAndAwait({ type: "EmptyShowfileTrash" });
 }
 
 /** Load a backup revision into working state without replacing its saved showfile. */

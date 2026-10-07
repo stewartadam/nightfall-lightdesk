@@ -32,6 +32,12 @@ export interface DataGridScrollRequest {
 
 export type DataGridEditCommitMode = "default" | "alternate";
 
+/** Controls what an inline edit commit does besides writing the value. */
+export interface DataGridEditCommitOptions {
+  /** Whether keyboard focus returns to the grid; false when focus is leaving it. */
+  restoreFocus?: boolean;
+}
+
 export interface DataGridEditCommitContext {
   inputValue?: string;
   mode: DataGridEditCommitMode;

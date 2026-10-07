@@ -14,17 +14,23 @@ use nightfall_cmd_parse::prelude::*;
 
 use crate::prelude::*;
 
+pub mod blueprint;
 mod client;
 pub mod client_bridge;
 pub mod client_ingress;
 pub mod command_lifecycle;
 pub mod command_traits;
 pub mod data_provider;
+pub mod diagnostic_paths;
+pub mod eval_action;
+pub mod frame_waker;
 pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod process_shutdown;
 pub mod protocol;
+pub mod render_pass;
 pub mod runtime_capabilities;
+pub mod variables;
 
 /// Backend lifecycle state for process initialization and showfile readiness.
 #[derive(
@@ -66,10 +72,13 @@ pub mod prelude {
     pub use nightfall_engine_derive::EnginePayload;
 
     pub use crate::EnginePlugin;
+    pub use crate::blueprint::{
+        BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
+    };
     pub use crate::client_bridge::{
         ClientBridgeHost, ClientBridgePlugin, ClientEventSink, CommandDeserializerRegistry,
-        CommandJsonEnvelope, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
-        EncodedClientMessage, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        CommandJsonEnvelope, CommandSender, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
+        EncodedClientMessage, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
@@ -78,6 +87,8 @@ pub mod prelude {
     };
     pub use crate::command_traits::CliCommand;
     pub use crate::data_provider::{DataProvider, DataStoreError};
+    pub use crate::eval_action::EvalAction;
+    pub use crate::frame_waker::FrameWaker;
     pub use crate::parse_command_string;
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::process_shutdown::{
@@ -104,13 +115,16 @@ pub mod prelude {
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
     pub use crate::register_update_deserializer;
+    pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, PersistenceCapability, RuntimeCapabilities,
         RuntimeMode, TimelineAudioCapability,
     };
+    pub use crate::variables::GlobalVariables;
     pub use crate::{
-        AppState, ClientOutput, ClockUpdate, Compositing, DmxOutput, EventHandling, InputHandling,
-        LayerGeneration, ResyncHandling, StartupFrameCounter, VdimProcessing,
+        AppState, ClientFeedback, ClientOutput, ClockUpdate, CommandFeedbackEgress, Compositing,
+        DeskEventSet, DmxOutput, EventHandling, InputHandling, LayerGeneration, ResyncHandling,
+        StartupFrameCounter, VdimProcessing,
     };
     pub use crate::{EngineCommand, ResyncRequested, register_engine_action};
 }
@@ -127,12 +141,19 @@ impl Plugin for EnginePlugin {
         app.init_state::<AppState>();
         app.init_resource::<StartupFrameCounter>();
         app.init_resource::<RuntimeCapabilities>();
+        render_pass::add_render_schedule(app);
         app.configure_sets(
             Update,
             (
                 InputHandling,
                 EventHandling.after(InputHandling),
-                ClockUpdate.after(EventHandling),
+                ResyncHandling.after(EventHandling),
+            ),
+        );
+        app.configure_sets(
+            Render,
+            (
+                ClockUpdate,
                 LayerGeneration.after(ClockUpdate),
                 Compositing.after(LayerGeneration),
                 VdimProcessing.after(Compositing),
@@ -140,6 +161,7 @@ impl Plugin for EnginePlugin {
                 DmxOutput.after(VdimProcessing),
             ),
         );
+        app.configure_sets(PostUpdate, ClientFeedback.before(CommandFeedbackEgress));
         app.init_resource::<CommandDeserializerRegistry>();
         app.init_resource::<UpdateDeserializerRegistry>();
         app.init_resource::<CommandTracker>();
@@ -157,18 +179,20 @@ impl Plugin for EnginePlugin {
                 .in_set(InputHandling),
         );
 
-        // Add resync completion system that runs after all plugin resync handlers
+        // Resync completes before clock and layer work so a heavy first frame after a
+        // world swap does not hold the client's readiness boundary.
         app.add_systems(
             Update,
             (
                 broadcast_app_state_on_resync.before(ResyncHandling),
                 send_runtime_capabilities_on_resync.before(ResyncHandling),
                 send_attribute_metadata_on_resync.before(ResyncHandling),
-                broadcast_app_state_on_change.in_set(ClientOutput),
-                send_resync_complete
-                    .after(ResyncHandling)
-                    .in_set(ClientOutput),
+                send_resync_complete.after(ResyncHandling),
             ),
+        );
+        app.add_systems(
+            PostUpdate,
+            broadcast_app_state_on_change.in_set(ClientFeedback),
         );
 
         register_ingress_command::<EngineCommand>(app);
@@ -189,33 +213,64 @@ pub struct InputHandling;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventHandling;
 
-/// System set for advancing clocks before producing frame layers.
+/// [`Render`] system set for advancing clocks before producing frame layers.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClockUpdate;
 
-/// System set for producing layer outputs before compositing.
+/// [`Render`] system set for producing layer outputs before compositing.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LayerGeneration;
 
-/// System set for combining generated layers into fixture output values.
+/// [`Render`] system set for combining generated layers into fixture output values.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Compositing;
 
-/// System set for applying virtual dimmer processing after compositing.
+/// [`Render`] system set for applying virtual dimmer processing after compositing.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VdimProcessing;
 
-/// System set for publishing engine state changes to attached clients.
+/// [`Render`] system set for publishing render-derived engine state to attached clients.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientOutput;
+
+/// [`PostUpdate`] system set for forwarding input-derived client messages, such as command echoes,
+/// notifications and state changes made by commands, in every update so they do not wait for the
+/// next render. Runs after [`Render`], so it also sees changes made by a render pass.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClientFeedback;
+
+/// `PostUpdate` system set that publishes command feedback produced during the frame.
+///
+/// Frame pacing sleeps after this set, so terminal results reach clients before the
+/// frame limiter waits for the next frame instead of one frame later.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CommandFeedbackEgress;
 
 /// System set for plugin state resend handlers during a resync.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ResyncHandling;
 
-/// System set for sending finalized DMX frames to output transports.
+/// [`Render`] system set for sending finalized DMX frames to output transports.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DmxOutput;
+
+/// Desk event handlers that domain plugins order their own handlers against.
+///
+/// Domains name these sets instead of desk system functions, so ordering against desk work does
+/// not require depending on the desk crate.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DeskEventSet {
+    /// Forwards clip ingress actions and playback requests into clip actions.
+    ClipForwarding,
+    /// Routes clip playback actions to the domain that owns each clip source.
+    ClipRouting,
+    /// Applies blueprint create, update, and delete commands.
+    BlueprintCrud,
+    /// Applies blueprint engine actions.
+    BlueprintActions,
+    /// Applies instance playback commands.
+    InstancePlayback,
+}
 
 /// Registers one user-facing command for semantic envelope dispatch.
 pub fn register_ingress_command<T: IngressCommand + Clone>(app: &mut App) {
@@ -506,5 +561,50 @@ mod tests {
             .expect("resync should publish its completion notification");
         let decoded: serde_json::Value = minicbor_serde::from_slice(&notification[1..]).unwrap();
         assert_eq!(decoded["type"], "ResyncComplete");
+    }
+
+    /// Receiving end of the client sink, readable from systems under test.
+    #[derive(Resource)]
+    struct PublishedPayloads(async_channel::Receiver<Vec<u8>>);
+
+    /// Whether ResyncComplete had already been published when clock work started.
+    #[derive(Resource, Default)]
+    struct ResyncCompleteBeforeClock(Option<bool>);
+
+    /// Records whether ResyncComplete was published before this frame's clock update ran.
+    fn record_resync_complete_before_clock(
+        payloads: Res<PublishedPayloads>,
+        mut seen: ResMut<ResyncCompleteBeforeClock>,
+    ) {
+        let published = std::iter::from_fn(|| payloads.0.try_recv().ok()).any(|payload| {
+            minicbor_serde::from_slice::<serde_json::Value>(&payload[1..])
+                .is_ok_and(|decoded| decoded["type"] == "ResyncComplete")
+        });
+        seen.0.get_or_insert(published);
+    }
+
+    /// Verifies ResyncComplete goes out before clock and layer work, so a heavy first frame
+    /// after a world swap does not hold the client's readiness boundary.
+    #[test]
+    fn resync_complete_publishes_before_clock_update() {
+        let mut app = App::new();
+        let (sender, receiver) = unbounded();
+        app.insert_resource(ClientEventSink::new(sender));
+        app.insert_resource(PublishedPayloads(receiver));
+        app.init_resource::<ResyncCompleteBeforeClock>();
+        app.add_plugins(EnginePlugin);
+        app.add_systems(
+            Render,
+            record_resync_complete_before_clock.in_set(ClockUpdate),
+        );
+        app.world_mut()
+            .write_message(ResyncRequested { command_id: None });
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<ResyncCompleteBeforeClock>().0,
+            Some(true)
+        );
     }
 }

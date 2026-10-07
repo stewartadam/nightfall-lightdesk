@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /**
  * Opens a blank showfile for an isolated playback timing measurement.
  */
@@ -136,7 +139,7 @@ test("timeline playhead advances smoothly", async ({ page }) => {
       title: `Timeline ${timelineId}`,
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Groups",
         direction: "within",
       },
     });

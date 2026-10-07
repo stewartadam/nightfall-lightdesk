@@ -11,6 +11,7 @@
 import { deepMap } from "@nanostores/deepmap";
 import type { DockviewApi } from "dockview";
 import { atom } from "nanostores";
+import type { FramePacingSnapshot } from "../features/visualizer";
 import {
   appendConsoleScrollbackEntry,
   type ConsoleScrollbackEntry,
@@ -24,6 +25,7 @@ import type { BrowserDemoRuntimeInfo } from "../lib/engine-runtime-protocol";
 import { setStoreAction } from "../lib/nanostore-action";
 import { registerPanelTabStatus } from "../lib/panel-tab-status";
 import type { SelectionTarget } from "../lib/selection-targets";
+import { testHooksEnabled } from "../lib/test-mode";
 import type * as types from "../types";
 import type * as flowTypes from "../types/index";
 import {
@@ -48,6 +50,7 @@ export interface EngineMetrics {
   entity_count?: number;
   framepace_time_ms?: number;
   framepace_oversleep_ms?: number;
+  framepace_overrun_ms?: number;
   active_layers: number;
   active_universes: number;
   artnet_send_time_ms?: number;
@@ -329,6 +332,11 @@ function getFixtureById(id: number): types.Fixture | undefined {
 
 /** Per-element output map for visualizer: uid -> array of element outputs (index = element number) */
 export type ParameterOutputMap = Map<string, Record<string, number>[]>;
+/** Read-only engine snapshot; publishers replace the map when output changes. */
+export type ParameterOutputSnapshot = ReadonlyMap<
+  string,
+  Record<string, number>[]
+>;
 /**
  * Immediate parameter output for non-reactive hot paths.
  * Updated synchronously on every WebSocket message with minimal processing.
@@ -339,8 +347,12 @@ const parametersImmediateHolder = {
   current: new Map<string, Record<string, number>[]>(),
 };
 
-/** Returns the latest parameter output map without subscribing to nanostore updates. */
-export function getParametersImmediate(): ParameterOutputMap {
+/**
+ * Returns the latest immutable snapshot without subscribing to nanostore
+ * updates. Renderers convert it only when its identity changes, so publish
+ * changes through {@link setParametersImmediate} rather than mutating it.
+ */
+export function getParametersImmediate(): ParameterOutputSnapshot {
   return parametersImmediateHolder.current;
 }
 
@@ -445,6 +457,7 @@ export interface SmoothedEngineMetrics {
   frameTimeMs: number;
   framepaceTimeMs: number;
   framepaceOversleepMs: number;
+  framepaceOverrunMs: number;
   artnetSendTimeMs: number;
   sacnSendTimeMs: number;
   parameterStateBuildMs: number;
@@ -460,6 +473,7 @@ let smoothedValues: SmoothedEngineMetrics = {
   frameTimeMs: 0,
   framepaceTimeMs: 0,
   framepaceOversleepMs: 0,
+  framepaceOverrunMs: 0,
   artnetSendTimeMs: 0,
   sacnSendTimeMs: 0,
   parameterStateBuildMs: 0,
@@ -495,6 +509,10 @@ engineMetrics.subscribe((raw) => {
     framepaceOversleepMs: applyEma(
       smoothedValues.framepaceOversleepMs,
       raw.framepace_oversleep_ms,
+    ),
+    framepaceOverrunMs: applyEma(
+      smoothedValues.framepaceOverrunMs,
+      raw.framepace_overrun_ms,
     ),
     artnetSendTimeMs: applyEma(
       smoothedValues.artnetSendTimeMs,
@@ -613,7 +631,23 @@ export interface VisualizerStats {
   postProcessMs: number;
   totalRenderMs: number;
   frameToFrameMs: number; // Wall clock time between actual renders
-  gpuMs: number; // GPU execution time (from CPU render end to next frame start)
+  gpuMs?: number; // GPU timestamp duration; absent when unsupported or unresolved
+  /** Unsmoothed pass durations from the most recently completed GPU sample (diagnostics only). */
+  gpuPasses?: Record<string, number>;
+  /** Active fog resolution, for correlating quality changes with stalls (diagnostics only). */
+  atmosphereScale?: number;
+  /** Active scene resolution, independent of presentation canvas size (diagnostics only). */
+  sceneScale?: number;
+  /** Sources excluded from surface shading by the fixed light budget. */
+  omittedSurfaceLights?: number;
+  reducedPrismEmitters?: number;
+  reducedGoboEmitters?: number;
+  /**
+   * Raw render submission counters; window maximum is not smoothed like FPS.
+   * Published only with the `visualizer:framePacing` or `visualizer:inspector`
+   * diagnostics flags.
+   */
+  framePacing?: FramePacingSnapshot;
   scenePassMs: number;
   volumetricPassMs: number;
   gaussianBlurMs: number;
@@ -955,14 +989,8 @@ export {
   pushToast,
 } from "./notifications";
 
-const exposesDebugStores =
-  import.meta.env?.DEV ||
-  (import.meta.env?.MODE === "browser-demo" &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("e2e") === "1");
-
-// 🔍 Expose for debugging in development and explicit browser-demo test sessions.
-if (typeof window !== "undefined" && exposesDebugStores) {
+// 🔍 Expose for debugging in development and as the stores handle for e2e tests.
+if (typeof window !== "undefined" && testHooksEnabled()) {
   // @ts-expect-error we are defining the appStores global on window
   window.appStores = {
     dockApi,
@@ -1007,6 +1035,7 @@ if (typeof window !== "undefined" && exposesDebugStores) {
     parameters,
     getFixtureById,
     getParametersImmediate,
+    setParametersImmediate,
     bindings,
     bindingValidationSettings,
     patchBindingNavigationRequest,

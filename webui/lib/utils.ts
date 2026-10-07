@@ -115,12 +115,15 @@ export function normalizeAttributeName(attributeName: string): string {
  * This is necessary to avoid corruption of references to solid proxy objects
  * in nanostores, due to use of `reconcile()` in the nanostore solidjs
  * integration.
+ *
+ * See nanostores/solid#27.
  */
-export function unproxify(val: any): any {
-  if (Array.isArray(val)) return val.map(unproxify);
-  if (val instanceof Object)
+export function unproxify<Value>(value: Value): Value {
+  if (Array.isArray(value)) return value.map(unproxify) as Value;
+  if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
-      Object.entries(Object.assign({}, val)).map(([k, v]) => [k, unproxify(v)]),
-    );
-  return val;
+      Object.entries(value).map(([key, entry]) => [key, unproxify(entry)]),
+    ) as Value;
+  }
+  return value;
 }

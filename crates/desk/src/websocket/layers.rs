@@ -8,12 +8,13 @@
 
 //! Layer-stack projection and transition-state derivation.
 
+use nightfall_fixture_model::prelude::*;
+
 use super::*;
 
 /// Layer components projected into websocket layer snapshots.
-pub(super) type LayerSnapshotData = (
+pub type LayerSnapshotData = (
     &'static Layer,
-    &'static BaseLayer,
     &'static OutputLayer,
     Option<&'static ObjectRefMarker>,
     Option<&'static ReleaseMarker>,
@@ -27,10 +28,10 @@ fn parameter_instance(parameter: ParameterRef) -> moonshine_kind::Instance<Param
     unsafe { moonshine_kind::Instance::from_entity_unchecked(parameter.entity()) }
 }
 
-/// Transform a `Layer` into the same fixture-centric representation that `ParameterState` uses.
+/// Transform a `Layer` into per-fixture element values keyed by attribute.
 fn layer_absolute_fixture_state(
     layer: &Layer,
-    param_map: &bimap::BiMap<(FixtureRef, Attribute), moonshine_kind::Instance<Parameter>>,
+    param_index: &ParameterIndex,
     parameters_query: &Query<&Parameter>,
 ) -> Vec<OutboundElementParameterValues> {
     // (fixture_id -> vec[element_index -> attribute map])
@@ -39,7 +40,11 @@ fn layer_absolute_fixture_state(
     for (param_instance, (param_value, _)) in layer.absolute.iter() {
         // Determine fixture/element and attribute information
         let typed_param = parameter_instance(param_instance);
-        let Some((fixture_ref, _)) = param_map.get_by_right(&typed_param) else {
+        let Some(ParameterLocation {
+            element: fixture_ref,
+            ..
+        }) = param_index.location(&typed_param)
+        else {
             continue;
         };
         let param = parameters_query.get(param_instance.entity()).unwrap();
@@ -65,10 +70,10 @@ fn layer_absolute_fixture_state(
         .collect()
 }
 
-/// Transform a `Layer` into the same fixture-centric representation that `ParameterState` uses.
+/// Transform a `Layer` into per-fixture element values keyed by attribute.
 fn layer_relative_fixture_state(
     layer: &Layer,
-    param_map: &bimap::BiMap<(FixtureRef, Attribute), moonshine_kind::Instance<Parameter>>,
+    param_index: &ParameterIndex,
     parameters_query: &Query<&Parameter>,
 ) -> Vec<OutboundElementParameterValues> {
     // (fixture_id -> vec[element_index -> attribute map])
@@ -77,7 +82,11 @@ fn layer_relative_fixture_state(
     for (param_instance, (param_value, _)) in layer.relative.iter() {
         // Determine fixture/element and attribute information
         let typed_param = parameter_instance(param_instance);
-        let Some((fixture_ref, _)) = param_map.get_by_right(&typed_param) else {
+        let Some(ParameterLocation {
+            element: fixture_ref,
+            ..
+        }) = param_index.location(&typed_param)
+        else {
             continue;
         };
         let param = parameters_query.get(param_instance.entity()).unwrap();
@@ -106,7 +115,7 @@ fn layer_relative_fixture_state(
 /// Transform lookahead assertions into a fixture-centric websocket representation.
 fn lookahead_assertions_fixture_state(
     assertions: Option<&LookaheadAssertions>,
-    param_map: &bimap::BiMap<(FixtureRef, Attribute), moonshine_kind::Instance<Parameter>>,
+    param_index: &ParameterIndex,
     parameters_query: &Query<&Parameter>,
 ) -> Vec<OutboundElementParameterValues> {
     let Some(assertions) = assertions else {
@@ -116,7 +125,11 @@ fn lookahead_assertions_fixture_state(
     let mut per_fixture: HashMap<Uuid, Vec<HashMap<Attribute, ParameterValue>>> = HashMap::new();
 
     for assertion in &assertions.assertions {
-        let Some((fixture_ref, _)) = param_map.get_by_right(&assertion.parameter) else {
+        let Some(ParameterLocation {
+            element: fixture_ref,
+            ..
+        }) = param_index.location(&assertion.parameter)
+        else {
             continue;
         };
         let Ok(parameter) = parameters_query.get(assertion.parameter.entity()) else {
@@ -140,10 +153,10 @@ fn lookahead_assertions_fixture_state(
         .collect()
 }
 
-/// Transform a `ComputedLayer` into the same fixture-centric representation that `ParameterState` uses.
+/// Transform a `ComputedLayer` into per-fixture element values keyed by attribute.
 fn computed_layer_fixture_state(
     output: &ComputedLayer,
-    param_map: &bimap::BiMap<(FixtureRef, Attribute), moonshine_kind::Instance<Parameter>>,
+    param_index: &ParameterIndex,
     parameters_query: &Query<&Parameter>,
 ) -> Vec<OutboundElementComputedState> {
     // (fixture_id -> vec[element_index -> attribute map])
@@ -152,7 +165,11 @@ fn computed_layer_fixture_state(
     for (param_instance, value) in output.absolute.iter() {
         // Determine fixture/element and attribute information
         let typed_param = parameter_instance(param_instance);
-        let Some((fixture_ref, _)) = param_map.get_by_right(&typed_param) else {
+        let Some(ParameterLocation {
+            element: fixture_ref,
+            ..
+        }) = param_index.location(&typed_param)
+        else {
             continue;
         };
         let param = parameters_query.get(param_instance.entity()).unwrap();
@@ -182,7 +199,7 @@ fn computed_layer_fixture_state(
 pub(super) fn computed_transition_fixture_state(
     layer: &Layer,
     output: &ComputedLayer,
-    param_map: &bimap::BiMap<(FixtureRef, Attribute), moonshine_kind::Instance<Parameter>>,
+    param_index: &ParameterIndex,
     parameters_query: &Query<&Parameter>,
     is_releasing: bool,
     compositing_context: Option<&LayerCompositingContext>,
@@ -195,7 +212,11 @@ pub(super) fn computed_transition_fixture_state(
         }
 
         let typed_param = parameter_instance(param_instance);
-        let Some((fixture_ref, _)) = param_map.get_by_right(&typed_param) else {
+        let Some(ParameterLocation {
+            element: fixture_ref,
+            ..
+        }) = param_index.location(&typed_param)
+        else {
             return;
         };
         let Ok(parameter) = parameters_query.get(param_instance.entity()) else {
@@ -351,7 +372,7 @@ pub fn send_layer_stack(
     let build_start = Instant::now();
     let mut transition_build_elapsed = Duration::ZERO;
     // Acquire parameter map lock once for all layers
-    let param_map = fixture_data_provider.parameter_attribute_map_guard();
+    let param_index = fixture_data_provider.parameter_index();
 
     // Collect and sort by the same priority/activation ordering as the compositor.
     let mut stack: Vec<_> = layers
@@ -359,7 +380,6 @@ pub fn send_layer_stack(
         .map(
             |(
                 layer,
-                _base,
                 output,
                 object_ref,
                 release_marker,
@@ -372,7 +392,7 @@ pub fn send_layer_stack(
                 let computed_transitioning = computed_transition_fixture_state(
                     layer,
                     &output.0,
-                    &param_map,
+                    &param_index,
                     &parameters_query,
                     is_releasing,
                     compositing_context,
@@ -390,22 +410,22 @@ pub fn send_layer_stack(
                         runtime_position: runtime_status.map(|status| status.position.clone()),
                         asserted_absolute_values: layer_absolute_fixture_state(
                             layer,
-                            &param_map,
+                            &param_index,
                             &parameters_query,
                         ),
                         asserted_relative_values: layer_relative_fixture_state(
                             layer,
-                            &param_map,
+                            &param_index,
                             &parameters_query,
                         ),
                         lookahead_asserted_values: lookahead_assertions_fixture_state(
                             lookahead_assertions,
-                            &param_map,
+                            &param_index,
                             &parameters_query,
                         ),
                         computed_values: computed_layer_fixture_state(
                             &output.0,
-                            &param_map,
+                            &param_index,
                             &parameters_query,
                         ),
                         computed_transitioning,

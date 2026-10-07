@@ -7,6 +7,7 @@
  */
 
 import type { WebSocketRoute } from "@playwright/test";
+import { servesE2eBuild } from "./app-hooks";
 import { expect, test } from "./playwright-fixtures";
 
 import { routeShowfileDiscovery, waitForDockviewApp } from "./showfile-startup";
@@ -59,9 +60,8 @@ test("connection overlay renders above showfile dialogs and dockview sashes", as
     });
 
   await page.evaluate(async () => {
-    const { EngineRuntimeStatus, engineRuntime } = await import(
-      "/lib/engine-runtime.ts"
-    );
+    const { EngineRuntimeStatus, engineRuntime } =
+      window.__nightfallTest.runtime;
     engineRuntime.worker?.onmessage?.(
       new MessageEvent("message", {
         data: { type: "status", status: EngineRuntimeStatus.Connected },
@@ -104,7 +104,8 @@ test("connection overlay renders above showfile dialogs and dockview sashes", as
     await surface.evaluate((element) => getComputedStyle(element).boxShadow),
   ).not.toBe("none");
   const endpoint = await page.evaluate(async () => {
-    const { getWebSocketUrl } = await import("/lib/api.ts");
+    const { getWebSocketUrl } = (await window.__nightfallHarness.load("app"))
+      .api;
     return getWebSocketUrl();
   });
   await overlay
@@ -125,13 +126,17 @@ test("connection overlay renders above showfile dialogs and dockview sashes", as
   await expect(dots.nth(1)).toHaveCSS("animation-delay", "0.3s");
   await expect(dots.nth(2)).toHaveCSS("animation-delay", "0.6s");
   await page.evaluate(async () => {
-    const { setAppearanceSetting } = await import("/state/appearance.ts");
+    const { setAppearanceSetting } = (
+      await window.__nightfallHarness.load("app")
+    ).appearance;
     setAppearanceSetting("reducedMotion", "on");
   });
   await expect(dots.first()).toHaveCSS("animation-name", "none");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.evaluate(async () => {
-    const { setAppearanceSetting } = await import("/state/appearance.ts");
+    const { setAppearanceSetting } = (
+      await window.__nightfallHarness.load("app")
+    ).appearance;
     setAppearanceSetting("reducedMotion", "off");
   });
   await expect(dots.first()).toHaveCSS(
@@ -139,36 +144,39 @@ test("connection overlay renders above showfile dialogs and dockview sashes", as
     "startup-status-dot-chase",
   );
 
-  await expect.poll(() => Boolean(hmrSocket)).toBe(true);
-  const modulePath = "/components/overlays/connection/index.tsx";
-  const updated = page.waitForEvent("console", {
-    predicate: (message) =>
-      message.text().includes(`hot updated: ${modulePath}`),
-  });
-  hmrSocket!.send(
-    JSON.stringify({
-      type: "update",
-      updates: [
-        {
-          type: "js-update",
-          path: modulePath,
-          acceptedPath: modulePath,
-          timestamp: Date.now(),
-        },
-      ],
-    }),
-  );
-  await updated;
-  await expect(
-    overlay.getByRole("dialog", { name: "Connection Lost" }),
-  ).toBeVisible();
-  await page.keyboard.press("ControlOrMeta+Shift+P");
-  await expect(
-    page.locator('[data-dialog-kind="command-palette"]'),
-  ).not.toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("connection-dialog-after-hmr.png"),
-  });
+  // Only the dev server hot-replaces modules; the overlay must survive that.
+  if (!servesE2eBuild) {
+    await expect.poll(() => Boolean(hmrSocket)).toBe(true);
+    const modulePath = "/components/overlays/connection/index.tsx";
+    const updated = page.waitForEvent("console", {
+      predicate: (message) =>
+        message.text().includes(`hot updated: ${modulePath}`),
+    });
+    hmrSocket!.send(
+      JSON.stringify({
+        type: "update",
+        updates: [
+          {
+            type: "js-update",
+            path: modulePath,
+            acceptedPath: modulePath,
+            timestamp: Date.now(),
+          },
+        ],
+      }),
+    );
+    await updated;
+    await expect(
+      overlay.getByRole("dialog", { name: "Connection Lost" }),
+    ).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+Shift+P");
+    await expect(
+      page.locator('[data-dialog-kind="command-palette"]'),
+    ).not.toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("connection-dialog-after-hmr.png"),
+    });
+  }
 
   const topElement = await page.evaluate(({ x, y }) => {
     const element = document.elementFromPoint(x, y);
@@ -184,4 +192,74 @@ test("connection overlay renders above showfile dialogs and dockview sashes", as
 
   expect(topElement.isInsideOverlay, topElement.className).toBe(true);
   expect(topElement.isInsideSash, topElement.className).toBe(false);
+});
+
+/**
+ * Replays a reconnect whose last failed attempt lands just before the socket
+ * opens, then hands the screen to the startup picker as a reset backend does.
+ * The hidden shell's overlay must not re-arm its keyboard blocker, so the new
+ * show dialog still accepts typing.
+ */
+test("startup picker accepts typing after a reconnect hands control back to startup", async ({
+  page,
+}, testInfo) => {
+  await routeShowfileDiscovery(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ showfiles: [] }),
+    });
+  });
+
+  await page.goto("/?startup:bypassBackendReadiness=1");
+  await waitForDockviewApp(page, {
+    createIfMissing: true,
+    newShowfileName: "connection-overlay-startup-e2e",
+  });
+  const overlay = page.locator('[data-overlay-kind="connection"]');
+
+  await page.evaluate(async () => {
+    const { EngineRuntimeStatus, engineRuntime } =
+      window.__nightfallTest.runtime;
+    /** Delivers one worker status message to the main-thread runtime. */
+    const postStatus = (status: string) =>
+      engineRuntime.worker?.onmessage?.(
+        new MessageEvent("message", { data: { type: "status", status } }),
+      );
+    postStatus(EngineRuntimeStatus.Disconnected);
+  });
+  await expect(overlay.getByText("Connection Lost")).toBeVisible();
+
+  await page.evaluate(async () => {
+    const { EngineRuntimeStatus, engineRuntime } =
+      window.__nightfallTest.runtime;
+    const { transitionAppLifecycle } = (
+      await window.__nightfallHarness.load("app")
+    ).appLifecycle;
+    /** Delivers one worker status message to the main-thread runtime. */
+    const postStatus = (status: string) =>
+      engineRuntime.worker?.onmessage?.(
+        new MessageEvent("message", { data: { type: "status", status } }),
+      );
+    postStatus(EngineRuntimeStatus.Connecting);
+    postStatus(EngineRuntimeStatus.Disconnected);
+    postStatus(EngineRuntimeStatus.Connecting);
+    postStatus(EngineRuntimeStatus.Connected);
+    transitionAppLifecycle({ type: "showfile-prompt" });
+  });
+
+  const picker = page.getByRole("dialog", { name: "Open Showfile" });
+  await expect(picker).toBeVisible();
+  // Outlast the overlay's show delay so a stale show timer would have fired.
+  await page.waitForTimeout(1_500);
+  await picker.getByRole("button", { name: "New showfile" }).click();
+
+  const nameField = page
+    .getByRole("dialog", { name: "New Showfile" })
+    .getByLabel("Show name");
+  await expect(nameField).toBeFocused();
+  await nameField.pressSequentially("after reconnect");
+  await expect(nameField).toHaveValue("after reconnect");
+  await page.screenshot({
+    path: testInfo.outputPath("startup-picker-after-reconnect.png"),
+  });
 });

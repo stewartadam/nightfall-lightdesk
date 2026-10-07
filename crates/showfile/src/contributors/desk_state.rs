@@ -11,6 +11,7 @@ use std::{borrow::Cow, collections::HashMap};
 use bevy_ecs::prelude::Commands;
 use nightfall::prelude::*;
 use nightfall_desk::prelude::*;
+use nightfall_engine::prelude::*;
 use nightfall_io::IoRuntimeSettings;
 
 use super::{ShowfileContribution, ShowfileLoadContributor, ShowfileSaveContributor};
@@ -19,7 +20,7 @@ use crate::{ShowfileLoadDomain, ShowfileLoadPhase};
 /// Desk-level state used as owned save output or borrowed load input.
 pub(crate) struct DeskStateSnapshot<'a> {
     pub(super) variables: Cow<'a, HashMap<String, VariableValue>>,
-    pub(super) control_assignments: Cow<'a, Vec<Option<ControlAssignment>>>,
+    pub(super) control_assignments: Cow<'a, [Option<ControlAssignment>]>,
     pub(super) settings: Cow<'a, DeskSettings>,
     pub(super) io_settings: Cow<'a, IoRuntimeSettings>,
 }
@@ -52,12 +53,12 @@ impl<'a> DeskStateSaveContributor<'a> {
 impl ShowfileSaveContributor for DeskStateSaveContributor<'_> {
     /// Copy global variables and desk settings into their stable showfile fields.
     fn save_contribution(&self) -> ShowfileContribution<'static> {
-        ShowfileContribution::DeskState(DeskStateSnapshot {
+        ShowfileContribution::DeskState(Box::new(DeskStateSnapshot {
             control_assignments: Cow::Owned(self.controls.assignments()),
             variables: Cow::Owned(self.global_variables.get_all()),
             settings: Cow::Owned(self.desk_settings.clone()),
             io_settings: Cow::Owned(self.io_settings.clone()),
-        })
+        }))
     }
 }
 

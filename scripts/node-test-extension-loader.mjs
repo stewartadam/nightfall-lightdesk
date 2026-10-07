@@ -43,9 +43,15 @@ function isPhosphorSolidSourceUrl(url) {
 
 /**
  * Resolve extensionless relative imports emitted by TypeScript for node test bundles.
+ * Bare imports from emitted test files resolve against the repository's direct
+ * dependencies; installed packages resolve their own, since pnpm does not hoist
+ * transitive dependencies to the repository root.
  */
 export async function resolve(specifier, context, nextResolve) {
-  if (isBareSpecifier(specifier)) {
+  if (
+    isBareSpecifier(specifier) &&
+    !context.parentURL?.includes("/node_modules/")
+  ) {
     try {
       return await nextResolve(specifier, {
         ...context,

@@ -7,47 +7,27 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { appendFileSync, mkdirSync, realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import {
+  ALL_SELECTOR,
+  DASHBOARD_BASE_URL,
+  fetchWorktrees,
+  findWorktree,
+  MANAGE_ACTIONS,
+  manageWorktree,
+  resolveWorktreeServiceTargets,
+  statusSummary,
+  summarizeWorktree,
+  uniqueNonEmptyStrings,
+  WORKTREE_MANAGED_SERVICES,
+} from "./dashboard-client.mjs";
 
 const SERVER_NAME = "nightfall-worktree-dashboard";
 const SERVER_VERSION = "0.1.0";
-const DEFAULT_DASHBOARD_HOST =
-  process.env.NIGHTFALL_WORKTREE_DASHBOARD_HOST ?? "127.0.0.1";
-const DEFAULT_DASHBOARD_PORT = Number.parseInt(
-  process.env.NIGHTFALL_WORKTREE_DASHBOARD_PORT ?? "4780",
-  10,
-);
-const DASHBOARD_BASE_URL = (
-  process.env.NIGHTFALL_WORKTREE_DASHBOARD_URL ??
-  `http://${DEFAULT_DASHBOARD_HOST}:${DEFAULT_DASHBOARD_PORT}`
-).replace(/\/+$/u, "");
-const STARTUP_WAIT_TIMEOUT_MS = Number.parseInt(
-  process.env.NIGHTFALL_WORKTREE_STARTUP_WAIT_MS ?? "90000",
-  10,
-);
-const STARTUP_POLL_INTERVAL_MS = Number.parseInt(
-  process.env.NIGHTFALL_WORKTREE_STARTUP_POLL_MS ?? "500",
-  10,
-);
-const DASHBOARD_REQUEST_TIMEOUT_MS = Number.parseInt(
-  process.env.NIGHTFALL_WORKTREE_DASHBOARD_REQUEST_TIMEOUT_MS ?? "30000",
-  10,
-);
-const LOG_TAIL_MAX_LINES = 80;
-const LOG_TAIL_MAX_CHARS = 8000;
 const DEBUG_LOG_PATH =
   process.env.NIGHTFALL_WORKTREE_MCP_DEBUG_LOG?.trim() || null;
-const WORKTREE_MANAGED_SERVICES = [
-  "backend",
-  "ui",
-  "wasm",
-  "artnet-sender",
-  "sacn-sender",
-];
 const SENDER_TARGETS = ["art-net", "sacn"];
-const ALL_SELECTOR = "all";
 
 const TOOLS = [
   {
@@ -227,16 +207,6 @@ function logDebugJsonRpc(direction, message) {
         : [],
   };
   logDebug(direction, summary);
-}
-
-function normalizePath(pathValue) {
-  const resolved = resolve(pathValue);
-  try {
-    const real = realpathSync.native(resolved);
-    return process.platform === "win32" ? real.toLowerCase() : real;
-  } catch {
-    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
-  }
 }
 
 function writeProtocolMessage(message) {
@@ -494,125 +464,12 @@ function asTextToolResult(text, structuredContent) {
   return result;
 }
 
-function statusSummary(worktree, service) {
-  const managedState = worktree.managed?.[service];
-  const observedOpen = observedOpenForService(worktree, service);
-
-  if (service === "wasm") {
-    if (managedState?.running) return "managed running";
-    if (
-      managedState?.lastExitCode === 0 &&
-      !managedState?.lastExitSignal &&
-      !managedState?.lastError
-    ) {
-      return "completed";
-    }
-    if (
-      (managedState?.lastExitCode ?? null) !== null ||
-      managedState?.lastError
-    ) {
-      return "failed";
-    }
-    return "stopped";
-  }
-
-  if (managedState?.running && observedOpen) return "managed + reachable";
-  if (managedState?.running && !observedOpen)
-    return "managed starting/unreachable";
-  if (!managedState?.running && observedOpen)
-    return "external process detected";
-  return "stopped";
-}
-
-function summarizeWorktree(worktree) {
-  return {
-    id: worktree.id,
-    path: worktree.path,
-    name: worktree.name,
-    branch: worktree.branch,
-    nightfallPort: worktree.nightfallPort,
-    webUiPort: worktree.webUiPort,
-    webUiUrl: worktree.webUiUrl,
-    backend: statusSummary(worktree, "backend"),
-    ui: statusSummary(worktree, "ui"),
-    wasm: statusSummary(worktree, "wasm"),
-    artnetSender: statusSummary(worktree, "artnet-sender"),
-    sacnSender: statusSummary(worktree, "sacn-sender"),
-    managed: {
-      backend: {
-        running: Boolean(worktree.managed?.backend?.running),
-        pid: worktree.managed?.backend?.pid ?? null,
-      },
-      ui: {
-        running: Boolean(worktree.managed?.ui?.running),
-        pid: worktree.managed?.ui?.pid ?? null,
-      },
-      wasm: {
-        running: Boolean(worktree.managed?.wasm?.running),
-        pid: worktree.managed?.wasm?.pid ?? null,
-      },
-      "artnet-sender": {
-        running: Boolean(worktree.managed?.["artnet-sender"]?.running),
-        pid: worktree.managed?.["artnet-sender"]?.pid ?? null,
-      },
-      "sacn-sender": {
-        running: Boolean(worktree.managed?.["sacn-sender"]?.running),
-        pid: worktree.managed?.["sacn-sender"]?.pid ?? null,
-      },
-    },
-  };
-}
-
-function delay(ms) {
-  return new Promise((resolveDelay) => {
-    setTimeout(resolveDelay, ms);
-  });
-}
-
-function uniqueNonEmptyStrings(values) {
-  if (!Array.isArray(values)) return [];
-  const seen = new Set();
-  const ordered = [];
-  for (const value of values) {
-    if (typeof value !== "string") continue;
-    const trimmed = value.trim();
-    if (trimmed.length === 0 || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    ordered.push(trimmed);
-  }
-  return ordered;
-}
-
-function resolveWorktreeServiceTargets(values) {
-  const targets = uniqueNonEmptyStrings(values);
-  if (targets.includes(ALL_SELECTOR)) {
-    return [...WORKTREE_MANAGED_SERVICES];
-  }
-  return targets;
-}
-
 function resolveSenderTargets(values) {
   const targets = uniqueNonEmptyStrings(values);
   if (targets.includes(ALL_SELECTOR)) {
     return [...SENDER_TARGETS];
   }
   return targets;
-}
-
-function observedOpenForService(worktree, service) {
-  if (service === "backend") {
-    return Boolean(worktree.observed?.backendPortOpen);
-  }
-  if (service === "ui") {
-    return Boolean(worktree.observed?.webUiPortOpen);
-  }
-  if (service === "artnet-sender") {
-    return Boolean(worktree.observed?.artnetSenderRunning);
-  }
-  if (service === "sacn-sender") {
-    return Boolean(worktree.observed?.sacnSenderRunning);
-  }
-  return false;
 }
 
 function senderServiceForTarget(sender) {
@@ -644,236 +501,6 @@ function summarizeSenderStatus(worktree) {
         logPath: sacn?.logPath ?? null,
       },
     },
-  };
-}
-
-function classifyStartup(worktree, service) {
-  const managed = worktree.managed?.[service] ?? null;
-  if (
-    service === "wasm" &&
-    !managed?.running &&
-    managed?.lastExitCode === 0 &&
-    !managed?.lastExitSignal &&
-    !managed?.lastError
-  ) {
-    return {
-      service,
-      status: "online",
-      pid: managed?.pid ?? null,
-      logPath: managed?.logPath ?? null,
-      lastExitCode: managed?.lastExitCode ?? null,
-      lastExitSignal: managed?.lastExitSignal ?? null,
-      lastError: managed?.lastError ?? null,
-    };
-  }
-
-  const observedOpen = observedOpenForService(worktree, service);
-  if (observedOpen) {
-    return {
-      service,
-      status: "online",
-      pid: managed?.pid ?? null,
-      logPath: managed?.logPath ?? null,
-      lastExitCode: managed?.lastExitCode ?? null,
-      lastExitSignal: managed?.lastExitSignal ?? null,
-      lastError: managed?.lastError ?? null,
-    };
-  }
-
-  if (managed?.running) {
-    return {
-      service,
-      status: "pending",
-      pid: managed?.pid ?? null,
-      logPath: managed?.logPath ?? null,
-      lastExitCode: managed?.lastExitCode ?? null,
-      lastExitSignal: managed?.lastExitSignal ?? null,
-      lastError: managed?.lastError ?? null,
-    };
-  }
-
-  if ((managed?.lastExitCode ?? null) !== null || managed?.lastError) {
-    return {
-      service,
-      status: "failed",
-      pid: managed?.pid ?? null,
-      logPath: managed?.logPath ?? null,
-      lastExitCode: managed?.lastExitCode ?? null,
-      lastExitSignal: managed?.lastExitSignal ?? null,
-      lastError: managed?.lastError ?? null,
-    };
-  }
-
-  return {
-    service,
-    status: "pending",
-    pid: managed?.pid ?? null,
-    logPath: managed?.logPath ?? null,
-    lastExitCode: managed?.lastExitCode ?? null,
-    lastExitSignal: managed?.lastExitSignal ?? null,
-    lastError: managed?.lastError ?? null,
-  };
-}
-
-function trimLogTail(rawText) {
-  const lines = rawText
-    .split(/\r?\n/u)
-    .filter((line) => line.trim().length > 0)
-    .slice(-LOG_TAIL_MAX_LINES);
-  const tail = lines.join("\n");
-  if (tail.length <= LOG_TAIL_MAX_CHARS) {
-    return tail;
-  }
-  return tail.slice(-LOG_TAIL_MAX_CHARS);
-}
-
-async function readLogTail(logPath) {
-  if (!logPath) return null;
-  try {
-    const raw = await readFile(logPath, "utf8");
-    if (!raw.trim()) return null;
-    return trimLogTail(raw);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `Failed to read log tail: ${message}`;
-  }
-}
-
-async function waitForStartupOutcome(worktreePath, services) {
-  const targets = uniqueNonEmptyStrings(services);
-  const startedAt = Date.now();
-  let latest = findWorktree(await fetchWorktrees(), worktreePath);
-
-  while (Date.now() - startedAt < STARTUP_WAIT_TIMEOUT_MS) {
-    const states = targets.map((target) => classifyStartup(latest, target));
-    const complete = states.every(
-      (state) => state.status === "online" || state.status === "failed",
-    );
-    if (complete) {
-      const enrichedStates = await Promise.all(
-        states.map(async (state) => ({
-          ...state,
-          logTail:
-            state.status === "failed" ? await readLogTail(state.logPath) : null,
-        })),
-      );
-      return {
-        timedOut: false,
-        waitMs: Date.now() - startedAt,
-        services: enrichedStates,
-        worktree: latest,
-      };
-    }
-
-    await delay(STARTUP_POLL_INTERVAL_MS);
-    latest = findWorktree(await fetchWorktrees(), worktreePath);
-  }
-
-  const timeoutStates = targets.map((target) =>
-    classifyStartup(latest, target),
-  );
-  const enrichedTimeoutStates = await Promise.all(
-    timeoutStates.map(async (state) => ({
-      ...state,
-      logTail:
-        state.status === "failed" ? await readLogTail(state.logPath) : null,
-    })),
-  );
-  return {
-    timedOut: true,
-    waitMs: Date.now() - startedAt,
-    services: enrichedTimeoutStates,
-    worktree: latest,
-  };
-}
-
-async function fetchDashboard(path, options) {
-  const url = `${DASHBOARD_BASE_URL}${path}`;
-  let response;
-  try {
-    response = await fetch(url, {
-      ...options,
-      signal: AbortSignal.timeout(DASHBOARD_REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    const errorName = error instanceof Error ? error.name : "";
-    if (errorName === "TimeoutError" || errorName === "AbortError") {
-      throw new Error(
-        `Worktree dashboard request timed out after ${DASHBOARD_REQUEST_TIMEOUT_MS}ms: ${url}`,
-        { cause: error },
-      );
-    }
-    throw new Error(
-      `Unable to reach worktree dashboard at ${DASHBOARD_BASE_URL}. Start it with: npm run worktree:dashboard`,
-      { cause: error },
-    );
-  }
-
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `Dashboard request failed (${response.status}): ${text || response.statusText}`,
-    );
-  }
-  return text;
-}
-
-async function fetchWorktrees() {
-  const raw = await fetchDashboard("/api/worktrees");
-  const payload = JSON.parse(raw);
-  if (!payload || !Array.isArray(payload.worktrees)) {
-    throw new Error("Dashboard payload is missing worktrees");
-  }
-  return payload.worktrees;
-}
-
-function findWorktree(worktrees, worktreePath) {
-  const target = normalizePath(worktreePath);
-  const match = worktrees.find(
-    (entry) => normalizePath(String(entry.path)) === target,
-  );
-  if (match) {
-    return match;
-  }
-
-  const known = worktrees.map((entry) => String(entry.path)).join("\n");
-  throw new Error(
-    `Worktree path was not found in dashboard data.\nrequested: ${worktreePath}\nknown:\n${known}`,
-  );
-}
-
-async function manageWorktree(worktreePath, action, services) {
-  const worktrees = await fetchWorktrees();
-  const current = findWorktree(worktrees, worktreePath);
-  const targets = uniqueNonEmptyStrings(services);
-  const actionResults = await Promise.all(
-    targets.map(async (targetService) => {
-      const raw = await fetchDashboard(
-        `/api/worktrees/${encodeURIComponent(current.id)}/${encodeURIComponent(action)}?service=${encodeURIComponent(targetService)}`,
-        { method: "POST" },
-      );
-      return {
-        service: targetService,
-        result: JSON.parse(raw),
-      };
-    }),
-  );
-  let startup = null;
-  let refreshed = findWorktree(await fetchWorktrees(), worktreePath);
-  if (action === "start" || action === "recycle") {
-    const startupOutcome = await waitForStartupOutcome(worktreePath, targets);
-    refreshed = startupOutcome.worktree;
-    startup = {
-      timedOut: startupOutcome.timedOut,
-      waitMs: startupOutcome.waitMs,
-      services: startupOutcome.services,
-    };
-  }
-
-  return {
-    worktree: summarizeWorktree(refreshed),
-    action: actionResults,
-    startup,
   };
 }
 
@@ -912,7 +539,7 @@ async function runTool(name, args) {
     if (!worktreePath) {
       throw new Error("worktree is required");
     }
-    if (!["start", "stop", "recycle"].includes(action)) {
+    if (!MANAGE_ACTIONS.includes(action)) {
       throw new Error("action must be one of: start, stop, recycle");
     }
     if (serviceModes.length === 0) {
@@ -930,7 +557,11 @@ async function runTool(name, args) {
       );
     }
 
-    const payload = await manageWorktree(worktreePath, action, services);
+    const payload = await manageWorktree(
+      findWorktree(await fetchWorktrees(), worktreePath),
+      action,
+      services,
+    );
     return asTextToolResult(JSON.stringify(payload, null, 2), {
       dashboardBaseUrl: DASHBOARD_BASE_URL,
       ...payload,
@@ -958,7 +589,7 @@ async function runTool(name, args) {
     if (!worktreePath) {
       throw new Error("worktree is required");
     }
-    if (!["start", "stop", "recycle"].includes(action)) {
+    if (!MANAGE_ACTIONS.includes(action)) {
       throw new Error("action must be one of: start, stop, recycle");
     }
     if (senderModes.length === 0) {
@@ -973,7 +604,11 @@ async function runTool(name, args) {
     }
     const services = senders.map(senderServiceForTarget);
 
-    const payload = await manageWorktree(worktreePath, action, services);
+    const payload = await manageWorktree(
+      findWorktree(await fetchWorktrees(), worktreePath),
+      action,
+      services,
+    );
     return asTextToolResult(JSON.stringify(payload, null, 2), {
       dashboardBaseUrl: DASHBOARD_BASE_URL,
       senders,

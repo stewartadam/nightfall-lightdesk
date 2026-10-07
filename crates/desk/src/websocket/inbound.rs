@@ -42,35 +42,6 @@ pub fn deserialize_desk_command(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verifies UI eval input enters the queue that expands before typed dispatch.
-    #[test]
-    fn eval_deserialization_queues_pre_dispatch_expansion() {
-        let mut world = World::new();
-        world.init_resource::<PendingCommandBuffer>();
-        let command_id = CommandId::new();
-
-        deserialize_desk_command(
-            &mut world,
-            serde_json::json!({ "type": "Eval", "data": "fps 44" }),
-            command_id,
-            command_id.into(),
-        )
-        .expect("eval command should deserialize");
-
-        let queued = world.resource_mut::<PendingCommandBuffer>().drain();
-        assert_eq!(queued.len(), 1);
-        assert_eq!(queued[0].command_id, command_id);
-        assert!(matches!(
-            queued[0].payload.as_any().downcast_ref::<DeskCommand>(),
-            Some(DeskCommand::Eval(command)) if command == "fps 44"
-        ));
-    }
-}
-
 /// Forward group commands to UI via byte-oriented broadcaster
 /// Forward group commands to UI via broadcaster
 ///
@@ -340,4 +311,33 @@ pub fn deserialize_control_update(world: &mut World, json: Value) -> Result<(), 
     world.write_message(update);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies UI eval input enters the queue that expands before typed dispatch.
+    #[test]
+    fn eval_deserialization_queues_pre_dispatch_expansion() {
+        let mut world = World::new();
+        world.init_resource::<PendingCommandBuffer>();
+        let command_id = CommandId::new();
+
+        deserialize_desk_command(
+            &mut world,
+            serde_json::json!({ "type": "Eval", "data": "fps 44" }),
+            command_id,
+            command_id.into(),
+        )
+        .expect("eval command should deserialize");
+
+        let queued = world.resource_mut::<PendingCommandBuffer>().drain();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].command_id, command_id);
+        assert!(matches!(
+            queued[0].payload.as_any().downcast_ref::<DeskCommand>(),
+            Some(DeskCommand::Eval(command)) if command == "fps 44"
+        ));
+    }
 }

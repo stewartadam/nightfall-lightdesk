@@ -108,7 +108,7 @@ async function addPanel(
  */
 async function captureWebsocketSends(page: Page) {
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     const worker = engineRuntime.worker;
     if (!worker) {
       throw new Error("websocket worker did not initialize");
@@ -172,7 +172,7 @@ async function latestStoreMappingsCommand(page: Page) {
  */
 async function dispatchOscExternalEval(page: Page) {
   await page.evaluate(async () => {
-    const { engineRuntime } = await import("/lib/engine-runtime.ts");
+    const { engineRuntime } = window.__nightfallTest.runtime;
     const worker = engineRuntime.worker;
     if (!worker?.onmessage) {
       throw new Error("websocket worker message handler did not initialize");

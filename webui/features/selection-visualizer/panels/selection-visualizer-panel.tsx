@@ -19,6 +19,7 @@ import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   activeSelectionSpanTargets,
   type FixtureMap,
@@ -129,7 +130,7 @@ function selectionWithEditableProgrammerSource(
 
 /** Render a dockable inspector for the active programmer spatial selection. */
 export default function SelectionVisualizerPanel() {
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const $programmerSelection = useStore(programmerSelection);
   const $spatialSelection = useStore(programmerSpatialSelection);
   const $resolvedSelection = useStore(programmerResolvedSelection);

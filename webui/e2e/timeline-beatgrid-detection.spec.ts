@@ -10,7 +10,7 @@ import { createSampleWav } from "../../scripts/browser-demo-audio.mjs";
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
 const TIMELINE_ID = 97_301;
 const TIMECODE_ID = 97_301;
@@ -169,6 +169,7 @@ async function openOwnedBeatgridApp(
 
 /** Opens the exact owned timeline and preserves its initial blank snapshot. */
 async function openOwnedTimeline(page: Page): Promise<TimelineContext> {
+  await dockFixturesInMainGrid(page);
   return page.evaluate(async (timelineUid) => {
     const stores = (window as any).appStores;
     if (
@@ -540,7 +541,7 @@ test("beatgrid detection proposal can be rejected, applied, and used for ruler s
         )
         .toBe("ready");
       await modelDialog
-        .getByRole("button", { name: "Back", exact: true })
+        .getByRole("button", { name: "Close", exact: true })
         .click();
     }
     await expect(

@@ -10,6 +10,7 @@ import { CubeIcon } from "@squidlab/phosphor-solid/cube";
 import { EraserIcon } from "@squidlab/phosphor-solid/eraser";
 import { LightbulbIcon } from "@squidlab/phosphor-solid/lightbulb";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
+import { v4 as uuidv4 } from "uuid";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 /**
  * Visualizer canvas component.
@@ -53,6 +54,8 @@ import {
   deleteSceneObject,
   updateSceneObjectPlacement,
 } from "../../../lib/scene-object-service";
+import { useShallowStore } from "../../../lib/use-shallow-store";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   applyVisualizerSelectionModifiers,
   combineVisualizerSelectionUids,
@@ -81,13 +84,17 @@ import { useMoveToolInteraction } from "../interactions/use-move-tool-interactio
 import { useRotateToolInteraction } from "../interactions/use-rotate-tool-interaction";
 import { useSelectionToolInteraction } from "../interactions/use-selection-tool-interaction";
 import { createPointerModeRouter } from "../interactions/use-visualizer-pointer-mode-router";
-import type { VisualizerScreenPoint } from "../rendering/renderers/renderer-api";
+import type {
+  CameraState,
+  VisualizerScreenPoint,
+} from "../rendering/renderers/renderer-api";
 import { useFixtures } from "../services/use-fixtures";
 import { useSceneObjects } from "../services/use-scene-objects";
 import { useVisualizerRendererLifecycle } from "../services/use-visualizer-renderer-lifecycle";
 import { useVisualizerRendererSync } from "../services/use-visualizer-renderer-sync";
 import {
   visualizerCameraRotationMode,
+  visualizerDarkness,
   visualizerHighlightSelection,
   visualizerShowOrbitTargetIndicator,
 } from "../state/settings";
@@ -97,10 +104,12 @@ const log = getLogger(import.meta.url);
 export interface VisualizerCanvasProps {
   /** CSS class name */
   class?: string;
-  /** Callback to receive the canvas API */
-  apiRef?: (api: VisualizerCanvasApi) => void;
+  /** Receives the canvas API once the renderer is ready, then `null` when it is disposed. */
+  apiRef?: (api: VisualizerCanvasApi | null) => void;
   /** Force main thread rendering even if OffscreenCanvas is available */
   forceMainThread?: boolean;
+  /** Camera pose inherited from a renderer this canvas replaces. */
+  initialCameraState?: CameraState;
 }
 
 type Axis = "x" | "y" | "z";
@@ -120,7 +129,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   const fixtures = useFixtures();
   const sceneObjects = useSceneObjects();
   const $programmerSelection = useStore(programmerSelection);
-  const $programmerState = useStore(programmerState);
+  const $programmerState = useShallowStore(programmerState);
   const $visualizerSceneObjectSelection = useStore(
     visualizerSceneObjectSelection,
   );
@@ -132,10 +141,11 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   const { openWizard: openObjectWizard } = useObjectPatchWizard();
   const $highlightSelection = useStore(visualizerHighlightSelection);
   const $rotationMode = useStore(visualizerCameraRotationMode);
+  const $darkness = useStore(visualizerDarkness);
   const $showOrbitTargetIndicator = useStore(
     visualizerShowOrbitTargetIndicator,
   );
-  const $fixturesStore = useStore(fixturesStore);
+  const $fixturesStore = useSharedStore(fixturesStore);
   const $sceneObjectsStore = useStore(sceneObjectsStore);
   const $visualizerStats = useStore(visualizerStats);
   const [, setAxisOverlay] = createSignal<{
@@ -187,8 +197,11 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   );
 
   /** Fixture UIDs with values currently present in the programmer. */
-  const programmerValueUids = createMemo(() =>
-    Array.from(new Set($programmerState().map((row) => row.fixtureUid))),
+  const programmerValueUids = createMemo(
+    () => Array.from(new Set($programmerState().map((row) => row.fixtureUid))),
+    undefined,
+    // Value-only programmer changes keep the same fixtures.
+    { equals: (previous, next) => previous.join() === next.join() },
   );
 
   /** Selection shared by visualizer affordances and object transform workflows. */
@@ -237,6 +250,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     canvasRef: () => canvasRef,
     containerRef: () => containerRef,
     forceMainThread: props.forceMainThread,
+    initialCameraState: props.initialCameraState,
     getToolMode,
     getSelection: $programmerSelection,
     onStats: (stats) =>
@@ -300,7 +314,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     onCommitMove: (positions) => {
       const fixtureMap = $fixturesStore();
       const sceneObjectMap = $sceneObjectsStore();
-      const batchId = crypto.randomUUID().replace(/-/g, "");
+      const batchId = uuidv4().replace(/-/g, "");
       const fixtureUpdates: types.FixturePlacementUpdateEntry[] = [];
       for (const { uid, kind, position } of positions) {
         if (kind === "fixture") {
@@ -388,7 +402,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     onCommitRotate: (rotations) => {
       const fixtureMap = $fixturesStore();
       const sceneObjectMap = $sceneObjectsStore();
-      const batchId = crypto.randomUUID().replace(/-/g, "");
+      const batchId = uuidv4().replace(/-/g, "");
       const fixtureUpdates: types.FixturePlacementUpdateEntry[] = [];
       for (const { uid, kind, rotation } of rotations) {
         if (kind === "fixture") {
@@ -878,7 +892,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   const confirmDeleteSelection = () => {
     const fixtureIds = selectedFixtureIds();
     const sceneObjectIds = selectedSceneObjectIds();
-    const batchId = crypto.randomUUID();
+    const batchId = uuidv4();
 
     context.sendProgrammerCommand(
       { type: "ClearProgrammerSelection" },
@@ -1001,6 +1015,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     showEmitters: context.showEmitters,
     showGrid: context.showGrid,
     showOrbitTargetIndicator: $showOrbitTargetIndicator,
+    darkness: $darkness,
     showLabels: context.showLabels,
     toolMode: context.toolMode,
     rotationMode: $rotationMode,
@@ -1196,7 +1211,9 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
             "pointer-events": "none",
           }}
         >
-          {Math.round($visualizerStats()!.fps)} FPS
+          <span class="fps-label">
+            {Math.round($visualizerStats()!.fps)} FPS
+          </span>
         </div>
       </Show>
     </div>

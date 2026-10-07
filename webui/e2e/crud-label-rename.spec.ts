@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 interface SequenceRecord {
   identifiers: { id: number; uid: string; label: string };
 }
@@ -59,7 +62,7 @@ async function openRenamePanels(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const api = (window as any).appStores.dockApi.get();
     if (!api.getPanel("panel-SequenceList-crud-rename")) {
-      const referencePanel = api.getPanel("panel-FixtureGrid");
+      const referencePanel = api.getPanel("panel-Groups");
       api.addPanel({
         id: "panel-SequenceList-crud-rename",
         component: "SequenceList",
@@ -229,7 +232,10 @@ async function exerciseRenameSurfaces(
   await expect(updatedRowLabel).toBeVisible();
   await updatedRowLabel.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Rename" }).click();
-  const listInlineEditor = page.locator('[role="gridcell"] input').last();
+  // Scope to this list: background-mounted grids elsewhere carry checkbox cells.
+  const listInlineEditor = page.locator(
+    '[data-panel-id="panel-SequenceList-crud-rename"] [role="gridcell"] input:not([type="checkbox"])',
+  );
   await expect(listInlineEditor).toBeVisible();
   await listInlineEditor.fill(context.listLabel);
   await listInlineEditor.blur();

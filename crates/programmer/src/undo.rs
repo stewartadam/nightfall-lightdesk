@@ -105,6 +105,141 @@ impl UndoableOperation for RemoveProgrammerInstructionByUuid {
     }
 }
 
+impl UndoableOperation for ProgrammerCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+        let programmer = ctx.world.resource::<Programmer>();
+
+        match self {
+            ProgrammerCommand::ClearProgrammer => {
+                if programmer.active_selection.is_empty() {
+                    // Snapshot current state for restoration (clear values)
+                    Some(Box::new(capture_restore_programmer_state(programmer)))
+                } else {
+                    // Inverse is set to previous selection (clear selection)
+                    Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
+                        programmer.active_selection.clone(),
+                    )))
+                }
+            }
+            ProgrammerCommand::ClearProgrammerSelection => {
+                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
+                    programmer.active_selection.clone(),
+                )))
+            }
+            ProgrammerCommand::ClearProgrammerValues => {
+                Some(Box::new(capture_restore_programmer_state(programmer)))
+            }
+            ProgrammerCommand::ReleaseProgrammerValues { .. } => {
+                Some(Box::new(capture_restore_programmer_state(programmer)))
+            }
+            // AddProgrammerInstruction: capture full state to restore on undo.
+            // The UUID is generated at handler time and instructions may merge,
+            // so we restore the complete state rather than removing a specific instruction.
+            ProgrammerCommand::AddProgrammerInstruction { .. }
+            | ProgrammerCommand::AddProgrammerInstructionWithActiveSelection(_)
+            | ProgrammerCommand::ApplyAttributeOperations { .. } => {
+                Some(Box::new(capture_restore_programmer_state(programmer)))
+            }
+            ProgrammerCommand::SetProgrammerSelection(_new_selection) => {
+                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
+                    programmer.active_selection.clone(),
+                )))
+            }
+            ProgrammerCommand::SetProgrammerSpatialSelection(_new_selection) => {
+                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
+                    programmer.active_selection.clone(),
+                )))
+            }
+            ProgrammerCommand::AddProgrammerSelection(_selection) => {
+                // Inverse is set to previous selection
+                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
+                    programmer.active_selection.clone(),
+                )))
+            }
+            ProgrammerCommand::RemoveProgrammerSelection(_selection) => {
+                // Inverse is set to previous selection
+                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
+                    programmer.active_selection.clone(),
+                )))
+            }
+            // These commands delegate to their respective command types, not undoable here
+            ProgrammerCommand::StoreCue { .. }
+            | ProgrammerCommand::RecallCue { .. }
+            | ProgrammerCommand::StoreGroup { .. }
+            | ProgrammerCommand::StoreBlueprint { .. } => None,
+        }
+    }
+
+    fn description(&self) -> String {
+        match self {
+            ProgrammerCommand::ClearProgrammer => "Clear Programmer".to_string(),
+            ProgrammerCommand::ClearProgrammerSelection => "Clear Selection".to_string(),
+            ProgrammerCommand::ClearProgrammerValues => "Clear Values".to_string(),
+            ProgrammerCommand::ReleaseProgrammerValues { .. } => {
+                "Release Programmer Values".to_string()
+            }
+            ProgrammerCommand::AddProgrammerInstruction { .. } => "Add Instruction".to_string(),
+            ProgrammerCommand::AddProgrammerInstructionWithActiveSelection(_) => {
+                "Add Instruction".to_string()
+            }
+            ProgrammerCommand::ApplyAttributeOperations { .. } => {
+                "Apply Attribute Operations".to_string()
+            }
+            ProgrammerCommand::SetProgrammerSelection(_) => "Change Selection".to_string(),
+            ProgrammerCommand::SetProgrammerSpatialSelection(_) => {
+                "Change Spatial Selection".to_string()
+            }
+            ProgrammerCommand::AddProgrammerSelection(_) => "Add to Selection".to_string(),
+            ProgrammerCommand::RemoveProgrammerSelection(_) => "Remove from Selection".to_string(),
+            ProgrammerCommand::StoreCue {
+                sequence_id,
+                cue_id,
+                part_id,
+                ..
+            } => match part_id {
+                crate::events::StoreCuePartId::Exact(0) => match cue_id {
+                    crate::events::StoreCueId::Exact(cue_id) => {
+                        format!("Store Cue {}.{}", sequence_id, cue_id)
+                    }
+                    crate::events::StoreCueId::Next => format!("Store Cue {}.", sequence_id),
+                },
+                crate::events::StoreCuePartId::Exact(part_id) => match cue_id {
+                    crate::events::StoreCueId::Exact(cue_id) => {
+                        format!("Store Cue {}.{} Part {}", sequence_id, cue_id, part_id)
+                    }
+                    crate::events::StoreCueId::Next => {
+                        format!("Store Cue {}. Next Part {}", sequence_id, part_id)
+                    }
+                },
+                crate::events::StoreCuePartId::Next => match cue_id {
+                    crate::events::StoreCueId::Exact(cue_id) => {
+                        format!("Store Cue {}.{} Next Part", sequence_id, cue_id)
+                    }
+                    crate::events::StoreCueId::Next => {
+                        format!("Store Cue {}. Next Part", sequence_id)
+                    }
+                },
+            },
+            ProgrammerCommand::RecallCue {
+                sequence_id,
+                cue_id,
+                part_id,
+                select: _,
+            } => {
+                if *part_id == 0 {
+                    format!("Recall Cue {}.{}", sequence_id, cue_id)
+                } else {
+                    format!("Recall Cue {}.{} Part {}", sequence_id, cue_id, part_id)
+                }
+            }
+            ProgrammerCommand::StoreGroup { group_id, .. } => format!("Store Group {}", group_id),
+            ProgrammerCommand::StoreBlueprint { blueprint_id, .. } => {
+                format!("Store Blueprint {}", blueprint_id)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy_app::prelude::*;
@@ -500,140 +635,5 @@ mod tests {
                 .blueprint_application,
             Some(application),
         );
-    }
-}
-
-impl UndoableOperation for ProgrammerCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
-        let programmer = ctx.world.resource::<Programmer>();
-
-        match self {
-            ProgrammerCommand::ClearProgrammer => {
-                if programmer.active_selection.is_empty() {
-                    // Snapshot current state for restoration (clear values)
-                    Some(Box::new(capture_restore_programmer_state(programmer)))
-                } else {
-                    // Inverse is set to previous selection (clear selection)
-                    Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
-                        programmer.active_selection.clone(),
-                    )))
-                }
-            }
-            ProgrammerCommand::ClearProgrammerSelection => {
-                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
-                    programmer.active_selection.clone(),
-                )))
-            }
-            ProgrammerCommand::ClearProgrammerValues => {
-                Some(Box::new(capture_restore_programmer_state(programmer)))
-            }
-            ProgrammerCommand::ReleaseProgrammerValues { .. } => {
-                Some(Box::new(capture_restore_programmer_state(programmer)))
-            }
-            // AddProgrammerInstruction: capture full state to restore on undo.
-            // The UUID is generated at handler time and instructions may merge,
-            // so we restore the complete state rather than removing a specific instruction.
-            ProgrammerCommand::AddProgrammerInstruction { .. }
-            | ProgrammerCommand::AddProgrammerInstructionWithActiveSelection(_)
-            | ProgrammerCommand::ApplyAttributeOperations { .. } => {
-                Some(Box::new(capture_restore_programmer_state(programmer)))
-            }
-            ProgrammerCommand::SetProgrammerSelection(_new_selection) => {
-                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
-                    programmer.active_selection.clone(),
-                )))
-            }
-            ProgrammerCommand::SetProgrammerSpatialSelection(_new_selection) => {
-                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
-                    programmer.active_selection.clone(),
-                )))
-            }
-            ProgrammerCommand::AddProgrammerSelection(_selection) => {
-                // Inverse is set to previous selection
-                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
-                    programmer.active_selection.clone(),
-                )))
-            }
-            ProgrammerCommand::RemoveProgrammerSelection(_selection) => {
-                // Inverse is set to previous selection
-                Some(Box::new(ProgrammerCommand::SetProgrammerSpatialSelection(
-                    programmer.active_selection.clone(),
-                )))
-            }
-            // These commands delegate to their respective command types, not undoable here
-            ProgrammerCommand::StoreCue { .. }
-            | ProgrammerCommand::RecallCue { .. }
-            | ProgrammerCommand::StoreGroup { .. }
-            | ProgrammerCommand::StoreBlueprint { .. } => None,
-        }
-    }
-
-    fn description(&self) -> String {
-        match self {
-            ProgrammerCommand::ClearProgrammer => "Clear Programmer".to_string(),
-            ProgrammerCommand::ClearProgrammerSelection => "Clear Selection".to_string(),
-            ProgrammerCommand::ClearProgrammerValues => "Clear Values".to_string(),
-            ProgrammerCommand::ReleaseProgrammerValues { .. } => {
-                "Release Programmer Values".to_string()
-            }
-            ProgrammerCommand::AddProgrammerInstruction { .. } => "Add Instruction".to_string(),
-            ProgrammerCommand::AddProgrammerInstructionWithActiveSelection(_) => {
-                "Add Instruction".to_string()
-            }
-            ProgrammerCommand::ApplyAttributeOperations { .. } => {
-                "Apply Attribute Operations".to_string()
-            }
-            ProgrammerCommand::SetProgrammerSelection(_) => "Change Selection".to_string(),
-            ProgrammerCommand::SetProgrammerSpatialSelection(_) => {
-                "Change Spatial Selection".to_string()
-            }
-            ProgrammerCommand::AddProgrammerSelection(_) => "Add to Selection".to_string(),
-            ProgrammerCommand::RemoveProgrammerSelection(_) => "Remove from Selection".to_string(),
-            ProgrammerCommand::StoreCue {
-                sequence_id,
-                cue_id,
-                part_id,
-                ..
-            } => match part_id {
-                crate::events::StoreCuePartId::Exact(0) => match cue_id {
-                    crate::events::StoreCueId::Exact(cue_id) => {
-                        format!("Store Cue {}.{}", sequence_id, cue_id)
-                    }
-                    crate::events::StoreCueId::Next => format!("Store Cue {}.", sequence_id),
-                },
-                crate::events::StoreCuePartId::Exact(part_id) => match cue_id {
-                    crate::events::StoreCueId::Exact(cue_id) => {
-                        format!("Store Cue {}.{} Part {}", sequence_id, cue_id, part_id)
-                    }
-                    crate::events::StoreCueId::Next => {
-                        format!("Store Cue {}. Next Part {}", sequence_id, part_id)
-                    }
-                },
-                crate::events::StoreCuePartId::Next => match cue_id {
-                    crate::events::StoreCueId::Exact(cue_id) => {
-                        format!("Store Cue {}.{} Next Part", sequence_id, cue_id)
-                    }
-                    crate::events::StoreCueId::Next => {
-                        format!("Store Cue {}. Next Part", sequence_id)
-                    }
-                },
-            },
-            ProgrammerCommand::RecallCue {
-                sequence_id,
-                cue_id,
-                part_id,
-                select: _,
-            } => {
-                if *part_id == 0 {
-                    format!("Recall Cue {}.{}", sequence_id, cue_id)
-                } else {
-                    format!("Recall Cue {}.{} Part {}", sequence_id, cue_id, part_id)
-                }
-            }
-            ProgrammerCommand::StoreGroup { group_id, .. } => format!("Store Group {}", group_id),
-            ProgrammerCommand::StoreBlueprint { blueprint_id, .. } => {
-                format!("Store Blueprint {}", blueprint_id)
-            }
-        }
     }
 }

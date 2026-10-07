@@ -95,6 +95,7 @@ impl FixtureScanner {
             source: FixtureSource::Gdtf(metadata),
             make,
             model,
+            revision: crate::manager::fixture_source_version(path)?,
             file_path: path.to_path_buf(),
         })
     }
@@ -110,6 +111,7 @@ impl FixtureScanner {
             source: FixtureSource::Ofl(Box::new(ofl_fixture)),
             make,
             model,
+            revision: crate::manager::fixture_source_version(path)?,
             file_path: path.to_path_buf(),
         })
     }

@@ -7,7 +7,11 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 /** Verifies detached content respects curved borders as a panel moves between edges and the grid. */
 test("panel content follows edge corners when moved", async ({
@@ -15,6 +19,8 @@ test("panel content follows edge corners when moved", async ({
 }, testInfo) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
+  await dockFixturesInMainGrid(page);
   for (const edge of ["bottom", "left", "right"]) {
     await page.evaluate((edge) => {
       const api = (window as any).appStores.dockApi.get();

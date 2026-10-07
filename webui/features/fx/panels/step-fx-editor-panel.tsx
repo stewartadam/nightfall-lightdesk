@@ -27,6 +27,7 @@ import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import type { DockviewPanelApi } from "dockview-core";
 import {
   batch,
+  createComputed,
   createEffect,
   createMemo,
   createSignal,
@@ -36,7 +37,9 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
+import { v4 as uuidv4 } from "uuid";
 import {
   DropdownMenu,
   DropdownMenuItem,
@@ -51,6 +54,7 @@ import {
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { RangeSlider } from "../../../components/ui/range-slider";
 import { Table } from "../../../components/ui/table";
+import { Toolbar } from "../../../components/ui/toolbar";
 import {
   ToggleToolbarButton,
   ToolbarButton,
@@ -60,6 +64,11 @@ import VerticalLayoutSplitter from "../../../components/ui/vertical-layout-split
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { getAttributeMetadata } from "../../../lib/attribute-metadata";
+import {
+  ClipboardUnavailableError,
+  readClipboardText,
+  writeClipboardText,
+} from "../../../lib/clipboard";
 import { durationToSeconds } from "../../../lib/duration";
 import {
   registerComponentFocus,
@@ -68,10 +77,13 @@ import {
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelTabStatus } from "../../../lib/panel-tab-status";
+import { createShowObjectUid } from "../../../lib/sequence-factory";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import { resolveSpatialSelection } from "../../../lib/wasm-bridge";
 import {
   fixtures as fixturesStore,
   groups as groupsStore,
+  pushToast,
 } from "../../../state/appStores";
 import { reducedMotion } from "../../../state/reduced-motion";
 import type * as types from "../../../types";
@@ -159,7 +171,7 @@ type StepFxEditorPopover = "timing" | "start-position" | "overrides";
 /** Presents Step FX authoring controls and integrates the editor session with docking. */
 export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
   log.trace("mounting");
-  const $fixtures = useStore(fixturesStore);
+  const $fixtures = useSharedStore(fixturesStore);
   const $groups = useStore(groupsStore);
   const initialDraft = props.initialDraft;
   const initialUid = (
@@ -331,13 +343,14 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
         contributionSlideAnimation = incoming;
         return incoming.finished;
       })
+      // A cancelled animation rejects; settle anyway so later track switches are not blocked.
+      .catch(() => undefined)
       .then(() => {
         if (token !== contributionSlideToken) return;
         contributionSlideAnimation = undefined;
         setPendingContributionTrack(undefined);
         setContributionSlidePhase("idle");
-      })
-      .catch(() => undefined);
+      });
   };
 
   /** Returns the operator-facing label used by the panel and Properties heading. */
@@ -375,6 +388,19 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     const lane = activeLane();
     return lane ? stepFxTrack(lane, trackKind()) : undefined;
   });
+
+  const [stepRows, setStepRows] = createStore<types.FxStep[]>([]);
+  /**
+   * Mirrors the active track's steps into a uid-keyed store. Every edit clones
+   * the draft, so rendering the cloned objects directly would remount each
+   * sheet row and drop keyboard focus from its controls after every change.
+   */
+  createComputed(() =>
+    setStepRows(
+      // Cloned so reconcile never mutates step objects owned by earlier drafts.
+      reconcile(structuredClone(activeTrack()?.steps ?? []), { key: "uid" }),
+    ),
+  );
 
   /** Formats the active track's effective cycle after optional fixed scaling. */
   const activeCycleBeatText = createMemo(() => {
@@ -725,14 +751,31 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
       activeTrack()?.steps.filter((step) => selectedStepUids().has(step.uid)) ??
       [];
     if (selected.length === 0) return;
-    await navigator.clipboard.writeText(JSON.stringify(selected, null, 2));
+    try {
+      await writeClipboardText(JSON.stringify(selected, null, 2));
+    } catch (error) {
+      log.warn("failed to copy step FX steps", { error });
+      pushToast("error", "Could not copy steps to the clipboard");
+    }
   };
 
   /** Pastes serialized steps or line-separated numeric targets after the selection. */
   const pasteSteps = async (): Promise<void> => {
     const track = activeTrack();
     if (!track) return;
-    const text = await navigator.clipboard.readText();
+    let text: string;
+    try {
+      text = await readClipboardText();
+    } catch (error) {
+      log.warn("failed to read step FX steps from the clipboard", { error });
+      pushToast(
+        "error",
+        error instanceof ClipboardUnavailableError
+          ? error.message
+          : "Could not read the clipboard",
+      );
+      return;
+    }
     const incoming = stepFxStepsFromClipboard(
       text,
       trackKind(),
@@ -741,7 +784,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     if (incoming.length === 0) return;
     const fresh = incoming.map((step) => ({
       ...structuredClone(step),
-      uid: crypto.randomUUID(),
+      uid: createShowObjectUid(),
       target: setStepFxTargetValue(
         step.target,
         stepFxNumericTarget(step.target),
@@ -946,7 +989,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     return target?.kind === "width" && target.stepUids.includes(stepUid);
   };
 
-  /** Applies Step Bar keyboard navigation and selection commands to the active track. */
+  /**
+   * Applies Step Bar keyboard navigation and selection commands to the active
+   * track. Arrow keys move the selection and keyboard focus together; past
+   * either end they fall through to the Step bar toolbar's roving focus.
+   */
   const handleStepBarKeyDown = (event: KeyboardEvent): void => {
     const track = activeTrack();
     if (!track || track.steps.length === 0) return;
@@ -961,11 +1008,18 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
       return;
     }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
     const selectedIndexes = track.steps
       .map((step, index) => (selectedStepUids().has(step.uid) ? index : -1))
       .filter((index) => index >= 0);
-    const anchor = selectedIndexes[selectedIndexes.length - 1] ?? 0;
+    const focusedSelector =
+      event.target instanceof HTMLElement
+        ? event.target.closest<HTMLElement>("[data-step-fx-step-selector]")
+        : null;
+    const focusedIndex = Number(focusedSelector?.dataset.stepIndex);
+    // Arrows continue from the focused step so roving focus and selection agree.
+    const anchor = Number.isInteger(focusedIndex)
+      ? focusedIndex
+      : (selectedIndexes[selectedIndexes.length - 1] ?? 0);
     const target = Math.max(
       0,
       Math.min(
@@ -973,13 +1027,28 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
         anchor + (event.key === "ArrowLeft" ? -1 : 1),
       ),
     );
+    // At either end, leave the arrow to the Step bar toolbar so focus can
+    // reach the paging buttons.
+    if (
+      target === anchor &&
+      selectedStepUids().has(track.steps[anchor].uid) &&
+      !event.shiftKey
+    )
+      return;
+    event.preventDefault();
     if (!event.shiftKey) {
       setSelectedStepUids(new Set([track.steps[target].uid]));
-      return;
+    } else {
+      const next = new Set(selectedStepUids());
+      next.add(track.steps[target].uid);
+      setSelectedStepUids(next);
     }
-    const next = new Set(selectedStepUids());
-    next.add(track.steps[target].uid);
-    setSelectedStepUids(next);
+    if (event.target instanceof HTMLElement) {
+      event.target
+        .closest("[data-step-fx-step-pager-viewport]")
+        ?.querySelector<HTMLElement>(`[data-step-index="${target}"]`)
+        ?.focus();
+    }
   };
 
   /** Handles panel-level step clipboard shortcuts without overriding native fields. */
@@ -1107,11 +1176,10 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
     lane: () => types.FxLane,
     track?: () => types.FxTrack | undefined,
   ) => (
-    <div
+    <Toolbar
       class="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-neutral-700 bg-neutral-900 px-2"
       data-step-fx-step-actions-toolbar
-      role="toolbar"
-      aria-label="Step edit actions"
+      label="Step edit actions"
     >
       <ToolbarButton
         label="Add step"
@@ -1206,16 +1274,15 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
           }
         />
       </div>
-    </div>
+    </Toolbar>
   );
 
   /** Renders paged step navigation in a persistent overlay at the table pane's foot. */
   const renderStepNavigationToolbar = (track: () => types.FxTrack) => (
-    <div
+    <Toolbar
       class="absolute inset-x-0 bottom-0 z-20 flex h-12 min-w-0 items-center gap-1 border-t border-neutral-700 bg-neutral-900/95 px-2 shadow-lg backdrop-blur"
       data-step-fx-step-toolbar
-      role="toolbar"
-      aria-label="Step bar"
+      label="Step bar"
     >
       <StepFxStepPager onKeyDown={handleStepBarKeyDown}>
         <For each={track().steps}>
@@ -1250,7 +1317,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
           )}
         </For>
       </StepFxStepPager>
-    </div>
+    </Toolbar>
   );
 
   return (
@@ -1573,7 +1640,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          <For each={track().steps}>
+                                          <For each={stepRows}>
                                             {(step, index) => {
                                               /** Returns the validation prefix for this authored row. */
                                               const path = () =>
@@ -1689,7 +1756,14 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                                                 .value,
                                                               trackKind(),
                                                             );
-                                                          if (!parsed) return;
+                                                          if (!parsed) {
+                                                            // Rows stay mounted across edits, so restore the authored text.
+                                                            event.currentTarget.value =
+                                                              formatStepFxTarget(
+                                                                step.target,
+                                                              );
+                                                            return;
+                                                          }
                                                           const selection =
                                                             editSelectionFor(
                                                               step.uid,
@@ -1713,6 +1787,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                                               }),
                                                             ),
                                                           );
+                                                          // Normalized input can leave the target unchanged, which skips Solid's DOM update.
+                                                          event.currentTarget.value =
+                                                            formatStepFxTarget(
+                                                              step.target,
+                                                            );
                                                         }}
                                                       />
                                                       <span class="inline-flex items-center border-l border-neutral-700 px-2 text-xs text-neutral-500">
@@ -1748,10 +1827,21 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                                         step.width_beats,
                                                       )}
                                                       onChange={(event) => {
-                                                        const value = Number(
+                                                        const value =
                                                           event.currentTarget
-                                                            .value,
-                                                        );
+                                                            .valueAsNumber;
+                                                        if (
+                                                          !Number.isFinite(
+                                                            value,
+                                                          )
+                                                        ) {
+                                                          // An emptied field is not an authored width; restore the current one.
+                                                          event.currentTarget.value =
+                                                            formatStepFxWidthBeats(
+                                                              step.width_beats,
+                                                            );
+                                                          return;
+                                                        }
                                                         replaceTrack(
                                                           editStepFxSteps(
                                                             track(),
@@ -1767,6 +1857,11 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
                                                             }),
                                                           ),
                                                         );
+                                                        // Rounding can leave the width unchanged, which skips Solid's DOM update.
+                                                        event.currentTarget.value =
+                                                          formatStepFxWidthBeats(
+                                                            step.width_beats,
+                                                          );
                                                       }}
                                                     />
                                                   </td>
@@ -2705,7 +2800,7 @@ function StepFxPhaseDial(props: {
   selectionCount: number;
 }) {
   const directionRadius = 54;
-  const directionMarkerId = `step-fx-phase-direction-${crypto.randomUUID()}`;
+  const directionMarkerId = `step-fx-phase-direction-${uuidv4()}`;
   /** Selects representative indexes without overcrowding the compact dial. */
   const indexes = createMemo(() => {
     const count = Math.max(1, props.selectionCount);
@@ -2830,7 +2925,7 @@ function StepFxTimingControls(props: {
   onTimingChange: (timing: types.StepFxTiming) => void;
   onCycleScaleChange: (scale: types.StepFxCycleScale) => void;
 }) {
-  const cycleScaleName = crypto.randomUUID();
+  const cycleScaleName = uuidv4();
   const [fixedScaleValue, setFixedScaleValue] = createSignal(
     props.stepFx.cycle_scale.type === "Fixed"
       ? props.stepFx.cycle_scale.data

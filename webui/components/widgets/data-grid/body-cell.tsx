@@ -27,6 +27,7 @@ import type {
   DataGridCellEditFactory,
   DataGridEditCommitContext,
   DataGridEditCommitMode,
+  DataGridEditCommitOptions,
   DataGridInlineEditTooltipContext,
   DataGridRichCellExtension,
   EditingCell,
@@ -112,7 +113,10 @@ export interface BodyCellProps {
   cellDecorations?: DataGridCellDecorationCallback;
   cellsUpdating: Accessor<boolean>;
   cellUpdateVersion: Accessor<number>;
-  commitEdit: (mode?: DataGridEditCommitMode) => void;
+  commitEdit: (
+    mode?: DataGridEditCommitMode,
+    options?: DataGridEditCommitOptions,
+  ) => void;
   currentSelection: Accessor<GridSelection["current"] | undefined>;
   customRenderers?: readonly CustomRenderer<any>[];
   richCellExtensions?: readonly DataGridRichCellExtension[];
@@ -293,14 +297,12 @@ export function BodyCell(props: BodyCellProps) {
   const color = () =>
     gridCell().themeOverride?.textDark ?? "var(--data-grid-text, #ffffff)";
 
-  /** Retains coordinate accents on unselected cells without adding interior selection rings. */
+  /** Keeps coordinate axis accents visible in every selection and edit state. */
   const cellRings = () => {
-    const rings: string[] = [];
     const axis = coordinateAxis();
-    if (axis && !isSelectedCellOrRange()) {
-      rings.push(`inset -3px 0 0 0 ${COORDINATE_AXIS_COLORS[axis]}`);
-    }
-    return rings.length > 0 ? rings.join(", ") : undefined;
+    return axis
+      ? `inset -3px 0 0 0 ${COORDINATE_AXIS_COLORS[axis]}`
+      : undefined;
   };
 
   /** Renders the optional decoration overlay for the current cell. */

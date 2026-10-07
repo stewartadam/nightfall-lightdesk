@@ -1,0 +1,116 @@
+name: Native validation
+
+# One job compiles the native graph once: tests first so the Playwright backend ships
+# early, then the desktop shell, doctests and Clippy reuse its build scripts, proc
+# macros and dependencies.
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Rust tests, Clippy and backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_DEV_OPT_LEVEL: "0"
+      NEXTEST_PROFILE: ci
+    steps:
+      - name: Download credential-free source
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source and Git history
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # selecting a toolchain either by action or manual `rustup` calls should happen
+      # before the plugin, as the cache uses the current rustc version as its cache key
+      - name: Show Rust toolchain
+        run: rustup show
+
+      - name: Cache native dependencies and tools
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # A stable key lets develop pushes warm caches that PRs restore from their base
+          # branch. The action already hashes manifests and the lockfile, and falls back
+          # to the newest native cache when they change.
+          shared-key: native
+          cache-on-failure: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libasound2-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install cargo-nextest for Rust tests
+        # Prebuilt and checksum-verified; building it from source costs minutes on a cache miss.
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-nextest@0.9.146
+
+      - name: Run Rust tests
+        id: native-hooks
+        run: pnpm exec prek run cargo-nextest --all-files --verbose --show-diff-on-failure --color always --stage pre-push
+
+      - name: Upload Rust test timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rust-test-junit-${{ github.sha }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stage the tested native backend
+        run: |
+          cargo build --tests --bin nightfall-headless
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          mkdir -p ci-artifacts
+          cp "$target_dir/debug/nightfall-headless" ci-artifacts/nightfall-headless
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-test-backend-${{ github.sha }}
+          path: ci-artifacts/nightfall-headless
+          if-no-files-found: error
+          retention-days: 1
+
+      # nextest cannot run doctests, and the push hook skips them (see cargo-doctest in
+      # .pre-commit-config.yaml). Run them after the backend upload so browser tests are
+      # not delayed, and even when nextest fails so both results report.
+      - name: Run Rust doctests
+        if: ${{ !cancelled() && steps.native-hooks.outcome != 'skipped' }}
+        run: pnpm exec prek run cargo-doctest --all-files --verbose --color always --stage manual
+
+      # app-tauri is not a default member, so nextest skips it. Testing it here reuses
+      # most of the runtime units nextest just built instead of a separate cold job.
+      - name: Run desktop shell tests
+        if: ${{ !cancelled() && steps.native-hooks.outcome != 'skipped' }}
+        env:
+          # Tests do not embed the frontend or copy distribution resources.
+          TAURI_CONFIG: '{"build":{"frontendDist":null},"bundle":{"resources":[]}}'
+        run: cargo test -p app-tauri --all-targets --locked
+
+      # Clippy runs last so it never delays the backend upload. Its dependency units are
+      # metadata-only and cannot reuse codegen, but build scripts and proc macros can.
+      - name: Run Clippy
+        if: ${{ !cancelled() && steps.native-hooks.outcome != 'skipped' }}
+        run: pnpm exec prek run cargo-clippy --all-files --verbose --show-diff-on-failure --color always --stage pre-commit

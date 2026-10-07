@@ -53,9 +53,7 @@ async function waitForDockApi(page: Page) {
  */
 async function disconnectBackend(page: Page) {
   await page.evaluate(async () => {
-    const { engineRuntime } = await import(
-      /* @vite-ignore */ "/lib/engine-runtime.ts"
-    );
+    const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
 }
@@ -89,6 +87,11 @@ async function expectPatchConflictCellPresentation(cell: Locator) {
     .toBe(true);
 }
 
+/**
+ * Adds and focuses a panel, by default in the full-height 3D Visualizer group
+ * rather than a collapsed edge or the shorter Groups group, where panels with
+ * a controls section (such as Clips) leave the grid only a header row.
+ */
 async function addPanel(
   page: Page,
   panel: {
@@ -112,7 +115,7 @@ async function addPanel(
       title: panel.title,
       params: panel.params ?? {},
       position: panel.position ?? {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: "panel-Visualizer",
         direction: "within",
       },
     });

@@ -23,6 +23,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  Show,
 } from "solid-js";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import DataGrid, {
@@ -54,9 +55,13 @@ import {
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
 import { engineRuntime } from "../../../lib/engine-runtime";
+import {
+  libraryDefinitionId,
+  libraryRevisionLabel,
+} from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
-import { fixtureLibrary } from "../../../state/appStores";
+import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
 import type {
   FixtureLibraryCommand,
   FixtureLibraryEntry,
@@ -79,6 +84,12 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   const panelId = props.initialPanelId ?? props.id;
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $selectedFixture = useStore(fixtureLibrarySelectedFixture);
+  const capabilities = useStore(runtimeCapabilities);
+
+  /** Whether the runtime can import and delete fixture definition files. */
+  const canManageLibrary = createMemo(
+    () => capabilities()?.fixture_library === "Native",
+  );
 
   // Row selection state (for row checkboxes)
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -143,7 +154,11 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     for (const idx of indices) {
       const fixture = fixtureData[idx];
       if (fixture) {
-        fixturesToDelete.push({ make: fixture.make, model: fixture.model });
+        fixturesToDelete.push({
+          make: fixture.make,
+          model: fixture.model,
+          asset_etag: fixture.asset_etag,
+        });
       }
     }
 
@@ -171,15 +186,16 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     { priority: 10, autoActivate: true },
   );
 
+  /** Sorts library fixtures by make, model, then revision so revisions of one model keep a stable row order. */
   const sortedFixtures = createMemo(() => {
     const rawFixtures = $fixtureLibrary();
 
-    // Sort by make, then model
-    return [...rawFixtures].sort((a, b) => {
-      const makeCompare = a.make.localeCompare(b.make);
-      if (makeCompare !== 0) return makeCompare;
-      return a.model.localeCompare(b.model);
-    });
+    return [...rawFixtures].sort(
+      (a, b) =>
+        a.make.localeCompare(b.make) ||
+        a.model.localeCompare(b.model) ||
+        a.asset_etag.localeCompare(b.asset_etag),
+    );
   });
 
   // Column definitions for data grid
@@ -213,6 +229,12 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       width: 100,
       ...columnVisibilityMeta("Metadata", "Source"),
     },
+    {
+      title: "Revision",
+      id: "revision",
+      width: 90,
+      ...columnVisibilityMeta("Metadata", "Revision"),
+    },
   ];
 
   const filterColumns = createMemo(() => filterColumnsFromMetadata(columns));
@@ -245,7 +267,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     createKeyedDataGridCellProvider({
       rows: fixtures(),
       columns: displayColumns(),
-      rowKey: (fixture) => `${fixture.make}:${fixture.model}`,
+      rowKey: libraryDefinitionId,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row: fixture, column }): GridCell => {
         const colId = String(column.id);
@@ -258,6 +280,8 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
             return makeSafeTextCell(fixture.modes.join(", "));
           case "source":
             return makeSafeTextCell(fixture.source_format);
+          case "revision":
+            return makeSafeTextCell(libraryRevisionLabel(fixture.asset_etag));
           default:
             return makeSafeTextCell("");
         }
@@ -282,7 +306,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       {/* Toolbar */}
       <DataGridToolbar
         selectedCount={selectedRows().length}
-        onDelete={handleDeleteSelected}
+        onDelete={canManageLibrary() ? handleDeleteSelected : undefined}
       >
         <DataGridFilterMenu
           columns={filterColumns()}
@@ -292,16 +316,18 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
           onFiltersChange={setTableFilters}
         />
         <ColumnVisibilityMenu scope={panelId} columns={columns} />
-        <ToolbarButton label="Upload fixture" onClick={triggerUpload}>
-          <PlusIcon class="size-4" aria-hidden />
-        </ToolbarButton>
-        <input
-          ref={fileInputRef}
-          type="file"
-          class="hidden"
-          accept=".gdtf,.json"
-          onChange={handleFileSelect}
-        />
+        <Show when={canManageLibrary()}>
+          <ToolbarButton label="Upload fixture" onClick={triggerUpload}>
+            <PlusIcon class="size-4" aria-hidden />
+          </ToolbarButton>
+          <input
+            ref={fileInputRef}
+            type="file"
+            class="hidden"
+            accept=".gdtf,.json"
+            onChange={handleFileSelect}
+          />
+        </Show>
       </DataGridToolbar>
 
       {/* Data grid */}

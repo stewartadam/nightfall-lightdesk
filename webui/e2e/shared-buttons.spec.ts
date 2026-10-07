@@ -11,7 +11,11 @@ import {
   type Locator,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import {
+  dockFixturesInMainGrid,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 /** Reads visible toolbar geometry and selection styling independently of its command handlers. */
 async function buttonAppearance(button: Locator) {
@@ -55,6 +59,8 @@ test("editor toolbars share the lab button states", async ({
 
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
+  await resetToDefaultLayout(page);
+  await dockFixturesInMainGrid(page);
   await page.evaluate(() => {
     const stores = (window as any).appStores;
     const sequence = Object.values(stores.sequences.get())[0] as any;
@@ -137,6 +143,10 @@ test("editor toolbars share the lab button states", async ({
     await page.screenshot({
       path: testInfo.outputPath("shared-cue-toolbar.png"),
     });
+    // The expanded Clips edge plus grid minimums would overflow a 900px window.
+    await page.evaluate(() =>
+      (window as any).appStores.dockApi.get().getEdgeGroup("left")?.collapse(),
+    );
     await page.setViewportSize({ width: 900, height: 700 });
     expect(
       await cueToolbar.evaluate(

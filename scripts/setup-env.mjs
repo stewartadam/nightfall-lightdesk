@@ -21,24 +21,42 @@ function randomPort() {
   return 3000 + Math.floor(Math.random() * 1000);
 }
 
+const ASSIGNMENT_KEY = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/u;
+
 /**
- * Preserves inherited dotenv text and appends worktree-specific overrides.
+ * Preserves inherited dotenv text while applying worktree-specific overrides.
+ *
+ * An overridden key keeps the position of its first assignment in the seed,
+ * later assignments of that key are dropped, and keys absent from the seed are
+ * appended, so rerunning setup never accumulates duplicate keys.
  */
 export function buildEnvLines({ port, projectRoot, mainWorktree, seed = "" }) {
-  const envLines = [
-    ...(seed ? seed.trimEnd().split(/\r?\n/u) : []),
-    `NIGHTFALL_PORT=${port}`,
-    `PLAYWRIGHT_BROWSERS_PATH=${sharedBrowsersPath}`,
-  ];
+  const overrides = new Map([
+    ["NIGHTFALL_PORT", String(port)],
+    ["PLAYWRIGHT_BROWSERS_PATH", sharedBrowsersPath],
+  ]);
 
   if (mainWorktree && mainWorktree !== projectRoot) {
-    envLines.push(
-      `NIGHTFALL_DATA_DIR=${nightfallTestDataDir(projectRoot)}`,
-      "NIGHTFALL_OUTPUT_SACN_ENABLED=false",
-      "NIGHTFALL_OUTPUT_ARTNET=false",
-      "NIGHTFALL_INPUT_SACN_ENABLED=false",
-      "NIGHTFALL_INPUT_ARTNET=false",
-    );
+    overrides.set("NIGHTFALL_DATA_DIR", nightfallTestDataDir(projectRoot));
+    overrides.set("NIGHTFALL_OUTPUT_SACN_ENABLED", "false");
+    overrides.set("NIGHTFALL_OUTPUT_ARTNET", "false");
+    overrides.set("NIGHTFALL_INPUT_SACN_ENABLED", "false");
+    overrides.set("NIGHTFALL_INPUT_ARTNET", "false");
+  }
+
+  const written = new Set();
+  const envLines = [];
+  for (const line of seed ? seed.trimEnd().split(/\r?\n/u) : []) {
+    const key = line.match(ASSIGNMENT_KEY)?.[1];
+    if (!key || !overrides.has(key)) {
+      envLines.push(line);
+    } else if (!written.has(key)) {
+      envLines.push(`${key}=${overrides.get(key)}`);
+      written.add(key);
+    }
+  }
+  for (const [key, value] of overrides) {
+    if (!written.has(key)) envLines.push(`${key}=${value}`);
   }
 
   return envLines;

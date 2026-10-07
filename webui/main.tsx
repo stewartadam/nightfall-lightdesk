@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import "./lib/report-uncaught-errors";
 import "./lib/idle-callback";
 import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
@@ -15,16 +16,20 @@ import EngineConnection from "./components/shell/runtime/engine-connection";
 import { StartupController, StartupOverlaps } from "./components/shell/startup";
 import NewShowfileNameModal from "./features/showfile/dialogs/new-showfile-name";
 import { APP_NAME, APP_TITLE } from "./lib/app-metadata";
-import { backendAppState } from "./lib/engine-runtime";
 import {
   initFeatureFlags,
   isStartupDraftRecoveryEnabled,
 } from "./lib/feature-flags";
 import { isEmbeddedDemoRuntime } from "./lib/runtime-config";
+import { installTestHooks } from "./lib/test-hooks";
+import {
+  reportFatalError,
+  setWorkspaceVisible,
+} from "./lib/uncaught-error-reporter";
 import { appLifecycle } from "./state/app-lifecycle";
 import "./state/reduced-motion";
 import { appearanceSettings } from "./state/appearance";
-import * as types from "./types";
+import { showfileTransition } from "./state/showfile-transition";
 
 import "./index.css";
 import "./components/shell/app/shell.css";
@@ -35,14 +40,27 @@ type InteractiveAppModule =
 
 let interactiveAppModule: Promise<InteractiveAppModule> | undefined;
 
-/** Loads the heavy interactive shell chunk once and shares it with Solid lazy. */
+/**
+ * Loads the heavy interactive shell chunk once and shares it with Solid lazy.
+ * A failed load can never reveal the workspace, so it is reported as fatal here
+ * and callers only need to ignore the rejection.
+ */
 function loadInteractiveApp(): Promise<InteractiveAppModule> {
-  interactiveAppModule ??= import("./components/shell/app/interactive-app");
+  if (!interactiveAppModule) {
+    interactiveAppModule = import("./components/shell/app/interactive-app");
+    interactiveAppModule.catch((error: unknown) =>
+      reportFatalError("workspace load", error),
+    );
+  }
   return interactiveAppModule;
 }
 
+/** Leaves a failed shell load to the fatal report already made by `loadInteractiveApp`. */
+function ignoreReportedLoadFailure(): void {}
+
 // Initialize URL-backed runtime settings before app components read them.
 initFeatureFlags();
+installTestHooks();
 document.title = isEmbeddedDemoRuntime() ? APP_NAME : APP_TITLE;
 
 type InteractiveShellMountProps = {
@@ -74,7 +92,7 @@ function InteractiveShellMount(props: InteractiveShellMountProps) {
         () => <LoadedInteractiveApp onReady={props.onReady} />,
         mountRef,
       );
-    });
+    }, ignoreReportedLoadFailure);
   });
 
   onCleanup(() => {
@@ -108,21 +126,31 @@ function App() {
     );
   });
   const lifecycle = useStore(appLifecycle);
+  // The shell mount is latched, so readiness stays set when startup returns to the picker.
   const [interactiveShellReady, setInteractiveShellReady] = createSignal(false);
   let preloadAnimationFrame: number | undefined;
 
-  /** Resets shell readiness if startup returns to a non-interactive phase. */
-  createEffect(() => {
-    if (lifecycle().phase !== "interactive") {
-      setInteractiveShellReady(false);
-    }
-  });
+  const pendingShowfileTransition = useStore(showfileTransition);
 
-  /** Keeps the startup splash visible while the interactive shell chunk loads. */
+  /**
+   * Keeps the startup splash visible while the interactive shell chunk loads and
+   * until the opened showfile's panels have settled behind the transition veil,
+   * so the splash fades straight onto a ready workspace.
+   */
   const holdStartupSplash = () =>
     lifecycle().phase === "interactive" &&
-    backendAppState() !== types.AppState.Ready &&
-    !interactiveShellReady();
+    (!interactiveShellReady() || pendingShowfileTransition() !== null);
+
+  /**
+   * Tracks whether the workspace is on screen. Until it is, uncaught failures
+   * open the error dialog, since notifications would sit behind the splash or a
+   * startup prompt.
+   */
+  createEffect(() => {
+    setWorkspaceVisible(
+      lifecycle().phase === "interactive" && !holdStartupSplash(),
+    );
+  });
 
   /** Starts loading the interactive shell after the first startup paint. */
   onMount(() => {

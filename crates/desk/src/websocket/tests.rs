@@ -11,8 +11,8 @@ use std::time::Duration;
 use bevy_app::{App, Last, Update};
 use moonshine_kind::Instance;
 use nightfall_engine::prelude::EnginePayload;
-use nightfall_fixtures::prelude::{MergeStrategy, Parameter, ParameterMetadata, ParameterValues};
-use nightfall_fixtures::websocket::ParameterState;
+use nightfall_fixture_model::prelude::*;
+use nightfall_fixtures::prelude::{Parameter, ParameterValues};
 use nightfall_undo::context::UndoContext;
 use nightfall_undo::manager::{UndoEntry, UndoGroup, UndoManager};
 use nightfall_undo::traits::UndoableOperation;
@@ -60,6 +60,10 @@ fn spawn_parameter(
         .world_mut()
         .spawn(Parameter {
             metadata: ParameterMetadata {
+                dmx_slots: Default::default(),
+                functions: Vec::new(),
+                default_dmx: None,
+                highlight_dmx: None,
                 resolution: DmxValueResolution::Coarse,
                 native_unit: attribute.native_unit(),
                 value_polarity: attribute.value_polarity(),
@@ -77,45 +81,6 @@ fn spawn_parameter(
         .id();
 
     unsafe { Instance::from_entity_unchecked(entity) }
-}
-
-#[test]
-/// Verifies custom attributes retain their distinct labels in parameter snapshots.
-fn parameter_state_serializes_custom_attributes_by_label() {
-    let state = ParameterState {
-        absolute: HashMap::from([(
-            Attribute::Custom {
-                label: "Tilt Speed".to_owned(),
-            },
-            ParameterValue::Absolute { value: 64.0 },
-        )]),
-        relative: HashMap::new(),
-        output: HashMap::from([
-            (
-                Attribute::Custom {
-                    label: "Tilt Speed".to_owned(),
-                },
-                128.0,
-            ),
-            (
-                Attribute::Custom {
-                    label: "Aux Strips Light Speed".to_owned(),
-                },
-                255.0,
-            ),
-        ]),
-    };
-
-    let serialized =
-        serde_json::to_value(&state).expect("parameter state should serialize to JSON");
-
-    assert_eq!(serialized["absolute"]["Tilt Speed"]["data"]["value"], 64.0);
-    assert_eq!(serialized["output"]["Tilt Speed"], 128.0);
-    assert_eq!(serialized["output"]["Aux Strips Light Speed"], 255.0);
-    assert!(
-        serialized["output"].get("Custom").is_none(),
-        "custom attributes must not collide under the shared Custom key",
-    );
 }
 
 #[test]
@@ -532,8 +497,8 @@ fn computed_transition_state_uses_compositing_context_per_transition_start_posit
         fixture_uid,
         index: Some(1),
     };
-    let mut param_map = bimap::BiMap::new();
-    param_map.insert((fixture_ref, Attribute::Red), parameter);
+    let mut param_index = ParameterIndex::default();
+    param_index.insert(fixture_ref, Attribute::Red, parameter);
 
     let mut layer = Layer::new("clocked".to_owned(), Priority::default());
     layer.absolute.insert(
@@ -562,7 +527,7 @@ fn computed_transition_state_uses_compositing_context_per_transition_start_posit
     let transition_state = computed_transition_fixture_state(
         &layer,
         &output,
-        &param_map,
+        &param_index,
         &parameters_query,
         false,
         Some(&compositing_context),

@@ -530,7 +530,8 @@ test("prompts to load a newer startup draft", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(dialog).toBeHidden();
   await expect.poll(draftLoadCount).toBe(1);
-  await expect(page.locator("button[title='Menu']")).toBeVisible();
+  // At phone width the app menu lives in the compact header's logo menu.
+  await expect(page.locator("button[title='Main menu']")).toBeVisible();
 });
 
 /** Verifies accepting a draft sends one load command and waits for it. */
@@ -755,6 +756,79 @@ test("creates a new show from the startup draft prompt", async ({
       }),
     )
     .toBe(true);
+});
+
+/**
+ * Verifies Enter in the show name field stacked over the startup draft prompt
+ * submits the new show instead of triggering the prompt's Load Draft default.
+ */
+test("enter in the new show name over the startup draft prompt creates the show", async ({
+  page,
+}) => {
+  await disableE2eStartupAutoOpen(page);
+  await captureWorkerSends(page);
+  await routeShowfileDiscovery(
+    page,
+    async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          showfiles: [
+            {
+              name: "default",
+              path: "/tmp/default.nightfall-show",
+              modified_ms: 1_700_000_000_000,
+              draft: {
+                showfile_name: "default",
+                name: "default.nightfall-show",
+                path: "/tmp/drafts/default.nightfall-show",
+                modified_ms: 1_700_000_100_000,
+                saved_modified_ms: 1_700_000_000_000,
+              },
+              revisions: [],
+            },
+          ],
+        }),
+      });
+    },
+    defaultDraftFixture,
+  );
+
+  await page.goto(
+    "/?startup:draftRecovery=true&e2e=1&startup:bypassBackendReadiness=1",
+  );
+  const recoveryDialog = page.getByRole("dialog", {
+    name: "Resume your work on default?",
+  });
+  await expect(recoveryDialog).toBeVisible();
+  await recoveryDialog.getByRole("button", { name: "New showfile" }).click();
+  const nameDialog = page.getByRole("dialog", {
+    name: "New Showfile",
+    exact: true,
+  });
+  const nameInput = nameDialog.getByRole("textbox", { name: "Show name" });
+  await expect(nameInput).toBeFocused();
+  await nameInput.fill("recovered-enter");
+  await nameInput.press("Enter");
+
+  /** Counts desk commands of one type captured from the worker bridge. */
+  const deskCommandCount = (type: string) =>
+    page.evaluate((type) => {
+      const sends =
+        (window as Window & { __nightfallWorkerSends?: any[] })
+          .__nightfallWorkerSends ?? [];
+      return sends.filter(
+        (send) =>
+          send?.module === "DeskCommand" &&
+          send?.command?.type === type &&
+          (type !== "NewNamedShowfile" ||
+            send?.command?.data?.name === "recovered-enter"),
+      ).length;
+    }, type);
+  await expect.poll(() => deskCommandCount("NewNamedShowfile")).toBe(1);
+  await expect(nameDialog).toBeHidden();
+  expect(await deskCommandCount("LoadDraftShowfile")).toBe(0);
+  expect(await deskCommandCount("LoadShowfile")).toBe(0);
 });
 
 /** Verifies startup stays hidden until a picked showfile finishes loading. */

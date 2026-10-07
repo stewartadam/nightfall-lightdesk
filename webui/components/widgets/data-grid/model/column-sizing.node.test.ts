@@ -181,3 +181,45 @@ test("sizeColumnsToContent uses rich cell extension measurements", () => {
 
   assert.equal(sized[0]?.width, 226);
 });
+
+/**
+ * Verifies floating-end indicators on centered checkboxes reserve their width on
+ * both sides so the end-pinned badge never overlaps the checkbox.
+ */
+test("sizeColumnsToContent reserves both sides for floating boolean indicators", () => {
+  const columns: GridColumn[] = [
+    { id: "inline", title: "" },
+    { id: "floating", title: "" },
+  ];
+  const provider = createKeyedDataGridCellProvider({
+    rows: [{}],
+    columns,
+    rowKey: (_row, index) => index,
+    columnKey: (column) => String(column.id),
+    getCellContent: ({ column }) => ({
+      kind: GridCellKind.Boolean,
+      data: true,
+      allowOverlay: false,
+      stateIndicators: [
+        {
+          label: "Applies lookahead from cue 12",
+          tone: "lookahead",
+          variant: "tag",
+          text: "12",
+        },
+      ],
+      stateIndicatorPlacement:
+        column.id === "floating" ? "floating-end" : "inline",
+    }),
+  });
+
+  const sized = sizeColumnsToContent({
+    columns,
+    provider,
+    context: measurementContext(),
+    nestedColumnGroups: false,
+  });
+
+  assert.equal(sized[0]?.width, 66);
+  assert.equal(sized[1]?.width, 98);
+});

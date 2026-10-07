@@ -137,9 +137,15 @@ test("design lab supports styling, tiles, cue edits, and dock resizing", async (
   await page.getByRole("button", { name: "Blue accent" }).click();
   await expect(page.locator(".design-lab")).toHaveCSS("--accent", "#398bfa");
   const comfortHeight = (await tile.boundingBox())!.height;
+  const tileGrid = page
+    .getByRole("region", { name: "Group library" })
+    .locator(".tile-grid");
+  await expect(tileGrid).toHaveCSS("padding-left", "18px");
   await page.getByRole("button", { name: "Compact", exact: true }).click();
   await expect(page.locator(".design-lab")).toHaveClass(/compact/);
-  expect((await tile.boundingBox())!.height).toBeLessThan(comfortHeight * 0.78);
+  // Compact tightens panel spacing while tiles keep their fixed geometry.
+  await expect(tileGrid).toHaveCSS("padding-left", "12px");
+  expect((await tile.boundingBox())!.height).toBe(comfortHeight);
   await page
     .getByRole("navigation", { name: "Component index" })
     .getByRole("button", { name: /Data grid/ })
@@ -631,7 +637,7 @@ test("context submenus meet their parent on the left and right", async ({
   await page.getByRole("menuitem", { name: "Accent color" }).hover();
   const root = page.locator('[data-menu-kind="context"]');
   const submenu = page
-    .locator('[data-menu-kind="context-submenu"][aria-hidden="false"]')
+    .locator('[data-menu-kind="context-submenu"]:not([inert])')
     .first();
   const parentRight = (await root.boundingBox())!;
   const childRight = (await submenu.boundingBox())!;

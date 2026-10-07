@@ -10,13 +10,8 @@ import { useStore } from "@nanostores/solid";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import PanelToolbar from "../../../../components/ui/panel-toolbar";
 import { ToolbarButton } from "../../../../components/ui/toolbar-button";
 import CrudPanelSearch, {
@@ -70,6 +65,7 @@ import {
   updateSceneObjectProperties,
   updateSceneObjectsFromLibrary,
 } from "../../../../lib/scene-object-service";
+import { useSharedStore } from "../../../../lib/use-shared-store";
 import {
   orderedUidListsEqual,
   replaceKnownUidsInSelection,
@@ -101,7 +97,7 @@ export interface SceneObjectsPanelProps extends BasePanelComponentProps {
   initialPanelId?: string;
 }
 export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
-  const $sceneObjects = useStore(sceneObjects);
+  const $sceneObjects = useSharedStore(sceneObjects);
   const $objectLibrary = useStore(objectLibrary);
   const { openWizard: openObjectWizard } = useObjectPatchWizard();
   const panelId = props.initialPanelId ?? props.id;
@@ -420,7 +416,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     cell: Item,
     newValue: GridCell,
     useSelection: boolean,
-    batchId = crypto.randomUUID().replace(/-/g, ""),
+    batchId = uuidv4().replace(/-/g, ""),
   ) => {
     const [col, row] = cell;
     const columnId = gridColumns()[col]?.id;
@@ -533,7 +529,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
   };
 
   const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {
-    const batchId = crypto.randomUUID().replace(/-/g, "");
+    const batchId = uuidv4().replace(/-/g, "");
     for (const edit of edits) {
       applySceneObjectEdit(edit.cell, edit.newValue, false, batchId);
     }
@@ -621,7 +617,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
 
             <ToolbarButton
               variant="danger"
-              size="labeled"
+              count={selectedRows().length}
               tooltip={
                 selectedRows().length > 0
                   ? `Delete selected scene objects (${selectedRows().length})`
@@ -633,11 +629,6 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
               label="Delete selected scene objects"
             >
               <TrashIcon class="size-4" aria-hidden />
-              <Show when={selectedRows().length > 0}>
-                <span class="rounded bg-red-800 px-1 text-[10px] leading-4 text-red-100">
-                  {selectedRows().length}
-                </span>
-              </Show>
             </ToolbarButton>
 
             <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />

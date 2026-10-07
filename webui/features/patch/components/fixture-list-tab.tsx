@@ -15,6 +15,7 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
@@ -53,6 +54,7 @@ import {
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   orderedUidListsEqual,
   replaceFixtureUidsInSelection,
@@ -345,7 +347,7 @@ function buildPlacementUpdate(
 }
 
 export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
-  const $fixtures = useStore(fixtures);
+  const $fixtures = useSharedStore(fixtures);
   const [baseColumns, setBaseColumns] =
     createSignal<VisibilityGridColumn[]>(DEFAULT_COLUMNS);
   const [collapsedGroups, setCollapsedGroups] = createSignal<readonly string[]>(
@@ -564,7 +566,7 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
   ) => {
     const startMs = performance.now();
     const rowData = displayRows();
-    const batchId = crypto.randomUUID().replace(/-/g, "");
+    const batchId = uuidv4().replace(/-/g, "");
     const fixtureMap = fixtures.get();
     let nextFixtureMap: typeof fixtureMap | null = null;
     const updates: types.FixturePlacementUpdateEntry[] = [];

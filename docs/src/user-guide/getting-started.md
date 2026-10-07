@@ -18,7 +18,7 @@ In **Patch**, use the add-fixture button to open the wizard:
 
 1. Select **nightfall / Practice RGBI**, then choose its **4 channel** mode. Inspect the parameter preview: intensity, red, green, and blue each use one channel.
 2. Set **Quantity** to `1` and **Label** to `Practice light`.
-3. Leave **Assign Console DMX** enabled. In **Patch**, enter universe `1` in the **Univ** box and start address `1` in the box after the dot. This only assigns console channels; output is still disabled.
+3. Leave **Assign Console DMX** enabled. In **Patch**, enter universe `1` in the **Univ** box and start address `1` in the box after the dot. This only assigns console channels; nothing is sent to hardware until you route them to an output target.
 4. Review the mode and channel footprint, then choose **Finish**.
 
 The fixture should appear in Patch and Fixtures. Note its numeric ID; the commands below use `1`. Substitute your fixture's ID if it differs. If the library is empty, install fixture definitions before continuing; see [Fixture Library](panels/fixture-library.md).

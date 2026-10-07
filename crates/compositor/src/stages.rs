@@ -12,6 +12,9 @@ pub mod merge;
 pub mod transition;
 
 // Re-export stage functions for convenience
-pub use attribution::merge_layer_with_attribution;
+pub use attribution::{merge_layer_with_attribution, merge_layer_with_attribution_skipping};
 pub use merge::merge;
-pub use transition::apply_transitions_with_compositing_context;
+pub use transition::{
+    apply_transitions_with_compositing_context, evaluate_transitions_with_compositing_context,
+    SkippedAssertions,
+};

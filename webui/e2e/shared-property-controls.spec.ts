@@ -12,7 +12,7 @@ import {
   type Page,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /** Reads the shared field surface independently of its editor-specific width. */
 async function appearance(control: Locator) {
@@ -30,14 +30,17 @@ async function appearance(control: Locator) {
   });
 }
 
-/** Opens a demo entity editor and keeps its properties visible in the right drawer. */
+/**
+ * Opens the first demo entity of one kind in its editor, keeps its properties visible in
+ * the right drawer, and returns the inspector together with the edited entity's UID.
+ */
 async function openProperties(
   page: Page,
   component: "SequenceEditor" | "CueEditor" | "Timeline",
   fieldLabel: string,
 ) {
   const panelId = `shared-properties-${component}`;
-  await page.evaluate(
+  const entityUid: string = await page.evaluate(
     ({ component, panelId }) => {
       const stores = (window as any).appStores;
       const api = stores.dockApi.get();
@@ -71,6 +74,7 @@ async function openProperties(
       }
       api.getPanel(panelId)?.api.setActive();
       api.getPanel(panelId)?.focus();
+      return entity.identifiers.uid;
     },
     { component, panelId },
   );
@@ -89,13 +93,18 @@ async function openProperties(
     api.getPanel(panelId)?.focus();
   }, panelId);
   await expect(page.getByLabel(fieldLabel, { exact: true })).toBeVisible();
-  return page.locator('[data-panel-id="panel-PropertiesInspector"]');
+  return {
+    properties: page.locator('[data-panel-id="panel-PropertiesInspector"]'),
+    entityUid,
+  };
 }
 
 /** Exercises drafts, timing inheritance and compact property fields against the lab appearance. */
 test("property editors share compact controls and preserve timing inheritance", async ({
   page,
 }, testInfo) => {
+  // Loading and editing the full sample rig takes longer than the default budget.
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.goto("/design-lab.html");
   await page
@@ -111,7 +120,15 @@ test("property editors share compact controls and preserve timing inheritance", 
 
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
-  const properties = await openProperties(
+  await resetToDefaultLayout(page);
+  // The always-rendered visualizer overlay sits above the expanded right drawer's edge.
+  await page.evaluate(() =>
+    (window as any).appStores.dockApi
+      .get()
+      .getPanel("panel-Visualizer")
+      ?.api.close(),
+  );
+  const { properties, entityUid: sequenceUid } = await openProperties(
     page,
     "SequenceEditor",
     "Sequence label",
@@ -136,12 +153,10 @@ test("property editors share compact controls and preserve timing inheritance", 
   await fades.first().blur();
   await expect
     .poll(() =>
-      page.evaluate(() => {
-        const sequence = Object.values(
-          (window as any).appStores.sequences.get(),
-        )[0] as any;
+      page.evaluate((uid) => {
+        const sequence = (window as any).appStores.sequences.get()[uid];
         return sequence.default_timing.fade_in;
-      }),
+      }, sequenceUid),
     )
     .toEqual({ type: "Fixed", data: { secs: 2, nanos: 500_000_000 } });
   await fades.last().fill("");
@@ -165,7 +180,11 @@ test("property editors share compact controls and preserve timing inheritance", 
     path: testInfo.outputPath("sequence-properties.png"),
   });
 
-  await openProperties(page, "CueEditor", "Fade In Duration (seconds)");
+  const { entityUid: cueUid } = await openProperties(
+    page,
+    "CueEditor",
+    "Fade In Duration (seconds)",
+  );
   const cueFade = properties.getByLabel("Fade In Duration (seconds)");
   expect(await appearance(cueFade)).toEqual(inputStyle);
   await cueFade.fill("3.5");
@@ -174,7 +193,8 @@ test("property editors share compact controls and preserve timing inheritance", 
   /** Reads persisted demo cue fields so consecutive edits wait for their acknowledgements. */
   const readCue = () =>
     page.evaluate(
-      () => Object.values((window as any).appStores.cues.get())[0] as any,
+      (uid) => (window as any).appStores.cues.get()[uid] as any,
+      cueUid,
     );
   await expect
     .poll(async () => (await readCue()).transitions.fade_in)

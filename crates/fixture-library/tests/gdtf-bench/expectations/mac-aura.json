@@ -1,0 +1,44 @@
+{
+  "known_violations": {},
+  "charts": {
+    "Extended": [
+      "Beams · StrobeShutter · b1 · 1",
+      "Beams · Intensity · b1 · 2",
+      "Beams · Custom { label: \"Color1\" } · b1 · 9",
+      "Beams · Red · b1 · 10",
+      "Beams · Green · b1 · 11",
+      "Beams · Blue · b1 · 12",
+      "Beams · White · b1 · 13",
+      "Beams · Custom { label: \"CTC\" } · b1 · 14",
+      "Head · Zoom · b1 · 3",
+      "Head · Tilt · b1 · 6,7",
+      "Yoke · Pan · b1 · 4,5",
+      "Base · Custom { label: \"Control1\" } · b1 · 8",
+      "Base · Custom { label: \"Effects1\" } · b1 · 15",
+      "Base · Custom { label: \"Effects1Rate\" } · b1 · 16",
+      "Base · Custom { label: \"Effects2\" } · b1 · 17",
+      "Base · Custom { label: \"Effects2Rate\" } · b1 · 18",
+      "Base · Custom { label: \"EffectsSync\" } · b1 · 19",
+      "Auras · StrobeShutter · b1 · 20",
+      "Auras · Intensity · b1 · 21",
+      "Auras · Custom { label: \"Color2\" } · b1 · 22",
+      "Auras · Red · b1 · 23",
+      "Auras · Green · b1 · 24",
+      "Auras · Blue · b1 · 25"
+    ],
+    "Standard": [
+      "Head · StrobeShutter · b1 · 1",
+      "Head · Intensity · b1 · 2",
+      "Head · Zoom · b1 · 3",
+      "Head · Tilt · b1 · 6,7",
+      "Head · Custom { label: \"Color1\" } · b1 · 9",
+      "Head · Red · b1 · 10",
+      "Head · Green · b1 · 11",
+      "Head · Blue · b1 · 12",
+      "Head · White · b1 · 13",
+      "Head · Custom { label: \"CTC\" } · b1 · 14",
+      "Yoke · Pan · b1 · 4,5",
+      "Base · Custom { label: \"Control1\" } · b1 · 8"
+    ]
+  }
+}

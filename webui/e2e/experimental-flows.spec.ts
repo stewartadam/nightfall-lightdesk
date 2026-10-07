@@ -9,6 +9,9 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
+// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
+test.use({ emptyStartupWorld: true });
+
 /** Creates an empty show so release-default layout assertions do not inherit a personal saved layout. */
 async function openBlankShow(page: Page): Promise<void> {
   await page.addInitScript(() => window.localStorage.clear());
@@ -40,7 +43,7 @@ test("flows are disabled by default", async ({ page }, testInfo) => {
   await expect(
     page.getByRole("tab", { name: "Flows", exact: true }),
   ).toHaveCount(0);
-  await page.keyboard.press("Meta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+Shift+P");
   await page.getByPlaceholder("Type a command or search...").fill("flow");
   await expect(page.getByText("Open Flows", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Open Flow Editor", { exact: true })).toHaveCount(
@@ -48,7 +51,8 @@ test("flows are disabled by default", async ({ page }, testInfo) => {
   );
   await page.keyboard.press("Escape");
   const completions = await page.evaluate(async () => {
-    const { completeCommand } = await import("/lib/wasm-bridge.ts");
+    const { completeCommand } = (await window.__nightfallHarness.load("app"))
+      .wasmBridge;
     return await completeCommand("store ", 6);
   });
   expect(
@@ -102,7 +106,7 @@ test.describe("experimental opt-in", () => {
         ),
       )
       .toBe(true);
-    await page.keyboard.press("Meta+Shift+P");
+    await page.keyboard.press("ControlOrMeta+Shift+P");
     await page
       .getByPlaceholder("Type a command or search...")
       .fill("Open Flows");

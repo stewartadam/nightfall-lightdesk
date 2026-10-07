@@ -80,7 +80,7 @@ These instructions define the Markdown style guide enforced by markdownlint in t
 * Schemas are located in `scripts/linting/schemas/`
 * Pattern-based mapping in `schema-mapping.json` determines which schema applies to each file
 * VS Code YAML extension (`redhat.vscode-yaml`) provides in-editor validation
-* Run validation: `npm run validate:frontmatter` or `pwsh scripts/linting/Validate-MarkdownFrontmatter.ps1`
+* Run validation: `pnpm run validate:frontmatter` or `pwsh scripts/linting/Validate-MarkdownFrontmatter.ps1`
 
 ### Schema Pattern Matching
 

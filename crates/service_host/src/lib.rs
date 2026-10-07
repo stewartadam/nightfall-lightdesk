@@ -15,6 +15,14 @@
 
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod fixed_rate;
+pub mod tick_grid;
+
+#[cfg(not(target_arch = "wasm32"))]
+// Leaf crate: mark the cargo-hakari workspace-hack as used so cargo's unused_dependencies lint passes.
+use nightfall_workspace_hack as _;
+
 /// Generic slot for a single process-lifetime worker.
 pub struct WorkerSlot<W> {
     /// Worker instance while the service is active.
@@ -333,5 +341,8 @@ mod tests {
 
 /// Prelude for ergonomic imports.
 pub mod prelude {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use crate::fixed_rate::{FixedRatePeriod, FixedRateWorker};
+    pub use crate::tick_grid::{grid_epoch, next_grid_tick};
     pub use crate::{ModeWorkerSlot, WorkerSlot, process_singleton};
 }

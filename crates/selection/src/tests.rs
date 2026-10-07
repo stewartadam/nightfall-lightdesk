@@ -288,8 +288,11 @@ fn index_fixture_ids(resolved: &ResolvedSelection) -> Vec<(bool, Vec<u32>)> {
         .collect()
 }
 
+/// Index inversion flag paired with its members as `(fixture ID, element index)`.
+type IndexFixtureRefs = (bool, Vec<(u32, Option<u32>)>);
+
 /// Return resolved index members with fixture IDs and element indexes preserved.
-fn index_fixture_refs(resolved: &ResolvedSelection) -> Vec<(bool, Vec<(u32, Option<u32>)>)> {
+fn index_fixture_refs(resolved: &ResolvedSelection) -> Vec<IndexFixtureRefs> {
     resolved
         .indexes
         .iter()

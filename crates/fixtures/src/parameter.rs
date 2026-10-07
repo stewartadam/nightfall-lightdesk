@@ -8,154 +8,20 @@
 
 //! Parameters are logical representation of DMX channels that hold values to
 //! eventually be sent to fixtures during output.
+//!
+//! The profile-level model of a parameter lives in `nightfall_fixture_model`
+//! so the web visualizer can share it; this module adds its runtime values
+//! and ECS component.
 
 use bevy_ecs::prelude::*;
-use nightfall_compositor::types::CompositorParameter;
+use nightfall_compositor::types::{
+    AbsolutePercentScale, CompositorParameter, ParameterCompositingContext,
+};
 use nightfall_dmx::prelude::*;
+use nightfall_fixture_model::parameter::*;
 use nightfall_io::OutputTransport;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
-
-/// Merge strategies for combining parameter values
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[typeshare::typeshare]
-pub enum MergeStrategy {
-    /// Highest Take Priority - the highest value will be used
-    HTP,
-    /// Last Takes Priority - the most recent value will be used
-    LTP,
-}
-
-/// Metadata for a parameter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct ParameterMetadata {
-    /// The DMX channel width of this logical parameter
-    pub resolution: DmxValueResolution,
-    /// Which attribute this parameter controls
-    pub attribute: Attribute,
-    /// Unit used for values entered and displayed by operators.
-    #[serde(default)]
-    pub native_unit: ParameterUnit,
-    /// Whether this parameter's logical values are unsigned or centered around zero.
-    #[serde(default)]
-    pub value_polarity: ParameterValuePolarity,
-    /// The minimum value of this parameter. The parameter can hold values
-    /// outside this bound in individual layers, but final output will be
-    /// clamped to this value.
-    pub min: ParameterDmxValue,
-    /// The maximum value of this parameter. The parameter can hold values
-    /// outside this bound in individual layers, but final output will be
-    /// clamped to this value.
-    pub max: ParameterDmxValue,
-    /// Fixed offset applied after merging and before clamping.
-    /// Can be specified as a raw DMX value or as a percentage of the parameter's range.
-    pub offset: ParameterValue,
-    /// Whether low and high values should be inverted upon output. This
-    /// can be useful for pan/tilt if a fixture was mounted rotated 180 degrees,
-    /// for example.
-    pub is_inverted: bool,
-    /// Whether this parameter is a 'snap' parameter (not fade-able)
-    pub is_snap: bool,
-    /// The merge strategy for this parameter
-    pub merge_type: MergeStrategy,
-    /// Whether this parameter should respond to grandmaster intensity
-    pub use_grandmaster: bool,
-}
-
-impl Default for ParameterMetadata {
-    fn default() -> Self {
-        Self {
-            resolution: DmxValueResolution::Coarse,
-            attribute: Attribute::Intensity,
-            native_unit: ParameterUnit::Percent,
-            value_polarity: ParameterValuePolarity::Unsigned,
-            min: 0.0,
-            max: ChannelDmxValue::MAX as ParameterDmxValue,
-            offset: ParameterValue::Absolute { value: 0.0 },
-            is_inverted: false,
-            is_snap: false,
-            merge_type: MergeStrategy::HTP,
-            use_grandmaster: false,
-        }
-    }
-}
-
-impl ParameterMetadata {
-    /// Returns the minimum logical value operators should use for this parameter.
-    pub fn logical_min(&self) -> ParameterDmxValue {
-        if self.value_polarity == ParameterValuePolarity::Signed && self.min >= 0.0 {
-            -(self.max - self.min) / 2.0
-        } else {
-            self.min
-        }
-    }
-
-    /// Returns the maximum logical value operators should use for this parameter.
-    pub fn logical_max(&self) -> ParameterDmxValue {
-        if self.value_polarity == ParameterValuePolarity::Signed && self.min >= 0.0 {
-            (self.max - self.min) / 2.0
-        } else {
-            self.max
-        }
-    }
-
-    /// Returns the logical value span for this parameter.
-    pub fn logical_range(&self) -> ParameterDmxValue {
-        self.logical_max() - self.logical_min()
-    }
-
-    /// Converts an absolute logical parameter value into an absolute percentage.
-    pub fn absolute_value_to_percent(&self, value: ParameterDmxValue) -> Percentage {
-        let min = self.logical_min();
-        let range = self.logical_range();
-        if range <= 0.0 {
-            return 0.0.into();
-        }
-
-        let normalized = ((value.clamp(min, self.logical_max()) - min) / range).clamp(0.0, 1.0);
-        match self.value_polarity {
-            ParameterValuePolarity::Unsigned => normalized.into(),
-            ParameterValuePolarity::Signed => (normalized * 2.0 - 1.0).into(),
-        }
-    }
-
-    /// Converts an absolute percentage into an absolute logical parameter value.
-    pub fn absolute_percent_to_value(&self, value: Percentage) -> ParameterDmxValue {
-        let min = self.logical_min();
-        let range = self.logical_range();
-        match self.value_polarity {
-            ParameterValuePolarity::Unsigned => {
-                let clamped_percent = value.clamp(0.0.into(), 1.0.into());
-                min + range * clamped_percent.as_f32()
-            }
-            ParameterValuePolarity::Signed => {
-                let percent = value.clamp((-1.0).into(), 1.0.into()).as_f32();
-                min + range * ((percent + 1.0) / 2.0)
-            }
-        }
-    }
-
-    /// Converts absolute parameter values to raw logical-value representation.
-    pub fn parameter_value_as_absolute(&self, value: &ParameterValue) -> ParameterValue {
-        match value {
-            ParameterValue::AbsolutePercent { value } => ParameterValue::Absolute {
-                value: self.absolute_percent_to_value(*value),
-            },
-            _ => *value,
-        }
-    }
-
-    /// Converts absolute parameter values to percentage representation.
-    pub fn parameter_value_as_absolute_percent(&self, value: &ParameterValue) -> ParameterValue {
-        match value {
-            ParameterValue::Absolute { value } => ParameterValue::AbsolutePercent {
-                value: self.absolute_value_to_percent(*value),
-            },
-            _ => *value,
-        }
-    }
-}
 
 /// Store current values for a parameter.
 #[derive(Clone, Debug, Serialize, Deserialize, SmartDefault)]
@@ -167,6 +33,32 @@ pub struct ParameterValues {
     pub highlight_value: ParameterDmxValue,
     /// The current value of the parameter is the value that will be sent to the fixture.
     pub current_value: ParameterDmxValue,
+}
+
+impl ParameterValues {
+    /// Derives initial runtime values for a parameter spawned from profile metadata.
+    ///
+    /// Profile defaults and highlight values are used when declared. Otherwise
+    /// virtual intensity starts at full so it does not black out its element,
+    /// and other parameters start at zero with a full-scale highlight.
+    pub fn from_metadata(metadata: &ParameterMetadata) -> Self {
+        let fallback = Self::default();
+        let default_value = match metadata.default_dmx {
+            Some(dmx) => metadata.logical_value_from_dmx(dmx),
+            None if metadata.attribute == Attribute::VirtualIntensity => metadata.max,
+            None => fallback.default_value,
+        };
+        let highlight_value = match metadata.highlight_dmx {
+            Some(dmx) => metadata.logical_value_from_dmx(dmx),
+            None if metadata.attribute == Attribute::VirtualIntensity => metadata.max,
+            None => fallback.highlight_value,
+        };
+        Self {
+            default_value,
+            highlight_value,
+            current_value: default_value,
+        }
+    }
 }
 
 /// Legacy patch payload for UI compatibility, mapping a parameter to a DMX universe and address.
@@ -241,29 +133,14 @@ impl Parameter {
     /// Clamps to valid range and applies inversion if configured.
     /// Use this for UI display that shows logical/conceptual values.
     pub fn get_logical_value(&self) -> ParameterDmxValue {
-        let min = self.metadata.logical_min();
-        let max = self.metadata.logical_max();
-        let value = self.values.current_value.clamp(min, max);
-        if self.metadata.is_inverted {
-            min + max - value
-        } else {
-            value
-        }
+        self.metadata.logical_output(self.values.current_value)
     }
 
     /// Gets the physical output value for DMX output.
     /// Applies the calibration offset and clamps to valid range.
     /// Use this for actual DMX output where offsets should be applied.
     pub fn get_raw_value(&self) -> ParameterDmxValue {
-        let min = self.metadata.logical_min();
-        let max = self.metadata.logical_max();
-        let offset = self.metadata.offset.resolve_as_dmx_offset(min, max);
-        let value = (self.values.current_value + offset).clamp(min, max);
-        if self.metadata.is_inverted {
-            min + max - value
-        } else {
-            value
-        }
+        self.metadata.raw_value(self.values.current_value)
     }
 
     /// Sets the effective output value, honoring parameter metadata settings
@@ -271,15 +148,13 @@ impl Parameter {
         self.values.current_value = value;
     }
 
-    /// Gets the default output value, honoring parameter metadata settings
+    /// Returns the logical value the parameter rests at, in the same space as
+    /// `current_value` and layer values.
+    ///
+    /// The stored default is already the logical value that outputs the
+    /// profile's default DMX, so inversion is applied once, on output.
     pub fn get_default_value(&self) -> ParameterDmxValue {
-        let min = self.metadata.logical_min();
-        let max = self.metadata.logical_max();
-        if self.metadata.is_inverted {
-            min + max - self.values.default_value
-        } else {
-            self.values.default_value
-        }
+        self.values.default_value
     }
 
     /// Resolves a ParameterValue instruction to a raw DmxValue (e.g. 0-255 for
@@ -315,58 +190,39 @@ impl Parameter {
 }
 
 impl CompositorParameter for Parameter {
-    fn attribute(&self) -> Attribute {
-        self.metadata.attribute.clone()
+    fn attribute(&self) -> &Attribute {
+        &self.metadata.attribute
     }
 
-    fn uses_htp_merge(&self) -> bool {
-        matches!(self.metadata.merge_type, MergeStrategy::HTP)
-    }
-
-    fn logical_min(&self) -> ParameterDmxValue {
-        self.metadata.logical_min()
+    fn compositing_context(&self) -> ParameterCompositingContext {
+        let logical_min = self.metadata.logical_min();
+        let logical_range = self.metadata.logical_range();
+        ParameterCompositingContext {
+            default_value: self.values.default_value,
+            logical_min,
+            uses_htp_merge: matches!(self.metadata.merge_type, MergeStrategy::HTP),
+            is_virtual_intensity: matches!(self.metadata.attribute, Attribute::VirtualIntensity),
+            absolute_percent: AbsolutePercentScale {
+                min: logical_min,
+                range: logical_range,
+                signed: self.metadata.value_polarity == ParameterValuePolarity::Signed,
+            },
+            relative_percent_range: logical_range,
+        }
     }
 
     fn current_value(&self) -> ParameterDmxValue {
         self.values.current_value
     }
 
-    fn default_value(&self) -> ParameterDmxValue {
-        self.values.default_value
-    }
-
     fn set_raw_value(&mut self, value: ParameterDmxValue) {
         Parameter::set_raw_value(self, value);
-    }
-
-    fn resolve_value(&self, value: &ParameterValue) -> ParameterDmxValue {
-        Parameter::resolve_value(self, value)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Verifies showfiles written before native units were introduced remain readable.
-    #[test]
-    fn parameter_metadata_defaults_missing_native_unit() {
-        let metadata: ParameterMetadata = serde_json::from_value(serde_json::json!({
-            "resolution": "Coarse",
-            "attribute": { "type": "Intensity" },
-            "value_polarity": "Unsigned",
-            "min": 0.0,
-            "max": 255.0,
-            "offset": { "type": "Absolute", "data": { "value": 0.0 } },
-            "is_inverted": false,
-            "is_snap": false,
-            "merge_type": "HTP",
-            "use_grandmaster": true
-        }))
-        .expect("deserialize legacy parameter metadata");
-
-        assert_eq!(metadata.native_unit, ParameterUnit::Percent);
-    }
 
     /// Builds parameter metadata with overridable polarity for value-resolution tests.
     fn metadata(value_polarity: ParameterValuePolarity) -> ParameterMetadata {
@@ -420,6 +276,39 @@ mod tests {
         );
     }
 
+    /// Verifies the compositor's trait snapshot resolves every value kind exactly as the parameter
+    /// does, for both polarities and for percentages outside the valid span.
+    #[test]
+    fn compositing_context_resolves_values_like_the_parameter() {
+        let values = [
+            ParameterValue::Absolute { value: 42.0 },
+            ParameterValue::AbsolutePercent { value: 0.25.into() },
+            ParameterValue::AbsolutePercent {
+                value: (-0.5).into(),
+            },
+            ParameterValue::AbsolutePercent { value: 1.5.into() },
+            ParameterValue::Relative { offset: -7.0 },
+            ParameterValue::RelativePercent { offset: 0.1.into() },
+        ];
+        for polarity in [
+            ParameterValuePolarity::Unsigned,
+            ParameterValuePolarity::Signed,
+        ] {
+            let parameter = Parameter {
+                metadata: metadata(polarity),
+                values: ParameterValues::default(),
+            };
+            let context = parameter.compositing_context();
+            for value in &values {
+                assert_eq!(
+                    context.resolve_value_with_current(value, 100.0),
+                    parameter.resolve_value_with_current(value, 100.0),
+                    "{polarity:?} {value:?}"
+                );
+            }
+        }
+    }
+
     /// Verifies temporary current values resolve relative assertions without mutating the parameter.
     #[test]
     fn resolve_value_with_current_uses_explicit_relative_base() {
@@ -438,37 +327,52 @@ mod tests {
         assert_eq!(parameter.values.current_value, 10.0);
     }
 
-    /// Verifies metadata conversion preserves unsigned absolute values through percentage form.
+    /// Verifies an inverted parameter's declared default is inverted once:
+    /// the default value a cue transition starts from outputs the declared DMX.
     #[test]
-    fn unsigned_absolute_values_round_trip_through_absolute_percent() {
-        let metadata = metadata(ParameterValuePolarity::Unsigned);
-        let percent = metadata
-            .parameter_value_as_absolute_percent(&ParameterValue::Absolute { value: 270.0 });
-        assert_eq!(
-            percent,
-            ParameterValue::AbsolutePercent { value: 0.5.into() }
-        );
-
-        assert_eq!(
-            metadata.parameter_value_as_absolute(&percent),
-            ParameterValue::Absolute { value: 270.0 }
-        );
+    fn inverted_default_outputs_declared_dmx() {
+        let metadata = ParameterMetadata {
+            is_inverted: true,
+            default_dmx: Some(64),
+            ..Default::default()
+        };
+        let values = ParameterValues::from_metadata(&metadata);
+        let mut parameter = Parameter {
+            values: values.clone(),
+            metadata,
+        };
+        assert_eq!(parameter.get_default_value(), values.default_value);
+        parameter.values.current_value = parameter.get_default_value();
+        assert_eq!(crate::universe::parameter_to_dmx_value(&parameter), 64);
     }
 
-    /// Verifies metadata conversion preserves signed absolute values through percentage form.
+    /// Verifies profile defaults and highlights seed runtime values, with legacy fallbacks otherwise.
     #[test]
-    fn signed_absolute_values_round_trip_through_absolute_percent() {
-        let metadata = metadata(ParameterValuePolarity::Signed);
-        let percent = metadata
-            .parameter_value_as_absolute_percent(&ParameterValue::Absolute { value: 135.0 });
-        assert_eq!(
-            percent,
-            ParameterValue::AbsolutePercent { value: 0.5.into() }
-        );
+    fn values_from_metadata_use_profile_defaults() {
+        let tilt = ParameterMetadata {
+            attribute: Attribute::Tilt,
+            value_polarity: ParameterValuePolarity::Signed,
+            resolution: DmxValueResolution::Fine,
+            min: -125.0,
+            max: 125.0,
+            default_dmx: Some(32_768),
+            highlight_dmx: Some(65_535),
+            ..Default::default()
+        };
+        let values = ParameterValues::from_metadata(&tilt);
+        assert!(values.default_value.abs() < 0.01);
+        assert_eq!(values.current_value, values.default_value);
+        assert_eq!(values.highlight_value, 125.0);
 
+        let virtual_intensity = ParameterMetadata {
+            attribute: Attribute::VirtualIntensity,
+            ..Default::default()
+        };
         assert_eq!(
-            metadata.parameter_value_as_absolute(&percent),
-            ParameterValue::Absolute { value: 135.0 }
+            ParameterValues::from_metadata(&virtual_intensity).current_value,
+            255.0
         );
+        let plain = ParameterValues::from_metadata(&ParameterMetadata::default());
+        assert_eq!((plain.default_value, plain.highlight_value), (0.0, 255.0));
     }
 }

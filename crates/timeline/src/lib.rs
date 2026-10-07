@@ -27,18 +27,14 @@ use crate::prelude::*;
 /// AST converter for timeline commands
 pub mod ast_conv;
 mod audio_integration;
-#[cfg(feature = "beatgrid-detect")]
-pub mod beat_model;
-#[cfg(feature = "beatgrid-detect")]
-#[doc(hidden)]
-pub mod beat_this_detection;
 mod beatgrid_detection;
 mod browser_audio;
 mod components;
 mod diagnostics;
 #[cfg(feature = "http")]
 mod http_routes;
-mod planner;
+/// Deterministic, ECS-free timeline playback planning.
+pub mod planner;
 mod recording;
 mod storage;
 mod systems;
@@ -50,8 +46,9 @@ pub mod websocket;
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::TimelinePlugin;
+    pub use crate::beatgrid_detection::{BeatgridDetector, DetectedBeat, DetectedBeatgrid};
     pub use crate::browser_audio::{TimelineAudioDirective, TimelineAudioLoopRange};
-    pub use crate::components::{MaterializedTimeline, SpawnedEntityType};
+    pub use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
     pub use crate::recording::{
         TimelineRecordingPreview, TimelineRecordingState, TimelineRecordingStates,
     };
@@ -78,6 +75,7 @@ pub struct TimelinePlugin {
     audio_enabled: bool,
     browser_audio_enabled: bool,
     http_enabled: bool,
+    beatgrid_detector: Option<BeatgridDetector>,
 }
 
 impl TimelinePlugin {
@@ -88,6 +86,7 @@ impl TimelinePlugin {
             audio_enabled,
             browser_audio_enabled: false,
             http_enabled: true,
+            beatgrid_detector: None,
         }
     }
 
@@ -98,7 +97,18 @@ impl TimelinePlugin {
             audio_enabled: false,
             browser_audio_enabled: true,
             http_enabled: false,
+            beatgrid_detector: None,
         }
+    }
+
+    /// Enable beatgrid detection with a host-supplied audio analysis backend.
+    ///
+    /// Without a detector, automatic detection is skipped and manual requests fail with an
+    /// unavailable-in-this-build error.
+    #[must_use]
+    pub const fn with_beatgrid_detector(mut self, detector: BeatgridDetector) -> Self {
+        self.beatgrid_detector = Some(detector);
+        self
     }
 }
 
@@ -125,7 +135,9 @@ impl Plugin for TimelinePlugin {
         );
 
         app.init_resource::<DataProvider<Timeline>>();
-        app.init_resource::<beatgrid_detection::BeatgridDetectionRuntime>();
+        app.insert_resource(beatgrid_detection::BeatgridDetectionRuntime::new(
+            self.beatgrid_detector,
+        ));
         app.init_resource::<recording::TimelineRecordingStates>();
         app.init_resource::<recording::TimelineRecordingSessions>();
         app.init_resource::<recording::TimelineCommandOrigins>();
@@ -160,30 +172,36 @@ impl Plugin for TimelinePlugin {
         audio_integration::add_event_handling_systems(app);
         if self.browser_audio_enabled {
             app.add_systems(
-                Update,
+                Render,
                 browser_audio::emit_browser_audio_directives
                     .after(systems::update_timeline_system)
                     .in_set(LayerGeneration),
             );
         }
 
+        // Recording runs in every update right after event handling, so actions are recorded
+        // against the timeline state at the moment they happen. The origins timeline playback
+        // marks in a render's layer generation are still set when the following update records
+        // those clip actions, and are cleared after it.
         app.add_systems(
             Update,
             (
-                recording::record_timeline_actions_system.after(EventHandling),
-                recording::finish_timeline_recording_sessions_system
-                    .after(recording::record_timeline_actions_system),
-                recording::clear_timeline_command_origins
-                    .after(recording::finish_timeline_recording_sessions_system),
+                recording::record_timeline_actions_system,
+                recording::finish_timeline_recording_sessions_system,
+                recording::clear_timeline_command_origins,
             )
-                .before(ClientOutput),
+                .chain()
+                .after(EventHandling),
         );
 
         // WebSocket forwarding and sends owned by timeline plugin
         app.add_systems(
-            Update,
+            PostUpdate,
+            websocket::forward_timeline_commands.in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
             (
-                websocket::forward_timeline_commands,
                 websocket::send_timelines_on_change,
                 websocket::send_timeline_recording_states_on_change,
                 websocket::send_timeline_recording_previews_on_change,
